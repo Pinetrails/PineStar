@@ -6,7 +6,7 @@
   "scripts": {
     "validate": "node test/validate_map.js",
     "test:world": "node test/test_world.js",
-    "test:fast": "node test/schema.test.js && node test/contract.test.js && node test/clock-rng.test.js && node test/context.test.js && node test/lint-emits.js && node test/lint-determinism.js",
+    "test:fast": "node test/schema.test.js && node test/contract.test.js && node test/clock-rng.test.js && node test/context.test.js && node test/cost.test.js && node test/provider.replay.test.js && node test/loop.replay.test.js && node test/lint-emits.js && node test/lint-determinism.js",
     "test": "node test/validate_map.js && node test/test_world.js && npm run test:fast",
     "serve": "npx -y http-server frontend -c-1 -p 8087"
   }
