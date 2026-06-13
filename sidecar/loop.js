@@ -103,6 +103,11 @@
       if (signal.aborted) return end('cancelled');
       if (turns >= maxIters) return end('max_iters');
       if (spentUsd >= maxCostUsd) return end('budget');
+      // COMPUTE GATE: a model turn needs a compute capability (a computer in the room).
+      if (capCtx && typeof capCtx.canRun === 'function' && !capCtx.canRun()) {
+        emit('capdenied', { agentId, need: 'compute', reason: capCtx.computeReason || 'no compute capability in room' });
+        return end('error');
+      }
       turns++;
 
       // (2) STREAM one model call
