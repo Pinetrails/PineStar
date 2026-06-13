@@ -1,0 +1,43 @@
+/* node test/lint-emits.js — CI lint: every literal emit('NAME') / bus.emit('NAME')
+   in backend + app source must reference an event in the frozen registry.
+   Scans shared/, sidecar/, frontend/app/ (NOT the untouched v7 engine, NOT test/).
+   Dynamic emits (emit(name, …)) carry no literal and are skipped by design. */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const events = require('../shared/events.js');
+
+const base = path.join(__dirname, '..');
+const ROOTS = ['shared', 'sidecar', path.join('frontend', 'app')];
+
+let fail = 0;
+const err = m => { fail++; console.log('FAIL: ' + m); };
+
+function walk(dir, out) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return out; } // dir may not exist yet
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p, out);
+    else if (e.name.endsWith('.js')) out.push(p);
+  }
+  return out;
+}
+
+const files = [];
+for (const r of ROOTS) walk(path.join(base, r), files);
+
+const re = /\bemit\s*\(\s*(['"])([\w.\-]+)\1/g;
+let found = 0;
+for (const f of files) {
+  const src = fs.readFileSync(f, 'utf8');
+  let m;
+  while ((m = re.exec(src))) {
+    const name = m[2];
+    found++;
+    if (!events.isKnown(name)) err(name + ' (in ' + path.relative(base, f) + ') is not in the event registry');
+  }
+}
+
+console.log('lint-emits: scanned ' + files.length + ' file(s), ' + found + ' literal emit(s); ' + (fail ? (fail + ' problem(s)') : 'OK'));
+process.exit(fail ? 1 : 0);
