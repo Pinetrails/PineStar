@@ -26,6 +26,7 @@
   function makeCapCtx(resolved, extra) {
     return Object.assign({
       agentId: resolved.agentId,
+      room: resolved.room,
       canRun: () => !!resolved.hasCompute,
       computeReason: 'no compute capability — place a computer in the room',
       canUse: (call) => canAgentUse(resolved, call.name),
