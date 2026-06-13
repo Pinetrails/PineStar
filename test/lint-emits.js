@@ -27,10 +27,17 @@ function walk(dir, out) {
 const files = [];
 for (const r of ROOTS) walk(path.join(base, r), files);
 
+// blank out /* */ comments (keep newlines) and // line comments (preserve :// in URLs),
+// so a comment mentioning emit('foo') is not a false positive.
+function decomment(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .split('\n').map(ln => ln.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
+}
+
 const re = /\bemit\s*\(\s*(['"])([\w.\-]+)\1/g;
 let found = 0;
 for (const f of files) {
-  const src = fs.readFileSync(f, 'utf8');
+  const src = decomment(fs.readFileSync(f, 'utf8'));
   let m;
   while ((m = re.exec(src))) {
     const name = m[2];
