@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKYNET — STATION OS v2.077</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="theme-amber">
+
+<div id="boot">
+  <div id="boot-inner">
+    <pre id="boot-logo">
+███████╗██╗  ██╗██╗   ██╗███╗   ██╗███████╗████████╗
+██╔════╝██║ ██╔╝╚██╗ ██╔╝████╗  ██║██╔════╝╚══██╔══╝
+███████╗█████╔╝  ╚████╔╝ ██╔██╗ ██║█████╗     ██║
+╚════██║██╔═██╗   ╚██╔╝  ██║╚██╗██║██╔══╝     ██║
+███████║██║  ██╗   ██║   ██║ ╚████║███████╗   ██║
+╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═══╝╚══════╝   ╚═╝</pre>
+    <div id="boot-lines"></div>
+    <div id="boot-go">▮ CLICK ANYWHERE TO TAKE COMMAND ▮</div>
+  </div>
+</div>
+
+<div id="app">
+  <header id="topbar">
+    <div id="logo"><span class="logo-mark">▲</span><pre id="logo-ascii">███████╗██╗  ██╗██╗   ██╗███╗   ██╗███████╗████████╗
+██╔════╝██║ ██╔╝╚██╗ ██╔╝████╗  ██║██╔════╝╚══██╔══╝
+███████╗█████╔╝  ╚████╔╝ ██╔██╗ ██║█████╗     ██║
+╚════██║██╔═██╗   ╚██╔╝  ██║╚██╗██║██╔══╝     ██║
+███████║██║  ██╗   ██║   ██║ ╚████║███████╗   ██║
+╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═══╝╚══════╝   ╚═╝</pre><span class="logo-sub">STATION OS v2.077</span></div>
+    <div class="tb-stats">
+      <div class="tb-stat">TOTAL REV <b id="tb-total" class="pos">$0.00</b></div>
+      <div class="tb-stat">ETSY <b id="tb-etsy">$0.00</b></div>
+      <div class="tb-stat">FIVERR <b id="tb-fiverr">$0.00</b></div>
+      <div class="tb-stat">NET <b id="tb-net">$0.00</b></div>
+      <button id="tb-mode" title="Toggle Autopilot / Manual">◎ MANUAL</button>
+      <div id="tb-level" title="Station Level">LVL <b id="tb-lvl">1</b>
+        <div id="xpbar"><div id="xpfill"></div></div>
+      </div>
+    </div>
+  </header>
+
+  <aside id="left">
+    <h3>▮ CREW MANIFEST<span class="h3-aux" id="crew-n"></span></h3>
+    <ul id="crew"></ul>
+    <div id="crew-sum"></div>
+  </aside>
+
+  <main id="center">
+    <div id="station-frame">
+      <canvas id="station"></canvas>
+      <div class="crt-scan"></div>
+      <div class="crt-vignette"></div>
+      <div class="crt-band"></div>
+      <div class="cam-hud">
+        <span class="cam-c cam-tl">┌</span><span class="cam-c cam-tr">┐</span>
+        <span class="cam-c cam-bl">└</span><span class="cam-c cam-br">┘</span>
+        <span class="cam-label">CAM-01 ▪ STATION OVERWATCH</span>
+        <span class="cam-rec">● REC</span>
+        <span class="cam-feed">FEED: LIVE ▪ SYNC 60Hz</span>
+        <span class="cam-alt">ORBIT ALT 412KM</span>
+      </div>
+    </div>
+  </main>
+
+  <aside id="right">
+    <section id="ops-sec"><h3>▮ OPERATIONS FEED<span class="h3-aux"><span class="live-dot"></span>LIVE</span></h3><div id="ops" class="scrolly"></div></section>
+    <section id="mc-sec"><h3>▮ MISSION CONTROL<span class="h3-aux" id="mc-aux"></span></h3><div id="mc"></div></section>
+    <section id="obj-sec"><h3>▮ DAILY OBJECTIVES<span class="h3-aux" id="obj-aux"></span></h3><div id="objs"></div></section>
+    <section id="chat-sec"><h3>▮ STATION GROUPCHAT<span class="h3-aux">#STATION-MAIN</span></h3>
+      <div id="chat" class="scrolly"></div>
+      <div id="chat-inputrow"><span class="prompt">&gt;</span><input id="chat-input" maxlength="220" placeholder="issue a directive to ULTRON…" autocomplete="off"></div>
+    </section>
+  </aside>
+
+  <footer id="bottombar">
+    <button class="bb" data-term="settings">⚙ SETTINGS</button>
+    <button class="bb" data-term="agents">☻ AGENTS</button>
+    <button class="bb" data-term="tasks">▤ TASKS</button>
+    <button class="bb" data-term="milestones">★ MILESTONES</button>
+    <button class="bb" data-term="stats">∿ STATS</button>
+    <button class="bb" data-term="feedback">⚑ FEEDBACK<span id="fb-badge" class="badge"></span></button>
+    <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
+    <div class="bb-right">
+      <span id="sig" title="orbital uplink">UPLINK <b>▂▄▆█</b></span>
+      <span id="save-dot" title="autosave">●</span>
+      <span id="clock">DAY 1 07:00</span>
+    </div>
+  </footer>
+
+  <div id="terms"></div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/data.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/map.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/agents.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/arcade.js"></script>
+<script src="js/propterm.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

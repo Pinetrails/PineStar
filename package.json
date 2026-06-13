@@ -1,0 +1,12 @@
+{
+  "name": "skynet-harness",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Skynet — a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "scripts": {
+    "validate": "node test/validate_map.js",
+    "test:world": "node test/test_world.js",
+    "test": "node test/validate_map.js && node test/test_world.js",
+    "serve": "npx -y http-server frontend -c-1 -p 8087"
+  }
+}

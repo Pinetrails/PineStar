@@ -1,0 +1,26 @@
+{
+  "sprites": {
+    "minion.rot.south": ["minion/rot_south.png"],
+    "minion.rot.north": ["minion/rot_north.png"],
+    "minion.rot.east": ["minion/rot_east.png"],
+    "minion.rot.west": ["minion/rot_west.png"],
+    "minion.walk.south": ["minion/walk_south_0.png", "minion/walk_south_1.png", "minion/walk_south_2.png", "minion/walk_south_3.png"],
+    "minion.walk.north": ["minion/walk_north_0.png", "minion/walk_north_1.png", "minion/walk_north_2.png", "minion/walk_north_3.png"],
+    "minion.walk.east": ["minion/walk_east_0.png", "minion/walk_east_1.png", "minion/walk_east_2.png", "minion/walk_east_3.png"],
+    "minion.walk.west": ["minion/walk_west_0.png", "minion/walk_west_1.png", "minion/walk_west_2.png", "minion/walk_west_3.png"],
+    "minion.drink.south": ["minion/drink_south_0.png", "minion/drink_south_1.png", "minion/drink_south_2.png", "minion/drink_south_3.png", "minion/drink_south_4.png", "minion/drink_south_5.png"],
+    "minion.type.north": ["minion/type_north_0.png", "minion/type_north_1.png", "minion/type_north_2.png", "minion/type_north_3.png", "minion/type_north_4.png"],
+    "minion.sit.south": ["minion/sit_south.png"],
+    "minion.sit.north": ["minion/sit_north.png"],
+    "minion.sit.east": ["minion/sit_east.png"],
+    "minion.sit.west": ["minion/sit_west.png"],
+    "ultron.rot.south": ["ultron/rot_south.png"],
+    "ultron.rot.north": ["ultron/rot_north.png"],
+    "ultron.rot.east": ["ultron/rot_east.png"],
+    "ultron.rot.west": ["ultron/rot_west.png"],
+    "ultron.walk.south": ["ultron/walk_south_0.png", "ultron/walk_south_1.png", "ultron/walk_south_2.png", "ultron/walk_south_3.png"],
+    "ultron.walk.north": ["ultron/walk_north_0.png", "ultron/walk_north_1.png", "ultron/walk_north_2.png", "ultron/walk_north_3.png"],
+    "ultron.walk.east": ["ultron/walk_east_0.png", "ultron/walk_east_1.png", "ultron/walk_east_2.png", "ultron/walk_east_3.png"],
+    "ultron.walk.west": ["ultron/walk_west_0.png", "ultron/walk_west_1.png", "ultron/walk_west_2.png", "ultron/walk_west_3.png"]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "skynet",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "frontend", "-c-1", "-p", "8231"],
+      "port": 8231,
+      "autoPort": false
+    }
+  ]
+}

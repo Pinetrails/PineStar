@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKYNET</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body class="theme-amber">
+
+<!-- ============ TITLE ============ -->
+<section id="screen-title" class="screen active">
+  <div class="title-wrap">
+    <pre id="title-logo">███████╗██╗  ██╗██╗   ██╗███╗   ██╗███████╗████████╗
+██╔════╝██║ ██╔╝╚██╗ ██╔╝████╗  ██║██╔════╝╚══██╔══╝
+███████╗█████╔╝  ╚████╔╝ ██╔██╗ ██║█████╗     ██║
+╚════██║██╔═██╗   ╚██╔╝  ██║╚██╗██║██╔══╝     ██║
+███████║██║  ██╗   ██║   ██║ ╚████║███████╗   ██║
+╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═══╝╚══════╝   ╚═╝</pre>
+    <div class="title-sub">▸ GAMIFIED AI-AGENT HARNESS</div>
+    <div class="title-btns">
+      <button id="btn-resume" class="btn-xl hidden">▮ RESUME ▮</button>
+      <button id="btn-begin" class="btn-xl">▮ NEW STATION ▮</button>
+      <button id="btn-newagent" class="btn hidden">⟲ NEW AGENT</button>
+    </div>
+    <div class="title-foot">BYOK · v0.2 · save + onboarding</div>
+  </div>
+</section>
+
+<!-- ============ CONNECT / CREATE ============ -->
+<section id="screen-connect" class="screen">
+  <div class="panel connect-panel">
+    <h2>▮ CREATE YOUR AGENT</h2>
+    <p class="muted lead">Bring your own key. It's stored locally on this machine and used to call the model directly — nothing is sent anywhere else. <span class="dim">(In the shipped desktop build this moves behind the sidecar + OS keychain.)</span></p>
+
+    <label>PROVIDER</label>
+    <div class="provider-row">
+      <button class="prov sel" data-prov="openrouter">OPENROUTER</button>
+      <span class="dim">· more soon</span>
+    </div>
+
+    <label>API KEY <span class="dim">— openrouter.ai/keys</span></label>
+    <input id="in-key" type="password" placeholder="sk-or-..." autocomplete="off" spellcheck="false">
+
+    <label>MODEL <span class="dim" id="model-count"></span></label>
+    <input id="in-model" list="model-list" placeholder="loading models…" autocomplete="off" spellcheck="false">
+    <datalist id="model-list"></datalist>
+    <div id="model-hint" class="dim hint">—</div>
+
+    <label>AGENT NAME</label>
+    <input id="in-name" maxlength="18" placeholder="name your agent" autocomplete="off" spellcheck="false">
+
+    <label>AVATAR SUIT</label>
+    <div id="swatches" class="swatches"></div>
+
+    <div id="connect-msg" class="msg"></div>
+    <div class="connect-actions">
+      <button id="btn-back" class="btn">‹ BACK</button>
+      <button id="btn-wake" class="btn-xl">⏼ WAKE AGENT ▸</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GAME ============ -->
+<section id="screen-game" class="screen">
+  <header id="game-top">
+    <span class="gt-logo">▲ SKYNET</span>
+    <span class="gt-sep">│</span>
+    <span class="gt-field">AGENT <b id="gt-agent">—</b></span>
+    <span class="gt-field">MODEL <b id="gt-model" class="dimb">—</b></span>
+    <span class="gt-spacer"></span>
+    <span class="gt-field">SPEND <b id="gt-cost" class="pos">$0.000000</b></span>
+    <span class="gt-field">TOKENS <b id="gt-tok">0</b></span>
+    <button id="btn-disconnect" class="btn-sm" title="disconnect agent">⏏ DISCONNECT</button>
+  </header>
+  <main id="game-main">
+    <div id="stage-wrap">
+      <canvas id="stage"></canvas>
+      <div class="cam-hud">
+        <span class="cam-c cam-tl">┌</span><span class="cam-c cam-tr">┐</span>
+        <span class="cam-c cam-bl">└</span><span class="cam-c cam-br">┘</span>
+        <span class="cam-label">CAM-01 ▪ AGENT QUARTERS</span>
+        <span class="cam-rec">● REC</span>
+        <span class="cam-feed">FEED: LIVE</span>
+      </div>
+    </div>
+    <aside id="chat-panel">
+      <h3>▮ COMMS<span class="dim" id="chat-status">offline</span></h3>
+      <div id="chat-log" class="scrolly"></div>
+      <div id="chat-inputrow">
+        <span class="prompt">&gt;</span>
+        <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off">
+      </div>
+    </aside>
+  </main>
+</section>
+
+<script src="js/util.js"></script>
+<script src="app/data-shim.js"></script>
+<script src="js/assets.js"></script>
+<script src="app/harness.js"></script>
+<script src="app/world.js"></script>
+<script src="app/chat.js"></script>
+<script src="app/save.js"></script>
+<script src="app/app.js"></script>
+</body>
+</html>

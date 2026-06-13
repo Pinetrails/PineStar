@@ -1,0 +1,137 @@
+/* SKYNET — app.css : screens for the REAL harness (title · connect · game).
+   Reuses the v7 phosphor/CRT design language from style.css (vars + body::before/after).
+   No "web app" softness — 2px hard lines, inverted-block headers, heavy bloom. */
+
+/* ---------- screen scaffolding ---------- */
+.screen { position: fixed; inset: 0; display: none; z-index: 10; }
+.screen.active { display: flex; }
+#screen-title.active, #screen-connect.active { align-items: center; justify-content: center; }
+#screen-game.active { flex-direction: column; padding: 11px; gap: 9px; }
+.hidden { display: none !important; }
+
+.dim { color: var(--ph-dim); }
+.dimb { color: var(--ph-dim); font-weight: normal; }
+.pos { color: var(--gold); }
+.muted { color: var(--text); opacity: 0.82; }
+
+/* ---------- shared inputs / buttons ---------- */
+.btn, .btn-xl, .btn-sm, .prov {
+  font-family: inherit; color: var(--ph); background: var(--panel2);
+  border: 2px solid var(--ph-dim); padding: 6px 14px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 1px; line-height: 1;
+  text-shadow: 0 0 6px var(--ph-glow2); transition: none;
+}
+.btn:hover, .btn-xl:hover, .btn-sm:hover, .prov:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+.btn:active, .btn-xl:active { transform: translateY(1px); }
+.btn-xl { font-size: 26px; padding: 12px 26px; border-color: var(--ph); box-shadow: 0 0 0 2px rgba(0,0,0,.85), 0 0 18px var(--ph-glow2); }
+.btn-sm { font-size: 15px; padding: 4px 9px; }
+.prov.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
+
+input[type=text], input[type=password], input:not([type]) {
+  width: 100%; font-family: inherit; font-size: 19px; color: var(--ph-bright);
+  background: #000; border: 2px solid var(--ph-dim); padding: 7px 10px; outline: none;
+  text-shadow: 0 0 5px var(--ph-glow2);
+}
+input:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
+input::placeholder { color: var(--ph-dim); opacity: .7; }
+
+/* ---------- TITLE ---------- */
+.title-wrap { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+#title-logo {
+  font-family: inherit; color: var(--ph); line-height: 1; font-size: 16px;
+  text-shadow: 0 0 10px var(--ph-glow), 0 0 26px var(--ph-glow2); white-space: pre;
+}
+.title-sub { color: var(--ph-bright); font-size: 22px; letter-spacing: 4px; }
+.title-foot { color: var(--ph-dim); font-size: 15px; letter-spacing: 2px; }
+@keyframes pulse-btn { 0%,100%{ box-shadow:0 0 0 2px rgba(0,0,0,.85),0 0 14px var(--ph-glow2);} 50%{ box-shadow:0 0 0 2px rgba(0,0,0,.85),0 0 26px var(--ph-glow);} }
+#btn-begin { animation: pulse-btn 2.4s infinite; }
+
+/* ---------- generic panel (reuses v7 bezel look) ---------- */
+.panel {
+  position: relative; background:
+    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%), var(--panel);
+  border: 1px solid rgba(0,0,0,.85); border-radius: 9px;
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2),
+    0 9px 28px rgba(0,0,0,.85), inset 0 0 52px rgba(0,0,0,.85);
+  padding: 20px 22px;
+}
+.panel h2 { color: var(--ink); background: var(--ph); display: inline-block; padding: 2px 12px; margin-bottom: 12px; letter-spacing: 2px; }
+
+/* ---------- CONNECT ---------- */
+.connect-panel { width: min(560px, 92vw); }
+.connect-panel .lead { font-size: 16px; margin-bottom: 16px; }
+.connect-panel label { display: block; color: var(--ph); letter-spacing: 1px; margin: 12px 0 4px; font-size: 16px; }
+.provider-row { display: flex; align-items: center; gap: 10px; }
+.hint { font-size: 15px; margin-top: 4px; min-height: 18px; }
+.connect-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+.msg { min-height: 20px; color: var(--bad); font-size: 16px; margin-top: 10px; }
+.msg.ok { color: var(--gold); }
+
+/* ---------- GAME ---------- */
+#game-top {
+  display: flex; align-items: center; gap: 14px; padding: 0 14px; height: 52px; flex: 0 0 auto;
+  background: var(--panel); border-radius: 9px;
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 40px rgba(0,0,0,.8);
+}
+.gt-logo { color: var(--ph-bright); letter-spacing: 2px; }
+.gt-sep { color: var(--ph-dim); }
+.gt-field { color: var(--ph-dim); font-size: 15px; letter-spacing: 1px; }
+.gt-field b { color: var(--ph-bright); font-weight: normal; margin-left: 4px; }
+.gt-spacer { flex: 1; }
+#btn-disconnect { margin-left: 6px; }
+
+#game-main { flex: 1; display: flex; gap: 9px; min-height: 0; }
+
+#stage-wrap {
+  flex: 1; position: relative; min-width: 0; border-radius: 9px; overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 60px rgba(0,0,0,.9);
+}
+#stage { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+
+/* camera HUD overlay (reused v7 idiom) */
+.cam-hud { position: absolute; inset: 0; pointer-events: none; font-size: 14px; color: var(--ph); z-index: 3; }
+.cam-c { position: absolute; font-size: 20px; opacity: .55; }
+.cam-tl { top: 6px; left: 8px; } .cam-tr { top: 6px; right: 8px; } .cam-bl { bottom: 6px; left: 8px; } .cam-br { bottom: 6px; right: 8px; }
+.cam-label { position: absolute; top: 9px; left: 24px; letter-spacing: 1px; opacity: .8; }
+.cam-rec { position: absolute; top: 9px; right: 26px; color: var(--bad); }
+.cam-feed { position: absolute; bottom: 9px; left: 24px; opacity: .65; }
+
+/* chat panel */
+#chat-panel {
+  flex: 0 0 360px; display: flex; flex-direction: column; min-height: 0; border-radius: 9px;
+  background: var(--panel);
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 40px rgba(0,0,0,.8);
+}
+#chat-panel h3 {
+  display: flex; justify-content: space-between; align-items: baseline;
+  color: var(--ink); background: var(--ph); padding: 4px 12px; letter-spacing: 2px; border-radius: 7px 7px 0 0;
+}
+#chat-panel h3 .dim { color: var(--ink); opacity: .7; font-size: 14px; }
+#chat-log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.scrolly::-webkit-scrollbar { width: 8px; }
+.scrolly::-webkit-scrollbar-thumb { background: var(--ph-dim); }
+
+.cmsg { font-size: 17px; line-height: 1.25; }
+.cmsg .who { font-size: 13px; letter-spacing: 1px; color: var(--ph-dim); display: block; margin-bottom: 2px; }
+.cmsg.user { text-align: right; }
+.cmsg.user .who { color: var(--gold); }
+.cmsg.user .body { color: var(--ph-bright); }
+.cmsg.agent .who { color: var(--ph); }
+.cmsg.agent .body { color: var(--text); }
+.cmsg.agent.err .body { color: var(--bad); }
+.cmsg .body { white-space: pre-wrap; word-break: break-word; }
+.cmsg .caret { color: var(--ph); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+#chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
+#chat-inputrow .prompt { color: var(--ph); }
+#chat-input { border: none; background: transparent; padding: 4px 2px; }
+#chat-input:focus { box-shadow: none; }
+
+/* ---------- onboarding / save additions ---------- */
+.title-btns { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.swatches { display: flex; gap: 8px; }
+.swatch { width: 30px; height: 30px; border: 2px solid var(--ph-dim); cursor: pointer; }
+.swatch:hover { border-color: var(--ph); }
+.swatch.sel { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }

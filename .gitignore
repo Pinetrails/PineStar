@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# logs / tmp
+*.log
+.tmp/
+
+# machine-local Claude settings
+.claude/settings.local.json
+
+# agent runtime workspaces / notes (created by tools at run time)
+workspaces/
