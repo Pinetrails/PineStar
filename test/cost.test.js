@@ -1,0 +1,39 @@
+/* node test/cost.test.js — token/cost accounting. */
+'use strict';
+const A = require('./_assert.js');
+const { makeCostEngine } = require('../sidecar/cost.js');
+
+const priceOf = id => id === 'm' ? { in: 1, out: 2 } : null; // $1 / 1M in, $2 / 1M out
+const ce = makeCostEngine({ priceOf });
+
+// estimate from catalog pricing
+const e = ce.estimate({ prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 }, 'm');
+A.ok(Math.abs(e.usd - (1000 * 1 + 500 * 2) / 1e6) < 1e-12, 'estimate usd from catalog pricing');
+A.eq(e.tokens, 1500, 'estimate total tokens');
+
+// provider-reported cost overrides the catalog estimate
+A.eq(ce.estimate({ prompt_tokens: 1000, completion_tokens: 500, cost: 0.042 }, 'm').usd, 0.042, 'provider cost wins');
+
+// reconcile splits reasoning + cached out
+const r = ce.reconcile({
+  prompt_tokens: 1000, completion_tokens: 500,
+  prompt_tokens_details: { cached_tokens: 200 }, reasoning_tokens: 50
+}, 'm');
+A.eq(r.tokensIn, 1000, 'reconcile tokensIn');
+A.eq(r.tokensOut, 500, 'reconcile tokensOut');
+A.eq(r.cachedTokens, 200, 'cached tokens tracked separately');
+A.eq(r.reasoningTokens, 50, 'reasoning tokens tracked separately');
+A.ok(Math.abs(r.usd - 2000 / 1e6) < 1e-12, 'reconcile usd');
+
+// reasoning via completion_tokens_details fallback
+A.eq(ce.reconcile({ prompt_tokens: 1, completion_tokens: 1, completion_tokens_details: { reasoning_tokens: 7 } }, 'm').reasoningTokens, 7, 'reasoning via completion_tokens_details');
+
+// unknown model + no cost -> 0 usd (never guess)
+A.eq(ce.estimate({ prompt_tokens: 100 }, 'unknown').usd, 0, 'no price + no cost -> 0 usd');
+
+// null usage is safe
+A.eq(ce.estimate(null, 'm').usd, 0, 'null usage estimate -> 0');
+A.eq(ce.estimate(null, 'm').tokens, 0, 'null usage tokens -> 0');
+A.eq(ce.reconcile(null, 'm').tokensIn, 0, 'null usage reconcile -> 0');
+
+A.report('cost.test');
