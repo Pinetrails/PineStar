@@ -22,6 +22,7 @@ async function rejectsAsync(p, msg) { try { await p; A.ok(false, msg + ' — did
     'http://[::1]/', 'http://[fd00::1]/', 'http://[fe80::1]/', 'http://[::ffff:127.0.0.1]/', // IPv6 loopback/ULA/link-local/mapped
     'http://2130706433/', 'http://0x7f000001/',                                            // integer / hex 127.0.0.1
     'http://internal-api/', 'http://db/', 'http://router.local/', 'http://svc.internal/',  // intranet names
+    'http://metadata.goog/computeMetadata/v1/', 'http://metadata.google.internal/',        // GCP cloud-metadata hostnames
     'ftp://example.com/', 'file:///etc/passwd', 'gopher://x/'                              // non-http(s)
   ];
   for (const url of blocked) rejects(() => assertSafeUrl(url), 'blocks ' + url);

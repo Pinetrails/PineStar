@@ -86,6 +86,7 @@
     const h = hostOf(u);
     const blockedName =
       h === 'localhost' || h === '0.0.0.0' ||
+      h === 'metadata.goog' || h.endsWith('.metadata.goog') ||                  // GCP cloud-metadata shorthand (metadata.google.internal already caught by .internal)
       h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') ||
       h.endsWith('.lan') || h.endsWith('.intranet') || h.endsWith('.home') || h.endsWith('.corp');
     const numericHost = /^\d+$/.test(h) || /^0x[0-9a-f]+$/i.test(h);   // integer / hex IP encodings (e.g. http://2130706433/)
