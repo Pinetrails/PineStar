@@ -23,7 +23,10 @@
     const notesOf = aid => { const v = store.get(KEY(aid)); return Array.isArray(v) ? v : []; };
 
     const writeTool = {
-      name: 'notebook.write', capability: 'memory', scope: 'write', requiresConsent: true,
+      // NO consent gate: the notebook is the agent's OWN sandboxed private memory (no filesystem reach, no
+      // network, a sibling file its fs.* tools can't even touch) — not the user's files. Prompting on every
+      // jotted note would be pure consent-fatigue; approval is reserved for outward effects (fs.* writes).
+      name: 'notebook.write', capability: 'memory', scope: 'write', requiresConsent: false,
       description: 'Save a short titled note to your persistent notebook so you remember it later.',
       schema: { type: 'object', required: ['title', 'body'], properties: { title: { type: 'string' }, body: { type: 'string' } } },
       run: async (args, ctx) => {

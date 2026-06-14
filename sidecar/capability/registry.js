@@ -19,7 +19,7 @@
       { capId: 'compute', tool: 'model.chat', scope: 'execute', requiresConsent: false, network: true }
     ],
     notebook: [
-      { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)
       { capId: 'memory', tool: 'notebook.read', scope: 'read', requiresConsent: false, network: false }
     ],
     // M5: object = capability made real — placing these grants the agent real-world reach.
