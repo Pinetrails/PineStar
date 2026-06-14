@@ -16,14 +16,16 @@
    typed error rather than a crash. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./providers/sanitize.js'));
-  else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./providers/sanitize.js'), require('./providers/errorClass.js'));
+  else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize, root.SK.providers && root.SK.providers.errorClass); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize, errorClass) {
   'use strict';
 
   // tool-call argument repair (L2): recover mechanically-broken JSON from non-Anthropic models. Degrades to
   // identity if the module is absent (e.g. a browser build that never runs the loop).
   const repairToolCallArguments = (sanitize && sanitize.repairToolCallArguments) || ((s) => s);
+  // API error classification (L3): makes `transient` on agent.run.error honest. Degrades to non-retryable if absent.
+  const classifyApiError = (errorClass && errorClass.classifyApiError) || (() => ({ retryable: false, message: '' }));
 
   function summarize(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) : s; }
   function clip(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) + '…' : s; }
@@ -111,6 +113,8 @@
     const runId = o.runId || 'run';
     const model = o.model || 'replay/model';
     const trigger = o.trigger || 'directive';
+    const approxTokens = o.approxTokens || 0;   // initial rough estimate; feeds the error classifier's overflow ratio
+    const contextLimit = o.contextLimit || 0;   // 0 = unknown (cold catalog) -> the ratio heuristic is skipped
 
     let spentUsd = 0, turns = 0;
     function end(reason) {
@@ -146,7 +150,11 @@
           // 'tool_done' / 'done' need no action here
         }
       } catch (e) {
-        emit('agent.run.error', { agentId, runId, message: String((e && e.message) || e), transient: false });
+        // classify the API failure so `transient` is honest (classifier-derived, not hardcoded false). The
+        // shouldFallback/shouldCompress hints have no consumer yet (single model per run, context.js unwired) —
+        // they are the documented extension point for the future failover/compaction layers; for now end('error').
+        const cls = classifyApiError(e, { model: model, approxTokens: approxTokens, contextLimit: contextLimit });
+        emit('agent.run.error', { agentId, runId, message: cls.message || String((e && e.message) || e), transient: !!cls.retryable });
         return end('error');
       }
 

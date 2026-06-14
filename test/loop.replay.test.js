@@ -165,5 +165,28 @@ function chatFixture() {
     A.eq(res.reason, 'done', 'loop recovers and finishes');
   }
 
+  // ---- L3.S3: the stream catch classifies the API error so agent.run.error.transient is honest ----
+  // (the replay provider yields fixtures and cannot throw, so this needs a throwing provider helper.)
+  {
+    const throwingProvider = (err) => ({ async *stream() { throw err; }, priceOf: () => null, contextLimit: () => 0 });
+    const httpErr = (s, m) => Object.assign(new Error('openrouter http ' + s + (m ? ' — ' + m : '')), { status: s });
+    async function runWithError(err) {
+      const r = setup();
+      const provider = throwingProvider(err);
+      const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit: r.emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r' });
+      return { res, seq: r.seq };
+    }
+
+    const rl = await runWithError(httpErr(429, 'slow down'));
+    A.eq(rl.res.reason, 'error', '429 -> run ends error');
+    A.eq(rl.seq.find(e => e.name === 'agent.run.error').payload.transient, true, '429 -> transient:true (retryable)');
+
+    const bill = await runWithError(httpErr(402, 'insufficient credits'));
+    A.eq(bill.seq.find(e => e.name === 'agent.run.error').payload.transient, false, '402 billing -> transient:false');
+
+    const bad = await runWithError(httpErr(400, 'malformed request'));
+    A.eq(bad.seq.find(e => e.name === 'agent.run.error').payload.transient, false, 'malformed 400 -> transient:false');
+  }
+
   A.report('loop.replay.test');
 })();

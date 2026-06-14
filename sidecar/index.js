@@ -231,7 +231,10 @@ async function handleRun(req, res) {
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
       limits: { maxIters: CAPS.maxIters, maxCostUsd: CAPS.maxCostUsd },
       signal: ac.signal, clock: { now: () => Date.now() },
-      agentId, runId, model, trigger: 'directive'
+      agentId, runId, model, trigger: 'directive',
+      // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
+      // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
+      approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
   } catch (e) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
