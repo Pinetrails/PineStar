@@ -481,5 +481,5 @@ const World = (() => {
     lines.forEach((l, i) => ctx.fillText(l, bx + padb, by + padb + lh * (i + 1) - 2));
   }
 
-  return { init, spawn, start, stop, setActivity, wakeIn, say };
+  return { init, spawn, start, stop, setActivity, wakeIn, say, getActivity: () => activity };
 })();

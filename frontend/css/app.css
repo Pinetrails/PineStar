@@ -6,7 +6,13 @@
 .screen { position: fixed; inset: 0; display: none; z-index: 10; }
 .screen.active { display: flex; }
 #screen-title.active, #screen-connect.active { align-items: center; justify-content: center; }
-#screen-game.active { flex-direction: column; padding: 11px; gap: 9px; }
+#screen-game.active {
+  display: grid;
+  grid-template-rows: 64px 1fr 44px;
+  grid-template-columns: 232px 1fr 360px;
+  grid-template-areas: "top top top" "left center chat" "bot bot bot";
+  padding: 11px; gap: 9px;
+}
 .hidden { display: none !important; }
 
 .dim { color: var(--ph-dim); }
@@ -144,3 +150,58 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .swatch { width: 30px; height: 30px; border: 2px solid var(--ph-dim); cursor: pointer; }
 .swatch:hover { border-color: var(--ph); }
 .swatch.sel { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
+
+/* ============================================================
+   STATION HUD — top bar · crew manifest · bottom bar · panels.
+   The phosphor/CRT chrome (#topbar/#left/#bottombar bezels, .bb,
+   .term, .crew-*, .kb-*, .ag-*, .set-*, .nf, .perk-*) is reused
+   verbatim from the v7 style.css already loaded above; this block
+   only positions the game-screen grid and adds the few new bits.
+   ============================================================ */
+#topbar { grid-area: top; }
+#left { grid-area: left; }
+#stage-wrap { grid-area: center; }
+#chat-panel { grid-area: chat; }
+#bottombar { grid-area: bot; }
+
+/* the v7 screen-flicker animation targets #app (which this app doesn't
+   have) — re-point it at the live station so the SETTINGS toggle works */
+body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
+
+/* top bar: reuse v7 #logo/.logo-*/.tb-stat; subtitle + disconnect fit */
+#topbar .logo-sub { white-space: nowrap; }
+#topbar #btn-disconnect { margin-left: 16px; align-self: center; }
+
+/* crew manifest empty state */
+.crew-empty { padding: 14px 10px; font-size: 13px; color: var(--ph-dim); }
+
+/* bottom-bar right cluster status pill (honest activity light, not a number) */
+#status-pill {
+  background: rgba(0,0,0,0.5); color: var(--ph); font-size: 14px; letter-spacing: 2px;
+  padding: 1px 12px; border: 2px solid var(--ph); text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: 0 0 12px var(--ph-glow2), inset 0 0 10px rgba(0,0,0,0.6);
+}
+#status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(255,211,74,0.35); }
+#status-pill.thinking { color: var(--ph-bright); }
+
+/* TASK BOARD — add-row + per-card actions (new controls over v7 .kb-* cards) */
+.kb-add { display: flex; gap: 8px; margin-bottom: 10px; }
+.kb-add input { flex: 1; font-size: 15px; padding: 5px 8px; }
+.kb-acts { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+.kb-acts button {
+  font-family: inherit; background: transparent; color: var(--ph-dim);
+  border: 1px solid var(--ph-faint); cursor: pointer; font-size: 12px; padding: 1px 7px; letter-spacing: 1px;
+}
+.kb-acts button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+.kb-acts .assign { color: var(--gold); border-color: var(--ph-dim); }
+.kb-empty-col { font-size: 12px; opacity: 0.4; padding: 6px 2px; }
+
+/* SKILLS — honest capability readout (reuses v7 .perk-grid/.perk) */
+.sk-note { font-size: 12px; opacity: 0.62; margin-top: 12px; line-height: 1.45; }
+.perk-stat { font-size: 10px; color: var(--ph-dim); margin-top: 2px; letter-spacing: 1px; }
+.perk.on .perk-stat { color: #69ff8e; }
+
+/* responsive: keep the three columns usable on smaller windows */
+@media (max-width: 1120px) {
+  #screen-game.active { grid-template-columns: 200px 1fr 300px; }
+}

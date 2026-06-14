@@ -109,11 +109,12 @@ const Chat = (() => {
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; toolLine('▶ ' + ev.name + ' ' + brief(ev.argsSummary)); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; toolLine((ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''), ev.isError); },
-        onDeliverable: ev => { if (ev.kind === 'file' && !seenDeliv[ev.title]) { seenDeliv[ev.title] = true; deliverableLine(ev.title, ev.agentId); } }
+        onDeliverable: ev => { if (ev.kind === 'file' && !seenDeliv[ev.title]) { seenDeliv[ev.title] = true; deliverableLine(ev.title, ev.agentId); if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold'); } }
       });
       if (error) {
         out.error(error);
         if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error));
+        if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
       } else {
         history.push({ role: 'assistant', content: reply || acc });
         out.done(); if (!isTask) World.say(reply || acc);
@@ -123,6 +124,7 @@ const Chat = (() => {
             : endReason === 'budget' ? 'reached this run\'s cost limit'
             : endReason === 'cancelled' ? 'run cancelled'
             : 'stopped (' + endReason + ')'));
+          if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         }
       }
     } catch (e) {

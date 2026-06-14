@@ -66,36 +66,63 @@
 
 <!-- ============ GAME ============ -->
 <section id="screen-game" class="screen">
-  <header id="game-top">
-    <span class="gt-logo">▲ SKYNET</span>
-    <span class="gt-sep">│</span>
-    <span class="gt-field">AGENT <b id="gt-agent">—</b></span>
-    <span class="gt-field">MODEL <b id="gt-model" class="dimb">—</b></span>
-    <span class="gt-spacer"></span>
-    <span class="gt-field">SPEND <b id="gt-cost" class="pos">$0.000000</b></span>
-    <span class="gt-field">TOKENS <b id="gt-tok">0</b></span>
-    <button id="btn-disconnect" class="btn-sm" title="disconnect agent">⏏ DISCONNECT</button>
-  </header>
-  <main id="game-main">
-    <div id="stage-wrap">
-      <canvas id="stage"></canvas>
-      <div class="cam-hud">
-        <span class="cam-c cam-tl">┌</span><span class="cam-c cam-tr">┐</span>
-        <span class="cam-c cam-bl">└</span><span class="cam-c cam-br">┘</span>
-        <span class="cam-label">CAM-01 ▪ AGENT QUARTERS</span>
-        <span class="cam-rec">● REC</span>
-        <span class="cam-feed">FEED: LIVE</span>
-      </div>
+
+  <header id="topbar">
+    <div id="logo"><span class="logo-mark">▲</span><pre id="logo-ascii">███████╗██╗  ██╗██╗   ██╗███╗   ██╗███████╗████████╗
+██╔════╝██║ ██╔╝╚██╗ ██╔╝████╗  ██║██╔════╝╚══██╔══╝
+███████╗█████╔╝  ╚████╔╝ ██╔██╗ ██║█████╗     ██║
+╚════██║██╔═██╗   ╚██╔╝  ██║╚██╗██║██╔══╝     ██║
+███████║██║  ██╗   ██║   ██║ ╚████║███████╗   ██║
+╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═══╝╚══════╝   ╚═╝</pre><span class="logo-sub">AI-AGENT HARNESS</span></div>
+    <div class="tb-stats">
+      <div class="tb-stat">AGENT <b id="gt-agent">—</b></div>
+      <div class="tb-stat">MODEL <b id="gt-model">—</b></div>
+      <div class="tb-stat">SPEND <b id="gt-cost" class="pos">$0.000000</b></div>
+      <div class="tb-stat">TOKENS <b id="gt-tok">0</b></div>
+      <button id="btn-disconnect" class="btn-sm" title="disconnect agent">⏏ DISCONNECT</button>
     </div>
-    <aside id="chat-panel">
-      <h3>▮ COMMS<span class="dim" id="chat-status">offline</span></h3>
-      <div id="chat-log" class="scrolly"></div>
-      <div id="chat-inputrow">
-        <span class="prompt">&gt;</span>
-        <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off">
-      </div>
-    </aside>
-  </main>
+  </header>
+
+  <aside id="left">
+    <h3>▮ CREW MANIFEST<span class="h3-aux" id="crew-n"></span></h3>
+    <ul id="crew"></ul>
+    <div id="crew-sum"></div>
+  </aside>
+
+  <div id="stage-wrap">
+    <canvas id="stage"></canvas>
+    <div class="cam-hud">
+      <span class="cam-c cam-tl">┌</span><span class="cam-c cam-tr">┐</span>
+      <span class="cam-c cam-bl">└</span><span class="cam-c cam-br">┘</span>
+      <span class="cam-label">CAM-01 ▪ AGENT QUARTERS</span>
+      <span class="cam-rec">● REC</span>
+      <span class="cam-feed">FEED: LIVE</span>
+    </div>
+  </div>
+
+  <aside id="chat-panel">
+    <h3>▮ COMMS<span class="dim" id="chat-status">offline</span></h3>
+    <div id="chat-log" class="scrolly"></div>
+    <div id="chat-inputrow">
+      <span class="prompt">&gt;</span>
+      <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off">
+    </div>
+  </aside>
+
+  <footer id="bottombar">
+    <button class="bb" data-term="agents">☻ AGENTS</button>
+    <button class="bb" data-term="skills">✦ SKILLS</button>
+    <button class="bb" data-term="tasks">▤ TASKS</button>
+    <button class="bb" data-term="settings">⚙ SETTINGS</button>
+    <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
+    <div class="bb-right">
+      <span id="sig" title="local sidecar uplink">UPLINK <b>▂▄▆█</b></span>
+      <span id="save-dot" title="autosave">●</span>
+      <span id="status-pill">ONLINE</span>
+    </div>
+  </footer>
+
+  <div id="terms"></div>
 </section>
 
 <script src="js/util.js"></script>
@@ -105,6 +132,7 @@
 <script src="app/world.js"></script>
 <script src="app/classify.js"></script>
 <script src="app/chat.js"></script>
+<script src="app/stationui.js"></script>
 <script src="app/save.js"></script>
 <script src="app/app.js"></script>
 </body>

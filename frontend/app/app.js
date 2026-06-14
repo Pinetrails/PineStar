@@ -35,6 +35,7 @@ const App = (() => {
   function persist() {
     if (!agent) return;
     Save.write({ agent, history: Chat.getHistory(), usage: Harness.totals() });
+    if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
   /* ---------- connect screen ---------- */
@@ -120,6 +121,10 @@ const App = (() => {
     World.spawn(agent);
     if (opts.wake) { World.wakeIn(); SFX.level(); }
     World.start();
+    if (typeof StationUI !== 'undefined') {
+      StationUI.enter([agent], { totals: () => Harness.totals(), activity: () => (World.getActivity ? World.getActivity() : 'idle') });
+      StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');
+    }
     Chat.init({ system: agent.systemPrompt, name: agent.name, history: opts.history, awaitingPurpose: opts.awaitingPurpose, onPurpose: onPurpose, onTurn: persist });
     if (opts.awaitingPurpose) {
       setTimeout(() => {
@@ -137,7 +142,7 @@ const App = (() => {
     // persisted by the turn's onTurn() once the agent replies
   }
 
-  function disconnect() { SFX.close(); Chat.abort(); World.stop(); persist(); showTitle(); }
+  function disconnect() { SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
 
   /* ---------- title ---------- */
   function showTitle() {
@@ -154,6 +159,7 @@ const App = (() => {
 
   /* ---------- boot ---------- */
   function init() {
+    if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
     el('btn-begin').onclick = startCreation;
     el('btn-newagent').onclick = () => { SFX.click(); Save.clear(); startCreation(); };
     el('btn-resume').onclick = () => { const s = Save.load(); if (s) { SFX.open(); resumeInto(s); } };
