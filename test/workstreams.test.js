@@ -52,6 +52,9 @@ A.ok(a.id !== genId, 'new stream is distinct from General');
 A.eq(W.list().length, 2, 'General + new stream');
 A.ok(W.switch(genId).id === genId, 'switch flips the active stream');
 A.eq(W.activeId(), genId, 'active is now General again');
+const backlog = W.create('backlog item', { activate: false });
+A.eq(W.activeId(), genId, 'create({activate:false}) does NOT hijack the active stream');
+A.ok(W.list().some(x => x.id === backlog.id), 'the non-activating create still adds the stream');
 
 const b = W.create(null);  // untitled "+ New"
 A.ok(W.autoTitle(b.id, 'find the best budget mechanical keyboard under $80') === true, 'untitled stream auto-titles from first msg');

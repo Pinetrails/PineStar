@@ -107,9 +107,11 @@
 
   // ---------- create / mutate ----------
   // start a new (untitled) workstream and make it active; it auto-titles on its first message.
-  function create(title) {
+  function create(title, opts) {
+    opts = opts || {};
     const w = make({ title: title || null, lane: 'todo' });
-    ws.push(w); activeId = w.id;
+    ws.push(w);
+    if (opts.activate !== false) activeId = w.id;   // board "add" passes {activate:false} so it won't hijack the active chat
     return w;
   }
   function rename(id, title) { const w = find(id); if (!w) return false; w.title = title ? clamp(title, 80) : null; return true; }
