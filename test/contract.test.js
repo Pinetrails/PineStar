@@ -22,6 +22,7 @@ const cases = [
   ['agent.token', { agentId: 'a', runId: 'r', delta: 'hi' }, { agentId: 'a', runId: 'r', delta: 5 }],
   ['agent.tool_call', { agentId: 'a', runId: 'r', callId: 'c1', name: 'notebook.write' }, { agentId: 'a', runId: 'r', name: 'x' }],
   ['agent.tool_result', { agentId: 'a', runId: 'r', callId: 'c1', ok: true, isError: false }, { agentId: 'a', runId: 'r', callId: 'c1', ok: 'yes', isError: false }],
+  ['tool.args.repaired', { agentId: 'a', runId: 'r', callId: 'c1', name: 'fs_write', before: '{', after: '{}' }, { agentId: 'a', runId: 'r', callId: 'c1' }],
   ['agent.cost', { agentId: 'a', runId: 'r', usd: 0.1, reconciled: true }, { agentId: 'a', runId: 'r', usd: 0.1, reconciled: false }],
   ['agent.run.end', { agentId: 'a', runId: 'r', reason: 'done', turns: 2, usd: 0.2 }, { agentId: 'a', runId: 'r', reason: 'whoops', turns: 2, usd: 0.2 }],
   ['budget.threshold', { scope: 'run', usd: 1, cap: 5 }, { scope: 'weekly', usd: 1, cap: 5 }],

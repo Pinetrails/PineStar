@@ -16,18 +16,40 @@
    typed error rather than a crash. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else { (root.SK = root.SK || {}).loop = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./providers/sanitize.js'));
+  else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize) {
   'use strict';
 
+  // tool-call argument repair (L2): recover mechanically-broken JSON from non-Anthropic models. Degrades to
+  // identity if the module is absent (e.g. a browser build that never runs the loop).
+  const repairToolCallArguments = (sanitize && sanitize.repairToolCallArguments) || ((s) => s);
+
   function summarize(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) : s; }
+  function clip(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) + '…' : s; }
+  function onlyStructural(s) { return /^[\s{}\[\],:]*$/.test(String(s == null ? '' : s)); }
 
   function parseCall(tc, index) {
     let args = {}, parseError = null;
     if (tc.args) { try { args = JSON.parse(tc.args); } catch (e) { parseError = 'invalid tool arguments JSON'; } }
     return { id: tc.id || ('call_' + index), name: tc.name, args, argsRaw: tc.args || '', parseError };
+  }
+
+  // Recover mechanically-broken tool-call argument JSON BEFORE the call is discarded as a parseError. A genuine
+  // structural fix rewrites args + argsRaw (so the replayed assistant turn carries valid JSON) and clears
+  // parseError, emitting one tool.args.repaired. A give-up '{}' on content-bearing args is NOT accepted — the
+  // call keeps its parseError and becomes one clean isError result downstream (never a silent empty-args run).
+  // Pure: same calls -> same emits -> byte-identical stream.
+  function repairCalls(calls, emit, agentId, runId) {
+    for (const c of calls) {
+      if (!c.parseError) continue;
+      const fixed = repairToolCallArguments(c.argsRaw);
+      if (fixed === c.argsRaw) continue;
+      let parsed = null; try { parsed = JSON.parse(fixed); } catch (e) { continue; }
+      if (fixed === '{}' && !onlyStructural(c.argsRaw)) continue;   // unrepairable content -> keep the parseError
+      emit('tool.args.repaired', { agentId, runId, callId: c.id, name: c.name || 'unknown', before: clip(c.argsRaw), after: clip(fixed) });
+      c.args = parsed; c.argsRaw = fixed; c.parseError = null;
+    }
   }
 
   function assistantTurn(text, calls) {
@@ -141,6 +163,7 @@
 
       // (4) APPEND assistant turn FIRST
       const calls = Object.keys(acc.toolCalls).sort((a, b) => a - b).map((k, i) => parseCall(acc.toolCalls[k], i));
+      repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
       messages.push(assistantTurn(acc.text, calls));
 
       // (5) STOP iff no tool calls accumulated
@@ -164,5 +187,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, assistantTurn, toolResultMsg, assertPaired, executeCalls } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls } };
 });

@@ -8,6 +8,17 @@ const { makeEmitter } = require('../shared/emitter.js');
 const { makeReplayProvider } = require('../sidecar/providers/replay.js');
 const { makeCostEngine } = require('../sidecar/cost.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
+const { makeRegistry } = require('../sidecar/tools/registry.js');
+
+// a minimal write-like tool + an open capCtx, for the L2 tool-call repair cases
+const WRITE_SCHEMA = { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } };
+const openCtx = () => ({ canRun: () => true, canUse: () => ({ ok: true }), agentId: 'a', room: 'office' });
+function brokenArgsFixture(chunk) {
+  return { turns: [
+    [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: chunk }, { type: 'done', finishReason: 'tool_calls' }],
+    [{ type: 'text', delta: 'done' }, { type: 'done', finishReason: 'stop' }]
+  ] };
+}
 
 function setup() {
   const bus = A.makeBus();
@@ -99,6 +110,59 @@ function chatFixture() {
     A.eq(res.reason, 'done', 'ends done without usage');
     A.ok(seq.find(e => e.name === 'cost.estimate') === undefined, 'no cost.estimate without a usage event');
     A.eq(seq.find(e => e.name === 'agent.cost').payload.tokensIn, 0, 'agent.cost zeros without usage');
+  }
+
+  // ---- L2: broken tool-call args are repaired, the tool runs, pairing holds ----
+  {
+    const { seq, emit } = setup();
+    let ran = 0, gotArgs = null;
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (args) => { ran++; gotArgs = args; return 'wrote ' + args.path; } });
+    const provider = makeReplayProvider(brokenArgsFixture('{"path":"a.md","content":"hi",'));   // trailing comma + unclosed
+    const messages = [{ role: 'user', content: 'write a.md' }];
+    const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: openCtx() });
+
+    const rep = seq.filter(e => e.name === 'tool.args.repaired');
+    A.eq(rep.length, 1, 'exactly one tool.args.repaired emitted');
+    A.eq(rep[0].payload.callId, 'c1', 'repaired event names the call');
+    A.eq(rep[0].payload.before, '{"path":"a.md","content":"hi",', 'before = the broken raw args');
+    A.notThrows(() => JSON.parse(rep[0].payload.after), 'after is valid JSON');
+    A.eq(ran, 1, 'the tool actually ran (the call was NOT discarded)');
+    A.eq(gotArgs, { path: 'a.md', content: 'hi' }, 'tool received the repaired args');
+    A.eq(seq.find(e => e.name === 'agent.tool_result').payload.isError, false, 'repaired call dispatched without error');
+    A.eq(res.reason, 'done', 'loop completes; pairing held (no throw)');
+    const asst = messages.find(m => m.role === 'assistant' && m.tool_calls);
+    A.notThrows(() => JSON.parse(asst.tool_calls[0].function.arguments), 'replayed assistant tool_call arguments are valid JSON');
+  }
+
+  // ---- L2 determinism: the repaired stream is byte-identical across runs ----
+  {
+    function runOnce() {
+      const r = setup();
+      const reg = makeRegistry();
+      reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'ok ' + a.path });
+      const provider = makeReplayProvider(brokenArgsFixture('{"path":"a.md","content":"hi",'));
+      return runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit: r.emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+        model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: openCtx() }).then(() => r.seq);
+    }
+    const s1 = await runOnce(), s2 = await runOnce();
+    A.eq(JSON.stringify(s1), JSON.stringify(s2), 'repaired run is byte-identical across runs');
+  }
+
+  // ---- L2: UNREPAIRABLE args stay a parseError -> one clean isError result, the tool never runs ----
+  {
+    const { seq, emit } = setup();
+    let ran = 0;
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async () => { ran++; return 'x'; } });
+    const provider = makeReplayProvider(brokenArgsFixture('not json at all @@@'));
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: openCtx() });
+    A.eq(seq.filter(e => e.name === 'tool.args.repaired').length, 0, 'no repair event for unrepairable args');
+    A.eq(seq.find(e => e.name === 'agent.tool_result').payload.isError, true, 'unrepairable args -> isError result');
+    A.eq(ran, 0, 'the tool never ran on unrepairable args');
+    A.eq(res.reason, 'done', 'loop recovers and finishes');
   }
 
   A.report('loop.replay.test');

@@ -32,6 +32,10 @@
     'agent.tool_result': obj(['agentId', 'runId', 'callId', 'ok', 'isError'], {
       agentId: str, runId: str, callId: str, ok: bool, ms: num, summary: str, isError: bool
     }),
+    // L2: a non-Anthropic model's mechanically-broken tool-call args were repaired into valid JSON before use.
+    'tool.args.repaired': obj(['agentId', 'runId', 'callId', 'name'], {
+      agentId: str, runId: str, callId: str, name: str, before: str, after: str
+    }),
     'cost.estimate': obj(['agentId', 'runId', 'usd', 'tokens'], { agentId: str, runId: str, usd: num, tokens: int }),
     'agent.cost': obj(['agentId', 'runId', 'usd', 'reconciled'], {
       agentId: str, runId: str, usd: num, tokensIn: int, tokensOut: int,
