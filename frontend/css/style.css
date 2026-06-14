@@ -15,12 +15,35 @@
   --bg: #030201;
   --panel: rgba(5, 3, 1, 0.95);
   --panel2: #0c0704;
-  --warn: #ffe97a;
-  --bad: #ff5c4d;
-  --gold: #ffd34a;
+  /* ---- semantic colour roles: amber phosphor + ONE accent + ONE alert ----
+     Three jobs, three colours. The four near-identical yellows are gone:
+     gold is the single accent; warn folds into it; "online" is bright
+     phosphor (no rogue green). This is what makes the palette read clean. */
+  --gold: #ffd34a;            /* accent — value, money, attention, active selection */
+  --warn: var(--gold);        /* caution == the accent (was a 2nd near-identical yellow) */
+  --bad: #ff5c4d;             /* alert — errors, danger, stop */
+  --ok: var(--ph-bright);     /* online / healthy — bright phosphor, not green */
   --text: #eec88f;
   /* color grade applied to the station feed so the world sits inside the terminal */
   --cam-grade: saturate(0.8) sepia(0.12) hue-rotate(-5deg) contrast(1.08) brightness(0.9);
+
+  /* ============================================================
+     DESIGN SYSTEM — the one scale everything snaps to.
+       type   6 steps, floor 11px so VT323 stays crisp
+       space  4px base unit
+       radius one family
+       glow   earned: only .live / active elements get bloom
+     ============================================================ */
+  --fs-0: 11px;   /* micro — meta, captions, chips */
+  --fs-1: 13px;   /* small — secondary data, tool lines */
+  --fs-2: 15px;   /* base  — default UI text */
+  --fs-3: 18px;   /* emphasis — inline values, names */
+  --fs-4: 24px;   /* stat — big numbers, section figures */
+  --fs-5: 34px;   /* display — hero numerals */
+  --ls-1: 0.5px; --ls-2: 1px; --ls-3: 2px; --ls-4: 4px;            /* letter-spacing steps */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px;   /* spacing steps */
+  --r: 4px; --r-sm: 2px;                                           /* radius family */
+  --glow-live: 0 0 0 1px var(--ph), 0 0 16px var(--ph-glow2);      /* reserved for .live / active */
 }
 body.theme-amber {
   --ph: #ffaa33; --ph-bright: #ffd9a3; --ph-dim: #b9791c; --ph-faint: #1e1404;
@@ -54,18 +77,18 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: 18px;
+  font-size: var(--fs-3);
   line-height: 1.22;
-  text-shadow: 0 0 4px var(--ph-glow2);
+  text-shadow: none;   /* crisp body text; glow is reserved for headers / values / live */
   cursor: default;
   user-select: none;
 }
 
 /* ====== CRT GLASS: scanlines + bezel vignette + slow roll band ====== */
-body::after { /* scanlines over EVERYTHING */
+body::after { /* scanlines over EVERYTHING — kept faint so small text stays legible */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 950;
   background:
-    repeating-linear-gradient(0deg, rgba(0,0,0,0.26) 0 1px, transparent 1px 3px);
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 3px);
 }
 body.no-scan::after { display: none; }
 body::before { /* curved-glass vignette + corner darkening */
@@ -90,39 +113,36 @@ body:not(.no-flicker) #app { animation: flick 7s infinite; }
 #topbar { grid-area: top; } #left { grid-area: left; } #center { grid-area: center; }
 #right { grid-area: right; } #bottombar { grid-area: bot; }
 
-/* ====== PANEL BEZELS: each panel is a small CRT monitor ======
-   layers, outside-in: drop shadow → black casing line → glowing phosphor
-   ring → black glass seam → curved near-black glass with deep vignette */
+/* ====== PANEL BEZELS: quiet CRT casing ======
+   Default state is calm: a single thin phosphor-dim edge + inner vignette.
+   No outer glow ring, no bloom. The glow is EARNED — only panels marked
+   .live light up (see below), so the eye always knows where the action is. */
 #topbar, #left, #right, #bottombar, #center {
   position: relative;
-  border: 1px solid rgba(0, 0, 0, 0.85);
-  border-radius: 9px;
-  background:
-    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
-    var(--panel);
-  box-shadow:
-    0 0 0 2px var(--ph),
-    0 0 0 3.5px rgba(0, 0, 0, 0.9),
-    0 0 22px var(--ph-glow2),
-    0 9px 28px rgba(0, 0, 0, 0.85),
-    inset 0 0 52px rgba(0, 0, 0, 0.85),
-    inset 0 1px 0 rgba(255, 228, 180, 0.07);
+  border: 1px solid var(--ph-dim);
+  border-radius: var(--r);
+  background: var(--panel);
+  box-shadow: inset 0 0 44px rgba(0, 0, 0, 0.72);
 }
-/* curved-glass vignette + diagonal glare on every panel */
+/* the one glow, spent only where something is happening */
+#topbar.live, #left.live, #right.live, #bottombar.live, #center.live,
+#stage-wrap.live, #chat-panel.live, .panel.live {
+  border-color: var(--ph);
+  box-shadow: var(--glow-live), inset 0 0 44px rgba(0, 0, 0, 0.72);
+}
+/* faint curved-glass vignette only — the bright diagonal glare is gone */
 #topbar::before, #left::before, #right::before, #bottombar::before, #center::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
   border-radius: inherit;
-  background:
-    radial-gradient(ellipse 108% 96% at 50% 45%, transparent 60%, rgba(0, 0, 0, 0.5) 100%),
-    linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
+  background: radial-gradient(ellipse 108% 96% at 50% 45%, transparent 66%, rgba(0, 0, 0, 0.4) 100%);
 }
 
 /* panel header: glyph + title, gradient rule, dim auxiliary readout on the right */
 h3 {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 15px; letter-spacing: 4px; color: var(--ph);
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--fs-2); letter-spacing: var(--ls-4); color: var(--ph);
   padding: 7px 12px 4px; font-weight: normal;
-  text-shadow: 0 0 10px var(--ph-glow), 0 0 2px var(--ph-glow);
+  text-shadow: 0 0 8px var(--ph-glow2);
 }
 h3::after { /* engraved double rule */
   content: ''; flex: 1; order: 1; height: 5px;
@@ -138,7 +158,7 @@ h3::after { /* engraved double rule */
 .scrolly::-webkit-scrollbar-thumb { background: var(--ph); }
 .scrolly::-webkit-scrollbar-track { background: rgba(0,0,0,0.4); }
 
-.pos { color: #69ff8e; } .neg, .bad { color: var(--bad); } .warn { color: var(--warn); } .gold { color: var(--gold); }
+.pos { color: var(--gold); } .neg, .bad { color: var(--bad); } .warn { color: var(--warn); } .gold { color: var(--gold); }
 .dim { opacity: 0.5; }
 b { font-weight: normal; color: var(--ph-bright); }
 ::selection { background: var(--ph); color: var(--ink); text-shadow: none; }
@@ -149,24 +169,25 @@ b { font-weight: normal; color: var(--ph-bright); }
   color: var(--ph);
   display: flex; align-items: center; gap: 12px; flex-shrink: 0;
 }
-.logo-mark { font-size: 27px; color: var(--bad); text-shadow: 0 0 12px rgba(255,92,77,0.7); animation: pulse 2.8s infinite; }
-#logo-ascii {
-  font-family: inherit; font-size: 10px; line-height: 1.0; letter-spacing: 0;
-  color: var(--ph);
-  text-shadow: 0 0 12px var(--ph-glow), 0 0 2px var(--ph-glow);
+.logo-mark { font-size: var(--fs-4); color: var(--bad); text-shadow: 0 0 12px rgba(255,92,77,0.55); animation: pulse 2.8s infinite; }
+/* a single confident wordmark in the chrome — the big ASCII logo lives on
+   the title screen, where it has the room to actually read as a logo */
+.logo-word {
+  font-family: inherit; font-size: var(--fs-4); line-height: 1; letter-spacing: 6px;
+  color: var(--ph); text-shadow: 0 0 12px var(--ph-glow2);
 }
 .logo-sub {
-  font-size: 10px; letter-spacing: 3px; color: var(--ph-dim); text-shadow: none;
-  white-space: nowrap; align-self: flex-end; padding-bottom: 5px;
-  border-top: 1px solid var(--ph-faint); margin-top: 3px; padding-top: 2px;
+  font-size: var(--fs-0); letter-spacing: var(--ls-3); color: var(--ph-dim); text-shadow: none;
+  white-space: nowrap; align-self: center;
+  border-left: 1px solid var(--ph-faint); margin-left: var(--s-1); padding-left: var(--s-3);
 }
 .tb-stats { display: flex; align-items: center; gap: 0; height: 100%; }
 .tb-stat {
-  font-size: 11px; color: var(--ph-dim); letter-spacing: 2px;
+  font-size: var(--fs-0); color: var(--ph-dim); letter-spacing: var(--ls-3);
   padding: 0 16px; border-left: 1px solid var(--ph-faint);
   display: flex; flex-direction: column; justify-content: center; height: 68%;
 }
-.tb-stat b { font-size: 20px; margin-top: -2px; letter-spacing: 1px; text-shadow: 0 0 8px var(--ph-glow2); }
+.tb-stat b { font-size: var(--fs-3); margin-top: -2px; letter-spacing: var(--ls-2); text-shadow: 0 0 8px var(--ph-glow2); }
 #tb-mode {
   background: transparent; color: var(--ph); border: 2px solid var(--ph-dim);
   font-family: inherit; font-size: 16px; padding: 3px 14px; cursor: pointer; letter-spacing: 2px;
@@ -194,8 +215,8 @@ b { font-weight: normal; color: var(--ph-bright); }
 .crew-row:hover { background: var(--ph-faint); box-shadow: inset 0 0 0 1px var(--ph); }
 .crew-row:hover .crew-status { opacity: 1; }
 .dot {
-  width: 7px; height: 7px; background: #41ff8a; margin-top: 6px; flex-shrink: 0;
-  box-shadow: 0 0 7px #41ff8a; animation: pulse 2.4s infinite;
+  width: 7px; height: 7px; background: var(--ok); margin-top: 6px; flex-shrink: 0;
+  box-shadow: 0 0 7px var(--ph-glow); animation: pulse 2.4s infinite;
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 .dot.alert { background: var(--warn); box-shadow: 0 0 7px var(--warn); animation: pulse 0.7s infinite; }
@@ -249,7 +270,7 @@ body.no-scan .crt-scan { display: none; }
 /* ====== STATION VIEW HUD: security-cam dressing over the main screen ====== */
 .cam-hud { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .cam-hud span { position: absolute; color: var(--ph); }
-.cam-c { font-size: 24px; line-height: 1; opacity: 0.85; text-shadow: 0 0 8px var(--ph-glow); }
+.cam-c { font-size: 24px; line-height: 1; opacity: 0.45; text-shadow: 0 0 6px var(--ph-glow2); }
 .cam-tl { top: 6px; left: 10px; }
 .cam-tr { top: 6px; right: 10px; }
 .cam-bl { bottom: 6px; left: 10px; }
@@ -265,7 +286,7 @@ body.no-scan .crt-scan { display: none; }
 #ops-sec { flex: 5; } #mc-sec { flex: 0 0 auto; } #obj-sec { flex: 0 0 auto; } #chat-sec { flex: 6; border-bottom: none; }
 #ops { flex: 1; padding: 3px 8px 3px 6px; font-size: 14px; }
 .op { margin-bottom: 1px; opacity: 0.92; border-left: 2px solid transparent; padding-left: 5px; }
-.op.sale { color: #69ff8e; border-left-color: #69ff8e; }
+.op.sale { color: var(--gold); border-left-color: var(--gold); }
 .op.warn { color: var(--warn); border-left-color: var(--warn); }
 .op.bad { color: var(--bad); border-left-color: var(--bad); }
 .op.gold { color: var(--gold); border-left-color: var(--gold); }
@@ -323,7 +344,7 @@ body.no-scan .crt-scan { display: none; }
 #sig b { color: var(--ph); font-weight: normal; text-shadow: 0 0 7px var(--ph-glow2); }
 .bb {
   background: transparent; color: var(--ph); border: none;
-  font-family: inherit; font-size: 16px; letter-spacing: 2px; padding: 6px 18px;
+  font-family: inherit; font-size: var(--fs-2); letter-spacing: var(--ls-3); padding: 6px 18px;
   cursor: pointer; position: relative; text-shadow: inherit;
 }
 /* pip-boy menu selection brackets on hover */
