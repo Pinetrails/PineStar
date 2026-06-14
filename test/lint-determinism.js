@@ -9,6 +9,11 @@ const path = require('path');
 
 const base = path.join(__dirname, '..');
 const ROOTS = ['shared', 'sidecar'];
+// The Node host (sidecar/index.js) is the ambient COMPOSITION ROOT: it is the one place that
+// creates the real clock/fetch/fs and INJECTS them into the otherwise-pure backend. The rule
+// bans ambient time/randomness in backend LOGIC, not at the injection boundary — so the host is
+// exempt by design (same intent as the not-yet-scanned frontend/app shim noted above).
+const EXCLUDE = new Set(['sidecar/index.js'].map(p => path.normalize(p)));
 
 let fail = 0;
 const err = m => { fail++; console.log('FAIL: ' + m); };
@@ -37,6 +42,7 @@ function decomment(src) {
 }
 
 for (const f of files) {
+  if (EXCLUDE.has(path.relative(base, f))) continue;   // ambient composition root — exempt by design
   const src = decomment(fs.readFileSync(f, 'utf8'));
   src.split('\n').forEach((ln, i) => {
     const code = ln.replace(/(^|[^:])\/\/.*$/, '$1');

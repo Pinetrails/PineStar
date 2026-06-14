@@ -21,8 +21,20 @@
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: true, network: false },
       { capId: 'memory', tool: 'notebook.read', scope: 'read', requiresConsent: false, network: false }
+    ],
+    // M5: object = capability made real — placing these grants the agent real-world reach.
+    cabinet: [
+      { capId: 'cabinet', tool: 'fs.read', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'cabinet', tool: 'fs.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'cabinet', tool: 'fs.write', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'cabinet', tool: 'fs.append', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'cabinet', tool: 'fs.edit', scope: 'write', requiresConsent: true, network: false }
+    ],
+    dish: [
+      { capId: 'web', tool: 'web_search', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'web_fetch', scope: 'read', requiresConsent: false, network: true }
     ]
-    // M5: cabinet (fs.read/write), terminal (shell.exec, jailed), dish (web.fetch, allowlisted)
+    // M5 next: terminal (shell.exec, jailed under Windows AppContainer/Job-Object)
   };
 
   function deepFreeze(o) {
