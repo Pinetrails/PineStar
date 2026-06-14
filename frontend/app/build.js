@@ -21,7 +21,7 @@ const Build = (() => {
 
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, dpr = 1;
-  let raf = 0, running = false, now0 = 0;
+  let raf = 0, running = false;
   let cache = null, bakeDirty = true;
 
   // camera: screen = world*zoom + pan   (world = bake-pixel space, 1 tile = TILE px)
@@ -42,6 +42,7 @@ const Build = (() => {
     if (running) return;
     station = opts.getStation();
     if (!station) return;
+    spaceHeld = false; drag = null;        // never inherit a latched pan/drag from a prior session
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
@@ -50,7 +51,7 @@ const Build = (() => {
     if (!stars.length) seedStars();
     resize();
     fitCamera();
-    running = true; now0 = performance.now();
+    running = true;
     if (typeof SFX !== 'undefined') SFX.open();
     raf = requestAnimationFrame(frame);
   }
@@ -59,6 +60,7 @@ const Build = (() => {
     if (!running) return;
     running = false;
     if (raf) cancelAnimationFrame(raf), raf = 0;
+    clearTimeout(tipTimer); tipTimer = 0;
     if (unsub) unsub(), unsub = null;
     document.body.classList.remove('refit-on');
     if (root && root.parentNode) root.parentNode.removeChild(root);
@@ -162,7 +164,7 @@ const Build = (() => {
   }
 
   function selectTool(id) {
-    tool = id; drag = null;
+    tool = id; drag = null; hideTip();
     root.querySelectorAll('.refit-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === id));
     renderPalette(); setHint(); sfx('click');
   }
@@ -258,7 +260,7 @@ const Build = (() => {
   }
   function commitMove(d, ev) {
     const dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
-    if (!dx && !dy) return;
+    if (!dx && !dy) { hideTip(); return; }
     feedback(station.moveRoom(d.roomId, dx, dy), ev, 'relocated');
   }
   function commitClick(d, ev) {
@@ -281,7 +283,9 @@ const Build = (() => {
   }
 
   function onKey(ev) {
-    if (ev.key === ' ') { spaceHeld = true; return; }
+    const a = ev.target;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    if (ev.key === ' ') { ev.preventDefault(); spaceHeld = true; return; }
     if (ev.key === 'Escape') return close();
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'z' || ev.key === 'Z')) {
       ev.preventDefault();

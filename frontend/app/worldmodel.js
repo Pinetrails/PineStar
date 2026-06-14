@@ -130,6 +130,9 @@ const WorldModel = (() => {
           if (w < MIN_ROOM || h < MIN_ROOM) return fail('TOO_SMALL', 'room min ' + MIN_ROOM + '×' + MIN_ROOM);
         }
       }
+      // candidate rects must not overlap EACH OTHER (multi-rect / L-shaped footprints)
+      for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++)
+        if (rectsHit(rects[i], rects[j])) return fail('OVERLAP', 'self-overlapping footprint');
       let hitName = null;
       eachRectWorld(ignoreId, (id, rm, r) => {
         if (hitName) return;
@@ -224,9 +227,15 @@ const WorldModel = (() => {
       const rm = doc.rooms[id];
       if (!rm) return fail('NOT_FOUND', 'no such room');
       if (!FLOOR_STYLES[styleId]) return fail('BAD_STYLE', 'unknown floor');
-      snapshot();
       rm.floorPaint = rm.floorPaint || {};
-      for (const t of tiles) if (roomAt(t[0], t[1]) === id) rm.floorPaint[t[0] + ',' + t[1]] = styleId;
+      const writes = [];
+      for (const t of tiles) {
+        const k = t[0] + ',' + t[1];
+        if (roomAt(t[0], t[1]) === id && rm.floorPaint[k] !== styleId) writes.push(k);
+      }
+      if (!writes.length) return { ok: true };   // a no-op must not consume an undo slot
+      snapshot();
+      for (const k of writes) rm.floorPaint[k] = styleId;
       emit(rm.rects.slice());
       return { ok: true };
     }
@@ -234,8 +243,10 @@ const WorldModel = (() => {
     function renameRoom(id, name) {
       const rm = doc.rooms[id];
       if (!rm) return fail('NOT_FOUND', 'no such room');
+      const nm = String(name || '').slice(0, 24) || rm.name;
+      if (nm === rm.name) return { ok: true };   // no-op: don't burn an undo slot / wipe redo
       snapshot();
-      rm.name = String(name || '').slice(0, 24) || rm.name;
+      rm.name = nm;
       emit([]);
       return { ok: true };
     }
@@ -371,6 +382,15 @@ const WorldModel = (() => {
     if (!doc.schema) doc.schema = 'skynet.station';
     if (!doc.version) doc.version = 1;
     // future: while (doc.version < CURRENT && migrations[doc.version]) ...
+    // make deserialize TOTAL over any partial/legacy/corrupted v1 blob (it's the persistence seam):
+    if (!doc.rooms || typeof doc.rooms !== 'object') doc.rooms = {};
+    if (!Array.isArray(doc.order)) doc.order = Object.keys(doc.rooms);
+    if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'SKYNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
+    if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
+    for (const id of doc.order) { const rm = doc.rooms[id]; if (rm && !rm.floorPaint) rm.floorPaint = {}; }
+    // spawnRoomId must point at a live non-corridor room (or null) so removeRoom's guard stays meaningful
+    if (!doc.meta.spawnRoomId || !doc.rooms[doc.meta.spawnRoomId])
+      doc.meta.spawnRoomId = doc.order.find(id => doc.rooms[id] && doc.rooms[id].kind !== 'corridor') || null;
     return doc;
   }
 

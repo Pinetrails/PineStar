@@ -63,7 +63,7 @@ const StationBake = (() => {
         const nz = (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) ? null : zg[idx(nx, ny)];
         if (nz === z) continue;                       // interior — no edge
         const door = nz != null && (G_.canStep(x, y, nx, ny) || G_.canStep(nx, ny, x, y));
-        edges.push({ x, y, side, room, door });
+        edges.push({ x, y, side, room, door, exterior: nz == null });
       }
     }
   }
@@ -124,7 +124,7 @@ const StationBake = (() => {
     b.fillStyle = 'rgba(0,0,0,0.25)';
     for (const e of edges) {
       if (e.door) continue;
-      const X = e.x * T, Y = e.y * T, d = e.room ? 8 : 5, ds = e.room ? 5 : 3;
+      const X = e.x * T, Y = e.y * T, d = e.room ? 8 : 4, ds = e.room ? 5 : 3;
       if (e.side === 'n') b.fillRect(X, Y, T, d);
       else if (e.side === 's') b.fillRect(X, Y + T - ds, T, ds);
       else if (e.side === 'w') b.fillRect(X, Y, ds, T);
@@ -138,8 +138,11 @@ const StationBake = (() => {
       if (e.door) { bakeThreshold(b, e, X, Y); continue; }
       const fw = e.room ? FACEW : 2, out = e.room ? 4 : 2, face = e.room ? NFACE : 5, cap = e.room ? NCAP : 2;
       const dep = fw + 1, rib = 'rgba(0,0,0,0.25)';
+      // the dark hull band (cap above / out below/beside) paints OUTSIDE the tile — only when the
+      // neighbour is void. Interior boundaries (a non-door seam to another zone) draw the face only,
+      // so the wall never smears onto an adjacent room/corridor floor (v7 render.js parity).
       if (e.side === 'n') {
-        b.fillStyle = wallDk; b.fillRect(X, Y - cap, T, cap);
+        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X, Y - cap, T, cap); }
         b.fillStyle = wallFace; b.fillRect(X, Y, T, face);
         b.fillStyle = rib; b.fillRect(X + 5, Y, 1, face);
         b.fillStyle = wallTop; b.fillRect(X, Y + face, T, 1);
@@ -148,17 +151,17 @@ const StationBake = (() => {
         b.fillStyle = wallTop; b.fillRect(X, Y + T - dep, T, 1);
         b.fillStyle = wallFace; b.fillRect(X, Y + T - fw, T, fw);
         b.fillStyle = rib; b.fillRect(X + 5, Y + T - fw, 1, fw);
-        b.fillStyle = wallDk; b.fillRect(X, Y + T, T, out);
+        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X, Y + T, T, out); }
       } else if (e.side === 'w') {
         b.fillStyle = wallTop; b.fillRect(X + fw, Y, 1, T);
         b.fillStyle = wallFace; b.fillRect(X, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X, Y + 5, fw, 1);
-        b.fillStyle = wallDk; b.fillRect(X - out, Y, out, T);
+        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X - out, Y, out, T); }
       } else {
         b.fillStyle = wallTop; b.fillRect(X + T - dep, Y, 1, T);
         b.fillStyle = wallFace; b.fillRect(X + T - fw, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X + T - fw, Y + 5, fw, 1);
-        b.fillStyle = wallDk; b.fillRect(X + T, Y, out, T);
+        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X + T, Y, out, T); }
       }
     }
   }
@@ -283,30 +286,39 @@ const StationBake = (() => {
     const baseCv = document.createElement('canvas'); baseCv.width = W; baseCv.height = H;
     const b = baseCv.getContext('2d'); b.imageSmoothingEnabled = false;
 
-    // hull plate behind each rect (notches between distant rooms show stars)
+    // hull plate behind ROOMS first (notches between distant rooms show stars)
+    const plate = r => b.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
     b.fillStyle = hullC;
-    for (const r of G.allRects) b.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
+    for (const r of G.allRects) if (!G.isCorridor(r.z)) plate(r);
+
+    // chamfer hull spandrel erase + curved rim — BEFORE corridor connectors, so a corridor kissing a
+    // room's rounded corner keeps its hull (v7 render.js ordering: corridors drawn after the erase)
+    for (const [ccx, ccy, kind] of G.chamfers) {
+      const A = CORNER[kind], ax = (ccx + A.cx) * T, ay = (ccy + A.cy) * T;
+      eraseSpandrel(b, kind, ax, ay, HR);
+      b.strokeStyle = '#28241b'; b.lineWidth = 2; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
+    }
+
+    // hull plate behind CORRIDORS (connectors stay intact through the corner erase)
+    b.fillStyle = hullC;
+    for (const r of G.allRects) if (G.isCorridor(r.z)) plate(r);
+
+    // panel seam grid over all hull pixels
     b.globalCompositeOperation = 'source-atop';
     b.strokeStyle = '#231f17'; b.lineWidth = 1;
     for (let x = 5; x < W; x += 28) { b.beginPath(); b.moveTo(x + .5, 0); b.lineTo(x + .5, H); b.stroke(); }
     for (let y = 9; y < H; y += 26) { b.beginPath(); b.moveTo(0, y + .5); b.lineTo(W, y + .5); b.stroke(); }
     b.globalCompositeOperation = 'source-over';
 
-    // single outer rim + bolts around the whole footprint
-    {
-      const bnd = unionBounds();
-      const x1 = bnd.x1 * T - pad, y1 = bnd.y1 * T - pad, x2 = (bnd.x2 + 1) * T + pad, y2 = (bnd.y2 + 1) * T + pad;
-      b.strokeStyle = '#28241b'; b.lineWidth = 2; b.strokeRect(x1 + 1, y1 + 1, x2 - x1 - 2, y2 - y1 - 2);
+    // riveted rim + bolts PER footprint — each room/corridor frames itself, so the void between
+    // distant (or mid-build, not-yet-connected) rooms stays open instead of one rim crossing space
+    b.lineWidth = 2;
+    for (const r of G.allRects) {
+      const x1 = r.x1 * T - pad, y1 = r.y1 * T - pad, x2 = (r.x2 + 1) * T + pad, y2 = (r.y2 + 1) * T + pad;
+      b.strokeStyle = '#28241b'; b.strokeRect(x1 + 1, y1 + 1, x2 - x1 - 2, y2 - y1 - 2);
       b.fillStyle = '#302b21';
       for (let x = x1 + 6; x < x2; x += 18) { b.fillRect(x, y1 + 2, 2, 2); b.fillRect(x, y2 - 4, 2, 2); }
       for (let y = y1 + 6; y < y2; y += 18) { b.fillRect(x1 + 2, y, 2, 2); b.fillRect(x2 - 4, y, 2, 2); }
-    }
-
-    // chamfer hull spandrel erase + curved rim
-    for (const [ccx, ccy, kind] of G.chamfers) {
-      const A = CORNER[kind], ax = (ccx + A.cx) * T, ay = (ccy + A.cy) * T;
-      eraseSpandrel(b, kind, ax, ay, HR);
-      b.strokeStyle = '#28241b'; b.lineWidth = 2; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
     }
 
     // floors
@@ -344,13 +356,6 @@ const StationBake = (() => {
 
     bakeHullExtrusion(b);
     return baseCv;
-  }
-
-  function unionBounds() {
-    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-    for (const r of G.allRects) { if (r.x1 < x1) x1 = r.x1; if (r.y1 < y1) y1 = r.y1; if (r.x2 > x2) x2 = r.x2; if (r.y2 > y2) y2 = r.y2; }
-    if (x1 === Infinity) { x1 = y1 = 0; x2 = y2 = 0; }
-    return { x1, y1, x2, y2 };
   }
 
   /* ---------- public ---------- */

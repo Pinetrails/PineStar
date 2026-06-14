@@ -104,4 +104,53 @@ const s2 = WM.deserialize(doc);
 A.eq(s2.rooms().length, s.rooms().length, 'deserialize preserves the room count');
 A.eq(JSON.stringify(s2.serialize()), JSON.stringify(doc), 'serialize → deserialize → serialize is identical');
 
+/* ---- multi-rect / L-shaped footprints + self-overlap rejection ---- */
+const s3 = WM.create();
+const lshape = s3.addRoom({ kind: 'storage', rects: [{ x1: 40, y1: 40, x2: 46, y2: 46 }, { x1: 44, y1: 47, x2: 50, y2: 52 }] });
+A.ok(lshape.ok, 'L-shaped multi-rect room places');
+const selfOver = s3.addRoom({ kind: 'storage', rects: [{ x1: 60, y1: 60, x2: 66, y2: 66 }, { x1: 63, y1: 63, x2: 69, y2: 69 }] });
+A.ok(!selfOver.ok && selfOver.error === 'OVERLAP', 'self-overlapping multi-rect footprint rejected');
+
+/* ---- a rejected mutation must not touch history ---- */
+const s4 = WM.create();
+s4.addRoom({ kind: 'lab', rect: { x1: 30, y1: 0, x2: 36, y2: 6 } });
+const canU = s4.canUndo();
+A.ok(!s4.addRoom({ kind: 'lab', rect: { x1: 0, y1: 0, x2: 4, y2: 4 } }).ok, 'overlapping add rejected');
+A.eq(s4.canUndo(), canU, 'a rejected mutation leaves the undo stack untouched');
+
+/* ---- no-op mutations must not consume an undo slot or wipe redo ---- */
+const s5 = WM.create();
+const hid = s5.rooms()[0].id;
+s5.setFloor(hid, 'cobalt');
+s5.undo();
+A.ok(s5.canRedo(), 'redo available after undo');
+A.ok(s5.setFloor(hid, s5.roomById(hid).floorStyle).ok, 'no-op setFloor returns ok');
+A.ok(s5.canRedo(), 'a no-op mutation does not wipe the redo stack');
+s5.setFloor(hid, 'rust');
+A.ok(!s5.canRedo(), 'a real mutation after undo clears redo');
+
+/* ---- floorPaint survives moveRoom + a serialize round-trip ---- */
+const s6 = WM.create();
+const pid = s6.rooms()[0].id;
+s6.paintTiles(pid, [[2, 2], [3, 3]], 'crimson');
+s6.moveRoom(pid, 5, 5);                       // painted tile (2,2) -> world (7,7)
+let g6 = s6.projectGeometry();
+const lx6 = 7 - g6.origin.tx, ly6 = 7 - g6.origin.ty;
+A.eq(g6.baseColorOf(pid, lx6, ly6), s6.FLOOR_STYLES.crimson.base, 'painted tile follows a moveRoom');
+g6 = WM.deserialize(s6.serialize()).projectGeometry();
+A.eq(g6.baseColorOf(pid, lx6, ly6), s6.FLOOR_STYLES.crimson.base, 'floorPaint survives serialize round-trip');
+
+/* ---- name-counter determinism + canStep same-zone ---- */
+const s7 = WM.create();
+const a7 = s7.addRoom({ kind: 'lab', rect: { x1: 20, y1: 0, x2: 28, y2: 6 } });
+A.eq(s7.roomById(a7.id).name, 'LAB-02', 'auto-name uses the deterministic doc id counter');
+const g7 = s7.projectGeometry(), hz = g7.zones[s7.spawnRoomId()];
+A.ok(g7.canStep(hz.x1, hz.y1, hz.x1 + 1, hz.y1), 'canStep true within the same zone');
+
+/* ---- migrate() is total over a partial / legacy doc ---- */
+const partial = WM.deserialize({ schema: 'skynet.station', version: 1,
+  rooms: { rX: { id: 'rX', kind: 'hab', name: 'X', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } } });
+A.eq(partial.rooms().length, 1, 'deserialize backfills a missing order[] from rooms{}');
+A.eq(partial.spawnRoomId(), 'rX', 'deserialize re-derives spawnRoomId for a partial doc');
+
 A.report('worldmodel');
