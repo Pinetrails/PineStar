@@ -29,6 +29,7 @@ const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
 const WORKSPACES = path.resolve(__dirname, 'workspaces');
 const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // The agent's toolset is NOT a host-side constant — it is projected from the objects placed in the
 // agent's room (CAP_REGISTRY: computer/dish/cabinet/notebook). See handleRun's station + resolveTools.
 
@@ -86,6 +87,16 @@ function persistAllowlist(nextAllow) {   // throws on failure -> the broker degr
 }
 const grantsPermanent = loadAllowlist();   // process-wide, restored from disk
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
+// full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
+// single click stops the prompts for the rest of this session but RESETS on sidecar restart — never persisted
+// (permanent machine-wide YOLO stays the explicit SKYNET_FULL_ACCESS env, frozen at boot).
+const grantsBlanketByAgent = new Map();    // agentId -> Set('*')
+function blanketSetFor(agentId) {
+  let s = grantsBlanketByAgent.get(agentId);
+  if (!s) { s = new Set(); grantsBlanketByAgent.set(agentId, s); }
+  return s;
+}
+const pendingByRun = new Map();            // runId -> Map(promptId -> resolve(decision)); the live consent prompts
 // unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
 // resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
 function hardlineFloor(call) {
@@ -99,6 +110,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
+  if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   return serveStatic(req, res);
@@ -135,12 +147,38 @@ async function handleRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
+  const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
+  pendingByRun.set(runId, pending);
   req.on('close', () => { ac.abort(); runs.delete(runId); });   // tab closed / DISCONNECT → stop spend
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+
+  // THE LIVE CONSENT CHANNEL: emit a permission.prompt down the NDJSON stream and return a Promise that the loop's
+  // dispatch await-pauses on. The browser answers via POST /api/consent (handleConsent), which calls the stored
+  // finisher. Fail-closed safety: a disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall auto-DENIES so a forgotten
+  // prompt can never hold a billable run open. Settles exactly once.
+  function promptConsent(call, tool) {
+    return new Promise((resolve) => {
+      const promptId = crypto.randomUUID();
+      let settled = false, timer = null;
+      function onAbort() { finish('deny'); }
+      function finish(decision) {
+        if (settled) return; settled = true;
+        pending.delete(promptId);
+        if (timer) clearTimeout(timer);
+        try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
+        resolve(decision);
+      }
+      pending.set(promptId, finish);
+      if (ac.signal.aborted) return finish('deny');
+      ac.signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => finish('deny'), CONSENT_TIMEOUT_MS);
+      emit('permission.prompt', { promptId, agentId, tool: call.name, scope: (tool && tool.scope) || 'write', argsSummary: consentSummary(call) });
+    });
+  }
 
   // all setup + the run live inside ONE try, so any failure becomes a clean agent.run.error + closed stream
   try {
@@ -166,8 +204,11 @@ async function handleRun(req, res) {
     // floor sits below Full Access. The live diegetic prompt (interactive surface) arrives with the WS bridge.
     const consent = makeConsentBroker({
       bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: runId,
-      grantsSession, grantsPermanent, persist: persistAllowlist,
-      networkOf: (call) => !!resolved.networkCaps[call.name], surface: 'autonomous'
+      grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
+      networkOf: (call) => !!resolved.networkCaps[call.name],
+      // directive runs = the Commander is watching, so an ungranted mutation asks live (promptConsent) instead of
+      // default-denying. Scheduled/autonomous runs (no one watching) would pass surface:'autonomous' to fail closed.
+      surface: 'interactive', prompt: promptConsent
     });
     const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs });
 
@@ -221,6 +262,8 @@ async function handleRun(req, res) {
         + 'do not invent facts, figures, or links. '
         + 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append, and record '
         + 'durable facts you\'ll want later with notebook_write. '
+        + 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you '
+        + 'are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. '
         + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
         + 'final report of what you found/did and which files you saved.'
       : '';
@@ -241,8 +284,24 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     grantsSession.delete(runId);     // drop this run's session-scoped grants
+    const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
+    if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
     try { res.end(); } catch (_) {}
   }
+}
+
+// POST /api/consent { runId, promptId, decision } — the browser's answer to a live permission.prompt. Resolves the
+// run's awaiting dispatch. Unknown/illegal decisions fail closed to 'deny'. A stale runId/promptId is a harmless
+// no-op (the run already ended or auto-denied).
+async function handleConsent(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  let decision = body.decision;
+  if (decision !== 'once' && decision !== 'session' && decision !== 'always' && decision !== 'full') decision = 'deny';
+  const pend = pendingByRun.get(body.runId);
+  const finish = pend && pend.get(body.promptId);
+  if (finish) finish(decision);
+  res.writeHead(200); res.end('ok');
 }
 
 async function handleCancel(req, res) {
@@ -254,6 +313,14 @@ async function handleCancel(req, res) {
 }
 
 /* ------------------------------- helpers ------------------------------- */
+// a short, human-readable summary of WHAT a consent prompt is approving — the file path for fs.* (what the user
+// actually cares about), else the compact args. Never echoes secrets (redact() also runs on the emitted event).
+function consentSummary(call) {
+  const a = (call && call.args) || {};
+  if (typeof a.path === 'string' && a.path) return a.path;
+  try { const s = JSON.stringify(a); return s.length > 80 ? s.slice(0, 77) + '…' : s; } catch (_) { return ''; }
+}
+
 function readBody(req, max) {
   return new Promise((resolve, reject) => {
     let b = '', n = 0;

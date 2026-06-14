@@ -110,4 +110,38 @@ const hardline = (call) => (call && call.args && /(^|\/)(\.env|permissions\.allo
   A.ok(!broker.grant('weird', writeCall, WRITE).allow, 'unknown decision denies');
 }
 
-A.report('permissions.test');
+// ---- 9-11. the INTERACTIVE surface (async: the human-prompt branch is the only one that returns a Promise) ----
+(async () => {
+  const brokerWith = (decision, extra) =>
+    makeConsentBroker(Object.assign({ surface: 'interactive', prompt: () => Promise.resolve(decision) }, extra || {}));
+
+  // 9. once allows without recording; deny/unknown deny; always persists the CLASS and then short-circuits (no re-ask)
+  A.ok((await brokerWith('once')(writeCall, WRITE)).allow, 'interactive once -> allow');
+  A.ok(!(await brokerWith('deny')(writeCall, WRITE)).allow, 'interactive deny -> deny');
+  A.ok(!(await brokerWith('zzz')(writeCall, WRITE)).allow, 'interactive unknown decision -> deny');
+  let saved = null;
+  const bAlways = brokerWith('always', { sessionKey: 'iv', persist: a => { saved = a.slice(); } });
+  A.ok((await bAlways(writeCall, WRITE)).allow, 'interactive always -> allow');
+  A.eq(saved, ['files:write'], 'interactive always persisted the danger CLASS only');
+  const again = bAlways(writeCall, WRITE);   // CACHE tier now -> a SYNC object, proving no second prompt
+  A.ok(again.allow === true && again.reason === 'previously granted', 'a granted class no longer prompts');
+
+  // 10. full access: a blanket grant covers EVERY danger class, but the hardline floor still wins
+  const blanket = new Set();
+  const bFull = makeConsentBroker({ surface: 'interactive', prompt: () => Promise.resolve('full'), grantsBlanket: blanket, hardline: hardline });
+  A.ok((await bFull(writeCall, WRITE)).allow, 'full access -> allow');
+  A.ok(blanket.has('*'), 'full access recorded the blanket wildcard');
+  const otherClass = bFull({ name: 'shell.exec', args: {} }, { name: 'shell.exec', capability: 'shell', scope: 'write' });
+  A.ok(otherClass.allow === true && otherClass.reason === 'previously granted', 'blanket covers a DIFFERENT danger class without asking');
+  const floor = bFull({ name: 'fs.write', args: { path: '.env' } }, WRITE);
+  A.ok(!floor.allow && floor.hardline === true, 'hardline still denies under full access');
+
+  // 11. interactive needs a wired prompt (else fail closed); autonomous IGNORES a prompt (surface gates the ask)
+  const nc = makeConsentBroker({ surface: 'interactive' })(writeCall, WRITE);   // interactive, no prompt
+  A.ok(!nc.allow && /no consent channel/.test(nc.reason), 'interactive with no prompt fails closed');
+  let asked = false;
+  const ar = makeConsentBroker({ surface: 'autonomous', prompt: () => { asked = true; return Promise.resolve('once'); } })(writeCall, WRITE);
+  A.ok(!ar.allow && ar.reason === SILENCE && asked === false, 'autonomous default-denies and never consults the prompt');
+
+  A.report('permissions.test');
+})();

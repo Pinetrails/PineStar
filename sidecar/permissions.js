@@ -3,24 +3,26 @@
    A PURE, injected-dependency decision function that the host dispatch pipeline consumes as
    `ctx.consent(call, tool)` (registry.js:76). It performs NO IO, never reads the wall clock, and
    never touches process.env: the frozen Full-Access bypass, the session/permanent grant stores, the
-   persist() sink, and the per-tool network hint are all injected by the sidecar edge (index.js) so
-   the same module is deterministic and headless-testable. Wiring is P1.5b; the live diegetic prompt
-   is P1.5c (deferred). This commit ships the pure broker only — nothing is wired yet.
+   persist() sink, the per-tool network hint, and the interactive prompt() channel are all injected by
+   the sidecar edge (index.js) so the same module is deterministic and headless-testable.
 
    makeConsentBroker({ bypass, hardline, sessionKey, grantsSession, grantsPermanent, persist,
-                       networkOf, surface }) -> consent
-     consent(call, tool)              -> { allow, reason, scope }   // the four-tier ladder
-     consent.grant(decision,call,tool)-> { allow, reason, scope }   // record a human 'session'/'always' decision
+                       networkOf, surface, prompt, grantsBlanket }) -> consent
+     consent(call, tool)              -> { allow, reason, scope } | Promise<…>   // the four-tier ladder
+     consent.grant(decision,call,tool)-> { allow, reason, scope }   // record a human once/session/always/full decision
      consent.snapshot()               -> { permanent:[...], session:{...} }   // read-only, for tests/telemetry
 
    The ladder, in FIXED order (each tier short-circuits):
      1. HARDLINE — an injected, unconditional deny floor; checked FIRST so no flag can reach past it.
                    Its reason carries an anti-retry suffix so the model stops re-attempting it.
      2. BYPASS   — Full Access: allow anything NOT on the hardline floor (flag frozen at boot upstream).
-     3. CACHE    — allow if this dangerKey was previously granted for THIS session or permanently.
+     3. CACHE    — allow if this dangerKey was previously granted for THIS session, permanently, or under
+                   a blanket full-access grant ('*' in grantsBlanket).
      4. RESOLVE  — a read-only, non-network call auto-allows; a mutation with no grant DEFAULT-DENIES
-                   under an autonomous surface ('silence is not consent'). The interactive live
-                   prompt is deferred to P1.5c; until it is wired, an interactive surface fails closed.
+                   under an autonomous surface ('silence is not consent'). Under an INTERACTIVE surface
+                   with a wired prompt(), it asks the human and routes the answer back through grant();
+                   with no prompt wired, it fails closed. Only this branch is async — tiers 1–3 and the
+                   read-only/autonomous paths stay synchronous, so direct-result callers are unaffected.
 
    dangerKey = (tool.capability || tool.name) + ':' + tool.scope — the danger CLASS, never args/paths/keys.
    (The makeTool object carries no `network` flag — that lives in resolved.networkCaps — so the read-only
@@ -61,6 +63,8 @@
     const persist = typeof opts.persist === 'function' ? opts.persist : null;
     const networkOf = typeof opts.networkOf === 'function' ? opts.networkOf : defaultNetworkOf;
     const surface = opts.surface || 'autonomous';
+    const prompt = typeof opts.prompt === 'function' ? opts.prompt : null;                     // (call,tool) -> Promise<decision>
+    const grantsBlanket = opts.grantsBlanket instanceof Set ? opts.grantsBlanket : null;       // full-access wildcard store ('*')
 
     function sessionSet(create) {
       let s = grantsSession.get(sessionKey);
@@ -68,6 +72,7 @@
       return s;
     }
     function granted(key) {
+      if (grantsBlanket && grantsBlanket.has('*')) return true;   // full-access (blanket) grant covers every danger class
       if (grantsPermanent.has(key)) return true;
       const s = grantsSession.get(sessionKey);
       return !!(s && s.has(key));
@@ -85,8 +90,12 @@
       // 4. RESOLVE.
       if (scope === 'read' && !networkOf(call, tool)) return { allow: true, scope: scope, reason: 'read-only, non-network' };
       if (surface === 'autonomous') return { allow: false, scope: scope, reason: SILENCE };
-      // interactive live prompt is deferred to P1.5c; until wired, fail closed.
-      return { allow: false, scope: scope, reason: 'no consent channel — interactive prompt not yet wired' };
+      // INTERACTIVE: ask the human. dispatch awaits consent(), so returning this Promise PAUSES the run until a
+      // decision arrives; the answer routes back through the SAME grant() ladder (once/always/full/deny). This is
+      // the ONLY async branch — every tier above already returned a plain object.
+      if (prompt) return Promise.resolve(prompt(call, tool)).then(function (d) { return consent.grant(d, call, tool); });
+      // no channel wired -> fail closed.
+      return { allow: false, scope: scope, reason: 'no consent channel — interactive prompt not wired' };
     }
 
     // Record a human decision (from the future interactive prompt, or seeded in tests). NEVER called
@@ -105,6 +114,13 @@
         }
         grantsPermanent.add(key);
         return { allow: true, scope: scope, reason: 'granted permanently' };
+      }
+      if (decision === 'full') {
+        // blanket "full access": allow EVERY danger class for the life of the injected grantsBlanket store. The
+        // sidecar wires it to an in-memory per-agent set, so it lasts the session and RESETS on restart — never
+        // persisted to disk. Still sits BELOW the hardline floor (tier 1 is checked before the cache tier).
+        if (grantsBlanket) grantsBlanket.add('*');
+        return { allow: true, scope: scope, reason: 'full access granted' };
       }
       return { allow: false, scope: scope, reason: 'denied' };
     };

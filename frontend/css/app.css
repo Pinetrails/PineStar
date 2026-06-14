@@ -139,6 +139,22 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .deliverable-link { color: var(--gold); text-decoration: underline; cursor: pointer; }
 .deliverable-link:hover { color: var(--ph-bright); }
 
+/* live consent prompt: the agent is paused waiting for the Commander to approve an action */
+.cmsg.consent .body { color: var(--ph-bright); }
+.consent-btns { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.consent-btn {
+  font: inherit; font-size: 13px; letter-spacing: 0.5px; cursor: pointer;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim);
+  padding: 3px 9px; border-radius: 2px; transition: background .1s, color .1s, border-color .1s;
+}
+.consent-btn:hover { color: var(--ph-bright); border-color: var(--ph); background: rgba(120, 255, 180, 0.08); }
+.consent-btn.danger { color: var(--gold); border-color: var(--gold); }
+.consent-btn.danger:hover { color: var(--ph-bright); background: rgba(255, 200, 80, 0.12); }
+.consent-btn.deny { color: var(--bad); border-color: var(--bad); }
+.consent-btn.deny:hover { color: var(--ph-bright); background: rgba(255, 90, 90, 0.12); }
+.consent-result { font-size: 13px; letter-spacing: 0.5px; color: var(--ph); }
+.consent-result.err { color: var(--bad); }
+
 #chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
 #chat-inputrow .prompt { color: var(--ph); }
 #chat-input { border: none; background: transparent; padding: 4px 2px; }

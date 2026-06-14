@@ -53,7 +53,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, agentId, isTask, signal }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal }) {
     const key = getKey(), model = getModel();
     if (!key) throw new Error('no API key set');
     if (!model) throw new Error('no model selected');
@@ -92,6 +92,9 @@ const Harness = (() => {
           case 'agent.tool_call': onToolCall && onToolCall(payload); break;
           case 'agent.tool_result': onToolResult && onToolResult(payload); break;
           case 'deliverable': onDeliverable && onDeliverable(payload); break;
+          // the run is PAUSED on the sidecar awaiting this; the UI shows approve/always/full/deny and answers
+          // via Harness.consent(). No more events arrive on this stream until the answer is POSTed.
+          case 'permission.prompt': onPermission && onPermission(payload); break;
           case 'agent.cost':
             totals.tokens += (payload.tokensIn || 0) + (payload.tokensOut || 0);
             totals.cost += payload.usd || 0;
@@ -115,9 +118,16 @@ const Harness = (() => {
     try { await fetch('/api/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId }) }); } catch (_) {}
   }
 
+  // answer a live permission.prompt: decision ∈ once|always|full|deny. Resolves the run's paused dispatch so it
+  // continues (or denies). Separate request from the open /api/run stream — no deadlock.
+  async function consent(runId, promptId, decision) {
+    if (!runId || !promptId) return;
+    try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
+  }
+
   return {
     getKey, setKey, getModel, setModel, getProv, setProv,
-    listModels, priceOf, chat, cancel,
+    listModels, priceOf, chat, cancel, consent,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
     resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; }

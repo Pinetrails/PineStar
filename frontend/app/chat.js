@@ -60,6 +60,46 @@ const Chat = (() => {
     r.body.appendChild(a);
     log.scrollTop = log.scrollHeight;
   }
+  // a live consent prompt: the agent wants to do something that needs approval (a file write today). The run is
+  // PAUSED on the sidecar until the Commander answers — once / always (this kind) / full access (everything this
+  // session) / deny. Answering resumes the stream automatically.
+  function actionPhrase(ev) {
+    const t = ev.tool || 'act';
+    if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
+    return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
+  }
+  function permissionRow(ev) {
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
+    r.body.appendChild(document.createTextNode('🔒 ' + name + ' wants to ' + actionPhrase(ev) + ' '));
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    let decided = false;
+    function decide(decision, doneLabel, isDeny) {
+      if (decided) return; decided = true;
+      Harness.consent(currentRunId, ev.promptId, decision);
+      btns.remove();
+      const tag = document.createElement('span');
+      tag.className = 'consent-result' + (isDeny ? ' err' : '');
+      tag.textContent = doneLabel;
+      r.body.appendChild(tag);
+      status(busy ? 'working…' : 'online');
+    }
+    const mk = (text, decision, cls, doneLabel, isDeny) => {
+      const b = document.createElement('button');
+      b.className = 'consent-btn' + (cls ? ' ' + cls : '');
+      b.textContent = text;
+      b.onclick = () => decide(decision, doneLabel, isDeny);
+      btns.appendChild(b);
+    };
+    mk('Approve once', 'once', '', '✓ approved once', false);
+    mk('Always', 'always', '', '✓ always allowed', false);
+    mk('Full access', 'full', 'danger', '✓ full access', false);
+    mk('Deny', 'deny', 'deny', '✕ denied', true);
+    r.body.appendChild(btns);
+    status('awaiting your approval…');
+    if (typeof StationUI !== 'undefined') StationUI.notify(name + ' needs approval to ' + actionPhrase(ev), 'warn');
+    log.scrollTop = log.scrollHeight;
+  }
+
   function renderHistory() {
     for (const m of history) {
       if (m.role === 'user') addUser(m.content);
@@ -109,7 +149,8 @@ const Chat = (() => {
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; toolLine('▶ ' + ev.name + ' ' + brief(ev.argsSummary)); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; toolLine((ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''), ev.isError); },
-        onDeliverable: ev => { if (ev.kind === 'file' && !seenDeliv[ev.title]) { seenDeliv[ev.title] = true; deliverableLine(ev.title, ev.agentId); if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold'); } }
+        onDeliverable: ev => { if (ev.kind === 'file' && !seenDeliv[ev.title]) { seenDeliv[ev.title] = true; deliverableLine(ev.title, ev.agentId); if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold'); } },
+        onPermission: ev => permissionRow(ev)
       });
       if (error) {
         out.error(error);
