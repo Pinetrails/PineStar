@@ -295,3 +295,52 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 @media (max-width: 1120px) {
   #screen-game.active { grid-template-columns: 200px 1fr 300px; }
 }
+
+/* ============================================================
+   REFIT MODE — the diegetic full-screen station builder (build.js).
+   Sits above the HUD + floating windows but UNDER the global CRT
+   scanline/vignette layers (z 940/950) so it stays behind the glass.
+   ============================================================ */
+.refit-overlay {
+  position: fixed; inset: 0; z-index: 80; overflow: hidden;
+  background: var(--bg); color: var(--ph); user-select: none;
+}
+.refit-canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
+
+.refit-top {
+  position: absolute; top: 0; left: 0; right: 0; height: 46px; z-index: 2;
+  display: flex; align-items: center; gap: 12px; padding: 0 14px;
+  background: linear-gradient(180deg, rgba(3,2,1,.92), rgba(3,2,1,.4) 78%, transparent);
+}
+.refit-title { color: var(--ink); background: var(--ph); padding: 3px 14px; letter-spacing: 3px; font-size: 18px; text-shadow: none; box-shadow: 0 0 14px var(--ph-glow2); }
+.refit-sub { color: var(--ph-dim); letter-spacing: 2px; font-size: 13px; }
+.refit-spacer { flex: 1; }
+
+.refit-dock {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2;
+  display: flex; flex-direction: column; align-items: center; gap: 7px; max-width: 94vw;
+  padding: 9px 12px 7px; border-radius: 9px;
+  background: var(--panel);
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
+}
+.refit-tools, .refit-palette { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.refit-palette:empty { display: none; }
+.refit-tool { font-size: 15px; }
+.refit-kind { font-size: 12px; }
+.refit-hint { font-size: 12px; color: var(--ph-dim); letter-spacing: 1px; min-height: 14px; text-align: center; }
+
+.refit-swatch {
+  width: 26px; height: 22px; cursor: pointer; border: 2px solid var(--ph-dim);
+  image-rendering: pixelated; padding: 0;
+}
+.refit-swatch:hover { border-color: var(--ph); }
+.refit-swatch.active { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
+
+.refit-tip {
+  position: fixed; z-index: 3; display: none; pointer-events: none;
+  font-size: 13px; letter-spacing: 1px; padding: 2px 8px;
+  background: rgba(3,2,1,.92); border: 1px solid var(--ph-dim); color: var(--ph-bright);
+  text-shadow: 0 0 6px var(--ph-glow2); white-space: nowrap;
+}
+.refit-tip.ok { border-color: #69ff8e; color: #aaffc8; }
+.refit-tip.bad { border-color: var(--bad); color: #ffb0a8; }
