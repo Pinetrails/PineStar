@@ -5,11 +5,19 @@
 
 const Save = (() => {
   const KEY = 'skynet.save';
-  const CURRENT = 1;
+  const CURRENT = 2;
 
   // forward-only migrations: { fromVersion: (doc) => upgradedDoc }
   const migrations = {
-    // 0: doc => ({ ...doc, /* future field */ }),
+    // v1 (one agent + one flat history) -> v2 (Workstreams): fold the whole conversation into a
+    // single "General" stream (cost seeded from lifetime usage so nothing looks invented); agent +
+    // lifetime usage stay at the envelope root. Delegates to the unit-tested pure migrator.
+    1: doc => {
+      const slice = (typeof Workstreams !== 'undefined')
+        ? Workstreams.migrateV1(doc)
+        : { workstreams: [], activeId: null, generalId: null };
+      return { agent: doc.agent, usage: doc.usage, workstreams: slice.workstreams, activeId: slice.activeId, generalId: slice.generalId };
+    }
   };
 
   function migrate(doc) {

@@ -6,31 +6,39 @@
 
 const Chat = (() => {
   let log, input, statusEl;
-  let system = '', name = 'AGENT', history = [], busy = false;
+  let system = '', name = 'AGENT', activeWs = null, busy = false;
   let awaitingPurpose = false, onPurpose = null, onTurn = null;
   let currentAbort = null, currentRunId = null;   // the in-flight run, so DISCONNECT can cancel it
   const el = id => document.getElementById(id);
 
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
-    history = Array.isArray(opts.history) ? opts.history.slice() : [];
     awaitingPurpose = !!opts.awaitingPurpose;
     onPurpose = opts.onPurpose || null; onTurn = opts.onTurn || null;
     busy = false;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
-    log.innerHTML = ''; input.value = '';
-    renderHistory();
+    input.value = '';
+    load(opts.ws);
     input.onkeydown = e => {
       if (e.key === 'Enter' && !e.isComposing) {
         const t = input.value.trim();
         if (t) { input.value = ''; send(t); }
       }
     };
-    status(awaitingPurpose ? 'awaiting purpose' : 'online');
+  }
+
+  // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
+  // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
+  function load(ws) {
+    activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
+    if (log) log.innerHTML = '';
+    renderHistory();
+    status(awaitingPurpose ? 'awaiting purpose' : (busy ? 'working…' : 'online'));
   }
 
   function setSystem(s) { system = s; }
-  function getHistory() { return history.slice(); }
+  function getHistory() { return activeWs ? activeWs.history.slice() : []; }
+  function isBusy() { return busy; }
   function status(s) { if (statusEl) statusEl.textContent = s; }
 
   function row(role) {
@@ -101,7 +109,8 @@ const Chat = (() => {
   }
 
   function renderHistory() {
-    for (const m of history) {
+    const h = activeWs ? activeWs.history : [];
+    for (const m of h) {
       if (m.role === 'user') addUser(m.content);
       else row('agent').body.textContent = m.content;
     }
@@ -122,11 +131,17 @@ const Chat = (() => {
 
   async function send(text) {
     if (busy) return;
+    const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
+    if (!ws) return;
     // first message after waking sets the agent's purpose (writes its system prompt)
     let purposeTurn = false;
     if (awaitingPurpose) { awaitingPurpose = false; purposeTurn = true; if (onPurpose) onPurpose(text); }
     busy = true;
-    addUser(text); history.push({ role: 'user', content: text });
+    addUser(text); ws.history.push({ role: 'user', content: text });
+    // name an untitled stream from its first real message (no-op on General / already-titled)
+    if (!purposeTurn && typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
+      if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
+    }
 
     const isTask = !purposeTurn && Classify.isTaskDirective(text);
     World.setActivity(isTask ? 'task' : 'talk');
@@ -135,6 +150,7 @@ const Chat = (() => {
     // this panel; for talk it speaks the reply as a bubble in the room.
     const sys = system + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '');
 
+    const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton) so the per-stream diff is real
     const ac = new AbortController();
     currentAbort = ac; currentRunId = null;
     const callNames = {};   // callId -> tool name (the frozen agent.tool_result has no name field)
@@ -143,13 +159,20 @@ const Chat = (() => {
     let acc = '';
     try {
       const { text: reply, error, endReason } = await Harness.chat({
-        system: sys, messages: history, agentId: 'agent', isTask, signal: ac.signal,
-        onRunId: id => { currentRunId = id; },
+        system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal,
+        onRunId: id => { currentRunId = id; if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; out.append(d); if (!isTask) World.say(acc); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; toolLine('▶ ' + ev.name + ' ' + brief(ev.argsSummary)); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; toolLine((ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''), ev.isError); },
-        onDeliverable: ev => { if (ev.kind === 'file' && !seenDeliv[ev.title]) { seenDeliv[ev.title] = true; deliverableLine(ev.title, ev.agentId); if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold'); } },
+        onDeliverable: ev => {
+          if (ev.kind === 'file' && !seenDeliv[ev.title]) {
+            seenDeliv[ev.title] = true; deliverableLine(ev.title, ev.agentId);
+            // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock
+            if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: ev.kind, runId: currentRunId, t: Date.now() });
+            if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold');
+          }
+        },
         onPermission: ev => permissionRow(ev)
       });
       if (error) {
@@ -157,7 +180,7 @@ const Chat = (() => {
         if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error));
         if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
       } else {
-        history.push({ role: 'assistant', content: reply || acc });
+        ws.history.push({ role: 'assistant', content: reply || acc });
         out.done(); if (!isTask) World.say(reply || acc);
         // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
         if (endReason && endReason !== 'done') {
@@ -175,7 +198,15 @@ const Chat = (() => {
     } finally {
       currentAbort = null; currentRunId = null;
       busy = false; status('online'); World.setActivity('idle');   // task done → agent stands up
+      // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
+      // the same deltas already minted the lifetime total inside Harness.
+      if (typeof Workstreams !== 'undefined') {
+        const a = Harness.totals();
+        Workstreams.addCost(ws.id, { tokens: a.tokens - before.tokens, usd: a.cost - before.cost, calls: a.calls - before.calls });
+        Workstreams.touch(ws.id);
+      }
       App.refreshUsage();
+      if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       if (onTurn) onTurn();
     }
   }
@@ -187,5 +218,5 @@ const Chat = (() => {
     if (currentRunId) Harness.cancel(currentRunId);
   }
 
-  return { init, send, localLine, setSystem, getHistory, abort };
+  return { init, load, send, localLine, setSystem, getHistory, abort, isBusy };
 })();

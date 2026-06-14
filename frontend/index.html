@@ -87,6 +87,10 @@
     <h3>▮ CREW MANIFEST<span class="h3-aux" id="crew-n"></span></h3>
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
+    <div id="ws-wrap">
+      <div class="ws-head">▮ WORKSTREAMS<button id="ws-new" title="start a new workstream">+ NEW</button></div>
+      <ul id="workstreams"></ul>
+    </div>
   </aside>
 
   <div id="stage-wrap">
@@ -101,7 +105,7 @@
   </div>
 
   <aside id="chat-panel">
-    <h3>▮ COMMS<span class="dim" id="chat-status">offline</span></h3>
+    <h3>▮ COMMS<span class="h3-right"><span class="ws-cost" id="ws-cost"></span><span class="dim" id="chat-status">offline</span></span></h3>
     <div id="chat-log" class="scrolly"></div>
     <div id="chat-inputrow">
       <span class="prompt">&gt;</span>
@@ -131,6 +135,7 @@
 <script src="app/harness.js"></script>
 <script src="app/world.js"></script>
 <script src="app/classify.js"></script>
+<script src="app/workstreams.js"></script>
 <script src="app/chat.js"></script>
 <script src="app/stationui.js"></script>
 <script src="app/save.js"></script>

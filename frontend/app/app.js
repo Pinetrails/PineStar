@@ -19,6 +19,12 @@ const App = (() => {
     const t = Harness.totals();
     el('gt-cost').textContent = '$' + t.cost.toFixed(6);
     el('gt-tok').textContent = String(t.tokens);
+    const wc = el('ws-cost');
+    if (wc && typeof Workstreams !== 'undefined') {
+      const a = Workstreams.active();
+      const c = a ? Workstreams.costOf(a.id) : null;
+      wc.textContent = (c && c.usd) ? '$' + c.usd.toFixed(4) + ' · this stream' : '';
+    }
   }
 
   function buildSystemPrompt(name, purpose) {
@@ -34,7 +40,7 @@ const App = (() => {
 
   function persist() {
     if (!agent) return;
-    Save.write({ agent, history: Chat.getHistory(), usage: Harness.totals() });
+    Save.write(Object.assign({ agent, usage: Harness.totals() }, Workstreams.serialize()));
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
@@ -97,7 +103,8 @@ const App = (() => {
 
     agent = { id: 'agent', name, color: pickedColor, model, purpose: null, systemPrompt: buildSystemPrompt(name, null), createdAt: Date.now() };
     Harness.resetTotals();
-    enterGame({ awaitingPurpose: true, wake: true, history: [] });
+    Workstreams.reset();   // a fresh General stream for the new agent
+    enterGame({ awaitingPurpose: true, wake: true });
     persist();   // so a refresh mid-onboarding resumes to the purpose step
   }
 
@@ -107,7 +114,9 @@ const App = (() => {
     if (!agent.systemPrompt) agent.systemPrompt = buildSystemPrompt(agent.name, agent.purpose);
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
-    enterGame({ awaitingPurpose: !agent.purpose, wake: false, history: saved.history || [] });
+    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
+    enterGame({ awaitingPurpose: !agent.purpose, wake: false });
+    persist();   // lock any v1->v2 migration to disk now (don't re-migrate every load)
   }
 
   function enterGame(opts) {
@@ -125,7 +134,9 @@ const App = (() => {
       StationUI.enter([agent], { totals: () => Harness.totals(), activity: () => (World.getActivity ? World.getActivity() : 'idle') });
       StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');
     }
-    Chat.init({ system: agent.systemPrompt, name: agent.name, history: opts.history, awaitingPurpose: opts.awaitingPurpose, onPurpose: onPurpose, onTurn: persist });
+    Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), awaitingPurpose: opts.awaitingPurpose, onPurpose: onPurpose, onTurn: persist });
+    renderRail();
+    el('ws-new').onclick = newWorkstream;
     if (opts.awaitingPurpose) {
       setTimeout(() => {
         Chat.localLine('…i am awake, Commander, but i don’t know what i’m for yet. tell me — what is my purpose?');
@@ -140,6 +151,35 @@ const App = (() => {
     agent.systemPrompt = buildSystemPrompt(agent.name, text);
     Chat.setSystem(agent.systemPrompt);
     // persisted by the turn's onTurn() once the agent replies
+  }
+
+  /* ---------- workstreams rail (left) ---------- */
+  function renderRail() {
+    const ul = el('workstreams');
+    if (!ul || typeof Workstreams === 'undefined') return;
+    const activeId = Workstreams.activeId();
+    ul.innerHTML = Workstreams.list().map(w => {
+      const title = w.title || 'General';
+      const c = (w.cost && w.cost.usd) ? '$' + w.cost.usd.toFixed(4) : '';
+      return '<li class="ws-row' + (w.id === activeId ? ' sel' : '') + '" data-id="' + w.id + '">' +
+        '<span class="ws-dot lane-' + w.lane + '"></span>' +
+        '<span class="ws-title">' + U.esc(title) + '</span>' +
+        (c ? '<span class="ws-c">' + c + '</span>' : '') +
+        '</li>';
+    }).join('');
+    ul.querySelectorAll('.ws-row').forEach(li => li.onclick = () => switchWorkstream(li.dataset.id));
+  }
+  // no switching mid-run: one #chat-log streams the active run, so a swap would render into the wrong stream.
+  function switchWorkstream(id) {
+    if (Chat.isBusy && Chat.isBusy()) return;
+    if (id === Workstreams.activeId()) return;
+    const ws = Workstreams.switch(id); if (!ws) return;
+    SFX.click(); Chat.load(ws); refreshUsage(); renderRail(); persist();
+  }
+  function newWorkstream() {
+    if (Chat.isBusy && Chat.isBusy()) return;
+    const ws = Workstreams.create(null);
+    SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
 
   function disconnect() { SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
@@ -176,5 +216,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist };
+  return { show, refreshUsage, persist, refreshRail: renderRail };
 })();
