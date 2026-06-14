@@ -208,7 +208,7 @@ const Build = (() => {
 
   function onDown(ev) {
     lastClient = { x: ev.clientX, y: ev.clientY };
-    cv.setPointerCapture(ev.pointerId);
+    try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
