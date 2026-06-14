@@ -24,6 +24,7 @@ const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
+const { renderRecall, injectRecall } = require('../sidecar/context.js');
 
 const ROOT = path.join(os.tmpdir(), 'skynet-itest-' + process.pid);
 
@@ -138,6 +139,24 @@ const fixture = {
   A.ok(/silence is not consent/.test(denied.content), 'denial carries the silence-is-not-consent reason');
   let wrote = true; try { await fsp.access(path.join(ROOT, 'agent', 'unsanctioned.md')); } catch (e) { wrote = false; }
   A.ok(!wrote, 'the denied write never touched disk (no action on deny)');
+
+  // ---- Cortex (M-mem.1): the recalled-memory injection the host performs before a run. Mirrors index.js's
+  //      composition exactly — populated notebook yields a fence right before the user message; an empty
+  //      notebook is byte-identical (the memoryless run is unchanged). ----
+  {
+    const notes = [{ id: 'note_1', title: 'API base', body: 'openrouter.ai/api/v1', ts: 1 },
+                   { id: 'note_2', title: 'User tz', body: 'PST', ts: 2 }];
+    const convo = [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'what timezone am I in?' }];
+    const r = renderRecall(notes.slice().reverse(), { limit: 1500 });
+    A.eq(r.count, 2, 'both stored notes are recalled');
+    A.ok(r.text.indexOf('User tz') >= 0 && r.text.indexOf('API base') >= 0, "recall surfaces the agent's own notes");
+    const withMem = injectRecall(convo, r.text);
+    A.eq(withMem.length, 3, 'recall adds exactly one system note');
+    A.eq(withMem[2], convo[1], 'fence sits immediately before the newest user message');
+    A.ok(withMem[1].role === 'system' && /recalled-memory/.test(withMem[1].content), 'fence is a system note');
+    const empty = injectRecall(convo, renderRecall([], {}).text);
+    A.eq(JSON.stringify(empty), JSON.stringify(convo), 'empty notebook -> byte-identical messages (memoryless run unchanged)');
+  }
 
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('harness.integration.test');

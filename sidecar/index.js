@@ -22,7 +22,7 @@ const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { makeEmitter } = require('../shared/emitter.js');
-const { redact } = require('./context.js');
+const { redact, renderRecall, injectRecall } = require('./context.js');
 const { makeConsentBroker } = require('./permissions.js');
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -113,6 +113,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
@@ -268,7 +269,15 @@ async function handleRun(req, res) {
         + 'final report of what you found/did and which files you saved.'
       : '';
     const sys = (system || '') + toolNote;
-    const msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
+    let msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
+    // Cortex (M-mem.1): surface the agent's OWN memory in-prompt — inject a recalled-memory fence (newest notes
+    // first, char-capped) right before the triggering user message, so the agent never has to call notebook.read
+    // to remember. Empty notebook => nothing injected (byte-identical to a memoryless run). Never fails the run.
+    try {
+      const stored = notebookStore.get('notebook:' + agentId);
+      const recall = renderRecall(Array.isArray(stored) ? stored.slice().reverse() : [], { limit: 1500 });
+      if (recall.text) { msgs = injectRecall(msgs, recall.text); emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars }); }
+    } catch (_) {}
 
     await runAgentLoop({
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
@@ -375,6 +384,23 @@ async function serveWorkspaceFile(req, res) {
     if (/escape|illegal|bad agentId|bad notebook/.test(msg)) { res.writeHead(403); return res.end('forbidden'); }
     res.writeHead(404); res.end('not found');
   }
+}
+// GET /api/notebook?agent=<id> — read-only JSON view of the agent's own notebook (its memory.md in the
+// dossier). The agent WRITES these notes itself via the notebook tool during runs; this route only reads
+// them. Jailed by the same agentId validation as the notebook store; never writable over HTTP, and the
+// store already lives outside the fs jail so the agent's fs.* tools can't touch it either.
+function serveNotebook(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const raw = notebookStore.get('notebook:' + agent);
+    const notes = Array.isArray(raw)
+      ? raw.map(n => ({ id: n && n.id, title: String((n && n.title) || ''), body: String((n && n.body) || ''), ts: (n && n.ts) || 0 }))
+      : [];
+    json(200, { notes });
+  } catch (e) { json(200, { notes: [] }); }   // tolerate missing/corrupt — empty memory, never a 500
 }
 async function serveStatic(req, res) {
   try {

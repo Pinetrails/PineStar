@@ -73,6 +73,7 @@ const Chat = (() => {
   // session) / deny. Answering resumes the stream automatically.
   function actionPhrase(ev) {
     const t = ev.tool || 'act';
+    if (/notebook/.test(t)) return 'save a note to its memory';
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
   }

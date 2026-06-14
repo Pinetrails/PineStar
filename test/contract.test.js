@@ -27,6 +27,10 @@ const cases = [
   ['agent.run.end', { agentId: 'a', runId: 'r', reason: 'done', turns: 2, usd: 0.2 }, { agentId: 'a', runId: 'r', reason: 'whoops', turns: 2, usd: 0.2 }],
   ['budget.threshold', { scope: 'run', usd: 1, cap: 5 }, { scope: 'weekly', usd: 1, cap: 5 }],
   ['permission.response', { promptId: 'p', decision: 'once' }, { promptId: 'p', decision: 'maybe' }],
+  ['memory.recall', { agentId: 'a', runId: 'r', count: 3, chars: 120 }, { agentId: 'a', runId: 'r', count: 'three' }],
+  ['channel.inbound', { channel: 'telegram', chatId: 'c', agentId: 'tg_c', userId: 'u', kind: 'dm' }, { channel: 'telegram', chatId: 'c', agentId: 'tg_c', kind: 'sms' }],
+  ['channel.delivery', { channel: 'telegram', chatId: 'c', runId: 'r', ok: true, chunks: 2, reason: 'done' }, { channel: 'telegram', chatId: 'c', runId: 'r', ok: 'yes' }],
+  ['channel.connect', { channel: 'telegram', state: 'up' }, { channel: 'telegram', state: 'flapping' }],
   ['notify', 'a station log line', 123],
   ['task', { id: 't1', status: 'running' }, { id: 't1', status: 'invented' }],
 ];

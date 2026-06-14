@@ -51,6 +51,10 @@
     }),
     'run.cancel': obj(['runId'], { runId: str }),
 
+    // ---- memory / context (Cortex) ----
+    // a recalled-memory fence was injected into this run's prompt (count = records included; chars = fence size).
+    'memory.recall': obj(['agentId', 'runId', 'count'], { agentId: str, runId: str, count: int, chars: int }),
+
     // ---- capability / permission ----
     'capdenied': obj(['agentId', 'need', 'reason'], { agentId: str, need: str, reason: str }),
     'permission.prompt': obj(['promptId', 'agentId', 'tool', 'scope'], {
@@ -62,6 +66,21 @@
     'object.place': obj(['room', 'objectType', 'instanceId'], { room: str, objectType: str, instanceId: str }),
     'object.reclaim': obj(['room', 'objectType', 'instanceId'], { room: str, objectType: str, instanceId: str }),
     'budget.threshold': obj(['scope', 'usd', 'cap'], { scope: { enum: ['run', 'day', 'global'] }, usd: num, cap: num }),
+
+    // ---- messaging-channel ingress (Telegram/Discord adapters; producers wired in C5) ----
+    // a message arrived on a platform, was admitted, and was mapped to an agent (the trigger-source telemetry
+    // that agent.run.start.trigger only labels). channel/chatId/userId are not secrets; the bot token never appears.
+    'channel.inbound': obj(['channel', 'chatId', 'agentId'], {
+      channel: str, chatId: str, agentId: str, userId: str, kind: { enum: ['dm', 'group'] }
+    }),
+    // the agent's reply was delivered back to the platform (chunk count + ok/why) — outbound delivery telemetry.
+    'channel.delivery': obj(['channel', 'chatId', 'runId', 'ok'], {
+      channel: str, chatId: str, runId: str, ok: bool, chunks: int, reason: str
+    }),
+    // adapter transport health: poll up / network down / fatal token error (in-memory health state).
+    'channel.connect': obj(['channel', 'state'], {
+      channel: str, state: { enum: ['up', 'down', 'error'] }, detail: str
+    }),
 
     // ---- reserved (P3 mutation API) ----
     'worldChange': obj(['seq'], { seq: int, dirtyTiles: { type: 'array' } }),

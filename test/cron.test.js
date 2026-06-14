@@ -1,0 +1,169 @@
+/* node test/cron.test.js — the PURE cron-math core (CRON Commit 1).
+   Proves the schedule parser, next-fire math, and the tick planner are pure, deterministic, and
+   injected-clock — and that the three subtle invariants hold: at-most-once across a crash, the
+   no-backlog fast-forward of stale recurring jobs, and one-shots that fire once then never again.
+   Everything is driven by makeClock (no wall-clock read), exactly like loop.replay/permissions. */
+'use strict';
+const A = require('./_assert.js');
+const { makeClock } = require('../shared/clock-rng.js');
+const cron = require('../sidecar/cron.js');
+
+const T0 = 1700000000000;   // a fixed ms epoch (2023-11-14T...) — all times are relative to this
+const clock = makeClock(T0);
+const job = (o) => Object.assign({ id: 'j1', enabled: true, schedule: null, nextRunAt: null, lastRunAt: null }, o);
+
+// ---- 1. parseSchedule: interval forms ----
+{
+  A.eq(cron.parseSchedule('every 30m', T0).kind, 'interval', 'every 30m -> interval');
+  A.eq(cron.parseSchedule('every 30m', T0).minutes, 30, 'every 30m -> 30 minutes');
+  A.eq(cron.parseSchedule('every 1h', T0).minutes, 60, 'every 1h -> 60 minutes');
+  A.eq(cron.parseSchedule('every 2 hours', T0).minutes, 120, 'every 2 hours -> 120 minutes');
+  A.eq(cron.parseSchedule('every day', T0).minutes, 1440, 'every day (no N) -> 1440 minutes');
+  A.eq(cron.parseSchedule('every 1h', T0).display, 'every 1h', 'interval display is humanized');
+  A.eq(cron.parseSchedule('every 30s', T0), null, 'sub-minute interval rejected (60s tick)');
+}
+
+// ---- 2. parseSchedule: once (relative + absolute) ----
+{
+  const inTwoH = cron.parseSchedule('in 2h', T0);
+  A.eq(inTwoH.kind, 'once', 'in 2h -> once');
+  A.eq(inTwoH.runAt, T0 + 2 * 3600000, 'in 2h runAt = now + 2h (now is a PARAM)');
+
+  const bare = cron.parseSchedule('30m', T0);
+  A.eq(bare.kind, 'once', 'bare 30m -> once');
+  A.eq(bare.runAt, T0 + 30 * 60000, 'bare 30m runAt = now + 30m');
+
+  const stamp = cron.parseSchedule('2026-06-15T09:00:00Z', T0);
+  A.eq(stamp.kind, 'once', 'ISO timestamp -> once');
+  A.eq(stamp.runAt, Date.parse('2026-06-15T09:00:00Z'), 'ISO runAt = Date.parse(value)');
+
+  // the SAME relative string parsed at a different `now` yields a different runAt — purity, not ambient
+  A.eq(cron.parseSchedule('in 2h', T0 + 1000).runAt, T0 + 1000 + 2 * 3600000, 'relative once tracks the passed now');
+}
+
+// ---- 3. parseSchedule: cron recognised-but-deferred, and garbage ----
+{
+  const c = cron.parseSchedule('*/30 * * * *', T0);
+  A.eq(c.kind, 'cron', '5-field expr recognised as cron');
+  A.eq(c.supported, false, 'cron is DEFERRED in v1 (supported:false)');
+  A.eq(cron.parseSchedule('not a schedule', T0), null, 'garbage -> null');
+  A.eq(cron.parseSchedule('', T0), null, 'empty -> null');
+  A.eq(cron.parseSchedule('* * * *', T0), null, '4-field (not 5) is not cron -> null');
+}
+
+// ---- 4. nextFireAt: once vs interval, run vs not-run ----
+{
+  const once = { kind: 'once', runAt: T0 + 5000 };
+  A.eq(cron.nextFireAt(once, null, T0), T0 + 5000, 'once not-run -> its runAt');
+  A.eq(cron.nextFireAt(once, cron._internals.iso(T0), T0), null, 'once already-run -> null (ineligible)');
+
+  const iv = { kind: 'interval', minutes: 60 };
+  A.eq(cron.nextFireAt(iv, null, T0), T0 + 3600000, 'interval no last-run -> now + period');
+  A.eq(cron.nextFireAt(iv, cron._internals.iso(T0 - 600000), T0), T0 - 600000 + 3600000, 'interval -> lastRun + period');
+}
+
+// ---- 5. planTick: nothing due when nextRunAt is in the future ----
+{
+  const jobs = [job({ schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(T0 + 3600000) })];
+  const r = cron.planTick(jobs, T0);
+  A.eq(r.fire.length, 0, 'future nextRunAt -> nothing fires');
+  A.eq(r.skipped.length, 0, 'future nextRunAt -> nothing skipped');
+}
+
+// ---- 6. planTick: an interval job due exactly on time fires once and advances ----
+{
+  const now = T0 + 3600000;
+  const jobs = [job({ schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(now) })];
+  const r = cron.planTick(jobs, now);
+  A.eq(r.fire.length, 1, 'due interval job fires');
+  A.eq(r.fire[0].jobId, 'j1', 'the right job fires');
+  A.eq(r.next.length, 1, 'a due fire advances next');
+  A.eq(r.next[0].nextAt, now + 3600000, 'advanced to now + period');
+  A.eq(r.skipped.length, 0, 'an on-time fire is not a skip');
+}
+
+// ---- 7. AT-MOST-ONCE across a simulated crash: fire -> persist advance -> "restart" same now -> no double-fire ----
+{
+  const now = T0 + 3600000;
+  const j = job({ schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(now) });
+  const r1 = cron.planTick([j], now);
+  A.eq(r1.fire.length, 1, 'first tick fires');
+  // host persists the advance BEFORE launching the run; simulate that, then re-plan at the SAME now (crash/restart)
+  j.nextRunAt = cron._internals.iso(r1.next[0].nextAt);
+  const r2 = cron.planTick([j], now);
+  A.eq(r2.fire.length, 0, 'after advance-before-run, a restart at the same instant does NOT double-fire');
+}
+
+// ---- 8. NO-BACKLOG: a recurring job stale beyond grace fast-forwards + skips (one catch-up, not a burst) ----
+{
+  // every 60m -> grace = clamp(30m, 2m, 2h) = 30m. Make it late by 3h (way past grace).
+  const now = T0 + 10 * 3600000;
+  const jobs = [job({ schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(now - 3 * 3600000) })];
+  const r = cron.planTick(jobs, now);
+  A.eq(r.fire.length, 0, 'stale-beyond-grace does NOT fire (no backlog burst)');
+  A.eq(r.skipped.length, 1, 'stale job is skipped...');
+  A.eq(r.skipped[0].reason, 'caught-up', '...with reason caught-up');
+  A.eq(r.next.length, 1, 'stale job is fast-forwarded');
+  A.ok(r.next[0].nextAt > now, 'fast-forwarded to a FUTURE occurrence');
+  A.ok(r.next[0].nextAt - now <= 3600000, 'fast-forwarded to the NEXT future occurrence (within one period)');
+}
+
+// ---- 9. WITHIN-GRACE catch-up: late but inside grace fires exactly once ----
+{
+  const now = T0 + 5 * 3600000;
+  const jobs = [job({ schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(now - 10 * 60000) })]; // 10m late < 30m grace
+  const r = cron.planTick(jobs, now);
+  A.eq(r.fire.length, 1, 'within-grace lateness fires the catch-up');
+  A.eq(r.skipped.length, 0, 'within-grace is not a skip');
+}
+
+// ---- 10. one-shots: fire once when due, then permanently ineligible; disabled jobs ignored ----
+{
+  const now = T0 + 1000;
+  const oneShot = job({ id: 'o1', schedule: { kind: 'once', runAt: T0 }, nextRunAt: cron._internals.iso(T0) });
+  let r = cron.planTick([oneShot], now);
+  A.eq(r.fire.length, 1, 'a due one-shot fires');
+  A.eq(r.next.length, 0, 'a one-shot does not recur (no next)');
+
+  // host marks it run (lastRunAt set) -> never fires again, even though nextRunAt is still in the past
+  oneShot.lastRunAt = cron._internals.iso(now);
+  r = cron.planTick([oneShot], now + 10000);
+  A.eq(r.fire.length, 0, 'a one-shot with lastRunAt set is permanently ineligible');
+
+  const disabled = job({ id: 'd1', enabled: false, schedule: { kind: 'interval', minutes: 1 }, nextRunAt: cron._internals.iso(T0 - 1000) });
+  A.eq(cron.planTick([disabled], now).fire.length, 0, 'disabled job is ignored (never fires)');
+}
+
+// ---- 11. dueJobs is the no-backlog pair (fire + advanced) over planTick ----
+{
+  const now = T0 + 3600000;
+  const jobs = [job({ schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(now) })];
+  const d = cron.dueJobs(jobs, now);
+  A.eq(d.fire.length, 1, 'dueJobs exposes the fire set');
+  A.eq(d.advanced.length, 1, 'dueJobs exposes the advanced next-fire (paired with fire)');
+  A.eq(d.advanced[0].nextAt, now + 3600000, 'advanced = now + period');
+}
+
+// ---- 12. DETERMINISM: same (jobs, now) -> byte-identical plan (the replay-test invariant) ----
+{
+  const mk = () => [
+    job({ id: 'a', schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(T0) }),
+    job({ id: 'b', schedule: { kind: 'interval', minutes: 30 }, nextRunAt: cron._internals.iso(T0 - 5 * 3600000) }),
+    job({ id: 'c', schedule: { kind: 'once', runAt: T0 - 1000 }, nextRunAt: cron._internals.iso(T0 - 1000) })
+  ];
+  const a = cron.planTick(mk(), T0);
+  const b = cron.planTick(mk(), T0);
+  A.eq(JSON.stringify(a), JSON.stringify(b), 'planTick is byte-identical for identical inputs');
+}
+
+// ---- 13. clock-INJECTED end to end: advance the fake clock and watch a job become due ----
+{
+  const c = makeClock(T0);
+  const sched = cron.parseSchedule('every 1h', c.now());
+  const j = job({ schedule: sched, nextRunAt: cron._internals.iso(cron.nextFireAt(sched, null, c.now())) });
+  A.eq(cron.planTick([j], c.now()).fire.length, 0, 'not due at t0');
+  c.advance(3600000);
+  A.eq(cron.planTick([j], c.now()).fire.length, 1, 'due after advancing the injected clock one period');
+}
+
+A.report('cron');

@@ -1,0 +1,212 @@
+/* node test/channels.adapter.test.js — the generic transport-agnostic channel adapter (C1).
+   A FAKE transport (no network) drives the inbound poll/normalize/admission/onInbound pipeline, the
+   offset advance, the DM/allowlist admission gate, the bounded send-retry, and clean disconnect.
+   Pure + deterministic: ts comes from an injected fixed clock; an injected instant `sleep`. */
+'use strict';
+const A = require('./_assert.js');
+const { makeChannelAdapter, normalizeAllowed } = require('../sidecar/channels/adapter.js');
+
+const tick = () => new Promise(r => setTimeout(r, 0));   // let the detached poll loop make progress
+const CLOCK = { now: () => 1000 };
+
+// A fake transport: getUpdates drains a queue of raw-update batches; once empty it PARKS (mimicking a
+// long-poll waiting for traffic) until disconnect aborts it. send() records calls and replays scripted results.
+function fakeTransport(batches, sendResults) {
+  const queue = batches.slice();
+  const pollOffsets = [];      // the offset passed to each getUpdates call (proves advancement)
+  const sends = [];            // every send() call
+  const results = (sendResults || []).slice();
+  return {
+    pollOffsets, sends,
+    getUpdates({ offset, signal }) {
+      pollOffsets.push(offset);
+      if (queue.length) return Promise.resolve(queue.shift());
+      return new Promise((resolve, reject) => {
+        if (signal && signal.aborted) return reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        signal && signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+      });
+    },
+    send(chatId, text, opts) {
+      sends.push({ chatId, text, opts });
+      const r = results.length ? results.shift() : { ok: true, messageId: 'm' + sends.length };
+      return Promise.resolve(r);
+    }
+  };
+}
+
+// Telegram-ish normalize: an update either carries a message or a callback; a non-text update -> null (ignored).
+function normalize(ru) {
+  if (ru.cb) return { offset: ru.id, callback: { chatId: ru.cb.chat, data: ru.cb.data, callbackId: ru.cb.id } };
+  if (ru.text == null) return { offset: ru.id, message: null };   // e.g. a sticker/photo update -> drop, just advance offset
+  return { offset: ru.id, message: { chatId: ru.chat, chatType: ru.type, userId: ru.user, userName: ru.uname, text: ru.text, messageId: ru.mid } };
+}
+
+async function run() {
+  // ---- A. a DM update flows through to onInbound, fully normalized, ts from the injected clock ----
+  {
+    const inbox = [];
+    const t = fakeTransport([[{ id: 10, chat: 'c1', type: 'dm', user: 'u1', uname: 'andro', text: 'hello', mid: '500' }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', maxMessageLength: 4096,
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 4 && !inbox.length; i++) await tick();
+    A.eq(inbox.length, 1, 'one DM delivered to onInbound');
+    A.eq(inbox[0], { channel: 'telegram', chatId: 'c1', chatType: 'dm', userId: 'u1', userName: 'andro', text: 'hello', messageId: '500', ts: 1000 }, 'InboundMessage normalized with ts from clock');
+    await a.disconnect();
+  }
+
+  // ---- B. admission: DM always allowed; a group only if whitelisted ----
+  {
+    const inbox = [];
+    const t = fakeTransport([[
+      { id: 1, chat: 'g_open', type: 'group', user: 'u', text: 'no', mid: '1' },     // group, NOT allowed -> dropped
+      { id: 2, chat: 'g_ok', type: 'group', user: 'u', text: 'yes', mid: '2' },      // group, allowed -> passes
+      { id: 3, chat: 'dm1', type: 'dm', user: 'u', text: 'dm', mid: '3' }            // dm -> always passes
+    ]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', allowedChats: ['g_ok'],
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 5 && inbox.length < 2; i++) await tick();
+    A.eq(inbox.map(m => m.chatId), ['g_ok', 'dm1'], 'unlisted group dropped; listed group + dm admitted');
+    await a.disconnect();
+  }
+
+  // ---- C. offset advances past processed update ids (each update fetched once) ----
+  {
+    const inbox = [];
+    const t = fakeTransport([
+      [{ id: 10, chat: 'c', type: 'dm', user: 'u', text: 'a', mid: '1' }],
+      [{ id: 11, chat: 'c', type: 'dm', user: 'u', text: 'b', mid: '2' }]
+    ]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 6 && inbox.length < 2; i++) await tick();
+    A.eq(inbox.length, 2, 'both batches processed');
+    A.eq(t.pollOffsets[0], 0, 'first getUpdates uses initial offset 0');
+    A.eq(t.pollOffsets[1], 11, 'second getUpdates advanced to lastId(10)+1');
+    A.ok(t.pollOffsets[2] === 12, 'third getUpdates advanced to lastId(11)+1');
+    await a.disconnect();
+  }
+
+  // ---- D. send sends ONE message; a retryable failure gets exactly one resend; non-retryable does not ----
+  {
+    const t = fakeTransport([[]], [
+      { ok: true, messageId: 'ok1' },
+      { ok: false, retryable: true }, { ok: true, messageId: 'ok2' },   // resend succeeds
+      { ok: false, retryable: false }                                    // hard fail: no resend
+    ]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: () => {}, clock: CLOCK, sleep: () => Promise.resolve() });
+    const r1 = await a.send('c', 'hi');
+    A.eq(t.sends.length, 1, 'ok send -> one transport call');
+    A.eq(r1.messageId, 'ok1', 'returns the transport result');
+    const r2 = await a.send('c', 'retry me');
+    A.eq(t.sends.length, 3, 'retryable failure -> exactly one bounded resend (total 2 more calls)');
+    A.eq(r2.messageId, 'ok2', 'resend result returned');
+    const r3 = await a.send('c', 'hard fail');
+    A.eq(t.sends.length, 4, 'non-retryable failure -> no resend');
+    A.eq(r3.ok, false, 'hard failure surfaced');
+  }
+
+  // ---- E. disconnect stops the loop; no further onInbound; the parked getUpdates aborts cleanly ----
+  {
+    const inbox = [];
+    const t = fakeTransport([[{ id: 1, chat: 'c', type: 'dm', user: 'u', text: 'x', mid: '1' }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 4 && !inbox.length; i++) await tick();
+    A.eq(inbox.length, 1, 'one message before disconnect');
+    await a.disconnect();
+    const before = inbox.length;
+    await tick(); await tick();
+    A.eq(inbox.length, before, 'no further onInbound after disconnect');
+  }
+
+  // ---- F. a non-text update (normalize -> message:null) is ignored but still advances the offset ----
+  {
+    const inbox = [];
+    const t = fakeTransport([[{ id: 7, chat: 'c', type: 'dm', user: 'u' /* no text -> sticker/photo */ }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    await tick(); await tick();
+    A.eq(inbox.length, 0, 'non-text update produced no inbound');
+    A.ok(t.pollOffsets.length >= 2 && t.pollOffsets[1] === 8, 'offset still advanced past the ignored update (7+1)');
+    await a.disconnect();
+  }
+
+  // ---- G. callback updates route to onCallback (C6 consent-button plumbing) ----
+  {
+    const cbs = [];
+    const t = fakeTransport([[{ id: 9, cb: { chat: 'c', data: 'approve:p1', id: 'q1' } }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: () => {}, onCallback: c => cbs.push(c), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 4 && !cbs.length; i++) await tick();
+    A.eq(cbs.length, 1, 'callback routed to onCallback');
+    A.eq(cbs[0], { chatId: 'c', data: 'approve:p1', callbackId: 'q1' }, 'callback payload normalized');
+    await a.disconnect();
+  }
+
+  // ---- H. a fatal poll error stops the loop with state:'error'; a transient error backs off then recovers ----
+  {
+    const statuses = [];
+    let calls = 0;
+    const transport = {
+      getUpdates({ signal }) {
+        calls++;
+        if (calls === 1) return Promise.reject(new Error('network blip'));            // transient -> backoff
+        if (calls === 2) return Promise.resolve([{ id: 1, chat: 'c', type: 'dm', user: 'u', text: 'hi', mid: '1' }]);
+        return new Promise((resolve, reject) => {                                     // then park (abortable)
+          if (signal && signal.aborted) return reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          signal && signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+        });
+      },
+      send() { return Promise.resolve({ ok: true }); }
+    };
+    const inbox = [];
+    const a = makeChannelAdapter({ transport, normalize, name: 'telegram',
+      onInbound: m => inbox.push(m), onStatus: s => statuses.push(s), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && !inbox.length; i++) await tick();
+    A.eq(inbox.length, 1, 'recovered after a transient error + backoff');
+    A.ok(statuses.some(s => s.state === 'down'), 'emitted state:down on the transient error');
+    A.ok(statuses.some(s => s.state === 'up'), 'emitted state:up on recovery');
+    await a.disconnect();
+  }
+
+  {
+    const fatal = Object.assign(new Error('401 unauthorized'), { fatal: true });
+    const statuses = [];
+    const transport = { getUpdates() { return Promise.reject(fatal); }, send() { return Promise.resolve({ ok: true }); } };
+    const a = makeChannelAdapter({ transport, normalize, name: 'telegram',
+      onInbound: () => {}, onStatus: s => statuses.push(s), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 4 && !statuses.length; i++) await tick();
+    A.ok(statuses.some(s => s.state === 'error'), 'fatal poll error -> state:error and the loop stops');
+    await a.disconnect();
+  }
+
+  // ---- I. surface invariants + pure helpers ----
+  {
+    A.eq([...normalizeAllowed(['a', 1, 'a'])].sort(), ['1', 'a'], 'normalizeAllowed stringifies + dedupes');
+    const t = fakeTransport([[]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', maxMessageLength: 4096,
+      onInbound: () => {}, clock: CLOCK, sleep: () => Promise.resolve() });
+    A.eq(a.name, 'telegram', 'name exposed');
+    A.eq(a.MAX_MESSAGE_LENGTH, 4096, 'MAX_MESSAGE_LENGTH exposed');
+    A.eq(a._internals.admitted({ chatType: 'dm', chatId: 'x' }), true, 'admitted: dm always true');
+    A.eq(a._internals.admitted({ chatType: 'group', chatId: 'x' }), false, 'admitted: unlisted group false');
+    await a.disconnect();
+    // bad construction throws
+    A.throws(() => makeChannelAdapter({ normalize, clock: CLOCK }), 'missing transport throws');
+    A.throws(() => makeChannelAdapter({ transport: t, clock: CLOCK }), 'missing normalize throws');
+    A.throws(() => makeChannelAdapter({ transport: t, normalize }), 'missing clock throws');
+  }
+
+  A.report('channels.adapter.test');
+}
+
+run().catch(e => { console.log('FAIL: run() threw — ' + (e && e.stack || e)); process.exit(1); });

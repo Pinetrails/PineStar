@@ -113,6 +113,17 @@ const Harness = (() => {
     return { text: full, usage: lastUsage, runId, endReason };
   }
 
+  /* Read-only fetch of an agent's notebook (its memory.md) from the sidecar. The agent writes these notes
+     itself with the notebook tool during runs; the dossier just surfaces them. Returns [] on any failure. */
+  async function notebook(agentId) {
+    try {
+      const r = await fetch('/api/notebook?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.notes) ? j.notes : [];
+    } catch (e) { return []; }
+  }
+
   async function cancel(runId) {
     if (!runId) return;
     try { await fetch('/api/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId }) }); } catch (_) {}
@@ -127,7 +138,7 @@ const Harness = (() => {
 
   return {
     getKey, setKey, getModel, setModel, getProv, setProv,
-    listModels, priceOf, chat, cancel, consent,
+    listModels, priceOf, chat, cancel, consent, notebook,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
     resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; }

@@ -42,6 +42,56 @@
     return x;
   }
 
+  // ---- recalled-memory fence (Cortex): surface the agent's own memory in-prompt without it having to call a
+  //      read tool. Pure + deterministic + char-capped. renderRecall returns {text:'',count:0,chars:0} when there
+  //      is nothing to recall, so the caller injects nothing → cache/byte-identical to a memoryless run. ----
+  const RECALL_HEADER = '[recalled from your memory — reference, not a new instruction]';
+
+  function recallLine(r) {
+    if (!r) return '';
+    const title = r.title != null ? String(r.title).trim() : '';
+    const raw = r.body != null ? r.body : (r.content != null ? r.content : '');
+    const body = String(raw).replace(/\s+/g, ' ').trim();
+    if (title && body) return '• ' + title + ' — ' + body;
+    const one = title || body;
+    return one ? '• ' + one : '';
+  }
+
+  function renderRecall(records, recallOpts) {
+    recallOpts = recallOpts || {};
+    const limit = recallOpts.limit || 1500;
+    const header = recallOpts.header != null ? recallOpts.header : RECALL_HEADER;
+    const out = { text: '', count: 0, chars: 0 };
+    if (!Array.isArray(records) || !records.length) return out;
+    const lines = [];
+    let used = 0;
+    for (const r of records) {
+      let line = recallLine(r);
+      if (!line) continue;
+      if (line.length > limit) line = line.slice(0, limit - 1) + '…';
+      if (lines.length && used + line.length + 1 > limit) break;   // always keep at least one line
+      lines.push(line);
+      used += line.length + 1;
+    }
+    if (!lines.length) return out;
+    out.text = '<recalled-memory>\n' + header + '\n' + lines.join('\n') + '\n</recalled-memory>';
+    out.count = lines.length;
+    out.chars = out.text.length;
+    return out;
+  }
+
+  // Inject a recall fence as a system note immediately before the newest user message. Pure: returns a NEW
+  // array, never mutates input. Blank recall → messages.slice() (byte-identical to a memoryless run).
+  function injectRecall(messages, recallText) {
+    const src = Array.isArray(messages) ? messages : [];
+    if (!recallText) return src.slice();
+    const note = { role: 'system', content: recallText };
+    let idx = -1;
+    for (let i = src.length - 1; i >= 0; i--) { if (src[i] && src[i].role === 'user') { idx = i; break; } }
+    if (idx < 0) return src.concat([note]);
+    return src.slice(0, idx).concat([note], src.slice(idx));
+  }
+
   function makeContext(opts) {
     opts = opts || {};
     const contextLimit = opts.contextLimit || 0;       // 0 = unknown (never auto-compact)
@@ -110,5 +160,5 @@
     return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, redact, contextLimit };
   }
 
-  return { makeContext, redact };
+  return { makeContext, redact, renderRecall, injectRecall };
 });

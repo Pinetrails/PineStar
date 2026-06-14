@@ -1,7 +1,7 @@
 /* node test/context.test.js — pure context-transform tests (zero IO). */
 'use strict';
 const A = require('./_assert.js');
-const { makeContext, redact } = require('../sidecar/context.js');
+const { makeContext, redact, renderRecall, injectRecall } = require('../sidecar/context.js');
 
 const ctx = makeContext({ contextLimit: 1000, compactAt: 0.65, keepTail: 2 });
 const m = (role, content) => ({ role, content });
@@ -73,5 +73,55 @@ const red = redact(obj);
 A.ok(JSON.stringify(red).indexOf('sk-or-v1-') < 0 && JSON.stringify(red).indexOf('sk-ant-') < 0, 'recursive redaction');
 A.eq(red.list[1], 'safe', 'safe values preserved in arrays');
 A.ok(JSON.stringify(obj).indexOf('sk-or-v1-') >= 0, 'redact did NOT mutate the input object');
+
+// ---- renderRecall (Cortex M-mem.1): pure, char-capped recalled-memory fence ----
+A.eq(renderRecall([], { limit: 1500 }), { text: '', count: 0, chars: 0 }, 'no records -> empty recall');
+A.eq(renderRecall(null), { text: '', count: 0, chars: 0 }, 'null records -> empty recall (tolerant)');
+
+const recNotes = [
+  { id: 'note_2', title: 'User tz', body: 'PST', ts: 2 },
+  { id: 'note_1', title: 'API base', body: 'openrouter.ai/api/v1', ts: 1 }
+];
+const rec = renderRecall(recNotes, { limit: 1500 });
+A.eq(rec.count, 2, 'both notes rendered');
+A.eq(rec.text.indexOf('<recalled-memory>'), 0, 'fence opens with the tag');
+A.ok(/<\/recalled-memory>$/.test(rec.text), 'fence closes with the tag');
+A.ok(rec.text.indexOf('User tz — PST') >= 0, 'title — body line present');
+A.eq(rec.chars, rec.text.length, 'chars matches rendered length');
+A.eq(renderRecall(recNotes, { limit: 1500 }), rec, 'renderRecall deterministic');
+
+// content-only and title-only both render; fully-blank records are skipped
+const mixed = renderRecall([{ content: 'just a body' }, { title: 'just a title' }, { title: '', body: '' }], { limit: 1500 });
+A.eq(mixed.count, 2, 'blank record skipped; body-only + title-only kept');
+A.ok(mixed.text.indexOf('• just a body') >= 0, 'content field used when no body');
+
+// char cap bounds how many records are included (but always keeps at least one)
+const many = [];
+for (let i = 0; i < 50; i++) many.push({ title: 'n' + i, body: 'x'.repeat(80) });
+const capped = renderRecall(many, { limit: 300 });
+A.ok(capped.count >= 1 && capped.count <= 5, 'char cap limits how many records are included');
+A.ok(capped.count < many.length, 'not all records included under a tight budget');
+
+// ---- injectRecall: splice the fence before the newest user message; pure ----
+const convo = [m('system', 'SYS'), m('user', 'u1'), m('assistant', 'a1'), m('user', 'u2 newest')];
+const injected = injectRecall(convo, rec.text);
+A.eq(injected.length, 5, 'one extra message injected');
+A.eq(injected[4], convo[3], 'fence lands immediately before the newest user message');
+A.ok(injected[3].role === 'system' && injected[3].content.indexOf('<recalled-memory>') === 0, 'injected message is the fence');
+A.eq(injected[0], convo[0], 'leading system prefix untouched');
+
+// empty recall -> a fresh COPY equal to input (byte-identical run), not the same reference, no mutation
+const noop = injectRecall(convo, '');
+A.eq(JSON.stringify(noop), JSON.stringify(convo), 'empty recall -> byte-identical messages');
+A.ok(noop !== convo, 'returns a fresh array, not the same reference');
+const beforeInject = JSON.stringify(convo);
+injectRecall(convo, rec.text);
+A.eq(JSON.stringify(convo), beforeInject, 'injectRecall does not mutate input');
+
+// no user message -> fence appended at the end (edge case, never crashes)
+const noUser = [m('system', 'SYS'), m('assistant', 'a1')];
+const appended = injectRecall(noUser, rec.text);
+A.eq(appended.length, 3, 'fence appended when there is no user message');
+A.eq(appended[2].role, 'system', 'appended fence is a system note');
 
 A.report('context.test');

@@ -27,15 +27,49 @@ const App = (() => {
     }
   }
 
-  function buildSystemPrompt(name, purpose) {
-    let p = 'You are ' + name + ', an AI agent operating from a workstation aboard the SKYNET station — a room '
+  /* ---------- agent config DOCS (the markdown files the Commander writes) ----------
+     The dossier surfaces three editable .md files — identity.md / purpose.md / operating-manual.md —
+     and composeSystemPrompt() assembles them into the EXACT system prompt sent to the model each run.
+     They are not decoration: editing one in the dossier re-shapes the live agent (see applyAgentConfig). */
+  function baseIdentity(name) {
+    return 'You are ' + name + ', an AI agent operating from a workstation aboard the SKYNET station — a room '
       + 'your Commander (the user) is building for you. Address the user as "Commander" and keep a spark of personality. '
       + 'When the Commander assigns you a TASK you have REAL tools at your workstation — you can search and read the '
       + 'live web and read/write files in your workspace — so actually do the work and report what you find; never '
       + 'claim you lack web or file access. When you are just chatting, keep replies short (1-3 sentences). Stay in character.';
-    if (purpose) p += ' Your Commander has given you your purpose: "' + purpose + '". Let it define what you care about and how you act.';
-    else p += ' You have just awakened and do not yet know your purpose — you are eager for your Commander to give you one.';
+  }
+  // seed the editable docs from the agent's existing fields the first time (back-compat for saves with no docs).
+  function agentDocs(a) {
+    if (!a.docs || typeof a.docs !== 'object') a.docs = {};
+    if (typeof a.docs.identity !== 'string') a.docs.identity = baseIdentity(a.name);
+    if (typeof a.docs.purpose !== 'string') a.docs.purpose = a.purpose || '';
+    if (typeof a.docs.manual !== 'string') a.docs.manual = '';
+    return a.docs;
+  }
+  // assemble the real system prompt from the config docs: identity + mission + standing orders.
+  function composeSystemPrompt(a) {
+    const d = agentDocs(a);
+    let p = (d.identity || '').trim() || baseIdentity(a.name);
+    const purpose = (d.purpose || '').trim();
+    if (purpose) p += '\n\nYOUR PURPOSE (purpose.md):\n' + purpose;
+    else p += '\n\nYou have not yet been given a purpose — you are eager for your Commander to assign one.';
+    const manual = (d.manual || '').trim();
+    if (manual) p += '\n\nSTANDING ORDERS (operating-manual.md) — always follow these:\n' + manual;
     return p;
+  }
+  // the dossier calls this when the Commander edits & saves a config file: fold the patch into the
+  // docs, recompose the live system prompt, hand it to the running chat, and persist.
+  function applyAgentConfig(patch) {
+    if (!agent) return;
+    const d = agentDocs(agent);
+    if (patch && typeof patch === 'object') {
+      if (typeof patch.identity === 'string') d.identity = patch.identity;
+      if (typeof patch.purpose === 'string') { d.purpose = patch.purpose; agent.purpose = patch.purpose.trim(); }
+      if (typeof patch.manual === 'string') d.manual = patch.manual;
+    }
+    agent.systemPrompt = composeSystemPrompt(agent);
+    if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
+    persist();
   }
 
   function persist() {
@@ -101,7 +135,9 @@ const App = (() => {
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
-    agent = { id: 'agent', name, color: pickedColor, model, purpose: null, systemPrompt: buildSystemPrompt(name, null), createdAt: Date.now() };
+    agent = { id: 'agent', name, color: pickedColor, model, purpose: null, createdAt: Date.now() };
+    agentDocs(agent);                              // seed identity.md / purpose.md / operating-manual.md
+    agent.systemPrompt = composeSystemPrompt(agent);
     Harness.resetTotals();
     Workstreams.reset();   // a fresh General stream for the new agent
     enterGame({ awaitingPurpose: true, wake: true });
@@ -111,7 +147,8 @@ const App = (() => {
   /* ---------- resume ---------- */
   function resumeInto(saved) {
     agent = saved.agent;
-    if (!agent.systemPrompt) agent.systemPrompt = buildSystemPrompt(agent.name, agent.purpose);
+    agentDocs(agent);                              // seed config docs for older saves that predate them
+    agent.systemPrompt = composeSystemPrompt(agent);
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
@@ -131,7 +168,11 @@ const App = (() => {
     if (opts.wake) { World.wakeIn(); SFX.level(); }
     World.start();
     if (typeof StationUI !== 'undefined') {
-      StationUI.enter([agent], { totals: () => Harness.totals(), activity: () => (World.getActivity ? World.getActivity() : 'idle') });
+      StationUI.enter([agent], {
+        totals: () => Harness.totals(),
+        activity: () => (World.getActivity ? World.getActivity() : 'idle'),
+        config: { apply: applyAgentConfig }   // dossier edits to identity/purpose/manual .md re-shape the live prompt
+      });
       StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');
     }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), awaitingPurpose: opts.awaitingPurpose, onPurpose: onPurpose, onTurn: persist });
@@ -148,7 +189,8 @@ const App = (() => {
 
   function onPurpose(text) {
     agent.purpose = text;
-    agent.systemPrompt = buildSystemPrompt(agent.name, text);
+    agentDocs(agent).purpose = text;               // the interview answer IS purpose.md
+    agent.systemPrompt = composeSystemPrompt(agent);
     Chat.setSystem(agent.systemPrompt);
     // persisted by the turn's onTurn() once the agent replies
   }
@@ -168,6 +210,7 @@ const App = (() => {
         '</li>';
     }).join('');
     ul.querySelectorAll('.ws-row').forEach(li => li.onclick = () => switchWorkstream(li.dataset.id));
+    if (typeof StationUI !== 'undefined' && StationUI.refreshBoard) StationUI.refreshBoard();
   }
   // no switching mid-run: one #chat-log streams the active run, so a swap would render into the wrong stream.
   function switchWorkstream(id) {
