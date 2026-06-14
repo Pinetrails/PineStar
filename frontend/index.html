@@ -34,7 +34,7 @@
 <section id="screen-connect" class="screen">
   <div class="panel connect-panel">
     <h2>▮ CREATE YOUR AGENT</h2>
-    <p class="muted lead">Bring your own key. It's stored locally on this machine and used to call the model directly — nothing is sent anywhere else. <span class="dim">(In the shipped desktop build this moves behind the sidecar + OS keychain.)</span></p>
+    <p class="muted lead">Bring your own key. It's stored locally and sent to the SKYNET sidecar running on this machine (127.0.0.1), which calls your chosen model. When you assign a <b>task</b>, the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its own workspace — so task queries and URLs reach those services. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
 
     <label>PROVIDER</label>
     <div class="provider-row">
@@ -103,6 +103,7 @@
 <script src="js/assets.js"></script>
 <script src="app/harness.js"></script>
 <script src="app/world.js"></script>
+<script src="app/classify.js"></script>
 <script src="app/chat.js"></script>
 <script src="app/save.js"></script>
 <script src="app/app.js"></script>

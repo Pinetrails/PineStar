@@ -124,6 +124,15 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .cmsg .caret { color: var(--ph); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* tool-activity lines: the agent's real work, shown step by step */
+.cmsg.tool { font-size: 14px; }
+.cmsg.tool .who { display: none; }
+.cmsg.tool .body { color: var(--ph-dim); letter-spacing: 0.3px; }
+.cmsg.tool.err .body { color: var(--bad); }
+.cmsg.deliverable .body { color: var(--ph); }
+.deliverable-link { color: var(--gold); text-decoration: underline; cursor: pointer; }
+.deliverable-link:hover { color: var(--ph-bright); }
+
 #chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
 #chat-inputrow .prompt { color: var(--ph); }
 #chat-input { border: none; background: transparent; padding: 4px 2px; }

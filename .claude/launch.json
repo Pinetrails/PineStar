@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "skynet",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "http-server", "frontend", "-c-1", "-p", "8231"],
-      "port": 8231,
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["sidecar/index.js"],
+      "port": 8787,
       "autoPort": false
     }
   ]

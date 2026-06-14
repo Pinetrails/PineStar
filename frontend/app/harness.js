@@ -48,77 +48,76 @@ const Harness = (() => {
     }
   }
 
-  /* stream a chat completion. messages = [{role,content}]; system prepended.
-     onToken(deltaText) fires per chunk; onUsage(usage) fires when usage arrives. */
-  async function chat({ system, messages, onToken, onUsage, signal }) {
+  /* Run an agent turn/task through the LOCAL SIDECAR (node sidecar/index.js), which holds the
+     real agent loop + tools (web, files). We POST the request and read the response body as a
+     stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
+     Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
+     onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, agentId, isTask, signal }) {
     const key = getKey(), model = getModel();
     if (!key) throw new Error('no API key set');
     if (!model) throw new Error('no model selected');
 
-    const body = {
-      model,
-      messages: system ? [{ role: 'system', content: system }, ...messages] : messages,
-      stream: true,
-      usage: { include: true }   // OpenRouter returns token + cost usage in-stream
-    };
-
-    const res = await fetch(OR + '/chat/completions', {
-      method: 'POST', signal,
-      headers: {
-        'Authorization': 'Bearer ' + key,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': location.origin,
-        'X-Title': 'SKYNET'
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!res.ok || !res.body) {
-      let detail = res.statusText;
-      try { const j = await res.json(); detail = (j.error && j.error.message) || JSON.stringify(j); }
-      catch (_) { try { detail = (await res.text()).slice(0, 300); } catch (__) {} }
-      throw new Error('HTTP ' + res.status + ' — ' + detail);
+    let res;
+    try {
+      res = await fetch('/api/run', {
+        method: 'POST', signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, model, system, messages, agentId: agentId || 'agent', isTask: !!isTask })
+      });
+    } catch (e) {
+      throw new Error('cannot reach the SKYNET sidecar — start it with `npm start` (node sidecar/index.js)');
     }
+    if (!res.ok || !res.body) throw new Error('sidecar HTTP ' + res.status);
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '', lastUsage = null;
+    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null;
 
-    while (true) {
+    for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl).trim();
+        const s = buf.slice(0, nl).trim();
         buf = buf.slice(nl + 1);
-        if (!line || line.startsWith(':')) continue;   // keepalive comment
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') continue;
-        let j; try { j = JSON.parse(data); } catch (_) { continue; }
-        const delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-        if (delta) { full += delta; onToken && onToken(delta); }
-        if (j.usage) lastUsage = j.usage;
+        if (!s) continue;
+        let ev; try { ev = JSON.parse(s); } catch (_) { continue; }
+        const name = ev.name, payload = ev.payload || {};
+        if (typeof U !== 'undefined' && U.bus) { try { U.bus.emit(name, payload); } catch (_) {} }
+        switch (name) {
+          case 'agent.run.start': runId = payload.runId; onRunId && onRunId(runId); break;
+          case 'agent.token': full += payload.delta; onToken && onToken(payload.delta); break;
+          case 'agent.tool_call': onToolCall && onToolCall(payload); break;
+          case 'agent.tool_result': onToolResult && onToolResult(payload); break;
+          case 'deliverable': onDeliverable && onDeliverable(payload); break;
+          case 'agent.cost':
+            totals.tokens += (payload.tokensIn || 0) + (payload.tokensOut || 0);
+            totals.cost += payload.usd || 0;
+            lastUsage = { total_tokens: (payload.tokensIn || 0) + (payload.tokensOut || 0), cost: payload.usd };
+            onUsage && onUsage(lastUsage); break;
+          case 'capdenied': errMsg = errMsg || ('no ' + (payload.need || 'capability') + ' — ' + (payload.reason || '')); break;
+          case 'agent.run.error': errMsg = payload.message; break;
+          case 'agent.run.end': endReason = payload.reason; break;
+        }
       }
     }
-
     totals.calls++;
-    if (lastUsage) {
-      totals.tokens += lastUsage.total_tokens || ((lastUsage.prompt_tokens || 0) + (lastUsage.completion_tokens || 0));
-      if (lastUsage.cost != null) totals.cost += lastUsage.cost;
-      else { // fall back to catalog pricing if the provider didn't return a dollar cost
-        const p = priceOf(model);
-        if (p) totals.cost += ((lastUsage.prompt_tokens || 0) * p.in + (lastUsage.completion_tokens || 0) * p.out) / 1e6;
-      }
-      onUsage && onUsage(lastUsage);
-    }
-    return { text: full, usage: lastUsage };
+    // surface the error to the caller (do NOT swallow it just because some text streamed first) —
+    // a network/fetch failure still throws below; this is for in-band run errors / capdenied.
+    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason };
+    return { text: full, usage: lastUsage, runId, endReason };
+  }
+
+  async function cancel(runId) {
+    if (!runId) return;
+    try { await fetch('/api/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId }) }); } catch (_) {}
   }
 
   return {
     getKey, setKey, getModel, setModel, getProv, setProv,
-    listModels, priceOf, chat,
+    listModels, priceOf, chat, cancel,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
     resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; }

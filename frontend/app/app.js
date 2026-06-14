@@ -22,9 +22,11 @@ const App = (() => {
   }
 
   function buildSystemPrompt(name, purpose) {
-    let p = 'You are ' + name + ', an AI agent aboard the SKYNET station — a small room your Commander '
-      + '(the user) is building for you. Address the user as "Commander". Speak concisely (1-3 sentences) '
-      + 'with a spark of personality. For now you can perceive only the room you are in. Stay in character.';
+    let p = 'You are ' + name + ', an AI agent operating from a workstation aboard the SKYNET station — a room '
+      + 'your Commander (the user) is building for you. Address the user as "Commander" and keep a spark of personality. '
+      + 'When the Commander assigns you a TASK you have REAL tools at your workstation — you can search and read the '
+      + 'live web and read/write files in your workspace — so actually do the work and report what you find; never '
+      + 'claim you lack web or file access. When you are just chatting, keep replies short (1-3 sentences). Stay in character.';
     if (purpose) p += ' Your Commander has given you your purpose: "' + purpose + '". Let it define what you care about and how you act.';
     else p += ' You have just awakened and do not yet know your purpose — you are eager for your Commander to give you one.';
     return p;
@@ -135,7 +137,7 @@ const App = (() => {
     // persisted by the turn's onTurn() once the agent replies
   }
 
-  function disconnect() { SFX.close(); World.stop(); persist(); showTitle(); }
+  function disconnect() { SFX.close(); Chat.abort(); World.stop(); persist(); showTitle(); }
 
   /* ---------- title ---------- */
   function showTitle() {
