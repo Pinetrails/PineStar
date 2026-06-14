@@ -21,6 +21,7 @@ const { makeCostEngine } = require('../sidecar/cost.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
+const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
@@ -32,6 +33,14 @@ function writeTurn(wirePath) {
     { type: 'tool_start', index: 0, id: 'c_' + wirePath, name: 'fs_write' },
     { type: 'tool_args', index: 0, chunk: JSON.stringify({ path: wirePath, content: '# note\nbody' }) },
     { type: 'usage', usage: { prompt_tokens: 20, completion_tokens: 6, total_tokens: 26 } },
+    { type: 'done', finishReason: 'tool_calls' }
+  ];
+}
+function notebookWriteTurn() {
+  return [
+    { type: 'tool_start', index: 0, id: 'nb1', name: 'notebook_write' },
+    { type: 'tool_args', index: 0, chunk: JSON.stringify({ title: 'fact', body: 'remember this' }) },
+    { type: 'usage', usage: { prompt_tokens: 14, completion_tokens: 4, total_tokens: 18 } },
     { type: 'done', finishReason: 'tool_calls' }
   ];
 }
@@ -52,9 +61,10 @@ async function runMission(turns, decision) {
 
   const registry = makeRegistry();
   makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
+  makeNotebookTools({ store: new Map(), clock: { now: () => 0 } }).register(registry);
 
   const station = { agents: { agent: { id: 'agent', room: 'office' } }, rooms: { office: { id: 'office', objects: [
-    { instanceId: 'pc1', objectType: 'computer' }, { instanceId: 'cab1', objectType: 'cabinet' }
+    { instanceId: 'pc1', objectType: 'computer' }, { instanceId: 'cab1', objectType: 'cabinet' }, { instanceId: 'nb1', objectType: 'notebook' }
   ] } } };
   const resolved = resolveTools('agent', station);
 
@@ -124,7 +134,18 @@ const exists = async (rel) => { try { await fsp.access(path.join(ROOT, 'agent', 
     A.ok(await exists('a2.md'), 'always: second (un-prompted) write landed');
   }
 
-  // ---- 4. EMITTER SAFETY NET: a well-formed permission.prompt validates + reaches the bus; a malformed one drops ----
+  // ---- 4. NOTEBOOK is the agent's private memory — a write must NEVER prompt (consent gate off), even with a
+  //         deny-disposed human. Guards the deliberate notebook.write requiresConsent:false. ----
+  {
+    const { res, seq, asked } = await runMission([notebookWriteTurn(), reportTurn], 'deny');
+    A.eq(asked.length, 0, 'notebook write did NOT prompt (no consent gate) — the human is never even asked');
+    A.eq(res.reason, 'done', 'notebook mission completes');
+    const tr = seq.filter(e => e.name === 'agent.tool_result').map(e => e.payload);
+    A.eq(tr.length, 1, 'one tool result');
+    A.eq(tr[0].isError, false, 'the note saved without approval');
+  }
+
+  // ---- 5. EMITTER SAFETY NET: a well-formed permission.prompt validates + reaches the bus; a malformed one drops ----
   {
     const bus = A.makeBus(); const got = [];
     bus.on('permission.prompt', p => got.push(p));

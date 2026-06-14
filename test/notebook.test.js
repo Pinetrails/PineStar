@@ -35,16 +35,12 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     let r = await reg.dispatch(dcall('notebook.read', {}), { agentId: 'ag' });
     A.ok(r.content.indexOf('empty') >= 0, 'empty notebook reads empty');
 
-    // write requires consent: denial persists nothing
-    r = await reg.dispatch(dcall('notebook.write', { title: 'T', body: 'B' }), { agentId: 'ag', consent: async () => ({ allow: false }) });
-    A.eq(r.isError, true, 'denied write -> isError');
-    A.eq((store.get('notebook:ag') || []).length, 0, 'denied write persisted nothing');
-
-    // allow -> persist with injected timestamp
-    r = await reg.dispatch(dcall('notebook.write', { title: 'first', body: 'hello' }), { agentId: 'ag', consent: async () => ({ allow: true }) });
-    A.eq(r.ok, true, 'allowed write ok');
+    // notebook is the agent's OWN sandboxed memory — writes do NOT require consent (unlike fs.* / the user's
+    // files): the dispatch consent gate is simply not consulted, so a deny-everything consent fn is ignored.
+    r = await reg.dispatch(dcall('notebook.write', { title: 'first', body: 'hello' }), { agentId: 'ag', consent: async () => ({ allow: false }) });
+    A.eq(r.ok, true, 'notebook write needs no consent — a denying consent fn is not even consulted');
     const notes = store.get('notebook:ag');
-    A.eq(notes.length, 1, 'one note persisted');
+    A.eq(notes.length, 1, 'one note persisted with the injected timestamp');
     A.eq(notes[0].title, 'first', 'note title'); A.eq(notes[0].ts, 1000, 'note ts from injected clock');
 
     // read back + query miss
