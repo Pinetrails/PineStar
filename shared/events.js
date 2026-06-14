@@ -54,6 +54,10 @@
     // ---- memory / context (Cortex) ----
     // a recalled-memory fence was injected into this run's prompt (count = records included; chars = fence size).
     'memory.recall': obj(['agentId', 'runId', 'count'], { agentId: str, runId: str, count: int, chars: int }),
+    // a memory record was committed — after the user approved a proposal, or via notebook.write. scope optional.
+    'memory.write': obj(['agentId', 'runId', 'id', 'kind'], { agentId: str, runId: str, id: str, kind: str, scope: str }),
+    // a memory record was removed — user pressed forget, or a proposal was discarded.
+    'memory.forget': obj(['agentId', 'id'], { agentId: str, id: str, reason: str }),
 
     // ---- capability / permission ----
     'capdenied': obj(['agentId', 'need', 'reason'], { agentId: str, need: str, reason: str }),

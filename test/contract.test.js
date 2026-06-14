@@ -28,6 +28,8 @@ const cases = [
   ['budget.threshold', { scope: 'run', usd: 1, cap: 5 }, { scope: 'weekly', usd: 1, cap: 5 }],
   ['permission.response', { promptId: 'p', decision: 'once' }, { promptId: 'p', decision: 'maybe' }],
   ['memory.recall', { agentId: 'a', runId: 'r', count: 3, chars: 120 }, { agentId: 'a', runId: 'r', count: 'three' }],
+  ['memory.write', { agentId: 'a', runId: 'r', id: 'mem_1', kind: 'note', scope: 'global' }, { agentId: 'a', runId: 'r', id: 'mem_1' }],
+  ['memory.forget', { agentId: 'a', id: 'mem_1', reason: 'discarded' }, { agentId: 'a', reason: 'discarded' }],
   ['channel.inbound', { channel: 'telegram', chatId: 'c', agentId: 'tg_c', userId: 'u', kind: 'dm' }, { channel: 'telegram', chatId: 'c', agentId: 'tg_c', kind: 'sms' }],
   ['channel.delivery', { channel: 'telegram', chatId: 'c', runId: 'r', ok: true, chunks: 2, reason: 'done' }, { channel: 'telegram', chatId: 'c', runId: 'r', ok: 'yes' }],
   ['channel.connect', { channel: 'telegram', state: 'up' }, { channel: 'telegram', state: 'flapping' }],
