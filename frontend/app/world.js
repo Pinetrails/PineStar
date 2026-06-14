@@ -327,6 +327,62 @@ const World = (() => {
   const stars = [];
   const footOf = (tx, ty) => ({ x: tx * T + T / 2, y: ty * T + T - 1 });
 
+  /* ---------- camera: wheel-zoom + drag-pan ----------
+     cam.cx,cy = the WORLD point parked at the canvas centre; cam.zoom multiplies
+     the fit-to-frame scale. zoom 1 / centre == the classic letterboxed home view. */
+  const MAXZOOM = 5;
+  const cam = { zoom: 1, cx: W / 2, cy: H / 2 };
+  const drag = { on: false, x: 0, y: 0 };
+  let camBound = false;
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+  const fitScale = () => Math.min(cv.width / W, cv.height / H);
+  // world point -> device-px transform implied by the camera
+  function camXform() {
+    const s = fitScale() * cam.zoom;
+    return { s, tx: cv.width / 2 - s * cam.cx, ty: cv.height / 2 - s * cam.cy };
+  }
+  // keep the room from being zoomed/panned out of frame
+  function clampCam() {
+    if (!cv) return;
+    cam.zoom = clamp(cam.zoom, 1, MAXZOOM);
+    const s = fitScale() * cam.zoom;
+    const hw = cv.width / 2 / s, hh = cv.height / 2 / s; // half view, in world units
+    cam.cx = W <= 2 * hw ? W / 2 : clamp(cam.cx, hw, W - hw);
+    cam.cy = H <= 2 * hh ? H / 2 : clamp(cam.cy, hh, H - hh);
+  }
+  // pointer (client) -> canvas device px (canvas is DPR-scaled and CSS-stretched)
+  function evToCanvas(ev) {
+    const r = cv.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * (cv.width / r.width), y: (ev.clientY - r.top) * (cv.height / r.height) };
+  }
+  function onWheel(ev) {
+    ev.preventDefault();
+    const c = evToCanvas(ev), x = camXform();
+    const wx = (c.x - x.tx) / x.s, wy = (c.y - x.ty) / x.s; // world point under cursor
+    cam.zoom = clamp(cam.zoom * Math.exp(-ev.deltaY * 0.0015), 1, MAXZOOM);
+    const s2 = fitScale() * cam.zoom;
+    cam.cx = wx + (cv.width / 2 - c.x) / s2;   // hold that world point under the cursor
+    cam.cy = wy + (cv.height / 2 - c.y) / s2;
+    clampCam();
+  }
+  function onDown(ev) {
+    if (ev.button !== 0) return;
+    const c = evToCanvas(ev);
+    drag.on = true; drag.x = c.x; drag.y = c.y;
+    if (cv) cv.style.cursor = 'grabbing';
+  }
+  function onMove(ev) {
+    if (!drag.on) return;
+    const c = evToCanvas(ev), s = fitScale() * cam.zoom;
+    cam.cx -= (c.x - drag.x) / s; cam.cy -= (c.y - drag.y) / s;
+    drag.x = c.x; drag.y = c.y;
+    clampCam();
+  }
+  function onUp() {
+    if (!drag.on) return;
+    drag.on = false; if (cv) cv.style.cursor = 'grab';
+  }
+
   function init(canvas) {
     cv = canvas; ctx = cv.getContext('2d');
     if (!baseCv) buildBase();
@@ -334,6 +390,14 @@ const World = (() => {
     resize();
     try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => resize()); ro.observe(cv.parentElement || cv); } catch (e) {}
     window.addEventListener('resize', resize);
+    if (!camBound) {
+      camBound = true;
+      cv.addEventListener('wheel', onWheel, { passive: false });
+      cv.addEventListener('mousedown', onDown);
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+    cv.style.cursor = 'grab';
   }
 
   function spawn(a) {
@@ -365,6 +429,7 @@ const World = (() => {
     const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth || cv.parentElement.clientWidth, h = cv.clientHeight || cv.parentElement.clientHeight;
     cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr));
+    clampCam(); // re-validate the camera against the new canvas size
   }
 
   function tick(dt, now) {
@@ -401,9 +466,8 @@ const World = (() => {
       ctx.fillRect((s.x * cv.width + now / 1000 * 8) % cv.width, s.y * cv.height, s.r, s.r);
     }
 
-    const scale = Math.min(cv.width / W, cv.height / H);
-    const ox = (cv.width - W * scale) / 2, oy = (cv.height - H * scale) / 2;
-    ctx.setTransform(scale, 0, 0, scale, ox, oy); ctx.imageSmoothingEnabled = false;
+    const x = camXform();
+    ctx.setTransform(x.s, 0, 0, x.s, x.tx, x.ty); ctx.imageSmoothingEnabled = false;
 
     ctx.drawImage(baseCv, 0, 0);
 

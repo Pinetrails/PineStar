@@ -6,19 +6,6 @@ const RENDER = (() => {
   let cv, ctx, now = 0;
   let hoverAgent = null, hoverProp = null, selAgent = null;
   let onClick = null; // cb(propKey, agentId, screenPos)
-
-  /* ---------- camera (zoom + pan) ----------
-     World is drawn in 0..W,0..H; the camera maps world -> canvas pixels via
-     setTransform(scale,0,0,scale,panX,panY). scale=1 / pan=0 == the classic
-     fit-to-frame view, so the default look is unchanged. */
-  const MIN_SCALE = 1, MAX_SCALE = 5;
-  let scale = 1, panX = 0, panY = 0;
-  const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
-  function clampPan() {
-    // never let the station be dragged off-screen: keep [0,cv.width] inside [0,W*scale]
-    panX = clamp(panX, cv.width - W * scale, 0);
-    panY = clamp(panY, cv.height - H * scale, 0);
-  }
   const floaters = []; // {x,y,txt,born,col}
   U.bus.on('sale', d => {
     const amt = d && d.amt != null ? d.amt : d;
@@ -802,13 +789,6 @@ const RENDER = (() => {
     SPR.setCtx(ctx); // reclaim ctx (portrait renders borrow it)
     SPR.setNow(tMs);
 
-    // clear the whole canvas under identity, then look through the camera —
-    // this paints black into the margins exposed when zoomed/panned
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#040302';
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.setTransform(scale, 0, 0, scale, panX, panY);
-
     // space
     ctx.fillStyle = '#040302';
     ctx.fillRect(0, 0, W, H);
@@ -893,15 +873,9 @@ const RENDER = (() => {
   }
 
   /* ---------- input ---------- */
-  // canvas-pixel coords from a pointer event (canvas is CSS-stretched to its box)
-  function toCanvas(ev) {
-    const r = cv.getBoundingClientRect();
-    return { x: (ev.clientX - r.left) * (cv.width / r.width), y: (ev.clientY - r.top) * (cv.height / r.height) };
-  }
-  // world coords: undo the camera transform on the canvas-pixel position
   function toLocal(ev) {
-    const c = toCanvas(ev);
-    return { x: (c.x - panX) / scale, y: (c.y - panY) / scale };
+    const r = cv.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * (W / r.width), y: (ev.clientY - r.top) * (H / r.height) };
   }
   function init(canvas, clickCb) {
     cv = canvas; onClick = clickCb;
@@ -909,39 +883,15 @@ const RENDER = (() => {
     ctx = cv.getContext('2d');
     ctx.imageSmoothingEnabled = false;
     SPR.setCtx(ctx);
-    cv.style.cursor = 'grab';
-
-    let dragging = false, dragSX = 0, dragSY = 0, dragMoved = false;
     cv.addEventListener('mousemove', ev => {
-      if (dragging) {
-        const c = toCanvas(ev);
-        panX += c.x - dragSX; panY += c.y - dragSY;
-        dragSX = c.x; dragSY = c.y;
-        dragMoved = true; // any movement while held counts as a drag, not a click
-        clampPan();
-        cv.style.cursor = 'grabbing';
-        return;
-      }
       const p = toLocal(ev);
       const b = WORLD.bodyAt(p.x, p.y);
       hoverAgent = b ? b.id : null;
       hoverProp = b ? null : MAP.propAt(Math.floor(p.x / T), Math.floor(p.y / T));
-      cv.style.cursor = (hoverAgent || hoverProp) ? 'pointer' : 'grab';
+      cv.style.cursor = (hoverAgent || hoverProp) ? 'pointer' : 'default';
     });
     cv.addEventListener('mouseleave', () => { hoverAgent = null; hoverProp = null; });
-
-    // drag to pan — track movement so a real drag doesn't fire click-to-select
-    cv.addEventListener('mousedown', ev => {
-      if (ev.button !== 0) return;
-      const c = toCanvas(ev);
-      dragging = true; dragMoved = false; dragSX = c.x; dragSY = c.y;
-    });
-    window.addEventListener('mouseup', () => {
-      if (dragging) { dragging = false; cv.style.cursor = 'grab'; }
-    });
-
     cv.addEventListener('click', ev => {
-      if (dragMoved) { dragMoved = false; return; } // released after a pan — not a select
       const p = toLocal(ev);
       const b = WORLD.bodyAt(p.x, p.y);
       if (b) { selAgent = b.id; onClick && onClick(null, b.id, null); return; }
@@ -949,16 +899,6 @@ const RENDER = (() => {
       if (f) { selAgent = null; onClick && onClick(f.pw, null, { x: ev.clientX, y: ev.clientY }); }
       else selAgent = null;
     });
-
-    // wheel to zoom, centered on the cursor so the point under it stays put
-    cv.addEventListener('wheel', ev => {
-      ev.preventDefault();
-      const c = toCanvas(ev);
-      const wx = (c.x - panX) / scale, wy = (c.y - panY) / scale; // world point under cursor
-      scale = clamp(scale * Math.exp(-ev.deltaY * 0.0015), MIN_SCALE, MAX_SCALE);
-      panX = c.x - wx * scale; panY = c.y - wy * scale;
-      clampPan();
-    }, { passive: false });
   }
 
   return { init, frame, set selAgent(v) { selAgent = v; } };
