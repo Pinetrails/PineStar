@@ -9,6 +9,8 @@ const App = (() => {
   let agent = null;           // {id,name,color,model,purpose,systemPrompt,createdAt}
   let resumingSaved = null;   // a save awaiting a re-entered key
   let pickedColor = SUITS[0];
+  let station = null;         // the canonical WorldModel station (the builder's source of truth)
+  let pendingStationDoc = null; // a saved station doc awaiting enterGame()
 
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -74,7 +76,7 @@ const App = (() => {
 
   function persist() {
     if (!agent) return;
-    Save.write(Object.assign({ agent, usage: Harness.totals() }, Workstreams.serialize()));
+    Save.write(Object.assign({ agent, usage: Harness.totals(), station: station ? station.serialize() : undefined }, Workstreams.serialize()));
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
@@ -140,6 +142,7 @@ const App = (() => {
     agent.systemPrompt = composeSystemPrompt(agent);
     Harness.resetTotals();
     Workstreams.reset();   // a fresh General stream for the new agent
+    pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     enterGame({ awaitingPurpose: true, wake: true });
     persist();   // so a refresh mid-onboarding resumes to the purpose step
   }
@@ -152,6 +155,7 @@ const App = (() => {
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
+    pendingStationDoc = saved.station || null;   // restore the built station (if any)
     enterGame({ awaitingPurpose: !agent.purpose, wake: false });
     persist();   // lock any v1->v2 migration to disk now (don't re-migrate every load)
   }
@@ -167,6 +171,14 @@ const App = (() => {
     World.spawn(agent);
     if (opts.wake) { World.wakeIn(); SFX.level(); }
     World.start();
+    // the canonical station the builder edits — restored from the save, or a fresh starter room
+    station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
+    pendingStationDoc = null;
+    if (typeof Build !== 'undefined') {
+      Build.init({ getStation: () => station, persist: persist, world: World });
+      const bbBuild = el('bb-build');
+      if (bbBuild) bbBuild.onclick = () => { SFX.click(); Build.toggle(); };
+    }
     if (typeof StationUI !== 'undefined') {
       StationUI.enter([agent], {
         totals: () => Harness.totals(),
