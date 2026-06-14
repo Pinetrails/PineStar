@@ -136,5 +136,25 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(calls, 0, 'aborted before the request was even sent');
   }
 
+  // K. classifier-driven retry replaces the old status whitelist: a 402 (billing) fails fast; a 408
+  //    (timeout) now retries — the genuinely new behavior (408 was fail-fast under the hardcoded set).
+  {
+    let n = 0;
+    const billing = async () => { n++; return new Response('{"error":{"message":"insufficient credits"}}', { status: 402 }); };
+    let threw = false;
+    try { await collect(makeOpenRouterProvider({ fetch: billing, key: 'k' }), { model: 'm', messages: [] }); } catch (e) { threw = /402/.test(e.message); }
+    A.ok(threw && n === 1, 'a 402 billing error fails fast (no paid retry burned)');
+
+    let m = 0;
+    const timeout = async () => {
+      m++;
+      if (m === 1) return new Response('{"error":{"message":"request timeout"}}', { status: 408 });
+      return new Response(['data: ' + JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }), 'data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const evs = await collect(makeOpenRouterProvider({ fetch: timeout, key: 'k' }), { model: 'm', messages: [] });
+    A.eq(m, 2, 'a 408 timeout now retries (classifier-derived; was fail-fast under the status whitelist)');
+    A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'ok', 'after the 408 retry it streams normally');
+  }
+
   A.report('provider.openrouter.test');
 })();

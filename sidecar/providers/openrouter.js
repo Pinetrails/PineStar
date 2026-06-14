@@ -9,12 +9,13 @@
    (incl. real billed `cost`) is always returned in the final chunk. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'));
-  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.openrouter = factory(root.SK.providers.provider); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'));
+  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.openrouter = factory(root.SK.providers.provider, root.SK.providers.errorClass); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass) {
   'use strict';
 
   const normalizeFinish = provider.normalizeFinish;
+  const classifyApiError = errorClass.classifyApiError;
   const BASE = 'https://openrouter.ai/api/v1';
 
   // The OpenRouter /models catalog is key-independent, so it is shared across every per-run
@@ -29,8 +30,7 @@
     return !!((signal && signal.aborted) || (e && e.name === 'AbortError'));
   }
 
-  const TRANSIENT_STATUS = { 429: 1, 500: 1, 502: 1, 503: 1, 504: 1 };   // worth a retry
-  const RETRY_DELAYS = [400, 1200];                                       // up to 2 retries (no jitter -> determinism)
+  const RETRY_DELAYS = [400, 1200];   // up to 2 retries (no jitter -> determinism); retryability comes from classifyApiError
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
   function delay(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -181,8 +181,10 @@
         try { const j = await res.json(); detail = (j && j.error && j.error.message) || JSON.stringify(j); }
         catch (e) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
         const err = new Error('openrouter http ' + res.status + ' — ' + detail);
-        err.status = res.status; err.transient = !!TRANSIENT_STATUS[res.status];
-        if (err.transient && attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
+        err.status = res.status;
+        const cls = classifyApiError(err, { model: body.model });   // single source of truth for retryability
+        err.transient = cls.retryable;                              // keep the field other code reads, now classifier-derived
+        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
         throw err;
       }
     }
