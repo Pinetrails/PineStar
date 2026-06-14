@@ -335,15 +335,15 @@ const StationUI = (() => {
      The agent's real tools come from the OBJECTS at its workstation (object = capability — see
      sidecar/capability/registry.js). This is an honest readout of that grant set: the real tool
      ids, and which actions pause for a one-click approval in COMMS (the P1.5 consent broker —
-     every world-changing call asks the Commander before it runs). Kept in sync with the registry
-     by hand; TERMINAL (shell.exec) is the registry's own declared "M5 next". */
+     writes to the user's files ask the Commander before they run; the private notebook does not).
+     Kept in sync with the registry by hand; TERMINAL (shell.exec) is the registry's own "M5 next". */
   const SKILLS = [
     { icon: '🖥️', name: 'COMPUTE',     tools: 'model.chat',               on: true },
     { icon: '🔎', name: 'WEB SEARCH',  tools: 'web_search',               on: true },
     { icon: '📥', name: 'WEB FETCH',   tools: 'web_fetch',                on: true },
     { icon: '📂', name: 'READ FILES',  tools: 'fs.read · fs.list',        on: true },
     { icon: '✏️', name: 'WRITE FILES', tools: 'fs.write · append · edit', on: true, consent: true },
-    { icon: '🧠', name: 'MEMORY',      tools: 'notebook.read · write',    on: true, consent: true },
+    { icon: '🧠', name: 'MEMORY',      tools: 'notebook.read · write',    on: true },
     { icon: '⌨️', name: 'TERMINAL',    tools: 'shell.exec',               on: false }
   ];
   function buildSkills(body) {
@@ -360,9 +360,9 @@ const StationUI = (() => {
       '</div>' +
       '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
       '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory), ' +
-      'so the room layout IS the permission system. Read-only skills run freely; anything that <b>changes the ' +
-      'world</b> (writing a file, saving a note) pauses for a one-click approval in COMMS before it runs. ' +
-      'TERMINAL (sandboxed shell) is the next capability coming online.</p>';
+      'so the room layout IS the permission system. Read-only skills run freely, and the agent\'s own private ' +
+      '<b>notebook memory</b> saves without asking; only <b>writing to your files</b> pauses for a one-click ' +
+      'approval in COMMS before it runs. TERMINAL (sandboxed shell) is the next capability coming online.</p>';
   }
 
   /* ============== TASKS — the project-board view of WORKSTREAMS (card ≡ workstream) ==============
@@ -672,13 +672,69 @@ const StationUI = (() => {
     d.classList.add('flash'); setTimeout(() => d.classList.remove('flash'), 600);
   }
 
+  /* ============== MESSAGING — connect a Telegram bot so the Commander can DM the agent ==============
+     The bot token comes from Telegram's @BotFather; the agent answers DMs using this app's current
+     OpenRouter key + model (handed to the sidecar on connect and persisted there for headless polling). */
+  function buildMessaging(body) {
+    body.innerHTML =
+      '<h4 class="ms-h">TELEGRAM</h4>' +
+      '<div id="tg-status" class="set-row">checking…</div>' +
+      '<p class="set-about">DM your agent from Telegram. ' +
+        '<b>1.</b> In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → copy the token it gives you. ' +
+        '<b>2.</b> Paste it below and connect. Your agent answers DMs using this app\'s current OpenRouter key + model, ' +
+        'with its own memory + workspace per chat. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span></p>' +
+      '<label class="ms-h" for="tg-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
+      '<input id="tg-token" type="password" class="key-input" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">' +
+      '<div class="set-save"><button class="bb sm" id="tg-connect">⏼ CONNECT</button> ' +
+      '<button class="bb sm danger" id="tg-disconnect">⏏ DISCONNECT</button></div>' +
+      '<div id="tg-msg" class="msg"></div>';
+
+    const statusEl = body.querySelector('#tg-status');
+    const msgEl = body.querySelector('#tg-msg');
+    function paint(st) {
+      const conn = st && st.connected;
+      const color = conn ? '#8f8' : (st && st.configured ? '#fc6' : '#999');
+      statusEl.style.color = color;
+      statusEl.textContent = conn ? ('● CONNECTED — polling' + (st.state && st.state !== 'up' ? ' (' + st.state + ')' : ''))
+        : (st && st.configured) ? ('○ configured but offline' + (st.detail ? ' — ' + st.detail : ''))
+        : '○ not connected';
+    }
+    async function refresh() {
+      try { const r = await fetch('/api/channels/telegram/status'); paint(await r.json()); }
+      catch (_) { statusEl.style.color = '#999'; statusEl.textContent = '○ sidecar offline'; }
+    }
+    body.querySelector('#tg-connect').addEventListener('click', async () => {
+      const token = (body.querySelector('#tg-token').value || '').trim();
+      if (!token) { sfx('bad'); msgEl.textContent = 'paste your @BotFather token first'; return; }
+      const key = (typeof Harness !== 'undefined' && Harness.getKey()) || '';
+      const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
+      if (!key || !model) { sfx('bad'); msgEl.textContent = 'connect your agent (API key + model) on the title screen first'; return; }
+      msgEl.textContent = 'connecting…';
+      try {
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
+        else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }
+      } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
+      refresh();
+    });
+    body.querySelector('#tg-disconnect').addEventListener('click', async () => {
+      try { await fetch('/api/channels/telegram/disconnect', { method: 'POST' }); msgEl.textContent = 'disconnected'; sfx('click'); }
+      catch (_) { msgEl.textContent = 'could not reach the sidecar'; }
+      refresh();
+    });
+    body.querySelector('#tg-token').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); body.querySelector('#tg-connect').click(); } });
+    refresh();
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
-    agents:   ['AGENT DOSSIER',          buildAgents,   { w: '560px' }],
-    skills:   ['SKILLS & CAPABILITIES',  buildSkills,   { w: '520px' }],
-    tasks:    ['TASK BOARD',             buildTasks,    { w: '760px' }],
-    settings: ['SETTINGS',               buildSettings, { w: '500px' }],
-    notifs:   ['NOTIFICATIONS',          buildNotifs,   { w: '460px' }]
+    agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
+    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '520px' }],
+    tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
+    settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
+    messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
+    notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
   };
 
   function init() {
