@@ -23,6 +23,7 @@ const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact } = require('./context.js');
+const { makeConsentBroker } = require('./permissions.js');
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
@@ -64,6 +65,35 @@ const notebookStore = {
     } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
   }
 };
+
+/* ---- consent (P1.5): the four-tier broker's host-side state ----
+   Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
+   prompt-injection escalation path (mirrors Hermes' import-frozen YOLO flag). */
+const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_FULL_ACCESS || '').trim());
+// permanent allowlist of danger-class keys (capability:scope) the user has blessed forever. Lives BESIDE
+// the notebook store (sibling of the fs jail) so the agent's own fs.* tools can neither read nor rewrite it.
+const ALLOWLIST_FILE = path.join(WORKSPACES, 'permissions.allow.json');
+function loadAllowlist() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(ALLOWLIST_FILE, 'utf8'));
+    return new Set((raw && Array.isArray(raw.allow) ? raw.allow : []).filter(x => typeof x === 'string'));
+  } catch (e) { return new Set(); }   // missing or corrupt -> nothing pre-allowed (fail-closed)
+}
+function persistAllowlist(nextAllow) {   // throws on failure -> the broker degrades the grant to a deny
+  const tmp = ALLOWLIST_FILE + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ version: 1, allow: nextAllow }));
+  fs.renameSync(tmp, ALLOWLIST_FILE);    // atomic replace
+}
+const grantsPermanent = loadAllowlist();   // process-wide, restored from disk
+const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
+// unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
+// resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
+function hardlineFloor(call) {
+  const p = call && call.args && call.args.path;
+  if (typeof p === 'string' && (/(^|[\\/])\.env(\.|$)/i.test(p) || /(^|[\\/])\.git([\\/]|$)/i.test(p)))
+    return 'writing ' + p + ' is blocked by the protected-file floor';
+  return null;
+}
 
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
@@ -131,7 +161,15 @@ async function handleRun(req, res) {
       { instanceId: 'nb1', objectType: 'notebook' }
     ] } } };
     const resolved = resolveTools(agentId, station);
-    const capCtx = makeCapCtx(resolved, { emit, consent: async () => ({ allow: true }), timeoutMs: CAPS.toolTimeoutMs });
+    // P1.5: the real informed-consent broker replaces the allow-all stub. Autonomous surface ⇒ default-deny
+    // on any ungranted mutation (silence is not consent); read-only/non-network auto-allows; the hardline
+    // floor sits below Full Access. The live diegetic prompt (interactive surface) arrives with the WS bridge.
+    const consent = makeConsentBroker({
+      bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: runId,
+      grantsSession, grantsPermanent, persist: persistAllowlist,
+      networkOf: (call) => !!resolved.networkCaps[call.name], surface: 'autonomous'
+    });
+    const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs });
 
     // ---- provider + cost ----
     const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, key });
@@ -199,6 +237,7 @@ async function handleRun(req, res) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    grantsSession.delete(runId);     // drop this run's session-scoped grants
     try { res.end(); } catch (_) {}
   }
 }

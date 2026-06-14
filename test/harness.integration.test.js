@@ -23,6 +23,7 @@ const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
 const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
+const { makeConsentBroker } = require('../sidecar/permissions.js');
 
 const ROOT = path.join(os.tmpdir(), 'skynet-itest-' + process.pid);
 
@@ -76,7 +77,12 @@ const fixture = {
     { instanceId: 'cab1', objectType: 'cabinet' }, { instanceId: 'nb1', objectType: 'notebook' }
   ] } } };
   const resolved = resolveTools('agent', station);
-  const capCtx = makeCapCtx(resolved, { emit, consent: async () => ({ allow: true }), timeoutMs: 5000 });
+  // P1.5: drive the mission through the REAL consent broker, not an allow-all stub. The mission's single
+  // write (report.md) is sanctioned up-front via a session grant on its danger class (cabinet:write), so it
+  // flows through the cache tier — proving a granted mutation is allowed without resorting to Full Access.
+  const consent = makeConsentBroker({ sessionKey: 'itest', surface: 'autonomous' });
+  consent.grant('session', { name: 'fs.write' }, registry.get('fs.write'));
+  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
   const EXPECTED = ['web_search', 'web_fetch', 'fs.read', 'fs.write', 'fs.list', 'fs.append', 'fs.edit', 'notebook.read', 'notebook.write'];
@@ -122,6 +128,16 @@ const fixture = {
   A.ok(/answer is 42/.test(onDisk), 'the report was REALLY written into the agent workspace on disk');
 
   A.ok(seq.filter(e => e.name === 'agent.token').some(e => /Saved report\.md/.test(e.payload.delta)), 'the final answer streamed to the user');
+
+  // ---- P1.5 default-deny: an UN-granted mutation under an autonomous surface is denied, body never runs ----
+  // (a fresh broker with no grant — the same fs.write the model is fully capable of calling otherwise.)
+  const denyCtx = makeCapCtx(resolved, { emit, consent: makeConsentBroker({ sessionKey: 'deny', surface: 'autonomous' }), timeoutMs: 5000 });
+  const denied = await dispatch({ name: 'fs_write', args: { path: 'unsanctioned.md', content: 'nope' } }, denyCtx);
+  A.eq(denied.isError, true, 'un-granted mutation default-denies');
+  A.eq(denied.summary, 'denied', 'denial surfaced as a consent denial, not a crash');
+  A.ok(/silence is not consent/.test(denied.content), 'denial carries the silence-is-not-consent reason');
+  let wrote = true; try { await fsp.access(path.join(ROOT, 'agent', 'unsanctioned.md')); } catch (e) { wrote = false; }
+  A.ok(!wrote, 'the denied write never touched disk (no action on deny)');
 
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('harness.integration.test');
