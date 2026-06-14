@@ -24,6 +24,10 @@ const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall } = require('./context.js');
 const { makeConsentBroker } = require('./permissions.js');
+const { makeTelegramAdapter } = require('./channels/telegram.js');
+const { makeChannelStore } = require('./channels/store.js');
+const { makeChannelHub } = require('./channels/hub.js');
+const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
@@ -106,11 +110,84 @@ function hardlineFloor(call) {
   return null;
 }
 
+/* ---- messaging channels (C5): a Telegram bot the Commander connects from the in-app Messaging tab.
+   The bot token + the OpenRouter key/model persist in a PROTECTED sibling file (outside the fs jail, never on
+   the bus, never returned by /status) so polling survives a restart with no browser open. The adapter is the
+   lone ambient-I/O edge (injected globalThis.fetch); the hub drives the SAME runOnce host with
+   surface:'autonomous' (a headless chat has no browser to answer a consent prompt — ungranted writes
+   default-deny and the run continues). Opt-in: nothing starts unless the Commander connects (or env is set). */
+const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the SKYNET station, reachable over Telegram. '
+  + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
+  + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
+  + 'report what you actually found; never claim you cannot act.';
+const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
+const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
+function loadChannelSecrets() {
+  try { const raw = JSON.parse(fs.readFileSync(CHANNEL_SECRETS_FILE, 'utf8')); return (raw && typeof raw === 'object') ? raw : {}; }
+  catch (e) { return {}; }   // missing/corrupt -> nothing configured
+}
+function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
+  try {
+    fs.mkdirSync(CHANNELS_DIR, { recursive: true });
+    const tmp = CHANNEL_SECRETS_FILE + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(obj));
+    fs.renameSync(tmp, CHANNEL_SECRETS_FILE);
+  } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
+}
+let channelSecrets = loadChannelSecrets();
+const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() } });
+// channel.* telemetry: validated + redacted, logged to the sidecar console for now (a future SSE bridge can
+// forward it to the station HUD). The bot token / OR key are NEVER placed on a payload — nothing to leak here.
+const chanBus = { emit: (name, payload) => { try { console.log('[channel]', name, JSON.stringify(payload)); } catch (_) {} } };
+const chanEmitValidated = makeEmitter(chanBus, e => console.warn('[channel-event]', e.kind, e.event, (e.errors || []).join(';')));
+const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redact(payload)); } catch (_) {} };
+
+let telegram = null;                                    // { adapter, hub } when connected, else null
+let telegramStatus = { connected: false, state: 'down', detail: '' };
+
+function startTelegram(token, key, model) {
+  stopTelegram();
+  channelSecrets = Object.assign({}, channelSecrets, { telegram: { token: token, key: key, model: model, enabled: true } });
+  saveChannelSecrets(channelSecrets);
+  let adapterRef = null;
+  const hub = makeChannelHub({
+    channel: 'telegram', runOnce: runOnce, store: channelStore,
+    send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    secrets: () => { const t = (channelSecrets && channelSecrets.telegram) || {}; return { key: t.key, model: t.model }; },
+    persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+    newId: () => crypto.randomUUID(), maxMessageLength: 4096
+  });
+  const adapter = makeTelegramAdapter({
+    fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
+    onInbound: (m) => { hub.onInbound(m).catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e)); },
+    onCallback: hub.onCallback,
+    onStatus: (s) => {
+      const state = (s && s.state) || 'down';
+      // a fatal (401/invalid-token) error stops the poll loop -> mark disconnected so /status is honest.
+      telegramStatus = { connected: state === 'error' ? false : !!telegram, state: state, detail: (s && s.detail) || '' };
+      hub.onStatus(s);
+    }
+  });
+  adapterRef = adapter;
+  telegram = { adapter: adapter, hub: hub };
+  telegramStatus = { connected: true, state: 'up', detail: '' };
+  adapter.connect();
+  console.log('  · telegram channel connected');
+}
+function stopTelegram() {
+  if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
+  telegram = null;
+  telegramStatus = { connected: false, state: 'down', detail: '' };
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
+  if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
@@ -129,6 +206,15 @@ server.listen(PORT, '127.0.0.1', () => {
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
+  // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
+  try {
+    const t = (channelSecrets && channelSecrets.telegram) || {};
+    const envTok = String(process.env.SKYNET_TELEGRAM_TOKEN || '').trim();
+    const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
+    const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+    if (t.enabled && t.token && t.key && t.model) { startTelegram(t.token, t.key, t.model); console.log('  · telegram auto-started from saved config'); }
+    else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel); console.log('  · telegram auto-started from env'); }
+  } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
 });
 
 /* ------------------------------- the run endpoint ------------------------------- */
@@ -183,110 +269,12 @@ async function handleRun(req, res) {
 
   // all setup + the run live inside ONE try, so any failure becomes a clean agent.run.error + closed stream
   try {
-    // ---- tools (registered fresh per run; cheap) ----
-    const registry = makeRegistry();
-    makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
-    makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
-    makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() } }).register(registry);
-    throttleSearch(registry);
-
-    // ---- capabilities: the office workstation. Each placed object IS a capability grant (CAP_REGISTRY):
-    //      computer = compute gate · dish = web · cabinet = files · notebook = memory. resolveTools
-    //      projects them into the agent's tools FRESH per run — no host-side toolset policy. ----
-    const station = { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: [
-      { instanceId: 'pc1', objectType: 'computer' },
-      { instanceId: 'dish1', objectType: 'dish' },
-      { instanceId: 'cab1', objectType: 'cabinet' },
-      { instanceId: 'nb1', objectType: 'notebook' }
-    ] } } };
-    const resolved = resolveTools(agentId, station);
-    // P1.5: the real informed-consent broker replaces the allow-all stub. Autonomous surface ⇒ default-deny
-    // on any ungranted mutation (silence is not consent); read-only/non-network auto-allows; the hardline
-    // floor sits below Full Access. The live diegetic prompt (interactive surface) arrives with the WS bridge.
-    const consent = makeConsentBroker({
-      bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: runId,
-      grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
-      networkOf: (call) => !!resolved.networkCaps[call.name],
-      // directive runs = the Commander is watching, so an ungranted mutation asks live (promptConsent) instead of
-      // default-denying. Scheduled/autonomous runs (no one watching) would pass surface:'autonomous' to fail closed.
+    // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
+    // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
+    await runOnce({
+      key, model, system, messages, agentId, isTask,
+      emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent
-    });
-    const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs });
-
-    // ---- provider + cost ----
-    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, key });
-    const cost = makeCostEngine({ priceOf: provider.priceOf });
-
-    // a task needs tool calls — refuse a model we KNOW can't call tools, up front, with an actionable message
-    // (supportsTools returns null when the catalog is cold, so this never false-refuses a real model).
-    if (isTask && provider.supportsTools(model) === false) {
-      emit('agent.run.start', { agentId, runId, trigger: 'directive', model });
-      emit('agent.run.error', { agentId, runId, transient: false, message: 'The model "' + model + '" does not support tool calls, so it can\'t run tasks. Pick a tool-capable model (e.g. anthropic/claude-sonnet-4.6 or openai/gpt-4o) on the connect screen.' });
-      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
-      return;
-    }
-
-    // ---- per-call tool list (task runs only). Internal names are dotted (fs.write, notebook.read) but the
-    //      OpenAI/OpenRouter function-name grammar is ^[A-Za-z0-9_-]{1,64}$ — a '.' 400s the request — so on
-    //      the WIRE we expose underscored names and translate the model's call name back before dispatch. ----
-    const toolDefs = isTask ? registry.wireFormat(registry.list(new Set(resolved.tools))) : [];
-    const fromWire = new Map();
-    for (const d of toolDefs) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
-
-    const seen = new Map();
-    let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
-    const dispatch = async (c, ctx) => {
-      if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
-      const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
-      const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
-      if (n > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical call blocked (loop guard)', summary: 'loop-break' };
-      let r = await registry.dispatch(c, ctx);
-      // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
-      if (r && typeof r.content === 'string' && r.content.length) {
-        if (toolBytes >= CAPS.maxToolBytes) {
-          r = Object.assign({}, r, { content: '[tool output omitted — this run hit its ' + Math.round(CAPS.maxToolBytes / 1000) + 'KB tool-output budget; finish with what you already have]' });
-        } else if (toolBytes + r.content.length > CAPS.maxToolBytes) {
-          r = Object.assign({}, r, { content: r.content.slice(0, CAPS.maxToolBytes - toolBytes) + '\n…[truncated — per-run tool-output budget reached]' });
-        }
-        toolBytes += r.content.length;
-      }
-      return r;
-    };
-
-    // tell the model, plainly + capability-driven, that it has real tools right now (so it never claims it can't act)
-    const wireNames = toolDefs.map(d => d.function.name);
-    const toolNote = (isTask && wireNames.length)
-      ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
-        + 'these LIVE tools: ' + wireNames.join(', ') + '. '
-        + 'Actually use them — never say you cannot reach the web or files; call the tool instead. '
-        + 'Ground every factual claim in what web_search / web_fetch actually return, and cite the source URLs; '
-        + 'do not invent facts, figures, or links. '
-        + 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append, and record '
-        + 'durable facts you\'ll want later with notebook_write. '
-        + 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you '
-        + 'are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. '
-        + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
-        + 'final report of what you found/did and which files you saved.'
-      : '';
-    const sys = (system || '') + toolNote;
-    let msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
-    // Cortex (M-mem.1): surface the agent's OWN memory in-prompt — inject a recalled-memory fence (newest notes
-    // first, char-capped) right before the triggering user message, so the agent never has to call notebook.read
-    // to remember. Empty notebook => nothing injected (byte-identical to a memoryless run). Never fails the run.
-    try {
-      const stored = notebookStore.get('notebook:' + agentId);
-      const recall = renderRecall(Array.isArray(stored) ? stored.slice().reverse() : [], { limit: 1500 });
-      if (recall.text) { msgs = injectRecall(msgs, recall.text); emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars }); }
-    } catch (_) {}
-
-    await runAgentLoop({
-      messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: CAPS.maxCostUsd },
-      signal: ac.signal, clock: { now: () => Date.now() },
-      agentId, runId, model, trigger: 'directive',
-      // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
-      // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
-      approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
   } catch (e) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
@@ -297,6 +285,124 @@ async function handleRun(req, res) {
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
     try { res.end(); } catch (_) {}
   }
+}
+
+/* runOnce — the reusable RUN HOST. Assembles the proven seams (fresh tool registry + the office-workstation
+   capability projection + the consent broker + the OpenRouter provider + cost engine), does the tool-capable
+   pre-check, injects the Cortex memory-recall fence, and drives the unchanged agentic loop. Extracted verbatim
+   from handleRun so BOTH the browser /api/run route AND the messaging hub (channels/hub.js) drive the identical
+   pipeline. The CALLER owns: the runId, the abort signal, the emit sink (NDJSON for the browser; an in-process
+   reply-assembler for the hub), the run lifecycle/cleanup, AND the consent SURFACE — 'interactive' + a live
+   `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
+async function runOnce(o) {
+  const { key, model, system, messages = [], agentId = 'agent', isTask = false, emit, signal, runId } = o;
+  const surface = o.surface || 'interactive';
+  const prompt = o.prompt;
+  const trigger = o.trigger || 'directive';
+
+  // ---- tools (registered fresh per run; cheap) ----
+  const registry = makeRegistry();
+  makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
+  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() } }).register(registry);
+  throttleSearch(registry);
+
+  // ---- capabilities: the office workstation. Each placed object IS a capability grant (CAP_REGISTRY):
+  //      computer = compute gate · dish = web · cabinet = files · notebook = memory. resolveTools
+  //      projects them into the agent's tools FRESH per run — no host-side toolset policy. ----
+  const station = { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: [
+    { instanceId: 'pc1', objectType: 'computer' },
+    { instanceId: 'dish1', objectType: 'dish' },
+    { instanceId: 'cab1', objectType: 'cabinet' },
+    { instanceId: 'nb1', objectType: 'notebook' }
+  ] } } };
+  const resolved = resolveTools(agentId, station);
+  // P1.5: the real informed-consent broker. surface:'interactive' + prompt ⇒ ungranted mutations ask live;
+  // surface:'autonomous' (no one watching, e.g. a Telegram chat) ⇒ default-deny on any ungranted mutation
+  // (silence is not consent). Read-only/non-network auto-allows; the hardline floor sits below Full Access.
+  const consent = makeConsentBroker({
+    bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: runId,
+    grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
+    networkOf: (call) => !!resolved.networkCaps[call.name],
+    surface: surface, prompt: prompt
+  });
+  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs });
+
+  // ---- provider + cost ----
+  const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, key });
+  const cost = makeCostEngine({ priceOf: provider.priceOf });
+
+  // a task needs tool calls — refuse a model we KNOW can't call tools, up front, with an actionable message
+  // (supportsTools returns null when the catalog is cold, so this never false-refuses a real model).
+  if (isTask && provider.supportsTools(model) === false) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: false, message: 'The model "' + model + '" does not support tool calls, so it can\'t run tasks. Pick a tool-capable model (e.g. anthropic/claude-sonnet-4.6 or openai/gpt-4o) on the connect screen.' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;
+  }
+
+  // ---- per-call tool list (task runs only). Internal names are dotted (fs.write, notebook.read) but the
+  //      OpenAI/OpenRouter function-name grammar is ^[A-Za-z0-9_-]{1,64}$ — a '.' 400s the request — so on
+  //      the WIRE we expose underscored names and translate the model's call name back before dispatch. ----
+  const toolDefs = isTask ? registry.wireFormat(registry.list(new Set(resolved.tools))) : [];
+  const fromWire = new Map();
+  for (const d of toolDefs) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
+
+  const seen = new Map();
+  let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
+  const dispatch = async (c, ctx) => {
+    if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
+    const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
+    const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
+    if (n > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical call blocked (loop guard)', summary: 'loop-break' };
+    let r = await registry.dispatch(c, ctx);
+    // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
+    if (r && typeof r.content === 'string' && r.content.length) {
+      if (toolBytes >= CAPS.maxToolBytes) {
+        r = Object.assign({}, r, { content: '[tool output omitted — this run hit its ' + Math.round(CAPS.maxToolBytes / 1000) + 'KB tool-output budget; finish with what you already have]' });
+      } else if (toolBytes + r.content.length > CAPS.maxToolBytes) {
+        r = Object.assign({}, r, { content: r.content.slice(0, CAPS.maxToolBytes - toolBytes) + '\n…[truncated — per-run tool-output budget reached]' });
+      }
+      toolBytes += r.content.length;
+    }
+    return r;
+  };
+
+  // tell the model, plainly + capability-driven, that it has real tools right now (so it never claims it can't act)
+  const wireNames = toolDefs.map(d => d.function.name);
+  const toolNote = (isTask && wireNames.length)
+    ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
+      + 'these LIVE tools: ' + wireNames.join(', ') + '. '
+      + 'Actually use them — never say you cannot reach the web or files; call the tool instead. '
+      + 'Ground every factual claim in what web_search / web_fetch actually return, and cite the source URLs; '
+      + 'do not invent facts, figures, or links. '
+      + 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append, and record '
+      + 'durable facts you\'ll want later with notebook_write. '
+      + 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you '
+      + 'are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. '
+      + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
+      + 'final report of what you found/did and which files you saved.'
+    : '';
+  const sys = (system || '') + toolNote;
+  let msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
+  // Cortex (M-mem.1): surface the agent's OWN memory in-prompt — inject a recalled-memory fence (newest notes
+  // first, char-capped) right before the triggering user message, so the agent never has to call notebook.read
+  // to remember. Empty notebook => nothing injected (byte-identical to a memoryless run). Never fails the run.
+  try {
+    const stored = notebookStore.get('notebook:' + agentId);
+    const recall = renderRecall(Array.isArray(stored) ? stored.slice().reverse() : [], { limit: 1500 });
+    if (recall.text) { msgs = injectRecall(msgs, recall.text); emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars }); }
+  } catch (_) {}
+
+  await runAgentLoop({
+    messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
+    limits: { maxIters: CAPS.maxIters, maxCostUsd: CAPS.maxCostUsd },
+    signal: signal, clock: { now: () => Date.now() },
+    agentId, runId, model, trigger: trigger,
+    // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
+    // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
+    approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
+  });
 }
 
 // POST /api/consent { runId, promptId, decision } — the browser's answer to a live permission.prompt. Resolves the
@@ -319,6 +425,39 @@ async function handleCancel(req, res) {
   const ac = runId && runs.get(runId);
   if (ac) ac.abort();
   res.writeHead(200); res.end('ok');
+}
+
+// POST /api/channels/telegram/connect { token, key, model } — the Messaging tab hands over the BotFather token
+// plus the app's current OpenRouter key+model; the sidecar persists them (protected sibling file) and starts the
+// bot. Headless polling then works even with no browser open. The secrets are NEVER echoed back.
+async function handleChannelConnect(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 8192)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const token = String(body.token || '').trim();
+  const key = String(body.key || '').trim();
+  const model = String(body.model || '').trim();
+  if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
+  if (!key || !model) return json(400, { error: 'connect your agent first (an OpenRouter key + model are required)' });
+  try { startTelegram(token, key, model); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  json(200, { connected: true, state: telegramStatus.state });
+}
+
+// POST /api/channels/telegram/disconnect — stop the bot and mark it disabled (kept in config so the token can be
+// re-enabled without re-entry; clear the token by connecting a new one).
+async function handleChannelDisconnect(req, res) {
+  stopTelegram();
+  if (channelSecrets && channelSecrets.telegram) {
+    channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, channelSecrets.telegram, { enabled: false }) });
+    saveChannelSecrets(channelSecrets);
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+}
+
+// GET /api/channels/telegram/status — booleans + poll state ONLY; never the token/key (those stay server-side).
+function handleChannelStatus(req, res) {
+  const t = (channelSecrets && channelSecrets.telegram) || {};
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: !!t.token, state: telegramStatus.state, detail: telegramStatus.detail || '' }));
 }
 
 /* ------------------------------- helpers ------------------------------- */

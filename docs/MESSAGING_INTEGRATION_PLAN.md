@@ -6,6 +6,22 @@
 
 ---
 
+## 0. BUILD STATUS (2026-06-14) — MVP shipped (C1–C5), tested + live-smoke-verified
+
+The Telegram-first MVP is **implemented and green** (26 test files + 2 lints). Locked decisions: full tools in chat, autonomous-consent now / buttons later, one agent per chat (`tg_<chatId>`), DM-first.
+
+| Commit | What | Files |
+|---|---|---|
+| C1 | generic transport-agnostic channel adapter (poll/offset/admission/onInbound/send/backoff) | `sidecar/channels/adapter.js` + `test/channels.adapter.test.js` |
+| C2 | Telegram concrete adapter + Bot API `fetch` transport (long-poll `getUpdates`/`sendMessage`) | `sidecar/channels/telegram.js`, `telegram.transport.js` + `test/channels.telegram.test.js` |
+| C3 | `channel.inbound` / `channel.delivery` / `channel.connect` event rungs | `shared/events.js` + `test/contract.test.js` |
+| C4 | `runOnce` extracted from `handleRun` (behavior-preserving) + save-safe per-chat history/chatmap store | `sidecar/index.js`, `sidecar/channels/store.js` + `test/channels.store.test.js` |
+| C5 | hub bridge (inbound→runOnce→chunked reply, autonomous, one-run-per-chat) + connect/disconnect/status endpoints + secrets-at-rest + **in-app Messaging panel** | `sidecar/channels/hub.js`, `sidecar/index.js`, `frontend/index.html`, `frontend/app/stationui.js` + `test/channels.hub.test.js` |
+
+**Delta vs. the plan below (§3.5):** the bot token is **not** an env var — it is entered in a **MESSAGING tab in the bottom bar** (token from Telegram's @BotFather). On connect, the browser hands the sidecar `{ token, key, model }` (the app's existing OpenRouter key+model); the sidecar persists them in a **protected sibling file** `WORKSPACES/channels/secrets.json` (outside the fs jail, never on the bus, never returned by `/status`) so polling survives a restart with no browser open. New endpoints: `POST /api/channels/telegram/connect|disconnect`, `GET …/status`. Env (`SKYNET_TELEGRAM_TOKEN` + `SKYNET_OPENROUTER_KEY` + `SKYNET_DEFAULT_MODEL`) remains a headless-deploy fallback. **Still pending:** C6 — interactive consent over a Telegram inline keyboard (optional; today a headless write default-denies and the run continues).
+
+---
+
 ## 1. Preamble — what we are borrowing and the prime directive
 
 Hermes attaches an agent to *any* messaging platform through **one abstract class** (`BasePlatformAdapter(ABC)`, `gateway/platforms/base.py:1796`) that owns a transport connection and translates the wire format into two normalized dataclasses — inbound `MessageEvent` (`base.py:1416`) and outbound `SendResult` (`base.py:1545`). The gateway is transport-agnostic: it injects callbacks (`set_message_handler`, `base.py:2234`) and never imports a Telegram/Discord SDK. The agent run is reached through `handle_message → _process_message_background → _message_handler(event)` (`base.py:3919 → 4138 → 4184`), bound to `GatewayRunner._handle_message` (`run.py:6398`) via `run.py:4894`. The reply streams back through `GatewayStreamConsumer` editing one live message (`stream_consumer.py:79`), chunked at the Telegram 4096-UTF16 limit (`telegram.py:349, 2656`).
