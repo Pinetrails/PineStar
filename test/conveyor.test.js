@@ -51,31 +51,38 @@ const mig = WM.deserialize({ schema: 'skynet.station', version: 1,
 A.eq(mig.belts().length, 2, 'migrate keeps only well-formed "int,int"->E|W|N|S belt entries');
 
 /* ---------- transport sim ---------- */
-// L-shaped belt: E from (0,0)->(3,0) then S (3,0)->(3,2). Source at (0,0); open end past (3,2).
+// L-shaped belt: E from (0,0)->(3,0) then S (3,0)->(3,2). Open end past (3,2).
 const belts = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' },
                { x: 3, y: 0, dir: 'S' }, { x: 3, y: 1, dir: 'S' }, { x: 3, y: 2, dir: 'S' }];
+
+// belts NEVER auto-spawn decorative cargo — an idle belt with no enqueued work stays EMPTY
+const cvidle = Conveyor.create();
+let now = 0;
+for (let i = 0; i < 200; i++) { now += 16; cvidle.tick(16, now, belts); }
+A.eq(cvidle.boxCount(), 0, 'an idle belt never auto-spawns boxes (quiet until real work rides)');
+
+// an enqueued work-item rounds the corner — adopts each tile’s direction (E→S)
 const cv = Conveyor.create();
-let now = 0, sawCornerS = false, maxBoxes = 0;
-for (let i = 0; i < 700; i++) {
+now = 0; let sawCornerS = false;
+cv.enqueueAt(0, 0, { workitemId: 'c1' });
+for (let i = 0; i < 400 && !sawCornerS; i++) {
   now += 16; cv.tick(16, now, belts);
-  maxBoxes = Math.max(maxBoxes, cv.boxCount());
-  // a box on the vertical leg means it took the corner (adopted S) — its tile x is 3, y>0
   if (cv.peekBoxes().some(b => b.x === 3 && b.y >= 1 && b.dir === 'S')) sawCornerS = true;
 }
-A.ok(maxBoxes > 0, 'the source spawns boxes onto the belt');
-A.ok(sawCornerS, 'a box rounds the corner — adopts the next tile’s direction (E→S)');
-A.ok(cv.boxCount() <= 80 && maxBoxes <= 80, 'box count stays under the cap (no runaway)');
+A.ok(sawCornerS, 'an enqueued box rounds the corner — adopts the next tile’s direction (E→S)');
 
-// boxes sink (despawn) at the open end — a single short belt drains to empty between spawns
+// a box sinks (despawns) at the open end — the belt drains to empty, never accumulates
 const cv2 = Conveyor.create();
 const tiny = [{ x: 0, y: 0, dir: 'E' }];   // one tile: source AND open end
-let drained = false; now = 0;
-for (let i = 0; i < 200; i++) { now += 16; cv2.tick(16, now, tiny); if (i > 20 && cv2.boxCount() === 0) drained = true; }
-A.ok(drained, 'boxes sink off an open end (the belt drains, not accumulates)');
+cv2.enqueueAt(0, 0, { workitemId: 't1' });
+now = 0; let drained = false;
+for (let i = 0; i < 200; i++) { now += 16; cv2.tick(16, now, tiny); if (i > 3 && cv2.boxCount() === 0) drained = true; }
+A.ok(drained, 'an enqueued box sinks off an open end (the belt drains)');
 
 // pulling the belt out from under a box sinks it (no orphan rides)
 const cv3 = Conveyor.create();
-now = 0; for (let i = 0; i < 60; i++) { now += 16; cv3.tick(16, now, belts); }
+cv3.enqueueAt(0, 0, { workitemId: 'o1' }); cv3.enqueueAt(1, 0, { workitemId: 'o2' });
+now = 0; for (let i = 0; i < 20; i++) { now += 16; cv3.tick(16, now, belts); }
 const had = cv3.boxCount();
 for (let i = 0; i < 40; i++) { now += 16; cv3.tick(16, now, []); }   // belts gone
 A.ok(had > 0 && cv3.boxCount() === 0, 'removing all belts sinks every riding box');
@@ -86,9 +93,10 @@ const line = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, 
 const delivered = [];
 const cvp = Conveyor.create({ onDeliver: (bx, x, y) => delivered.push({ id: bx.id, payload: bx.payload, x, y }) });
 cvp.enqueueAt(0, 0, { workitemId: 'W1', preview: 'hello' });
-cvp.tick(16, 16, line);                                   // first tick drains pending; ambient skips its warm-up beat
+cvp.tick(16, 16, line);                                   // first tick drains the pending work-item (no auto-spawn)
 const pay = cvp.peekBoxes().filter(b => b.payload);
 A.eq(pay.length, 1, 'enqueueAt creates exactly one payload box');
+A.eq(cvp.boxCount(), 1, 'and no decorative box rides alongside it (belts are quiet)');
 A.ok(pay[0].x === 0 && pay[0].y === 0 && pay[0].payload.workitemId === 'W1', 'the payload box starts at the source carrying its work-item');
 now = 16;
 for (let i = 0; i < 200 && !delivered.length; i++) { now += 16; cvp.tick(16, now, line); }

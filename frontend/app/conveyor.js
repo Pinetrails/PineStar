@@ -23,7 +23,6 @@ const Conveyor = (() => {
   const DIRV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
   const OPP = { E: 'W', W: 'E', S: 'N', N: 'S' };
   const SPEED = 1.7;        // tiles / second a box travels
-  const SPAWN_MS = 1500;    // base cadence a source emits at (per-source jittered)
   const SINK_MS = 300;      // chute fall + fade time once a box rides off the end
   const POP_MS = 180;       // spawn-pop settle time
   const MIN_GAP = 0.82;     // tiles of clear space a box keeps behind the one ahead (no stacking)
@@ -31,14 +30,6 @@ const Conveyor = (() => {
 
   const key = (x, y) => x + ',' + y;
   const buildMap = belts => { const m = new Map(); for (const b of belts) m.set(key(b.x, b.y), b.dir); return m; };
-  // a tile is a SOURCE if no neighbouring belt flows INTO it (nothing upstream feeds it)
-  function isSource(map, x, y) {
-    for (const d in DIRV) {
-      const v = DIRV[d], nx = x - v[0], ny = y - v[1];   // the tile that would feed (x,y) from dir d
-      if (map.get(key(nx, ny)) === d) return false;
-    }
-    return true;
-  }
   // classify a tile for its art: which neighbour feeds it, where it drains, is it a bend
   function classify(map, b) {
     const d = b.dir, v = DIRV[d];
@@ -189,10 +180,9 @@ const Conveyor = (() => {
     const onDeliver = (opts && opts.onDeliver) || null;   // called ONCE when a PAYLOAD box rides off the open end
     let boxes = [];
     let nid = 1;
-    const lastSpawn = new Map();
     const pending = [];                                    // enqueueAt() work-items, born inside tick() (live nowMs + dir)
 
-    function reset() { boxes = []; lastSpawn.clear(); pending.length = 0; }
+    function reset() { boxes = []; pending.length = 0; }
 
     /* event-driven spawn: drop ONE work-item-carrying box at a named SOURCE tile, bypassing the hash
        auto-spawn cadence. The box is actually born inside tick() so it gets the live nowMs and belt dir. */
@@ -227,23 +217,9 @@ const Conveyor = (() => {
       const tileMap = new Map();
       for (const bx of boxes) { if (bx.sink > 0) continue; const k = key(bx.x, bx.y); (tileMap.get(k) || tileMap.set(k, []).get(k)).push(bx); }
 
-      // spawn at sources: per-source jittered cadence, and skip when the mouth is still occupied (backpressure)
-      if (map.size && boxes.length < MAX_BOXES) {
-        for (const b of belts) {
-          if (!isSource(map, b.x, b.y)) continue;
-          const k = key(b.x, b.y);
-          const phase = U.hash('belt' + k) % SPAWN_MS;
-          const period = SPAWN_MS + (U.hash('per' + k) % 400) - 200;          // ±200ms per-source drift
-          const bucket = Math.floor((nowMs + phase) / period);
-          if (lastSpawn.get(k) === bucket) continue;                          // beat already resolved
-          if (!lastSpawn.has(k)) { lastSpawn.set(k, bucket); continue; }       // warm-up: skip first beat
-          const onSrc = tileMap.get(k);
-          if (onSrc && onSrc.some(c => c.prog < MIN_GAP)) continue;            // mouth busy → retry next frame
-          boxes.push({ id: nid++, x: b.x, y: b.y, dir: b.dir, prog: 0, sink: 0, t0: nowMs, turn0: -1e9 });
-          lastSpawn.set(k, bucket);
-        }
-      }
-
+      // NO auto-spawn: a box exists ONLY for a real work-item placed via enqueueAt(). The original
+      // decorative source-spawn was removed on purpose — belts stay QUIET until real work rides them, so
+      // every crate on a belt means something. The only spawn path is the enqueueAt drain below.
       // event-driven work-items (enqueueAt): born here so each gets the live nowMs + the tile's belt dir.
       // No belt under the tile → nothing rides (the server still ran the work; the world just shows no crate).
       while (pending.length && boxes.length < MAX_BOXES) {
