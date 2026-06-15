@@ -152,6 +152,7 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
 const QUEUE_CAP = 64;
 const queueDepth = new Map();
+const activeItem = new Map();   // agentId -> the newest in-flight workitemId; older ones the hub superseded
 function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) || 0) + d); queueDepth.set(agentId, n); return n; }
 
 let telegram = null;                                    // { adapter, hub } when connected, else null
@@ -175,18 +176,27 @@ function startTelegram(token, key, model) {
       // WORK-ITEM INTERCEPT: an admitted message becomes a box that rides the player-laid belts to the
       // agent. This is pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of
       // whether any belt/INTAKE exists. agentId/queue depth use the hub's OWN logic so the HUD never lies.
-      let agentId = '';
+      let agentId = '', workitemId = '';
       try {
         agentId = hub._internals.agentIdFor(String(m && m.chatId));
-        const workitemId = crypto.randomUUID();
+        workitemId = crypto.randomUUID();
         const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
+        // a prior in-flight item for this chat is about to be ABORTED by the hub — drop its box off the belt.
+        const prior = activeItem.get(agentId);
+        if (prior && prior !== workitemId) chanEmit('workitem.superseded', { workitemId: prior, agentId, ts: Date.now() });
+        activeItem.set(agentId, workitemId);
         const depth = bumpQueue(agentId, +1);
         chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
         chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
       } catch (e) { console.warn('[telegram] intake intercept error:', (e && e.message) || e); }
       Promise.resolve(hub.onInbound(m))
         .catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e))
-        .then(() => { if (agentId) { const d = bumpQueue(agentId, -1); chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 }); } });
+        .then(() => {
+          if (!agentId) return;
+          const d = bumpQueue(agentId, -1);
+          if (activeItem.get(agentId) === workitemId) activeItem.delete(agentId);   // finished + not superseded
+          chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+        });
     },
     onCallback: hub.onCallback,
     onStatus: (s) => {

@@ -97,6 +97,9 @@
     'workitem.delivered': obj(['workitemId', 'finalQueueId'], {
       workitemId: str, finalQueueId: str, agentId: str, box: str, ms: num, ts: num
     }),
+    // a newer message for the same chat ABORTED this work-item's run (hub supersede) — its box should drop
+    // off the belt instead of riding to the desk. Mirrors the hub's one-run-per-chat inflight behavior.
+    'workitem.superseded': obj(['workitemId'], { workitemId: str, agentId: str, ts: num }),
     // queue-depth telemetry for the backpressure HUD — emitted whenever a per-agent queue depth changes.
     'queue.status': obj(['queueId'], { queueId: str, depth: int, maxCapacity: int, nextAdvanceAt: num }),
 

@@ -104,4 +104,29 @@ now = 0; for (let i = 0; i < 50; i++) { now += 16; cvn.tick(16, now, [{ x: 0, y:
 A.eq(cvn.peekBoxes().filter(b => b.payload).length, 0, 'enqueueAt on a non-belt tile creates no payload box');
 A.eq(deliveredN, 0, 'no delivery fires when there is no belt under the work-item');
 
+/* ---------- Stage 2: backpressure spacing + supersede drop ---------- */
+const bp = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }, { x: 4, y: 0, dir: 'E' }];
+// a trailing work-item holds a backpressure gap behind the leader (crates stack, never overlap)
+const cvbp = Conveyor.create();
+cvbp.enqueueAt(0, 0, { workitemId: 'A' });
+now = 0; for (let i = 0; i < 40; i++) { now += 16; cvbp.tick(16, now, bp); }   // A rides ahead
+cvbp.enqueueAt(0, 0, { workitemId: 'B' });
+for (let i = 0; i < 30; i++) { now += 16; cvbp.tick(16, now, bp); }
+const A_ = cvbp.peekBoxes().find(b => b.payload && b.payload.workitemId === 'A');
+const B_ = cvbp.peekBoxes().find(b => b.payload && b.payload.workitemId === 'B');
+A.ok(A_ && B_, 'both work-items are riding the belt');
+A.ok((A_.x + A_.prog) - (B_.x + B_.prog) >= 0.6, 'the trailing work-item keeps a backpressure gap (no stacking)');
+
+// supersede drop: dropWorkitem early-sinks exactly that box, and it never delivers
+const dropped = [];
+const cvsd = Conveyor.create({ onDeliver: bx => dropped.push(bx.payload.workitemId) });
+cvsd.enqueueAt(0, 0, { workitemId: 'S1' });
+now = 0; for (let i = 0; i < 10; i++) { now += 16; cvsd.tick(16, now, bp); }   // S1 riding mid-belt
+A.ok(cvsd.peekBoxes().some(b => b.payload && b.payload.workitemId === 'S1' && b.sink <= 0), 'S1 is riding before the drop');
+A.ok(cvsd.dropWorkitem('S1'), 'dropWorkitem finds and sinks the riding box');
+A.ok(cvsd.peekBoxes().find(b => b.payload && b.payload.workitemId === 'S1').sink > 0, 'S1 is now sinking (dropped off the belt)');
+for (let i = 0; i < 40; i++) { now += 16; cvsd.tick(16, now, bp); }   // let it fade out
+A.eq(dropped.filter(id => id === 'S1').length, 0, 'a dropped (superseded) box NEVER fires onDeliver');
+A.ok(!cvsd.dropWorkitem('S1'), 'dropWorkitem on an already-gone work-item is a no-op');
+
 A.report('conveyor');

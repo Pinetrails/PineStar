@@ -469,6 +469,7 @@ const World = (() => {
     if (bridged || typeof U === 'undefined' || !U.bus) return;
     bridged = true;
     U.bus.on('workitem.placed', p => intakeMessage(p));
+    U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
     if (typeof EventSource === 'undefined') return;
     let es = null, backoff = 1000;

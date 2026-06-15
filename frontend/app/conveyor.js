@@ -198,6 +198,17 @@ const Conveyor = (() => {
        auto-spawn cadence. The box is actually born inside tick() so it gets the live nowMs and belt dir. */
     function enqueueAt(x, y, payload) { pending.push({ x, y, payload }); }
 
+    /* supersede drop: early-sink the riding box whose work-item was aborted (a newer message took over the
+       chat). It falls off the belt via the chute animation and — crucially — never fires onDeliver. */
+    function dropWorkitem(workitemId) {
+      // also purge any not-yet-born pending item with this id, so a supersede that races the spawn still drops it
+      for (let i = pending.length - 1; i >= 0; i--) { const p = pending[i].payload; if (p && p.workitemId === workitemId) pending.splice(i, 1); }
+      for (const bx of boxes) {
+        if (bx.sink <= 0 && bx.payload && bx.payload.workitemId === workitemId) { bx.sink = 1; bx.delivered = true; return true; }
+      }
+      return false;
+    }
+
     /* distance (in tiles, along the path) to the nearest box ahead — for backpressure spacing */
     function leaderDist(bx, tileMap) {
       let best = Infinity;
@@ -358,7 +369,7 @@ const Conveyor = (() => {
     }
 
     return {
-      tick, drawBelts, drawBoxes, reset, enqueueAt,
+      tick, drawBelts, drawBoxes, reset, enqueueAt, dropWorkitem,
       boxCount: () => boxes.length,
       peekBoxes: () => boxes.map(b => ({ id: b.id, x: b.x, y: b.y, dir: b.dir, sink: b.sink, prog: b.prog, payload: b.payload || null }))
     };
