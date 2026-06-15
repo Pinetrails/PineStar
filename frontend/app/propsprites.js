@@ -640,6 +640,35 @@ const PropSprites = (() => {
     wear(x + 1, y + 3, w - 2, h - 4, 6, '#1d2420');
   };
 
+  F.intake = (x, y, w, h, f) => {
+    // INTAKE BAY — where a real work-item (e.g. an admitted Telegram DM) enters the station and drops
+    // onto a belt. Echoes the conveyor SOURCE feeder (amber) + a signal hint that the bay LISTENS.
+    sh(x + 1, y + h - 1, w - 2);                                    // floor contact shadow
+    // hopper body — gunmetal cabinet with a raised intake collar
+    box(x, y + 3, w, h - 3, '#2b332e');
+    px(x + 1, y + 4, w - 2, 1, '#3c463f');                          // top-lit edge
+    px(x + 1, y + h - 2, w - 2, 1, '#161c19');                      // bottom shade
+    px(x + 3, y + 1, w - 6, 2, '#222a26');                          // raised collar
+    px(x + 3, y + 1, w - 6, 1, '#39463f');                          // collar lit edge
+    rivets(x + 1, y + 5, w - 2, h - 7, '#46584e', '#0c1410');
+    // amber feeder MOUTH (same language as the belt SOURCE) — pulses; flares brighter on active intake
+    const cyc = (now / 900) % 1, active = !!f.work;
+    const mx = x + 4, my = y + h - 7, mw = w - 8, mh = 4;
+    px(mx - 1, my - 1, mw + 2, mh + 2, '#2a2418');                  // dark-amber frame
+    inset(mx, my, mw, mh, (cyc < 0.5) ? '#161210' : '#3a3320');     // the slot
+    for (let i = 0; i < mw - 2; i += 3) px(mx + 1 + i, my + 1, 1, mh - 2, '#caa84a'); // feeder bars
+    if (active || cyc > 0.86) { px(mx, my, mw, 1, '#e8c860'); glow(mx - 1, my - 1, mw + 2, mh + 2, '#e8c860', active ? 0.5 : 0.3); }
+    // INTAKE caret stencilled on the collar
+    px(x + 5, y + 1, 1, 1, '#8a9a90'); px(x + 6, y + 2, 1, 1, '#8a9a90'); px(x + 7, y + 1, 1, 1, '#8a9a90');
+    // signal hint — mast + ping (the bay LISTENS for inbound work; cyan = a data packet arriving)
+    const ax = x + w - 5;
+    px(ax, y - 2, 1, 4, '#3c463f'); px(ax - 1, y - 2, 3, 1, '#46584e');
+    const ping = blink(640, 0);
+    px(ax, y - 3, 1, 1, ping ? '#7df0ff' : '#1d3a44');
+    if (ping) glow(ax - 2, y - 4, 5, 4, '#4ad9ff', 0.30);
+    wear(x + 2, y + 5, w - 4, h - 8, 3, '#1d2420');
+  };
+
   F.boxes = (x, y, w, h) => {
     sh(x + 1, y + 10, w - 2);
     px(x + 1, y + 4, 8, 7, '#36424c'); px(x + 1, y + 4, 8, 1, '#46525a'); px(x + 4, y + 4, 2, 7, '#56646e'); // tape
@@ -3636,6 +3665,7 @@ const PropSprites = (() => {
     { id: "gigs_partsbin", label: "PARTS BIN", cat: "storage", w: 2, h: 1, animated: true, blocks: true },
     { id: "treasury_coinsorter", label: "COIN SORTER", cat: "storage", w: 2, h: 1, animated: true, blocks: true },
     { id: "treasury_token_furnace", label: "TOKEN FURNACE", cat: "storage", w: 1, h: 2, animated: true, blocks: true },
+    { id: "intake", label: "INTAKE", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "commswall", label: "COMMS WALL", cat: "comms", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_dish", label: "DISH", cat: "comms", w: 2, h: 2, animated: true, blocks: true },
     { id: "comms_inbox", label: "INBOX", cat: "comms", w: 2, h: 1, animated: true, blocks: true },
