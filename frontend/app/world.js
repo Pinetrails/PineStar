@@ -136,7 +136,7 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use' || agent.goal === 'inspect' || agent.goal === 'watch') { agent.goal = null; agent.usingProp = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
+        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch') { agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
@@ -197,6 +197,7 @@ const World = (() => {
       px: 0, py: 0, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: true,
       phase: U.hash(a.id) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
+      watchProp: null,   // lounge: the TV the couch-sitter is watching (kept lit while it watches)
       // awareness & curiosity: head-turn glance (drawBody reads agent.glance), study/observe dwell, fidget + notice cooldowns
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0
     };
@@ -295,6 +296,12 @@ const World = (() => {
     agent.pathPts = null; agent.target = null;
     if (agent.goal === 'work') { agent.sitting = true; agent.working = true; agent.dir = 'north'; agent.state = 'idle'; }
     else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); }
+    else if (agent.goal === 'lounge') {
+      // settled on the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
+      agent.sitting = true; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle';
+      agent.useUntil = now + U.irnd(18000, 30000); agent.glanceCd = 0; agent.nextFidget = now + U.irnd(1500, 3500);
+      curiositySay(CURIO_WATCH, 0.4, now);
+    }
     else if (agent.goal === 'inspect' || agent.goal === 'watch') {
       // reached the thing — stand, face it, and observe for a spell (belts hold the gaze longer)
       agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
@@ -336,10 +343,56 @@ const World = (() => {
     const s = PropSprites.spec(p.t);
     return s && s.use ? s.use : null;
   }
+
+  /* v7 lounge port: a couch placed in front of a TV → sit ON the couch's TV-facing edge and watch.
+     gen has no authored couch/TV pairs (props are placed live in REFIT), so the pairing is DERIVED
+     from geometry each time: for a couch, find the closest TV that sits straight off one of its
+     faces (axis-aligned, footprints overlapping on the off-axis, within MAXT tiles). The sitter
+     takes the couch edge OPPOSITE the TV (so facing INTO the couch points at the screen beyond it).
+     Returns true if it committed a lounge; false → caller falls back to single-prop use. */
+  const LOUNGE_MAXT = 6, LOUNGE_OPP = { north: 'south', south: 'north', west: 'east', east: 'west' };
+  function tryLounge(now) {
+    const couches = [], tvs = [];
+    for (const p of geo.props) {
+      const use = propUse(p); if (!use) continue;
+      const c = { p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 };
+      if (use.kind === 'couch') couches.push(c); else if (use.kind === 'tv') tvs.push(c);
+    }
+    if (!couches.length || !tvs.length) return false;
+    const order = U.irnd(0, couches.length - 1);   // don't always favour the same couch
+    for (let k = 0; k < couches.length; k++) {
+      const couch = couches[(order + k) % couches.length];
+      let best = null;
+      for (const tv of tvs) {
+        const dx = tv.cx - couch.cx, dy = tv.cy - couch.cy, dist = Math.hypot(dx, dy);
+        if (dist > LOUNGE_MAXT) continue;
+        let dir, aligned;
+        if (Math.abs(dy) >= Math.abs(dx)) {   // TV above/below → need horizontal footprint overlap
+          dir = dy < 0 ? 'north' : 'south';
+          aligned = (tv.p.x < couch.p.x + (couch.p.w || 1)) && (tv.p.x + (tv.p.w || 1) > couch.p.x);
+        } else {                              // TV left/right → need vertical footprint overlap
+          dir = dx < 0 ? 'west' : 'east';
+          aligned = (tv.p.y < couch.p.y + (couch.p.h || 1)) && (tv.p.y + (tv.p.h || 1) > couch.p.y);
+        }
+        if (aligned && (!best || dist < best.dist)) best = { tv, dir, dist };
+      }
+      if (!best) continue;
+      const a = PropAnchor.deriveAnchor(couch.p, geo, { approach: LOUNGE_OPP[best.dir], sit: true, extra: blocked });
+      if (!a || a.face !== best.dir) continue;   // TV-facing edge walled in (deriveAnchor fell back) → not watchable
+      if (!setPathTo({ x: a.tx, y: a.ty })) continue;
+      agent.goal = 'lounge'; agent.usingProp = couch.p.id; agent.watchProp = best.tv.p.id;
+      agent.useFace = a.face; agent.useSit = true;
+      if (!agent.target) arrive(now);   // already on the sit tile
+      return true;
+    }
+    return false;
+  }
+
   // idle leisure: pick a reachable interactive prop (couch/tv/arcade/jukebox/bar), walk to
   // its approach tile, and commit to goal='use'. Returns false if none is reachable (→ wander).
   function planProp(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
+    if (tryLounge(now)) return true;   // couch + TV in front of it → sit and watch (the v7 lounge)
     const cands = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
@@ -467,6 +520,12 @@ const World = (() => {
       const box = nearestBox();
       if (box && box.d < 80) { setGlance(dirToward(agent.px, agent.py, box.x, box.y), U.irnd(500, 900), now); agent.glanceCd = now + U.irnd(700, 1400); return; }
     }
+    // lounging on the couch: eyes settle on the TV (base facing), with the odd glance around the room
+    if (agent.goal === 'lounge') {
+      if (U.chance(0.25)) { setGlance(U.pick(['east', 'west', 'south']), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(2600, 5200); }
+      else agent.glanceCd = now + U.irnd(1200, 2400);
+      return;
+    }
     // working at the desk: glance at a freshly placed thing nearby, else fidget-look up from the screen
     if (agent.working) {
       if (novelty.length) {
@@ -504,7 +563,7 @@ const World = (() => {
       agent.state = 'idle'; agent.idleUntil = 0;
     }
     if (activity === 'task' && agent.goal !== 'work') {
-      agent.goal = 'work'; agent.sitting = false; agent.working = false; agent.usingProp = null;   // summoned: get up off any prop and head to the desk
+      agent.goal = 'work'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null;   // summoned: get up off any prop and head to the desk
       if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { /* already at seat or unreachable */ if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } }
     }
     if (activity !== 'task' && agent.goal === 'work') {
@@ -529,6 +588,9 @@ const World = (() => {
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
       if (now >= agent.useUntil) { agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
+    } else if (agent.goal === 'lounge') {
+      // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
+      if (now >= agent.useUntil) { agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'inspect' || agent.goal === 'watch') {
       // observing a machine / belt: hold the gaze until the study timer ends (maybeGlance animates it)
       if (now >= agent.studyUntil) { agent.goal = null; agent.usingProp = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500); }
@@ -571,7 +633,7 @@ const World = (() => {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
-        const work = (p.t === 'outbox' && outboxLit) || !!(agent && agent.usingProp === p.id);
+        const work = (p.t === 'outbox' && outboxLit) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
         items.push({ y: (p.y + (p.h || 1)) * T, draw: () => PropSprites.draw(p, work) });
       }
     }

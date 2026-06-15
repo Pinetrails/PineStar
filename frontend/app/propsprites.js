@@ -1138,7 +1138,7 @@ const PropSprites = (() => {
     px(x + 5, y + 11, 2, 1, '#1e252b'); // ring shadow
   };
 
-  F.tv = (x, y, w, h) => {
+  F.tv = (x, y, w, h, f) => {
     px(x - 1, y, w + 2, h + 6, '#0a0a0a');
     px(x, y + 1, w, h + 4, '#1a1a1a');
     px(x, y + 1, w, 1, '#2e2e2e');
@@ -1167,11 +1167,12 @@ const PropSprites = (() => {
     }
     scanl(x + 2, y + 2, w - 4, h + 1, 0.08);
     glow(x + 2, y + 2, 6, 2, '#ffffff', 0.06); // glass glint
-    glow(x + 2, y + h + 5, w - 4, 2, mode === 1 ? '#2a5a7a' : '#3a1a2a', 0.15); // screen light under tv
+    const watched = !!(f && f.work);   // an agent is on the couch watching → screen spills more light, LED goes solid
+    glow(x + 2, y + h + 5, w - 4, 2, mode === 1 ? '#2a5a7a' : '#3a1a2a', watched ? 0.30 : 0.15); // screen light under tv
     px(x + 1, y + h + 5, w - 2, 1, '#000');
     px(x + 8, y + h + 5, w - 16, 1, '#1c1c1c'); // soundbar
     px(x + 10, y + h + 5, 1, 1, '#2e2e2e'); px(x + w - 11, y + h + 5, 1, 1, '#2e2e2e');
-    px(x + w - 3, y + h + 4, 1, 1, blink(1400) ? '#ff3030' : '#3a1010'); // standby LED
+    px(x + w - 3, y + h + 4, 1, 1, watched ? '#ff6a6a' : (blink(1400) ? '#ff3030' : '#3a1010')); // standby LED (solid when watched)
   };
 
   F.couch = (x, y, w, h) => {
