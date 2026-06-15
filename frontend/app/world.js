@@ -330,6 +330,11 @@ const World = (() => {
     ctx.drawImage(cache.baseCv, 0, 0);
 
     const items = [];
+    // placeable props (furniture) — drawn over the bake, y-sorted with agents, under the lightmap
+    if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
+      PropSprites.setCtx(ctx); PropSprites.setNow(now);
+      for (const p of geo.props) items.push({ y: (p.y + (p.h || 1)) * T, draw: () => PropSprites.draw(p, false) });
+    }
     if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
     if (seat) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });
     if (agent && !agent.unplaced) items.push({ y: agent.py, draw: () => drawAgent(now) });
