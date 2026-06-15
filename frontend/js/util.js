@@ -217,5 +217,44 @@ const SFX = {
   // the warm major-chord SWELL at dawn — first light you can hear.
   dawn() {
     [261, 329, 392, 523].forEach((f, n) => SFX.env(f, { attack: 0.3, hold: 0.32, release: 1.1, type: 'sine', vol: 0.11, when: n * 0.05 }));
+  },
+  // THE FLOOD — waking into vast knowledge: a noise wash that sweeps wide-open then closes, under an
+  // ascending detuned tone-cluster that swells to a peak (~3.3s) and resolves. ~4.7s, self-terminating.
+  flood() {
+    if (!SFX.on || !SFX.ctx) return;
+    const c = SFX.ctx, t0 = c.currentTime, out = SFX.master || c.destination;
+    const V = SFX.vol;
+    // rushing wash — looped noise through a bandpass that races open (the pages streaming past), then shuts
+    if (!SFX._noise) { const b = c.createBuffer(1, Math.floor(c.sampleRate * 0.5), c.sampleRate); const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; SFX._noise = b; }
+    const src = c.createBufferSource(); src.buffer = SFX._noise; src.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(180, t0);
+    bp.frequency.exponentialRampToValueAtTime(3600, t0 + 3.3);
+    bp.frequency.exponentialRampToValueAtTime(360, t0 + 4.5);
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.0001, t0);
+    ng.gain.linearRampToValueAtTime(0.085 * V, t0 + 3.3);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.6);
+    src.connect(bp); bp.connect(ng); ng.connect(out);
+    src.start(t0); src.stop(t0 + 4.7);
+    // the vastness rising — a detuned cluster that glides up a fifth and swells under a opening lowpass
+    [110, 146.83, 220, 293.66].forEach((f, n) => {
+      const o = c.createOscillator(), g = c.createGain(), lpf = c.createBiquadFilter();
+      o.type = n < 2 ? 'sawtooth' : 'triangle';
+      o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * 1.5, t0 + 3.4);
+      o.detune.value = (n - 1.5) * 4;
+      lpf.type = 'lowpass'; lpf.frequency.setValueAtTime(700, t0); lpf.frequency.exponentialRampToValueAtTime(2600, t0 + 3.3);
+      const peak = Math.max(0.0004, (0.05 - n * 0.006) * V);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 3.2 + n * 0.06);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.5);
+      o.connect(lpf); lpf.connect(g); g.connect(out);
+      o.start(t0); o.stop(t0 + 4.7);
+    });
+    // sub-rise for weight under the swell
+    const sub = c.createOscillator(), sg = c.createGain();
+    sub.type = 'sine'; sub.frequency.setValueAtTime(40, t0); sub.frequency.linearRampToValueAtTime(70, t0 + 3.4);
+    sg.gain.setValueAtTime(0.0001, t0); sg.gain.linearRampToValueAtTime(0.06 * V, t0 + 3.2); sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.4);
+    sub.connect(sg); sg.connect(out); sub.start(t0); sub.stop(t0 + 4.6);
   }
 };
