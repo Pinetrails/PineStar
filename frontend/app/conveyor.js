@@ -224,9 +224,9 @@ const Conveyor = (() => {
     function leaderDist(bx, tileMap) {
       let best = Infinity;
       const same = tileMap.get(key(bx.x, bx.y));
-      if (same) for (const c of same) if (c !== bx && c.prog > bx.prog) best = Math.min(best, c.prog - bx.prog);
+      if (same) for (const c of same) if (c !== bx && c.sink <= 0 && c.prog > bx.prog) best = Math.min(best, c.prog - bx.prog);
       const v = DIRV[bx.dir], nxt = tileMap.get(key(bx.x + v[0], bx.y + v[1]));
-      if (nxt) for (const c of nxt) best = Math.min(best, (1 - bx.prog) + c.prog);
+      if (nxt) for (const c of nxt) if (c.sink <= 0) best = Math.min(best, (1 - bx.prog) + c.prog);   // a box that began sinking mid-tick no longer blocks
       return best;
     }
 
