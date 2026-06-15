@@ -123,6 +123,7 @@ const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the SKYNET st
   + 'report what you actually found; never claim you cannot act.';
 const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
 try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
+let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 function loadChannelSecrets() {
@@ -588,6 +589,34 @@ function pcmToWav(pcm, sampleRate, channels) {
   h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
   return Buffer.concat([h, pcm]);
 }
+// the voice cache writes one file per distinct spoken line and never pruned them — over weeks as the
+// PRIMARY interaction that's hundreds of MB of orphaned audio. Sweep opportunistically (throttled, after
+// the response, never blocking it): unlink stale .tmp orphans, then evict oldest by mtime past a cap.
+async function maybeEvictVoiceCache() {
+  if (evictingVoiceCache) return;
+  evictingVoiceCache = true;
+  try {
+    const names = await fsp.readdir(VOICE_CACHE_DIR);
+    const now = Date.now();
+    const audio = []; let total = 0;
+    for (const n of names) {
+      const fp = path.join(VOICE_CACHE_DIR, n);
+      let st; try { st = await fsp.stat(fp); } catch (_) { continue; }
+      if (!st.isFile()) continue;
+      if (n.endsWith('.tmp')) { if (now - st.mtimeMs > 5 * 60 * 1000) { try { await fsp.unlink(fp); } catch (_) {} } continue; }
+      audio.push({ fp, mtime: st.mtimeMs, size: st.size }); total += st.size;
+    }
+    const MAX_FILES = 600, MAX_BYTES = 200 * 1024 * 1024, LOW = 0.8;
+    if (audio.length <= MAX_FILES && total <= MAX_BYTES) return;
+    audio.sort((a, b) => a.mtime - b.mtime);   // oldest first
+    let files = audio.length, bytes = total;
+    for (const f of audio) {
+      if (files <= MAX_FILES * LOW && bytes <= MAX_BYTES * LOW) break;
+      try { await fsp.unlink(f.fp); files--; bytes -= f.size; } catch (_) {}
+    }
+  } catch (_) { /* eviction must never throw into the request path */ }
+  finally { evictingVoiceCache = false; }
+}
 async function handleTts(req, res) {
   const fallback = (reason) => { console.error('[tts] fallback →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
   let body;
@@ -653,6 +682,8 @@ async function handleTts(req, res) {
   try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + ext)); } catch (_) {}
   res.writeHead(200, { 'Content-Type': outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
   res.end(buf);
+  // every 32nd miss, sweep the cache AFTER the response so it never adds latency to a spoken reply.
+  if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
 }
 
 function readBody(req, max) {

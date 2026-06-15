@@ -46,6 +46,7 @@ const Voice = (() => {
   let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
   let sentThisListen = false;       // did the just-finished listen actually send a message?
   let discarding = false;           // teardown in progress → drop any buffered transcript (don't send)
+  let forcedSpeak = false;          // voice mode flipped the speaker on for us → restore the user's mute on exit
 
   // a single status seam: prefer Chat.status (it owns #chat-status), fall back to the DOM node.
   function setStatus(s) {
@@ -401,7 +402,7 @@ const Voice = (() => {
     convoMode = !convoMode;
     if (typeof SFX !== 'undefined') SFX.open();
     if (convoMode) {
-      if (!speakReplies) { speakReplies = true; savePref(LS_SPEAK, true); reflectToggle(); }  // you have to hear it
+      if (!speakReplies) { speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle(); }  // you have to hear it (restored on exit)
       emptyStreak = 0;
       reflectMode();
       if (!busyNow() && !listening && !speaking) startListening();
@@ -421,6 +422,9 @@ const Voice = (() => {
     // DISCONNECT, would fire the buffered words at the agent as a brand-new run).
     if (listening) { discarding = true; sttProvider.abort(); }
     stopSpeaking();
+    // restore the speaker mute that voice-mode-on force-flipped — don't let a transient mode permanently
+    // clobber a deliberate preference (only if the user didn't manually re-touch the speaker meanwhile).
+    if (forcedSpeak) { forcedSpeak = false; speakReplies = false; savePref(LS_SPEAK, false); reflectToggle(); }
     reflectMode();
     if (was && !busyNow()) setStatus('online');
   }
@@ -520,7 +524,12 @@ const Voice = (() => {
     // spoken exit: leave voice mode by voice. Loosened so STT variants land ("stop the voice mode",
     // "turn off voice mode please") while still needing an explicit verb + the word "voice".
     const norm = t.toLowerCase().replace(/[.!,?\s]+$/, '');
-    if (convoMode && /^(exit|stop|end|leave|quit|turn off)\b.*\bvoice\b/.test(norm)) { stopConvo(); return; }
+    // drop a small closed set of polite lead-ins so "okay, stop voice mode" / "can you turn off voice mode"
+    // still match, then require an explicit verb DIRECTLY on "voice mode" — so a normal request that merely
+    // mentions "voice" ("stop using that formal voice") no longer tears the session down by accident.
+    const cmd = norm.replace(/^(?:ok(?:ay)?|hey|um|uh|so|please|yeah|now|can you|could you|would you|i want to|i'd like to|let'?s)[,\s]+/, '').trim();
+    if (convoMode && (/^(?:exit|stop|end|leave|quit|turn off)\s+(?:the\s+|this\s+)?voice\s*mode\b/.test(cmd)
+                      || /^(?:exit|leave)\s+(?:the\s+|this\s+)?voice\b/.test(cmd))) { stopConvo(); return; }
     sentThisListen = true; emptyStreak = 0;
     // a dedicated "got it" cue (not the generic send click) so the user knows their words landed —
     // closes the perceived gap until the agent's first spoken word.
@@ -553,6 +562,7 @@ const Voice = (() => {
     micBtn.classList.toggle('rec', on);
     micBtn.title = on ? 'listening — click to stop' : 'push to talk';
     micBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    micBtn.setAttribute('aria-label', on ? 'Listening, click to stop' : 'Push to talk');
   }
   function setSpeaking(on) {
     if (toggleBtn) toggleBtn.classList.toggle('speaking', on);
@@ -566,6 +576,8 @@ const Voice = (() => {
     toggleBtn.classList.toggle('off', !speakReplies);
     toggleBtn.textContent = speakReplies ? '🔊' : '🔇';
     toggleBtn.title = speakReplies ? 'agent voice: ON — click to mute' : 'agent voice: OFF — click to unmute';
+    toggleBtn.setAttribute('aria-pressed', speakReplies ? 'true' : 'false');
+    toggleBtn.setAttribute('aria-label', speakReplies ? 'Agent voice: on, click to mute' : 'Agent voice: off, click to unmute');
   }
   function reflectMode() {
     if (!modeBtn) return;
@@ -574,9 +586,12 @@ const Voice = (() => {
     modeBtn.title = convoMode
       ? 'voice mode: ON (hands-free) — click for push-to-talk'
       : 'voice mode: OFF (push-to-talk) — click for hands-free conversation';
+    modeBtn.setAttribute('aria-pressed', convoMode ? 'true' : 'false');
+    modeBtn.setAttribute('aria-label', convoMode ? 'Voice mode: on (hands-free), click for push-to-talk' : 'Voice mode: off (push-to-talk), click for hands-free');
   }
   function toggleSpeakReplies() {
     speakReplies = !speakReplies; savePref(LS_SPEAK, speakReplies);
+    forcedSpeak = false;   // a manual speaker change is the user's own choice — keep it (don't restore on voice-mode exit)
     if (!speakReplies) stopSpeaking();
     reflectToggle();
     if (typeof SFX !== 'undefined') SFX.click();
