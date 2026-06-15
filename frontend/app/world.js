@@ -344,44 +344,39 @@ const World = (() => {
     return s && s.use ? s.use : null;
   }
 
-  /* v7 lounge port: a couch placed in front of a TV → sit ON the couch's TV-facing edge and watch.
-     gen has no authored couch/TV pairs (props are placed live in REFIT), so the pairing is DERIVED
-     from geometry each time: for a couch, find the closest TV that sits straight off one of its
-     faces (axis-aligned, footprints overlapping on the off-axis, within MAXT tiles). The sitter
-     takes the couch edge OPPOSITE the TV (so facing INTO the couch points at the screen beyond it).
+  /* v7 lounge port: a couch placed near a TV → walk over, SIT ON THE COUCH, and watch the TV.
+     The sit is IDENTICAL to a normal couch-use — the couch's own front approach tile, the only one
+     that reads as sitting ON the couch (the y-sort draws the agent over the couch sprite; any other
+     edge leaves it on bare floor, which looks like sitting on a "black chair"). We just turn the
+     seated agent to FACE the nearest TV (any direction) and keep that TV lit. gen has no authored
+     couch/TV pairs (props placed live in REFIT), so the TV is found by proximity at decision time.
      Returns true if it committed a lounge; false → caller falls back to single-prop use. */
-  const LOUNGE_MAXT = 6, LOUNGE_OPP = { north: 'south', south: 'north', west: 'east', east: 'west' };
+  const LOUNGE_MAXT = 7;
   function tryLounge(now) {
     const couches = [], tvs = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
-      const c = { p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 };
-      if (use.kind === 'couch') couches.push(c); else if (use.kind === 'tv') tvs.push(c);
+      if (use.kind === 'couch') couches.push({ p, approach: use.approach || 'south' });
+      else if (use.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });
     }
     if (!couches.length || !tvs.length) return false;
     const order = U.irnd(0, couches.length - 1);   // don't always favour the same couch
     for (let k = 0; k < couches.length; k++) {
       const couch = couches[(order + k) % couches.length];
+      // sit EXACTLY where a normal couch-use sits (the front edge) so it always looks like sitting on the couch
+      const a = PropAnchor.deriveAnchor(couch.p, geo, { approach: couch.approach, sit: true, extra: blocked });
+      if (!a) continue;
+      // pick the nearest TV within range; the agent turns to face it from the couch (never walks to the TV)
       let best = null;
       for (const tv of tvs) {
-        const dx = tv.cx - couch.cx, dy = tv.cy - couch.cy, dist = Math.hypot(dx, dy);
-        if (dist > LOUNGE_MAXT) continue;
-        let dir, aligned;
-        if (Math.abs(dy) >= Math.abs(dx)) {   // TV above/below → need horizontal footprint overlap
-          dir = dy < 0 ? 'north' : 'south';
-          aligned = (tv.p.x < couch.p.x + (couch.p.w || 1)) && (tv.p.x + (tv.p.w || 1) > couch.p.x);
-        } else {                              // TV left/right → need vertical footprint overlap
-          dir = dx < 0 ? 'west' : 'east';
-          aligned = (tv.p.y < couch.p.y + (couch.p.h || 1)) && (tv.p.y + (tv.p.h || 1) > couch.p.y);
-        }
-        if (aligned && (!best || dist < best.dist)) best = { tv, dir, dist };
+        const d = Math.hypot(tv.cx - (a.tx + 0.5), tv.cy - (a.ty + 0.5));
+        if (d <= LOUNGE_MAXT && (!best || d < best.d)) best = { tv, d };
       }
       if (!best) continue;
-      const a = PropAnchor.deriveAnchor(couch.p, geo, { approach: LOUNGE_OPP[best.dir], sit: true, extra: blocked });
-      if (!a || a.face !== best.dir) continue;   // TV-facing edge walled in (deriveAnchor fell back) → not watchable
       if (!setPathTo({ x: a.tx, y: a.ty })) continue;
       agent.goal = 'lounge'; agent.usingProp = couch.p.id; agent.watchProp = best.tv.p.id;
-      agent.useFace = a.face; agent.useSit = true;
+      agent.useFace = dirToward(a.tx, a.ty, best.tv.cx, best.tv.cy);   // sit on the couch, head turned to the TV
+      agent.useSit = true;
       if (!agent.target) arrive(now);   // already on the sit tile
       return true;
     }
