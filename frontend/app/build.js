@@ -12,17 +12,19 @@
 
 const Build = (() => {
   const TOOLS = [
-    { id: 'room', label: '▦ ROOM', hint: 'drag to place a room' },
-    { id: 'hall', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length' },
-    { id: 'paint', label: '▧ PAINT', hint: 'click a room to repaint its deck' },
-    { id: 'move', label: '✥ MOVE', hint: 'drag a room to relocate it' },
-    { id: 'reclaim', label: '⌫ RECLAIM', hint: 'click a room to tear it down' },
+    { id: 'room', key: '1', label: '▦ ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
+    { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
+    { id: 'paint', key: '3', label: '▧ PAINT', hint: 'drag to paint deck tiles · click a room to fill it', cursor: 'cell' },
+    { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
+    { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room to tear it down (UNDO restores it)', cursor: 'not-allowed' },
   ];
+  const SEEN_KEY = 'skynet.refit.seen';
 
   let opts = null, station = null, unsub = null;
-  let root, cv, ctx, tip, hintEl, dpr = 1;
+  let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, dpr = 1, ro = null;
   let raf = 0, running = false;
-  let cache = null, bakeDirty = true;
+  let cache = null, cacheGeo = null, bakeDirty = true;
+  const flashes = [];   // {rects, t0, bad} place/delete confirmations
 
   // camera: screen = world*zoom + pan   (world = bake-pixel space, 1 tile = TILE px)
   let zoom = 2, panX = 0, panY = 0;
@@ -42,15 +44,17 @@ const Build = (() => {
     if (running) return;
     station = opts.getStation();
     if (!station) return;
-    spaceHeld = false; drag = null;        // never inherit a latched pan/drag from a prior session
+    spaceHeld = false; drag = null; flashes.length = 0;   // never inherit latched state from a prior session
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
-    unsub = station.onChange(() => { bakeDirty = true; });
+    unsub = station.onChange(() => { bakeDirty = true; updateUndoRedo(); });
     bakeDirty = true;
     if (!stars.length) seedStars();
     resize();
     fitCamera();
+    updateUndoRedo();
+    if (!hasSeen()) showGuide();
     running = true;
     if (typeof SFX !== 'undefined') SFX.open();
     raf = requestAnimationFrame(frame);
@@ -62,15 +66,19 @@ const Build = (() => {
     if (raf) cancelAnimationFrame(raf), raf = 0;
     clearTimeout(tipTimer); tipTimer = 0;
     if (unsub) unsub(), unsub = null;
+    if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
     document.body.classList.remove('refit-on');
     if (root && root.parentNode) root.parentNode.removeChild(root);
-    root = cv = ctx = tip = hintEl = null;
+    root = cv = ctx = tip = hintEl = undoBtn = redoBtn = null;
     window.removeEventListener('resize', resize);
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('keyup', onKeyUp);
+    window.removeEventListener('blur', onBlur);
     if (typeof SFX !== 'undefined') SFX.close();
     if (opts.persist) opts.persist();
-    if (opts.world && opts.world.start) opts.world.start();     // resume the live sim
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Station layout saved', 'good');
+    if (opts.world && opts.world.refit) opts.world.refit();     // recenter the live world on the new build
+    if (opts.world && opts.world.start) opts.world.start();     // resume the live sim with the new build
     if (opts.onClose) opts.onClose();
   }
 
@@ -85,12 +93,13 @@ const Build = (() => {
       <canvas class="refit-canvas"></canvas>
       <div class="refit-top">
         <span class="refit-title">▮ REFIT MODE</span>
-        <span class="refit-sub" id="refit-sub">STATION ARCHITECT</span>
+        <span class="refit-sub" id="refit-sub">DRAG TO PLACE ROOMS · RUN CORRIDORS · PAINT DECKS</span>
         <span class="refit-spacer"></span>
+        <button class="bb sm" id="refit-help" title="how to build">? HELP</button>
         <button class="bb sm" id="refit-undo" title="undo (Ctrl+Z)">↶ UNDO</button>
         <button class="bb sm" id="refit-redo" title="redo (Ctrl+Shift+Z)">↷ REDO</button>
         <button class="bb sm" id="refit-fit" title="frame the station">⊹ FIT</button>
-        <button class="bb sm danger" id="refit-done" title="exit build mode (Esc)">✓ DONE</button>
+        <button class="bb sm refit-primary" id="refit-done" title="finish + save (Esc)">✓ DONE</button>
       </div>
       <div class="refit-dock">
         <div class="refit-tools" id="refit-tools"></div>
@@ -103,31 +112,39 @@ const Build = (() => {
     ctx = cv.getContext('2d');
     tip = root.querySelector('#refit-tip');
     hintEl = root.querySelector('#refit-hint');
+    undoBtn = root.querySelector('#refit-undo');
+    redoBtn = root.querySelector('#refit-redo');
 
     const tools = root.querySelector('#refit-tools');
     TOOLS.forEach(t => {
       const btn = document.createElement('button');
       btn.className = 'bb refit-tool' + (t.id === tool ? ' active' : '');
-      btn.dataset.tool = t.id; btn.textContent = t.label;
+      btn.dataset.tool = t.id; btn.innerHTML = t.label + ' <span class="refit-key">' + t.key + '</span>';
+      btn.title = t.hint + '  (' + t.key + ')';
       btn.onclick = () => selectTool(t.id);
       tools.appendChild(btn);
     });
     renderPalette();
+    setCursor();
 
     root.querySelector('#refit-done').onclick = close;
+    root.querySelector('#refit-help').onclick = showGuide;
     root.querySelector('#refit-fit').onclick = () => { fitCamera(); };
-    root.querySelector('#refit-undo').onclick = () => { if (station.undo().ok) sfx('click'); else sfx('bad'); };
-    root.querySelector('#refit-redo').onclick = () => { if (station.redo().ok) sfx('click'); else sfx('bad'); };
+    undoBtn.onclick = () => { if (station.undo().ok) sfx('click'); else sfx('bad'); };
+    redoBtn.onclick = () => { if (station.redo().ok) sfx('click'); else sfx('bad'); };
 
     cv.addEventListener('pointerdown', onDown);
     cv.addEventListener('pointermove', onMove);
     cv.addEventListener('pointerup', onUp);
+    cv.addEventListener('pointercancel', onCancel);
     cv.addEventListener('pointerleave', () => { hoverRoomId = null; if (!drag) hideTip(); });
     cv.addEventListener('wheel', onWheel, { passive: false });
     cv.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('resize', resize);
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    try { ro = new ResizeObserver(() => { resize(); }); ro.observe(cv); } catch (e) {}
     setHint();
   }
 
@@ -155,7 +172,7 @@ const Build = (() => {
       Object.keys(station.FLOOR_STYLES).forEach(sid => {
         const b = document.createElement('button');
         b.className = 'refit-swatch' + (sid === style ? ' active' : '');
-        b.style.background = station.FLOOR_STYLES[sid].base;
+        b.appendChild(swatchCanvas(station.FLOOR_STYLES[sid].base));
         b.title = station.FLOOR_STYLES[sid].label;
         b.onclick = () => { style = sid; renderPalette(); sfx('click'); };
         pal.appendChild(b);
@@ -163,16 +180,63 @@ const Build = (() => {
     }
   }
 
+  // a tiny textured deck sample (so the swatch reads like the baked floor, not a flat chip)
+  function swatchCanvas(base) {
+    const c = document.createElement('canvas'); c.width = 24; c.height = 20;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.fillStyle = base; x.fillRect(0, 0, 24, 20);
+    x.fillStyle = U.shade(base, -0.3);
+    for (let i = 0; i <= 24; i += 6) x.fillRect(i, 0, 1, 20);
+    for (let j = 0; j <= 20; j += 6) x.fillRect(0, j, 24, 1);
+    x.fillStyle = U.shade(base, 0.22); x.fillRect(1, 1, 1, 1); x.fillRect(7, 7, 1, 1); x.fillRect(13, 13, 1, 1);
+    return c;
+  }
+
   function selectTool(id) {
     tool = id; drag = null; hideTip();
     root.querySelectorAll('.refit-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === id));
-    renderPalette(); setHint(); sfx('click');
+    renderPalette(); setHint(); setCursor(); sfx('click');
   }
 
   function setHint(msg) {
     if (!hintEl) return;
     const t = TOOLS.find(x => x.id === tool);
     hintEl.textContent = msg || (t ? t.hint : '') + '  ·  wheel = zoom · space-drag = pan';
+  }
+  function setCursor() {
+    if (!cv) return;
+    const t = TOOLS.find(x => x.id === tool);
+    cv.style.cursor = spaceHeld ? 'grab' : (t ? t.cursor : 'default');
+  }
+  function updateUndoRedo() {
+    if (undoBtn) undoBtn.disabled = !station.canUndo();
+    if (redoBtn) redoBtn.disabled = !station.canRedo();
+  }
+
+  /* ---------- first-use guide ---------- */
+  function hasSeen() { try { return !!localStorage.getItem(SEEN_KEY); } catch (e) { return false; } }
+  function markSeen() { try { localStorage.setItem(SEEN_KEY, '1'); } catch (e) {} }
+  function showGuide() {
+    if (!root || root.querySelector('.refit-guide')) return;
+    const g = document.createElement('div');
+    g.className = 'refit-guide';
+    g.innerHTML = `
+      <div class="refit-guide-card">
+        <h3>▮ BUILD YOUR STATION</h3>
+        <ul>
+          <li><b>Drag</b> on the grid to place a <b>ROOM</b>.</li>
+          <li><b>Drag</b> along an axis to run a <b>HALLWAY</b> — any length.</li>
+          <li>Rooms &amp; halls that <b>touch auto-connect</b> with a door.</li>
+          <li><span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked (a tip says why).</li>
+          <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
+          <li>Your agent walks the rooms + corridors you build.</li>
+        </ul>
+        <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
+      </div>`;
+    root.appendChild(g);
+    const dismiss = () => { markSeen(); if (g.parentNode) g.parentNode.removeChild(g); };
+    g.querySelector('#refit-guide-go').onclick = dismiss;
+    g.addEventListener('click', e => { if (e.target === g) dismiss(); });
   }
 
   /* ---------- camera + sizing ---------- */
@@ -184,7 +248,7 @@ const Build = (() => {
   }
   function seedStars() {
     stars = [];
-    for (let i = 0; i < 120; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
+    for (let i = 0; i < 110; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
   }
   function fitCamera() {
     const b = station.bounds(), t = T();
@@ -195,7 +259,6 @@ const Build = (() => {
     panY = cv.height / 2 - (wy1 + wy2) / 2 * zoom;
   }
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
-  // client → canvas backing px
   function toCanvas(ev) {
     const r = cv.getBoundingClientRect();
     return { x: (ev.clientX - r.left) * (cv.width / r.width), y: (ev.clientY - r.top) * (cv.height / r.height) };
@@ -206,19 +269,25 @@ const Build = (() => {
   }
 
   /* ---------- pointer interaction ---------- */
-  function panTrigger(ev) { return tool === 'pan' || spaceHeld || ev.button === 1 || ev.button === 2; }
+  function panTrigger(ev) { return spaceHeld || ev.button === 1; }  // space-drag or middle-drag
 
   function onDown(ev) {
     lastClient = { x: ev.clientX, y: ev.clientY };
+    // right-button cancels an in-progress edit (and never starts one)
+    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } return; }
     try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
-    if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; return; }
+    if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
     if (tool === 'move') {
       const id = station.roomAt(w.tx, w.ty);
       if (!id) { flashTip(ev, 'nothing to move here'); return; }
       drag = { mode: 'move', roomId: id, start: w, cur: w, moved: false };
-    } else if (tool === 'paint' || tool === 'reclaim') {
+    } else if (tool === 'paint') {
+      const id = station.roomAt(w.tx, w.ty);
+      if (!id) { flashTip(ev, 'nothing to paint here'); return; }
+      drag = { mode: 'paint', roomId: id, start: w, cur: w, cells: new Set([w.tx + ',' + w.ty]), moved: false };
+    } else if (tool === 'reclaim') {
       drag = { mode: 'click', start: w, cur: w, moved: false };
     } else { // room | hall
       drag = { mode: 'draw', start: w, cur: w, moved: false };
@@ -235,6 +304,7 @@ const Build = (() => {
     const w = toWorldTile(ev);
     if (drag) {
       if (w.tx !== drag.cur.tx || w.ty !== drag.cur.ty) drag.moved = true;
+      if (drag.mode === 'paint') rasterTo(drag, w);   // accumulate every tile the brush crosses
       drag.cur = w;
     } else {
       hoverRoomId = station.roomAt(w.tx, w.ty);
@@ -245,17 +315,34 @@ const Build = (() => {
     try { cv.releasePointerCapture(ev.pointerId); } catch (e) {}
     if (!drag) return;
     const d = drag; drag = null;
+    setCursor();
     if (d.mode === 'pan') return;
     if (d.mode === 'draw') return commitDraw(d, ev);
     if (d.mode === 'move') return commitMove(d, ev);
+    if (d.mode === 'paint') return commitPaint(d, ev);
     if (d.mode === 'click') return commitClick(d, ev);
+  }
+  function onCancel() { if (drag) { drag = null; hideTip(); setCursor(); } }
+  function onBlur() { spaceHeld = false; if (drag && drag.mode === 'pan') drag = null; setCursor(); }
+
+  // add every tile on the segment from drag.cur to w (so a fast brush stroke skips nothing)
+  function rasterTo(d, w) {
+    let x0 = d.cur.tx, y0 = d.cur.ty; const x1 = w.tx, y1 = w.ty;
+    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy, guard = 0;
+    while (guard++ < 4096) {
+      d.cells.add(x0 + ',' + y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x0 += sx; }
+      if (e2 < dx) { err += dx; y0 += sy; }
+    }
   }
 
   function commitDraw(d, ev) {
     const rect = (tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur);
-    const res = (tool === 'hall')
-      ? station.placeHallway({ rect })
-      : station.addRoom({ kind, rect });
+    const res = (tool === 'hall') ? station.placeHallway({ rect }) : station.addRoom({ kind, rect });
+    if (res && res.ok) pushFlash([rect], false);
     feedback(res, ev, tool === 'hall' ? 'hallway run' : 'room placed');
   }
   function commitMove(d, ev) {
@@ -263,66 +350,94 @@ const Build = (() => {
     if (!dx && !dy) { hideTip(); return; }
     feedback(station.moveRoom(d.roomId, dx, dy), ev, 'relocated');
   }
-  function commitClick(d, ev) {
+  function commitPaint(d, ev) {
+    if (d.moved) {
+      const tiles = [...d.cells].map(k => { const p = k.split(','); return [+p[0], +p[1]]; });
+      feedback(station.paintTiles(d.roomId, tiles, style), ev, 'painted');
+    } else {
+      feedback(station.setFloor(d.roomId, style), ev, 'deck repainted');   // a plain click fills the room
+    }
+  }
+  function commitClick(d, ev) {   // RECLAIM
     const id = station.roomAt(d.cur.tx, d.cur.ty);
     if (!id) return;
-    if (tool === 'paint') feedback(station.setFloor(id, style), ev, 'repainted');
-    else feedback(station.removeRoom(id), ev, 'reclaimed');
+    const rm = station.roomById(id);
+    const res = station.removeRoom(id);
+    if (res && res.ok) { if (rm) pushFlash(rm.rects, true); flashUndo(); flashTip(ev, 'reclaimed — UNDO to restore', true); sfx('click'); }
+    else if (res && res.error === 'SPAWN_ROOM') { flashTip(ev, 'spawn room — can’t reclaim (try MOVE)'); sfx('bad'); }
+    else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
   }
   function feedback(res, ev, okMsg) {
     if (res && res.ok) { sfx('click'); flashTip(ev, okMsg, true); }
     else { sfx('bad'); flashTip(ev, (res && res.msg) || 'blocked'); }
   }
+  function pushFlash(rects, bad) { flashes.push({ rects: rects.map(r => Object.assign({}, r)), t0: performance.now(), bad: !!bad }); }
+  function flashUndo() { if (undoBtn) { undoBtn.classList.add('pulse'); setTimeout(() => undoBtn && undoBtn.classList.remove('pulse'), 900); } }
 
   function onWheel(ev) {
     ev.preventDefault();
     const c = toCanvas(ev), t = T();
     const wx = (c.x - panX) / zoom, wy = (c.y - panY) / zoom;
-    zoom = clamp(zoom * Math.exp(-ev.deltaY * 0.0015), MINZ, MAXZ);
+    const d = clamp(ev.deltaY, -50, 50);   // normalize notch vs trackpad so one mouse click doesn't over-zoom
+    zoom = clamp(zoom * Math.exp(-d * 0.0022), MINZ, MAXZ);
     panX = c.x - wx * zoom; panY = c.y - wy * zoom;
   }
 
   function onKey(ev) {
     const a = ev.target;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
-    if (ev.key === ' ') { ev.preventDefault(); spaceHeld = true; return; }
-    if (ev.key === 'Escape') return close();
+    if (ev.key === ' ') { ev.preventDefault(); spaceHeld = true; setCursor(); return; }
+    if (ev.key === 'Escape') {
+      const card = root && root.querySelector('.refit-guide');
+      if (card) { markSeen(); card.parentNode.removeChild(card); return; }
+      if (drag) { drag = null; hideTip(); setCursor(); return; }   // cancel an in-progress edit first
+      return close();
+    }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'z' || ev.key === 'Z')) {
       ev.preventDefault();
       const r = ev.shiftKey ? station.redo() : station.undo();
       sfx(r.ok ? 'click' : 'bad'); return;
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'y' || ev.key === 'Y')) { ev.preventDefault(); sfx(station.redo().ok ? 'click' : 'bad'); return; }
+    if (ev.key === 'f' || ev.key === 'F') { fitCamera(); return; }
     const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim' };
     if (map[ev.key]) selectTool(map[ev.key]);
   }
-  function onKeyUp(ev) { if (ev.key === ' ') spaceHeld = false; }
+  function onKeyUp(ev) { if (ev.key === ' ') { spaceHeld = false; setCursor(); } }
 
   /* ---------- geometry helpers (world tiles) ---------- */
   function norm(a, b) { return { x1: Math.min(a.tx, b.tx), y1: Math.min(a.ty, b.ty), x2: Math.max(a.tx, b.tx), y2: Math.max(a.ty, b.ty) }; }
+  // a corridor lane along the dominant drag axis; its WIDTH grows toward the drag, not always south/east
   function laneRect(a, b) {
     const dx = b.tx - a.tx, dy = b.ty - a.ty, w = hallWidth - 1;
-    if (Math.abs(dx) >= Math.abs(dy)) return { x1: Math.min(a.tx, b.tx), y1: a.ty, x2: Math.max(a.tx, b.tx), y2: a.ty + w };
-    return { x1: a.tx, y1: Math.min(a.ty, b.ty), x2: a.tx + w, y2: Math.max(a.ty, b.ty) };
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      const y1 = dy < 0 ? a.ty - w : a.ty, y2 = dy < 0 ? a.ty : a.ty + w;
+      return { x1: Math.min(a.tx, b.tx), y1, x2: Math.max(a.tx, b.tx), y2 };
+    }
+    const x1 = dx < 0 ? a.tx - w : a.tx, x2 = dx < 0 ? a.tx : a.tx + w;
+    return { x1, y1: Math.min(a.ty, b.ty), x2, y2: Math.max(a.ty, b.ty) };
   }
   function ghostInfo() {
-    if (!drag || (drag.mode !== 'draw' && drag.mode !== 'move')) return null;
+    if (!drag) return null;
     if (drag.mode === 'draw') {
       const rect = (tool === 'hall') ? laneRect(drag.start, drag.cur) : norm(drag.start, drag.cur);
       const v = (tool === 'hall') ? station.canPlaceHallway([rect]) : station.canPlaceRoom([rect], kind);
-      return { rects: [rect], v };
+      return { rects: [rect], v, kind: tool };
     }
-    // move
-    const rm = station.roomById(drag.roomId); if (!rm) return null;
-    const dx = drag.cur.tx - drag.start.tx, dy = drag.cur.ty - drag.start.ty;
-    const rects = rm.rects.map(r => ({ x1: r.x1 + dx, y1: r.y1 + dy, x2: r.x2 + dx, y2: r.y2 + dy }));
-    const v = rm.kind === 'corridor' ? station.canPlaceHallway(rects, rm.id) : station.canPlaceRoom(rects, rm.kind, rm.id);
-    return { rects, v, move: true };
+    if (drag.mode === 'move') {
+      const rm = station.roomById(drag.roomId); if (!rm) return null;
+      const dx = drag.cur.tx - drag.start.tx, dy = drag.cur.ty - drag.start.ty;
+      const rects = rm.rects.map(r => ({ x1: r.x1 + dx, y1: r.y1 + dy, x2: r.x2 + dx, y2: r.y2 + dy }));
+      const v = rm.kind === 'corridor' ? station.canPlaceHallway(rects, rm.id) : station.canPlaceRoom(rects, rm.kind, rm.id);
+      return { rects, v, move: true, dx, dy };
+    }
+    return null;
   }
 
   /* ---------- render loop ---------- */
   function rebake() {
-    cache = StationBake.bake(station.projectGeometry());
+    cacheGeo = station.projectGeometry();
+    cache = StationBake.bake(cacheGeo);
     bakeDirty = false;
   }
 
@@ -332,12 +447,11 @@ const Build = (() => {
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#04050a'; ctx.fillRect(0, 0, cv.width, cv.height);
-    // starfield (screen space)
-    for (const s of stars) {
-      const tw = 0.3 + 0.6 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph));
-      ctx.fillStyle = 'rgba(170,195,230,' + tw + ')';
-      ctx.fillRect((s.x * cv.width + now / 1000 * 6) % cv.width, s.y * cv.height, s.r, s.r);
+    ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height);
+    for (const s of stars) {   // starfield matched to the live world so entering/exiting REFIT doesn't jump
+      const tw = 0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph));
+      ctx.fillStyle = 'rgba(180,200,230,' + tw + ')';
+      ctx.fillRect((s.x * cv.width + now / 1000 * 8) % cv.width, s.y * cv.height, s.r, s.r);
     }
 
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
@@ -347,6 +461,7 @@ const Build = (() => {
     drawGrid(t);
     ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
+    drawFlashes(now, t);
     drawHover(t);
     drawGhost(t, now);
 
@@ -354,17 +469,26 @@ const Build = (() => {
   }
 
   function drawGrid(t) {
-    // faint cyan blueprint grid across the visible world, brighter inside the footprint
-    const x0 = (-panX) / zoom, y0 = (-panY) / zoom;
-    const x1 = (cv.width - panX) / zoom, y1 = (cv.height - panY) / zoom;
-    const tx0 = Math.floor(x0 / t) - 1, ty0 = Math.floor(y0 / t) - 1;
-    const tx1 = Math.ceil(x1 / t) + 1, ty1 = Math.ceil(y1 / t) + 1;
+    const x0 = (-panX) / zoom, y0 = (-panY) / zoom, x1 = (cv.width - panX) / zoom, y1 = (cv.height - panY) / zoom;
+    const tx0 = Math.floor(x0 / t) - 1, ty0 = Math.floor(y0 / t) - 1, tx1 = Math.ceil(x1 / t) + 1, ty1 = Math.ceil(y1 / t) + 1;
     ctx.lineWidth = 1 / zoom;
-    ctx.strokeStyle = 'rgba(120,200,255,0.10)';
+    ctx.strokeStyle = 'rgba(120,200,255,0.07)';
     ctx.beginPath();
     for (let gx = tx0; gx <= tx1; gx++) { ctx.moveTo(gx * t, y0); ctx.lineTo(gx * t, y1); }
     for (let gy = ty0; gy <= ty1; gy++) { ctx.moveTo(x0, gy * t); ctx.lineTo(x1, gy * t); }
     ctx.stroke();
+    // brighter cells over the actual footprint (the comment's promise, now real)
+    if (cacheGeo && (tx1 - tx0) * (ty1 - ty0) < 6000) {
+      const ox = cacheGeo.origin.tx, oy = cacheGeo.origin.ty, zg = cacheGeo.zoneGrid, idx = cacheGeo.idx, C = cacheGeo.COLS, R = cacheGeo.ROWS;
+      ctx.strokeStyle = 'rgba(140,210,255,0.16)';
+      ctx.beginPath();
+      for (let gy = ty0; gy <= ty1; gy++) for (let gx = tx0; gx <= tx1; gx++) {
+        const lx = gx - ox, ly = gy - oy;
+        if (lx < 0 || ly < 0 || lx >= C || ly >= R || zg[idx(lx, ly)] == null) continue;
+        ctx.rect(gx * t + 0.5 / zoom, gy * t + 0.5 / zoom, t - 1 / zoom, t - 1 / zoom);
+      }
+      ctx.stroke();
+    }
   }
 
   function drawGlows(now) {
@@ -380,17 +504,42 @@ const Build = (() => {
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  // place/delete confirmation flashes — a quick bright pulse that fades over ~500ms
+  function drawFlashes(now, t) {
+    for (let i = flashes.length - 1; i >= 0; i--) {
+      const fl = flashes[i], k = (now - fl.t0) / 500;
+      if (k >= 1) { flashes.splice(i, 1); continue; }
+      const a = (1 - k) * 0.5;
+      ctx.fillStyle = fl.bad ? 'rgba(255,110,90,' + a + ')' : 'rgba(170,255,210,' + a + ')';
+      for (const r of fl.rects) ctx.fillRect(r.x1 * t, r.y1 * t, (r.x2 - r.x1 + 1) * t, (r.y2 - r.y1 + 1) * t);
+    }
+  }
+
   function drawHover(t) {
     if (drag) return;
     if (tool !== 'move' && tool !== 'reclaim' && tool !== 'paint') return;
     if (!hoverRoomId) return;
     const rm = station.roomById(hoverRoomId); if (!rm) return;
+    const protectedSpawn = tool === 'reclaim' && hoverRoomId === station.spawnRoomId();
     ctx.lineWidth = 1.5 / zoom;
-    ctx.strokeStyle = tool === 'reclaim' ? 'rgba(255,92,77,0.9)' : 'rgba(120,220,255,0.9)';
+    ctx.strokeStyle = protectedSpawn ? 'rgba(255,200,80,0.95)' : (tool === 'reclaim' ? 'rgba(255,92,77,0.95)' : 'rgba(120,220,255,0.95)');
     for (const r of rm.rects) ctx.strokeRect(r.x1 * t + 1, r.y1 * t + 1, (r.x2 - r.x1 + 1) * t - 2, (r.y2 - r.y1 + 1) * t - 2);
+    if (protectedSpawn) { // a small lock badge so the block is predictable, not surprising
+      const z = rm.rects[0]; ctx.fillStyle = 'rgba(255,200,80,0.95)'; ctx.font = (10 / zoom) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('⌂', (z.x1 + 0.5) * t, (z.y1 + 0.5) * t);
+    }
   }
 
   function drawGhost(t, now) {
+    // paint brush: tint the crossed tiles with the chosen deck colour
+    if (drag && drag.mode === 'paint' && drag.moved) {
+      const base = station.FLOOR_STYLES[style] ? station.FLOOR_STYLES[style].base : '#888';
+      ctx.globalAlpha = 0.55; ctx.fillStyle = base;
+      for (const k of drag.cells) { const p = k.split(','); if (station.roomAt(+p[0], +p[1]) === drag.roomId) ctx.fillRect(+p[0] * t, +p[1] * t, t, t); }
+      ctx.globalAlpha = 1;
+      showTip(drag.cells.size + ' tiles', true);
+      return;
+    }
     const g = ghostInfo();
     if (!g) return;
     const ok = g.v && g.v.ok;
@@ -402,11 +551,11 @@ const Build = (() => {
       ctx.fillStyle = fill; ctx.fillRect(X, Y, Wd, Hd);
       ctx.strokeStyle = line; ctx.strokeRect(X + 0.5 / zoom, Y + 0.5 / zoom, Wd - 1 / zoom, Hd - 1 / zoom);
     }
-    // size + validity readout at the cursor
-    const r0 = g.rects[0];
-    const w = r0.x2 - r0.x1 + 1, h = r0.y2 - r0.y1 + 1;
-    const label = ok ? (w + '×' + h) : ((g.v && g.v.msg) || 'blocked');
-    showTip(label, ok);
+    // live readout: dimensions while placing/sizing; the reason when blocked
+    const r0 = g.rects[0], w = r0.x2 - r0.x1 + 1, h = r0.y2 - r0.y1 + 1;
+    let dims = g.move ? ('move ' + (g.dx >= 0 ? '+' : '') + g.dx + ',' + (g.dy >= 0 ? '+' : '') + g.dy)
+      : (tool === 'hall' ? (Math.max(w, h) + ' long × ' + Math.min(w, h)) : (w + '×' + h));
+    showTip(ok ? dims : (dims + ' · ' + ((g.v && g.v.msg) || 'blocked')), ok);
   }
 
   /* ---------- tooltip ---------- */
@@ -416,15 +565,19 @@ const Build = (() => {
     tip.classList.toggle('ok', !!ok);
     tip.classList.toggle('bad', !ok);
     tip.style.display = 'block';
-    tip.style.left = (lastClient.x + 16) + 'px';
-    tip.style.top = (lastClient.y + 14) + 'px';
+    // clamp within the viewport so it never clips off the right/bottom edge
+    const tw = tip.offsetWidth || 80, th = tip.offsetHeight || 18;
+    const x = Math.min(lastClient.x + 16, window.innerWidth - tw - 6);
+    const y = Math.min(lastClient.y + 14, window.innerHeight - th - 6);
+    tip.style.left = Math.max(6, x) + 'px';
+    tip.style.top = Math.max(6, y) + 'px';
   }
   function hideTip() { if (tip) tip.style.display = 'none'; }
   let tipTimer = 0;
   function flashTip(ev, text, ok) {
     lastClient = { x: ev.clientX, y: ev.clientY };
     showTip(text, ok); clearTimeout(tipTimer);
-    tipTimer = setTimeout(hideTip, 1100);
+    tipTimer = setTimeout(hideTip, 1300);
   }
 
   function sfx(n) { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); }

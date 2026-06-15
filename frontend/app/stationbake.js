@@ -360,6 +360,12 @@ const StationBake = (() => {
 
   /* ---------- public ---------- */
   function bake(geo) {
+    // belt-and-suspenders: never allocate gigabytes for a malformed/oversized imported geometry
+    // (the model's MAX_SPAN normally keeps this far below the ceiling).
+    if (geo.W * geo.H > 16e6) {
+      const blank = document.createElement('canvas'); blank.width = 1; blank.height = 1;
+      return { baseCv: blank, lightCv: blank, W: geo.W, H: geo.H, origin: geo.origin, flickers: [] };
+    }
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
     lampPos = []; chamferAt = {};
     for (const [cx, cy, k] of geo.chamfers) chamferAt[cx + ',' + cy] = k;

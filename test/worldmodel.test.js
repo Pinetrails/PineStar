@@ -153,4 +153,46 @@ const partial = WM.deserialize({ schema: 'skynet.station', version: 1,
 A.eq(partial.rooms().length, 1, 'deserialize backfills a missing order[] from rooms{}');
 A.eq(partial.spawnRoomId(), 'rX', 'deserialize re-derives spawnRoomId for a partial doc');
 
+/* ---- walkability + pathfinding over the projected geometry ---- */
+const s8 = WM.create();                                  // HAB-01 {0..17,0..10}
+s8.addRoom({ kind: 'lab', rect: { x1: 20, y1: 0, x2: 28, y2: 8 } });
+s8.placeHallway({ rect: { x1: 18, y1: 3, x2: 19, y2: 4 } });  // bridges hab <-> lab
+const g8 = s8.projectGeometry();
+const ox8 = g8.origin.tx, oy8 = g8.origin.ty;
+const L = (wx, wy) => [wx - ox8, wy - oy8];              // world -> local
+const habT = L(3, 5), labT = L(24, 5);
+A.ok(g8.walkable(habT[0], habT[1]), 'hab interior tile is walkable');
+A.ok(g8.walkable(labT[0], labT[1]), 'lab interior tile is walkable');
+A.ok(!g8.walkable(-1, -1), 'off-grid is not walkable');
+A.ok(!g8.walkable(0, 0), 'a margin/void tile is not walkable');
+const cz = g8.chamfers[0];
+A.ok(cz && !g8.walkable(cz[0], cz[1]), 'a rounded-corner (chamfer) tile is not walkable');
+
+const p = g8.path(habT[0], habT[1], labT[0], labT[1]);
+A.ok(p && p.length > 0, 'a path from hab to lab exists');
+A.ok(p[p.length - 1].x === labT[0] && p[p.length - 1].y === labT[1], 'path ends at the target tile');
+A.eq(g8.path(habT[0], habT[1], 0, 0), null, 'no path to a void tile');
+const extra = new Set();
+for (let wx = 18; wx <= 19; wx++) for (let wy = 3; wy <= 4; wy++) extra.add((wx - ox8) + ',' + (wy - oy8));
+A.eq(g8.path(habT[0], habT[1], labT[0], labT[1], extra), null, 'blocking the only corridor severs the path');
+
+/* ---- footprint span cap (the far-room canvas-explosion guard) ---- */
+const s9 = WM.create();
+A.ok(!s9.addRoom({ kind: 'lab', rect: { x1: 800, y1: 600, x2: 806, y2: 606 } }).ok, 'a far-flung room is rejected');
+A.eq(s9.addRoom({ kind: 'lab', rect: { x1: 800, y1: 600, x2: 806, y2: 606 } }).error, 'TOO_FAR', '...with TOO_FAR');
+A.ok(s9.addRoom({ kind: 'lab', rect: { x1: 22, y1: 0, x2: 28, y2: 6 } }).ok, 'a nearby room is still fine');
+
+/* ---- migrate() is total over corrupt docs (ghost order id / missing rects) ---- */
+A.notThrows(() => {
+  const g = WM.deserialize({ schema: 'skynet.station', version: 1,
+    rooms: { rA: { id: 'rA', kind: 'hab', name: 'A', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } },
+    order: ['rA', 'rGHOST'], meta: { spawnRoomId: 'rGHOST' } });
+  g.projectGeometry(); g.bounds(); g.canPlaceRoom([{ x1: 9, y1: 9, x2: 13, y2: 13 }], 'lab');
+}, 'a doc with a ghost order id does not crash any read path');
+A.notThrows(() => {
+  const g = WM.deserialize({ schema: 'skynet.station', version: 1,
+    rooms: { rB: { id: 'rB', kind: 'hab', name: 'B' } }, order: ['rB'] });   // room with no rects
+  g.projectGeometry(); g.rooms();
+}, 'a room with no rects[] is repaired, not crashed');
+
 A.report('worldmodel');

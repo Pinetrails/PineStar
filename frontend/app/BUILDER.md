@@ -48,14 +48,18 @@ frame (the model itself uses signed, unbounded world-tile coords so the station 
   ROOM_IDS:[...], isCorridor(z),     // room vs corridor split
   chamfers:[[x,y,kind]],             // void-exposed room corners to round
   windows:[], doorDefs:[[x1,y1,x2,y2]], zoneGrid, idx(x,y), canStep(x1,y1,x2,y2),
+  walkable(lx,ly,extra?), path(sx,sy,tx,ty,extra?), blockedTiles,  // BFS nav for the live agent
   baseColorOf(id,lx,ly),             // per-tile floor base colour (room style or paint override)
   nameOf(id), kindOf(id), FLOOR_STYLES }
 ```
 
 Doors are **auto-derived**: any two orthogonally-adjacent different-zone tiles become an open
-threshold, so abutting rooms/corridors connect with no manual door tool.
+threshold, so abutting rooms/corridors connect with no manual door tool. `walkable`/`path` power the
+live agent: a tile is walkable if it's in a zone, not a rounded-corner (chamfer) tile, and not in the
+caller's `extra` blocked set (furniture/desks live in the renderer, passed per query); `path` is a BFS
+that crosses zone seams only where `canStep` allows (same zone or a door).
 
-Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `BAD_STYLE`, `SPAWN_ROOM`, `NOT_FOUND`, `NO_RECT`.
+Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `TOO_FAR`, `BAD_STYLE`, `SPAWN_ROOM`, `NOT_FOUND`, `NO_RECT`, `NOTHING` (undo/redo).
 
 ## Extending
 
@@ -67,9 +71,9 @@ Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `BAD_STYLE`, `SPAWN
 
 - **Furniture / object → capability placement** (the v7 `F{}` table is the catalog; `object.place` /
   `object.reclaim` events are already in `shared/events.js`).
-- **Making the built station the LIVE world** — `app/world.js` still renders the single starter room.
-  Driving the live sim + agent pathfinding from this model (multi-room `path()` through doors) is a
-  separate, heavier `world.js` change (and overlaps the camera workstream's renderer), so it's kept clean.
+- **~~Making the built station the LIVE world~~ — DONE.** `app/world.js` now renders the player-built
+  station (multi-room) via `StationBake` under a pan/zoom camera, and the agent walks it room-to-room
+  through doors via `geo.path()`, re-baking live on REFIT edits. (Furniture/object placement is still ahead.)
 - **Chunked / incremental bake** (the bible §5.2) — today every edit re-bakes the whole station
   (fast for small stations); `WorldPatch.dirtyRects` is already emitted to drive a chunk cache later.
 - **Discrete door placement**, **Salvage/XP economy + tiers**, **PixelLab hi-tier art**.
