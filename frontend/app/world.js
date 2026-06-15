@@ -31,6 +31,7 @@ const World = (() => {
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
+  let floodAt = 0, floodEndAt = 0, floodStreams = null;        // THE FLOOD: screen-space data-cascade — start / collapse-trigger / seeded streams
   const stars = [];
 
   /* reduced-motion (the warroom honesty floor): heavy motion — pulses/blinks — goes steady when the OS
@@ -336,7 +337,27 @@ const World = (() => {
   }
   function truthPulse() { truthPulseAt = performance.now(); }
   function endAwakening() { wakeDarkTarget = 0; dawnAt = performance.now(); wakeIn(); }   // DAWN: light floods + ripple fires (agent stays frozen/facing-you for the final line)
-  function releaseAwakening() { awakeFrozen = false; sparkAt = 0; }                        // hand the newborn back to its own autonomous life
+  function releaseAwakening() { awakeFrozen = false; sparkAt = 0; floodAt = 0; floodEndAt = 0; floodStreams = null; }   // hand the newborn back to its own autonomous life
+  /* THE FLOOD — the rush of waking into vast knowledge. A screen-space cascade of streaming phosphor
+     tokens (seeded with REAL forming-prompt + capability fragments passed in, padded with glyph noise —
+     never fake facts) builds to overwhelming density, then collapseFlood() pulls every glyph inward into
+     the newborn's mind. Deterministic per stream after seeding so the frame is stable. */
+  const FLOOD_GLYPHS = '01<>/\\{}[]()=+*#%&@|;:.01_-01アイウエオカキクケコ10サシスセソ01';
+  function beginFlood(words) {
+    floodAt = performance.now(); floodEndAt = 0;
+    const pool = (Array.isArray(words) ? words : []).map(s => String(s || '').trim()).filter(Boolean);
+    const N = 30, streams = [];
+    for (let i = 0; i < N; i++) {
+      const len = 9 + Math.floor(Math.random() * 12), toks = [];
+      for (let j = 0; j < len; j++) {
+        if (pool.length && Math.random() < 0.24) toks.push(pool[Math.floor(Math.random() * pool.length)]);
+        else { let s = ''; const gl = 1 + Math.floor(Math.random() * 2); for (let k = 0; k < gl; k++) s += FLOOD_GLYPHS[Math.floor(Math.random() * FLOOD_GLYPHS.length)]; toks.push(s); }
+      }
+      streams.push({ x: (i + 0.5) / N + (Math.random() - 0.5) * 0.012, speed: 70 + Math.random() * 150, size: 12 + Math.floor(Math.random() * 7), delay: Math.random() * 1100, toks, len });
+    }
+    floodStreams = streams;
+  }
+  function collapseFlood() { if (floodAt && !floodEndAt) floodEndAt = performance.now(); }   // pull the cascade inward into the mind
   function refit() { fitNeeded = true; }
   function say(text) {
     if (!agent) return;
@@ -869,6 +890,7 @@ const World = (() => {
       ctx.fillRect(0, 0, cv.width, cv.height);
       ctx.setTransform(scale, 0, 0, scale, panX, panY);
     }
+    if (floodAt) drawFlood(now);   // THE FLOOD — the cascade of knowledge streaming in, over the dark room
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     drawDeskGauge(now);   // the context-window memory core at the workstation (world-space, above the lightmap)
     if (agent && !agent.unplaced) drawBubble(now);
@@ -936,6 +958,44 @@ const World = (() => {
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     g.addColorStop(0, 'rgba(255,214,150,' + a.toFixed(3) + ')'); g.addColorStop(1, 'rgba(255,214,150,0)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.globalCompositeOperation = 'source-over'; ctx.setTransform(scale, 0, 0, scale, panX, panY);
+  }
+  // THE FLOOD — screen-space matrix-rain of real prompt/capability fragments + glyph noise; ramps to
+  // overwhelming density, then collapses every glyph inward into the newborn. Amber/gold phosphor to sit
+  // with the CRT + dawn palette; hot-white leading glyph. Self-terminating once the collapse completes.
+  function drawFlood(now) {
+    if (!floodAt || !floodStreams) return;
+    const t = now - floodAt;
+    const rampIn = Math.min(1, t / 1400);
+    let collapse = 0;
+    if (floodEndAt) {
+      collapse = (now - floodEndAt) / 1000;
+      if (collapse >= 1) { floodAt = 0; floodEndAt = 0; floodStreams = null; return; }
+    }
+    const ec = collapse <= 0 ? 0 : (collapse < 0.5 ? 2 * collapse * collapse : 1 - Math.pow(-2 * collapse + 2, 2) / 2);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.textBaseline = 'top';
+    let ax = cv.width / 2, ay = cv.height * 0.46;
+    if (agent && !agent.unplaced) { ax = agent.px * scale + panX; ay = (agent.py - 8) * scale + panY; }
+    const lineH = 15, H = cv.height, span = (Math.ceil(H / lineH) + 9) * lineH, tail = 8;
+    const base = rampIn * (1 - ec * 0.9);
+    for (const st of floodStreams) {
+      const tt = t - st.delay; if (tt < 0) continue;
+      const x = st.x * cv.width;
+      ctx.font = st.size + 'px VT323, monospace';
+      const headRow = Math.floor((tt / 1000 * st.speed) / lineH);
+      for (let k = 0; k < tail; k++) {
+        const row = headRow - k;
+        let y = (row * lineH) % span; if (y < 0) y += span; y -= tail * lineH;
+        if (y < -lineH || y > H) continue;
+        let a = base * (k === 0 ? 1 : Math.max(0, (1 - k / tail)) * 0.62);
+        let dx = x, dy = y;
+        if (ec > 0) { dx = x + (ax - x) * ec; dy = y + (ay - y) * ec; a *= (1 - ec); }
+        if (a <= 0.02) continue;
+        const tok = st.toks[((row % st.len) + st.len) % st.len];
+        ctx.fillStyle = k === 0 ? 'rgba(255,250,235,' + Math.min(1, a * 1.25).toFixed(3) + ')' : 'rgba(255,200,120,' + a.toFixed(3) + ')';
+        ctx.fillText(tok, dx, dy);
+      }
+    }
     ctx.globalCompositeOperation = 'source-over'; ctx.setTransform(scale, 0, 0, scale, panX, panY);
   }
 
@@ -1178,5 +1238,5 @@ const World = (() => {
     ctx.textAlign = 'left';
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, endAwakening, releaseAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit };
+  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit };
 })();
