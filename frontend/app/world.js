@@ -29,6 +29,8 @@ const World = (() => {
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
   let drag = null, hoverAgent = false, onClick = null, wakeAt = 0;
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
+  let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
+  let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   const stars = [];
 
   /* ---------- agent ---------- */
@@ -245,11 +247,37 @@ const World = (() => {
   function start() { if (running) return; running = true; last = performance.now(); frame(last); }
   function stop() { running = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } }
   function wakeIn() { wakeAt = performance.now(); }
-  // the AWAKENING: room starts dark + the agent frozen; setWakeProgress(0..1) eases the darkness up
-  // toward first light as the onboarding authors each doc; endAwakening lifts it fully and fires the ripple.
-  function beginAwakening() { awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; }
+
+  /* ---------- THE AWAKENING — a witnessed birth (cinematic camera + spark + dark->dawn) ----------
+     The room opens near-black with the newborn frozen and facing AWAY; a scripted camera pushes in as it
+     stirs, holds close through the four self-discovery beats, then pulls back to reveal its whole world at
+     dawn. All self-contained + gated to the awakening so it never fights the general camera path. */
+  const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const lerpv = (a, b, k) => a + (b - a) * k;
+  function camTweenTo(toS, toX, toY, dur, ease, onEnd) {
+    camAnim = { fromS: scale, toS: clampz(toS, MINZ, MAXZ), fromX: panX, toX, fromY: panY, toY, t: 0, dur: dur || 1500, ease: ease || easeInOut, onEnd: onEnd || null };
+  }
+  // a camera target that centers world point (px,py) on screen at zoom sc — 0.46 height leaves headroom above
+  function camCenterOn(px, py, sc) { sc = clampz(sc, MINZ, MAXZ); return [sc, cv.width / 2 - px * sc, cv.height * 0.46 - py * sc]; }
+  function beginAwakening() { awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; camAnim = null; if (agent) agent.dir = 'north'; }   // newborn faces AWAY until the Turn
   function setWakeProgress(p) { p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
-  function endAwakening() { awakeFrozen = false; wakeDarkTarget = 0; wakeIn(); }
+  function igniteSpark() { sparkAt = performance.now(); bornAt = performance.now(); wakeDark = 0.985; wakeDarkTarget = 0.985; }   // the mind catches fire — snap to near-total dark so the spark is the ONLY light
+  function camPushIn() { if (!cache || !agent || agent.unplaced) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, 3.2); camTweenTo(s, x, y, 2600); }
+  function camCreep() { if (!cache || !agent || agent.unplaced || camAnim) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, scale * 1.035); camTweenTo(s, x, y, 600); }   // a hair closer with each truth
+  function camPunch() { if (!agent || agent.unplaced || camAnim) return; const b = scale; const [s1, x1, y1] = camCenterOn(agent.px, agent.py - 4, b * 1.06); const [s0, x0, y0] = camCenterOn(agent.px, agent.py - 4, b); camTweenTo(s1, x1, y1, 150, t => t, () => camTweenTo(s0, x0, y0, 240)); }   // eyes finding yours
+  function camPullBack() { if (!cache) return; const W = cache.W, H = cache.H; const s = clampz(Math.min(cv.width / W, cv.height / H), MINZ, MAXZ); camTweenTo(s, (cv.width - W * s) / 2, (cv.height - H * s) / 2, 1700); }   // recompute fit at fire time -> no jump on release
+  // the Turn: the newborn finds the Commander — head leads, then the body pivots north -> side -> south and holds your gaze
+  function awakenTurn() {
+    if (!agent) return;
+    const side = (cache && agent.px > cache.W / 2) ? 'west' : 'east';
+    setGlance(side, 650, performance.now());
+    setTimeout(() => { if (agent) agent.dir = side; }, 240);
+    setTimeout(() => { if (agent) setGlance('south', 700, performance.now()); }, 760);
+    setTimeout(() => { if (agent) agent.dir = 'south'; }, 1000);
+  }
+  function truthPulse() { truthPulseAt = performance.now(); }
+  function endAwakening() { wakeDarkTarget = 0; dawnAt = performance.now(); wakeIn(); }   // DAWN: light floods + ripple fires (agent stays frozen/facing-you for the final line)
+  function releaseAwakening() { awakeFrozen = false; sparkAt = 0; }                        // hand the newborn back to its own autonomous life
   function refit() { fitNeeded = true; }
   function say(text) {
     if (!agent) return;
@@ -547,6 +575,12 @@ const World = (() => {
   function frame(now) {
     const dt = Math.min(64, now - last); last = now; fnow = now;
     if (wakeDark !== wakeDarkTarget) { wakeDark += (wakeDarkTarget - wakeDark) * Math.min(1, dt / 260); if (Math.abs(wakeDark - wakeDarkTarget) < 0.002) wakeDark = wakeDarkTarget; }
+    if (camAnim) {   // the scripted awakening camera owns {scale,panX,panY} while a move runs
+      camAnim.t = Math.min(1, camAnim.t + dt / camAnim.dur);
+      const k = camAnim.ease(camAnim.t);
+      scale = lerpv(camAnim.fromS, camAnim.toS, k); panX = lerpv(camAnim.fromX, camAnim.toX, k); panY = lerpv(camAnim.fromY, camAnim.toY, k);
+      if (camAnim.t >= 1) { const oe = camAnim.onEnd; camAnim = null; if (oe) oe(); }
+    }
     if (geoDirty) rederive();
     if (bakeDirty || !cache) rebake();
     tick(dt, now);
@@ -560,7 +594,7 @@ const World = (() => {
     }
 
     if (!cache) { if (running) raf = requestAnimationFrame(frame); return; }
-    if (fitNeeded) { fitCamera(); fitNeeded = false; }
+    if (fitNeeded && !camAnim) { fitCamera(); fitNeeded = false; }   // the scripted awakening camera owns the transform while it runs
     ctx.setTransform(scale, 0, 0, scale, panX, panY); ctx.imageSmoothingEnabled = false;
 
     ctx.drawImage(cache.baseCv, 0, 0);
@@ -591,14 +625,27 @@ const World = (() => {
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
-    // the AWAKENING veil — a screen-space darkness the onboarding lifts toward first light; drawn UNDER the
-    // speech bubble so the newborn's words still glow while the room is still dark.
+    drawAwakenLight(now);   // the soul kindling: ignition spark + a growing halo + motes (world-space additive, awakening only)
+    // the AWAKENING veil — now a SPOTLIGHT on the newborn (center light, corners dark) that warms cold->dawn,
+    // drawn UNDER the speech bubble so its first words still glow while the room is dark.
     if (wakeDark > 0.002) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = 'rgba(2,3,6,' + wakeDark.toFixed(3) + ')';
+      const prog = Math.max(0, Math.min(1, 1 - wakeDark / 0.92));
+      const tr = Math.round(2 + prog * 12), tg = Math.round(3 + prog * 5), tb = Math.round(8 - prog * 4);   // cold blue-black -> warm ember
+      if (agent && !agent.unplaced) {
+        const ax = agent.px * scale + panX, ay = (agent.py - 8) * scale + panY;
+        const r0 = 22 * scale, r1 = Math.max(r0 + 12, Math.min(cv.width, cv.height) * 0.62);
+        const g = ctx.createRadialGradient(ax, ay, r0, ax, ay, r1);
+        g.addColorStop(0, 'rgba(' + tr + ',' + tg + ',' + tb + ',' + (wakeDark * 0.16).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(' + tr + ',' + tg + ',' + tb + ',' + wakeDark.toFixed(3) + ')');
+        ctx.fillStyle = g;
+      } else {
+        ctx.fillStyle = 'rgba(' + tr + ',' + tg + ',' + tb + ',' + wakeDark.toFixed(3) + ')';
+      }
       ctx.fillRect(0, 0, cv.width, cv.height);
       ctx.setTransform(scale, 0, 0, scale, panX, panY);
     }
+    if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     if (agent && !agent.unplaced) drawBubble(now);
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
@@ -618,14 +665,75 @@ const World = (() => {
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  // the soul kindling: an ignition spark at the head, a halo that grows with consciousness, drifting motes.
+  function drawAwakenLight(now) {
+    if (!agent || agent.unplaced) return;
+    const live = awakeFrozen || (dawnAt && now - dawnAt < 1200);
+    if (!live && !(sparkAt && now - sparkAt < 1200)) return;
+    const prog = Math.max(0, Math.min(1, 1 - wakeDark / 0.92));
+    const pulse = (truthPulseAt && now - truthPulseAt < 360) ? (1 - (now - truthPulseAt) / 360) : 0;   // a flare as each truth is written in
+    const hx = agent.px, hy = agent.py - 12;
+    ctx.globalCompositeOperation = 'lighter';
+    // halo
+    const hr = 14 + prog * 30 + pulse * 10;
+    let g = ctx.createRadialGradient(hx, hy, 1, hx, hy, hr);
+    g.addColorStop(0, 'rgba(255,236,200,' + (0.05 + 0.13 * prog + pulse * 0.12).toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(255,236,200,0)');
+    ctx.fillStyle = g; ctx.fillRect(hx - hr, hy - hr, hr * 2, hr * 2);
+    // ignition spark — the discrete instant the mind catches fire (the ONLY light in the dark)
+    if (sparkAt && now - sparkAt < 1100) {
+      const t = (now - sparkAt) / 1100;
+      const flick = t < 0.4 ? (Math.sin(now / 26) > 0 ? 1 : 0.35) : 1;
+      const sr = 2 + t * 9, a = flick * (t < 0.5 ? 0.95 : Math.max(0, 0.95 * (1 - (t - 0.5) / 0.5)));
+      const gs = ctx.createRadialGradient(hx, hy, 0.5, hx, hy, sr);
+      gs.addColorStop(0, 'rgba(255,252,240,' + a.toFixed(3) + ')'); gs.addColorStop(1, 'rgba(255,252,240,0)');
+      ctx.fillStyle = gs; ctx.fillRect(hx - sr, hy - sr, sr * 2, sr * 2);
+    }
+    // motes of consciousness — slow orbital, thicken as it wakes (computed from time, no state to leak)
+    if (live) {
+      const n = Math.floor(5 + 9 * prog);
+      for (let i = 0; i < n; i++) {
+        const seed = i * 1.7, ang = now / 1500 + seed * 2.4, rad = 9 + (i % 5) * 4 + Math.sin(now / 760 + seed) * 2;
+        const mx = hx + Math.cos(ang) * rad, my = hy + Math.sin(ang) * rad * 0.5;
+        const tw = 0.3 + 0.5 * Math.abs(Math.sin(now / 520 + seed));
+        ctx.fillStyle = 'rgba(255,244,214,' + (0.38 * tw * (0.4 + 0.6 * prog)).toFixed(3) + ')';
+        ctx.fillRect(mx - 0.6, my - 0.6, 1.4, 1.4);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  // dawn bloom — a brief warm wash flooding the whole room as the veil reaches light
+  function drawDawnBloom(now) {
+    const t = (now - dawnAt) / 1300, a = Math.sin(Math.min(1, t) * Math.PI) * 0.2;
+    if (a <= 0.003) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter';
+    const cx = cv.width / 2, cy = cv.height * 0.46, r = Math.max(cv.width, cv.height) * 0.75;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, 'rgba(255,214,150,' + a.toFixed(3) + ')'); g.addColorStop(1, 'rgba(255,214,150,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.globalCompositeOperation = 'source-over'; ctx.setTransform(scale, 0, 0, scale, panX, panY);
+  }
+
   function drawAgent(now) {
+    // color-into-being: the body fades up from a faint silhouette to full as the spark blooms (sprite path)
+    let bornA = 1;
+    if (bornAt && now - bornAt < 1000) bornA = 0.16 + 0.84 * ((now - bornAt) / 1000);
+    const prevA = ctx.globalAlpha;
+    if (bornA < 1) ctx.globalAlpha = prevA * bornA;
     let geom = null;
     if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, agent, now);
     if (!geom) drawFallback(now);
-    if (wakeAt && now - wakeAt < 1300) {
-      const t = (now - wakeAt) / 1300;
-      ctx.save(); ctx.globalAlpha = (1 - t) * 0.8; ctx.strokeStyle = agent.color; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.ellipse(agent.px, agent.py, 4 + t * 16, 2 + t * 7, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    ctx.globalAlpha = prevA;
+    // the wake ripple — a triple-ringed sonar pulse of first breath, in the suit color
+    if (wakeAt && now - wakeAt < 1500) {
+      ctx.save(); ctx.strokeStyle = agent.color;
+      for (let k = 0; k < 3; k++) {
+        const tk = (now - wakeAt) / 1300 - k * 0.18;
+        if (tk <= 0 || tk >= 1) continue;
+        ctx.globalAlpha = (1 - tk) * 0.6 * (1 - k * 0.22); ctx.lineWidth = Math.max(0.5, 1.5 - tk);
+        ctx.beginPath(); ctx.ellipse(agent.px, agent.py, 4 + tk * 22, 2 + tk * 9, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
     }
   }
 
@@ -759,5 +867,5 @@ const World = (() => {
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, endAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
+  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, endAwakening, releaseAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
 })();

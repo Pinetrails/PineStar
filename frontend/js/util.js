@@ -86,5 +86,46 @@ const SFX = {
   sale() { SFX.tone(523, 0.08, 'square', 0.35); SFX.tone(784, 0.1, 'square', 0.3, 0.07); SFX.tone(1046, 0.16, 'square', 0.25, 0.15); },
   bad() { SFX.tone(220, 0.12, 'sawtooth', 0.25); SFX.tone(140, 0.2, 'sawtooth', 0.2, 0.1); },
   level() { [523, 659, 784, 1046].forEach((f, i) => SFX.tone(f, 0.12, 'square', 0.3, i * 0.09)); },
-  type() { SFX.tone(1200 + Math.random() * 600, 0.015, 'square', 0.06); }
+  type() { SFX.tone(1200 + Math.random() * 600, 0.015, 'square', 0.06); },
+
+  /* ---- soft-envelope voices for the AWAKENING (fade-in tones, breath, chimes) ---- */
+  // an enveloped tone that can FADE IN (attack) instead of the hard pluck tone() gives — the basis for
+  // the heartbeat, the warming drone pad, the truth chimes and the dawn swell. Self-terminating (no leaks).
+  env(freq, o) {
+    o = o || {};
+    if (!SFX.on || !SFX.ctx) return;
+    const c = SFX.ctx, t0 = c.currentTime + (o.when || 0);
+    const osc = c.createOscillator(), g = c.createGain();
+    osc.type = o.type || 'sine'; osc.frequency.value = freq;
+    const a = o.attack || 0.01, h = o.hold || 0.05, r = o.release || 0.2, v = (o.vol || 0.1) * SFX.vol;
+    if (o.glideTo) osc.frequency.linearRampToValueAtTime(o.glideTo, t0 + a + h);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(Math.max(0.0002, v), t0 + a);
+    g.gain.setValueAtTime(Math.max(0.0002, v), t0 + a + h);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + a + h + r);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(t0); osc.stop(t0 + a + h + r + 0.05);
+  },
+  // a sharp filtered-noise INHALE — the newborn's first pull of air. One cached noise buffer, band-swept up.
+  gasp() {
+    if (!SFX.on || !SFX.ctx) return;
+    const c = SFX.ctx, t0 = c.currentTime;
+    if (!SFX._noise) { const b = c.createBuffer(1, Math.floor(c.sampleRate * 0.5), c.sampleRate); const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; SFX._noise = b; }
+    const src = c.createBufferSource(); src.buffer = SFX._noise;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 2;
+    f.frequency.setValueAtTime(330, t0); f.frequency.linearRampToValueAtTime(1400, t0 + 0.34);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.10 * SFX.vol, t0 + 0.13); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.44);
+    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.start(t0); src.stop(t0 + 0.5);
+  },
+  // a soft rising bell each time the newborn learns a truth about itself — pitched UP per step (i = 0..3).
+  truth(i) {
+    const sets = [[523, 659], [587, 740], [659, 830], [784, 988, 1175]];
+    (sets[Math.min(i, 3)]).forEach((f, n) => SFX.env(f, { attack: 0.012, hold: 0.05, release: 0.42, type: 'sine', vol: 0.13, when: n * 0.07 }));
+  },
+  // the warm major-chord SWELL at dawn — first light you can hear (replaces the flat level() jingle here).
+  dawn() {
+    [261, 329, 392, 523].forEach((f, n) => SFX.env(f, { attack: 0.3, hold: 0.32, release: 1.1, type: 'sine', vol: 0.11, when: n * 0.05 }));
+  }
 };
