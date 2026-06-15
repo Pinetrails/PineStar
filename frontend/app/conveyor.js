@@ -2,22 +2,31 @@
 
    The WorldModel owns belt TOPOLOGY (a keyed "x,y"->dir graph, walkable floor machinery). This
    module owns everything ALIVE: the transport simulation (boxes flowing tile-to-tile, spawned at
-   sources, sinking at open ends) and the direction-aware belt + box pixel art (treads scrolling
-   in the flow direction, ported from v7 F.beltH).
+   sources, sinking at open ends, spaced so they never stack) and the pixel art.
 
-   Frame-agnostic by design: `Conveyor.create()` returns a self-contained instance handed a belt
-   list in whatever tile frame the caller draws in (build.js = world coords, world.js = local
-   coords). One sim powers REFIT preview and the live world, each with its own box state.
+   CARGO speaks the station's SEMANTIC COLOR ECONOMY (amber=production, cyan=data, red=command,
+   gold=money, steel=neutral) — each box hashes deterministically to a type, weighted so the loud
+   colours stay rare. Boxes are built on one 2.5D chassis (lit top face + shaded front face + a
+   leading-edge rim light) and carry motion juice: a hash-phased ride bob, a lean into travel, a
+   bob-coupled contact shadow, a spawn pop, and a sink that reads as falling into a chute.
 
-   DETERMINISM: no Math.random, no wall-clock — nowMs/dtMs are injected, spawn cadence is derived
-   from nowMs + a per-source tile hash. Depends only on the global `U` + a 2D ctx. */
+   Belts read as a real material-handling network: axis-aware treads, a dim-neutral marching flow
+   chevron (NOT an economy accent — that would flood the cyan/green channel), corner-aware art on
+   bends, an amber SOURCE feeder hatch, and a dark SINK chute mouth.
+
+   Frame-agnostic: `Conveyor.create()` returns a self-contained instance handed a belt list in
+   whatever tile frame the caller draws in (build.js = world coords, world.js = local coords).
+   DETERMINISM: no Math.random, no wall-clock — nowMs/dtMs injected; variety from U.hash(''+id). */
 'use strict';
 
 const Conveyor = (() => {
   const DIRV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
+  const OPP = { E: 'W', W: 'E', S: 'N', N: 'S' };
   const SPEED = 1.7;        // tiles / second a box travels
-  const SPAWN_MS = 1500;    // a source emits a box this often
-  const SINK_MS = 280;      // fade-out time once a box rides off the end
+  const SPAWN_MS = 1500;    // base cadence a source emits at (per-source jittered)
+  const SINK_MS = 300;      // chute fall + fade time once a box rides off the end
+  const POP_MS = 180;       // spawn-pop settle time
+  const MIN_GAP = 0.82;     // tiles of clear space a box keeps behind the one ahead (no stacking)
   const MAX_BOXES = 80;     // hard cap (a runaway loop can't explode)
 
   const key = (x, y) => x + ',' + y;
@@ -30,115 +39,295 @@ const Conveyor = (() => {
     }
     return true;
   }
+  // classify a tile for its art: which neighbour feeds it, where it drains, is it a bend
+  function classify(map, b) {
+    const d = b.dir, v = DIRV[d];
+    const fd = map.get(key(b.x - v[0], b.y - v[1]));      // feeder's own dir (or undefined)
+    const fedByMe = fd && fd !== OPP[d];
+    const drain = map.get(key(b.x + v[0], b.y + v[1]));
+    let kind = 'straight';
+    if (!fedByMe) kind = 'source';
+    else if (!drain) kind = 'sink';
+    else if (fd !== d) kind = 'corner';
+    return { kind, dir: d, fromDir: fedByMe ? fd : null };
+  }
+
+  /* ---- art context (module-local, set per draw call — like propsprites/sprites) ---- */
+  let _ctx = null, _now = 0;
+  const px = (x, y, w, h, c) => { _ctx.fillStyle = c; _ctx.fillRect(x, y, w, h); };
+  const SH = (c, n) => U.shade(c, n);
+
+  /* ============================ CARGO ART ============================ */
+  /* one shared 2.5D chassis; cx,py = rounded pixel centre, h32 = U.hash(''+id), dir = E|W|N|S.
+     returns the lit TOP-face rect so each type can stencil onto it. */
+  function cargoChassis(cx, py, h32, body, dir) {
+    const x = cx - 4, y = py - 5;                 // 9 wide; top face 5 tall, front face 3 tall
+    const jit = ((h32 >> 3) & 3) - 1;             // -1..+2 deterministic tone jitter
+    const top = SH(body, 0.10 + jit * 0.04);
+    // FRONT face (short, shaded) — the 2.5D base
+    px(x, y + 5, 9, 3, SH(body, -0.42));
+    px(x, y + 7, 9, 1, SH(body, -0.60));          // darkest floor line
+    px(x + 8, y + 5, 1, 3, SH(body, -0.55));      // right front facet to shadow
+    // TOP face (lit), 1px inset so the front edge shows
+    px(x, y, 9, 5, SH(body, -0.25));              // top outline
+    px(x + 1, y, 7, 5, top);
+    px(x + 1, y, 7, 1, SH(top, 0.30));            // sheen (EXACTLY 1px)
+    px(x + 1, y + 1, 1, 4, SH(top, 0.16));        // lit left edge
+    px(x + 7, y + 1, 1, 4, SH(top, -0.22));       // shaded right edge
+    // RIM LIGHT on the leading edge (reads as travel direction — all 4 headings)
+    const v = DIRV[dir];
+    if (v[0] > 0) px(x + 8, y, 1, 5, SH(top, 0.5));
+    else if (v[0] < 0) px(x, y, 1, 5, SH(top, 0.5));
+    else if (v[1] < 0) px(x + 1, y, 7, 1, SH(top, 0.55));
+    else px(x + 1, y + 4, 7, 1, SH(top, 0.4));
+    // signature corner braces + one rivet glint
+    px(x, y, 2, 1, SH(top, 0.4)); px(x + 7, y, 2, 1, SH(top, 0.4));
+    px(x + 1, y, 1, 1, '#aeb9c4');
+    return { tx: x + 1, ty: y };
+  }
+  const bloomOK = () => _ctx.globalAlpha > 0.6;   // skip glows on fading/popping boxes (cheap + clean)
+
+  function cargoProduction(cx, py, h32, dir) {     // amber = production (common)
+    const f = cargoChassis(cx, py, h32, '#46525a', dir), x = f.tx, y = f.ty;
+    px(x + 2, y + 1, 1, 4, '#2e3840'); px(x + 5, y + 1, 1, 4, '#2e3840');     // ribs
+    px(x + 3, y + 1, 1, 4, SH('#46525a', 0.18));                              // rib catch
+    px(cx - 4, py, 9, 1, '#caa84a'); px(cx - 4, py + 1, 9, 1, SH('#caa84a', -0.4)); // amber band (front)
+    px(cx - 3 + (h32 % 3), py, 2, 1, '#e8c860');                              // hot pip, varied x
+    const lit = ((_now / 520 + (h32 & 7) * 0.13) % 1) < 0.5;
+    px(x + 5, y + 1, 1, 1, lit ? '#ffe088' : '#5a4a24');
+    if (lit && bloomOK()) { _ctx.globalAlpha *= 0.5; px(x + 4, y, 3, 3, '#e8c860'); _ctx.globalAlpha /= 0.5; }
+  }
+  function cargoUtility(cx, py, h32, dir) {         // steel = neutral (most common; lets specials pop)
+    const f = cargoChassis(cx, py, h32, '#3e4a52', dir), x = f.tx, y = f.ty;
+    for (let i = 0; i < 4; i++) if ((h32 >> i) & 1) px(x + 1 + i * 2, y + 1, 1, 3, '#222a30'); // barcode
+    px(x + 1, y + 4, 4, 1, '#2a343c');                                        // serial underline
+    px(x + 6, y + 1, 1, 1, '#41ff8a');                                        // green logged dot
+    if (h32 & 16) px(x + 5, y + 3, 1, 1, SH('#3e4a52', -0.5));                // deterministic scuff
+  }
+  function cargoData(cx, py, h32, dir) {           // cyan = data (flat cassette — different silhouette)
+    const body = '#1e3a44', x = cx - 4, y = py - 4;
+    px(x, y + 4, 9, 3, SH(body, -0.4)); px(x, y + 6, 9, 1, '#0a1418');        // front
+    px(x, y, 9, 4, SH(body, -0.2)); px(x + 1, y, 7, 4, body);                 // top
+    px(x + 1, y, 7, 1, '#2e5a68');                                            // sheen
+    px(x + 2, y + 1, 5, 2, '#06181e');                                        // recessed window
+    const head = Math.floor((_now / 90 + (h32 & 7)) % 5);
+    px(x + 2 + head, y + 1, 1, 1, '#7df0ff');                                 // marching read-head
+    px(x + 2, y + 2, 3, 1, '#1d6878');                                        // dim history
+    px(x + 1, y, 1, 4, '#4ad9ff'); px(x + 7, y + 3, 1, 1, body);              // cyan edge + notch
+    const v = DIRV[dir];
+    if (v[0] >= 0) px(x + 8, y, 1, 4, SH('#4ad9ff', 0.2)); else px(x, y, 1, 4, SH('#4ad9ff', 0.2));
+  }
+  function cargoCommand(cx, py, h32, dir) {        // red = command (rare, urgent)
+    const f = cargoChassis(cx, py, h32, '#3a2826', dir), x = f.tx, y = f.ty;
+    px(x + 1, y + 2, 6, 1, '#1a0e0c');
+    for (let i = 0; i < 3; i++) px(x + 1 + i * 2, y + 1 + (i % 2), 2, 1, '#ff4a3d'); // hazard chevron
+    const on = ((_now / 240 + (h32 & 3) * 0.2) % 1) < 0.5;                    // fast strobe = urgency
+    px(x + 5, y, 2, 1, on ? '#ff8a7a' : '#5a201c');
+    if (on && bloomOK()) { _ctx.globalAlpha *= 0.45; px(x + 4, y - 1, 3, 3, '#ff4a3d'); _ctx.globalAlpha /= 0.45; }
+  }
+  function cargoMoney(cx, py, h32, dir) {          // gold = money (rarest, the jackpot)
+    const x = cx - 4, y = py - 5;
+    for (let r = 0; r < 2; r++) {                                             // two stacked ingots
+      const yy = y + 1 + r * 3, w = 9 - r * 2, xx = x + r;
+      px(xx, yy, w, 3, '#caa84a'); px(xx, yy, w, 1, '#ffe88c'); px(xx, yy + 2, w, 1, '#8a7434');
+      px(xx, yy, 1, 3, '#e8c860'); px(xx + w - 1, yy, 1, 3, '#6a5824');
+    }
+    const sw = Math.floor((_now / 140 + (h32 & 7)) % 9);                      // sheen sweep
+    px(x + sw, y + 1, 1, 2, '#fff4cc');
+    if (bloomOK()) { _ctx.globalAlpha *= 0.4; px(x + 2, y + 1, 5, 4, '#ffe88c'); _ctx.globalAlpha /= 0.4; }
+  }
+  // pure, replayable id -> type. weights keep the meaningful colours rare.
+  function cargoType(id) {
+    const r = U.hash('' + id) % 100;
+    if (r < 34) return 0;      // 34% utility (steel)
+    if (r < 64) return 1;      // 30% production (amber)
+    if (r < 80) return 2;      // 16% data (cyan)
+    if (r < 93) return 3;      // 13% command (red)
+    return 4;                  //  7% money (gold)
+  }
+  const CARGO_FN = [cargoUtility, cargoProduction, cargoData, cargoCommand, cargoMoney];
+
+  /* ---- motion bundle: bob/lean/shadow + spawn-pop + sink-chute. translate-only (no ctx.scale). ---- */
+  function boxMotion(bx, now) {
+    const s = U.hash('' + bx.id);
+    const ph = (s % 1000) / 1000 * 6.2832;
+    const wob = ((s >> 10) & 255) / 255;
+    let bob = Math.sin(now / (520 * (0.85 + wob * 0.3)) + ph) * 0.9;          // ~±1px ride shimmer
+    const v = DIRV[bx.dir];
+    const lift0 = (bob + 0.9) / 1.8;                                          // 0..1 for the shadow
+    let alpha = 1, slide = 0, shadowMul = 1;
+    // spawn pop: quick alpha ramp + a small overshoot lift (easeOutBack stand-in)
+    const age = now - (bx.t0 || 0);
+    if (age < POP_MS) {
+      const k = age / POP_MS, kk = k - 1, c = 1.70158;
+      bob += -((1 + c) * kk * kk * kk + c * kk * kk) * 3;
+      alpha = Math.min(1, age / 60);
+    }
+    // corner jolt: a brief upward hop when the box just changed heading (reads as reacting to the turn)
+    const ta = now - (bx.turn0 || -1e9);
+    if (ta >= 0 && ta < 140) bob -= Math.sin((ta / 140) * Math.PI) * 1.4;
+    // sink chute: fall + fade + slide off in the travel dir + shrinking shadow
+    if (bx.sink > 0) {
+      const e = Math.min(1, bx.sink / SINK_MS); const ee = e * e;
+      alpha *= 1 - ee; slide = ee * 3.5; shadowMul = 1 - 0.9 * ee; bob += ee * 2.5;
+    }
+    return { bob, lx: -v[0] * 0.6 + v[0] * slide, ly: -v[1] * 0.6 + v[1] * slide, lift: lift0, alpha, shadowMul };
+  }
 
   function create() {
     let boxes = [];
     let nid = 1;
-    const lastSpawn = new Map();   // source key -> last spawn bucket (so cadence survives across ticks)
+    const lastSpawn = new Map();
 
     function reset() { boxes = []; lastSpawn.clear(); }
+
+    /* distance (in tiles, along the path) to the nearest box ahead — for backpressure spacing */
+    function leaderDist(bx, tileMap) {
+      let best = Infinity;
+      const same = tileMap.get(key(bx.x, bx.y));
+      if (same) for (const c of same) if (c !== bx && c.prog > bx.prog) best = Math.min(best, c.prog - bx.prog);
+      const v = DIRV[bx.dir], nxt = tileMap.get(key(bx.x + v[0], bx.y + v[1]));
+      if (nxt) for (const c of nxt) best = Math.min(best, (1 - bx.prog) + c.prog);
+      return best;
+    }
 
     function tick(dtMs, nowMs, belts) {
       const map = buildMap(belts || []);
       const dt = Math.min(64, dtMs) / 1000;
 
-      // spawn at sources on a hash-staggered cadence
+      // occupancy index of RIDING boxes (sinking boxes are leaving — they don't block)
+      const tileMap = new Map();
+      for (const bx of boxes) { if (bx.sink > 0) continue; const k = key(bx.x, bx.y); (tileMap.get(k) || tileMap.set(k, []).get(k)).push(bx); }
+
+      // spawn at sources: per-source jittered cadence, and skip when the mouth is still occupied (backpressure)
       if (map.size && boxes.length < MAX_BOXES) {
         for (const b of belts) {
           if (!isSource(map, b.x, b.y)) continue;
           const k = key(b.x, b.y);
-          const phase = (U.hash('belt' + k) % SPAWN_MS);
-          const bucket = Math.floor((nowMs + phase) / SPAWN_MS);
-          if (lastSpawn.get(k) === bucket) continue;
-          if (lastSpawn.has(k) && boxes.length < MAX_BOXES) boxes.push({ id: nid++, x: b.x, y: b.y, dir: b.dir, prog: 0, sink: 0 });
+          const phase = U.hash('belt' + k) % SPAWN_MS;
+          const period = SPAWN_MS + (U.hash('per' + k) % 400) - 200;          // ±200ms per-source drift
+          const bucket = Math.floor((nowMs + phase) / period);
+          if (lastSpawn.get(k) === bucket) continue;                          // beat already resolved
+          if (!lastSpawn.has(k)) { lastSpawn.set(k, bucket); continue; }       // warm-up: skip first beat
+          const onSrc = tileMap.get(k);
+          if (onSrc && onSrc.some(c => c.prog < MIN_GAP)) continue;            // mouth busy → retry next frame
+          boxes.push({ id: nid++, x: b.x, y: b.y, dir: b.dir, prog: 0, sink: 0, t0: nowMs, turn0: -1e9 });
           lastSpawn.set(k, bucket);
         }
       }
 
-      // advance every box along its belt; adopt the next tile's direction at junctions/corners
+      // advance: cap each box so it never closes within MIN_GAP of the box ahead (no stacking; backpressure)
       for (let i = boxes.length - 1; i >= 0; i--) {
         const bx = boxes[i];
         if (bx.sink > 0) { bx.sink += dtMs; if (bx.sink > SINK_MS) boxes.splice(i, 1); continue; }
         const here = map.get(key(bx.x, bx.y));
-        if (!here) { bx.sink = 1; continue; }        // belt pulled out from under it → sink
+        if (!here) { bx.sink = 1; continue; }                                 // belt pulled out → sink
         bx.dir = here;
-        bx.prog += SPEED * dt;
+        const want = SPEED * dt, ld = leaderDist(bx, tileMap);
+        const allowed = ld === Infinity ? want : Math.min(want, Math.max(0, ld - MIN_GAP));
+        bx.prog += allowed;
         let guard = 0;
         while (bx.prog >= 1 && guard++ < 8) {
-          const v = DIRV[bx.dir], nx = bx.x + v[0], ny = bx.y + v[1];
-          const nd = map.get(key(nx, ny));
-          if (nd) { bx.x = nx; bx.y = ny; bx.dir = nd; bx.prog -= 1; }
-          else { bx.prog = 1; bx.sink = 1; break; }   // rode off the open end
+          const v = DIRV[bx.dir], nx = bx.x + v[0], ny = bx.y + v[1], nd = map.get(key(nx, ny));
+          if (nd) { if (nd !== bx.dir) bx.turn0 = nowMs; bx.x = nx; bx.y = ny; bx.dir = nd; bx.prog -= 1; }
+          else { bx.prog = 1; bx.sink = 1; break; }                           // rode off the open end
         }
       }
-      // trim oldest if some upstream change overran the cap
       if (boxes.length > MAX_BOXES) boxes.splice(0, boxes.length - MAX_BOXES);
     }
 
-    /* ---------- belt art (direction-aware, ported from v7 F.beltH) ---------- */
+    /* ---------- belt art (direction + topology aware) ---------- */
     function drawBelts(ctx, nowMs, T, belts) {
       if (!belts || !belts.length) return;
-      const px = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
-      const scroll = ((nowMs / 90) % 4);             // tread phase, 0..4 px
-      for (const b of belts) {
-        const X = b.x * T, Y = b.y * T, v = DIRV[b.dir];
-        const horiz = v[0] !== 0;
-        // bed
-        px(X, Y, T, T, '#222a26');
-        px(X + 1, Y + 1, T - 2, T - 2, '#161c1a');
-        // rails on the two edges PARALLEL to flow (the sides the cargo can't fall off)
-        if (horiz) { px(X, Y, T, 1, '#46544c'); px(X, Y + T - 1, T, 1, '#46544c'); px(X + 1, Y + 1, T - 2, 1, '#0e1412'); }
-        else { px(X, Y, 1, T, '#46544c'); px(X + T - 1, Y, 1, T, '#46544c'); px(X + 1, Y + 1, 1, T - 2, '#0e1412'); }
-        // moving treads: short bars across the belt, marching in the flow direction
-        ctx.fillStyle = '#3a4a42';
-        for (let s = -4; s < T; s += 4) {
-          if (horiz) { const tx = X + (v[0] > 0 ? (s + scroll) : (T - 1 - s - scroll)); if (tx > X && tx < X + T - 1) px(Math.round(tx), Y + 2, 1, T - 4, '#3a4a42'); }
-          else { const ty = Y + (v[1] > 0 ? (s + scroll) : (T - 1 - s - scroll)); if (ty > Y && ty < Y + T - 1) px(X + 2, Math.round(ty), T - 4, 1, '#3a4a42'); }
-        }
-        // a phosphor flow chevron, marching — makes direction legible at a glance
-        const cphase = ((nowMs / 220) % 1);
-        const cx = X + T / 2, cy = Y + T / 2;
-        ctx.strokeStyle = 'rgba(90,230,150,0.7)'; ctx.lineWidth = 1;
-        ctx.beginPath();
-        const reach = T * 0.32, off = (cphase - 0.5) * T * 0.5;
-        if (horiz) { const dx = v[0], hx = cx + off * dx; ctx.moveTo(hx - reach * dx, cy - reach); ctx.lineTo(hx, cy); ctx.lineTo(hx - reach * dx, cy + reach); }
-        else { const dy = v[1], hy = cy + off * dy; ctx.moveTo(cx - reach, hy - reach * dy); ctx.lineTo(cx, hy); ctx.lineTo(cx + reach, hy - reach * dy); }
-        ctx.stroke();
-        // drive LED on a corner, slow blink
-        px(X + 1, Y + T - 2, 1, 1, ((nowMs / 300) % 1) < 0.5 ? '#41ff8a' : '#1a2a22');
+      _ctx = ctx; _now = nowMs;
+      const map = buildMap(belts);
+      for (const b of belts) beltTile(b.x * T, b.y * T, T, classify(map, b), nowMs, U.hash('belt' + key(b.x, b.y)));
+    }
+    function beltTile(X, Y, T, info, now, h) {
+      const v = DIRV[info.dir], horiz = v[0] !== 0;
+      px(X, Y, T, T, '#222a26'); px(X + 1, Y + 1, T - 2, T - 2, '#161c1a');   // bed + recess
+      // rails along the edges PARALLEL to flow
+      if (horiz) { px(X, Y, T, 1, '#46544c'); px(X, Y + T - 1, T, 1, '#46544c'); px(X + 1, Y + 1, T - 2, 1, '#0e1412'); }
+      else { px(X, Y, 1, T, '#46544c'); px(X + T - 1, Y, 1, T, '#46544c'); px(X + 1, Y + 1, 1, T - 2, '#0e1412'); }
+      // treads: short bars perpendicular to flow, marching in the SIGNED flow dir
+      const sign = v[0] + v[1], scroll = ((Math.floor(now / 90) * sign) % 4 + 4) % 4;
+      for (let s = -4; s < T; s += 4) {
+        if (horiz) { const tx = X + (v[0] > 0 ? (s + scroll) : (T - 1 - s - scroll)); if (tx > X && tx < X + T - 1) px(Math.round(tx), Y + 2, 1, T - 4, '#3a4a42'); }
+        else { const ty = Y + (v[1] > 0 ? (s + scroll) : (T - 1 - s - scroll)); if (ty > Y && ty < Y + T - 1) px(X + 2, Math.round(ty), T - 4, 1, '#3a4a42'); }
       }
+      // deterministic wear speckle (frame-stable per tile)
+      for (let k = 0; k < 3; k++) { const w = h >> (k * 4); px(X + 2 + (w % (T - 4)), Y + 2 + ((w >> 3) % (T - 4)), 1, 1, '#1d2420'); }
+      if (info.kind === 'corner') beltCornerGlyph(X, Y, T, info, now);
+      else beltChevron(X, Y, T, info.dir, now);
+      // drive LED (small, powered cue)
+      px(X + 1, Y + T - 2, 1, 1, ((now / 300) % 1) < 0.5 ? '#3fa86a' : '#1a2a22');
+      if (info.kind === 'source') beltSource(X, Y, T, info, now, h);
+      else if (info.kind === 'sink') beltSink(X, Y, T, info);
+    }
+    // a DIM-NEUTRAL marching chevron (no economy accent — keeps cyan/green for data/money)
+    function beltChevron(X, Y, T, dir, now) {
+      const cphase = (now / 220) % 1, cx = X + T / 2, cy = Y + T / 2, v = DIRV[dir];
+      const reach = T * 0.3, off = (cphase - 0.5) * T * 0.5;
+      _ctx.globalAlpha = 0.4; _ctx.strokeStyle = '#7a8a80'; _ctx.lineWidth = 1; _ctx.beginPath();
+      if (v[0]) { const hx = cx + off * v[0]; _ctx.moveTo(hx - reach * v[0], cy - reach); _ctx.lineTo(hx, cy); _ctx.lineTo(hx - reach * v[0], cy + reach); }
+      else { const hy = cy + off * v[1]; _ctx.moveTo(cx - reach, hy - reach * v[1]); _ctx.lineTo(cx, hy); _ctx.lineTo(cx + reach, hy - reach * v[1]); }
+      _ctx.stroke(); _ctx.globalAlpha = 1;
+    }
+    // a bend: a small elbow of tread + a chevron pointing the exit way, biased to the inner corner
+    function beltCornerGlyph(X, Y, T, info, now) {
+      const vIn = DIRV[OPP[info.fromDir]], vOut = DIRV[info.dir];            // entry/exit headings (inward)
+      const cx = X + T / 2, cy = Y + T / 2;
+      _ctx.globalAlpha = 0.5; _ctx.strokeStyle = '#8a9a90'; _ctx.lineWidth = 1.5; _ctx.beginPath();
+      _ctx.moveTo(cx - vIn[0] * T * 0.34, cy - vIn[1] * T * 0.34);          // from the entry edge
+      _ctx.lineTo(cx, cy);                                                   // through the centre
+      _ctx.lineTo(cx + vOut[0] * T * 0.34, cy + vOut[1] * T * 0.34);        // out the exit edge
+      _ctx.stroke(); _ctx.globalAlpha = 1;
+      // exit arrow tip
+      const ax = cx + vOut[0] * T * 0.34, ay = cy + vOut[1] * T * 0.34;
+      px(Math.round(ax), Math.round(ay), 1, 1, '#aebcb2');
+    }
+    function beltSource(X, Y, T, info, now, h) {
+      const v = DIRV[info.dir], horiz = v[0] !== 0;
+      const ex = X + (v[0] > 0 ? 0 : v[0] < 0 ? T - 3 : 2), ey = Y + (v[1] > 0 ? 0 : v[1] < 0 ? T - 3 : 2);
+      const fw = horiz ? 3 : T - 4, fh = horiz ? T - 4 : 3;
+      px(ex, ey, fw, fh, '#2a2418');                                         // dark-amber feeder frame
+      const cyc = (now / 900 + (h % 7) * 0.04) % 1, open = cyc < 0.5;
+      if (horiz) px(ex + 1, ey + 1, 1, fh - 2, open ? '#161210' : '#caa84a'); else px(ex + 1, ey + 1, fw - 2, 1, open ? '#161210' : '#caa84a');
+      if (cyc > 0.88) px(ex, ey, fw, fh, '#e8c860');                         // "about to spawn" flash
+      px(ex, ey, horiz ? fw : 1, horiz ? 1 : fh, '#3a3320');                 // hatch catch
+    }
+    function beltSink(X, Y, T, info) {
+      const v = DIRV[info.dir], horiz = v[0] !== 0;
+      const mx = X + (v[0] > 0 ? T - 4 : v[0] < 0 ? 0 : 2), my = Y + (v[1] > 0 ? T - 4 : v[1] < 0 ? 0 : 2);
+      const mw = horiz ? 4 : T - 4, mh = horiz ? T - 4 : 4;
+      px(mx, my, mw, mh, '#0a0d0c'); px(mx + 1, my + 1, Math.max(1, mw - 2), Math.max(1, mh - 2), '#050706');
+      if (horiz) px(mx + (v[0] > 0 ? 0 : mw - 1), my, 1, mh, '#000'); else px(mx, my + (v[1] > 0 ? 0 : mh - 1), mw, 1, '#000');
+      px(mx, my, horiz ? 1 : mw, horiz ? mh : 1, '#1a201c');                 // chute rim catch
     }
 
-    /* ---------- box art (a small riding crate w/ contact shadow) ---------- */
+    /* ---------- box art ---------- */
     function drawBoxes(ctx, nowMs, T) {
       if (!boxes.length) return;
-      const px = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
-      // y-sort so nearer boxes overlap farther ones cleanly
-      const order = boxes.slice().sort((a, b) => boxPix(a, T).py - boxPix(b, T).py);
+      _ctx = ctx; _now = nowMs;
+      const order = boxes.slice().sort((a, b) => boxPix(a, T).py - boxPix(b, T).py);  // painter's y-sort
       for (const bx of order) {
-        const { cx, py } = boxPix(bx, T);
-        let a = 1;
-        if (bx.sink > 0) a = Math.max(0, 1 - bx.sink / SINK_MS);
-        ctx.globalAlpha = a * 0.28; px(Math.round(cx) - 4, Math.round(py) + 3, 9, 2, '#000'); ctx.globalAlpha = a;  // contact shadow
-        const bxl = Math.round(cx) - 4, byl = Math.round(py) - 4;
-        px(bxl, byl, 9, 8, '#36424c');               // body
-        px(bxl, byl, 9, 1, '#56646e');               // lit top edge
-        px(bxl, byl + 1, 1, 6, '#3e4a54');           // lit left
-        px(bxl + 8, byl + 1, 1, 6, '#222a30');       // shaded right
-        px(bxl + 3, byl, 3, 8, '#2e3840');           // tape seam down
-        px(bxl + 1, byl + 2, 9 - 2, 1, '#caa84a');   // strap label (amber)
-        px(bxl + 5, byl + 5, 2, 1, '#1f262b');       // barcode fleck
+        const base = boxPix(bx, T), m = boxMotion(bx, nowMs);
+        if (m.alpha <= 0) continue;
+        const cx = Math.round(base.cx + m.lx), py = Math.round(base.py + m.bob + m.ly), h32 = U.hash('' + bx.id);
+        // bob-coupled contact shadow (drawn first, under the box)
+        const sa = (0.30 - 0.12 * m.lift) * m.shadowMul;
+        if (sa > 0) { ctx.globalAlpha = sa * m.alpha; const sw = 9 + Math.round(m.lift * 2); px(cx - (sw >> 1), Math.round(base.py) + 3, sw, 2, '#05080a'); }
+        ctx.globalAlpha = m.alpha;
+        CARGO_FN[cargoType(bx.id)](cx, py, h32, bx.dir);
         ctx.globalAlpha = 1;
       }
     }
     function boxPix(bx, T) {
       const v = DIRV[bx.dir] || [0, 0];
-      const cx = (bx.x + 0.5) * T + (bx.prog - 0.5) * T * v[0];
-      const cy = (bx.y + 0.5) * T + (bx.prog - 0.5) * T * v[1];
-      return { cx, py: cy };
+      return { cx: (bx.x + 0.5) * T + (bx.prog - 0.5) * T * v[0], py: (bx.y + 0.5) * T + (bx.prog - 0.5) * T * v[1] };
     }
 
-    return { tick, drawBelts, drawBoxes, reset, boxCount: () => boxes.length, peekBoxes: () => boxes.map(b => ({ x: b.x, y: b.y, dir: b.dir, sink: b.sink })) };
+    return { tick, drawBelts, drawBoxes, reset, boxCount: () => boxes.length, peekBoxes: () => boxes.map(b => ({ x: b.x, y: b.y, dir: b.dir, sink: b.sink, prog: b.prog })) };
   }
 
   return { create };
