@@ -669,6 +669,33 @@ const PropSprites = (() => {
     wear(x + 2, y + 5, w - 4, h - 8, 3, '#1d2420');
   };
 
+  F.outbox = (x, y, w, h, f) => {
+    // OUTBOX / DISPATCH CHUTE — where the agent's reply LEAVES the station. Mirror of INTAKE, but cyan/green
+    // (outgoing) vs INTAKE's amber (incoming). Flares brighter on f.work when a reply box arrives.
+    sh(x + 1, y + h - 1, w - 2);                                    // floor contact shadow
+    box(x, y + 3, w, h - 3, '#2a322f');
+    px(x + 1, y + 4, w - 2, 1, '#3a463f');                          // top-lit edge
+    px(x + 1, y + h - 2, w - 2, 1, '#161c19');                      // bottom shade
+    px(x + 3, y + 1, w - 6, 2, '#212a26');                          // raised collar
+    px(x + 3, y + 1, w - 6, 1, '#39463f');                          // collar lit edge
+    rivets(x + 1, y + 5, w - 2, h - 7, '#46584e', '#0c1410');
+    // dispatch MOUTH — the dark chute a reply box drops into, with a cyan/green dispatch glow
+    const cyc = (now / 900) % 1, active = !!f.work;
+    const mx = x + 4, my = y + h - 7, mw = w - 8, mh = 4;
+    px(mx - 1, my - 1, mw + 2, mh + 2, '#0a1816');                  // dark chute frame
+    inset(mx, my, mw, mh, '#06100e');                              // the slot
+    for (let i = 0; i < mw - 2; i += 3) px(mx + 1 + i, my + 1, 1, mh - 2, active ? '#5ad1b3' : '#1d4a44'); // dispatch bars
+    if (active || cyc > 0.86) { px(mx, my, mw, 1, '#7df0c8'); glow(mx - 1, my - 1, mw + 2, mh + 2, '#5ad1b3', active ? 0.5 : 0.25); }
+    // OUT caret stencilled on the collar (work leaves the station here)
+    px(x + 5, y + 2, 1, 1, '#8a9a90'); px(x + 6, y + 1, 1, 1, '#8a9a90'); px(x + 7, y + 2, 1, 1, '#8a9a90');
+    // uplink light — blinks idle; solid + bright while dispatching
+    const ax = x + w - 5;
+    px(ax, y - 2, 1, 4, '#3a463f'); px(ax - 1, y - 2, 3, 1, '#46584e');
+    px(ax, y - 3, 1, 1, active ? '#7df0c8' : (blink(720, 1) ? '#41ff8a' : '#173026'));
+    if (active) glow(ax - 2, y - 4, 5, 4, '#5ad1b3', 0.35);
+    wear(x + 2, y + 5, w - 4, h - 8, 3, '#1d2420');
+  };
+
   F.boxes = (x, y, w, h) => {
     sh(x + 1, y + 10, w - 2);
     px(x + 1, y + 4, 8, 7, '#36424c'); px(x + 1, y + 4, 8, 1, '#46525a'); px(x + 4, y + 4, 2, 7, '#56646e'); // tape
@@ -3666,6 +3693,7 @@ const PropSprites = (() => {
     { id: "treasury_coinsorter", label: "COIN SORTER", cat: "storage", w: 2, h: 1, animated: true, blocks: true },
     { id: "treasury_token_furnace", label: "TOKEN FURNACE", cat: "storage", w: 1, h: 2, animated: true, blocks: true },
     { id: "intake", label: "INTAKE", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
+    { id: "outbox", label: "OUTBOX", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "commswall", label: "COMMS WALL", cat: "comms", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_dish", label: "DISH", cat: "comms", w: 2, h: 2, animated: true, blocks: true },
     { id: "comms_inbox", label: "INBOX", cat: "comms", w: 2, h: 1, animated: true, blocks: true },

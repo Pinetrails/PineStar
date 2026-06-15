@@ -138,15 +138,15 @@ const Conveyor = (() => {
   }
   const CARGO_FN = [cargoUtility, cargoProduction, cargoData, cargoCommand, cargoMoney];
 
-  /* a floating amber tag marking a box that carries a REAL work-item (vs ambient cargo) — drawn above the crate */
-  function payloadTag(cx, py) {
-    const yy = py - 11;
+  /* a floating tag marking a box that carries a REAL work-item — amber = inbound, green = outbound reply */
+  function payloadTag(cx, py, outbound) {
+    const yy = py - 11, face = outbound ? '#5ad1b3' : '#e8c860', sheen = outbound ? '#c8f4e6' : '#fff0b0';
     px(cx, yy + 4, 1, 3, '#2a2418');                    // stem down to the crate
     px(cx - 3, yy, 7, 5, '#161210');                    // dark outline
-    px(cx - 2, yy + 1, 5, 3, '#e8c860');                // amber face
-    px(cx - 2, yy + 1, 5, 1, '#fff0b0');                // top sheen
-    px(cx - 1, yy + 2, 3, 1, SH('#e8c860', -0.35));     // envelope flap
-    if (bloomOK()) { _ctx.globalAlpha *= 0.4; px(cx - 3, yy, 7, 6, '#e8c860'); _ctx.globalAlpha /= 0.4; }
+    px(cx - 2, yy + 1, 5, 3, face);                     // tag face
+    px(cx - 2, yy + 1, 5, 1, sheen);                    // top sheen
+    px(cx - 1, yy + 2, 3, 1, SH(face, -0.35));          // flap
+    if (bloomOK()) { _ctx.globalAlpha *= 0.4; px(cx - 3, yy, 7, 6, face); _ctx.globalAlpha /= 0.4; }
   }
 
   /* ---- motion bundle: bob/lean/shadow + spawn-pop + sink-chute. translate-only (no ctx.scale). ---- */
@@ -335,7 +335,7 @@ const Conveyor = (() => {
         if (sa > 0) { ctx.globalAlpha = sa * m.alpha; const sw = 9 + Math.round(m.lift * 2); px(cx - (sw >> 1), Math.round(base.py) + 3, sw, 2, '#05080a'); }
         ctx.globalAlpha = m.alpha;
         CARGO_FN[bx.payload ? 2 : cargoType(bx.id)](cx, py, h32, bx.dir);    // work-items ride as cyan data cassettes
-        if (bx.payload) payloadTag(cx, py);
+        if (bx.payload) payloadTag(cx, py, bx.payload.outbound);
         ctx.globalAlpha = 1;
       }
     }

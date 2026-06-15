@@ -194,7 +194,10 @@ function startTelegram(token, key, model) {
         .then(() => {
           if (!agentId) return;
           const d = bumpQueue(agentId, -1);
-          if (activeItem.get(agentId) === workitemId) activeItem.delete(agentId);   // finished + not superseded
+          if (activeItem.get(agentId) === workitemId) {        // finished WITHOUT being superseded → the reply went out
+            activeItem.delete(agentId);
+            chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: 0, ts: Date.now() });
+          }
           chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
         });
     },

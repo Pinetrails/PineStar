@@ -342,7 +342,11 @@ const World = (() => {
     // placeable props (furniture) — drawn over the bake, y-sorted with agents, under the lightmap
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
-      for (const p of geo.props) items.push({ y: (p.y + (p.h || 1)) * T, draw: () => PropSprites.draw(p, false) });
+      const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
+      for (const p of geo.props) {
+        const work = p.t === 'outbox' && outboxLit;
+        items.push({ y: (p.y + (p.h || 1)) * T, draw: () => PropSprites.draw(p, work) });
+      }
     }
     if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
     if (seat) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });
@@ -439,28 +443,37 @@ const World = (() => {
      box at the INTAKE prop so it rides the player-laid belts to the desk. Pure visualization — if no
      INTAKE/belt path exists, nothing rides (the sidecar already ran the work either way). */
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
-  let bridged = false;
+  let bridged = false, lastOutboxFlash = -1e9;
 
-  // a belt tile on/adjacent to the INTAKE prop, used as the box's spawn point (local frame)
-  function intakeTile() {
-    if (!geo || !geo.props || !geo.belts || !geo.belts.length) return null;
-    const intake = geo.props.find(p => p.t === 'intake');
-    if (!intake) return null;
+  // a belt tile on/adjacent to a footprint (its tiles + a 1-tile ring), used as a box spawn point (local frame)
+  function beltTileNear(tx, ty, tw, th) {
+    if (!geo || !geo.belts || !geo.belts.length) return null;
     const beltSet = new Set(geo.belts.map(b => b.x + ',' + b.y));
-    const w = intake.w || 1, h = intake.h || 1;
-    for (let yy = intake.y - 1; yy <= intake.y + h; yy++)
-      for (let xx = intake.x - 1; xx <= intake.x + w; xx++)
+    for (let yy = ty - 1; yy <= ty + th; yy++)
+      for (let xx = tx - 1; xx <= tx + tw; xx++)
         if (beltSet.has(xx + ',' + yy)) return { x: xx, y: yy };
     return null;
   }
+  function intakeTile() {
+    const intake = geo && geo.props && geo.props.find(p => p.t === 'intake');
+    return intake ? beltTileNear(intake.x, intake.y, intake.w || 1, intake.h || 1) : null;
+  }
+  // a real inbound message arrived — drop a box at the INTAKE so it rides the belts to the desk
   function intakeMessage(payload) {
     if (!convey) return;
     const t = intakeTile();
     if (t) convey.enqueueAt(t.x, t.y, payload || {});
   }
-  // the box reached the open end (the agent's desk) — show the agent receive the message
+  // the agent's reply heads out — enqueue an OUTBOUND box at a desk-adjacent belt tile, riding to the OUTBOX
+  function outboundMessage(payload) {
+    if (!convey || !desk) return;
+    const t = beltTileNear(desk.tx, desk.ty, desk.w, desk.h);
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, workitemId: (payload && payload.workitemId) || '' });
+  }
+  // a payload box reached an open end: inbound -> the agent receives it; outbound -> the OUTBOX dispatches it
   function onWorkitemDeliver(bx) {
     const p = (bx && bx.payload) || {};
+    if (p.outbound) { lastOutboxFlash = fnow; return; }   // reply reached the OUTBOX -> flash the chute
     say('received: ' + (p.preview || 'message'));
     wakeIn();
   }
@@ -469,6 +482,7 @@ const World = (() => {
     if (bridged || typeof U === 'undefined' || !U.bus) return;
     bridged = true;
     U.bus.on('workitem.placed', p => intakeMessage(p));
+    U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
     if (typeof EventSource === 'undefined') return;
