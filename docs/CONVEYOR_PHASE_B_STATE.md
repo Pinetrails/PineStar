@@ -50,26 +50,36 @@ the single authority `require()`d by both the frontend sim and the sidecar route
 4. **Tests:** `test/classify.test.js` (getTag), `test/conveyor.test.js` (filter routes by tag w/ overflow;
    merger emits one box at K; both replay-stable). `npm run test:fast` green.
 
-## NEXT — B4 (the VISIBLE multi-agent crew + bay authoring) — XL, do AFTER B3, decoupled
-The maps confirmed `world.js` has dormant multi-agent seams (`occupiedSeats`, `StationUI.enter` takes an
-array, per-agentId queues). Use the **crew[0]=hero** pattern to avoid the 40-ref `let agent` rewrite:
-1. **`frontend/app/world.js`** — keep `agent` (the hero, full behavior/awakening) as crew[0]; add `crew=[]` of
-   LIGHT desk-idle bodies (stripped state machine: no path/novelty/glance — desk-idle + receive-box only);
-   `spawnCrew(specs)` places each at its bay's desk tile; iterate crew+agent in the frame y-sort + tick.
-   Restrict the awakening cinematic to the first spawn. Empty crew = today's exact single-agent world.
-2. **`frontend/app/world.js`** — replace `buildJunctions()` with `plan = Pipeline.compileRoutingPlan(geo)` in
-   `rederive()`; derive `junctions` from `plan.junctions` (incl filter/merger). `onWorkitemDeliver` extracts
-   `bx.payload.agentId`, finds the matching crew body via `plan.bays`, routes `say()`+`wakeIn()` to IT.
-   POST the plan to `/api/routing` on every geo change (`fetch('/api/routing',{method:'POST',body:JSON.stringify(plan)})`).
-3. **`frontend/app/build.js`** — add BAY to the logistics palette (mirror intake/outbox/splitter); on
-   placing/clicking a bay show an **agent-picker popover** sourced from the app's agent list (calls
-   `station.assignPropAgent(propId, agentId)`). Run `compileRoutingPlan` live in REFIT and render **RED GHOST**
-   tiles at orphan-source/dead-bay/cycle/filter-no-default locations (cost-safety surfaced before any paid run).
-4. **`frontend/app/app.js`** — minimal agent registry at the `World.spawn`/`StationUI.enter` seam so the crew
-   list flows in; persist `{agents, activeAgentId}` with legacy `{agent}` auto-wrap.
-5. **Tests:** headless assertion that a multi-bay geo's `resolveTarget` agrees with where a conveyor box
-   deterministically lands (frontend-visual == backend-dispatch invariant). Manual smoke: place INTAKE+FILTER+
-   two bound BAYs, DM a 'research…' then 'code…', watch each sort to the right agent's bay + that agent light up.
+## B4 progress (the VISIBLE multi-agent crew + bay authoring)
+| Commit | Stage | What |
+|---|---|---|
+| `786cb89` | **B4a** | world.js `rederive()` → `compileRouting()`: `Pipeline.compileRoutingPlan(geo)` + POST `/api/routing` (hash-deduped). `buildJunctions()` derives from `plan.junctions` (filter/merger animate). `intakeMessage` tags the box via `Classify.getTag`. index.html loads `app/pipeline.js`. Non-breaking for an empty floor. |
+| `662625e` | **B4b** | **Visible crew.** `agent` stays the HERO (untouched). `crew[]` = light static bodies, one per bound bay (`syncCrewFromPlan` in rederive). `drawAgent/drawFallback/drawBubble` take an optional `who` (hero path byte-identical, gated `who===agent`). `onWorkitemDeliver` routes a delivered box to its bound body via `resolveTarget` + lights the bay (`bayLit`); else the hero, as before. Verified: instrumented frame drew hero+2 crew. |
+| `bac4388` | **B4b.2** | **Junctions carry config.** Found projectGeometry dropped a placed filter/merger's `routes/def/bufferSize` (B0 only carried `agentId`) → real filters were inert. Now carried additively in addProp/projectGeometry/migrate (sanitized E/W/N/S, bufferSize≥2) + `configureJunction(propId,cfg)` setter. A placed filter floor now compiles DEPLOYABLE. worldmodel.test 136. |
+
+### NEXT — B4c (bay authoring + cost-safety ghosts) then B4d (app registry)
+- **`frontend/app/build.js`** — BAY is ALREADY in the catalog (auto-renders in the logistics palette via
+  PropSprites.CATS). On placing/clicking a bay, show an **agent-picker popover** (mirror `showGuide`'s
+  `div.refit-guide` appended to `root`, lines ~250-271) sourced from the app's agent list → calls
+  `station.assignPropAgent(propId, agentId)` (live, already exported). Detect a bay click in `onDown`
+  (`station.propAt(w.tx,w.ty)` → resolve to a bay) — or a double-click — to (re)open the picker. The
+  **red-ghost** path already exists: `ghostInfo`→`drawGhost` paints red on `canPlaceProp` fail. Add a live
+  REFIT validation pass that runs `Pipeline.compileRoutingPlan(projectGeometry())` and paints red tiles at
+  ORPHAN_SOURCE / DEAD_BAY / CYCLE / FILTER_NO_DEFAULT / UNBOUND_BAY (cost-safety before any paid run).
+  Optionally a filter-route editor calling the new `configureJunction`.
+- **`frontend/app/app.js`** — minimal agent registry at the `World.spawn`/`StationUI.enter` seam (already
+  passes `[agent]`). Persist `{agents, activeAgentId}` via Save with a legacy `{agent}` auto-wrap (save.js
+  migrate). Feed the crew/agent list to the build.js picker. `syncChannels` should use the active agent's id.
+- **Tests:** headless assertion that a multi-bay geo's `resolveTarget` agrees with where a conveyor box
+  deterministically lands (frontend-visual == backend-dispatch invariant). Manual smoke: place INTAKE+FILTER+
+  two bound BAYs, DM a 'research…' then 'code…', watch each sort to the right agent's bay + that agent light up.
+
+### Verifying world.js (browser) — the worktree-served preview
+The running `skynet-frontend` preview serves the *integration tree*, NOT this worktree. Added a
+`workpipe-b-frontend` launch config (`http-server C:/Users/andro/gen-trees/workpipe-b/frontend -p 8099`).
+world.js is not headless; verify via that preview: `preview_eval` to compile a synthetic floor + check
+`Pipeline`/`resolveTarget`, instrument `ctx.fillRect` to confirm bodies drew (screenshots time out on the
+continuously-animating canvas). Drive real work via the awakening (which calls `connectChannelBridge`).
 
 ## NEXT — B5 (per-bay capability) + merge
 - `sidecar/routing/router.js` `route()` builds the per-bay `station` from the delivered bay's room objects
