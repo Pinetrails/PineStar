@@ -68,6 +68,19 @@
     const pollTimeoutSec = o.pollTimeoutSec || DEFAULT_POLL_TIMEOUT_SEC;
     const backoff = Array.isArray(o.backoffMs) && o.backoffMs.length ? o.backoffMs.slice() : DEFAULT_BACKOFF.slice();
     const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
+    const dropPending = o.dropPendingOnConnect === true;   // generic default OFF; the Telegram layer turns it on
+
+    // owner-only admission for DMs (trust-on-first-use): the FIRST direct message claims ownership; every later
+    // DM from a DIFFERENT user is dropped BEFORE onInbound — i.e. before any model key is spent or memory is read.
+    // A preset ownerUserId (restored from saved config) skips the claim. Empty string == unclaimed. Group access
+    // stays governed by allowedChats, independently.
+    let owner = o.ownerUserId ? String(o.ownerUserId) : '';
+    const onOwnerClaim = typeof o.onOwnerClaim === 'function' ? o.onOwnerClaim : null;
+    function ownerOk(userId) {
+      const uid = String(userId == null ? '' : userId);
+      if (!owner) { if (!uid) return false; owner = uid; if (onOwnerClaim) { try { onOwnerClaim(uid); } catch (_) {} } return true; }
+      return uid === owner;
+    }
 
     // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
     function admitted(m) {
@@ -91,6 +104,7 @@
       if (n.message) {
         const m = n.message;
         if (!admitted(m)) return;
+        if (m.chatType === 'dm' && !ownerOk(m.userId)) return;   // a non-owner DM never reaches the run host
         onInbound({
           channel: name,
           chatId: String(m.chatId),
@@ -102,7 +116,7 @@
           ts: clock.now()
         });
       } else if (n.callback && onCallback) {
-        onCallback(n.callback);
+        if (!owner || String(n.callback.userId) === owner) onCallback(n.callback);   // only the owner's taps act
       }
     }
 
@@ -135,11 +149,28 @@
       MAX_MESSAGE_LENGTH: MAX_MESSAGE_LENGTH,
 
       // start the inbound long-poll loop; resolves once listening (the loop runs detached until disconnect()).
+      // dropPendingOnConnect (default true): before the first real poll, prime the offset past everything already
+      // buffered server-side (getUpdates offset:-1 returns only the last pending update) and DISCARD that backlog,
+      // so a restart never replays hours of stale DMs and autonomously runs stale directives. Skipped when an
+      // explicit startOffset was given (the caller pinned a resume point).
       connect() {
         if (started) return Promise.resolve();
         started = true; stopped = false;
         ac = new AbortController();
-        loopDone = loop();
+        loopDone = (async () => {
+          // proactively clear any stale webhook on this token so getUpdates can't 409 forever (Telegram-only;
+          // guarded so generic transports/fakes without the method are unaffected).
+          if (typeof transport.deleteWebhook === 'function') { try { await transport.deleteWebhook(); } catch (_) {} }
+          if (dropPending && !Number.isFinite(o.startOffset)) {
+            try {
+              const raw = await transport.getUpdates({ offset: -1, timeoutSec: 0, signal: ac.signal });
+              const ups = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.updates) ? raw.updates : []);
+              for (const ru of ups) { let n; try { n = normalize(ru); } catch (_) {} if (n && Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1); }
+              // the next poll uses `offset` (= last backlog id + 1), which confirms+discards the backlog; we did NOT dispatch it.
+            } catch (e) { if (stopped || isAbort(e)) return; /* fatal/transient handled by the loop below */ }
+          }
+          if (!stopped) await loop();
+        })();
         return Promise.resolve();
       },
 
@@ -152,10 +183,17 @@
       },
 
       // send ONE message (the hub chunks long replies to MAX_MESSAGE_LENGTH before calling this). A transport
-      // result with { ok:false, retryable:true } gets exactly ONE bounded resend (Hermes _send_with_retry, minimal).
+      // result with { ok:false, retryable:true } gets exactly ONE bounded resend (Hermes _send_with_retry, minimal),
+      // and on a 429 we WAIT out the server's retry_after (capped) first, so the resend lands after the flood window
+      // instead of bouncing instantly into it.
       async send(chatId, text, sendOpts) {
-        let r = await transport.send(String(chatId), text == null ? '' : String(text), sendOpts || {});
-        if (r && r.ok === false && r.retryable) r = await transport.send(String(chatId), text == null ? '' : String(text), sendOpts || {});
+        const t = text == null ? '' : String(text);
+        let r = await transport.send(String(chatId), t, sendOpts || {});
+        if (r && r.ok === false && r.retryable) {
+          const waitMs = Math.min((Number(r.retryAfter) > 0 ? Number(r.retryAfter) : 1) * 1000, 30000);
+          await sleep(waitMs);
+          r = await transport.send(String(chatId), t, sendOpts || {});
+        }
         return r;
       },
 
@@ -165,7 +203,7 @@
         return { id: String(chatId), type: allowed.has(String(chatId)) ? 'group' : 'dm' };
       },
 
-      _internals: { admitted, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, get offset() { return offset; } }
+      _internals: { admitted, ownerOk, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, get offset() { return offset; }, get owner() { return owner; } }
     };
   }
 

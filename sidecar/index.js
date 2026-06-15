@@ -145,20 +145,37 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
-function startTelegram(token, key, model) {
+function startTelegram(token, key, model, agentCfg) {
   stopTelegram();
-  channelSecrets = Object.assign({}, channelSecrets, { telegram: { token: token, key: key, model: model, enabled: true } });
+  const cfg = agentCfg || {};
+  // Persist the SAME agentId + composed system prompt the app uses, so a Telegram run IS the same agent
+  // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
+  // LIVE by the hub each message, so /sync can refresh them (dossier edits) without a reconnect.
+  channelSecrets = Object.assign({}, channelSecrets, { telegram: {
+    token: token, key: key, model: model, enabled: true,
+    agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined
+  } });
   saveChannelSecrets(channelSecrets);
   let adapterRef = null;
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
-    secrets: () => { const t = (channelSecrets && channelSecrets.telegram) || {}; return { key: t.key, model: t.model }; },
+    secrets: () => { const t = (channelSecrets && channelSecrets.telegram) || {}; return { key: t.key, model: t.model, agentId: t.agentId, system: t.system }; },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), maxMessageLength: 4096
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
+    // owner-only admission: the first DM claims the bot; persist that userId so it survives restarts.
+    ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
+    onOwnerClaim: (uid) => {
+      try {
+        const t = (channelSecrets && channelSecrets.telegram) || {};
+        channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, t, { ownerId: String(uid) }) });
+        saveChannelSecrets(channelSecrets);
+        console.log('  · telegram owner claimed (userId ' + String(uid) + ') — other DMs are now refused');
+      } catch (_) {}
+    },
     onInbound: (m) => { hub.onInbound(m).catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e)); },
     onCallback: hub.onCallback,
     onStatus: (s) => {
@@ -186,6 +203,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
@@ -212,8 +230,8 @@ server.listen(PORT, '127.0.0.1', () => {
     const envTok = String(process.env.SKYNET_TELEGRAM_TOKEN || '').trim();
     const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
     const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
-    if (t.enabled && t.token && t.key && t.model) { startTelegram(t.token, t.key, t.model); console.log('  · telegram auto-started from saved config'); }
-    else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel); console.log('  · telegram auto-started from env'); }
+    if (t.enabled && t.token && t.key && t.model) { startTelegram(t.token, t.key, t.model, { agentId: t.agentId, system: t.system, name: t.name }); console.log('  · telegram auto-started from saved config'); }
+    else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
 });
 
@@ -432,14 +450,39 @@ async function handleCancel(req, res) {
 // bot. Headless polling then works even with no browser open. The secrets are NEVER echoed back.
 async function handleChannelConnect(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 8192)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
-  const token = String(body.token || '').trim();
-  const key = String(body.key || '').trim();
-  const model = String(body.model || '').trim();
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }   // room for the composed system prompt
+  // reuse the saved values when the request omits them, so RECONNECT is one click (no re-pasting the token).
+  const saved = (channelSecrets && channelSecrets.telegram) || {};
+  const token = String(body.token || '').trim() || String(saved.token || '');
+  const key = String(body.key || '').trim() || String(saved.key || '');
+  const model = String(body.model || '').trim() || String(saved.model || '');
+  // the app's REAL agent identity, so Telegram runs as the same agent (shared memory) with the same voice.
+  const agentId = String(body.agentId || '').trim() || String(saved.agentId || '');
+  const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');
+  const name = String(body.agentName || '').trim() || String(saved.name || '');
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
   if (!key || !model) return json(400, { error: 'connect your agent first (an OpenRouter key + model are required)' });
-  try { startTelegram(token, key, model); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  try { startTelegram(token, key, model, { agentId, system, name }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   json(200, { connected: true, state: telegramStatus.state });
+}
+
+// POST /api/channels/telegram/sync { agentId?, system?, model?, key?, agentName? } — refresh the agent identity
+// the bot runs as (e.g. after the Commander edits identity/purpose/manual in the dossier) WITHOUT a reconnect.
+// The hub reads channelSecrets.telegram live, so the next inbound uses the updated prompt. No-op if unconfigured.
+async function handleChannelSync(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const t = (channelSecrets && channelSecrets.telegram) || null;
+  if (!t || !t.token) return json(200, { synced: false });   // nothing connected/configured — ignore quietly
+  const patch = {};
+  if (typeof body.agentId === 'string' && body.agentId.trim()) patch.agentId = body.agentId.trim();
+  if (typeof body.system === 'string') patch.system = body.system;
+  if (typeof body.model === 'string' && body.model.trim()) patch.model = body.model.trim();
+  if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
+  if (typeof body.agentName === 'string') patch.name = body.agentName;
+  channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, t, patch) });
+  saveChannelSecrets(channelSecrets);
+  json(200, { synced: true });
 }
 
 // POST /api/channels/telegram/disconnect — stop the bot and mark it disabled (kept in config so the token can be

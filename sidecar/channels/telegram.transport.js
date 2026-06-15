@@ -46,6 +46,12 @@
     }
 
     return {
+      // best-effort: drop any webhook this bot token may still have set (a prior tutorial/curl/another tool),
+      // which would otherwise make every getUpdates fail with 409. Never throws — a failure just means no webhook.
+      async deleteWebhook() {
+        try { await call('deleteWebhook', { drop_pending_updates: false }); } catch (_) {}
+      },
+
       async getUpdates(args) {
         const a = args || {};
         const { data, res } = await call('getUpdates', {
@@ -53,9 +59,16 @@
         }, a.signal);
         if (data && data.ok) return Array.isArray(data.result) ? data.result : [];
         const code = (data && data.error_code) || (res && res.status) || 0;
-        const err = new Error('telegram getUpdates failed: ' + code + ' ' + ((data && data.description) || ''));
+        const desc = (data && data.description) || '';
+        const err = new Error('telegram getUpdates failed: ' + code + ' ' + desc);
         err.code = code;
         if (code === 401 || code === 404) err.fatal = true;   // invalid/unknown token -> stop polling for good
+        // 409: another poller or a webhook owns this token. We proactively deleteWebhook on connect, so a
+        // persistent 409 means a SECOND instance is polling — stop with an actionable status instead of looping.
+        if (code === 409 || /terminated by other getupdates|another.*instance|webhook is active/i.test(desc)) {
+          err.fatal = true;
+          err.message = 'another instance or a webhook is using this bot token — stop the other poller (or it will keep stealing updates)';
+        }
         throw err;
       },
 

@@ -51,6 +51,22 @@ async function run() {
     const t500 = makeTelegramTransport({ fetch: fakeFetch(() => resp(500, { ok: false, error_code: 500, description: 'Internal' })), token: 'TKN' });
     e = null; try { await t500.getUpdates({ offset: 0 }); } catch (x) { e = x; }
     A.ok(e && !e.fatal, '500 -> throws but NOT fatal (transient, loop will back off)');
+    // 409 (another poller / stale webhook) -> fatal with an actionable message (don't loop forever)
+    const t409 = makeTelegramTransport({ fetch: fakeFetch(() => resp(409, { ok: false, error_code: 409, description: 'Conflict: terminated by other getUpdates request' })), token: 'TKN' });
+    e = null; try { await t409.getUpdates({ offset: 0 }); } catch (x) { e = x; }
+    A.ok(e && e.fatal === true && /another instance|webhook/i.test(e.message), '409 -> fatal with actionable detail');
+  }
+
+  // ---- B5. deleteWebhook posts the right method and never throws ----
+  {
+    const fdw = fakeFetch(() => resp(200, { ok: true, result: true }));
+    const tdw = makeTelegramTransport({ fetch: fdw, token: 'TKN' });
+    await tdw.deleteWebhook();
+    A.eq(fdw.calls[0].url, 'https://api.telegram.org/botTKN/deleteWebhook', 'deleteWebhook hits the right method');
+    A.eq(fdw.calls[0].body, { drop_pending_updates: false }, 'deleteWebhook body keeps pending (drop is handled by the offset prime)');
+    const tdw2 = makeTelegramTransport({ fetch: fakeFetch(() => ({ __throw: new Error('net down') })), token: 'TKN' });
+    await tdw2.deleteWebhook();   // must NOT throw
+    A.ok(true, 'deleteWebhook swallows transport errors');
   }
 
   // ---- C. getUpdates: a network throw propagates (non-fatal) so the loop backs off ----
@@ -102,22 +118,49 @@ async function run() {
     A.eq(normalize({ foo: 1 }), null, 'no update_id -> null (skipped, no offset advance)');
   }
 
+  const getUpdatesCalls = (f) => f.calls.filter(c => c.url.indexOf('/getUpdates') !== -1);
+
   // ---- G. end-to-end: connect() polls via the real transport+normalize+generic adapter -> onInbound fires ----
   {
     const inbox = [];
-    const f = fakeFetch((url, opts, n) => {
+    let gu = 0;   // count getUpdates calls specifically (connect also fires deleteWebhook, so total-call index is unreliable)
+    const f = fakeFetch((url) => {
       if (url.indexOf('/getUpdates') !== -1) {
-        if (n === 1) return resp(200, { ok: true, result: [{ update_id: 50, message: { message_id: 1, text: 'ping', chat: { id: 999, type: 'private' }, from: { id: 1, username: 'a' } } }] });
+        gu++;
+        if (gu === 1) return resp(200, { ok: true, result: [{ update_id: 50, message: { message_id: 1, text: 'ping', chat: { id: 999, type: 'private' }, from: { id: 1, username: 'a' } } }] });
         return { __park: true };   // subsequent polls park (abort-aware) so the test's timers aren't starved
       }
-      return resp(200, { ok: true, result: { message_id: 1 } });
+      return resp(200, { ok: true, result: { message_id: 1 } });   // deleteWebhook / sendMessage
     });
-    const a = makeTelegramAdapter({ fetch: f, token: 'TKN', onInbound: m => inbox.push(m), clock: { now: () => 1234 }, sleep: () => Promise.resolve() });
+    // drop-pending OFF here so the first poll IS the delivery (this case tests basic end-to-end, not backlog).
+    const a = makeTelegramAdapter({ fetch: f, token: 'TKN', dropPendingOnConnect: false, onInbound: m => inbox.push(m), clock: { now: () => 1234 }, sleep: () => Promise.resolve() });
     await a.connect();
     for (let i = 0; i < 8 && !inbox.length; i++) await tick();
     A.eq(inbox.length, 1, 'end-to-end: one inbound delivered');
     A.eq(inbox[0], { channel: 'telegram', chatId: '999', chatType: 'dm', userId: '1', userName: 'a', text: 'ping', messageId: '1', ts: 1234 }, 'normalized InboundMessage via the real pipeline');
-    A.ok(f.calls[1] && f.calls[1].body.offset === 51, 'second poll confirmed offset 50+1 (each update fetched once)');
+    const gus = getUpdatesCalls(f);
+    A.ok(gus[1] && gus[1].body.offset === 51, 'second getUpdates confirmed offset 50+1 (each update fetched once)');
+    await a.disconnect();
+  }
+
+  // ---- H. drop-pending is ON by default for Telegram: connect primes offset:-1 and discards the backlog ----
+  {
+    const inbox = [];
+    let gu = 0;
+    const f = fakeFetch((url) => {
+      if (url.indexOf('/getUpdates') !== -1) {
+        gu++;
+        if (gu === 1) return resp(200, { ok: true, result: [{ update_id: 70, message: { message_id: 1, text: 'STALE', chat: { id: 5, type: 'private' }, from: { id: 9 } } }] });   // prime -> dropped
+        if (gu === 2) return resp(200, { ok: true, result: [{ update_id: 71, message: { message_id: 2, text: 'fresh', chat: { id: 5, type: 'private' }, from: { id: 9 } } }] });   // real -> delivered
+        return { __park: true };
+      }
+      return resp(200, { ok: true, result: { message_id: 1 } });
+    });
+    const a = makeTelegramAdapter({ fetch: f, token: 'TKN', onInbound: m => inbox.push(m), clock: { now: () => 1 }, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && !inbox.length; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['fresh'], 'Telegram default discards the offline backlog, delivers only fresh');
+    A.eq(getUpdatesCalls(f)[0].body.offset, -1, 'prime getUpdates used offset -1');
     await a.disconnect();
   }
 

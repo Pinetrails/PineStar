@@ -57,6 +57,18 @@ async function run() {
     A.eq(lastRun.messages[2], { role: 'user', content: 'research foo' }, 'newest user turn last');
   }
 
+  // ---- B2. configured agentId + system: runs as the SAME app agent (shared memory) with its real prompt ----
+  {
+    const store = fakeStore(); let lastRun = null; const sends = [];
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'hi' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({ runOnce, store, send: (c, t) => { sends.push({ c, t }); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm', agentId: 'agent', system: 'You are ULTRON, the Commander\'s agent.' }), classify: () => false, newId: idGen() });
+    await hub.onInbound(dm('hey'));
+    A.eq(lastRun.agentId, 'agent', 'configured agentId used verbatim (same as the app -> shared notebook/memory/workspace)');
+    A.ok(lastRun.system.indexOf('You are ULTRON, the Commander\'s agent.') === 0, 'the REAL composed system prompt is used, not the default persona');
+    A.eq((store.hist.get('agent') || []).length, 2, 'history stored under the shared agentId');
+    A.eq(store.hist.has('tg_555'), false, 'did NOT create a separate tg_<chatId> agent');
+  }
+
   // ---- C. error / capdenied surfaced; assistant turn NOT persisted on error ----
   {
     const store = fakeStore(); const sends = [];

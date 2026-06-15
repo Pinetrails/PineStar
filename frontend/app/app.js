@@ -71,7 +71,21 @@ const App = (() => {
     }
     agent.systemPrompt = composeSystemPrompt(agent);
     if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
+    syncChannels();   // keep a connected Telegram bot on the SAME (updated) identity — no reconnect needed
     persist();
+  }
+
+  // push the live agent identity (the run agentId + composed system prompt) to the sidecar so any connected
+  // messaging channel (Telegram) runs as the SAME agent. Fire-and-forget; a no-op if no channel is connected.
+  function syncChannels() {
+    try {
+      if (!agent) return;
+      const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+      fetch('/api/channels/telegram/sync', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: (ws && ws.agentId) || 'agent', system: agent.systemPrompt || '', agentName: agent.name || '' })
+      }).catch(() => {});
+    } catch (_) {}
   }
 
   function persist() {
@@ -169,6 +183,7 @@ const App = (() => {
     SPRITES.init();
     World.init(el('stage'));
     World.spawn(agent);
+    World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
     if (opts.wake) { World.wakeIn(); SFX.level(); }
     World.start();
     // the canonical station the builder edits — restored from the save, or a fresh starter room
@@ -193,6 +208,7 @@ const App = (() => {
       StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');
     }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), awaitingPurpose: opts.awaitingPurpose, onPurpose: onPurpose, onTurn: persist });
+    syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
     renderRail();
     el('ws-new').onclick = newWorkstream;
     if (opts.awaitingPurpose) {
@@ -209,6 +225,7 @@ const App = (() => {
     agentDocs(agent).purpose = text;               // the interview answer IS purpose.md
     agent.systemPrompt = composeSystemPrompt(agent);
     Chat.setSystem(agent.systemPrompt);
+    syncChannels();                                // keep a connected Telegram bot on the new identity
     // persisted by the turn's onTurn() once the agent replies
   }
 
