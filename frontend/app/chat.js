@@ -229,12 +229,15 @@ const Chat = (() => {
       App.refreshUsage();
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       if (onTurn) onTurn();
+      // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
+      if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
     }
   }
 
   /* DISCONNECT (or any teardown) cancels the in-flight billable run: abort the fetch (the sidecar's
      req.on('close') then stops the loop) AND tell the sidecar to kill the run by id — belt-and-suspenders. */
   function abort() {
+    if (typeof Voice !== 'undefined' && Voice.stopConvo) Voice.stopConvo();   // drop hands-free on disconnect
     if (currentAbort) { try { currentAbort.abort(); } catch (_) {} }
     if (currentRunId) Harness.cancel(currentRunId);
   }

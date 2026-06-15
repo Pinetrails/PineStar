@@ -23,19 +23,26 @@ const Voice = (() => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   const synth = ('speechSynthesis' in window) ? window.speechSynthesis : null;
   const LS_SPEAK = 'skynet.voice.speak';
+  const REARM_DELAY = 350;                 // ms after the agent stops talking before the mic re-opens (echo guard)
+  const MAX_EMPTY = 3;                      // consecutive silent listens before the loop goes passive
 
   const canListen = () => !!SR;
   const canSpeak = () => !!synth;
 
-  // ---- persisted prefs ----------------------------------------------------
-  let speakReplies = loadPref(LS_SPEAK, true);   // do agents speak their replies aloud?
+  // ---- prefs --------------------------------------------------------------
+  let speakReplies = loadPref(LS_SPEAK, true);   // do agents speak their replies aloud? (persisted)
+  let convoMode = false;     // hands-free loop — a per-session mode (each game starts in push-to-talk)
   function loadPref(k, dflt) { try { const v = localStorage.getItem(k); return v == null ? dflt : v === '1'; } catch (_) { return dflt; } }
   function savePref(k, on) { try { localStorage.setItem(k, on ? '1' : '0'); } catch (_) {} }
 
   // ---- UI handles (wired in init) -----------------------------------------
-  let micBtn = null, toggleBtn = null, inputEl = null, statusEl = null;
+  let micBtn = null, toggleBtn = null, modeBtn = null, inputEl = null, statusEl = null;
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let listening = false, speaking = false, savedStatus = '';
+  // hands-free loop bookkeeping
+  let rearmTimer = null;            // pending mic re-open
+  let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
+  let sentThisListen = false;       // did the just-finished listen actually send a message?
 
   // a single status seam: prefer Chat.status (it owns #chat-status), fall back to the DOM node.
   function setStatus(s) {
@@ -147,15 +154,71 @@ const Voice = (() => {
   function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); }
 
   // public: speak a finished reply. Called from chat.js at the same seam that shows the bubble.
+  // The onReplyEnded callback is the hands-free loop's heartbeat: when the agent truly stops
+  // talking, re-open the mic so the conversation just continues.
   function speak(text, voiceId) {
     if (!speakReplies || !synth) return;
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t) return;
     if (voiceId) activeVoiceId = voiceId;
-    ttsProvider.speak(t.slice(0, 600), activeVoiceId, null);
+    ttsProvider.speak(t.slice(0, 600), activeVoiceId, onReplyEnded);
   }
 
   function stopSpeaking() { ttsProvider.stop(); }
+
+  /* ======================================================================
+     HANDS-FREE VOICE MODE — the self-driving listen → send → speak → listen loop
+     ====================================================================== */
+
+  // the agent finished speaking a reply → try to re-open the mic (no-op unless in voice mode).
+  function onReplyEnded() { maybeRearm(); }
+  // a run fully finished (called from chat.js's finally — covers task turns that never spoke).
+  function onTurnEnd() { maybeRearm(); }
+
+  // re-open the mic once the turn is genuinely done: not in a run, not still speaking, not already
+  // listening. Whichever finishing event (TTS end / run end) lands last is the one that arms it.
+  function maybeRearm() {
+    if (!convoMode || !SR || rearmTimer) return;
+    if (busyNow() || speaking || listening) return;   // not ready — the finishing event will re-call this
+    rearmTimer = setTimeout(() => {
+      rearmTimer = null;
+      if (convoMode && !busyNow() && !speaking && !listening) startListening();
+    }, REARM_DELAY);
+  }
+
+  // turn hands-free on/off. ON jumps straight into listening; agents must be audible to converse,
+  // so it also flips the speaker on. OFF tears the loop down.
+  function toggleVoiceMode() {
+    if (!SR) return;
+    convoMode = !convoMode;
+    if (typeof SFX !== 'undefined') SFX.open();
+    if (convoMode) {
+      if (!speakReplies) { speakReplies = true; savePref(LS_SPEAK, true); reflectToggle(); }  // you have to hear it
+      emptyStreak = 0;
+      reflectMode();
+      if (!busyNow() && !listening && !speaking) startListening();
+      else setStatus('voice mode on');
+    } else {
+      stopConvo();
+    }
+  }
+
+  // fully stop the loop (toggle off, DISCONNECT, teardown).
+  function stopConvo() {
+    const was = convoMode;
+    convoMode = false;
+    clearTimeout(rearmTimer); rearmTimer = null;
+    stopListening(); stopSpeaking();
+    reflectMode();
+    if (was && !busyNow()) setStatus('online');
+  }
+
+  // a silent listen in voice mode: try again a few times, then go passive so the mic isn't hot forever.
+  function handleEmptyListen() {
+    emptyStreak++;
+    if (emptyStreak >= MAX_EMPTY) { emptyStreak = 0; setStatus('voice mode — tap 🎤 when ready'); return; }
+    maybeRearm();
+  }
 
   /* ======================================================================
      INPUT — speak to your agent (STT)
@@ -195,10 +258,11 @@ const Voice = (() => {
   function startListening() {
     if (!SR || listening) return;
     if (busyNow()) { setStatus('busy — wait for the reply'); return; }  // don't talk over a live run
+    clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
-    listening = true; setMicState(true);
+    listening = true; sentThisListen = false; setMicState(true);
     savedStatus = currentStatusText();
-    setStatus('listening…');
+    setStatus(convoMode ? 'voice mode — listening…' : 'listening…');
     if (typeof SFX !== 'undefined') SFX.open();
     sttProvider.start({
       onInterim: t => { if (inputEl) inputEl.value = t; },
@@ -213,17 +277,32 @@ const Voice = (() => {
   function endListening() {
     if (!listening) return;
     listening = false; setMicState(false);
-    // if nothing was submitted, restore whatever status was showing before we grabbed it
-    if (!busyNow()) setStatus(savedStatus || 'online');
+    // hands-free: if this listen heard nothing, keep the loop alive (retry, then go passive).
+    if (convoMode && !sentThisListen && !busyNow() && !speaking) { handleEmptyListen(); return; }
+    // otherwise restore whatever status was showing before we grabbed the mic (a send already set
+    // 'thinking…'/'working…' via Chat, so this only fires for a plain idle stop).
+    if (!busyNow() && !speaking) setStatus(savedStatus || (convoMode ? 'voice mode on' : 'online'));
   }
 
   // a final transcript: drop it in the box for a beat of visual confirmation, then send as if typed.
   function submitTranscript(text) {
     const t = String(text || '').trim();
     if (inputEl) inputEl.value = '';
-    if (!t) return;
+    if (!t) return;   // heard nothing — endListening() handles the hands-free retry
+    // spoken exit: let the Commander leave voice mode without touching the keyboard.
+    if (convoMode && /^(exit|stop|end|leave|quit)\s+voice(\s+mode)?[.!]?$/i.test(t)) { stopConvo(); return; }
+    sentThisListen = true; emptyStreak = 0;
     if (typeof SFX !== 'undefined') SFX.click();
     if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t);   // reuses busy/purpose/task logic + cost accounting
+  }
+
+  // mic button: interrupt the agent if it's talking (barge-in), else start/stop a listen. In voice
+  // mode the loop manages re-opening; clicking just lets you jump in (or resume from passive).
+  function onMicClick() {
+    if (!SR) return;
+    if (speaking) { stopSpeaking(); setTimeout(() => { if (!busyNow() && !listening) startListening(); }, 150); return; }
+    if (convoMode) { if (!listening && !busyNow()) startListening(); return; }
+    if (listening) stopListening(); else startListening();
   }
 
   function toggleListen() {
@@ -252,6 +331,14 @@ const Voice = (() => {
     toggleBtn.textContent = speakReplies ? '🔊' : '🔇';
     toggleBtn.title = speakReplies ? 'agent voice: ON — click to mute' : 'agent voice: OFF — click to unmute';
   }
+  function reflectMode() {
+    if (!modeBtn) return;
+    modeBtn.classList.toggle('on', convoMode);
+    modeBtn.textContent = convoMode ? '🎙️' : '💬';
+    modeBtn.title = convoMode
+      ? 'voice mode: ON (hands-free) — click for push-to-talk'
+      : 'voice mode: OFF (push-to-talk) — click for hands-free conversation';
+  }
   function toggleSpeakReplies() {
     speakReplies = !speakReplies; savePref(LS_SPEAK, speakReplies);
     if (!speakReplies) stopSpeaking();
@@ -263,17 +350,26 @@ const Voice = (() => {
   function init(opts) {
     opts = opts || {};
     activeVoiceId = opts.name || 'agent';
+    convoMode = false;   // a fresh game session starts in push-to-talk; the toggle opts into hands-free
+    clearTimeout(rearmTimer); rearmTimer = null; emptyStreak = 0;
     inputEl = el('chat-input'); statusEl = el('chat-status');
-    micBtn = el('chat-mic'); toggleBtn = el('voice-toggle');
+    micBtn = el('chat-mic'); toggleBtn = el('voice-toggle'); modeBtn = el('voice-mode');
 
     if (micBtn) {
       if (!canListen()) micBtn.style.display = 'none';      // graceful degradation
-      else micBtn.onclick = () => toggleListen();
+      else micBtn.onclick = () => onMicClick();
     }
     if (toggleBtn) {
       if (!canSpeak()) toggleBtn.style.display = 'none';
       else { toggleBtn.onclick = () => toggleSpeakReplies(); reflectToggle(); }
     }
+    if (modeBtn) {
+      if (!canListen()) modeBtn.style.display = 'none';     // no STT → no hands-free
+      else { modeBtn.onclick = () => toggleVoiceMode(); reflectMode(); }
+    }
+    // Escape always drops out of hands-free (never auto-arm on load — the first listen needs a click,
+    // which also satisfies the browser mic-permission gesture).
+    if (!init._esc) { init._esc = true; document.addEventListener('keydown', e => { if (e.key === 'Escape' && convoMode) stopConvo(); }); }
   }
 
   // let other code (or a future hotkey) retarget the active voice when the workstream's agent changes.
@@ -287,7 +383,8 @@ const Voice = (() => {
   return {
     init, speak, setAgent, isOn,
     startListening, stopListening, toggleListen, stopSpeaking,
+    toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak,
-    isListening: () => listening, isSpeaking: () => speaking
+    isListening: () => listening, isSpeaking: () => speaking, inVoiceMode: () => convoMode
   };
 })();

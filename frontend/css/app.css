@@ -179,6 +179,9 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 /* speaking: gentle pulse on the speaker glyph while the agent's voice plays */
 .voice-toggle.speaking { animation: spk-pulse .7s infinite; }
 @keyframes spk-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+/* hands-free VOICE MODE button: dim when off (push-to-talk), lit + glowing when the loop is live */
+.voice-mode { opacity: .6; }
+.voice-mode.on { opacity: 1; text-shadow: 0 0 8px var(--ph-glow), 0 0 14px var(--ph-glow2); }
 
 /* ---------- onboarding / save additions ---------- */
 .title-btns { display: flex; flex-direction: column; gap: 12px; align-items: center; }
