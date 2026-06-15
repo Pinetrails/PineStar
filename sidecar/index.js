@@ -195,10 +195,12 @@ function startTelegram(token, key, model, agentCfg) {
     onInbound: (m) => {
       // WORK-ITEM INTERCEPT: an admitted message becomes a box that rides the player-laid belts to the
       // agent. This is pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of
-      // whether any belt/INTAKE exists. agentId/queue depth use the hub's OWN logic so the HUD never lies.
+      // whether any belt/INTAKE exists. agentId MIRRORS the hub's OWN resolution (a configured agentId else
+      // tg_<chatId>) so the HUD attributes work to the same agent the hub actually runs (hub.js AID_RE/secrets).
       let agentId = '', workitemId = '';
       try {
-        agentId = hub._internals.agentIdFor(String(m && m.chatId));
+        const sec = (channelSecrets && channelSecrets.telegram) || {};
+        agentId = (sec.agentId && /^[A-Za-z0-9_-]{1,40}$/.test(String(sec.agentId))) ? String(sec.agentId) : hub._internals.agentIdFor(String(m && m.chatId));
         workitemId = crypto.randomUUID();
         const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
         // a prior in-flight item for this chat is about to be ABORTED by the hub — drop its box off the belt.
@@ -292,8 +294,8 @@ function handleChannelEvents(req, res) {
   });
   try { res.write('retry: 3000\n\n'); } catch (_) {}        // EventSource auto-reconnects after 3s if dropped
   sse.add(res);
-  const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch (_) {} }, 25000);   // keep-alive comment
-  const done = () => { clearInterval(ka); sse.remove(res); };   // evict on disconnect — mirrors the /api/run cleanup
+  const done = () => { clearInterval(ka); sse.remove(res); };   // evict on disconnect — mirrors /api/run cleanup; idempotent
+  const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch (_) { done(); } }, 25000);   // keep-alive; self-evicts on write failure
   req.on('close', done); req.on('aborted', done); res.on('error', done);
 }
 

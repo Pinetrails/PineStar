@@ -29,14 +29,13 @@ function voiceModeRules() {
 const Chat = (() => {
   let log, input, statusEl;
   let system = '', name = 'AGENT', activeWs = null, busy = false;
-  let awaitingPurpose = false, onPurpose = null, onTurn = null;
+  let onTurn = null, interview = null;   // interview: the AWAKENING answer handler — while set, COMMS input feeds onboarding, not the model
   let currentAbort = null, currentRunId = null;   // the in-flight run, so DISCONNECT can cancel it
   const el = id => document.getElementById(id);
 
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
-    awaitingPurpose = !!opts.awaitingPurpose;
-    onPurpose = opts.onPurpose || null; onTurn = opts.onTurn || null;
+    onTurn = opts.onTurn || null; interview = null;
     busy = false;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     input.value = '';
@@ -55,7 +54,7 @@ const Chat = (() => {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
     if (log) log.innerHTML = '';
     renderHistory();
-    status(awaitingPurpose ? 'awaiting purpose' : (busy ? 'working…' : 'online'));
+    status(interview ? 'waking…' : (busy ? 'working…' : 'online'));
   }
 
   function setSystem(s) { system = s; }
@@ -153,20 +152,18 @@ const Chat = (() => {
   // task-vs-chat classification lives in app/classify.js (pure + unit-tested); see Classify.isTaskDirective.
 
   async function send(text) {
+    if (interview) { interview(text); return; }   // THE AWAKENING owns the input: route the answer to onboarding, no model call
     if (busy) return;
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
-    // first message after waking sets the agent's purpose (writes its system prompt)
-    let purposeTurn = false;
-    if (awaitingPurpose) { awaitingPurpose = false; purposeTurn = true; if (onPurpose) onPurpose(text); }
     busy = true;
     addUser(text); ws.history.push({ role: 'user', content: text });
     // name an untitled stream from its first real message (no-op on General / already-titled)
-    if (!purposeTurn && typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
+    if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
     }
 
-    const isTask = !purposeTurn && Classify.isTaskDirective(text);
+    const isTask = Classify.isTaskDirective(text);
     // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
     // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
     // forth. When it's OFF, replies are silent + detailed written text.
@@ -289,5 +286,61 @@ const Chat = (() => {
     if (currentRunId) Harness.cancel(currentRunId);
   }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy };
+  /* ---------- THE AWAKENING (onboarding) interview ----------
+     While an interview handler is set, the COMMS input feeds the onboarding script (Onboarding) instead
+     of the model: typed answers AND tappable suggestion chips both author config docs — no model call. */
+  function beginInterview(onAnswer) {
+    interview = onAnswer || null;
+    if (input) input.placeholder = 'answer to wake your agent…';
+    status('waking…');
+  }
+  function endInterview() {
+    interview = null;
+    if (input) input.placeholder = 'speak to your agent…';
+    status('online');
+  }
+  function echoUser(text) { addUser(text); }
+  // a row of tappable suggestion pills in COMMS; picking one (or typing) is an answer. onPick gets the item.
+  function choices(items, onPick) {
+    if (!log) return;
+    const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
+    let done = false;
+    (items || []).forEach(it => {
+      const b = document.createElement('button'); b.className = 'choice'; b.textContent = it.label;
+      b.onclick = () => { if (done) return; done = true; rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
+      rowEl.appendChild(b);
+    });
+    log.appendChild(rowEl); log.scrollTop = log.scrollHeight;
+  }
+
+  // THE AWAKENING typewriter: reveals fixed text char-by-char (with per-segment speed + holds) through the
+  // streaming caret, so the newborn is SEEN assembling its first broken sentence rather than printing it.
+  // Pass a string or an array of {text, cps, holdAfter} segments. onDone ALWAYS fires (try/finally) so a
+  // missed timer can never leave the awakening stuck. Returns a force-finish handle.
+  function typeLine(segments, onDone) {
+    if (typeof segments === 'string') segments = [{ text: segments }];
+    if (!log || !Array.isArray(segments)) { if (onDone) onDone(); return () => {}; }
+    const out = streamingAgent();
+    let si = 0, ci = 0, finished = false, killed = false;
+    function finish() {
+      if (finished) return; finished = true;
+      try { out.done(); } catch (_) {}
+      try { if (onDone) onDone(); } catch (_) {}
+    }
+    function stepOne() {
+      if (killed || si >= segments.length) { finish(); return; }
+      const seg = segments[si] || {};
+      const text = String(seg.text || '');
+      if (ci >= text.length) { si++; ci = 0; setTimeout(stepOne, seg.holdAfter != null ? seg.holdAfter : 0); return; }
+      const ch = text[ci++];
+      try { out.append(ch); } catch (_) { finish(); return; }
+      if (typeof SFX !== 'undefined' && SFX.type && ch !== ' ' && (ci % 2 === 0)) SFX.type();
+      const cps = seg.cps || 40;
+      setTimeout(stepOne, (1000 / cps) * (0.6 + Math.random() * 0.8));
+    }
+    stepOne();
+    return () => { killed = true; };
+  }
+
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, choices, typeLine };
 })();

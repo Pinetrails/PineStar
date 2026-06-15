@@ -12,7 +12,11 @@ const Harness = (() => {
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
-  let modelMap = {};   // id -> { id, name, pricing }
+  let modelMap = {};   // id -> { id, name, pricing, context_length }
+  // the agent's CURRENT context-window occupancy = the most recent turn's real prompt_tokens
+  // (agent.cost.tokensIn). Distinct from totals.tokens (lifetime in+out). Ephemeral runtime state,
+  // not persisted — on resume it stays 0 until the next real turn measures the live context.
+  let lastTokensIn = 0;
 
   const getKey = () => localStorage.getItem(LS.key) || '';
   const setKey = k => localStorage.setItem(LS.key, k || '');
@@ -31,13 +35,28 @@ const Harness = (() => {
     return { in: inP, out: outP };
   }
 
+  /* the model's real max context-window length (tokens) from the catalog, or 0 if unknown.
+     The browser already fetches the full OpenRouter /models payload — context_length is right
+     there next to pricing; we just stopped throwing it away. */
+  function contextLimitOf(id) {
+    const m = modelMap[id];
+    return (m && m.context_length) || 0;
+  }
+
+  /* live context-window occupancy for the CURRENT agent's model: how full is the window right now.
+     used = the latest real prompt_tokens; limit = the model's max context. Both come from real
+     provider/catalog data — the gauge (CtxGauge) renders "calibrating" until both are known. */
+  function contextState() {
+    return { used: lastTokensIn, limit: contextLimitOf(getModel()) };
+  }
+
   /* public model catalog (no key required) — populates the connect dropdown */
   async function listModels() {
     try {
       const r = await fetch(OR + '/models', { cache: 'no-store' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
-      const list = (j.data || []).map(m => ({ id: m.id, name: m.name, pricing: m.pricing }));
+      const list = (j.data || []).map(m => ({ id: m.id, name: m.name, pricing: m.pricing, context_length: m.context_length || 0 }));
       list.sort((a, b) => a.id.localeCompare(b.id));
       modelMap = {};
       for (const m of list) modelMap[m.id] = m;
@@ -98,6 +117,8 @@ const Harness = (() => {
           case 'agent.cost':
             totals.tokens += (payload.tokensIn || 0) + (payload.tokensOut || 0);
             totals.cost += payload.usd || 0;
+            // the newest prompt_tokens IS the live context occupancy — keep the last real reading
+            if (payload.tokensIn) lastTokensIn = payload.tokensIn;
             lastUsage = { total_tokens: (payload.tokensIn || 0) + (payload.tokensOut || 0), cost: payload.usd };
             onUsage && onUsage(lastUsage); break;
           case 'capdenied': errMsg = errMsg || ('no ' + (payload.need || 'capability') + ' — ' + (payload.reason || '')); break;
@@ -138,9 +159,9 @@ const Harness = (() => {
 
   return {
     getKey, setKey, getModel, setModel, getProv, setProv,
-    listModels, priceOf, chat, cancel, consent, notebook,
+    listModels, priceOf, contextLimitOf, contextState, chat, cancel, consent, notebook,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
-    resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; }
+    resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; lastTokensIn = 0; }
   };
 })();

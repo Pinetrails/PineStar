@@ -24,7 +24,7 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true }; }
+  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true }; }
   function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [] }; }
   function load() {
     try {
@@ -50,6 +50,7 @@ const StationUI = (() => {
     document.body.classList.toggle('no-scan', !s.scanlines);
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
+    if (typeof MUSIC === 'object') MUSIC.on = (s.music !== false);   // default-on adaptive score; arms on first gesture
   }
 
   /* ---------- time ---------- */
@@ -86,7 +87,11 @@ const StationUI = (() => {
   window.addEventListener('mouseup', () => termDrag = null);
 
   function closeTerm(key) {
-    if (open[key]) { open[key].remove(); delete open[key]; sfx('close'); }
+    if (open[key]) {
+      const w = open[key];
+      if (w._onClose) { try { w._onClose(); } catch (_) {} }   // e.g. tear down the live arcade canvas
+      w.remove(); delete open[key]; sfx('close');
+    }
     syncBB();
   }
   function toggleTerm(key, title, builder, opts) {
@@ -95,6 +100,7 @@ const StationUI = (() => {
     const w = el('div', 'term');
     w.style.zIndex = U.zTop();
     if (opts && opts.w) w.style.width = opts.w;
+    w._onClose = opts && opts.onClose;
     const head = el('div', 'term-head', '<span class="term-title">▮ ' + title + '</span>');
     const x = el('button', 'term-x', '✕');
     x.addEventListener('click', () => closeTerm(key));
@@ -167,6 +173,9 @@ const StationUI = (() => {
     { key: 'purpose', file: 'purpose.md', badge: 'YOU WRITE THIS',
       desc: 'What your agent is for. Folded into the prompt so it colours everything it does.',
       ph: 'e.g. Track AI-policy news and brief me each morning.' },
+    { key: 'context', file: 'context.md', badge: 'YOU WRITE THIS',
+      desc: 'About you and your world — your project, domain, and what "good" looks like. Grounds every run.',
+      ph: 'e.g. I build TypeScript web apps solo; "good" = tested, minimal diffs, no hand-waving.' },
     { key: 'manual', file: 'operating-manual.md', badge: 'YOU WRITE THIS',
       desc: 'House rules appended to every run — tone, format, the do-nots. Always obeyed.',
       ph: '- Cite your sources.\n- Keep it terse.\n- Never message anyone without asking first.' }
@@ -185,14 +194,14 @@ const StationUI = (() => {
   function agHead(a, act, price) {
     const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
     const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
-    return '<div class=”ag-hero”>' +
-      '<div class=”ag-portrait-wrap”><canvas id=”ag-portrait” width=”52” height=”68”></canvas></div>' +
-      '<div class=”ag-info”>' +
-      '<div class=”ag-name” style=”color:' + a.color + '”>' + esc(a.name) + '</div>' +
-      '<div class=”ag-role-line”><span class=”ag-sdot ' + dotCls + '”></span>' + statusText + ' · HAB-01</div>' +
-      '<div class=”ag-tags”>' +
-      '<span class=”tag model”>' + esc(a.model || '—') + '</span>' +
-      (price ? '<span class=”tag dim”>$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
+    return '<div class="ag-hero">' +
+      '<div class="ag-portrait-wrap"><canvas id="ag-portrait" width="52" height="68"></canvas></div>' +
+      '<div class="ag-info">' +
+      '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + '</div>' +
+      '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
+      '<div class="ag-tags">' +
+      '<span class="tag model">' + esc(a.model || '—') + '</span>' +
+      (price ? '<span class="tag dim">$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
       '</div></div></div>';
   }
 
@@ -200,31 +209,31 @@ const StationUI = (() => {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
     const fmtTok = n => { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
-    return '<div class=”stat-grid”>' +
-      '<div class=”stat-cell”><div class=”stat-val”>' + (t.calls || 0) + '</div><div class=”stat-lbl”>RUNS</div></div>' +
-      '<div class=”stat-cell”><div class=”stat-val”>' + fmtTok(t.tokens) + '</div><div class=”stat-lbl”>TOKENS</div></div>' +
-      '<div class=”stat-cell”><div class=”stat-val pos”>$' + Number(t.cost || 0).toFixed(4) + '</div><div class=”stat-lbl”>SPENT</div></div>' +
+    return '<div class="stat-grid">' +
+      '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +
       '</div>' +
-      '<div class=”ag-mission”><div class=”ag-mission-lbl”>MISSION</div>' +
+      '<div class="ag-mission"><div class="ag-mission-lbl">MISSION</div>' +
       (a.purpose
-        ? '<div class=”ag-mission-text”>' + esc(a.purpose) + '</div>'
-        : '<div class=”ag-mission-cta”>No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
+        ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
+        : '<div class="ag-mission-cta">No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
-      '<div class=”ag-foot-row”>on station since <b>' + since + '</b> · all figures are real spend</div>';
+      '<div class="ag-foot-row">on station since <b>' + since + '</b> · all figures are real spend</div>';
   }
 
   function agSkills() {
     const on = SKILLS.filter(s => s.on).length;
-    return '<h4 class=”ms-h”>GRANTED — ' + on + ' LIVE</h4>' +
-      '<div class=”perk-grid”>' +
-      SKILLS.map(s => '<div class=”perk ' + (s.on ? 'on' : '') + '”>' +
-        '<div class=”perk-icon”>' + s.icon + '</div>' +
-        '<div class=”perk-name”>' + s.name + '</div>' +
-        '<div class=”perk-desc”>' + s.tools + '</div>' +
-        '<div class=”perk-stat' + (s.consent ? ' ask' : '') + '”>' +
+    return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
+      '<div class="perk-grid">' +
+      SKILLS.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
+        '<div class="perk-icon">' + s.icon + '</div>' +
+        '<div class="perk-name">' + s.name + '</div>' +
+        '<div class="perk-desc">' + s.tools + '</div>' +
+        '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
-      '<p class=”sk-note”>Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS.</p>';
+      '<p class="sk-note">Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS.</p>';
   }
 
   function fileCard(a, f) {
@@ -628,6 +637,7 @@ const StationUI = (() => {
       '<label class="set-row"><input type="checkbox" id="set-scan" ' + (s.scanlines ? 'checked' : '') + '> CRT SCANLINES</label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO</label>' +
+      '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">SKYNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
@@ -638,7 +648,7 @@ const StationUI = (() => {
       body.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
     }));
     const bind = (id, key) => body.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
-    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
     const clr = body.querySelector('#set-clear');
     clr.addEventListener('click', () => {
@@ -798,10 +808,23 @@ const StationUI = (() => {
     if (!started) { started = true; tickTimer = setInterval(tick, 1000); }
   }
 
+  /* ============== ARCADE CABINET ==============
+     Clicking an arcade cabinet in the world opens BREACH PROTOCOL — the playable
+     Space-Invaders descendant ported verbatim from v7 (js/arcade.js). It mounts a
+     live canvas into a floating window; _onClose tears the game loop down so closing
+     the window stops the RAF + releases the global key handlers. */
+  function openArcade() {
+    if (typeof ARCADE === 'undefined') return;
+    toggleTerm('arcade', 'QUARTERS ▪ ARCADE — BREACH PROTOCOL', body => {
+      body.innerHTML = ARCADE.shell();
+      ARCADE.mount(body);
+    }, { w: '430px', onClose: () => { try { ARCADE.unmount(); } catch (_) {} } });
+  }
+
   // called on disconnect — tear down floating windows, keep persisted state
   function leave() {
     Object.keys(open).forEach(k => closeTerm(k));
   }
 
-  return { init, enter, leave, notify, flashSave, openAgent, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
+  return { init, enter, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
 })();
