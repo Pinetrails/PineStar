@@ -56,23 +56,24 @@ the single authority `require()`d by both the frontend sim and the sidecar route
 | `786cb89` | **B4a** | world.js `rederive()` → `compileRouting()`: `Pipeline.compileRoutingPlan(geo)` + POST `/api/routing` (hash-deduped). `buildJunctions()` derives from `plan.junctions` (filter/merger animate). `intakeMessage` tags the box via `Classify.getTag`. index.html loads `app/pipeline.js`. Non-breaking for an empty floor. |
 | `662625e` | **B4b** | **Visible crew.** `agent` stays the HERO (untouched). `crew[]` = light static bodies, one per bound bay (`syncCrewFromPlan` in rederive). `drawAgent/drawFallback/drawBubble` take an optional `who` (hero path byte-identical, gated `who===agent`). `onWorkitemDeliver` routes a delivered box to its bound body via `resolveTarget` + lights the bay (`bayLit`); else the hero, as before. Verified: instrumented frame drew hero+2 crew. |
 | `bac4388` | **B4b.2** | **Junctions carry config.** Found projectGeometry dropped a placed filter/merger's `routes/def/bufferSize` (B0 only carried `agentId`) → real filters were inert. Now carried additively in addProp/projectGeometry/migrate (sanitized E/W/N/S, bufferSize≥2) + `configureJunction(propId,cfg)` setter. A placed filter floor now compiles DEPLOYABLE. worldmodel.test 136. |
+| `a30b798` | **B4c** | **Bay authoring + cost-safety ghosts.** build.js `openBayPicker` (reuses the refit-guide modal): place/click a BAY → assign an agent (roster from `opts.agents()` + free-text) → `assignPropAgent`. `rebake()` runs `compileRoutingPlan`; `drawRoutingValidation` paints pulsing RED markers (NO BELT/UNREACHABLE/LOOP!/NO DEFAULT/DUP AGENT) + AMBER (NO AGENT) on the floor before any paid run. A clean no-bay floor shows nothing. |
+| `43d3379` | **B4d** | **Roster → picker (minimal).** app.js `Build.init` now passes `agents:()=>[the app agent]` so the picker lists real agents. The bay→agent binding persists via `station.serialize` (prop.agentId round-trips) — no save-schema change needed. The full `{agents,activeAgentId}` multi-agent app registry (multiple real agents, per-agent chat) is a SEPARATE, larger workstream beyond conveyor routing — deliberately out of scope here. |
 
-### NEXT — B4c (bay authoring + cost-safety ghosts) then B4d (app registry)
-- **`frontend/app/build.js`** — BAY is ALREADY in the catalog (auto-renders in the logistics palette via
-  PropSprites.CATS). On placing/clicking a bay, show an **agent-picker popover** (mirror `showGuide`'s
-  `div.refit-guide` appended to `root`, lines ~250-271) sourced from the app's agent list → calls
-  `station.assignPropAgent(propId, agentId)` (live, already exported). Detect a bay click in `onDown`
-  (`station.propAt(w.tx,w.ty)` → resolve to a bay) — or a double-click — to (re)open the picker. The
-  **red-ghost** path already exists: `ghostInfo`→`drawGhost` paints red on `canPlaceProp` fail. Add a live
-  REFIT validation pass that runs `Pipeline.compileRoutingPlan(projectGeometry())` and paints red tiles at
-  ORPHAN_SOURCE / DEAD_BAY / CYCLE / FILTER_NO_DEFAULT / UNBOUND_BAY (cost-safety before any paid run).
-  Optionally a filter-route editor calling the new `configureJunction`.
-- **`frontend/app/app.js`** — minimal agent registry at the `World.spawn`/`StationUI.enter` seam (already
-  passes `[agent]`). Persist `{agents, activeAgentId}` via Save with a legacy `{agent}` auto-wrap (save.js
-  migrate). Feed the crew/agent list to the build.js picker. `syncChannels` should use the active agent's id.
-- **Tests:** headless assertion that a multi-bay geo's `resolveTarget` agrees with where a conveyor box
-  deterministically lands (frontend-visual == backend-dispatch invariant). Manual smoke: place INTAKE+FILTER+
-  two bound BAYs, DM a 'research…' then 'code…', watch each sort to the right agent's bay + that agent light up.
+**B3 + B4 (a/b/b.2/c/d) DONE + committed on agent/workpipe-b, all `npm run test:fast` green (30 files; classify 65, conveyor 50, pipeline 29, worldmodel 136). NOT merged.** The "connect agents to conveyors" vision is functional end-to-end: author bays + filters in REFIT → work sorts by content to the right bay → that agent appears + lights up → the sidecar dispatches the run there → unroutable floors flagged before spend.
+
+### NEXT — B5 (per-bay capability isolation) + merge to trunk
+- **`sidecar/routing/router.js`** `route()` (or a new method) builds the per-bay `station` from the delivered
+  bay's room objects (`agentRoomId(agentId)` → that room's placed props) and passes it to `runOnce` (which
+  gains an OPTIONAL `station` param; absent = today's hardcoded office). `resolveTools` reused verbatim.
+  `test/capgate.test.js`-style: a bay-room with a cabinet grants fs.*, without one grants none.
+- **Merge:** `sync-agent-tree.ps1 workpipe-b` (rebase onto trunk), `npm run test:fast` green, `git merge
+  agent/workpipe-b` from the integration tree, re-gate, ff master, tear down the worktree. CONFIRM with andro
+  before merging (outward-facing, shared trunk). B3/B4 are independently mergeable green now if desired.
+- **Pending live check:** the B4c/B4d picker UI was verified by the green gate + reuse of proven pieces, but
+  the in-browser click-test is pending a free preview slot (the 5-server cap was full with other worktrees).
+  Re-test via the `workpipe-b-frontend` preview (port 8099) when a slot frees, or post-merge on the trunk
+  preview: open REFIT → PROP/LOGISTICS/BAY → place a bay → the picker opens → assign 'coder' → place a filter
+  + 2 bays → DM 'research…'/'code…' → each sorts to the right bay + that agent lights up.
 
 ### Verifying world.js (browser) — the worktree-served preview
 The running `skynet-frontend` preview serves the *integration tree*, NOT this worktree. Added a
