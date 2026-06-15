@@ -8,14 +8,15 @@
           voice identity — distinct, stable pitch/rate/voice derived from the agent's
           name, so every crew member sounds like itself.
 
-   PHASE 1 (this file) uses the browser-native Web Speech API: SpeechRecognition for
-   STT and speechSynthesis for TTS. Zero keys, zero cost, works offline. Both directions
-   sit behind a tiny provider seam (sttProvider / ttsProvider) so a neural backend
-   (Whisper transcription, neural per-agent voices) can drop in LATER without touching
-   the UI or chat.js. See docs/VOICE_CHAT_PLAN.md for the Phase 2 path.
+   STT is the browser-native SpeechRecognition (push-to-talk + the hands-free loop).
+   TTS goes through output(): it first tries NEURAL voices via the sidecar /api/tts
+   (OpenRouter /audio/speech, using the same OpenRouter key the browser already sends to
+   /api/run — a distinct Gemini voice per personality), and falls back to the browser's
+   speechSynthesis on no-key / error / offline — so the worst case is the old robotic voice,
+   never silence. Per-personality voice + speed live on the persona (personas.js: ttsVoice/ttsSpeed).
 
-   Graceful degradation: if the browser exposes no SpeechRecognition the mic button hides
-   itself; if no speechSynthesis the speaker toggle hides itself. Everything else still works. */
+   Graceful degradation: no SpeechRecognition → the mic button hides; no neural key AND no
+   speechSynthesis → speak() is a no-op (the reply still shows as text + a room bubble). */
 'use strict';
 
 const Voice = (() => {
@@ -40,6 +41,7 @@ const Voice = (() => {
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let activePersonaId = 'worker-homie';   // drives the in-character task acknowledgments
   let listening = false, speaking = false, savedStatus = '';
+  let pendingSpeech = false;        // a neural TTS request is in flight / about to play (covers the fetch gap)
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open
   let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
@@ -100,110 +102,139 @@ const Voice = (() => {
     return { voice, pitch, rate };
   }
 
-  // the real utterance build + queue, shared by speak() and its voices-ready retry path.
-  function doSpeak(text, id, onEnd) {
-    if (!synth) { onEnd && onEnd(); return; }
-    // Only cancel when something is actually queued/playing. A cancel() on an empty queue can
-    // leave Chrome's engine paused (the later-turn silence). resume() first un-sticks any pause
-    // left over from the mic's SpeechRecognition run before we enqueue.
+  function onSpeakStart() { speaking = true; setSpeaking(true); }
+  // clears pendingSpeech FIRST (before the speaking guard) so the hands-free loop never wedges even if
+  // a neural attempt ended before any audio actually started.
+  function onSpeakEnd() { pendingSpeech = false; if (!speaking) return; speaking = false; setSpeaking(false); }
+
+  /* ---- web-speech (browser) FALLBACK -----------------------------------------------------------
+     The built-in speechSynthesis voices, used when neural TTS has no key / errors / is offline.
+     opts: { volume, speedMul }. */
+  function doSpeak(text, id, onEnd, opts) {
+    opts = opts || {};
+    if (!synth) { onSpeakEnd(); onEnd && onEnd(); return; }
     kickResume();
     try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {}
     const u = new SpeechSynthesisUtterance(text);
     const v = voiceFor(id);
     if (v.voice) u.voice = v.voice;
-    u.pitch = v.pitch; u.rate = v.rate; u.volume = 1;
+    u.pitch = v.pitch;
+    u.rate = Math.max(0.6, Math.min(1.6, v.rate * (opts.speedMul || 1)));
+    u.volume = (opts.volume == null ? 1 : opts.volume);
     u.onstart = () => onSpeakStart();
     u.onend = () => { onSpeakEnd(); onEnd && onEnd(); };
     u.onerror = () => { onSpeakEnd(); onEnd && onEnd(); };
-    try {
-      synth.speak(u);
-      kickResume();        // Chrome sometimes enqueues paused — resume right after speak()
-      startWatchdog();     // keep resuming if it pauses mid-utterance (~15s bug) or stalls
-    } catch (_) { onSpeakEnd(); onEnd && onEnd(); }
+    try { synth.speak(u); kickResume(); startWatchdog(); }
+    catch (_) { onSpeakEnd(); onEnd && onEnd(); }
   }
-
-  // the TTS provider seam — Phase 2 swaps this for a neural backend (return a Promise that resolves on end).
-  const ttsProvider = {
-    name: 'web-speech',
-    speak(text, id, onEnd) {
-      if (!synth) { onEnd && onEnd(); return; }
-      // voices may not be loaded yet on a cold first paint — if empty, refresh and retry once on
-      // voiceschanged so we don't speak with a null/default voice (or, on some builds, not at all).
+  function webSpeechSpeak(text, id, onEnd, opts) {
+    if (!synth) { onSpeakEnd(); onEnd && onEnd(); return; }
+    if (!voiceCache.length) {
+      refreshVoices();
       if (!voiceCache.length) {
-        refreshVoices();
-        if (!voiceCache.length) {
-          let fired = false;
-          const go = () => { if (fired) return; fired = true; refreshVoices(); doSpeak(text, id, onEnd); };
-          try { synth.addEventListener('voiceschanged', go, { once: true }); } catch (_) {}
-          setTimeout(go, 250);   // hard fallback if voiceschanged never fires
-          return;
-        }
+        let fired = false;
+        const go = () => { if (fired) return; fired = true; refreshVoices(); doSpeak(text, id, onEnd, opts); };
+        try { synth.addEventListener('voiceschanged', go, { once: true }); } catch (_) {}
+        setTimeout(go, 250);   // hard fallback if voiceschanged never fires
+        return;
       }
-      doSpeak(text, id, onEnd);
-    },
-    stop() {
-      if (synth) {
-        // only cancel if there is actually something queued/playing — a cancel() on an empty queue
-        // can leave Chrome's engine wedged (paused), which is what silences later turns.
-        try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {}
-        kickResume();   // un-stick the engine after recognition / a prior cancel
-      }
-      onSpeakEnd();
     }
-  };
-
-  function onSpeakStart() { speaking = true; setSpeaking(true); }
-  function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); }
-
-  // public: speak a finished reply. Called from chat.js at the same seam that shows the bubble.
-  // The onReplyEnded callback is the hands-free loop's heartbeat: when the agent truly stops
-  // talking, re-open the mic so the conversation just continues.
-  function speak(text, voiceId) {
-    if (!speakReplies || !synth) return;
-    const t = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!t) return;
-    if (voiceId) activeVoiceId = voiceId;
-    ttsProvider.speak(t.slice(0, 600), activeVoiceId, onReplyEnded);
+    doSpeak(text, id, onEnd, opts);
   }
 
-  function stopSpeaking() { ttsProvider.stop(); }
+  /* ---- neural TTS via OpenRouter — the agent's real per-personality voice ----------------------
+     Hits the sidecar /api/tts (which calls OpenRouter /audio/speech with the SAME OpenRouter key the
+     browser already uses) and plays the returned mp3. Any failure (no key / error / offline) falls
+     straight back to the browser voice, so the worst case is exactly the Phase-1 behavior. */
+  const TTS_MODEL = 'google/gemini-3.1-flash-tts-preview';
+  let ttsDisabled = false;   // flip true once we learn there's no usable key — skip the round-trip after that
+  function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
+  function ttsConfig() {
+    const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
+    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0 };
+  }
+  let currentAudio = null;
+  function stopAudio() { if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; } }
+  // play an mp3 blob, wiring start/end into the same speaking-state + loop hooks as the browser path.
+  function playBlob(blob, onEnd, volume, onFail) {
+    let url = null, a = null, done = false;
+    const cleanup = () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } if (currentAudio === a) currentAudio = null; };
+    const endOk = () => { if (done) return; done = true; cleanup(); onSpeakEnd(); onEnd && onEnd(); };
+    try {
+      stopAudio();
+      url = URL.createObjectURL(blob);
+      a = new Audio(url); currentAudio = a;
+      a.volume = (volume == null ? 1 : volume);
+      a.onplay = () => onSpeakStart();
+      a.onended = endOk; a.onerror = endOk;
+      const p = a.play();
+      if (p && p.catch) p.catch(() => { if (done) return; done = true; cleanup(); onFail ? onFail() : endOk(); });
+    } catch (_) { cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); }
+  }
+  // the unified output path used by speak()/ack()/mutter(): try neural, fall back to browser.
+  function output(text, id, onEnd, opts) {
+    opts = opts || {};
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) { onEnd && onEnd(); return; }
+    pendingSpeech = true;   // the agent is about to make sound — the loop must wait through the fetch gap
+    const fb = () => webSpeechSpeak(t, id, onEnd, opts);
+    const key = apiKey();
+    if (!key || ttsDisabled) { fb(); return; }
+    const cfg = ttsConfig();
+    const speed = Math.round(cfg.speed * (opts.speedMul || 1) * 100) / 100;
+    fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, text: t, model: cfg.model, voice: cfg.voice, speed }) })
+      .then(async r => {
+        const ct = r.headers.get('Content-Type') || '';
+        if (r.ok && ct.indexOf('audio') === 0) {
+          const blob = await r.blob();
+          if (blob && blob.size) { playBlob(blob, onEnd, opts.volume, fb); return; }
+        }
+        let reason = 'http ' + r.status;
+        try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
+        if (/no key/i.test(reason)) ttsDisabled = true;
+        console.warn('[voice] neural TTS → browser fallback:', reason);
+        fb();
+      })
+      .catch(e => { console.warn('[voice] neural TTS error:', (e && e.message) || e); fb(); });
+  }
+  function stopSpeaking() {
+    stopAudio();
+    if (synth) { try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {} kickResume(); }
+    onSpeakEnd();
+  }
+
+  // public: speak a finished reply. onReplyEnded is the hands-free loop's heartbeat.
+  function speak(text, voiceId) {
+    if (!speakReplies) return;
+    if (voiceId) activeVoiceId = voiceId;
+    output(text, activeVoiceId, onReplyEnded, {});
+  }
 
   // a quick, in-character spoken acknowledgment ("aight, on it") fired the INSTANT a task is assigned,
   // so the agent answers right away as it heads to the workstation instead of going silent until the
   // whole task finishes. Canned per-personality (zero latency, no model call). Returns the phrase so
   // the caller can also show it as a room bubble. The real result still speaks when the run completes.
   function ack() {
-    if (!speakReplies || !synth) return '';
+    if (!speakReplies) return '';
     const persona = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
     const acks = (persona && persona.acks) || [];
     if (!acks.length) return '';
     const phrase = (typeof U !== 'undefined' && U.pick) ? U.pick(acks) : acks[0];
-    ttsProvider.speak(phrase, activeVoiceId, null);
+    output(phrase, activeVoiceId, null, {});
     return phrase;
   }
 
-  // an ambient, muttered aside — station-life flavor (from world.js curiosity remarks), spoken
-  // quieter + a touch slower so it reads as the agent talking to itself, not answering. It NEVER
-  // cuts off a real reply and stays silent during a live exchange (listening / speaking / a run /
-  // a pending re-arm) so it can't collide with conversation or feed the open mic.
+  // an ambient, muttered aside — station-life flavor (from world.js curiosity remarks), in the agent's
+  // own voice but quieter + a touch slower so it reads as it talking to itself, not answering. It NEVER
+  // cuts off a real reply and stays silent during a live exchange (speaking / listening / a run / a
+  // pending re-arm) so it can't collide with conversation or feed the open mic. maybeRearm on end
+  // covers "voice mode switched on mid-mutter" so the loop never hangs.
   function mutter(text) {
-    if (!speakReplies || !synth) return;
-    if (speaking || listening || rearmTimer || busyNow()) return;
+    if (!speakReplies) return;
+    if (speaking || pendingSpeech || currentAudio || listening || rearmTimer || busyNow()) return;
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t) return;
-    try {
-      kickResume();
-      const u = new SpeechSynthesisUtterance(t.slice(0, 80));
-      const v = voiceFor(activeVoiceId);
-      if (v.voice) u.voice = v.voice;
-      u.pitch = v.pitch; u.rate = Math.max(0.6, v.rate - 0.12); u.volume = 0.5;   // quieter + slower
-      u.onstart = () => onSpeakStart();
-      // if voice mode was switched on WHILE this mutter was playing, toggleVoiceMode couldn't start
-      // the loop (it saw speaking=true) — so kick the loop when the mutter finishes, or it'd hang.
-      u.onend = () => { onSpeakEnd(); maybeRearm(); };
-      u.onerror = () => { onSpeakEnd(); maybeRearm(); };
-      synth.speak(u); kickResume(); startWatchdog();
-    } catch (_) {}
+    output(t.slice(0, 80), activeVoiceId, maybeRearm, { volume: 0.5, speedMul: 0.88 });
   }
 
   /* ======================================================================
@@ -221,13 +252,16 @@ const Voice = (() => {
   // can land while `speaking` is still false but the utterance is queued. We must also treat a
   // pending/speaking synth queue as "not done" — otherwise the mic would re-open into the agent's
   // own voice (echo) or cancel the not-yet-started reply (swallow). onReplyEnded then arms it.
-  function synthBusy() { return !!(synth && (synth.speaking || synth.pending)); }
+  // "is the agent making (or about to make) sound?" — covers the browser synth queue, a playing neural
+  // audio element, AND the gap while a neural request is in flight (pendingSpeech). The loop must wait
+  // through all of it, or the re-opened mic would capture the agent's own voice (echo).
+  function talking() { return speaking || pendingSpeech || !!currentAudio || !!(synth && (synth.speaking || synth.pending)); }
   function maybeRearm() {
     if (!convoMode || !SR || rearmTimer) return;
-    if (busyNow() || speaking || listening || synthBusy()) return;   // not ready — a finishing event re-calls this
+    if (busyNow() || listening || talking()) return;   // not ready — a finishing event re-calls this
     rearmTimer = setTimeout(() => {
       rearmTimer = null;
-      if (convoMode && !busyNow() && !speaking && !listening && !synthBusy()) startListening();
+      if (convoMode && !busyNow() && !listening && !talking()) startListening();
     }, REARM_DELAY);
   }
 

@@ -121,6 +121,8 @@ const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the SKYNET st
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
   + 'report what you actually found; never claim you cannot act.';
+const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
+try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 function loadChannelSecrets() {
@@ -242,6 +244,7 @@ function stopTelegram() {
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
@@ -568,6 +571,53 @@ function consentSummary(call) {
   const a = (call && call.args) || {};
   if (typeof a.path === 'string' && a.path) return a.path;
   try { const s = JSON.stringify(a); return s.length > 80 ? s.slice(0, 77) + '…' : s; } catch (_) { return ''; }
+}
+
+/* POST /api/tts — neural text-to-speech via OpenRouter's /audio/speech (same BYOK key the browser
+   already sends to /api/run; no extra secret). Returns mp3 bytes, or a small {fallback:true} JSON so
+   the browser drops back to its built-in speechSynthesis. Results are cached on disk by
+   (model,voice,speed,text) so repeated lines (acks, catchphrases) cost nothing and play instantly. */
+const TTS_DEFAULT_MODEL = 'google/gemini-3.1-flash-tts-preview';
+async function handleTts(req, res) {
+  const fallback = (reason) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
+  catch (e) { return fallback('bad json'); }
+  const key = String((body && body.key) || '').trim();
+  const text = String((body && body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+  const model = String((body && body.model) || TTS_DEFAULT_MODEL).trim();
+  const voice = String((body && body.voice) || 'Umbriel').trim();
+  let speed = Number(body && body.speed); if (!(speed > 0.25 && speed < 4)) speed = 1.0;
+  if (!text) return fallback('no text');
+  if (!key) return fallback('no key');
+
+  const ck = crypto.createHash('sha1').update(model + '|' + voice + '|' + speed + '|' + text).digest('hex');
+  const cacheFile = path.join(VOICE_CACHE_DIR, ck + '.mp3');
+  try {
+    const buf = await fsp.readFile(cacheFile);
+    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
+    return res.end(buf);
+  } catch (_) { /* miss → synthesize */ }
+
+  const payload = { model, input: text, voice, response_format: 'mp3', speed };
+  let or;
+  try {
+    or = await fetch('https://openrouter.ai/api/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'SKYNET' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
+  if (!or.ok) {
+    let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
+    return fallback('openrouter ' + or.status + (detail ? ' — ' + detail : ''));
+  }
+  let buf;
+  try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
+  if (!buf || !buf.length) return fallback('empty audio');
+  try { const tmp = cacheFile + '.' + crypto.randomUUID() + '.tmp'; await fsp.writeFile(tmp, buf); await fsp.rename(tmp, cacheFile); } catch (_) {}
+  res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
+  res.end(buf);
 }
 
 function readBody(req, max) {
