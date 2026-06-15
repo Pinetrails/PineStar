@@ -33,6 +33,11 @@ const World = (() => {
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   const stars = [];
 
+  /* reduced-motion (the warroom honesty floor): heavy motion — pulses/blinks — goes steady when the OS
+     asks for less motion. Live-read so a runtime setting change is honored without a reload. */
+  const _rmq = (typeof window !== 'undefined' && window.matchMedia) ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const reduceMotion = () => !!(_rmq && _rmq.matches);
+
   /* ---------- agent ---------- */
   let agent = null, activity = 'idle';
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
@@ -865,6 +870,7 @@ const World = (() => {
       ctx.setTransform(scale, 0, 0, scale, panX, panY);
     }
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
+    drawDeskGauge(now);   // the context-window memory core at the workstation (world-space, above the lightmap)
     if (agent && !agent.unplaced) drawBubble(now);
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
@@ -1121,6 +1127,55 @@ const World = (() => {
     ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
+  }
+
+  /* ---------- CONTEXT-WINDOW gauge: the agent's memory core, made physical ----------
+     A segmented "memory bank" standing beside the workstation that fills toward the model's REAL
+     context ceiling: latest prompt_tokens / catalog context_length (via Harness.contextState +
+     CtxGauge). Green→amber→red as it nears full; the topmost cell pulses at crit (steady under
+     reduced-motion). Drawn in world-space, above the lightmap, so it lives at the desk and reads at
+     a glance. Honest by construction: an unknown limit shows an empty core + "—" (calibrating),
+     never a fabricated fill. NOTE: it shows the window FILLING — there is no "compaction" beat yet
+     (context.js is unwired), so nothing animates emptying until that lands. */
+  function drawDeskGauge(now) {
+    if (!desk || !agent || agent.unplaced) return;
+    if (wakeDark > 0.5) return;   // stay out of the awakening cinematic until first light has mostly arrived
+    if (typeof Harness === 'undefined' || !Harness.contextState || typeof CtxGauge === 'undefined') return;
+    const cs = Harness.contextState();
+    const g = CtxGauge.compute(cs.used, cs.limit);
+
+    const gw = 4, gh = 18, N = 6, gap = 1;
+    const gx = (desk.tx + desk.w) * T;   // standing just past the desk's right edge
+    const gy = desk.ty * T - 6;
+
+    // housing
+    fpx(gx - 1, gy - 1, gw + 2, gh + 2, '#05080b');
+    fpx(gx, gy, gw, gh, '#0b1014');
+    fpx(gx, gy, gw, 1, '#1b2630');        // top rim
+    fpx(gx, gy, 1, gh, '#13202a');        // left edge sheen
+
+    const col = g.level === 'crit' ? '#ff5a4a' : g.level === 'warn' ? '#ffb24a' : g.level === 'ok' ? '#3fd07c' : '#243038';
+    const dimC = '#13201a';
+    const cellH = Math.floor((gh - (N - 1) * gap) / N);
+    const lit = (g.known && g.used > 0) ? Math.max(1, Math.round(g.frac * N)) : 0;   // any real fill lights ≥1 cell
+
+    for (let i = 0; i < N; i++) {   // stack bottom-up
+      const cy = gy + gh - cellH - i * (cellH + gap);
+      const on = i < lit;
+      let c = on ? col : dimC;
+      if (on && g.level === 'crit' && i === lit - 1 && !reduceMotion() && !fblink(360)) c = U.shade(col, -0.45);
+      fpx(gx + 1, cy, gw - 2, cellH, c);
+      if (on) fpx(gx + 1, cy, gw - 2, 1, U.shade(c, 0.3));   // cell top highlight
+    }
+    if (g.known && g.used > 0) fglow(gx, gy, gw, gh, col, g.level === 'crit' ? 0.20 : 0.12);
+
+    // compact readout above the core — percentage when known, a calibrating dash when not.
+    // VT323 (the station's typed/terminal font) with a 1px dark backing so it reads over the lit room.
+    ctx.font = "10px 'VT323', 'Courier New', monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const lx = gx + gw / 2, ly = gy - 3;
+    ctx.fillStyle = 'rgba(2,4,3,0.85)'; ctx.fillText(g.pctLabel, lx, ly + 1);
+    ctx.fillStyle = g.known ? col : '#5a6b62'; ctx.fillText(g.pctLabel, lx, ly);
+    ctx.textAlign = 'left';
   }
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, endAwakening, releaseAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit };
