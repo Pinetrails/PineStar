@@ -25,8 +25,11 @@ const Build = (() => {
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, dpr = 1, ro = null;
   let raf = 0, running = false;
-  let cache = null, cacheGeo = null, bakeDirty = true;
+  let cache = null, cacheGeo = null, bakeDirty = true, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
+  // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
+  const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT' };
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // camera: screen = world*zoom + pan   (world = bake-pixel space, 1 tile = TILE px)
   let zoom = 2, panX = 0, panY = 0;
@@ -270,6 +273,45 @@ const Build = (() => {
     g.addEventListener('click', e => { if (e.target === g) dismiss(); });
   }
 
+  /* ---------- BAY agent-picker (Phase B4c): bind a docking bay to an agent — work that reaches it runs as
+     that agent. Sourced from the app's agent list (opts.agents()) when present, plus a free-text agent id. */
+  function openBayPicker(bayId, ev) {
+    if (!root || root.querySelector('.refit-bay-picker')) return;
+    const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
+    const cur = p.agentId || '';
+    const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
+    const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-bay-picker';
+    g.innerHTML = `
+      <div class="refit-guide-card">
+        <h3>▮ ASSIGN AGENT TO BAY</h3>
+        <ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li>
+        <li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>
+        ${agents.length ? '<div class="refit-bay-agents" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">' + rows + '</div>' : ''}
+        <input id="bay-aid" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}"
+          style="width:100%;box-sizing:border-box;margin:6px 0;padding:5px 7px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;border-radius:3px" />
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="btn-sm refit-primary" id="bay-ok">▸ ASSIGN</button>
+          <button type="button" class="btn-sm" id="bay-clear">UNBIND</button>
+          <button type="button" class="btn-sm" id="bay-cancel">CANCEL</button>
+        </div>
+      </div>`;
+    root.appendChild(g);
+    const input = g.querySelector('#bay-aid');
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
+    g.querySelector('#bay-ok').onclick = () => {
+      const res = station.assignPropAgent(bayId, input.value.trim());
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('bay → ' + res.agentId) : 'bay unbound', true); closeP(); }
+      else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
+    };
+    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, 'bay unbound', true); closeP(); };
+    g.querySelector('#bay-cancel').onclick = closeP;
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+    try { input.focus(); input.select(); } catch (_) {}
+  }
+
   /* ---------- camera + sizing ---------- */
   function resize() {
     if (!cv) return;
@@ -393,9 +435,18 @@ const Build = (() => {
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
   function commitPropStamp(d, ev) {
+    // BAY tool: a click (no drag) on an existing bay re-opens its agent picker instead of stamping a duplicate
+    if (propType === 'bay' && !d.moved) {
+      const exist = station.propAt(d.cur.tx, d.cur.ty);
+      const ep = exist && station.propById(exist);
+      if (ep && ep.t === 'bay') { openBayPicker(exist, ev); return; }
+    }
     const s = propSpec(propType);
     const res = station.addProp({ t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h, block: s.blocks !== false });
-    if (res && res.ok) pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
+    if (res && res.ok) {
+      pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
+      if (propType === 'bay' && res.id) { openBayPicker(res.id, ev); return; }   // bind the freshly-placed bay immediately
+    }
     feedback(res, ev, 'placed ' + propType);
   }
   function commitBeltRun(d, ev) {
@@ -537,6 +588,7 @@ const Build = (() => {
   function rebake() {
     cacheGeo = station.projectGeometry();
     cache = StationBake.bake(cacheGeo);
+    valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
     bakeDirty = false;
   }
 
@@ -564,6 +616,7 @@ const Build = (() => {
     ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
     drawFlashes(now, t);
+    drawRoutingValidation(t, now);   // red/amber markers on any unroutable junction/bay (cost-safety)
     drawHover(t);
     drawGhost(t, now);
 
@@ -637,6 +690,29 @@ const Build = (() => {
     convey.drawBelts(ctx, now, t, belts);
   }
   function drawConveyorBoxes(now, t) { if (convey) convey.drawBoxes(ctx, now, t); }
+
+  /* cost-safety overlay: an unroutable floor would silently send work into a void or an infinite paid loop, so
+     surface it BEFORE any run. Red = blocking (orphan source / dead bay / cycle / filter has no default lane /
+     duplicate agent); amber = warning (a bay with no agent). Plan is recomputed only on a floor edit (rebake). */
+  function drawRoutingValidation(t, now) {
+    if (!valPlan || !valPlan.errors || !valPlan.errors.length || !cacheGeo) return;
+    const propById = {};
+    for (const p of (cacheGeo.props || [])) propById[p.id] = p;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+    ctx.lineWidth = 2 / zoom;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = (7 / zoom) + 'px monospace';
+    for (const e of valPlan.errors) {
+      let rect = null;
+      if (e.tile) rect = { x1: e.tile.x, y1: e.tile.y, x2: e.tile.x, y2: e.tile.y };
+      else if (e.propId && propById[e.propId]) { const p = propById[e.propId]; rect = { x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }; }
+      if (!rect) continue;
+      const col = e.warn ? '255,190,60' : '255,80,70';   // amber warning vs red blocker
+      const X = rect.x1 * t, Y = rect.y1 * t, Wd = (rect.x2 - rect.x1 + 1) * t, Hd = (rect.y2 - rect.y1 + 1) * t;
+      ctx.fillStyle = 'rgba(' + col + ',' + (0.10 + 0.12 * pulse).toFixed(3) + ')'; ctx.fillRect(X, Y, Wd, Hd);
+      ctx.strokeStyle = 'rgba(' + col + ',0.95)'; ctx.strokeRect(X + 0.5 / zoom, Y + 0.5 / zoom, Wd - 1 / zoom, Hd - 1 / zoom);
+      ctx.fillStyle = 'rgba(' + col + ',0.95)'; ctx.fillText(VAL_LABEL[e.code] || e.code, X + Wd / 2, Y - 1 / zoom);
+    }
+  }
 
   function drawHover(t) {
     if (drag) return;
