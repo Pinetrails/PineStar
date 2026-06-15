@@ -117,7 +117,9 @@ const World = (() => {
       else {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
+        if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
         if (agent.goal === 'use') { agent.goal = null; agent.usingProp = null; agent.sitting = false; }  // the prop list may have changed — drop leisure, re-decide next idle tick
+        if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
       }
