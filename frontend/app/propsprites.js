@@ -1176,7 +1176,9 @@ const PropSprites = (() => {
   };
 
   F.couch = (x, y, w, h) => {
-    sh(x + 1, y + h + 1, w - 2);
+    sh(x + 1, y + h + 1, w - 2);   // shadow stays on the floor
+    ctx.save();                    // flip the couch 180° (it faces up/north) around its own centre
+    ctx.translate(x + w / 2, y + h / 2); ctx.scale(-1, -1); ctx.translate(-(x + w / 2), -(y + h / 2));
     px(x - 1, y + 1, w + 2, h + 2, '#0e1418'); // outline
     px(x, y + 2, w, h + 1, '#33414a');
     px(x, y + 2, 2, h + 1, '#283238'); px(x + w - 2, y + 2, 2, h + 1, '#283238'); // arms
@@ -1197,6 +1199,7 @@ const PropSprites = (() => {
     px(x + 2, y + 7, w - 4, 2, '#2a363d'); // seat front
     px(x + 2, y + 7, w - 4, 1, '#313e46'); // seat front catch
     px(x + 2, y + h + 1, 1, 1, '#1a2126'); px(x + w - 3, y + h + 1, 1, 1, '#1a2126'); // leg studs
+    ctx.restore();
   };
 
   F.arcade = (x, y, w, h, f) => {
