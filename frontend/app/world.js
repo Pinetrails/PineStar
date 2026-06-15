@@ -37,6 +37,14 @@ const World = (() => {
   let agent = null, activity = 'idle';
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
   const tileOf = (px, py) => ({ x: Math.floor(px / T), y: Math.floor(py / T) });
+  // where the agent is DRAWN: on its couch seat when seated, otherwise its logical foot position
+  const rposX = () => (agent && agent.seated) ? agent.seatPx : agent.px;
+  const rposY = () => (agent && agent.seated) ? agent.seatPy : agent.py;
+
+  /* couch seat reservation (multi-agent seam): "propId:slot" of every taken seat. One agent drives
+     world.js today, so this holds at most its own claim — but it's the shared occupancy a second
+     agent would consult to take a different cushion (or a different couch). */
+  const occupiedSeats = new Set();
 
   /* ---------- awareness & curiosity ----------
      novelty = freshly placed things the agent should wander over and inspect; seen* track what the
@@ -139,7 +147,7 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch') { agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
+        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
@@ -181,10 +189,11 @@ const World = (() => {
   }
 
   function placeAgent() {
+    releaseSeat();   // re-homing → drop any couch seat claim + on-couch render
     const t = spawnTileLocal(), f = footOf(t.x, t.y);
     agent.px = f.x; agent.py = f.y; agent.unplaced = false;
     agent.pathPts = null; agent.target = null; agent.sitting = false; agent.working = false; agent.state = 'idle';
-    agent.goal = null; agent.usingProp = null;
+    agent.goal = null; agent.usingProp = null; agent.watchProp = null;
   }
 
   function ensureAgentValid() {
@@ -201,6 +210,8 @@ const World = (() => {
       phase: U.hash(a.id) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
       watchProp: null,   // lounge: the TV the couch-sitter is watching (kept lit while it watches)
+      // seat-on-couch: logical pos stays on the approach tile, but it RENDERS at seat{Px,Py} ON the couch
+      seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       // awareness & curiosity: head-turn glance (drawBody reads agent.glance), study/observe dwell, fidget + notice cooldowns
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0
     };
@@ -295,7 +306,7 @@ const World = (() => {
   function setActivity(kind) {
     activity = kind;
     if (!agent) return;
-    if (kind === 'talk') { agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.sitting = false; agent.working = false; agent.goal = null; agent.usingProp = null; agent.dir = 'south'; }
+    if (kind === 'talk') { releaseSeat(); agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.sitting = false; agent.working = false; agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.dir = 'south'; }
   }
 
   /* ---------- camera helpers ---------- */
@@ -312,7 +323,7 @@ const World = (() => {
   function toWorld(ev) { const c = toCanvas(ev); return { x: (c.x - panX) / scale, y: (c.y - panY) / scale }; }
   function agentHit(wp) {
     if (!agent || agent.unplaced) return false;
-    const dx = wp.x - agent.px, dy = wp.y - agent.py;
+    const dx = wp.x - rposX(), dy = wp.y - rposY();
     return (dx * dx + dy * dy) < 14 * 14;
   }
 
@@ -335,12 +346,12 @@ const World = (() => {
   function arrive(now) {
     agent.pathPts = null; agent.target = null;
     if (agent.goal === 'work') { agent.sitting = true; agent.working = true; agent.dir = 'north'; agent.state = 'idle'; }
-    else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); }
+    else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); takeSeat(); }
     else if (agent.goal === 'lounge') {
-      // settled on the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
+      // settled ON the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
       agent.sitting = true; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle';
       agent.useUntil = now + U.irnd(18000, 30000); agent.glanceCd = 0; agent.nextFidget = now + U.irnd(1500, 3500);
-      curiositySay(CURIO_WATCH, 0.4, now);
+      takeSeat(); curiositySay(CURIO_WATCH, 0.4, now);
     }
     else if (agent.goal === 'inspect' || agent.goal === 'watch') {
       // reached the thing — stand, face it, and observe for a spell (belts hold the gaze longer)
@@ -384,41 +395,69 @@ const World = (() => {
     return s && s.use ? s.use : null;
   }
 
-  /* v7 lounge port: a couch placed near a TV → walk over, SIT ON THE COUCH, and watch the TV.
-     The sit is IDENTICAL to a normal couch-use — the couch's own front approach tile, the only one
-     that reads as sitting ON the couch (the y-sort draws the agent over the couch sprite; any other
-     edge leaves it on bare floor, which looks like sitting on a "black chair"). We just turn the
-     seated agent to FACE the nearest TV (any direction) and keep that TV lit. gen has no authored
-     couch/TV pairs (props placed live in REFIT), so the TV is found by proximity at decision time.
-     Returns true if it committed a lounge; false → caller falls back to single-prop use. */
+  /* free this agent's claimed seat (idempotent) and drop the on-couch render offset */
+  function releaseSeat() {
+    if (!agent) return;
+    if (agent.seatKey) occupiedSeats.delete(agent.seatKey);
+    agent.seatKey = null; agent.seated = false; agent.pendSeat = null;
+  }
+  /* on arrival, snap the render position onto the cushion claimed at plan time (logical pos stays put) */
+  function takeSeat() {
+    if (agent.seatKey && agent.pendSeat) { agent.seated = true; agent.seatPx = agent.pendSeat.px; agent.seatPy = agent.pendSeat.py; agent.pendSeat = null; }
+  }
+
+  /* v7 sit-ON-the-couch: a couch is a blocking prop (you can't path onto it), so the agent walks to
+     a tile ADJACENT to a free cushion, then RENDERS on that cushion while the couch is y-sorted just
+     behind it — exactly v7's sitTiles + sitPy trick. Seats are the inner footprint columns (an arm
+     is skipped at each end on a wide couch). Each cushion is reserved in occupiedSeats so a second
+     agent takes a different one (or, when the couch is full, planProp moves on to another couch).
+     tvId != null → goal 'lounge' (watch + light the TV); else a plain couch sit. */
   const LOUNGE_MAXT = 7;
+  const SEAT_NB = [[0, 1], [0, -1], [1, 0], [-1, 0]];   // approach a cushion from any walkable neighbour
+  function planCouchSit(now, couch, tvId, faceDir) {
+    const w = couch.w || 1, h = couch.h || 1;
+    const lo = w >= 3 ? 1 : 0, hi = w >= 3 ? w - 2 : w - 1;   // skip an arm tile each end when wide
+    const slots = [];
+    for (let i = lo; i <= hi; i++) if (!occupiedSeats.has(couch.id + ':' + i)) slots.push(i);
+    if (!slots.length) return false;                          // couch full → caller tries another couch
+    const order = U.irnd(0, slots.length - 1);                // vary which cushion is taken
+    for (let k = 0; k < slots.length; k++) {
+      const slot = slots[(order + k) % slots.length];
+      const sx = couch.x + slot, sy = couch.y;                // the couch tile the agent will sit on
+      for (const [dx, dy] of SEAT_NB) {
+        const ax = sx + dx, ay = sy + dy;
+        if (!geo.walkable(ax, ay, blocked)) continue;
+        if (!setPathTo({ x: ax, y: ay })) continue;
+        occupiedSeats.add(couch.id + ':' + slot); agent.seatKey = couch.id + ':' + slot;
+        agent.pendSeat = { px: (sx + 0.5) * T, py: (couch.y + h) * T - 2 };   // render foot at the cushion front
+        agent.goal = tvId ? 'lounge' : 'use'; agent.usingProp = couch.id; agent.watchProp = tvId || null;
+        agent.useSit = true; agent.useFace = faceDir || 'south';
+        if (!agent.target) arrive(now);                       // already adjacent → sit immediately
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* couch + a TV nearby → sit on the couch and watch it. The pairing is derived live (gen has no
+     authored couch/TV pairs): for each couch, the nearest TV within range, faced from the couch. */
   function tryLounge(now) {
     const couches = [], tvs = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') couches.push({ p, approach: use.approach || 'south' });
+      if (use.kind === 'couch') couches.push(p);
       else if (use.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });
     }
     if (!couches.length || !tvs.length) return false;
     const order = U.irnd(0, couches.length - 1);   // don't always favour the same couch
     for (let k = 0; k < couches.length; k++) {
       const couch = couches[(order + k) % couches.length];
-      // sit EXACTLY where a normal couch-use sits (the front edge) so it always looks like sitting on the couch
-      const a = PropAnchor.deriveAnchor(couch.p, geo, { approach: couch.approach, sit: true, extra: blocked });
-      if (!a) continue;
-      // pick the nearest TV within range; the agent turns to face it from the couch (never walks to the TV)
+      const cx = couch.x + (couch.w || 1) / 2, cy = couch.y + (couch.h || 1) / 2;
       let best = null;
-      for (const tv of tvs) {
-        const d = Math.hypot(tv.cx - (a.tx + 0.5), tv.cy - (a.ty + 0.5));
-        if (d <= LOUNGE_MAXT && (!best || d < best.d)) best = { tv, d };
-      }
+      for (const tv of tvs) { const d = Math.hypot(tv.cx - cx, tv.cy - cy); if (d <= LOUNGE_MAXT && (!best || d < best.d)) best = { tv, d }; }
       if (!best) continue;
-      if (!setPathTo({ x: a.tx, y: a.ty })) continue;
-      agent.goal = 'lounge'; agent.usingProp = couch.p.id; agent.watchProp = best.tv.p.id;
-      agent.useFace = dirToward(a.tx, a.ty, best.tv.cx, best.tv.cy);   // sit on the couch, head turned to the TV
-      agent.useSit = true;
-      if (!agent.target) arrive(now);   // already on the sit tile
-      return true;
+      const face = dirToward(cx, cy, best.tv.cx, best.tv.cy);   // turn to the TV from the couch
+      if (planCouchSit(now, couch, best.tv.p.id, face)) return true;
     }
     return false;
   }
@@ -427,10 +466,11 @@ const World = (() => {
   // its approach tile, and commit to goal='use'. Returns false if none is reachable (→ wander).
   function planProp(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
-    if (tryLounge(now)) return true;   // couch + TV in front of it → sit and watch (the v7 lounge)
+    if (tryLounge(now)) return true;   // couch + TV nearby → sit ON the couch and watch (the v7 lounge)
     const cands = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
+      if (use.kind === 'couch') { cands.push({ couch: p }); continue; }   // sit ON it (handled below)
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a) cands.push({ id: p.id, a });
     }
@@ -438,6 +478,7 @@ const World = (() => {
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
+      if (c.couch) { if (planCouchSit(now, c.couch, null, 'south')) return true; continue; }   // lone couch → sit on it, facing out
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         agent.goal = 'use'; agent.usingProp = c.id; agent.useFace = c.a.face; agent.useSit = c.a.sit;
         if (!agent.target) arrive(now);   // already standing on the approach tile
@@ -598,7 +639,7 @@ const World = (() => {
       agent.state = 'idle'; agent.idleUntil = 0;
     }
     if (activity === 'task' && agent.goal !== 'work') {
-      agent.goal = 'work'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null;   // summoned: get up off any prop and head to the desk
+      releaseSeat(); agent.goal = 'work'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null;   // summoned: get up off any prop and head to the desk
       if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { /* already at seat or unreachable */ if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } }
     }
     if (activity !== 'task' && agent.goal === 'work') {
@@ -622,10 +663,10 @@ const World = (() => {
       }
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
-      if (now >= agent.useUntil) { agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'lounge') {
       // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
-      if (now >= agent.useUntil) { agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'inspect' || agent.goal === 'watch') {
       // observing a machine / belt: hold the gaze until the study timer ends (maybeGlance animates it)
       if (now >= agent.studyUntil) { agent.goal = null; agent.usingProp = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500); }
@@ -676,12 +717,14 @@ const World = (() => {
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
         const work = (p.t === 'outbox' && outboxLit) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
-        items.push({ y: (p.y + (p.h || 1)) * T, draw: () => PropSprites.draw(p, work) });
+        // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
+        const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
+        items.push({ y: sy, draw: () => PropSprites.draw(p, work) });
       }
     }
     if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
     if (seat) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });
-    if (agent && !agent.unplaced) items.push({ y: agent.py, draw: () => drawAgent(now) });
+    if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
@@ -778,26 +821,32 @@ const World = (() => {
   }
 
   function drawAgent(now) {
-    // color-into-being: the body fades up from a faint silhouette to full as the spark blooms (sprite path)
-    let bornA = 1;
-    if (bornAt && now - bornAt < 1000) bornA = 0.16 + 0.84 * ((now - bornAt) / 1000);
-    const prevA = ctx.globalAlpha;
-    if (bornA < 1) ctx.globalAlpha = prevA * bornA;
-    let geom = null;
-    if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, agent, now);
-    if (!geom) drawFallback(now);
-    ctx.globalAlpha = prevA;
-    // the wake ripple — a triple-ringed sonar pulse of first breath, in the suit color
-    if (wakeAt && now - wakeAt < 1500) {
-      ctx.save(); ctx.strokeStyle = agent.color;
-      for (let k = 0; k < 3; k++) {
-        const tk = (now - wakeAt) / 1300 - k * 0.18;
-        if (tk <= 0 || tk >= 1) continue;
-        ctx.globalAlpha = (1 - tk) * 0.6 * (1 - k * 0.22); ctx.lineWidth = Math.max(0.5, 1.5 - tk);
-        ctx.beginPath(); ctx.ellipse(agent.px, agent.py, 4 + tk * 22, 2 + tk * 9, 0, 0, Math.PI * 2); ctx.stroke();
+    // while seated on a couch the agent draws on the cushion, not its (adjacent) logical tile — swap
+    // px/py for the draw and restore after, so movement/pathing keep using the real logical position.
+    const ox = agent.px, oy = agent.py;
+    if (agent.seated) { agent.px = agent.seatPx; agent.py = agent.seatPy; }
+    try {
+      // color-into-being: the body fades up from a faint silhouette to full as the spark blooms (sprite path)
+      let bornA = 1;
+      if (bornAt && now - bornAt < 1000) bornA = 0.16 + 0.84 * ((now - bornAt) / 1000);
+      const prevA = ctx.globalAlpha;
+      if (bornA < 1) ctx.globalAlpha = prevA * bornA;
+      let geom = null;
+      if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, agent, now);
+      if (!geom) drawFallback(now);
+      ctx.globalAlpha = prevA;
+      // the wake ripple — a triple-ringed sonar pulse of first breath, in the suit color
+      if (wakeAt && now - wakeAt < 1500) {
+        ctx.save(); ctx.strokeStyle = agent.color;
+        for (let k = 0; k < 3; k++) {
+          const tk = (now - wakeAt) / 1300 - k * 0.18;
+          if (tk <= 0 || tk >= 1) continue;
+          ctx.globalAlpha = (1 - tk) * 0.6 * (1 - k * 0.22); ctx.lineWidth = Math.max(0.5, 1.5 - tk);
+          ctx.beginPath(); ctx.ellipse(agent.px, agent.py, 4 + tk * 22, 2 + tk * 9, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
       }
-      ctx.restore();
-    }
+    } finally { agent.px = ox; agent.py = oy; }
   }
 
   function drawFallback(now) {
@@ -818,11 +867,12 @@ const World = (() => {
     ctx.font = '9px monospace';
     const label = agent.name;
     const tw = ctx.measureText(label).width, bw = tw + 8, bh = 11;
-    const bx = Math.round(agent.px - bw / 2), by = Math.round(agent.py - 30);
+    const rx = rposX(), ry = rposY();
+    const bx = Math.round(rx - bw / 2), by = Math.round(ry - 30);
     ctx.fillStyle = 'rgba(4,3,2,0.88)'; ctx.fillRect(bx, by, bw, bh);
     ctx.strokeStyle = agent.color; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = agent.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(label, agent.px, by + bh / 2);
+    ctx.fillText(label, rx, by + bh / 2);
     ctx.restore();
   }
 
@@ -840,11 +890,12 @@ const World = (() => {
     if (lines.length === 3) lines[2] = lines[2].replace(/.{0,2}$/, '…');
     const bw = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + padb * 2;
     const bh = lines.length * lh + padb * 2;
-    let bx = Math.round(agent.px - bw / 2); const by = Math.round(agent.py - 22 - bh);
+    const rx = rposX(), ry = rposY();
+    let bx = Math.round(rx - bw / 2); const by = Math.round(ry - 22 - bh);
     bx = Math.max(2, Math.min((cache ? cache.W : 9999) - bw - 2, bx));
     ctx.fillStyle = 'rgba(3,2,1,0.92)'; ctx.fillRect(bx, by, bw, bh);
     ctx.strokeStyle = '#ffaa33'; ctx.lineWidth = 1; ctx.strokeRect(bx + .5, by + .5, bw - 1, bh - 1);
-    ctx.fillStyle = '#ffaa33'; ctx.fillRect(Math.round(agent.px) - 1, by + bh, 3, 2);
+    ctx.fillStyle = '#ffaa33'; ctx.fillRect(Math.round(rx) - 1, by + bh, 3, 2);
     ctx.fillStyle = '#ffd9a3'; ctx.textAlign = 'left';
     lines.forEach((l, i) => ctx.fillText(l, bx + padb, by + padb + lh * (i + 1) - 2));
   }
