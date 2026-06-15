@@ -197,7 +197,10 @@ const App = (() => {
     pendingStationDoc = null;
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
     if (typeof Build !== 'undefined') {
-      Build.init({ getStation: () => station, persist: persist, world: World });
+      // agents: the roster the BAY agent-picker offers (Phase B4d). Today the app runs one agent; this is the
+      // seam a multi-agent roster flows through. The bay->agent binding itself persists via station.serialize
+      // (prop.agentId round-trips), so a single-agent app already saves its routing floor.
+      Build.init({ getStation: () => station, persist: persist, world: World, agents: () => (agent ? [{ id: agent.id, name: agent.name, color: agent.color }] : []) });
       const bbBuild = el('bb-build');
       if (bbBuild) {
         let seenBuild = false; try { seenBuild = !!localStorage.getItem('skynet.refit.seen'); } catch (e) {}
