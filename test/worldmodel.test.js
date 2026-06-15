@@ -195,4 +195,60 @@ A.notThrows(() => {
   g.projectGeometry(); g.rooms();
 }, 'a room with no rects[] is repaired, not crashed');
 
+/* ---- props (furniture): place / validate / block-walk / move / reclaim / persist ---- */
+const sp = WM.create();                                   // HAB-01 {0..17,0..10}
+const spId = sp.spawnRoomId();
+A.eq(sp.props().length, 0, 'a fresh station has no props');
+
+const addP = sp.addProp({ t: 'desk', x: 4, y: 2, w: 2, h: 1 });
+A.ok(addP.ok && addP.id, 'addProp onto the deck succeeds');
+A.eq(sp.props().length, 1, 'one prop after add');
+A.eq(sp.propAt(4, 2), addP.id, 'propAt finds the placed prop');
+A.eq(sp.propAt(15, 9), null, 'propAt over bare deck returns null');
+
+const offDeck = sp.addProp({ t: 'desk', x: 500, y: 500, w: 2, h: 1 });
+A.ok(!offDeck.ok && offDeck.error === 'OFF_DECK', 'a prop off the deck is rejected');
+const overlapP = sp.addProp({ t: 'tv', x: 5, y: 2, w: 3, h: 1 });
+A.ok(!overlapP.ok && overlapP.error === 'OVERLAP', 'a prop overlapping another prop is rejected');
+const noType = sp.addProp({ t: '', x: 8, y: 5, w: 1, h: 1 });
+A.ok(!noType.ok && noType.error === 'NO_TYPE', 'a typeless prop is rejected');
+A.eq(sp.props().length, 1, 'rejected prop adds do not mutate the doc');
+
+/* props block walkability in the projected geometry (the furniture seam) */
+const gp = sp.projectGeometry();
+A.ok(gp.props && gp.props.length === 1, 'projectGeometry emits props in the local frame');
+const pl = gp.props[0];
+A.eq(pl.t, 'desk', 'projected prop keeps its type');
+A.ok(!gp.walkable(pl.x, pl.y), 'a prop footprint tile is NOT walkable (agents route around it)');
+A.ok(gp.walkable(pl.x, pl.y + 2), 'the deck below the prop is still walkable');
+
+/* move + reclaim + undo */
+A.ok(sp.moveProp(addP.id, 0, 4).ok, 'moveProp to free deck succeeds');
+A.eq(sp.propById(addP.id).y, 6, 'moveProp updates the prop position');
+sp.undo();
+A.eq(sp.propById(addP.id).y, 2, 'undo restores the prop position');
+sp.redo();
+A.eq(sp.propById(addP.id).y, 6, 'redo re-applies the move');
+A.ok(sp.removeProp(addP.id).ok, 'removeProp succeeds');
+A.eq(sp.props().length, 0, 'prop count drops after reclaim');
+sp.undo();
+A.eq(sp.props().length, 1, 'undo restores a reclaimed prop');
+
+/* props survive a serialize round-trip */
+const spDoc = sp.serialize();
+const sp2 = WM.deserialize(spDoc);
+A.eq(sp2.props().length, 1, 'deserialize preserves props');
+A.eq(JSON.stringify(sp2.serialize()), JSON.stringify(spDoc), 'props serialize round-trips identically');
+
+/* migrate(): legacy doc with no props[] and a partial prop blob is repaired, not crashed */
+A.notThrows(() => {
+  const g = WM.deserialize({ schema: 'skynet.station', version: 1,
+    rooms: { rP: { id: 'rP', kind: 'hab', name: 'P', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } }, order: ['rP'],
+    props: [{ t: 'tv', x: 1, y: 1 }, { nope: true }] });   // one valid (no id/w/h), one junk
+  const pr = g.props();
+  A.eq(pr.length, 1, 'migrate keeps the valid prop and drops the junk one');
+  A.ok(pr[0].id && pr[0].w >= 1 && pr[0].h >= 1, 'migrate backfills id + default footprint');
+  g.projectGeometry();
+}, 'a legacy/partial props blob is repaired without crashing');
+
 A.report('worldmodel');

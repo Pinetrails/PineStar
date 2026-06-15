@@ -16,7 +16,8 @@ const Build = (() => {
     { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
     { id: 'paint', key: '3', label: '▧ PAINT', hint: 'drag to paint deck tiles · click a room to fill it', cursor: 'cell' },
     { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
-    { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room to tear it down (UNDO restores it)', cursor: 'not-allowed' },
+    { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room or prop to tear it down (UNDO restores it)', cursor: 'not-allowed' },
+    { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
   ];
   const SEEN_KEY = 'skynet.refit.seen';
 
@@ -31,8 +32,8 @@ const Build = (() => {
   const MINZ = 0.4, MAXZ = 6;
 
   // interaction state
-  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2;
-  let drag = null, hoverRoomId = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
+  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk';
+  let drag = null, hoverRoomId = null, hoverPropId = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let stars = [];
 
   const T = () => (station ? station.TILE : 12);
@@ -137,7 +138,7 @@ const Build = (() => {
     cv.addEventListener('pointermove', onMove);
     cv.addEventListener('pointerup', onUp);
     cv.addEventListener('pointercancel', onCancel);
-    cv.addEventListener('pointerleave', () => { hoverRoomId = null; if (!drag) hideTip(); });
+    cv.addEventListener('pointerleave', () => { hoverRoomId = null; hoverPropId = null; if (!drag) hideTip(); });
     cv.addEventListener('wheel', onWheel, { passive: false });
     cv.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('resize', resize);
@@ -166,6 +167,16 @@ const Build = (() => {
         b.className = 'bb sm refit-kind' + (w === hallWidth ? ' active' : '');
         b.textContent = 'W' + w;
         b.onclick = () => { hallWidth = w; renderPalette(); sfx('click'); };
+        pal.appendChild(b);
+      });
+    } else if (tool === 'prop') {
+      const cat = (typeof PropSprites !== 'undefined') ? PropSprites.CATALOG : [];
+      cat.forEach(c => {
+        const b = document.createElement('button');
+        b.className = 'bb sm refit-kind' + (c.id === propType ? ' active' : '');
+        b.textContent = c.label;
+        b.title = c.label + ' · ' + c.w + '×' + c.h;
+        b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
         pal.appendChild(b);
       });
     } else if (tool === 'paint') {
@@ -279,7 +290,11 @@ const Build = (() => {
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
-    if (tool === 'move') {
+    if (tool === 'prop') {
+      drag = { mode: 'propstamp', start: w, cur: w, moved: false };
+    } else if (tool === 'move') {
+      const pid = station.propAt(w.tx, w.ty);   // props sit on top of rooms — move them first
+      if (pid) { drag = { mode: 'propmove', propId: pid, start: w, cur: w, moved: false }; return; }
       const id = station.roomAt(w.tx, w.ty);
       if (!id) { flashTip(ev, 'nothing to move here'); return; }
       drag = { mode: 'move', roomId: id, start: w, cur: w, moved: false };
@@ -307,6 +322,7 @@ const Build = (() => {
       if (drag.mode === 'paint') rasterTo(drag, w);   // accumulate every tile the brush crosses
       drag.cur = w;
     } else {
+      hoverPropId = station.propAt(w.tx, w.ty);
       hoverRoomId = station.roomAt(w.tx, w.ty);
     }
   }
@@ -319,6 +335,8 @@ const Build = (() => {
     if (d.mode === 'pan') return;
     if (d.mode === 'draw') return commitDraw(d, ev);
     if (d.mode === 'move') return commitMove(d, ev);
+    if (d.mode === 'propmove') return commitPropMove(d, ev);
+    if (d.mode === 'propstamp') return commitPropStamp(d, ev);
     if (d.mode === 'paint') return commitPaint(d, ev);
     if (d.mode === 'click') return commitClick(d, ev);
   }
@@ -350,6 +368,18 @@ const Build = (() => {
     if (!dx && !dy) { hideTip(); return; }
     feedback(station.moveRoom(d.roomId, dx, dy), ev, 'relocated');
   }
+  function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
+  function commitPropStamp(d, ev) {
+    const s = propSpec(propType);
+    const res = station.addProp({ t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h });
+    if (res && res.ok) pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
+    feedback(res, ev, 'placed ' + propType);
+  }
+  function commitPropMove(d, ev) {
+    const dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
+    if (!dx && !dy) { hideTip(); return; }
+    feedback(station.moveProp(d.propId, dx, dy), ev, 'relocated');
+  }
   function commitPaint(d, ev) {
     if (d.moved) {
       const tiles = [...d.cells].map(k => { const p = k.split(','); return [+p[0], +p[1]]; });
@@ -359,6 +389,14 @@ const Build = (() => {
     }
   }
   function commitClick(d, ev) {   // RECLAIM
+    const pid = station.propAt(d.cur.tx, d.cur.ty);   // props sit on top — reclaim them first
+    if (pid) {
+      const p = station.propById(pid);
+      const res = station.removeProp(pid);
+      if (res && res.ok) { if (p) pushFlash([{ x1: p.x, y1: p.y, x2: p.x + p.w - 1, y2: p.y + p.h - 1 }], true); flashUndo(); flashTip(ev, 'reclaimed — UNDO to restore', true); sfx('click'); }
+      else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
+      return;
+    }
     const id = station.roomAt(d.cur.tx, d.cur.ty);
     if (!id) return;
     const rm = station.roomById(id);
@@ -400,7 +438,7 @@ const Build = (() => {
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'y' || ev.key === 'Y')) { ev.preventDefault(); sfx(station.redo().ok ? 'click' : 'bad'); return; }
     if (ev.key === 'f' || ev.key === 'F') { fitCamera(); return; }
-    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim' };
+    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop' };
     if (map[ev.key]) selectTool(map[ev.key]);
   }
   function onKeyUp(ev) { if (ev.key === ' ') { spaceHeld = false; setCursor(); } }
@@ -423,6 +461,18 @@ const Build = (() => {
       const rect = (tool === 'hall') ? laneRect(drag.start, drag.cur) : norm(drag.start, drag.cur);
       const v = (tool === 'hall') ? station.canPlaceHallway([rect]) : station.canPlaceRoom([rect], kind);
       return { rects: [rect], v, kind: tool };
+    }
+    if (drag.mode === 'propstamp') {
+      const s = propSpec(propType), tx = drag.cur.tx, ty = drag.cur.ty;
+      const rect = { x1: tx, y1: ty, x2: tx + s.w - 1, y2: ty + s.h - 1 };
+      return { rects: [rect], v: station.canPlaceProp(propType, tx, ty, s.w, s.h), kind: 'prop' };
+    }
+    if (drag.mode === 'propmove') {
+      const p = station.propById(drag.propId); if (!p) return null;
+      const dx = drag.cur.tx - drag.start.tx, dy = drag.cur.ty - drag.start.ty;
+      const nx = p.x + dx, ny = p.y + dy;
+      const rect = { x1: nx, y1: ny, x2: nx + p.w - 1, y2: ny + p.h - 1 };
+      return { rects: [rect], v: station.canPlaceProp(p.t, nx, ny, p.w, p.h, p.id), move: true, dx, dy };
     }
     if (drag.mode === 'move') {
       const rm = station.roomById(drag.roomId); if (!rm) return null;
@@ -459,6 +509,7 @@ const Build = (() => {
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
     ctx.drawImage(cache.baseCv, ox, oy);
     drawGrid(t);
+    drawProps(now);
     ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
     drawFlashes(now, t);
@@ -515,8 +566,29 @@ const Build = (() => {
     }
   }
 
+  // placeable props — drawn in WORLD tile coords (camera maps world*t, the bake is origin-shifted
+  // to match). Lit (work=true) so the editor previews screens alive; y-sorted for clean overlap.
+  function drawProps(now) {
+    if (typeof PropSprites === 'undefined') return;
+    const list = station.props();
+    if (!list.length) return;
+    PropSprites.setCtx(ctx); PropSprites.setNow(now);
+    const sorted = list.slice().sort((a, b) => (a.y + (a.h || 1)) - (b.y + (b.h || 1)));
+    for (const p of sorted) PropSprites.draw(p, true);
+  }
+
   function drawHover(t) {
     if (drag) return;
+    // a hovered prop (move/reclaim) outlines on top of any room outline
+    if ((tool === 'move' || tool === 'reclaim') && hoverPropId) {
+      const p = station.propById(hoverPropId);
+      if (p) {
+        ctx.lineWidth = 1.5 / zoom;
+        ctx.strokeStyle = tool === 'reclaim' ? 'rgba(255,92,77,0.95)' : 'rgba(120,220,255,0.95)';
+        ctx.strokeRect(p.x * t + 1, p.y * t + 1, p.w * t - 2, p.h * t - 2);
+        return;
+      }
+    }
     if (tool !== 'move' && tool !== 'reclaim' && tool !== 'paint') return;
     if (!hoverRoomId) return;
     const rm = station.roomById(hoverRoomId); if (!rm) return;

@@ -63,7 +63,7 @@ const WorldModel = (() => {
     const doc = {
       schema: 'skynet.station', version: 1, _nid: 1,
       meta: { name: 'SKYNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null },
-      rooms: {}, order: []
+      rooms: {}, order: [], props: []
     };
     // seed the shabby starter HAB (18×11 floor — the v7 / world.js starter room), so a new
     // station is never empty and the builder has something to extend from.
@@ -105,6 +105,19 @@ const WorldModel = (() => {
       for (const id of doc.order) {
         const rm = doc.rooms[id];
         for (const r of rm.rects) if (inRect(r, tx, ty)) return id;
+      }
+      return null;
+    }
+
+    /* ---------- props (furniture) ---------- */
+    const props = () => doc.props;
+    const propById = id => doc.props.find(p => p.id === id) || null;
+    const propFootprint = p => ({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 });
+    // topmost prop occupying a tile (last in array = drawn last = on top)
+    function propAt(tx, ty) {
+      for (let i = doc.props.length - 1; i >= 0; i--) {
+        const p = doc.props[i];
+        if (inRect(propFootprint(p), tx, ty)) return p.id;
       }
       return null;
     }
@@ -156,8 +169,9 @@ const WorldModel = (() => {
       checkRects((rects || []).map(normRect), 'corridor', ignoreId);
 
     /* ---------- history (snapshot-based — small docs, correct by construction) ---------- */
-    function snapshot() { undoStack.push(clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid })); if (undoStack.length > 120) undoStack.shift(); redoStack.length = 0; }
-    function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; }
+    const snap = () => clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid, props: doc.props });
+    function snapshot() { undoStack.push(snap()); if (undoStack.length > 120) undoStack.shift(); redoStack.length = 0; }
+    function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; }
     function emit(dirtyRects) {
       seq++;
       const patch = { seq, dirtyRects: dirtyRects || [] };
@@ -248,6 +262,63 @@ const WorldModel = (() => {
       return { ok: true };
     }
 
+    /* ---------- prop validation + mutations ----------
+       The model stays pure: it doesn't know the prop CATALOG (that lives in propsprites.js).
+       The caller supplies w,h (the footprint) from the catalog; the model only validates
+       GEOMETRY — every footprint tile must sit on station floor (inside a zone), the footprint
+       must not overlap another prop, and the type tag must be a non-empty string. */
+    function checkProp(foot, ignoreId) {
+      if (foot.x2 < foot.x1 || foot.y2 < foot.y1) return fail('NO_RECT', 'nothing to place');
+      for (let y = foot.y1; y <= foot.y2; y++) for (let x = foot.x1; x <= foot.x2; x++) {
+        if (!roomAt(x, y)) return fail('OFF_DECK', 'must sit on a deck');
+      }
+      for (const p of doc.props) {
+        if (p.id === ignoreId) continue;
+        if (rectsHit(foot, propFootprint(p))) return fail('OVERLAP', 'overlaps a prop');
+      }
+      return { ok: true };
+    }
+    const canPlaceProp = (t, x, y, w, h, ignoreId) =>
+      checkProp({ x1: x, y1: y, x2: x + (w || 1) - 1, y2: y + (h || 1) - 1 }, ignoreId);
+
+    function addProp(opts) {
+      const t = String(opts.t || '').trim();
+      if (!t) return fail('NO_TYPE', 'no prop type');
+      const w = Math.max(1, opts.w | 0 || 1), h = Math.max(1, opts.h | 0 || 1);
+      const x = opts.x | 0, y = opts.y | 0;
+      const v = checkProp({ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 });
+      if (!v.ok) return v;
+      snapshot();
+      const id = 'p' + (doc._nid++);
+      doc.props.push({ id, t, x, y, w, h });
+      emit([{ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 }]);
+      return { ok: true, id };
+    }
+
+    function removeProp(id) {
+      const i = doc.props.findIndex(p => p.id === id);
+      if (i < 0) return fail('NOT_FOUND', 'no such prop');
+      snapshot();
+      const p = doc.props[i];
+      doc.props.splice(i, 1);
+      emit([propFootprint(p)]);
+      return { ok: true };
+    }
+
+    function moveProp(id, dTx, dTy) {
+      const p = propById(id);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      if (!dTx && !dTy) return { ok: true };
+      const nx = p.x + dTx, ny = p.y + dTy;
+      const v = checkProp({ x1: nx, y1: ny, x2: nx + p.w - 1, y2: ny + p.h - 1 }, id);
+      if (!v.ok) return v;
+      snapshot();
+      const before = propFootprint(p);
+      p.x = nx; p.y = ny;
+      emit([before, propFootprint(p)]);
+      return { ok: true };
+    }
+
     function renameRoom(id, name) {
       const rm = doc.rooms[id];
       if (!rm) return fail('NOT_FOUND', 'no such room');
@@ -261,14 +332,14 @@ const WorldModel = (() => {
 
     function undo() {
       if (!undoStack.length) return fail('NOTHING', 'nothing to undo');
-      redoStack.push(clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid }));
+      redoStack.push(snap());
       restore(undoStack.pop());
       emit([]);   // empty dirty = full re-bake
       return { ok: true };
     }
     function redo() {
       if (!redoStack.length) return fail('NOTHING', 'nothing to redo');
-      undoStack.push(clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid }));
+      undoStack.push(snap());
       restore(redoStack.pop());
       emit([]);
       return { ok: true };
@@ -362,6 +433,14 @@ const WorldModel = (() => {
          that only crosses zone seams where canStep allows (same zone or a door). */
       const blockedTiles = new Set();
       for (const c of chamfers) blockedTiles.add(c[0] + ',' + c[1]);
+      // props occupy their footprint: shift to the local frame, block walking, and emit for the
+      // renderer. This is the seam the walkability contract promised — furniture lives here now.
+      const propsLocal = [];
+      for (const p of doc.props) {
+        const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
+        propsLocal.push({ id: p.id, t: p.t, x: lx, y: ly, w, h });
+        for (let yy = ly; yy < ly + h; yy++) for (let xx = lx; xx < lx + w; xx++) blockedTiles.add(xx + ',' + yy);
+      }
       const walkable = (lx, ly, extra) => {
         if (lx < 0 || ly < 0 || lx >= COLS || ly >= ROWS) return false;
         if (zoneGrid[idx(lx, ly)] == null) return false;
@@ -396,7 +475,7 @@ const WorldModel = (() => {
       return {
         TILE, COLS, ROWS, W: COLS * TILE, H: ROWS * TILE + HULL_PAD,
         origin: { tx: ox, ty: oy },
-        allRects, zones, ROOM_IDS, isCorridor, chamfers, windows: [],
+        allRects, zones, ROOM_IDS, isCorridor, chamfers, windows: [], props: propsLocal,
         doorDefs, zoneGrid, idx, canStep, baseColorOf, walkable, path, blockedTiles,
         nameOf: id => (doc.rooms[id] ? doc.rooms[id].name : ''),
         kindOf: id => (doc.rooms[id] ? doc.rooms[id].kind : null),
@@ -411,11 +490,13 @@ const WorldModel = (() => {
     return {
       // reads
       doc: () => doc, rooms, roomById, roomAt, bounds, spawnRoomId,
+      props, propById, propAt,
       getSeq: () => seq, FLOOR_STYLES, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
       // validation (no mutation — for ghost previews)
-      canPlaceRoom, canPlaceHallway,
+      canPlaceRoom, canPlaceHallway, canPlaceProp,
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
+      addProp, removeProp, moveProp,
       undo, redo, canUndo, canRedo,
       // projection + io
       projectGeometry, serialize, onChange,
@@ -435,8 +516,13 @@ const WorldModel = (() => {
     // so a truncated / hand-edited save can never crash the read paths (eachRectWorld/bounds/project).
     doc.order = doc.order.filter(id => doc.rooms[id] && typeof doc.rooms[id] === 'object');
     for (const id of doc.order) { const rm = doc.rooms[id]; if (!Array.isArray(rm.rects)) rm.rects = []; if (!rm.floorPaint) rm.floorPaint = {}; }
+    // props are additive (v1 docs predate them); make the read paths total over any blob.
+    if (!Array.isArray(doc.props)) doc.props = [];
+    doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
+      .map(p => ({ id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }));
     if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'SKYNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
     if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
+    for (const p of doc.props) if (!p.id) p.id = 'p' + (doc._nid++);   // backfill ids for legacy/partial props
     // spawnRoomId must point at a live non-corridor room (or null) so removeRoom's guard stays meaningful
     if (!doc.meta.spawnRoomId || !doc.rooms[doc.meta.spawnRoomId])
       doc.meta.spawnRoomId = doc.order.find(id => doc.rooms[id] && doc.rooms[id].kind !== 'corridor') || null;
