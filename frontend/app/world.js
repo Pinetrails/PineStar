@@ -205,6 +205,7 @@ const World = (() => {
       if (!wasDrag && agentHit(toWorld(ev)) && onClick) onClick();
     });
     cv.addEventListener('mouseleave', () => { hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
+    connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
   }
 
   function resize() {
@@ -332,7 +333,7 @@ const World = (() => {
 
     // conveyor belts (floor machinery) + the live transport sim — local frame, under entities
     if (geo && geo.belts && typeof Conveyor !== 'undefined') {
-      if (!convey) convey = Conveyor.create();
+      if (!convey) convey = Conveyor.create({ onDeliver: onWorkitemDeliver });
       convey.tick(dt, now, geo.belts);
       convey.drawBelts(ctx, now, T, geo.belts);
     }
@@ -354,6 +355,7 @@ const World = (() => {
     drawGlows(now);
     if (agent && !agent.unplaced) drawBubble(now);
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
+    drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
 
     if (running) raf = requestAnimationFrame(frame);
   }
@@ -431,6 +433,66 @@ const World = (() => {
   }
 
   function setOnClick(fn) { onClick = fn; }
+
+  /* ---------- work-item pipeline: the conveyor carries REAL inbound work to the agent ----------
+     A real admitted message (Telegram) arrives over the SSE bridge as `workitem.placed`; we drop a
+     box at the INTAKE prop so it rides the player-laid belts to the desk. Pure visualization — if no
+     INTAKE/belt path exists, nothing rides (the sidecar already ran the work either way). */
+  const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
+  let bridged = false;
+
+  // a belt tile on/adjacent to the INTAKE prop, used as the box's spawn point (local frame)
+  function intakeTile() {
+    if (!geo || !geo.props || !geo.belts || !geo.belts.length) return null;
+    const intake = geo.props.find(p => p.t === 'intake');
+    if (!intake) return null;
+    const beltSet = new Set(geo.belts.map(b => b.x + ',' + b.y));
+    const w = intake.w || 1, h = intake.h || 1;
+    for (let yy = intake.y - 1; yy <= intake.y + h; yy++)
+      for (let xx = intake.x - 1; xx <= intake.x + w; xx++)
+        if (beltSet.has(xx + ',' + yy)) return { x: xx, y: yy };
+    return null;
+  }
+  function intakeMessage(payload) {
+    if (!convey) return;
+    const t = intakeTile();
+    if (t) convey.enqueueAt(t.x, t.y, payload || {});
+  }
+  // the box reached the open end (the agent's desk) — show the agent receive the message
+  function onWorkitemDeliver(bx) {
+    const p = (bx && bx.payload) || {};
+    say('received: ' + (p.preview || 'message'));
+    wakeIn();
+  }
+  // one app-level EventSource: re-emit validated channel/work-item events onto U.bus, and react in-world
+  function connectChannelBridge() {
+    if (bridged || typeof U === 'undefined' || !U.bus) return;
+    bridged = true;
+    U.bus.on('workitem.placed', p => intakeMessage(p));
+    U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
+    if (typeof EventSource === 'undefined') return;
+    let es = null, backoff = 1000;
+    const open = () => {
+      try { es = new EventSource('/api/channels/events'); } catch (_) { return; }
+      es.onopen = () => { backoff = 1000; };
+      es.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
+      es.onerror = () => { try { es.close(); } catch (_) {} es = null; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
+    };
+    open();
+  }
+  // bottom-right INTAKE queue-depth gauge — backpressure made visible (screen-space overlay)
+  function drawQueueDepth() {
+    let depth = 0; for (const d of chanQueues.values()) depth += d;
+    if (depth <= 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 88, bh = 16;
+    const x = W - bw - pad, y = H - bh - pad;
+    ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
+    ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
+  }
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, say, getActivity: () => activity, setOnClick, refit };
 })();
