@@ -7,6 +7,54 @@
       "runtimeArgs": ["sidecar/index.js"],
       "port": 8787,
       "autoPort": false
+    },
+    {
+      "name": "skynet-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "frontend", "-c-1", "-p", "8087"],
+      "port": 8087
+    },
+    {
+      "name": "design-system",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/design-system/frontend", "-c-1", "-p", "8089"],
+      "port": 8089
+    },
+    {
+      "name": "props-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/props/frontend", "-c-1", "-p", "8091"],
+      "port": 8091
+    },
+    {
+      "name": "conveyor-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/conveyor/frontend", "-c-1", "-p", "8092"],
+      "port": 8092
+    },
+    {
+      "name": "workpipe-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/workpipe/frontend", "-c-1", "-p", "8093"],
+      "port": 8093
+    },
+    {
+      "name": "onboarding-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/onboarding/frontend", "-c-1", "-p", "8094"],
+      "port": 8094
+    },
+    {
+      "name": "voice-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/voice/frontend", "-c-1", "-p", "8095"],
+      "port": 8095
+    },
+    {
+      "name": "arcade-game-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/arcade-game/frontend", "-c-1", "-p", "8096"],
+      "port": 8096
     }
   ]
 }

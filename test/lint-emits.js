@@ -34,7 +34,9 @@ function decomment(src) {
     .split('\n').map(ln => ln.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
 }
 
-const re = /\bemit\s*\(\s*(['"])([\w.\-]+)\1/g;
+// match emit('NAME') AND prefixed emitters like chanEmit('NAME') (the trailing string arg keeps wiring like
+// `emit: chanEmit` or makeEmitter(...) out); the literal NAME is then checked against the frozen registry.
+const re = /\b\w*emit\s*\(\s*(['"])([\w.\-]+)\1/gi;
 let found = 0;
 for (const f of files) {
   const src = decomment(fs.readFileSync(f, 'utf8'));

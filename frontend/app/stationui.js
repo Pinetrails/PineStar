@@ -188,14 +188,14 @@ const StationUI = (() => {
   function agHead(a, act, price) {
     const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
     const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
-    return '<div class=”ag-hero”>' +
-      '<div class=”ag-portrait-wrap”><canvas id=”ag-portrait” width=”52” height=”68”></canvas></div>' +
-      '<div class=”ag-info”>' +
-      '<div class=”ag-name” style=”color:' + a.color + '”>' + esc(a.name) + '</div>' +
-      '<div class=”ag-role-line”><span class=”ag-sdot ' + dotCls + '”></span>' + statusText + ' · HAB-01</div>' +
-      '<div class=”ag-tags”>' +
-      '<span class=”tag model”>' + esc(a.model || '—') + '</span>' +
-      (price ? '<span class=”tag dim”>$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
+    return '<div class="ag-hero">' +
+      '<div class="ag-portrait-wrap"><canvas id="ag-portrait" width="52" height="68"></canvas></div>' +
+      '<div class="ag-info">' +
+      '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + '</div>' +
+      '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
+      '<div class="ag-tags">' +
+      '<span class="tag model">' + esc(a.model || '—') + '</span>' +
+      (price ? '<span class="tag dim">$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
       '</div></div></div>';
   }
 
@@ -203,31 +203,31 @@ const StationUI = (() => {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
     const fmtTok = n => { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
-    return '<div class=”stat-grid”>' +
-      '<div class=”stat-cell”><div class=”stat-val”>' + (t.calls || 0) + '</div><div class=”stat-lbl”>RUNS</div></div>' +
-      '<div class=”stat-cell”><div class=”stat-val”>' + fmtTok(t.tokens) + '</div><div class=”stat-lbl”>TOKENS</div></div>' +
-      '<div class=”stat-cell”><div class=”stat-val pos”>$' + Number(t.cost || 0).toFixed(4) + '</div><div class=”stat-lbl”>SPENT</div></div>' +
+    return '<div class="stat-grid">' +
+      '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +
       '</div>' +
-      '<div class=”ag-mission”><div class=”ag-mission-lbl”>MISSION</div>' +
+      '<div class="ag-mission"><div class="ag-mission-lbl">MISSION</div>' +
       (a.purpose
-        ? '<div class=”ag-mission-text”>' + esc(a.purpose) + '</div>'
-        : '<div class=”ag-mission-cta”>No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
+        ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
+        : '<div class="ag-mission-cta">No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
-      '<div class=”ag-foot-row”>on station since <b>' + since + '</b> · all figures are real spend</div>';
+      '<div class="ag-foot-row">on station since <b>' + since + '</b> · all figures are real spend</div>';
   }
 
   function agSkills() {
     const on = SKILLS.filter(s => s.on).length;
-    return '<h4 class=”ms-h”>GRANTED — ' + on + ' LIVE</h4>' +
-      '<div class=”perk-grid”>' +
-      SKILLS.map(s => '<div class=”perk ' + (s.on ? 'on' : '') + '”>' +
-        '<div class=”perk-icon”>' + s.icon + '</div>' +
-        '<div class=”perk-name”>' + s.name + '</div>' +
-        '<div class=”perk-desc”>' + s.tools + '</div>' +
-        '<div class=”perk-stat' + (s.consent ? ' ask' : '') + '”>' +
+    return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
+      '<div class="perk-grid">' +
+      SKILLS.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
+        '<div class="perk-icon">' + s.icon + '</div>' +
+        '<div class="perk-name">' + s.name + '</div>' +
+        '<div class="perk-desc">' + s.tools + '</div>' +
+        '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
-      '<p class=”sk-note”>Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS.</p>';
+      '<p class="sk-note">Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS.</p>';
   }
 
   function fileCard(a, f) {
