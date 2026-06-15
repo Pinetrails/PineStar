@@ -27,6 +27,7 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
+const { makeSseHub } = require('./channels/sse.js');
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -136,11 +137,22 @@ function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the ag
 }
 let channelSecrets = loadChannelSecrets();
 const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() } });
-// channel.* telemetry: validated + redacted, logged to the sidecar console for now (a future SSE bridge can
-// forward it to the station HUD). The bot token / OR key are NEVER placed on a payload — nothing to leak here.
-const chanBus = { emit: (name, payload) => { try { console.log('[channel]', name, JSON.stringify(payload)); } catch (_) {} } };
+// channel.* / workitem.* / queue.* telemetry: validated + redacted, logged to the sidecar console AND
+// forwarded to open browser EventSources (the station HUD). The bot token / OR key are NEVER placed on a
+// payload — nothing to leak here — and redact() runs before validate() as a second backstop.
+const sse = makeSseHub();
+const chanBus = { emit: (name, payload) => {
+  try { console.log('[channel]', name, JSON.stringify(payload)); } catch (_) {}
+  try { sse.broadcast(name, payload); } catch (_) {}
+} };
 const chanEmitValidated = makeEmitter(chanBus, e => console.warn('[channel-event]', e.kind, e.event, (e.errors || []).join(';')));
 const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redact(payload)); } catch (_) {} };
+
+// per-agent inbound work-item depth (backpressure): bumped when a message is admitted, dropped when its
+// run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
+const QUEUE_CAP = 64;
+const queueDepth = new Map();
+function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) || 0) + d); queueDepth.set(agentId, n); return n; }
 
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
@@ -159,7 +171,23 @@ function startTelegram(token, key, model) {
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
-    onInbound: (m) => { hub.onInbound(m).catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e)); },
+    onInbound: (m) => {
+      // WORK-ITEM INTERCEPT: an admitted message becomes a box that rides the player-laid belts to the
+      // agent. This is pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of
+      // whether any belt/INTAKE exists. agentId/queue depth use the hub's OWN logic so the HUD never lies.
+      let agentId = '';
+      try {
+        agentId = hub._internals.agentIdFor(String(m && m.chatId));
+        const workitemId = crypto.randomUUID();
+        const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
+        const depth = bumpQueue(agentId, +1);
+        chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
+        chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+      } catch (e) { console.warn('[telegram] intake intercept error:', (e && e.message) || e); }
+      Promise.resolve(hub.onInbound(m))
+        .catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e))
+        .then(() => { if (agentId) { const d = bumpQueue(agentId, -1); chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 }); } });
+    },
     onCallback: hub.onCallback,
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
@@ -188,6 +216,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
+  if (req.method === 'GET' && req.url === '/api/channels/events') return handleChannelEvents(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
@@ -216,6 +245,21 @@ server.listen(PORT, '127.0.0.1', () => {
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
 });
+
+/* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
+function handleChannelEvents(req, res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  try { res.write('retry: 3000\n\n'); } catch (_) {}        // EventSource auto-reconnects after 3s if dropped
+  sse.add(res);
+  const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch (_) {} }, 25000);   // keep-alive comment
+  const done = () => { clearInterval(ka); sse.remove(res); };   // evict on disconnect — mirrors the /api/run cleanup
+  req.on('close', done); req.on('aborted', done); res.on('error', done);
+}
 
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
