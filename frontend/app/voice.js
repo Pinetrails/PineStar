@@ -155,8 +155,9 @@ const Voice = (() => {
   }
   let currentAudio = null;
   function stopAudio() { if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; } }
-  // play an mp3 blob, wiring start/end into the same speaking-state + loop hooks as the browser path.
-  function playBlob(blob, onEnd, volume, onFail) {
+  // play an audio blob (mp3/wav), wiring start/end into the same speaking-state + loop hooks as the
+  // browser path. playbackRate gives the per-personality pacing (Gemini TTS takes no speed param).
+  function playBlob(blob, onEnd, volume, onFail, rate) {
     let url = null, a = null, done = false;
     const cleanup = () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } if (currentAudio === a) currentAudio = null; };
     const endOk = () => { if (done) return; done = true; cleanup(); onSpeakEnd(); onEnd && onEnd(); };
@@ -165,6 +166,7 @@ const Voice = (() => {
       url = URL.createObjectURL(blob);
       a = new Audio(url); currentAudio = a;
       a.volume = (volume == null ? 1 : volume);
+      if (rate && rate > 0) a.playbackRate = Math.max(0.5, Math.min(2, rate));
       a.onplay = () => onSpeakStart();
       a.onended = endOk; a.onerror = endOk;
       const p = a.play();
@@ -181,13 +183,13 @@ const Voice = (() => {
     const key = apiKey();
     if (!key || ttsDisabled) { fb(); return; }
     const cfg = ttsConfig();
-    const speed = Math.round(cfg.speed * (opts.speedMul || 1) * 100) / 100;
-    fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, text: t, model: cfg.model, voice: cfg.voice, speed }) })
+    const rate = cfg.speed * (opts.speedMul || 1);   // applied client-side via Audio.playbackRate
+    fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, text: t, model: cfg.model, voice: cfg.voice }) })
       .then(async r => {
         const ct = r.headers.get('Content-Type') || '';
         if (r.ok && ct.indexOf('audio') === 0) {
           const blob = await r.blob();
-          if (blob && blob.size) { playBlob(blob, onEnd, opts.volume, fb); return; }
+          if (blob && blob.size) { playBlob(blob, onEnd, opts.volume, fb, rate); return; }
         }
         let reason = 'http ' + r.status;
         try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}

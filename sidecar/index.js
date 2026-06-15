@@ -578,8 +578,18 @@ function consentSummary(call) {
    the browser drops back to its built-in speechSynthesis. Results are cached on disk by
    (model,voice,speed,text) so repeated lines (acks, catchphrases) cost nothing and play instantly. */
 const TTS_DEFAULT_MODEL = 'google/gemini-3.1-flash-tts-preview';
+// prepend a 44-byte WAV header so the browser can play raw PCM (Gemini TTS only outputs pcm).
+function pcmToWav(pcm, sampleRate, channels) {
+  const bits = 16, blockAlign = channels * bits / 8, byteRate = sampleRate * blockAlign;
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8);
+  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(channels, 22);
+  h.writeUInt32LE(sampleRate, 24); h.writeUInt32LE(byteRate, 28); h.writeUInt16LE(blockAlign, 32); h.writeUInt16LE(bits, 34);
+  h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
 async function handleTts(req, res) {
-  const fallback = (reason) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
+  const fallback = (reason) => { console.error('[tts] fallback →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
   catch (e) { return fallback('bad json'); }
@@ -587,19 +597,26 @@ async function handleTts(req, res) {
   const text = String((body && body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
   const model = String((body && body.model) || TTS_DEFAULT_MODEL).trim();
   const voice = String((body && body.voice) || 'Umbriel').trim();
-  let speed = Number(body && body.speed); if (!(speed > 0.25 && speed < 4)) speed = 1.0;
   if (!text) return fallback('no text');
   if (!key) return fallback('no key');
 
-  const ck = crypto.createHash('sha1').update(model + '|' + voice + '|' + speed + '|' + text).digest('hex');
-  const cacheFile = path.join(VOICE_CACHE_DIR, ck + '.mp3');
-  try {
-    const buf = await fsp.readFile(cacheFile);
-    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
-    return res.end(buf);
-  } catch (_) { /* miss → synthesize */ }
+  // cache the synthesized (speed-independent) audio by model+voice+text; per-personality pacing is
+  // applied client-side via Audio.playbackRate, so it stays out of the key for better cache hits.
+  const ck = crypto.createHash('sha1').update(model + '|' + voice + '|' + text).digest('hex');
+  const serveCached = async () => {
+    for (const ext of ['wav', 'mp3']) {
+      try {
+        const buf = await fsp.readFile(path.join(VOICE_CACHE_DIR, ck + '.' + ext));
+        res.writeHead(200, { 'Content-Type': ext === 'mp3' ? 'audio/mpeg' : 'audio/wav', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
+        res.end(buf); return true;
+      } catch (_) { /* try next ext */ }
+    }
+    return false;
+  };
+  if (await serveCached()) return;
 
-  const payload = { model, input: text, voice, response_format: 'mp3', speed };
+  // pcm is the only format Gemini TTS supports (and is widely available); we wrap it to WAV below.
+  const payload = { model, input: text, voice, response_format: 'pcm' };
   let or;
   try {
     or = await fetch('https://openrouter.ai/api/v1/audio/speech', {
@@ -612,11 +629,22 @@ async function handleTts(req, res) {
     let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
     return fallback('openrouter ' + or.status + (detail ? ' — ' + detail : ''));
   }
+  const ct = (or.headers.get('content-type') || '').toLowerCase();
   let buf;
   try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
   if (!buf || !buf.length) return fallback('empty audio');
-  try { const tmp = cacheFile + '.' + crypto.randomUUID() + '.tmp'; await fsp.writeFile(tmp, buf); await fsp.rename(tmp, cacheFile); } catch (_) {}
-  res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
+
+  // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
+  let outType = 'audio/wav', ext = 'wav';
+  if (/pcm/.test(ct) || (!/mpeg|mp3|wav|ogg/.test(ct))) {
+    const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
+    const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
+    buf = pcmToWav(buf, rate, channels);
+  } else if (/mpeg|mp3/.test(ct)) { outType = 'audio/mpeg'; ext = 'mp3'; }
+  else if (/wav/.test(ct)) { outType = 'audio/wav'; ext = 'wav'; }
+
+  try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + ext)); } catch (_) {}
+  res.writeHead(200, { 'Content-Type': outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
   res.end(buf);
 }
 
