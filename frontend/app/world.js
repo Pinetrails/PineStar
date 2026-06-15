@@ -27,7 +27,7 @@ const World = (() => {
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = false, onClick = null, wakeAt = 0;
+  let drag = null, hoverAgent = false, onClick = null, onArcade = null, wakeAt = 0;
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
@@ -227,12 +227,18 @@ const World = (() => {
         panX += c.x - drag.sx; panY += c.y - drag.sy; drag.sx = c.x; drag.sy = c.y; drag.moved = true;
         cv.style.cursor = 'grabbing'; return;
       }
-      const hit = agentHit(toWorld(ev));
-      if (hit !== hoverAgent) { hoverAgent = hit; cv.style.cursor = hit ? 'pointer' : 'default'; }
+      const wp = toWorld(ev);
+      const hit = agentHit(wp);
+      if (hit !== hoverAgent) hoverAgent = hit;
+      cv.style.cursor = (hit || arcadeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
-      if (!wasDrag && agentHit(toWorld(ev)) && onClick) onClick();
+      if (wasDrag) return;
+      const wp = toWorld(ev);
+      if (agentHit(wp)) { if (onClick) onClick(); return; }
+      const arc = arcadeAt(wp);
+      if (arc && onArcade) onArcade(arc);
     });
     cv.addEventListener('mouseleave', () => { hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
@@ -844,6 +850,20 @@ const World = (() => {
   }
 
   function setOnClick(fn) { onClick = fn; }
+  function setOnArcade(fn) { onArcade = fn; }
+  // hit-test: the arcade cabinet prop under a world-space point (null if none). The cabinet
+  // art spills a few px below its tile footprint, so extend the box down to keep it clickable.
+  function arcadeAt(wp) {
+    if (!geo || !geo.props) return null;
+    for (const p of geo.props) {
+      const s = specOf(p.t);
+      if (!s || !s.use || s.use.kind !== 'arcade') continue;
+      const x0 = p.x * T, y0 = p.y * T - 2;
+      const x1 = (p.x + (p.w || s.w || 1)) * T, y1 = (p.y + (p.h || s.h || 1)) * T + 8;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
+  }
 
   /* ---------- work-item pipeline: the conveyor carries REAL inbound work to the agent ----------
      A real admitted message (Telegram) arrives over the SSE bridge as `workitem.placed`; we drop a
@@ -924,5 +944,5 @@ const World = (() => {
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, endAwakening, releaseAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
+  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, endAwakening, releaseAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit };
 })();

@@ -1200,70 +1200,68 @@ const PropSprites = (() => {
   };
 
   F.arcade = (x, y, w, h, f) => {
-    sh(x + 2, y + h + 9, w + 6);
-    px(x, y - 1, w + 10, h + 12, '#14101e');
-    px(x + 1, y, w + 8, h + 10, '#2a2438');
-    px(x + 2, y + 1, w + 6, 1, '#3c3450');
-    px(x + 1, y + 1, 1, h + 8, '#332c44'); px(x + w + 8, y + 1, 1, h + 8, '#1e1830'); // cab facets
-    px(x + 1, y + 3, 1, h + 5, '#b44aff'); // side art stripe
+    // slim ~1-tile cabinet. v7 drew this w+10 ≈ 22px wide (≈2 tiles), so it towered
+    // over the couch/tv/jukebox; redrawn at a fixed 13px so it sits in line with them.
+    const cw = 13, bh = h + 7;
+    sh(x + 1, y + bh, cw - 1);                 // floor shadow
+    px(x, y - 1, cw, bh + 1, '#14101e');       // outer shell
+    px(x + 1, y, cw - 2, bh, '#2a2438');       // cabinet body
+    px(x + 1, y, cw - 2, 1, '#3c3450');        // top sheen
+    px(x + 1, y + 1, 1, bh - 2, '#332c44'); px(x + cw - 2, y + 1, 1, bh - 2, '#1e1830'); // cab facets
+    px(x + 1, y + 3, 1, bh - 9, '#b44aff'); // side art stripe
     px(x + 1, y + 4, 1, 2, '#ff6ad5');
-    px(x + 1, y, w + 8, 2, blink(700) ? '#b44aff' : '#3a2a4a'); // marquee
-    px(x + 3, y, 3, 1, '#dfd0ff'); // marquee title glint
-    glow(x + 1, y, w + 8, 2, '#b44aff', blink(700) ? 0.45 : 0.1);
-    inset(x + 3, y + 2, w + 4, 8, '#0c0a16');
+    px(x + 1, y, cw - 2, 2, blink(700) ? '#b44aff' : '#3a2a4a'); // marquee
+    px(x + 3, y, 2, 1, '#dfd0ff'); // marquee title glint
+    glow(x + 1, y, cw - 2, 2, '#b44aff', blink(700) ? 0.45 : 0.1);
+    inset(x + 2, y + 2, cw - 4, 8, '#0c0a16'); // screen
     const fr = Math.floor(now / 280) % 4;
-    for (let i = 0; i < 4; i++) px(x + 4 + i * 3, y + 3, 1, 1, '#1c1830'); // starfield
-    px(x + 5 + fr, y + 4, 2, 2, '#41ff8a'); // player
-    px(x + 5 + fr, y + 3, 1, 1, '#8affb8'); // player cannon
-    for (let i = 0; i < 3; i++) px(x + 5 + i * 4 + (fr % 2), y + 7, 2, 1, '#ff5c5c'); // marching enemies
-    if (fr === 2) px(x + 6 + fr, y + 5, 1, 2, '#ffd34a'); // shot
-    px(x + 4, y + 9, w + 2, 1, '#1c1830'); // ground line
-    px(x + 4, y + 2, 2, 1, '#2a2440'); // hi-score row
-    scanl(x + 4, y + 3, w + 2, 7, 0.12);
-    glow(x + 3, y + 2, w + 4, 8, '#41ff8a', 0.05);
-    px(x + 3, y + 11, w + 4, 3, '#3a3448');
-    px(x + 3, y + 11, w + 4, 1, '#4c4660');
-    px(x + 3, y + 13, w + 4, 1, '#28223a'); // panel front shade
-    px(x + 5, y + 14, 2, 2, '#ff5c5c'); px(x + 5, y + 14, 1, 1, '#ff8a8a'); // buttons + shine
-    px(x + 8, y + 14, 2, 2, '#ffd34a'); px(x + 8, y + 14, 1, 1, '#ffe88c');
-    px(x + 13, y + 13, 1, 2, '#888'); px(x + 12, y + 12, 3, 1, '#aaa'); // joystick
-    px(x + 12, y + 12, 1, 1, '#ccc'); // ball top shine
-    // coin door
-    px(x + 4, y + h + 5, 4, 3, '#1e1830'); px(x + 4, y + h + 5, 4, 1, '#332c44');
-    px(x + 5, y + h + 6, 2, 1, '#0e0a18'); // coin slot
-    px(x + 4, y + h + 7, 2, 1, blink(900) ? '#ffd34a' : '#3a3020'); // coin light
-    wear(x + 1, y + 11, w + 8, 4, 3, '#241e32'); // kick plate scuffs
+    for (let i = 0; i < 3; i++) px(x + 3 + i * 2, y + 3, 1, 1, '#1c1830'); // starfield
+    px(x + 4 + (fr % 3), y + 4, 2, 2, '#41ff8a'); // player
+    px(x + 4 + (fr % 3), y + 3, 1, 1, '#8affb8'); // player cannon
+    for (let i = 0; i < 3; i++) px(x + 3 + i * 2 + (fr & 1), y + 7, 1, 1, '#ff5c5c'); // marching enemies
+    if (fr === 2) px(x + 6, y + 5, 1, 1, '#ffd34a'); // shot
+    scanl(x + 2, y + 3, cw - 4, 7, 0.12);
+    glow(x + 2, y + 2, cw - 4, 8, '#41ff8a', 0.05);
+    px(x + 2, y + 11, cw - 4, 3, '#3a3448'); // control panel
+    px(x + 2, y + 11, cw - 4, 1, '#4c4660');
+    px(x + 2, y + 13, cw - 4, 1, '#28223a'); // panel front shade
+    px(x + 3, y + 12, 1, 1, '#ff5c5c'); // red button
+    px(x + 5, y + 12, 1, 1, '#ffd34a'); // yellow button
+    px(x + 8, y + 12, 1, 1, '#aaa'); px(x + 8, y + 12, 1, 1, '#ccc'); // joystick ball
+    px(x + 3, y + bh - 4, cw - 6, 3, '#1e1830'); px(x + 3, y + bh - 4, cw - 6, 1, '#332c44'); // coin door
+    px(x + 5, y + bh - 3, 2, 1, blink(900) ? '#ffd34a' : '#3a3020'); // coin light
+    wear(x + 1, y + 11, cw - 2, 4, 3, '#241e32'); // kick-plate scuffs
   };
 
   F.arcade2 = (x, y, w, h, f) => {
-    sh(x + 2, y + h + 9, w + 6);
-    px(x, y - 1, w + 10, h + 12, '#0e1a1e');
-    px(x + 1, y, w + 8, h + 10, '#1e3038');
-    px(x + 2, y + 1, w + 6, 1, '#2c424c');
-    px(x + 1, y + 1, 1, h + 8, '#263a44'); px(x + w + 8, y + 1, 1, h + 8, '#15242a'); // cab facets
-    px(x + w + 8, y + 3, 1, h + 5, '#2ee6c8'); // side art stripe
-    px(x + 1, y, w + 8, 2, blink(900, 2) ? '#2ee6c8' : '#1a2a30');
-    px(x + 3, y, 3, 1, '#bff8ee'); // marquee glint
-    glow(x + 1, y, w + 8, 2, '#2ee6c8', blink(900, 2) ? 0.4 : 0.1);
-    inset(x + 3, y + 2, w + 4, 8, '#0a1216');
+    const cw = 13, bh = h + 7;                 // slim 1-tile cabinet — see F.arcade
+    sh(x + 1, y + bh, cw - 1);
+    px(x, y - 1, cw, bh + 1, '#0e1a1e');
+    px(x + 1, y, cw - 2, bh, '#1e3038');
+    px(x + 1, y, cw - 2, 1, '#2c424c');
+    px(x + 1, y + 1, 1, bh - 2, '#263a44'); px(x + cw - 2, y + 1, 1, bh - 2, '#15242a'); // cab facets
+    px(x + cw - 2, y + 3, 1, bh - 9, '#2ee6c8'); // side art stripe
+    px(x + 1, y, cw - 2, 2, blink(900, 2) ? '#2ee6c8' : '#1a2a30'); // marquee
+    px(x + 3, y, 2, 1, '#bff8ee'); // marquee glint
+    glow(x + 1, y, cw - 2, 2, '#2ee6c8', blink(900, 2) ? 0.4 : 0.1);
+    inset(x + 2, y + 2, cw - 4, 8, '#0a1216'); // screen
     const fr = Math.floor(now / 200) % 5;
-    px(x + 4, y + 6, w + 2, 1, '#12262a'); // midline
-    for (let i = 0; i < 5; i++) {
-      px(x + 4 + i * 3, y + 8 - ((fr + i) % 5), 2, 1, '#2ee6c8'); // waveform game
-      px(x + 4 + i * 3, y + 9 - ((fr + i + 2) % 5), 1, 1, '#15564c'); // echo trace
+    px(x + 2, y + 6, cw - 4, 1, '#12262a'); // midline
+    for (let i = 0; i < 4; i++) {
+      px(x + 3 + i * 2, y + 8 - ((fr + i) % 5), 1, 1, '#2ee6c8'); // waveform game
+      px(x + 3 + i * 2, y + 9 - ((fr + i + 2) % 5), 1, 1, '#15564c'); // echo trace
     }
-    px(x + 4 + ((fr + 2) % 5) * 3, y + 8 - ((fr * 2) % 5), 1, 1, '#dffaf4'); // combo spark
-    scanl(x + 4, y + 3, w + 2, 7, 0.12);
-    glow(x + 3, y + 2, w + 4, 8, '#2ee6c8', 0.05);
-    px(x + 3, y + 11, w + 4, 3, '#2a3e46');
-    px(x + 3, y + 11, w + 4, 1, '#3a525c');
-    px(x + 3, y + 13, w + 4, 1, '#1c2c32'); // panel shade
-    px(x + 6, y + 14, 3, 2, '#2ee6c8'); px(x + 6, y + 14, 1, 1, '#bff8ee'); // pads + shine
-    px(x + 11, y + 14, 2, 2, '#caa84a'); px(x + 11, y + 14, 1, 1, '#ffe88c');
-    px(x + 4, y + h + 5, 4, 3, '#15242a'); px(x + 4, y + h + 5, 4, 1, '#263a44'); // coin door
-    px(x + 5, y + h + 6, 2, 1, '#08110e');
-    px(x + 4, y + h + 7, 2, 1, blink(1100) ? '#2ee6c8' : '#16242a');
-    wear(x + 1, y + 11, w + 8, 4, 3, '#192b31');
+    px(x + 3 + ((fr + 2) % 4) * 2, y + 8 - ((fr * 2) % 5), 1, 1, '#dffaf4'); // combo spark
+    scanl(x + 2, y + 3, cw - 4, 7, 0.12);
+    glow(x + 2, y + 2, cw - 4, 8, '#2ee6c8', 0.05);
+    px(x + 2, y + 11, cw - 4, 3, '#2a3e46'); // control panel
+    px(x + 2, y + 11, cw - 4, 1, '#3a525c');
+    px(x + 2, y + 13, cw - 4, 1, '#1c2c32'); // panel shade
+    px(x + 3, y + 12, 2, 1, '#2ee6c8'); px(x + 3, y + 12, 1, 1, '#bff8ee'); // pads + shine
+    px(x + 7, y + 12, 1, 1, '#caa84a'); // pad
+    px(x + 3, y + bh - 4, cw - 6, 3, '#15242a'); px(x + 3, y + bh - 4, cw - 6, 1, '#263a44'); // coin door
+    px(x + 5, y + bh - 3, 2, 1, blink(1100) ? '#2ee6c8' : '#16242a'); // coin light
+    wear(x + 1, y + 11, cw - 2, 4, 3, '#192b31');
   };
 
   F.jukebox = (x, y, w, h) => {

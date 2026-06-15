@@ -87,7 +87,11 @@ const StationUI = (() => {
   window.addEventListener('mouseup', () => termDrag = null);
 
   function closeTerm(key) {
-    if (open[key]) { open[key].remove(); delete open[key]; sfx('close'); }
+    if (open[key]) {
+      const w = open[key];
+      if (w._onClose) { try { w._onClose(); } catch (_) {} }   // e.g. tear down the live arcade canvas
+      w.remove(); delete open[key]; sfx('close');
+    }
     syncBB();
   }
   function toggleTerm(key, title, builder, opts) {
@@ -96,6 +100,7 @@ const StationUI = (() => {
     const w = el('div', 'term');
     w.style.zIndex = U.zTop();
     if (opts && opts.w) w.style.width = opts.w;
+    w._onClose = opts && opts.onClose;
     const head = el('div', 'term-head', '<span class="term-title">▮ ' + title + '</span>');
     const x = el('button', 'term-x', '✕');
     x.addEventListener('click', () => closeTerm(key));
@@ -803,10 +808,23 @@ const StationUI = (() => {
     if (!started) { started = true; tickTimer = setInterval(tick, 1000); }
   }
 
+  /* ============== ARCADE CABINET ==============
+     Clicking an arcade cabinet in the world opens BREACH PROTOCOL — the playable
+     Space-Invaders descendant ported verbatim from v7 (js/arcade.js). It mounts a
+     live canvas into a floating window; _onClose tears the game loop down so closing
+     the window stops the RAF + releases the global key handlers. */
+  function openArcade() {
+    if (typeof ARCADE === 'undefined') return;
+    toggleTerm('arcade', 'QUARTERS ▪ ARCADE — BREACH PROTOCOL', body => {
+      body.innerHTML = ARCADE.shell();
+      ARCADE.mount(body);
+    }, { w: '430px', onClose: () => { try { ARCADE.unmount(); } catch (_) {} } });
+  }
+
   // called on disconnect — tear down floating windows, keep persisted state
   function leave() {
     Object.keys(open).forEach(k => closeTerm(k));
   }
 
-  return { init, enter, leave, notify, flashSave, openAgent, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
+  return { init, enter, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
 })();
