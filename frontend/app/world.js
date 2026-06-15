@@ -21,6 +21,7 @@ const World = (() => {
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
+  let routingPlan = null, lastPlanHash = null;   // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
 
   /* ---------- canvas + camera ---------- */
   let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null;
@@ -140,6 +141,7 @@ const World = (() => {
     const oldOrigin = geo ? geo.origin : null;
     geo = next; T = geo.TILE;
     placeDesk();
+    compileRouting();              // recompile the RoutingPlan (+ POST to the sidecar) — the single point floor edits flow through
     junctions = buildJunctions();
     if (agent) {
       if (agent.unplaced) placeAgent();
@@ -936,19 +938,49 @@ const World = (() => {
     const intake = geo && geo.props && geo.props.find(p => p.t === 'intake');
     return intake ? beltTileNear(intake.x, intake.y, intake.w || 1, intake.h || 1) : null;
   }
-  // junction props (splitter/...) keyed by tile — the conveyor routes boxes at these tiles
+  /* compile the floor into a RoutingPlan and push it to the sidecar. ONE compiler (pipeline.js) feeds BOTH
+     the visual junctions below AND the server's autonomous dispatch, so "the box you watch ride to a bay" and
+     "the agent that actually runs" can never drift. The plan is derived from the same local-frame geo the
+     conveyor animates. If Pipeline isn't loaded, routingPlan stays null and buildJunctions() falls back. */
+  function compileRouting() {
+    routingPlan = (typeof Pipeline !== 'undefined' && geo) ? Pipeline.compileRoutingPlan(geo) : null;
+    postRoutingPlan(routingPlan);
+  }
+  // fire-and-forget the plan to /api/routing, but only when the floor TOPOLOGY actually changed (hash dedupe —
+  // rederive() also runs on pure camera/agent moves). The sidecar REFUSES a non-deployable plan (cycle/orphan)
+  // and falls back to its default resolution, so a broken floor disables routed-mode rather than stalling work.
+  function postRoutingPlan(plan) {
+    if (typeof fetch === 'undefined') return;
+    const hash = plan ? (plan.hash || '') : '';
+    if (hash === lastPlanHash) return;
+    lastPlanHash = hash;
+    try { fetch('/api/routing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }).catch(() => {}); } catch (_) {}
+  }
+  // junction props (splitter/filter/merger) keyed by tile — derived from the compiled plan so the VISUAL engine
+  // animates filters + mergers (not just splitters) using the SAME config the dispatch router routes by.
   function buildJunctions() {
+    if (routingPlan && routingPlan.junctions) {
+      let j = null;
+      for (const k in routingPlan.junctions) (j = j || new Map()).set(k, routingPlan.junctions[k]);
+      return j;
+    }
+    // fallback (Pipeline unavailable): the original splitter-only scan keeps belts animating
     let j = null;
     if (geo && geo.props) for (const p of geo.props) {
       if (p.t === 'splitter') (j = j || new Map()).set(p.x + ',' + p.y, { kind: 'split' });
     }
     return j;
   }
-  // a real inbound message arrived — drop a box at the INTAKE so it rides the belts to the desk
+  // a real inbound message arrived — drop a box at the INTAKE so it rides the belts to the desk. The box carries
+  // a CONTENT TAG (the same getTag the sidecar routes by) so a FILTER junction visibly sorts it toward the
+  // matching agent's bay — frontend sort == backend dispatch.
   function intakeMessage(payload) {
     if (!convey) return;
     const t = intakeTile();
-    if (t) convey.enqueueAt(t.x, t.y, payload || {});
+    if (!t) return;
+    const p = payload || {};
+    if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
+    convey.enqueueAt(t.x, t.y, p);
   }
   // the agent's reply heads out — enqueue an OUTBOUND box at a desk-adjacent belt tile, riding to the OUTBOX
   function outboundMessage(payload) {
