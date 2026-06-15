@@ -174,6 +174,7 @@ const App = (() => {
     // the canonical station the builder edits — restored from the save, or a fresh starter room
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
+    if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
     if (typeof Build !== 'undefined') {
       Build.init({ getStation: () => station, persist: persist, world: World });
       const bbBuild = el('bb-build');

@@ -70,7 +70,8 @@ const Build = (() => {
     window.removeEventListener('keyup', onKeyUp);
     if (typeof SFX !== 'undefined') SFX.close();
     if (opts.persist) opts.persist();
-    if (opts.world && opts.world.start) opts.world.start();     // resume the live sim
+    if (opts.world && opts.world.refit) opts.world.refit();     // recenter the live world on the new build
+    if (opts.world && opts.world.start) opts.world.start();     // resume the live sim with the new build
     if (opts.onClose) opts.onClose();
   }
 
