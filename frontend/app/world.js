@@ -19,6 +19,7 @@ const World = (() => {
   /* ---------- station + bake cache ---------- */
   let station = null, geo = null, cache = null, geoDirty = true, bakeDirty = true, unsub = null;
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
+  let convey = null;   // live conveyor transport sim (boxes riding the belts)
 
   /* ---------- canvas + camera ---------- */
   let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null;
@@ -329,6 +330,13 @@ const World = (() => {
 
     ctx.drawImage(cache.baseCv, 0, 0);
 
+    // conveyor belts (floor machinery) + the live transport sim — local frame, under entities
+    if (geo && geo.belts && typeof Conveyor !== 'undefined') {
+      if (!convey) convey = Conveyor.create();
+      convey.tick(dt, now, geo.belts);
+      convey.drawBelts(ctx, now, T, geo.belts);
+    }
+
     const items = [];
     // placeable props (furniture) — drawn over the bake, y-sorted with agents, under the lightmap
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
@@ -340,6 +348,7 @@ const World = (() => {
     if (agent && !agent.unplaced) items.push({ y: agent.py, draw: () => drawAgent(now) });
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
+    if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);

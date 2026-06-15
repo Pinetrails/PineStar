@@ -63,7 +63,7 @@ const WorldModel = (() => {
     const doc = {
       schema: 'skynet.station', version: 1, _nid: 1,
       meta: { name: 'SKYNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null },
-      rooms: {}, order: [], props: []
+      rooms: {}, order: [], props: [], belts: {}
     };
     // seed the shabby starter HAB (18×11 floor — the v7 / world.js starter room), so a new
     // station is never empty and the builder has something to extend from.
@@ -122,6 +122,14 @@ const WorldModel = (() => {
       return null;
     }
 
+    /* ---------- belts (conveyor) ----------
+       A keyed graph "x,y"->dir (E|W|N|S). Belts are walkable floor machinery; boxes ride above
+       them (the conveyor runtime lives in conveyor.js — the model only owns topology). */
+    const DIRS = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
+    const beltKey = (x, y) => (x | 0) + ',' + (y | 0);
+    const beltAt = (x, y) => doc.belts[beltKey(x, y)] || null;
+    const belts = () => Object.keys(doc.belts).map(k => { const p = k.split(','); return { x: +p[0], y: +p[1], dir: doc.belts[k] }; });
+
     function bounds() {
       let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
       eachRectWorld(null, (id, rm, r) => {
@@ -169,9 +177,9 @@ const WorldModel = (() => {
       checkRects((rects || []).map(normRect), 'corridor', ignoreId);
 
     /* ---------- history (snapshot-based — small docs, correct by construction) ---------- */
-    const snap = () => clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid, props: doc.props });
+    const snap = () => clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid, props: doc.props, belts: doc.belts });
     function snapshot() { undoStack.push(snap()); if (undoStack.length > 120) undoStack.shift(); redoStack.length = 0; }
-    function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; }
+    function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; doc.belts = s.belts || {}; }
     function emit(dirtyRects) {
       seq++;
       const patch = { seq, dirtyRects: dirtyRects || [] };
@@ -323,6 +331,65 @@ const WorldModel = (() => {
       return { ok: true };
     }
 
+    /* ---------- belt mutations ----------
+       A belt tile must sit on a deck and not on a blocking prop. Belts are 1×1, keyed by tile;
+       setBelt overwrites the direction in place (re-laying over a belt just re-aims it). */
+    function beltPlaceable(x, y) {
+      if (!roomAt(x, y)) return fail('OFF_DECK', 'belts must sit on a deck');
+      const pid = propAt(x, y);
+      if (pid) { const p = propById(pid); if (p && p.block !== false) return fail('ON_PROP', 'a prop is in the way'); }
+      return { ok: true };
+    }
+    function setBelt(x, y, dir) {
+      x |= 0; y |= 0;
+      if (!DIRS[dir]) return fail('BAD_DIR', 'bad belt direction');
+      const v = beltPlaceable(x, y); if (!v.ok) return v;
+      if (doc.belts[beltKey(x, y)] === dir) return { ok: true };   // no-op: don't burn an undo slot
+      snapshot();
+      doc.belts[beltKey(x, y)] = dir;
+      emit([{ x1: x, y1: y, x2: x, y2: y }]);
+      return { ok: true };
+    }
+    function removeBelt(x, y) {
+      const k = beltKey(x, y);
+      if (!doc.belts[k]) return fail('NOT_FOUND', 'no belt here');
+      snapshot();
+      delete doc.belts[k];
+      emit([{ x1: x | 0, y1: y | 0, x2: x | 0, y2: y | 0 }]);
+      return { ok: true };
+    }
+    // lay a straight run a→b; direction = the dominant drag axis (drag east → E belts, etc.)
+    function placeBeltRun(a, b) {
+      const ax = a.tx | 0, ay = a.ty | 0, bx = b.tx | 0, by = b.ty | 0;
+      const dx = bx - ax, dy = by - ay;
+      const horiz = Math.abs(dx) >= Math.abs(dy);
+      const dir = horiz ? (dx >= 0 ? 'E' : 'W') : (dy >= 0 ? 'S' : 'N');
+      const tiles = [];
+      if (horiz) { const s = dx >= 0 ? 1 : -1; for (let x = ax; x !== bx + s; x += s) tiles.push([x, ay]); }
+      else { const s = dy >= 0 ? 1 : -1; for (let y = ay; y !== by + s; y += s) tiles.push([ax, y]); }
+      // validate every tile first so a run is all-or-nothing (the ghost already tinted it)
+      for (const [x, y] of tiles) { const v = beltPlaceable(x, y); if (!v.ok) return v; }
+      const dirty = [];
+      let changed = false;
+      // single snapshot for the whole run
+      const prev = clone(doc.belts);
+      for (const [x, y] of tiles) { const k = beltKey(x, y); if (doc.belts[k] !== dir) changed = true; doc.belts[k] = dir; dirty.push({ x1: x, y1: y, x2: x, y2: y }); }
+      if (!changed) { doc.belts = prev; return { ok: true }; }
+      doc.belts = prev; snapshot();                                  // snapshot the pre-run state
+      for (const [x, y] of tiles) doc.belts[beltKey(x, y)] = dir;
+      emit(dirty);
+      return { ok: true, dir, count: tiles.length };
+    }
+    const canPlaceBeltRun = (a, b) => {
+      const ax = a.tx | 0, ay = a.ty | 0, bx = b.tx | 0, by = b.ty | 0;
+      const horiz = Math.abs(bx - ax) >= Math.abs(by - ay);
+      const tiles = [];
+      if (horiz) { const s = bx >= ax ? 1 : -1; for (let x = ax; x !== bx + s; x += s) tiles.push([x, ay]); }
+      else { const s = by >= ay ? 1 : -1; for (let y = ay; y !== by + s; y += s) tiles.push([ax, y]); }
+      for (const [x, y] of tiles) { const v = beltPlaceable(x, y); if (!v.ok) return v; }
+      return { ok: true };
+    };
+
     function renameRoom(id, name) {
       const rm = doc.rooms[id];
       if (!rm) return fail('NOT_FOUND', 'no such room');
@@ -446,6 +513,10 @@ const WorldModel = (() => {
         if (p.block === false) continue;   // flat decor (rugs / wall panels) never blocks walking
         for (let yy = ly; yy < ly + h; yy++) for (let xx = lx; xx < lx + w; xx++) blockedTiles.add(xx + ',' + yy);
       }
+      // belts: shift into the local frame for the renderer/transport. Belts are WALKABLE — they
+      // are never added to blockedTiles (floor machinery; boxes ride above, agents step across).
+      const beltsLocal = [];
+      for (const k in doc.belts) { const p = k.split(','); beltsLocal.push({ x: +p[0] - ox, y: +p[1] - oy, dir: doc.belts[k] }); }
       const walkable = (lx, ly, extra) => {
         if (lx < 0 || ly < 0 || lx >= COLS || ly >= ROWS) return false;
         if (zoneGrid[idx(lx, ly)] == null) return false;
@@ -480,7 +551,7 @@ const WorldModel = (() => {
       return {
         TILE, COLS, ROWS, W: COLS * TILE, H: ROWS * TILE + HULL_PAD,
         origin: { tx: ox, ty: oy },
-        allRects, zones, ROOM_IDS, isCorridor, chamfers, windows: [], props: propsLocal,
+        allRects, zones, ROOM_IDS, isCorridor, chamfers, windows: [], props: propsLocal, belts: beltsLocal,
         doorDefs, zoneGrid, idx, canStep, baseColorOf, walkable, path, blockedTiles,
         nameOf: id => (doc.rooms[id] ? doc.rooms[id].name : ''),
         kindOf: id => (doc.rooms[id] ? doc.rooms[id].kind : null),
@@ -495,13 +566,14 @@ const WorldModel = (() => {
     return {
       // reads
       doc: () => doc, rooms, roomById, roomAt, bounds, spawnRoomId,
-      props, propById, propAt,
+      props, propById, propAt, belts, beltAt,
       getSeq: () => seq, FLOOR_STYLES, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
       // validation (no mutation — for ghost previews)
-      canPlaceRoom, canPlaceHallway, canPlaceProp,
+      canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
       addProp, removeProp, moveProp,
+      setBelt, removeBelt, placeBeltRun,
       undo, redo, canUndo, canRedo,
       // projection + io
       projectGeometry, serialize, onChange,
@@ -525,6 +597,9 @@ const WorldModel = (() => {
     if (!Array.isArray(doc.props)) doc.props = [];
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
       .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; return o; });
+    // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
+    if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
+    else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }
     if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'SKYNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
     if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
     for (const p of doc.props) if (!p.id) p.id = 'p' + (doc._nid++);   // backfill ids for legacy/partial props

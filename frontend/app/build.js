@@ -18,6 +18,7 @@ const Build = (() => {
     { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
     { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room or prop to tear it down (UNDO restores it)', cursor: 'not-allowed' },
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
+    { id: 'belt', key: '7', label: '⇶ BELT', hint: 'drag to lay a conveyor — boxes flow the way you drag', cursor: 'crosshair' },
   ];
   const SEEN_KEY = 'skynet.refit.seen';
 
@@ -35,6 +36,7 @@ const Build = (() => {
   let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'work';
   let drag = null, hoverRoomId = null, hoverPropId = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let stars = [];
+  let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
 
   const T = () => (station ? station.TILE : 12);
 
@@ -51,6 +53,8 @@ const Build = (() => {
     document.body.classList.add('refit-on');
     unsub = station.onChange(() => { bakeDirty = true; updateUndoRedo(); });
     bakeDirty = true;
+    convey = (typeof Conveyor !== 'undefined') ? Conveyor.create() : null;
+    lastFrameTs = 0;
     if (!stars.length) seedStars();
     resize();
     fitCamera();
@@ -66,6 +70,7 @@ const Build = (() => {
     running = false;
     if (raf) cancelAnimationFrame(raf), raf = 0;
     clearTimeout(tipTimer); tipTimer = 0;
+    if (convey) convey.reset(), convey = null;
     if (unsub) unsub(), unsub = null;
     if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
     document.body.classList.remove('refit-on');
@@ -305,7 +310,9 @@ const Build = (() => {
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
-    if (tool === 'prop') {
+    if (tool === 'belt') {
+      drag = { mode: 'beltrun', start: w, cur: w, moved: false };
+    } else if (tool === 'prop') {
       drag = { mode: 'propstamp', start: w, cur: w, moved: false };
     } else if (tool === 'move') {
       const pid = station.propAt(w.tx, w.ty);   // props sit on top of rooms — move them first
@@ -352,6 +359,7 @@ const Build = (() => {
     if (d.mode === 'move') return commitMove(d, ev);
     if (d.mode === 'propmove') return commitPropMove(d, ev);
     if (d.mode === 'propstamp') return commitPropStamp(d, ev);
+    if (d.mode === 'beltrun') return commitBeltRun(d, ev);
     if (d.mode === 'paint') return commitPaint(d, ev);
     if (d.mode === 'click') return commitClick(d, ev);
   }
@@ -390,6 +398,11 @@ const Build = (() => {
     if (res && res.ok) pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
     feedback(res, ev, 'placed ' + propType);
   }
+  function commitBeltRun(d, ev) {
+    const res = station.placeBeltRun(d.start, d.cur);
+    if (res && res.ok && res.count) pushFlash([beltRunBox(d.start, d.cur)], false);
+    feedback(res, ev, res && res.dir ? ('belt → ' + res.dir) : 'belt');
+  }
   function commitPropMove(d, ev) {
     const dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
     if (!dx && !dy) { hideTip(); return; }
@@ -409,6 +422,12 @@ const Build = (() => {
       const p = station.propById(pid);
       const res = station.removeProp(pid);
       if (res && res.ok) { if (p) pushFlash([{ x1: p.x, y1: p.y, x2: p.x + p.w - 1, y2: p.y + p.h - 1 }], true); flashUndo(); flashTip(ev, 'reclaimed — UNDO to restore', true); sfx('click'); }
+      else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
+      return;
+    }
+    if (station.beltAt(d.cur.tx, d.cur.ty)) {   // a belt tile sits on the floor, under props
+      const res = station.removeBelt(d.cur.tx, d.cur.ty);
+      if (res && res.ok) { pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx, y2: d.cur.ty }], true); flashUndo(); flashTip(ev, 'belt removed — UNDO to restore', true); sfx('click'); }
       else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
       return;
     }
@@ -453,7 +472,7 @@ const Build = (() => {
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'y' || ev.key === 'Y')) { ev.preventDefault(); sfx(station.redo().ok ? 'click' : 'bad'); return; }
     if (ev.key === 'f' || ev.key === 'F') { fitCamera(); return; }
-    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop' };
+    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt' };
     if (map[ev.key]) selectTool(map[ev.key]);
   }
   function onKeyUp(ev) { if (ev.key === ' ') { spaceHeld = false; setCursor(); } }
@@ -470,12 +489,27 @@ const Build = (() => {
     const x1 = dx < 0 ? a.tx - w : a.tx, x2 = dx < 0 ? a.tx : a.tx + w;
     return { x1, y1: Math.min(a.ty, b.ty), x2, y2: Math.max(a.ty, b.ty) };
   }
+  // a belt run is a single-tile-wide line along the dominant drag axis; returns {rect, dir}
+  function beltRun(a, b) {
+    const dx = b.tx - a.tx, dy = b.ty - a.ty;
+    const horiz = Math.abs(dx) >= Math.abs(dy);
+    const dir = horiz ? (dx >= 0 ? 'E' : 'W') : (dy >= 0 ? 'S' : 'N');
+    const rect = horiz ? { x1: Math.min(a.tx, b.tx), y1: a.ty, x2: Math.max(a.tx, b.tx), y2: a.ty }
+                       : { x1: a.tx, y1: Math.min(a.ty, b.ty), x2: a.tx, y2: Math.max(a.ty, b.ty) };
+    return { rect, dir };
+  }
+  function beltRunBox(a, b) { return beltRun(a, b).rect; }
+
   function ghostInfo() {
     if (!drag) return null;
     if (drag.mode === 'draw') {
       const rect = (tool === 'hall') ? laneRect(drag.start, drag.cur) : norm(drag.start, drag.cur);
       const v = (tool === 'hall') ? station.canPlaceHallway([rect]) : station.canPlaceRoom([rect], kind);
       return { rects: [rect], v, kind: tool };
+    }
+    if (drag.mode === 'beltrun') {
+      const br = beltRun(drag.start, drag.cur);
+      return { rects: [br.rect], v: station.canPlaceBeltRun(drag.start, drag.cur), belt: true, dir: br.dir };
     }
     if (drag.mode === 'propstamp') {
       const s = propSpec(propType), tx = drag.cur.tx, ty = drag.cur.ty;
@@ -524,7 +558,9 @@ const Build = (() => {
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
     ctx.drawImage(cache.baseCv, ox, oy);
     drawGrid(t);
+    drawConveyor(now, t);   // belts (floor) → props → boxes ride on top
     drawProps(now);
+    drawConveyorBoxes(now, t);
     ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
     drawFlashes(now, t);
@@ -592,6 +628,16 @@ const Build = (() => {
     for (const p of sorted) PropSprites.draw(p, true);
   }
 
+  // conveyor — belts (floor machinery) + the live transport sim. WORLD coords like drawProps.
+  function drawConveyor(now, t) {
+    if (!convey) return;
+    const belts = station.belts();
+    const dt = lastFrameTs ? (now - lastFrameTs) : 16; lastFrameTs = now;
+    convey.tick(dt, now, belts);
+    convey.drawBelts(ctx, now, t, belts);
+  }
+  function drawConveyorBoxes(now, t) { if (convey) convey.drawBoxes(ctx, now, t); }
+
   function drawHover(t) {
     if (drag) return;
     // a hovered prop (move/reclaim) outlines on top of any room outline
@@ -638,9 +684,23 @@ const Build = (() => {
       ctx.fillStyle = fill; ctx.fillRect(X, Y, Wd, Hd);
       ctx.strokeStyle = line; ctx.strokeRect(X + 0.5 / zoom, Y + 0.5 / zoom, Wd - 1 / zoom, Hd - 1 / zoom);
     }
+    // belt: draw flow arrows along the run so the direction reads at a glance
+    if (g.belt) {
+      const V = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] }[g.dir];
+      ctx.strokeStyle = line; ctx.lineWidth = 1.5 / zoom;
+      const rr = g.rects[0];
+      for (let x = rr.x1; x <= rr.x2; x++) for (let y = rr.y1; y <= rr.y2; y++) {
+        const cx = (x + 0.5) * t, cy = (y + 0.5) * t, a = t * 0.22;
+        ctx.beginPath();
+        if (V[0]) { ctx.moveTo(cx - a * V[0], cy - a); ctx.lineTo(cx + a * V[0], cy); ctx.lineTo(cx - a * V[0], cy + a); }
+        else { ctx.moveTo(cx - a, cy - a * V[1]); ctx.lineTo(cx, cy + a * V[1]); ctx.lineTo(cx + a, cy - a * V[1]); }
+        ctx.stroke();
+      }
+    }
     // live readout: dimensions while placing/sizing; the reason when blocked
     const r0 = g.rects[0], w = r0.x2 - r0.x1 + 1, h = r0.y2 - r0.y1 + 1;
-    let dims = g.move ? ('move ' + (g.dx >= 0 ? '+' : '') + g.dx + ',' + (g.dy >= 0 ? '+' : '') + g.dy)
+    let dims = g.belt ? ('belt → ' + g.dir + ' · ' + Math.max(w, h) + ' long')
+      : g.move ? ('move ' + (g.dx >= 0 ? '+' : '') + g.dx + ',' + (g.dy >= 0 ? '+' : '') + g.dy)
       : (tool === 'hall' ? (Math.max(w, h) + ' long × ' + Math.min(w, h)) : (w + '×' + h));
     showTip(ok ? dims : (dims + ' · ' + ((g.v && g.v.msg) || 'blocked')), ok);
   }
