@@ -493,6 +493,13 @@ const World = (() => {
   function tick(dt, now) {
     if (!agent || agent.unplaced || !geo) return;
     const SPEED = 34;
+    // self-heal a stuck walker: the walk pose with nowhere to go (target + path both gone —
+    // e.g. a REFIT re-bake cleared the in-flight path, or a path came back empty). The idle
+    // re-decision below is gated on state !== 'walk', so without this the legs cycle in place
+    // forever (moonwalk). Drop to idle and let this same tick re-path / re-summon.
+    if (agent.state === 'walk' && !agent.target && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) {
+      agent.state = 'idle'; agent.idleUntil = 0;
+    }
     if (activity === 'task' && agent.goal !== 'work') {
       agent.goal = 'work'; agent.sitting = false; agent.working = false; agent.usingProp = null;   // summoned: get up off any prop and head to the desk
       if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { /* already at seat or unreachable */ if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } }
