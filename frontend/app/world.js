@@ -960,6 +960,11 @@ const World = (() => {
      conveyor animates. If Pipeline isn't loaded, routingPlan stays null and buildJunctions() falls back. */
   function compileRouting() {
     routingPlan = (typeof Pipeline !== 'undefined' && geo) ? Pipeline.compileRoutingPlan(geo) : null;
+    // B5: enrich each bay with the capability objectTypes in its room, so the sidecar can isolate that agent's
+    // tools to exactly what the floor placed there (the bay->agent binding decides WHO; the room decides WHAT).
+    if (routingPlan && routingPlan.bays && station && typeof station.bayObjects === 'function') {
+      for (const b of routingPlan.bays) b.objects = station.bayObjects(b.agentId);
+    }
     postRoutingPlan(routingPlan);
   }
   // fire-and-forget the plan to /api/routing, but only when the floor TOPOLOGY actually changed (hash dedupe —
@@ -967,7 +972,8 @@ const World = (() => {
   // and falls back to its default resolution, so a broken floor disables routed-mode rather than stalling work.
   function postRoutingPlan(plan) {
     if (typeof fetch === 'undefined') return;
-    const hash = plan ? (plan.hash || '') : '';
+    // dedupe on topology hash + per-bay caps, so equipping a bay (a capability change with no belt change) still re-POSTs
+    const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).join(','))).join(';')) : '';
     if (hash === lastPlanHash) return;
     lastPlanHash = hash;
     try { fetch('/api/routing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }).catch(() => {}); } catch (_) {}

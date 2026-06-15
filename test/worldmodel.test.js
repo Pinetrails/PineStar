@@ -332,4 +332,25 @@ A.ok(jc.configureJunction(filtP.id, null).ok && jc.propById(filtP.id).routes ===
 jc.undo();
 A.eq(jc.propById(filtP.id).def, 'S', 'undo restores a prior junction config (configureJunction snapshots)');
 
+/* ---- Phase B5: bayObjects — the cap-props sharing a bay's room become that agent's capability objectTypes ---- */
+const cap = WM.create();
+const cr = cap.roomById(cap.spawnRoomId()).rects[0];
+const cbx = cr.x1 + 2, cby = cr.y1 + 2;
+const capBay = cap.addProp({ t: 'bay', x: cbx, y: cby, w: 2, h: 2, block: false });
+cap.assignPropAgent(capBay.id, 'coder');
+A.eq(JSON.stringify(cap.bayObjects('coder')), '[]', 'a bare bay grants no capability objects');
+cap.addProp({ t: 'console', x: cbx + 3, y: cby, w: 2, h: 1, block: true });       // a workstation -> compute
+cap.addProp({ t: 'war_intelcab', x: cbx, y: cby + 3, w: 1, h: 2, block: true });  // a cabinet -> files
+A.eq(cap.bayObjects('coder').slice().sort().join(','), 'cabinet,computer', 'cap-props in the bay room map to their capability objectTypes');
+cap.addProp({ t: 'desk', x: cbx + 3, y: cby + 2, w: 2, h: 1, block: true });      // a 2nd workstation
+A.eq(cap.bayObjects('coder').filter(o => o === 'computer').length, 1, 'duplicate compute objects de-dupe');
+A.eq(JSON.stringify(cap.bayObjects('nobody')), '[]', 'an agent with no bay -> no capability objects');
+// decor in the room never grants reach
+const cap2 = WM.create();
+const cr2 = cap2.roomById(cap2.spawnRoomId()).rects[0];
+const b2 = cap2.addProp({ t: 'bay', x: cr2.x1 + 2, y: cr2.y1 + 2, w: 2, h: 2, block: false });
+cap2.assignPropAgent(b2.id, 'r');
+cap2.addProp({ t: 'plant', x: cr2.x1 + 5, y: cr2.y1 + 2, w: 1, h: 1, block: false });
+A.eq(JSON.stringify(cap2.bayObjects('r')), '[]', 'decor (a plant) grants no capabilities');
+
 A.report('worldmodel');

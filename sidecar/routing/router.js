@@ -24,7 +24,23 @@ function makeRouter() {
   // the agentId a work-item routes to, or null (caller falls back to its default resolution — never stalls)
   function resolveTarget(ctx) { return plan ? Pipeline.resolveTarget(plan, ctx || {}) : null; }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, resolveTarget };
+  /* Phase B5 — per-bay capability isolation. The resolveTools-shaped station for a BAY-bound agent, built from
+     the objects the floor placed in that bay's room (carried on the posted plan). null for any agent WITHOUT a
+     bay (the caller then uses its own default office), so only bay-routed work is isolated; everything else is
+     unchanged. PURE room objects — no baseline — so an UNEQUIPPED bay grants no compute and can't spend (the
+     compute gate stays shut; cost-safe), exactly mirroring resolveTools' projection of the placed floor. */
+  function stationFor(agentId) {
+    if (!plan || !agentId) return null;
+    const bay = (plan.bays || []).find(b => b.agentId === agentId);
+    if (!bay) return null;
+    const objs = Array.isArray(bay.objects) ? bay.objects : [];
+    return {
+      agents: { [agentId]: { id: agentId, room: 'bay' } },
+      rooms: { bay: { id: 'bay', objects: objs.map((t, i) => ({ instanceId: 'o' + i, objectType: t })) } }
+    };
+  }
+
+  return { setPlan, clearPlan, getPlan, hasPlan, resolveTarget, stationFor };
 }
 
 module.exports = { makeRouter };

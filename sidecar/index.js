@@ -184,7 +184,8 @@ function startTelegram(token, key, model, agentCfg) {
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
-    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined)   // B3 supplies the real classifier
+    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
+    resolveStation: (agentId) => router.stationFor(agentId)                     // B5: a bay's room objects = that agent's caps
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
@@ -407,10 +408,12 @@ async function runOnce(o) {
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() } }).register(registry);
   throttleSearch(registry);
 
-  // ---- capabilities: the office workstation. Each placed object IS a capability grant (CAP_REGISTRY):
-  //      computer = compute gate · dish = web · cabinet = files · notebook = memory. resolveTools
-  //      projects them into the agent's tools FRESH per run — no host-side toolset policy. ----
-  const station = { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: [
+  // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
+  //      web · cabinet = files · notebook = memory. resolveTools projects them into the agent's tools FRESH per
+  //      run — no host-side toolset policy. Phase B5: a routed bay passes its OWN station (o.station) built from
+  //      the objects in that bay's room, so per-bay caps are isolated; absent (browser chat / unrouted work) =
+  //      the full default office, unchanged. ----
+  const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: [
     { instanceId: 'pc1', objectType: 'computer' },
     { instanceId: 'dish1', objectType: 'dish' },
     { instanceId: 'cab1', objectType: 'cabinet' },

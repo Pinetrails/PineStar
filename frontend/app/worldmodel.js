@@ -41,6 +41,18 @@ const WorldModel = (() => {
     return dst;
   }
 
+  /* Phase B5 — object = capability, made real on the placed floor. A prop type maps to a CAP_REGISTRY
+     objectType (computer=compute · cabinet=files · dish=web · notebook=memory); the props in a BAY's room are
+     that agent's grants (via the sidecar's resolveTools). DATA, deliberately tunable — only a few intuitive
+     props grant reach; everything else is inert decor. A bay with no `computer` prop can't run (compute gate
+     stays shut = cost-safe), which the REFIT validator surfaces as NO COMPUTE. */
+  const CAP_PROP_MAP = {
+    console: 'computer', consoleL: 'computer', desk: 'computer', desk2: 'computer', pixelrig: 'computer', bench: 'computer',  // a workstation = compute
+    war_intelcab: 'cabinet', safe: 'cabinet', vault: 'cabinet', rack: 'cabinet', shelf: 'cabinet',                            // a locked cabinet = files
+    comms_dish: 'dish', comms_uplink: 'dish', comms_beacon: 'dish',                                                           // a comms dish = web
+    gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook'                                             // a server/databank = memory
+  };
+
   /* the paint palette — each is a floor BASE colour; every other floor detail
      (seams / rivets / vents / hatches) is derived from it via U.shade in the bake. */
   const FLOOR_STYLES = {
@@ -610,6 +622,21 @@ const WorldModel = (() => {
       const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
       return bay ? roomAt(bay.x, bay.y) : null;
     }
+    // Phase B5: the capability objectTypes (CAP_REGISTRY) granted by the cap-props sharing the agent's BAY room —
+    // exactly what the sidecar feeds resolveTools, so each bay's tools are what you placed in its room. Deduped.
+    function bayObjects(agentId) {
+      const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
+      const room = bay ? roomAt(bay.x, bay.y) : null;
+      if (!room) return [];
+      const seen = {}, out = [];
+      for (const p of doc.props) {
+        const cap = CAP_PROP_MAP[p.t];
+        if (!cap || seen[cap]) continue;
+        if (roomAt(p.x, p.y) !== room) continue;
+        seen[cap] = true; out.push(cap);
+      }
+      return out;
+    }
 
     /* ---------- serialize / subscribe ---------- */
     const serialize = () => clone(doc);
@@ -627,7 +654,7 @@ const WorldModel = (() => {
       addProp, removeProp, moveProp, assignPropAgent, configureJunction,
       setBelt, removeBelt, placeBeltRun,
       // agent-bay binding queries
-      propsByType, propsByAgent, agentRoomId,
+      propsByType, propsByAgent, agentRoomId, bayObjects,
       undo, redo, canUndo, canRedo,
       // projection + io
       projectGeometry, serialize, onChange,

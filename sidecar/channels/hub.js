@@ -76,6 +76,7 @@
     const agentPrefix = o.agentPrefix || 'tg_';
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
+    const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
     if (!store || typeof store.loadHistory !== 'function') throw new Error('makeChannelHub: a channel store is required');
     if (typeof send !== 'function') throw new Error('makeChannelHub: a send(chatId,text) is required');
@@ -160,10 +161,14 @@
         else if (name === 'agent.run.end') state.reason = p.reason;
       };
 
+      // B5: if this agent runs at a bound BAY, its tools are that bay room's objects (resolveStation), not the
+      // default office — so a routed agent's reach is exactly what the floor granted it. null -> office default.
+      const bayStation = resolveStation ? resolveStation(agentId) : null;
       try {
         await runOnce({
           key: sec.key, model: sec.model, system, messages, agentId, isTask,
-          emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous'
+          emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous',
+          station: bayStation || undefined
         });
       } catch (e) {
         state.errMsg = state.errMsg || ('run failed: ' + ((e && e.message) || e));

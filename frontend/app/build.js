@@ -695,22 +695,35 @@ const Build = (() => {
      surface it BEFORE any run. Red = blocking (orphan source / dead bay / cycle / filter has no default lane /
      duplicate agent); amber = warning (a bay with no agent). Plan is recomputed only on a floor edit (rebake). */
   function drawRoutingValidation(t, now) {
-    if (!valPlan || !valPlan.errors || !valPlan.errors.length || !cacheGeo) return;
-    const propById = {};
-    for (const p of (cacheGeo.props || [])) propById[p.id] = p;
+    if (!cacheGeo) return;
     const pulse = 0.5 + 0.5 * Math.sin(now / 300);
     ctx.lineWidth = 2 / zoom;
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = (7 / zoom) + 'px monospace';
-    for (const e of valPlan.errors) {
-      let rect = null;
-      if (e.tile) rect = { x1: e.tile.x, y1: e.tile.y, x2: e.tile.x, y2: e.tile.y };
-      else if (e.propId && propById[e.propId]) { const p = propById[e.propId]; rect = { x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }; }
-      if (!rect) continue;
-      const col = e.warn ? '255,190,60' : '255,80,70';   // amber warning vs red blocker
+    const mark = (rect, col, label) => {
       const X = rect.x1 * t, Y = rect.y1 * t, Wd = (rect.x2 - rect.x1 + 1) * t, Hd = (rect.y2 - rect.y1 + 1) * t;
       ctx.fillStyle = 'rgba(' + col + ',' + (0.10 + 0.12 * pulse).toFixed(3) + ')'; ctx.fillRect(X, Y, Wd, Hd);
       ctx.strokeStyle = 'rgba(' + col + ',0.95)'; ctx.strokeRect(X + 0.5 / zoom, Y + 0.5 / zoom, Wd - 1 / zoom, Hd - 1 / zoom);
-      ctx.fillStyle = 'rgba(' + col + ',0.95)'; ctx.fillText(VAL_LABEL[e.code] || e.code, X + Wd / 2, Y - 1 / zoom);
+      ctx.fillStyle = 'rgba(' + col + ',0.95)'; ctx.fillText(label, X + Wd / 2, Y - 1 / zoom);
+    };
+    // routing errors from the compiled plan (orphan source / dead bay / cycle / no default / dup agent / no agent)
+    if (valPlan && valPlan.errors && valPlan.errors.length) {
+      const propById = {};
+      for (const p of (cacheGeo.props || [])) propById[p.id] = p;
+      for (const e of valPlan.errors) {
+        let rect = null;
+        if (e.tile) rect = { x1: e.tile.x, y1: e.tile.y, x2: e.tile.x, y2: e.tile.y };
+        else if (e.propId && propById[e.propId]) { const p = propById[e.propId]; rect = { x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }; }
+        if (rect) mark(rect, e.warn ? '255,190,60' : '255,80,70', VAL_LABEL[e.code] || e.code);   // amber warn vs red blocker
+      }
+    }
+    // B5 cost-safety: a BOUND bay whose room has no workstation can't run — the compute gate stays shut, so
+    // routed work would silently do nothing. Surface it (amber) so the Commander knows to equip the bay.
+    if (typeof station.bayObjects === 'function') {
+      for (const p of (cacheGeo.props || [])) {
+        if (p.t !== 'bay' || !p.agentId) continue;
+        if (station.bayObjects(p.agentId).indexOf('computer') >= 0) continue;
+        mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'NO COMPUTE');
+      }
     }
   }
 
