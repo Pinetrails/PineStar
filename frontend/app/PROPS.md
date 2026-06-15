@@ -45,10 +45,23 @@ lightmap** (so they're lit) — never baked.
 - `world.js` (live): props drawn in the existing y-sorted item pass, in LOCAL coords from
   `geo.props`.
 
+## Blocking vs decor
+
+`CATALOG[].blocks` decides whether a prop occupies its tiles for pathfinding. Solid furniture
+(desks, tables, the pool table, machines, seating, crates) is `blocks:true`. Flat decor — wall
+murals (`bigscreen`, `whiteboard`, `chartwall`, `commswall`, `calwall`, `screens`, `ticker`,
+`poster`, wall thumb/index walls) and floor pieces (`rug`, `arc_floorlight`, holo projections) —
+is `blocks:false`, so agents walk over/along it. The builder passes the flag to `addProp({block})`;
+the model stores `block:false` (omitted when true) and `projectGeometry()` skips those footprints
+when filling `blockedTiles`.
+
 ## Status
 
-- **Stage 1 (done):** model + module + `desk`, `desk2`, `tv`; place/move/reclaim/undo/persist;
-  walkability blocking; verified in-browser (REFIT) + 96 worldmodel assertions.
-- **Stage 2 (next):** bulk-port the remaining ~45 generic props.
-- **Stage 3:** bespoke room props + category-grouped palette + rotate/flip.
-- **Stage 4:** conveyor system (`beltH` + moving `boxes`).
+- **Stage 1 (done):** model + module + first props; place/move/reclaim/undo/persist + blocking.
+- **Stage 2+3 (done):** all **84** v7 procedural props ported verbatim (1:1, lines 66–3568 of v7
+  `sprites.js`), full `CATALOG` with v7-authentic footprints, category-grouped palette
+  (work/ops/lab/storage/comms/lounge/decor), `blocks:false` decor. Verified in-browser: 84/84
+  place + render with animation; 100 worldmodel assertions; fast suite green.
+- **Stage 4 (later):** conveyor system — `beltH` belt segments + `boxes` that ride them (motion).
+- **Possible polish:** rotate/flip (R key), prop-aware footprint hints, an auto-desk-as-real-prop
+  unification with the live-world workstation FSM.

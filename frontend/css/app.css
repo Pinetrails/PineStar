@@ -327,6 +327,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .refit-palette:empty { display: none; }
 .refit-tool { font-size: 15px; }
 .refit-kind { font-size: 12px; }
+/* prop palette: a row of category tabs above the props in the active category */
+.refit-propcats, .refit-props { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; width: 100%; }
+.refit-props { margin-top: 5px; max-width: 88vw; max-height: 96px; overflow-y: auto; }
+.refit-propcat { font-size: 11px; letter-spacing: 1px; opacity: 0.7; }
+.refit-propcat.active { opacity: 1; }
 .refit-hint { font-size: 12px; color: var(--ph-dim); letter-spacing: 1px; min-height: 14px; text-align: center; }
 
 .refit-swatch {

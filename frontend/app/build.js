@@ -32,7 +32,7 @@ const Build = (() => {
   const MINZ = 0.4, MAXZ = 6;
 
   // interaction state
-  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk';
+  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'work';
   let drag = null, hoverRoomId = null, hoverPropId = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let stars = [];
 
@@ -170,15 +170,30 @@ const Build = (() => {
         pal.appendChild(b);
       });
     } else if (tool === 'prop') {
-      const cat = (typeof PropSprites !== 'undefined') ? PropSprites.CATALOG : [];
-      cat.forEach(c => {
+      const CATS = (typeof PropSprites !== 'undefined') ? PropSprites.CATS : {};
+      const groups = Object.keys(CATS);
+      if (!CATS[propCat]) propCat = groups[0] || 'work';
+      // row 1 — category tabs
+      const catRow = document.createElement('div'); catRow.className = 'refit-propcats';
+      groups.forEach(g => {
+        const b = document.createElement('button');
+        b.className = 'bb sm refit-propcat' + (g === propCat ? ' active' : '');
+        b.textContent = g.toUpperCase();
+        b.onclick = () => { propCat = g; if (CATS[g][0]) propType = CATS[g][0].id; renderPalette(); setHint(); sfx('click'); };
+        catRow.appendChild(b);
+      });
+      pal.appendChild(catRow);
+      // row 2 — props in the active category
+      const propRow = document.createElement('div'); propRow.className = 'refit-props';
+      (CATS[propCat] || []).forEach(c => {
         const b = document.createElement('button');
         b.className = 'bb sm refit-kind' + (c.id === propType ? ' active' : '');
         b.textContent = c.label;
-        b.title = c.label + ' · ' + c.w + '×' + c.h;
+        b.title = c.label + ' · ' + c.w + '×' + c.h + (c.blocks === false ? ' · decor (walkable)' : '');
         b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
-        pal.appendChild(b);
+        propRow.appendChild(b);
       });
+      pal.appendChild(propRow);
     } else if (tool === 'paint') {
       Object.keys(station.FLOOR_STYLES).forEach(sid => {
         const b = document.createElement('button');
@@ -371,7 +386,7 @@ const Build = (() => {
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
   function commitPropStamp(d, ev) {
     const s = propSpec(propType);
-    const res = station.addProp({ t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h });
+    const res = station.addProp({ t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h, block: s.blocks !== false });
     if (res && res.ok) pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
     feedback(res, ev, 'placed ' + propType);
   }

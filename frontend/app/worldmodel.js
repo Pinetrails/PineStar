@@ -290,7 +290,11 @@ const WorldModel = (() => {
       if (!v.ok) return v;
       snapshot();
       const id = 'p' + (doc._nid++);
-      doc.props.push({ id, t, x, y, w, h });
+      // block defaults true; the caller (builder) passes the catalog's blocks flag. Wall murals /
+      // floor rugs pass block:false so agents walk over/along them (they're flat decor, not obstacles).
+      const prop = { id, t, x, y, w, h };
+      if (opts.block === false) prop.block = false;
+      doc.props.push(prop);
       emit([{ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 }]);
       return { ok: true, id };
     }
@@ -438,7 +442,8 @@ const WorldModel = (() => {
       const propsLocal = [];
       for (const p of doc.props) {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
-        propsLocal.push({ id: p.id, t: p.t, x: lx, y: ly, w, h });
+        propsLocal.push({ id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false });
+        if (p.block === false) continue;   // flat decor (rugs / wall panels) never blocks walking
         for (let yy = ly; yy < ly + h; yy++) for (let xx = lx; xx < lx + w; xx++) blockedTiles.add(xx + ',' + yy);
       }
       const walkable = (lx, ly, extra) => {
@@ -519,7 +524,7 @@ const WorldModel = (() => {
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => ({ id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }));
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; return o; });
     if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'SKYNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
     if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
     for (const p of doc.props) if (!p.id) p.id = 'p' + (doc._nid++);   // backfill ids for legacy/partial props

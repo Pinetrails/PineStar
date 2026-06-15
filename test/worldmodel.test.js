@@ -240,6 +240,16 @@ const sp2 = WM.deserialize(spDoc);
 A.eq(sp2.props().length, 1, 'deserialize preserves props');
 A.eq(JSON.stringify(sp2.serialize()), JSON.stringify(spDoc), 'props serialize round-trips identically');
 
+/* block:false decor (rugs / wall panels) is drawn but never blocks walkability */
+const sd = WM.create();
+const rugRoom = sd.spawnRoomId(), rz = sd.roomById(rugRoom).rects[0];
+const rug = sd.addProp({ t: 'rug', x: rz.x1 + 2, y: rz.y1 + 2, w: 2, h: 1, block: false });
+A.ok(rug.ok, 'a non-blocking prop places');
+const gd = sd.projectGeometry();
+A.ok(gd.props[0].block === false, 'projected decor carries block:false');
+A.ok(gd.walkable(rz.x1 + 2 - gd.origin.tx, rz.y1 + 2 - gd.origin.ty), 'a rug tile stays walkable (decor never blocks)');
+A.eq(JSON.stringify(WM.deserialize(sd.serialize()).props()[0].block), 'false', 'block:false survives a round-trip');
+
 /* migrate(): legacy doc with no props[] and a partial prop blob is repaired, not crashed */
 A.notThrows(() => {
   const g = WM.deserialize({ schema: 'skynet.station', version: 1,
