@@ -4,6 +4,18 @@
    Supports: preloaded history (resume), and an "awaiting purpose" first-message mode. */
 'use strict';
 
+// VOICE MODE augmentation — appended to the system prompt (per-turn, ephemeral) only when the
+// agent is about to SPEAK a conversational reply. Forces a short, spoken-style answer; the paired
+// text/task turns get NO augmentation, so written replies keep full structure (the whole "voice =
+// laid-back back-and-forth, type = detailed" split is produced by the presence/absence of this block).
+const VOICE_MODE_RULES = "\n\n[VOICE MODE — you're talking out loud, not typing.] Reply the way you'd actually SAY it:"
+  + " 1-3 short sentences, max. Use contractions (you're, gonna, it's, lemme). Plain spoken words only —"
+  + " absolutely NO markdown, asterisks, bullet points, numbered lists, headers, code blocks, emoji, or links;"
+  + " those can't be heard. Don't read out URLs or file paths character-by-character — just say what you did."
+  + " No throat-clearing, no 'As an AI', no 'I'd be happy to', no recapping the question. Sound like a relaxed"
+  + " buddy giving a quick answer across the room. If the real answer is long, give the one-line version out"
+  + " loud and offer to drop the details in chat.";
+
 const Chat = (() => {
   let log, input, statusEl;
   let system = '', name = 'AGENT', activeWs = null, busy = false;
@@ -149,7 +161,13 @@ const Chat = (() => {
     status(isTask ? 'working…' : 'thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to
     // this panel; for talk it speaks the reply as a bubble in the room.
-    const sys = system + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '');
+    // VOICE MODE: when the reply will be SPOKEN (speaker on + conversational), append a per-turn
+    // rule that makes it short & spoken-style. Appended LAST so it wins on format; never baked into
+    // the saved prompt and never sent on text/task turns — so typed/written replies stay detailed.
+    const voiceTurn = !isTask && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    const sys = system
+      + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '')
+      + (voiceTurn ? VOICE_MODE_RULES : '');
 
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton) so the per-stream diff is real
     const ac = new AbortController();

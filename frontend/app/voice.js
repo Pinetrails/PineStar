@@ -279,8 +279,13 @@ const Voice = (() => {
   // let other code (or a future hotkey) retarget the active voice when the workstream's agent changes.
   function setAgent(name) { if (name) activeVoiceId = name; }
 
+  // is the agent going to SPEAK this reply? true when synth is available and the speaker toggle is on.
+  // chat.js uses this to decide whether a conversational turn is "voice mode" (short/casual spoken
+  // reply) vs "type mode" (detailed written reply). Stage 4's hands-free toggle will fold in here too.
+  function isOn() { return !!(synth && speakReplies); }
+
   return {
-    init, speak, setAgent,
+    init, speak, setAgent, isOn,
     startListening, stopListening, toggleListen, stopSpeaking,
     canListen, canSpeak,
     isListening: () => listening, isSpeaking: () => speaking
