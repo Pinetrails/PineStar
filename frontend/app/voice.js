@@ -43,6 +43,7 @@ const Voice = (() => {
   let rearmTimer = null;            // pending mic re-open
   let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
   let sentThisListen = false;       // did the just-finished listen actually send a message?
+  let discarding = false;           // teardown in progress → drop any buffered transcript (don't send)
 
   // a single status seam: prefer Chat.status (it owns #chat-status), fall back to the DOM node.
   function setStatus(s) {
@@ -182,8 +183,10 @@ const Voice = (() => {
       if (v.voice) u.voice = v.voice;
       u.pitch = v.pitch; u.rate = Math.max(0.6, v.rate - 0.12); u.volume = 0.5;   // quieter + slower
       u.onstart = () => onSpeakStart();
-      u.onend = () => onSpeakEnd();
-      u.onerror = () => onSpeakEnd();
+      // if voice mode was switched on WHILE this mutter was playing, toggleVoiceMode couldn't start
+      // the loop (it saw speaking=true) — so kick the loop when the mutter finishes, or it'd hang.
+      u.onend = () => { onSpeakEnd(); maybeRearm(); };
+      u.onerror = () => { onSpeakEnd(); maybeRearm(); };
       synth.speak(u); kickResume(); startWatchdog();
     } catch (_) {}
   }
@@ -199,12 +202,17 @@ const Voice = (() => {
 
   // re-open the mic once the turn is genuinely done: not in a run, not still speaking, not already
   // listening. Whichever finishing event (TTS end / run end) lands last is the one that arms it.
+  // NB: a reply is enqueued via synth.speak() before its `onstart` fires, so chat.js's run-end hook
+  // can land while `speaking` is still false but the utterance is queued. We must also treat a
+  // pending/speaking synth queue as "not done" — otherwise the mic would re-open into the agent's
+  // own voice (echo) or cancel the not-yet-started reply (swallow). onReplyEnded then arms it.
+  function synthBusy() { return !!(synth && (synth.speaking || synth.pending)); }
   function maybeRearm() {
     if (!convoMode || !SR || rearmTimer) return;
-    if (busyNow() || speaking || listening) return;   // not ready — the finishing event will re-call this
+    if (busyNow() || speaking || listening || synthBusy()) return;   // not ready — a finishing event re-calls this
     rearmTimer = setTimeout(() => {
       rearmTimer = null;
-      if (convoMode && !busyNow() && !speaking && !listening) startListening();
+      if (convoMode && !busyNow() && !speaking && !listening && !synthBusy()) startListening();
     }, REARM_DELAY);
   }
 
@@ -230,7 +238,11 @@ const Voice = (() => {
     const was = convoMode;
     convoMode = false;
     clearTimeout(rearmTimer); rearmTimer = null;
-    stopListening(); stopSpeaking();
+    // tear down WITHOUT sending a half-spoken utterance: abort() suppresses the final result, and the
+    // discarding flag drops it even if a final already arrived (else turning off mid-sentence, or a
+    // DISCONNECT, would fire the buffered words at the agent as a brand-new run).
+    if (listening) { discarding = true; sttProvider.abort(); }
+    stopSpeaking();
     reflectMode();
     if (was && !busyNow()) setStatus('online');
   }
@@ -272,7 +284,8 @@ const Voice = (() => {
       rec.onend = () => { cbs.onFinal && cbs.onFinal(finalText.trim()); cbs.onEnd && cbs.onEnd(); rec = null; };
       try { rec.start(); } catch (_) { cbs.onError && cbs.onError('start-failed'); rec = null; }
     },
-    stop() { if (rec) { try { rec.stop(); } catch (_) {} } }
+    stop() { if (rec) { try { rec.stop(); } catch (_) {} } },          // flush + deliver the final result (push-to-talk send)
+    abort() { if (rec) { try { rec.abort(); } catch (_) {} } }          // hard stop, suppress the final result (teardown)
   };
 
   function busyNow() { return typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy(); }
@@ -282,7 +295,7 @@ const Voice = (() => {
     if (busyNow()) { setStatus('busy — wait for the reply'); return; }  // don't talk over a live run
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
-    listening = true; sentThisListen = false; setMicState(true);
+    listening = true; sentThisListen = false; discarding = false; setMicState(true);
     savedStatus = currentStatusText();
     setStatus(convoMode ? 'voice mode — listening…' : 'listening…');
     if (typeof SFX !== 'undefined') SFX.open();
@@ -299,6 +312,7 @@ const Voice = (() => {
   function endListening() {
     if (!listening) return;
     listening = false; setMicState(false);
+    if (discarding) { discarding = false; return; }   // teardown — no retry, no rearm, no status churn
     // hands-free: if this listen heard nothing, keep the loop alive (retry, then go passive).
     if (convoMode && !sentThisListen && !busyNow() && !speaking) { handleEmptyListen(); return; }
     // otherwise restore whatever status was showing before we grabbed the mic (a send already set
@@ -306,16 +320,20 @@ const Voice = (() => {
     if (!busyNow() && !speaking) setStatus(savedStatus || (convoMode ? 'voice mode on' : 'online'));
   }
 
-  // a final transcript: drop it in the box for a beat of visual confirmation, then send as if typed.
+  // a final transcript from the mic. Sends through Chat.send marked { spoken:true } so a genuinely
+  // SPOKEN turn gets the short voice-mode answer — while a TYPED question keeps full written detail.
   function submitTranscript(text) {
+    if (discarding) return;   // teardown in progress — drop the buffered transcript, never send it
     const t = String(text || '').trim();
     if (inputEl) inputEl.value = '';
     if (!t) return;   // heard nothing — endListening() handles the hands-free retry
-    // spoken exit: let the Commander leave voice mode without touching the keyboard.
-    if (convoMode && /^(exit|stop|end|leave|quit)\s+voice(\s+mode)?[.!]?$/i.test(t)) { stopConvo(); return; }
+    // spoken exit: leave voice mode by voice. Loosened so STT variants land ("stop the voice mode",
+    // "turn off voice mode please") while still needing an explicit verb + the word "voice".
+    const norm = t.toLowerCase().replace(/[.!,?\s]+$/, '');
+    if (convoMode && /^(exit|stop|end|leave|quit|turn off)\b.*\bvoice\b/.test(norm)) { stopConvo(); return; }
     sentThisListen = true; emptyStreak = 0;
     if (typeof SFX !== 'undefined') SFX.click();
-    if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t);   // reuses busy/purpose/task logic + cost accounting
+    if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t, { spoken: true });   // reuses busy/purpose/task logic + cost
   }
 
   // mic button: interrupt the agent if it's talking (barge-in), else start/stop a listen. In voice

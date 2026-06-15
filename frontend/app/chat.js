@@ -142,7 +142,8 @@ const Chat = (() => {
 
   // task-vs-chat classification lives in app/classify.js (pure + unit-tested); see Classify.isTaskDirective.
 
-  async function send(text) {
+  async function send(text, opts) {
+    opts = opts || {};   // { spoken } — true when this came from the mic (drives the voice-mode brevity below)
     if (busy) return;
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
@@ -161,10 +162,11 @@ const Chat = (() => {
     status(isTask ? 'working…' : 'thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to
     // this panel; for talk it speaks the reply as a bubble in the room.
-    // VOICE MODE: when the reply will be SPOKEN (speaker on + conversational), append a per-turn
-    // rule that makes it short & spoken-style. Appended LAST so it wins on format; never baked into
-    // the saved prompt and never sent on text/task turns — so typed/written replies stay detailed.
-    const voiceTurn = !isTask && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    // VOICE MODE: only when the Commander actually SPOKE this turn (and the agent will answer aloud)
+    // do we append the short/spoken-style rule. A TYPED conversational question — even with the
+    // speaker on — keeps full written detail (it's just read aloud). Appended LAST so it wins on
+    // format; never baked into the saved prompt and never sent on text/task turns.
+    const voiceTurn = !isTask && !!opts.spoken && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
     const sys = system
       + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '')
       + (voiceTurn ? VOICE_MODE_RULES : '');
