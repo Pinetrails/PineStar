@@ -53,11 +53,25 @@ const World = (() => {
      ever spoken when no real message bubble is live. */
   let novelty = [], seenProps = null, seenBelts = null;
   const NOVELTY_MAX = 4;
-  const CURIO_NEW_PROP = ['what is that?', 'new hardware', 'fresh kit', 'ooh, new toy', 'when did this arrive?'];
-  const CURIO_NEW_BELT = ['a conveyor!', 'cargo line', 'where does this go?', 'belt is live'];
-  const CURIO_WATCH = ['cargo inbound', 'steady flow', 'keep it moving', 'hmm', '...'];
-  const CURIO_STUDY = ['interesting', 'huh.', 'noted.', 'fascinating', 'let me see'];
-  const CURIO_LOOK = ['hm.', 'all quiet', 'nice station', 'cozy in here', '...'];
+  let lastSelfTalk = -1e9;          // global self-talk cooldown — bubbles stay rare, honest thoughts (never a monologue)
+  const seenCount = new Map();      // habituation: how many times a prop-id / belt-tile has been studied (novel -> familiar)
+  /* First-person self-talk — ONE conscious mind narrating its OWN state to itself. Never crew/colony
+     banter (a lie for a solo agent). Every line is gated by curiositySay (no live bubble + global
+     cooldown + the chatty trait), so they read as rare honest thoughts tied to the true inner state. */
+  const CURIO_NEW_PROP = ['what is that?', 'thats new', 'when did this arrive?', 'let me see this', 'new hardware'];
+  const CURIO_NEW_BELT = ['a conveyor!', 'where does this go?', 'a new line', 'that wasnt here before'];
+  const CURIO_WATCH = ['cargo moving', 'busy line today', 'steady flow', 'there it goes', 'keep it moving'];
+  const CURIO_STUDY = ['how does this run', 'let me look closer', 'curious', 'noted', 'interesting'];
+  const CURIO_LOOK = ['hm.', 'all quiet', 'good station', '...', 'just taking it in'];
+  const SELF_REST = ['need a breather', 'feet up for a bit', 'recharge', 'easy for a minute', 'resting the circuits'];
+  const SELF_STIM = ['too quiet', 'something to do', 'restless', 'let me find something', 'need a spark'];
+  const SELF_TEND = ['anything for me?', 'standing by', 'awaiting orders', 'still here, Commander', 'ready when you are'];
+  const SELF_ONDUTY = ['on it', 'parsing', 'let me think', 'working it', 'processing'];
+  const SELF_QUIET = ['...', 'cycles to spare', 'so quiet', 'just me and the stars', 'standing by'];
+  const SELF_CONTEMPLATE = ['quiet out there', 'so much void', 'just... processing', 'the stars again', 'endless out there'];
+  const SELF_DISPATCH = ['sent', 'delivered', 'thats away', 'reply is out', 'done and gone'];
+  const SELF_GREET = ['yes, Commander?', 'still here', 'watching', 'at your service', 'go ahead'];
+  const SELF_ACK = ['hm?', 'yes?', 'still here', 'watching'];
   const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
   const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
 
@@ -147,7 +161,7 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
+        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
@@ -213,9 +227,26 @@ const World = (() => {
       // seat-on-couch: logical pos stays on the approach tile, but it RENDERS at seat{Px,Py} ON the couch
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       // awareness & curiosity: head-turn glance (drawBody reads agent.glance), study/observe dwell, fidget + notice cooldowns
-      glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0
+      glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
+      // INNER LIFE: a fixed temperament + three slow-draining needs that drive WHICH goal it pursues
+      pers: makePersonality(a.id),
+      needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
+      lastTaskAt: 0, thinkUntil: 0, settleUntil: 0, trackUntil: 0   // machine-state timers (think-before-work, settle-before-typing, downtime, body-track)
     };
     if (geo) placeAgent();
+  }
+
+  /* a stable temperament derived from the agent id (no RNG — same agent feels the same across a session).
+     pace = walk speed; restless = how fast it re-decides + paces; curious/homebody/chatty bias the idle menu + self-talk. */
+  function makePersonality(id) {
+    const h = s => U.hash(id + ':' + s);
+    return {
+      pace: 0.88 + (h('pace') % 30) / 100,       // 0.88 .. 1.17
+      restless: 0.55 + (h('restless') % 90) / 100, // 0.55 .. 1.44
+      curious: 0.45 + (h('curious') % 75) / 100,  // 0.45 .. 1.19
+      homebody: 0.45 + (h('homebody') % 75) / 100, // 0.45 .. 1.19
+      chatty: 0.55 + (h('chatty') % 70) / 100,    // 0.55 .. 1.24
+    };
   }
 
   function init(canvas) {
@@ -240,6 +271,8 @@ const World = (() => {
       }
       const wp = toWorld(ev);
       const hit = agentHit(wp);
+      // rising edge: it notices the Commander's cursor land on it and turns to meet you
+      if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
       if (hit !== hoverAgent) hoverAgent = hit;
       cv.style.cursor = (hit || arcadeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets are clickable too
     });
@@ -247,7 +280,10 @@ const World = (() => {
       const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
       if (wasDrag) return;
       const wp = toWorld(ev);
-      if (agentHit(wp)) { if (onClick) onClick(); return; }
+      if (agentHit(wp)) {
+        if (agent && activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
+        if (onClick) onClick(); return;
+      }
       const arc = arcadeAt(wp);
       if (arc && onArcade) onArcade(arc);
     });
@@ -345,21 +381,24 @@ const World = (() => {
   }
   function arrive(now) {
     agent.pathPts = null; agent.target = null;
-    if (agent.goal === 'work') { agent.sitting = true; agent.working = true; agent.dir = 'north'; agent.state = 'idle'; }
-    else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); takeSeat(); }
+    if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
+    else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); takeSeat(); if (agent.useSit && agent.needs.rest < 35) curiositySay(SELF_REST, 0.4, now); }
     else if (agent.goal === 'lounge') {
       // settled ON the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
       agent.sitting = true; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle';
       agent.useUntil = now + U.irnd(18000, 30000); agent.glanceCd = 0; agent.nextFidget = now + U.irnd(1500, 3500);
-      takeSeat(); curiositySay(CURIO_WATCH, 0.4, now);
+      takeSeat(); curiositySay(agent.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
-    else if (agent.goal === 'inspect' || agent.goal === 'watch') {
-      // reached the thing — stand, face it, and observe for a spell (belts hold the gaze longer)
+    else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze') {
+      // reached the thing — stand, face it, observe for a spell. Familiar things hold the gaze less (habituation).
       agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
-      agent.studyUntil = now + (agent.goal === 'watch' ? U.irnd(6000, 14000) : U.irnd(2600, 6000));
       agent.glanceCd = 0; agent.nextFidget = now + U.irnd(700, 1600);
-      if (agent.goal === 'watch') curiositySay(CURIO_WATCH, 0.5, now);
-      else curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, 0.65, now);
+      const fam = agent.studyKey ? (seenCount.get(agent.studyKey) || 0) : 0, famK = 1 / (1 + fam * 0.8);
+      if (agent.studyKey) seenCount.set(agent.studyKey, fam + 1);
+      if (agent.goal === 'tend') { agent.studyUntil = now + U.irnd(3500, 8000); curiositySay(agent.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
+      else if (agent.goal === 'gaze') { agent.studyUntil = now + U.irnd(4000, 8000); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
+      else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); }
+      else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); }
     }
     else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 2600); }
   }
@@ -540,6 +579,7 @@ const World = (() => {
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra });
       if (a && setPathTo({ x: a.tx, y: a.ty })) {
         agent.goal = 'inspect'; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = true;
+        agent.studyKey = n.kind === 'belt' ? ('belt:' + n.tx + ',' + n.ty) : n.pid;
         if (!agent.target) arrive(now);
         return true;
       }
@@ -551,15 +591,16 @@ const World = (() => {
   function planPOI(now) {
     const cands = [];
     const belts = (geo && geo.belts) || [];
-    if (belts.length) { const b = belts[U.irnd(0, belts.length - 1)]; cands.push({ kind: 'watch', foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
+    if (belts.length) { const b = belts[U.irnd(0, belts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
-    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks; });   // non-leisure kit (leisure is planProp's job)
-    if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', foot: p, extra: blocked }); }
+    // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation)
+    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4; });
+    if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', key: p.id, foot: p, extra: blocked }); }
     if (cands.length === 2 && U.chance(0.5)) cands.reverse();
     for (const c of cands) {
       const a = PropAnchor.deriveAnchor(c.foot, geo, { approach: 'auto', extra: c.extra });
       if (a && setPathTo({ x: a.tx, y: a.ty })) {
-        agent.goal = c.kind; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = false;
+        agent.goal = c.kind; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = false; agent.studyKey = c.key;
         if (!agent.target) arrive(now);
         return true;
       }
@@ -575,14 +616,78 @@ const World = (() => {
     if (U.chance(0.15)) curiositySay(CURIO_LOOK, 1, now);
   }
 
-  // the idle menu: new things first, then lounging / studying-a-machine / watching-a-belt, and
-  // failing those (or by default) mostly stroll — but pause to look around a fair bit too.
+  /* ---------- inner life: needs + temperament decide WHICH goal it pursues ---------- */
+  // is the agent loitering near its desk (its tether to the Commander)?
+  function nearDesk() {
+    if (!seat) return false;
+    const c = tileOf(agent.px, agent.py);
+    return Math.abs(c.x - seat.tx) <= 2 && Math.abs(c.y - seat.ty) <= 2;
+  }
+  // three slow meters decay/refill by what the agent is doing; clamped 0..100. O(1), every tick.
+  function tickNeeds(dt) {
+    const s = dt / 1000, n = agent.needs;
+    const sitLeisure = agent.goal === 'lounge' || (agent.goal === 'use' && agent.sitting);
+    const observing = agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'lounge' || agent.goal === 'gaze';
+    n.rest = U.clamp(n.rest + (agent.working ? -2.1 : sitLeisure ? 3.4 : 0.35) * s, 0, 100);
+    n.stim = U.clamp(n.stim + (observing ? 2.6 : agent.working ? 0.6 : agent.state === 'walk' ? 0.2 : -1.25) * s, 0, 100);
+    n.social = U.clamp(n.social + (activity === 'task' || activity === 'talk' ? 2.2 : (agent.goal === 'tend' || nearDesk()) ? 1.6 : -0.45) * s, 0, 100);
+  }
+  // lonely → drift to a tile by the desk and face south (its window to the Commander); refills social
+  function planSeekDesk(now) {
+    if (!seat) return false;
+    const spots = [[seat.tx, seat.ty + 1], [seat.tx - 1, seat.ty], [seat.tx + 1, seat.ty], [seat.tx, seat.ty]];
+    for (const [tx, ty] of spots) {
+      if (!geo.walkable(tx, ty, blocked)) continue;
+      if (setPathTo({ x: tx, y: ty })) { agent.goal = 'tend'; agent.useFace = 'south'; agent.usingProp = null; agent.studyKey = null; if (!agent.target) arrive(now); return true; }
+    }
+    return false;
+  }
+  // restless → short back-and-forth hops near the current tile (paces in place instead of strolling far off)
+  function pace(now) {
+    const cur = tileOf(agent.px, agent.py), dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (let i = 0; i < 5; i++) {
+      const d = dirs[U.irnd(0, 3)], step = U.irnd(1, 2), tx = cur.x + d[0] * step, ty = cur.y + d[1] * step;
+      if (geo.walkable(tx, ty, blocked) && setPathTo({ x: tx, y: ty })) { agent.goal = null; curiositySay(SELF_STIM, 0.4, now); return true; }
+    }
+    return false;
+  }
+  // deep downtime → walk to the station edge and contemplate the void (faces outward, long quiet dwell)
+  function planGazeOut(now) {
+    if (!geo || !geo.allRects || !geo.allRects.length) return false;
+    const cx = geo.COLS / 2, cy = geo.ROWS / 2, cands = [];
+    for (const r of geo.allRects) {
+      cands.push({ tx: r.x1, ty: (r.y1 + r.y2) >> 1, face: 'west' }); cands.push({ tx: r.x2, ty: (r.y1 + r.y2) >> 1, face: 'east' });
+      cands.push({ tx: (r.x1 + r.x2) >> 1, ty: r.y1, face: 'north' }); cands.push({ tx: (r.x1 + r.x2) >> 1, ty: r.y2, face: 'south' });
+    }
+    cands.sort((a, b) => ((b.tx - cx) ** 2 + (b.ty - cy) ** 2) - ((a.tx - cx) ** 2 + (a.ty - cy) ** 2));   // furthest-out first
+    for (const c of cands) {
+      if (geo.walkable(c.tx, c.ty, blocked) && setPathTo({ x: c.tx, y: c.ty })) { agent.goal = 'gaze'; agent.useFace = c.face; agent.usingProp = null; agent.studyKey = null; if (!agent.target) arrive(now); return true; }
+    }
+    return false;
+  }
+
+  // THE WANT ENGINE — replaces the flat dice roll. Whichever drive is most unmet (tilted by temperament
+  // + how long since real work) leads; novelty is the reflex that always interrupts. The SAME planners
+  // run, but now there is a legible reason behind every move so it stops reading as aimless.
   function decideIdle(now) {
-    if (novelty.length && planInspect(now)) return;
-    const r = U.irnd(0, 99);
-    if (r < 30 && planProp(now)) return;
-    if (r < 55 && planPOI(now)) return;
-    if (U.chance(0.4)) lookAround(now); else wander(now);
+    if (novelty.length && planInspect(now)) return;   // curiosity reflex: a fresh placement always wins
+    const n = agent.needs, p = agent.pers, idleAge = now - (agent.lastTaskAt || now);
+    const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody);
+    const wStim = (100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless;   // boredom climbs with downtime
+    const wSoc = (100 - n.social);
+    const top = Math.max(wRest, wStim, wSoc);
+    if (top < 28) { if (U.chance(0.5)) lookAround(now); else wander(now); return; }   // content -> light ambient life
+    if (top === wRest) { if (planProp(now)) return; }                                  // tired -> lounge / couch
+    else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
+    else {                                                                             // bored / restless
+      if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
+      if (idleAge > 30000 && U.chance(0.35) && planGazeOut(now)) return;               //   long quiet -> contemplate the void
+      if (p.restless > 1.0 && pace(now)) return;                                       //   antsy -> pace in place
+    }
+    // graceful fallbacks so it never freezes
+    if (U.chance(0.45 * p.curious) && planPOI(now)) return;
+    if (U.chance(0.4 * p.homebody) && planProp(now)) return;
+    if (U.chance(0.45)) lookAround(now); else wander(now);
   }
 
   // head-turns that sell "alive": track passing cargo, fidget at the desk, glance at new kit, look around
@@ -614,23 +719,30 @@ const World = (() => {
       if (now > (agent.nextFidget || 0)) { setGlance(U.pick(['east', 'west', 'south']), U.irnd(500, 950), now); agent.nextFidget = now + U.irnd(9000, 20000); agent.glanceCd = now + 3000; }
       return;
     }
-    // a box trundles past an idle agent → a quick look over
-    if (U.chance(0.6)) { const box = nearestBox(); if (box && box.d < 46) { setGlance(dirToward(agent.px, agent.py, box.x, box.y), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(3500, 6000); return; } }
-    // idle / studying: occasional ambient look around
-    if ((agent.goal === 'inspect' || agent.goal == null) && U.chance(0.5)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(2500, 5000); }
+    // a box trundles past an idle agent → turn the WHOLE BODY to track it (held by trackUntil in tick), not just the eyes
+    if (U.chance(0.6)) { const box = nearestBox(); if (box && box.d < 56) { const bd = dirToward(agent.px, agent.py, box.x, box.y); setGlance(bd, U.irnd(500, 1000), now); agent.dir = bd; agent.trackUntil = now + U.irnd(1200, 2600); agent.glanceCd = now + U.irnd(3000, 5500); return; } }
+    // idle / studying / tending / gazing: occasional ambient look around
+    if ((agent.goal === 'inspect' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal == null) && U.chance(0.5)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(2500, 5000); }
   }
 
   // a short curiosity remark — only when nothing real is on screen, and only sometimes
   function curiositySay(lines, prob, now) {
     if (!lines || !lines.length || !agent) return;
-    if (agent.say && agent.say.until > now) return;   // never stomp a live (real) message
-    if (!U.chance(prob)) return;
-    say(U.pick(lines));
+    if (agent.say && agent.say.until > now) return;        // never stomp a live (real) message
+    if (now - lastSelfTalk < 6500) return;                 // global cooldown: thoughts are rare, not a running monologue
+    if (!U.chance(prob * (agent.pers ? agent.pers.chatty : 1))) return;
+    say(U.pick(lines)); lastSelfTalk = now;
   }
 
   function tick(dt, now) {
     if (!agent || agent.unplaced || !geo || awakeFrozen) return;   // frozen during the awakening: the newborn holds still, facing the Commander
-    const SPEED = 34;
+    if (!agent.lastTaskAt) agent.lastTaskAt = now;                 // anchor downtime at the first live tick
+    tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
+    const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
+    // settle: a beat of sitting (loading context) before the screens light + typing latches on
+    if (agent.goal === 'work' && !agent.working && agent.settleUntil && now >= agent.settleUntil) { agent.working = true; agent.settleUntil = 0; }
+    // body-track: keep the torso turned to a tracked box for a beat after the glance (whole-body attention, eased by glanceCd)
+    if (agent.goal == null && agent.state !== 'walk' && agent.trackUntil > now) { const box = nearestBox(); if (box && box.d < 90) agent.dir = dirToward(agent.px, agent.py, box.x, box.y); }
     // self-heal a stuck walker: the walk pose with nowhere to go (target + path both gone —
     // e.g. a REFIT re-bake cleared the in-flight path, or a path came back empty). The idle
     // re-decision below is gated on state !== 'walk', so without this the legs cycle in place
@@ -638,12 +750,13 @@ const World = (() => {
     if (agent.state === 'walk' && !agent.target && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) {
       agent.state = 'idle'; agent.idleUntil = 0;
     }
+    // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
-      releaseSeat(); agent.goal = 'work'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null;   // summoned: get up off any prop and head to the desk
-      if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { /* already at seat or unreachable */ if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } }
+      if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
+      else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } } }
     }
-    if (activity !== 'task' && agent.goal === 'work') {
-      agent.goal = null; agent.sitting = false; agent.working = false; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200;
+    if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon')) {
+      agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now;   // just finished real work → relaxed, downtime clock resets
     }
     // freshly placed thing + free to roam → divert and go check it out (even mid-stroll), throttled
     if (activity === 'idle' && novelty.length && agent.goal === null && !agent.working && !agent.sitting && now >= (agent.noticeCd || 0)) {
@@ -667,9 +780,9 @@ const World = (() => {
     } else if (agent.goal === 'lounge') {
       // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
       if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
-    } else if (agent.goal === 'inspect' || agent.goal === 'watch') {
-      // observing a machine / belt: hold the gaze until the study timer ends (maybeGlance animates it)
-      if (now >= agent.studyUntil) { agent.goal = null; agent.usingProp = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500); }
+    } else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze') {
+      // observing / tending the desk / gazing into the void: hold until the dwell ends (maybeGlance animates it), then re-decide
+      if (now >= agent.studyUntil) { agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500); }
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
       decideIdle(now);
     }
@@ -949,6 +1062,13 @@ const World = (() => {
     if (!convey) return;
     const t = intakeTile();
     if (t) convey.enqueueAt(t.x, t.y, payload || {});
+    // ANTICIPATE: an idle agent senses work on the line and perks up toward the dock before any summon lands
+    if (agent && !agent.unplaced && activity === 'idle' && !agent.working) {
+      const intake = geo && geo.props && geo.props.find(q => q.t === 'intake');
+      if (intake) setGlance(dirToward(agent.px, agent.py, (intake.x + 0.5) * T, (intake.y + 0.5) * T), 1100, fnow);
+      curiositySay(['incoming?', 'work inbound', 'something is coming', 'heads up'], 0.6, fnow);
+      if (agent.goal == null) agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 200);
+    }
   }
   // the agent's reply heads out — enqueue an OUTBOUND box at a desk-adjacent belt tile, riding to the OUTBOX
   function outboundMessage(payload) {
@@ -959,7 +1079,15 @@ const World = (() => {
   // a payload box reached an open end: inbound -> the agent receives it; outbound -> the OUTBOX dispatches it
   function onWorkitemDeliver(bx) {
     const p = (bx && bx.payload) || {};
-    if (p.outbound) { lastOutboxFlash = fnow; return; }   // reply reached the OUTBOX -> flash the chute
+    if (p.outbound) {
+      lastOutboxFlash = fnow;   // reply reached the OUTBOX -> flash the chute
+      if (agent && !agent.unplaced && activity === 'idle') {   // EXHALE: watch the reply leave, satisfied, then relax (downtime clock resets)
+        const ob = geo && geo.props && geo.props.find(q => q.t === 'outbox');
+        if (ob) setGlance(dirToward(agent.px, agent.py, (ob.x + 0.5) * T, (ob.y + 0.5) * T), 1100, fnow);
+        curiositySay(SELF_DISPATCH, 0.7, fnow); agent.lastTaskAt = fnow;
+      }
+      return;
+    }
     say('received: ' + (p.preview || 'message'));
     wakeIn();
   }
