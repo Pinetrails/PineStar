@@ -478,7 +478,7 @@ const World = (() => {
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
-      if (c.couch) { if (planCouchSit(now, c.couch, null, 'south')) return true; continue; }   // lone couch → sit on it, facing out
+      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north')) return true; continue; }   // lone couch → sit on it facing UP (back to the viewer)
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         agent.goal = 'use'; agent.usingProp = c.id; agent.useFace = c.a.face; agent.useSit = c.a.sit;
         if (!agent.target) arrive(now);   // already standing on the approach tile
