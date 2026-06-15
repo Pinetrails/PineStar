@@ -526,7 +526,10 @@ const World = (() => {
     if (typeof Voice !== 'undefined'
         && ((Voice.isListening && Voice.isListening()) || (Voice.isSpeaking && Voice.isSpeaking()))) return;
     if (!U.chance(prob)) return;
-    say(U.pick(lines), { ambient: true });
+    // let the active persona flavor the remark (gremlin vs old-salt say different things); the SAME line
+    // drives both the bubble and the spoken aside, so caption and voice stay in sync.
+    const line = (typeof Voice !== 'undefined' && Voice.ambientLine) ? Voice.ambientLine(lines) : U.pick(lines);
+    say(line, { ambient: true });
   }
 
   function tick(dt, now) {

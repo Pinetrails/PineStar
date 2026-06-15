@@ -352,6 +352,17 @@ const Voice = (() => {
     endReply(maybeRearm);
   }
 
+  // pick an in-character ambient line for the active persona (so the gremlin and the old-salt don't both
+  // mutter a flat "noted."). Falls back to the generic pool. world.js uses the SAME returned line for the
+  // bubble AND the spoken aside, so caption and voice always match.
+  function ambientLine(fallback) {
+    try {
+      const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
+      if (p && p.ambientLines && p.ambientLines.length && Math.random() < 0.65) return p.ambientLines[(Math.random() * p.ambientLines.length) | 0];
+    } catch (_) {}
+    return (fallback && fallback.length) ? fallback[(Math.random() * fallback.length) | 0] : '';
+  }
+
   /* ======================================================================
      HANDS-FREE VOICE MODE — the self-driving listen → send → speak → listen loop
      ====================================================================== */
@@ -469,7 +480,19 @@ const Voice = (() => {
     sttProvider.start({
       onInterim: t => { if (inputEl) inputEl.value = t; },
       onFinal: text => { submitTranscript(text); },
-      onError: msg => { endListening(); if (msg !== 'no-speech' && msg !== 'aborted') setStatus('mic: ' + msg); },
+      onError: msg => {
+        // a DENIED mic is a hard stop, not a recoverable hiccup: don't silently retry/re-arm into a mic
+        // that can never open — drop hands-free and tell the user the real problem + how to fix it.
+        if (msg === 'not-allowed' || msg === 'service-not-allowed') {
+          listening = false; setMicState(false);
+          clearTimeout(rearmTimer); rearmTimer = null;
+          stopConvo();
+          setStatus('mic blocked — allow microphone access in your browser, then click 🎤');
+          return;
+        }
+        endListening();
+        if (msg !== 'no-speech' && msg !== 'aborted') setStatus('mic: ' + msg);
+      },
       onEnd: () => { endListening(); }
     });
   }
@@ -595,7 +618,7 @@ const Voice = (() => {
   function isOn() { return !!(synth && speakReplies); }
 
   return {
-    init, speak, speakChunk, endReply, mutter, setAgent, isOn,
+    init, speak, speakChunk, endReply, mutter, ambientLine, setAgent, isOn,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak, personaId: () => activePersonaId,
