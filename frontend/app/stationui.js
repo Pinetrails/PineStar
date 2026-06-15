@@ -24,7 +24,7 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true }; }
+  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true }; }
   function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [] }; }
   function load() {
     try {
@@ -50,6 +50,7 @@ const StationUI = (() => {
     document.body.classList.toggle('no-scan', !s.scanlines);
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
+    if (typeof MUSIC === 'object') MUSIC.on = (s.music !== false);   // default-on adaptive score; arms on first gesture
   }
 
   /* ---------- time ---------- */
@@ -631,6 +632,7 @@ const StationUI = (() => {
       '<label class="set-row"><input type="checkbox" id="set-scan" ' + (s.scanlines ? 'checked' : '') + '> CRT SCANLINES</label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO</label>' +
+      '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">SKYNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
@@ -641,7 +643,7 @@ const StationUI = (() => {
       body.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
     }));
     const bind = (id, key) => body.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
-    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
     const clr = body.querySelector('#set-clear');
     clr.addEventListener('click', () => {
