@@ -105,11 +105,12 @@
   </div>
 
   <aside id="chat-panel">
-    <h3>▮ COMMS<span class="h3-right"><span class="ws-cost" id="ws-cost"></span><span class="dim" id="chat-status">offline</span></span></h3>
+    <h3>▮ COMMS<span class="h3-right"><button id="voice-toggle" class="voice-toggle" title="agent voice">🔊</button><span class="ws-cost" id="ws-cost"></span><span class="dim" id="chat-status">offline</span></span></h3>
     <div id="chat-log" class="scrolly"></div>
     <div id="chat-inputrow">
       <span class="prompt">&gt;</span>
       <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off">
+      <button id="chat-mic" class="mic-btn" title="push to talk">🎤</button>
     </div>
   </aside>
 
@@ -142,6 +143,7 @@
 <script src="app/classify.js"></script>
 <script src="app/workstreams.js"></script>
 <script src="app/chat.js"></script>
+<script src="app/voice.js"></script>
 <script src="app/stationui.js"></script>
 <script src="app/worldmodel.js"></script>
 <script src="app/stationbake.js"></script>

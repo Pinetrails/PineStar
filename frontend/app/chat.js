@@ -182,7 +182,9 @@ const Chat = (() => {
         if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
       } else {
         ws.history.push({ role: 'assistant', content: reply || acc });
-        out.done(); if (!isTask) World.say(reply || acc);
+        out.done();
+        // a conversational reply: the agent shows it as a room bubble AND speaks it aloud (per-agent voice).
+        if (!isTask) { World.say(reply || acc); if (typeof Voice !== 'undefined') Voice.speak(reply || acc, name); }
         // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
         if (endReason && endReason !== 'done') {
           toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
@@ -219,5 +221,5 @@ const Chat = (() => {
     if (currentRunId) Harness.cancel(currentRunId);
   }
 
-  return { init, load, send, localLine, setSystem, getHistory, abort, isBusy };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy };
 })();
