@@ -594,7 +594,10 @@ async function handleTts(req, res) {
   try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
   catch (e) { return fallback('bad json'); }
   const key = String((body && body.key) || '').trim();
-  const text = String((body && body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+  let text = String((body && body.text) || '').replace(/\s+/g, ' ').trim();
+  // backstop cap (the client already segments to <1000): if it ever overruns, cut back to the last
+  // sentence boundary within the window rather than chopping mid-word.
+  if (text.length > 1200) { const head = text.slice(0, 1200); const m = head.match(/[\s\S]*[.!?]["')\]]?(?=\s|$)/); text = (m && m[0].length > 600 ? m[0] : head).trim(); }
   const model = String((body && body.model) || TTS_DEFAULT_MODEL).trim();
   const voice = String((body && body.voice) || 'Umbriel').trim();
   if (!text) return fallback('no text');
@@ -636,12 +639,16 @@ async function handleTts(req, res) {
 
   // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
   let outType = 'audio/wav', ext = 'wav';
-  if (/pcm/.test(ct) || (!/mpeg|mp3|wav|ogg/.test(ct))) {
+  if (/pcm|octet-stream/.test(ct) || /rate=|channels=/.test(ct)) {
     const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
     const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
     buf = pcmToWav(buf, rate, channels);
   } else if (/mpeg|mp3/.test(ct)) { outType = 'audio/mpeg'; ext = 'mp3'; }
   else if (/wav/.test(ct)) { outType = 'audio/wav'; ext = 'wav'; }
+  else if (/ogg/.test(ct)) { outType = 'audio/ogg'; ext = 'ogg'; }
+  // anything else (e.g. a 200 with a JSON error body, or an unexpected codec) is NOT silently wrapped as
+  // WAV — that would ship a corrupt blob the browser fails to decode into silence. Fall back cleanly.
+  else { return fallback('unexpected content-type: ' + ct); }
 
   try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + ext)); } catch (_) {}
   res.writeHead(200, { 'Content-Type': outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });

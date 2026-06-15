@@ -41,7 +41,6 @@ const Voice = (() => {
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let activePersonaId = 'worker-homie';   // drives the in-character task acknowledgments
   let listening = false, speaking = false, savedStatus = '';
-  let pendingSpeech = false;        // a neural TTS request is in flight / about to play (covers the fetch gap)
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open
   let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
@@ -102,10 +101,8 @@ const Voice = (() => {
     return { voice, pitch, rate };
   }
 
-  function onSpeakStart() { speaking = true; setSpeaking(true); }
-  // clears pendingSpeech FIRST (before the speaking guard) so the hands-free loop never wedges even if
-  // a neural attempt ended before any audio actually started.
-  function onSpeakEnd() { pendingSpeech = false; if (!speaking) return; speaking = false; setSpeaking(false); }
+  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); }
+  function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); }
 
   /* ---- web-speech (browser) FALLBACK -----------------------------------------------------------
      The built-in speechSynthesis voices, used when neural TTS has no key / errors / is offline.
@@ -147,12 +144,60 @@ const Voice = (() => {
      browser already uses) and plays the returned mp3. Any failure (no key / error / offline) falls
      straight back to the browser voice, so the worst case is exactly the Phase-1 behavior. */
   const TTS_MODEL = 'google/gemini-3.1-flash-tts-preview';
-  let ttsDisabled = false;   // flip true once we learn there's no usable key — skip the round-trip after that
+  let ttsDisabled = false;        // latched once we learn there's no usable key — skip the round-trip after that
+  let neuralColdUntil = 0;        // after a transient neural error, prefer the browser voice until this time (ms)
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
   function ttsConfig() {
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
     return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0 };
   }
+
+  /* text → speakable: strip what TTS would otherwise read LITERALLY (markdown, emoji, URLs/paths, and
+     ALL-CAPS names it'd spell out letter-by-letter). VOICE_MODE_RULES only ASKS the model to avoid these;
+     this is the enforcement the prompt can't guarantee. Pure + cheap; runs on every spoken line. */
+  function speakable(s) {
+    s = String(s || '');
+    s = s.replace(/```[\s\S]*?```/g, ' ');                          // code fences
+    s = s.replace(/`([^`]+)`/g, '$1');                              // inline code
+    s = s.replace(/!?\[([^\]]*)\]\(([^)]+)\)/g, '$1');              // [label](url) / ![alt](url) → label
+    s = s.replace(/https?:\/\/\S+/g, 'a link');                     // bare URLs
+    s = s.replace(/(^|\s)[~.]?[\/\\][\w./\\-]+/g, '$1that file');   // file paths → "that file"
+    s = s.replace(/^#{1,6}\s*/gm, '');                              // headers
+    s = s.replace(/^\s*[-*+]\s+/gm, '');                            // bullet markers
+    s = s.replace(/^\s*\d+\.\s+/gm, '');                            // numbered-list markers
+    s = s.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/_([^_]+)_/g, '$1'); // emphasis
+    s = s.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️]/gu, ' '); // emoji/arrows
+    s = s.replace(/\b([A-Z]{4,})\b/g, m => m[0] + m.slice(1).toLowerCase()); // ULTRON → Ultron (keep AI/OK/API)
+    return s.replace(/\s+/g, ' ').trim();
+  }
+
+  /* duck the game SFX while the agent talks so its voice isn't fought by station blips. SFX.vol is a
+     plain master multiplier; save it once on the first chunk and restore when the WHOLE reply ends
+     (not per-chunk, so the bed doesn't pump between sentences). Idempotent + try/guarded. */
+  let _duckSaved = null;
+  function duckSfx(on) {
+    try {
+      if (typeof SFX === 'undefined') return;
+      if (on) { if (_duckSaved == null) { _duckSaved = SFX.vol; SFX.vol = SFX.vol * 0.28; } }
+      else if (_duckSaved != null) { SFX.vol = _duckSaved; _duckSaved = null; }
+    } catch (_) {}
+  }
+
+  /* split one utterance that's too long for a single synth call, keeping each piece under the sidecar's
+     1200-char cap — so a long reply is spoken IN FULL instead of guillotined mid-word. */
+  function splitForTts(t, max) {
+    if (t.length <= max) return [t];
+    const out = [], parts = t.match(/[^.!?…]+[.!?…]+|\S[^.!?…]*$/g) || [t];
+    let cur = '';
+    for (const p of parts) {
+      let s = p;
+      while (s.length > max) { out.push(s.slice(0, max).trim()); s = s.slice(max); }
+      if ((cur + s).length > max) { if (cur.trim()) out.push(cur.trim()); cur = s; } else cur += s;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  }
+
   let currentAudio = null;
   function stopAudio() { if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; } }
   // play an audio blob (mp3/wav), wiring start/end into the same speaking-state + loop hooks as the
@@ -168,61 +213,143 @@ const Voice = (() => {
       a.volume = (volume == null ? 1 : volume);
       if (rate && rate > 0) a.playbackRate = Math.max(0.5, Math.min(2, rate));
       a.onplay = () => onSpeakStart();
-      a.onended = endOk; a.onerror = endOk;
+      a.onended = endOk;
+      // a decode/format error on the neural blob is exactly the "try the browser voice" case — route
+      // it to onFail (fallback) rather than treating it as a clean finish (which would go SILENT).
+      a.onerror = () => { if (done) return; done = true; cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); };
       const p = a.play();
       if (p && p.catch) p.catch(() => { if (done) return; done = true; cleanup(); onFail ? onFail() : endOk(); });
     } catch (_) { cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); }
   }
-  // the unified output path used by speak()/mutter(): try neural, fall back to browser.
-  function output(text, id, onEnd, opts) {
-    opts = opts || {};
-    const t = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!t) { onEnd && onEnd(); return; }
-    pendingSpeech = true;   // the agent is about to make sound — the loop must wait through the fetch gap
-    const fb = () => webSpeechSpeak(t, id, onEnd, opts);
-    const key = apiKey();
-    if (!key || ttsDisabled) { fb(); return; }
-    const cfg = ttsConfig();
-    const rate = cfg.speed * (opts.speedMul || 1);   // applied client-side via Audio.playbackRate
-    fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, text: t, model: cfg.model, voice: cfg.voice }) })
-      .then(async r => {
-        const ct = r.headers.get('Content-Type') || '';
-        if (r.ok && ct.indexOf('audio') === 0) {
-          const blob = await r.blob();
-          if (blob && blob.size) { playBlob(blob, onEnd, opts.volume, fb, rate); return; }
-        }
-        let reason = 'http ' + r.status;
-        try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
-        if (/no key/i.test(reason)) ttsDisabled = true;
-        console.warn('[voice] neural TTS → browser fallback:', reason);
-        fb();
-      })
-      .catch(e => { console.warn('[voice] neural TTS error:', (e && e.message) || e); fb(); });
+  /* ======================================================================
+     SPEAK QUEUE — stream the reply sentence-by-sentence so the FIRST words play while the rest is still
+     being generated/synthesized (kills the multi-second "dead air" before the agent talks). Chunks are
+     synthesized one-ahead but ALWAYS played in order. `draining` stays true across the whole queue AND
+     every fetch gap, so the hands-free mic can't re-open into the agent's own voice (echo). Bumping
+     `speakSeq` (barge-in / teardown) invalidates every in-flight fetch + queued playback at once. */
+  let jobs = [];          // queued chunks: { text, opts, seq, result(Promise), ac(AbortController) }
+  let playIdx = 0;        // next job to PLAY
+  let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
+  let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
+  let replyClosed = true; // producer has signalled "no more chunks for this reply"
+  let playing = false;    // a chunk is currently playing (serializes playback)
+  let speakSeq = 0;       // monotonic token; bump to invalidate all in-flight speak work
+  let ttsAbort = null;    // controller of the most-recent in-flight fetch
+  let onReplyDone = null; // heartbeat fired ONCE when the whole reply finishes (→ maybeRearm)
+  let lastAudioPath = 'neural';  // 'neural' (stops synchronously) | 'synth' (messier cancel tail)
+  const MAX_INFLIGHT = 2;        // synth at most this many chunks ahead of playback
+  const TTS_CHUNK_MAX = 1000;    // keep each synth call under the sidecar's 1200-char cap
+
+  function resetQueue() { jobs = []; playIdx = 0; synthIdx = 0; draining = false; playing = false; replyClosed = true; }
+
+  // begin synthesizing one job → resolves to {kind:'neural',blob} | {kind:'browser'} | {kind:'skip'}.
+  function startSynth(job) {
+    if (job.result) return;
+    const key = apiKey(), cfg = ttsConfig();
+    if (!key || ttsDisabled || Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'browser' }); return; }
+    const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
+    job.result = fetch('/api/tts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
+      body: JSON.stringify({ key, text: job.text, model: cfg.model, voice: cfg.voice })
+    }).then(async r => {
+      const ct = r.headers.get('Content-Type') || '';
+      if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
+      let reason = 'http ' + r.status;
+      try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
+      if (/no key/i.test(reason)) ttsDisabled = true; else neuralColdUntil = Date.now() + 8000;
+      console.warn('[voice] neural TTS → browser fallback:', reason);
+      return { kind: 'browser' };
+    }).catch(e => {
+      if (e && e.name === 'AbortError') return { kind: 'skip' };   // intentionally cancelled — stay silent
+      console.warn('[voice] neural TTS error:', (e && e.message) || e);
+      neuralColdUntil = Date.now() + 8000;
+      return { kind: 'browser' };
+    });
   }
+  function pumpSynth() { while (synthIdx < jobs.length && (synthIdx - playIdx) < MAX_INFLIGHT) startSynth(jobs[synthIdx++]); }
+
+  function pumpPlay() {
+    if (playing) return;
+    if (playIdx >= jobs.length) { if (replyClosed && synthIdx >= jobs.length) finishReply(); return; }
+    const job = jobs[playIdx];
+    if (!job.result) { startSynth(job); if (synthIdx <= playIdx) synthIdx = playIdx + 1; }
+    playing = true;
+    pumpSynth();   // keep the prefetch window full while this chunk plays
+    job.result.then(res => {
+      if (job.seq !== speakSeq) { playing = false; return; }   // torn down → stop the loop
+      const advance = () => { playing = false; playIdx++; pumpPlay(); };
+      if (res.kind === 'neural') {
+        lastAudioPath = 'neural';
+        const rate = ttsConfig().speed * (job.opts.speedMul || 1);
+        playBlob(res.blob, advance, job.opts.volume, () => browserPlay(job, advance), rate);
+      } else if (res.kind === 'browser') {
+        browserPlay(job, advance);
+      } else { advance(); }   // 'skip' (aborted)
+    });
+  }
+  // browser-synth fallback — fold the persona's pace into the rate so even the OS voice tracks the personality.
+  function browserPlay(job, advance) {
+    lastAudioPath = 'synth';
+    const opts = Object.assign({}, job.opts, { speedMul: (job.opts.speedMul || 1) * ttsConfig().speed });
+    webSpeechSpeak(job.text, activeVoiceId, advance, opts);
+  }
+  function finishReply() {
+    const wasDraining = draining;
+    resetQueue();
+    duckSfx(false);
+    if (wasDraining) { const cb = onReplyDone; onReplyDone = null; if (cb) cb(); }
+  }
+
+  /* ---- PRODUCER API ---- */
+  // push one chunk of an in-progress reply (chat.js streams these sentence-by-sentence). The first chunk
+  // opens a reply; endReply() closes it. mutter() rides the same path as a one-shot quiet aside.
+  function speakChunk(text, voiceId, opts) {
+    if (!speakReplies) return;
+    if (voiceId) activeVoiceId = voiceId;
+    opts = opts || {};
+    const clean = speakable(text);
+    const body = opts.mutter ? clean.slice(0, 80) : clean;
+    if (!body.trim()) return;
+    replyClosed = false; draining = true;
+    for (const seg of splitForTts(body, TTS_CHUNK_MAX)) jobs.push({ text: seg, opts, seq: speakSeq, result: null, ac: null });
+    pumpSynth(); pumpPlay();
+  }
+  // signal end-of-reply; the heartbeat (default: re-arm the hands-free loop) fires once the LAST chunk ends.
+  function endReply(onDone) {
+    onReplyDone = onDone || onReplyEnded;
+    replyClosed = true;
+    if (!draining && jobs.length === 0) { const cb = onReplyDone; onReplyDone = null; if (cb) cb(); return; }
+    pumpPlay();
+  }
+  // public one-shot (non-streaming callers): speak a whole finished reply.
+  function speak(text, voiceId) { speakChunk(text, voiceId); endReply(onReplyEnded); }
+
+  // tear everything down NOW: invalidate in-flight work, abort fetches, cut audio, kill the watchdog.
+  // Used by barge-in, mute, voice-mode-off, and DISCONNECT — the agent must go silent immediately.
   function stopSpeaking() {
+    speakSeq++;
+    for (const j of jobs) { if (j.ac) { try { j.ac.abort(); } catch (_) {} } }
+    if (ttsAbort) { try { ttsAbort.abort(); } catch (_) {} ttsAbort = null; }
     stopAudio();
     if (synth) { try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {} kickResume(); }
+    if (watchdog) { clearInterval(watchdog); watchdog = null; }
+    onReplyDone = null;
+    resetQueue();
+    duckSfx(false);
     onSpeakEnd();
   }
 
-  // public: speak a finished reply. onReplyEnded is the hands-free loop's heartbeat.
-  function speak(text, voiceId) {
-    if (!speakReplies) return;
-    if (voiceId) activeVoiceId = voiceId;
-    output(text, activeVoiceId, onReplyEnded, {});
-  }
-
   // an ambient, muttered aside — station-life flavor (from world.js curiosity remarks), in the agent's
-  // own voice but quieter + a touch slower so it reads as it talking to itself, not answering. It NEVER
-  // cuts off a real reply and stays silent during a live exchange (speaking / listening / a run / a
-  // pending re-arm) so it can't collide with conversation or feed the open mic. maybeRearm on end
-  // covers "voice mode switched on mid-mutter" so the loop never hangs.
+  // own voice but quieter + slower so it reads as talking to itself. It stays silent during any live
+  // exchange (incl. an open hands-free loop) so it can't collide with conversation or feed the open mic;
+  // re-arming on end covers "voice mode toggled on mid-mutter" so the loop never hangs.
   function mutter(text) {
     if (!speakReplies) return;
-    if (speaking || pendingSpeech || currentAudio || listening || rearmTimer || busyNow()) return;
-    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (convoMode || speaking || draining || currentAudio || listening || rearmTimer || busyNow()) return;
+    const t = String(text || '').trim();
     if (!t) return;
-    output(t.slice(0, 80), activeVoiceId, maybeRearm, { volume: 0.5, speedMul: 0.88 });
+    speakChunk(t, activeVoiceId, { volume: 0.5, speedMul: 0.88, mutter: true });
+    endReply(maybeRearm);
   }
 
   /* ======================================================================
@@ -243,14 +370,17 @@ const Voice = (() => {
   // "is the agent making (or about to make) sound?" — covers the browser synth queue, a playing neural
   // audio element, AND the gap while a neural request is in flight (pendingSpeech). The loop must wait
   // through all of it, or the re-opened mic would capture the agent's own voice (echo).
-  function talking() { return speaking || pendingSpeech || !!currentAudio || !!(synth && (synth.speaking || synth.pending)); }
+  // "is the agent making (or about to make) sound?" — `draining` covers the whole streamed reply incl.
+  // every inter-chunk fetch gap, so the loop waits through all of it (no echo, no swallowed chunk).
+  function talking() { return draining || playing || !!currentAudio || !!(synth && (synth.speaking || synth.pending)); }
   function maybeRearm() {
     if (!convoMode || !SR || rearmTimer) return;
     if (busyNow() || listening || talking()) return;   // not ready — a finishing event re-calls this
+    const delay = (lastAudioPath === 'synth') ? REARM_DELAY : 150;   // neural <audio> stops cleanly → shorter guard
     rearmTimer = setTimeout(() => {
       rearmTimer = null;
       if (convoMode && !busyNow() && !listening && !talking()) startListening();
-    }, REARM_DELAY);
+    }, delay);
   }
 
   // turn hands-free on/off. ON jumps straight into listening; agents must be audible to converse,
@@ -377,7 +507,9 @@ const Voice = (() => {
   // mode the loop manages re-opening; clicking just lets you jump in (or resume from passive).
   function onMicClick() {
     if (!SR) return;
-    if (speaking) { stopSpeaking(); setTimeout(() => { if (!busyNow() && !listening) startListening(); }, 150); return; }
+    // barge-in: interrupt whenever the agent is making OR about to make sound (talking() also covers the
+    // neural-fetch gap, where `speaking` is still false but a reply is imminent) — stopSpeaking aborts it.
+    if (talking()) { stopSpeaking(); setTimeout(() => { if (!busyNow() && !listening) startListening(); }, 150); return; }
     if (convoMode) { if (!listening && !busyNow()) startListening(); return; }
     if (listening) stopListening(); else startListening();
   }
@@ -399,9 +531,10 @@ const Voice = (() => {
   }
   function setSpeaking(on) {
     if (toggleBtn) toggleBtn.classList.toggle('speaking', on);
-    // a task acknowledgment speaks while the run is still going — don't clobber the 'working…' status.
+    // a spoken reply streams as several chunks — don't flip back to 'online' between them (draining),
+    // and don't clobber a still-running task's 'working…' status.
     if (on) { if (!busyNow()) setStatus('speaking…'); }
-    else if (!listening && !busyNow()) setStatus('online');
+    else if (!listening && !busyNow() && !draining) setStatus('online');
   }
   function reflectToggle() {
     if (!toggleBtn) return;
@@ -460,10 +593,10 @@ const Voice = (() => {
   function isOn() { return !!(synth && speakReplies); }
 
   return {
-    init, speak, mutter, setAgent, isOn,
+    init, speak, speakChunk, endReply, mutter, setAgent, isOn,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
-    canListen, canSpeak,
+    canListen, canSpeak, personaId: () => activePersonaId,
     isListening: () => listening, isSpeaking: () => speaking, inVoiceMode: () => convoMode
   };
 })();

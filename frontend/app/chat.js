@@ -181,11 +181,29 @@ const Chat = (() => {
     const seenDeliv = {};   // title -> true (one openable row per produced file)
     const out = streamingAgent();
     let acc = '';
+    // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
+    // streams — so it starts talking while the rest is still generating, instead of after the whole reply
+    // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
+    let spokenIdx = 0, finalReply = '';
+    const pushSpeech = (finalize, finalText) => {
+      if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
+      const src = finalize ? (finalText || acc) : acc;
+      const pending = src.slice(spokenIdx);
+      if (!pending) return;
+      if (finalize) { Voice.speakChunk(pending, name); spokenIdx = src.length; return; }
+      // stream only COMPLETE sentence(s): require trailing whitespace after the terminator so a decimal
+      // or abbreviation sitting at the buffer edge ("3." / "e.g.") isn't spoken as a finished sentence.
+      let cut = -1; const re = /[.!?…]+["')\]]?\s/g; let m;
+      while ((m = re.exec(pending)) !== null) cut = re.lastIndex;
+      if (cut < 0) { if (pending.length < 200) return; cut = pending.length; }   // runaway guard
+      const chunk = pending.slice(0, cut);
+      if (chunk.trim()) { Voice.speakChunk(chunk, name); spokenIdx += cut; }
+    };
     try {
       const { text: reply, error, endReason } = await Harness.chat({
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal,
         onRunId: id => { currentRunId = id; if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
-        onToken: d => { acc += d; out.append(d); if (!isTask) World.say(acc); App.refreshUsage(); },
+        onToken: d => { acc += d; out.append(d); if (!isTask) World.say(acc); if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; toolLine('▶ ' + ev.name + ' ' + brief(ev.argsSummary)); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; toolLine((ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''), ev.isError); },
@@ -206,11 +224,11 @@ const Chat = (() => {
       } else {
         ws.history.push({ role: 'assistant', content: reply || acc });
         out.done();
-        // a talk reply shows as a room bubble; the agent SPEAKS its reply on every turn (talk or task)
-        // whenever the 🔊 toggle is on — Voice.speak self-gates on it, so this is how you hear your agent
-        // in a real conversation, not just on the handful of messages the classifier counts as "chat".
+        finalReply = reply || acc;
+        // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
+        // it arrives (onToken → pushSpeech) and flushed in the finally — so the agent starts talking while
+        // the rest is still generating, instead of after the whole reply + a full TTS round-trip.
         if (!isTask) World.say(reply || acc);
-        if (typeof Voice !== 'undefined') Voice.speak(reply || acc, name);
         // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
         if (endReason && endReason !== 'done') {
           toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
@@ -241,6 +259,9 @@ const Chat = (() => {
       App.refreshUsage();
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       if (onTurn) onTurn();
+      // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
+      // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
+      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
       // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
       if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
     }
