@@ -302,6 +302,7 @@ const WorldModel = (() => {
       // floor rugs pass block:false so agents walk over/along them (they're flat decor, not obstacles).
       const prop = { id, t, x, y, w, h };
       if (opts.block === false) prop.block = false;
+      if (typeof opts.agentId === 'string' && opts.agentId) prop.agentId = opts.agentId;   // a BAY binds a belt endpoint to an agent
       doc.props.push(prop);
       emit([{ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 }]);
       return { ok: true, id };
@@ -509,7 +510,7 @@ const WorldModel = (() => {
       const propsLocal = [];
       for (const p of doc.props) {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
-        propsLocal.push({ id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false });
+        propsLocal.push({ id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null });
         if (p.block === false) continue;   // flat decor (rugs / wall panels) never blocks walking
         for (let yy = ly; yy < ly + h; yy++) for (let xx = lx; xx < lx + w; xx++) blockedTiles.add(xx + ',' + yy);
       }
@@ -559,6 +560,25 @@ const WorldModel = (() => {
       };
     }
 
+    /* ---------- agent-bay binding (Phase B: a belt endpoint named for an agent) ---------- */
+    const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (mirrors the sidecar hub)
+    function assignPropAgent(propId, agentId) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      const aid = String(agentId || '').trim();
+      if (aid && !AID_RE.test(aid)) return fail('BAD_AGENT', 'agentId must match ' + AID_RE);
+      snapshot();
+      if (aid) p.agentId = aid; else delete p.agentId;   // empty string unbinds
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, agentId: aid || null };
+    }
+    const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
+    const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
+    function agentRoomId(agentId) {   // the room the agent's BAY sits in — the capability-isolation seam
+      const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
+      return bay ? roomAt(bay.x, bay.y) : null;
+    }
+
     /* ---------- serialize / subscribe ---------- */
     const serialize = () => clone(doc);
     function onChange(fn) { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; }
@@ -572,8 +592,10 @@ const WorldModel = (() => {
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
-      addProp, removeProp, moveProp,
+      addProp, removeProp, moveProp, assignPropAgent,
       setBelt, removeBelt, placeBeltRun,
+      // agent-bay binding queries
+      propsByType, propsByAgent, agentRoomId,
       undo, redo, canUndo, canRedo,
       // projection + io
       projectGeometry, serialize, onChange,
@@ -596,7 +618,7 @@ const WorldModel = (() => {
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }

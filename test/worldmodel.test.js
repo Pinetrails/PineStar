@@ -261,4 +261,38 @@ A.notThrows(() => {
   g.projectGeometry();
 }, 'a legacy/partial props blob is repaired without crashing');
 
+/* ---- Phase B: BAY agent-binding (additive prop.agentId — who runs at this belt endpoint) ---- */
+const sb = WM.create();
+const bz = sb.roomById(sb.spawnRoomId()).rects[0];
+const bayA = sb.addProp({ t: 'bay', x: bz.x1 + 2, y: bz.y1 + 2, w: 2, h: 2, block: false, agentId: 'coder' });
+A.ok(bayA.ok, 'a BAY prop places');
+A.eq(sb.propById(bayA.id).agentId, 'coder', 'addProp carries opts.agentId onto the prop');
+const deskP = sb.addProp({ t: 'desk', x: bz.x1 + 6, y: bz.y1 + 2, w: 2, h: 1 });
+A.eq(sb.propById(deskP.id).agentId, undefined, 'a prop placed without agentId is unbound');
+// projectGeometry carries it into the local frame; unbound props project agentId:null
+const gb = sb.projectGeometry();
+A.eq(gb.props.find(p => p.t === 'bay').agentId, 'coder', 'projectGeometry carries the bay agentId');
+A.eq(gb.props.find(p => p.t === 'desk').agentId, null, 'an unbound prop projects agentId:null');
+// agentId survives a serialize/deserialize round-trip (migrate must preserve it, not whitelist it away)
+const sbDoc = sb.serialize();
+A.eq(WM.deserialize(sbDoc).propById(bayA.id).agentId, 'coder', 'prop.agentId survives serialize/deserialize');
+A.eq(JSON.stringify(WM.deserialize(sbDoc).serialize()), JSON.stringify(sbDoc), 'a doc with bound props round-trips identically');
+// an OLD save (bay with no agentId) loads UNBOUND — backward compatible
+const legacy = WM.deserialize({ schema: 'skynet.station', version: 1,
+  rooms: { rH: { id: 'rH', kind: 'hab', name: 'H', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rH'],
+  props: [{ id: 'p9', t: 'bay', x: 2, y: 2, w: 2, h: 2 }] });
+A.eq(legacy.propById('p9').agentId, undefined, 'a legacy bay (no agentId) loads unbound');
+// assignPropAgent: validate, bind, unbind
+A.ok(!sb.assignPropAgent('nope', 'x').ok, 'assignPropAgent on a missing prop fails');
+A.eq(sb.assignPropAgent(deskP.id, 'bad agent!').error, 'BAD_AGENT', 'assignPropAgent rejects a malformed agentId');
+A.ok(sb.assignPropAgent(deskP.id, 'writer').ok && sb.propById(deskP.id).agentId === 'writer', 'assignPropAgent binds a valid agentId');
+A.ok(sb.assignPropAgent(deskP.id, '').ok && sb.propById(deskP.id).agentId === undefined, 'assignPropAgent with "" unbinds');
+sb.undo();
+A.eq(sb.propById(deskP.id).agentId, 'writer', 'undo restores a prior binding (assignPropAgent snapshots)');
+// queries
+A.eq(sb.propsByType('bay').length, 1, 'propsByType("bay") finds the bay');
+A.eq(sb.propsByAgent('coder')[0].id, bayA.id, 'propsByAgent("coder") finds the coder bay');
+A.eq(sb.agentRoomId('coder'), sb.spawnRoomId(), 'agentRoomId returns the room the coder bay sits in (capability seam)');
+A.eq(sb.agentRoomId('nobody'), null, 'agentRoomId for an unbound agent is null');
+
 A.report('worldmodel');
