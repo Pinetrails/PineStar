@@ -166,6 +166,9 @@ const Chat = (() => {
     // runs, just not as a visible desk trip). Only a SILENT task (speaker off) walks over to work.
     const stance = (isTask && !willSpeak) ? 'task' : 'talk';
     World.setActivity(stance);
+    // in a spoken conversation, gently frame the agent so you can actually see who you're talking to
+    // (no-op if he's already comfortably on-screen; self-cancels the moment you pan/zoom).
+    if (stance === 'talk' && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
     status(stance === 'task' ? 'working…' : 'thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
     // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
@@ -249,6 +252,7 @@ const Chat = (() => {
       // off between turns); otherwise he stands up and goes back to idle station life.
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
       World.setActivity(stayFacing ? 'talk' : 'idle');
+      if (stayFacing && World.focusAgent) World.focusAgent({ soft: true });
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
       if (typeof Workstreams !== 'undefined') {

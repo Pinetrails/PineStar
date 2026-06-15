@@ -28,6 +28,7 @@ const World = (() => {
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
   let drag = null, hoverAgent = false, onClick = null, wakeAt = 0;
+  let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   const stars = [];
 
   /* ---------- agent ---------- */
@@ -215,8 +216,9 @@ const World = (() => {
       const c = toCanvas(ev), wx = (c.x - panX) / scale, wy = (c.y - panY) / scale;
       scale = clampz(scale * Math.exp(-ev.deltaY * 0.0015), MINZ, MAXZ);
       panX = c.x - wx * scale; panY = c.y - wy * scale;
+      camLerp = null;   // the user is driving the camera — stop any in-progress focus ease
     }, { passive: false });
-    cv.addEventListener('mousedown', ev => { const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
+    cv.addEventListener('mousedown', ev => { camLerp = null; const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
     cv.addEventListener('mousemove', ev => {
       if (drag) {
         const c = toCanvas(ev);
@@ -265,6 +267,20 @@ const World = (() => {
   }
 
   /* ---------- camera helpers ---------- */
+  // ease the camera to frame the agent for a one-on-one voice conversation — but only NUDGE: bail if he's
+  // already comfortably on-screen and not tiny, so it never fights a deliberate pan/zoom. Self-cancels on
+  // manual input (wheel/drag clear camLerp). Called from chat.js when a spoken turn begins.
+  function focusAgent(opts) {
+    if (!agent || agent.unplaced || !cache) return;
+    opts = opts || {};
+    const sx = agent.px * scale + panX, sy = agent.py * scale + panY;
+    const margin = 48;
+    const onScreen = sx > margin && sx < cv.width - margin && sy > margin && sy < cv.height - margin;
+    const small = scale < 2.2;
+    if (onScreen && !small && !opts.force) return;
+    const target = clampz(Math.max(scale, 3), MINZ, MAXZ);
+    camLerp = { scale: target, panX: cv.width / 2 - agent.px * target, panY: cv.height * 0.56 - agent.py * target };
+  }
   function fitCamera() {
     if (!cache) return;
     const W = cache.W, H = cache.H;
@@ -465,7 +481,17 @@ const World = (() => {
 
   // head-turns that sell "alive": track passing cargo, fidget at the desk, glance at new kit, look around
   function maybeGlance(now) {
-    if (!agent || agent.unplaced || activity === 'talk') return;
+    if (!agent || agent.unplaced) return;
+    if (activity === 'talk') {
+      // a voice conversation: don't let the gaze wander, but if he's actively LISTENING to the Commander,
+      // give small acknowledging looks (mostly toward the camera) so he reads as engaged, not frozen.
+      const lst = typeof Voice !== 'undefined' && Voice.isListening && Voice.isListening();
+      if (lst && agent.state !== 'walk' && now >= (agent.glanceCd || 0) && !(agent.glance && agent.glance.until > now)) {
+        setGlance(U.pick(['south', 'south', 'east', 'west']), U.irnd(450, 850), now);
+        agent.glanceCd = now + U.irnd(1400, 2800);
+      }
+      return;
+    }
     if (agent.state === 'walk') return;                              // walking owns the facing
     if (agent.glance && agent.glance.until > now) return;
     if (now < (agent.glanceCd || 0)) return;
@@ -564,6 +590,13 @@ const World = (() => {
 
     if (!cache) { if (running) raf = requestAnimationFrame(frame); return; }
     if (fitNeeded) { fitCamera(); fitNeeded = false; }
+    if (camLerp) {   // gently ease toward a conversation framing (set by focusAgent)
+      const k = 0.16;
+      scale += (camLerp.scale - scale) * k; panX += (camLerp.panX - panX) * k; panY += (camLerp.panY - panY) * k;
+      if (Math.abs(camLerp.scale - scale) < 0.01 && Math.abs(camLerp.panX - panX) < 1 && Math.abs(camLerp.panY - panY) < 1) {
+        scale = camLerp.scale; panX = camLerp.panX; panY = camLerp.panY; camLerp = null;
+      }
+    }
     ctx.setTransform(scale, 0, 0, scale, panX, panY); ctx.imageSmoothingEnabled = false;
 
     ctx.drawImage(cache.baseCv, 0, 0);
@@ -614,6 +647,9 @@ const World = (() => {
   }
 
   function drawAgent(now) {
+    // let the body animate while the agent is actually speaking (drawBody/drawFallback read this).
+    agent.speaking = (typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking());
+    const listening = (typeof Voice !== 'undefined' && Voice.isListening && Voice.isListening());
     let geom = null;
     if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, agent, now);
     if (!geom) drawFallback(now);
@@ -622,12 +658,20 @@ const World = (() => {
       ctx.save(); ctx.globalAlpha = (1 - t) * 0.8; ctx.strokeStyle = agent.color; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.ellipse(agent.px, agent.py, 4 + t * 16, 2 + t * 7, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     }
+    // a soft "I'm listening to you" pulse at the feet — an in-world cue the mic is open and he's hearing
+    // you (distinct from just standing facing the Commander). Only while the mic is actually live.
+    if (listening) {
+      const p = 0.4 + 0.35 * Math.sin(now / 320);
+      ctx.save(); ctx.globalAlpha = p * 0.7; ctx.strokeStyle = agent.color; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(agent.px, agent.py, 8 + 2 * Math.sin(now / 320), 3.5, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
   }
 
   function drawFallback(now) {
     const a = agent, x = Math.round(a.px), y = Math.round(a.py), h = 13;
     const step = a.state === 'walk' ? (Math.floor(now / 140) % 2) : 0;
-    const bob = (a.state !== 'walk' && !a.sitting) ? Math.round(Math.sin(now / 600 + a.phase) * 0.7) : 0;
+    const bob = (a.state !== 'walk' && !a.sitting)
+      ? Math.round(a.speaking ? Math.sin(now / 170 + a.phase) * 1.1 : Math.sin(now / 600 + a.phase) * 0.7) : 0;
     ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1;
     const top = y - h + bob;
     ctx.fillStyle = a.color; ctx.fillRect(x - 3, top + 3, 6, h - 6);
@@ -652,7 +696,10 @@ const World = (() => {
 
   function drawBubble(now) {
     const s = agent.say;
-    if (!s.text || s.until < now) return;
+    // keep the caption up while the agent is still SPEAKING (a streamed neural reply can outlast the
+    // bubble's fixed timer) — so the on-screen line and the voice stay in phase instead of vanishing mid-sentence.
+    const speakingNow = typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking();
+    if (!s.text || (s.until < now && !speakingNow)) return;
     ctx.font = '8px monospace';
     const maxW = 96, padb = 3, lh = 9;
     const words = s.text.split(' '), lines = []; let line = '';
@@ -754,5 +801,5 @@ const World = (() => {
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
+  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
 })();

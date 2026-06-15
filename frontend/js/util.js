@@ -80,6 +80,9 @@ const SFX = {
     o.start(t0); o.stop(t0 + dur + 0.02);
   },
   click() { SFX.tone(660, 0.05, 'square', 0.25); },
+  // "got it, thinking…" — a soft descending sine, distinct from click (send) and open (listen-start), so a
+  // hands-free user gets instant confirmation their words landed before the agent starts speaking.
+  think() { SFX.tone(740, 0.05, 'sine', 0.22); SFX.tone(560, 0.08, 'sine', 0.18, 0.05); },
   open() { SFX.tone(440, 0.06, 'square', 0.3); SFX.tone(880, 0.08, 'square', 0.22, 0.05); },
   close() { SFX.tone(520, 0.05, 'square', 0.25); SFX.tone(330, 0.07, 'square', 0.2, 0.04); },
   notify() { SFX.tone(880, 0.09, 'square', 0.3); SFX.tone(1318, 0.12, 'square', 0.22, 0.08); },

@@ -499,7 +499,9 @@ const Voice = (() => {
     const norm = t.toLowerCase().replace(/[.!,?\s]+$/, '');
     if (convoMode && /^(exit|stop|end|leave|quit|turn off)\b.*\bvoice\b/.test(norm)) { stopConvo(); return; }
     sentThisListen = true; emptyStreak = 0;
-    if (typeof SFX !== 'undefined') SFX.click();
+    // a dedicated "got it" cue (not the generic send click) so the user knows their words landed —
+    // closes the perceived gap until the agent's first spoken word.
+    if (typeof SFX !== 'undefined') (SFX.think || SFX.click)();
     if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
   }
 
