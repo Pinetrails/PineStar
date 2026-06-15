@@ -167,6 +167,9 @@ const StationUI = (() => {
     { key: 'purpose', file: 'purpose.md', badge: 'YOU WRITE THIS',
       desc: 'What your agent is for. Folded into the prompt so it colours everything it does.',
       ph: 'e.g. Track AI-policy news and brief me each morning.' },
+    { key: 'context', file: 'context.md', badge: 'YOU WRITE THIS',
+      desc: 'About you and your world — your project, domain, and what "good" looks like. Grounds every run.',
+      ph: 'e.g. I build TypeScript web apps solo; "good" = tested, minimal diffs, no hand-waving.' },
     { key: 'manual', file: 'operating-manual.md', badge: 'YOU WRITE THIS',
       desc: 'House rules appended to every run — tone, format, the do-nots. Always obeyed.',
       ph: '- Cite your sources.\n- Keep it terse.\n- Never message anyone without asking first.' }

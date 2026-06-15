@@ -155,6 +155,15 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .consent-result { font-size: 13px; letter-spacing: 0.5px; color: var(--ph); }
 .consent-result.err { color: var(--bad); }
 
+/* THE AWAKENING — tappable suggestion chips in COMMS (the gamified first-meeting onboarding) */
+.choice-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 1px 0 3px; }
+.choice {
+  font: inherit; font-size: 14px; letter-spacing: 0.5px; cursor: pointer;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim);
+  padding: 4px 10px; border-radius: 2px; transition: background .1s, color .1s, border-color .1s;
+}
+.choice:hover { color: var(--ph-bright); border-color: var(--ph); background: rgba(120, 255, 180, 0.08); }
+
 #chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
 #chat-inputrow .prompt { color: var(--ph); }
 #chat-input { border: none; background: transparent; padding: 4px 2px; }

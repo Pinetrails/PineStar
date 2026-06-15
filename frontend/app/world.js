@@ -28,6 +28,7 @@ const World = (() => {
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
   let drag = null, hoverAgent = false, onClick = null, wakeAt = 0;
+  let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   const stars = [];
 
   /* ---------- agent ---------- */
@@ -244,6 +245,11 @@ const World = (() => {
   function start() { if (running) return; running = true; last = performance.now(); frame(last); }
   function stop() { running = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } }
   function wakeIn() { wakeAt = performance.now(); }
+  // the AWAKENING: room starts dark + the agent frozen; setWakeProgress(0..1) eases the darkness up
+  // toward first light as the onboarding authors each doc; endAwakening lifts it fully and fires the ripple.
+  function beginAwakening() { awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; }
+  function setWakeProgress(p) { p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
+  function endAwakening() { awakeFrozen = false; wakeDarkTarget = 0; wakeIn(); }
   function refit() { fitNeeded = true; }
   function say(text) {
     if (!agent) return;
@@ -494,7 +500,7 @@ const World = (() => {
   }
 
   function tick(dt, now) {
-    if (!agent || agent.unplaced || !geo) return;
+    if (!agent || agent.unplaced || !geo || awakeFrozen) return;   // frozen during the awakening: the newborn holds still, facing the Commander
     const SPEED = 34;
     // self-heal a stuck walker: the walk pose with nowhere to go (target + path both gone —
     // e.g. a REFIT re-bake cleared the in-flight path, or a path came back empty). The idle
@@ -540,6 +546,7 @@ const World = (() => {
   /* ---------- render ---------- */
   function frame(now) {
     const dt = Math.min(64, now - last); last = now; fnow = now;
+    if (wakeDark !== wakeDarkTarget) { wakeDark += (wakeDarkTarget - wakeDark) * Math.min(1, dt / 260); if (Math.abs(wakeDark - wakeDarkTarget) < 0.002) wakeDark = wakeDarkTarget; }
     if (geoDirty) rederive();
     if (bakeDirty || !cache) rebake();
     tick(dt, now);
@@ -584,6 +591,14 @@ const World = (() => {
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
+    // the AWAKENING veil — a screen-space darkness the onboarding lifts toward first light; drawn UNDER the
+    // speech bubble so the newborn's words still glow while the room is still dark.
+    if (wakeDark > 0.002) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = 'rgba(2,3,6,' + wakeDark.toFixed(3) + ')';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.setTransform(scale, 0, 0, scale, panX, panY);
+    }
     if (agent && !agent.unplaced) drawBubble(now);
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
@@ -744,5 +759,5 @@ const World = (() => {
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
+  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, endAwakening, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
 })();

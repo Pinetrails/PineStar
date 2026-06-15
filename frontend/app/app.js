@@ -46,6 +46,7 @@ const App = (() => {
     if (typeof a.docs.identity !== 'string') a.docs.identity = baseIdentity(a.name);
     if (typeof a.docs.purpose !== 'string') a.docs.purpose = a.purpose || '';
     if (typeof a.docs.manual !== 'string') a.docs.manual = '';
+    if (typeof a.docs.context !== 'string') a.docs.context = '';   // about the Commander & their world (authored at the awakening; back-filled for older saves)
     return a.docs;
   }
   // assemble the real system prompt from the config docs: identity + mission + standing orders.
@@ -55,6 +56,8 @@ const App = (() => {
     const purpose = (d.purpose || '').trim();
     if (purpose) p += '\n\nYOUR PURPOSE (purpose.md):\n' + purpose;
     else p += '\n\nYou have not yet been given a purpose — you are eager for your Commander to assign one.';
+    const context = (d.context || '').trim();
+    if (context) p += '\n\nABOUT YOUR COMMANDER & THEIR WORLD (context.md):\n' + context;
     const manual = (d.manual || '').trim();
     if (manual) p += '\n\nSTANDING ORDERS (operating-manual.md) — always follow these:\n' + manual;
     return p;
@@ -68,6 +71,7 @@ const App = (() => {
       if (typeof patch.identity === 'string') d.identity = patch.identity;
       if (typeof patch.purpose === 'string') { d.purpose = patch.purpose; agent.purpose = patch.purpose.trim(); }
       if (typeof patch.manual === 'string') d.manual = patch.manual;
+      if (typeof patch.context === 'string') d.context = patch.context;
     }
     agent.systemPrompt = composeSystemPrompt(agent);
     if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
@@ -184,7 +188,8 @@ const App = (() => {
     World.init(el('stage'));
     World.spawn(agent);
     World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
-    if (opts.wake) { World.wakeIn(); SFX.level(); }
+    if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
+    else if (opts.wake) { World.wakeIn(); SFX.level(); }
     World.start();
     // the canonical station the builder edits — restored from the save, or a fresh starter room
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
@@ -205,29 +210,29 @@ const App = (() => {
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
         config: { apply: applyAgentConfig }   // dossier edits to identity/purpose/manual .md re-shape the live prompt
       });
-      StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');
+      if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }
-    Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), awaitingPurpose: opts.awaitingPurpose, onPurpose: onPurpose, onTurn: persist });
+    Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
     renderRail();
     el('ws-new').onclick = newWorkstream;
-    if (opts.awaitingPurpose) {
-      setTimeout(() => {
-        Chat.localLine('…i am awake, Commander, but i don’t know what i’m for yet. tell me — what is my purpose?');
-        World.say('what is my purpose?');
-      }, opts.wake ? 950 : 250);
+    if (opts.awaitingPurpose && typeof Onboarding !== 'undefined') {
+      // THE AWAKENING — a guided first meeting that authors identity/purpose/context/operating-manual.md
+      // while the room rises from dark to first light. Replaces the old single "what is my purpose?" beat.
+      Onboarding.start({
+        name: agent.name,
+        docs: agentDocs(agent),
+        wake: !!opts.wake,
+        commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
+        done: persist,
+        notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null
+      });
     }
     el('btn-disconnect').onclick = disconnect;
   }
 
-  function onPurpose(text) {
-    agent.purpose = text;
-    agentDocs(agent).purpose = text;               // the interview answer IS purpose.md
-    agent.systemPrompt = composeSystemPrompt(agent);
-    Chat.setSystem(agent.systemPrompt);
-    syncChannels();                                // keep a connected Telegram bot on the new identity
-    // persisted by the turn's onTurn() once the agent replies
-  }
+  // (the single-question purpose interview was replaced by the AWAKENING — Onboarding authors purpose.md
+  //  and the other config docs through applyAgentConfig; see onboarding.js + enterGame.)
 
   /* ---------- workstreams rail (left) ---------- */
   function renderRail() {
