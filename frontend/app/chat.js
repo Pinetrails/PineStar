@@ -161,15 +161,12 @@ const Chat = (() => {
     // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
     // forth. When it's OFF, replies are silent + detailed written text.
     const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
-    World.setActivity(isTask ? 'task' : 'talk');
-    status(isTask ? 'working…' : 'thinking…');
-    // a task makes the agent walk to the workstation and work, which can take a while. With voice on,
-    // fire an immediate in-character acknowledgment ("on it, boss") AS it heads over — so it answers
-    // right away instead of going silent until the whole task is done. The real result speaks at the end.
-    if (isTask && willSpeak && typeof Voice !== 'undefined' && Voice.ack) {
-      const a = Voice.ack();
-      if (a && typeof World !== 'undefined' && World.say) World.say(a);
-    }
+    // In a voice conversation the agent stays ONE-ON-ONE: he faces the Commander and answers on the
+    // spot instead of walking to the workstation — even for "task"-classified messages (the work still
+    // runs, just not as a visible desk trip). Only a SILENT task (speaker off) walks over to work.
+    const stance = (isTask && !willSpeak) ? 'task' : 'talk';
+    World.setActivity(stance);
+    status(stance === 'task' ? 'working…' : 'thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
     // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
     // wins on format; it's never baked into the saved prompt.
@@ -229,7 +226,11 @@ const Chat = (() => {
       if (!isTask && !aborted) World.say('…connection trouble…');
     } finally {
       currentAbort = null; currentRunId = null;
-      busy = false; status('online'); World.setActivity('idle');   // task done → agent stands up
+      busy = false; status('online');
+      // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering
+      // off between turns); otherwise he stands up and goes back to idle station life.
+      const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
+      World.setActivity(stayFacing ? 'talk' : 'idle');
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
       if (typeof Workstreams !== 'undefined') {

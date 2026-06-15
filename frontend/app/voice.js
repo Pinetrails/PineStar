@@ -173,7 +173,7 @@ const Voice = (() => {
       if (p && p.catch) p.catch(() => { if (done) return; done = true; cleanup(); onFail ? onFail() : endOk(); });
     } catch (_) { cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); }
   }
-  // the unified output path used by speak()/ack()/mutter(): try neural, fall back to browser.
+  // the unified output path used by speak()/mutter(): try neural, fall back to browser.
   function output(text, id, onEnd, opts) {
     opts = opts || {};
     const t = String(text || '').replace(/\s+/g, ' ').trim();
@@ -210,20 +210,6 @@ const Voice = (() => {
     if (!speakReplies) return;
     if (voiceId) activeVoiceId = voiceId;
     output(text, activeVoiceId, onReplyEnded, {});
-  }
-
-  // a quick, in-character spoken acknowledgment ("aight, on it") fired the INSTANT a task is assigned,
-  // so the agent answers right away as it heads to the workstation instead of going silent until the
-  // whole task finishes. Canned per-personality (zero latency, no model call). Returns the phrase so
-  // the caller can also show it as a room bubble. The real result still speaks when the run completes.
-  function ack() {
-    if (!speakReplies) return '';
-    const persona = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
-    const acks = (persona && persona.acks) || [];
-    if (!acks.length) return '';
-    const phrase = (typeof U !== 'undefined' && U.pick) ? U.pick(acks) : acks[0];
-    output(phrase, activeVoiceId, null, {});
-    return phrase;
   }
 
   // an ambient, muttered aside — station-life flavor (from world.js curiosity remarks), in the agent's
@@ -474,7 +460,7 @@ const Voice = (() => {
   function isOn() { return !!(synth && speakReplies); }
 
   return {
-    init, speak, mutter, ack, setAgent, isOn,
+    init, speak, mutter, setAgent, isOn,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak,
