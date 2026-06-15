@@ -187,6 +187,15 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .swatch:hover { border-color: var(--ph); }
 .swatch.sel { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
 
+/* personality picker — selectable vibe chips on the create screen */
+.persona-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.persona {
+  font-family: inherit; font-size: 14px; color: var(--ph); background: var(--panel2);
+  border: 2px solid var(--ph-dim); padding: 4px 10px; cursor: pointer; letter-spacing: 1px;
+}
+.persona:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+.persona.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
+
 /* ============================================================
    STATION HUD — top bar · crew manifest · bottom bar · panels.
    The phosphor/CRT chrome (#topbar/#left/#bottombar bezels, .bb,

@@ -9,6 +9,7 @@ const App = (() => {
   let agent = null;           // {id,name,color,model,purpose,systemPrompt,createdAt}
   let resumingSaved = null;   // a save awaiting a re-entered key
   let pickedColor = SUITS[0];
+  let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'worker-homie';
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
 
@@ -38,7 +39,8 @@ const App = (() => {
       + 'your Commander (the user) is building for you. Address the user as "Commander" and keep a spark of personality. '
       + 'When the Commander assigns you a TASK you have REAL tools at your workstation — you can search and read the '
       + 'live web and read/write files in your workspace — so actually do the work and report what you find; never '
-      + 'claim you lack web or file access. When you are just chatting, keep replies short (1-3 sentences). Stay in character.';
+      + 'claim you lack web or file access. When you are just chatting out loud, keep replies short and easy; when you are '
+      + 'typing in the COMMS panel you can go into as much detail as the question deserves. Stay in character.';
   }
   // seed the editable docs from the agent's existing fields the first time (back-compat for saves with no docs).
   function agentDocs(a) {
@@ -48,10 +50,16 @@ const App = (() => {
     if (typeof a.docs.manual !== 'string') a.docs.manual = '';
     return a.docs;
   }
-  // assemble the real system prompt from the config docs: identity + mission + standing orders.
+  // assemble the real system prompt from the config docs: identity + PERSONALITY + mission + standing orders.
   function composeSystemPrompt(a) {
     const d = agentDocs(a);
     let p = (d.identity || '').trim() || baseIdentity(a.name);
+    // personality preset sits AFTER identity (keeps the REAL-tools clause) and BEFORE purpose, so it
+    // colours the agent's tone without ever displacing capability or the mission. Default: worker-homie.
+    if (typeof Personas !== 'undefined') {
+      const persona = Personas.get(a.personaId || Personas.DEFAULT_ID);
+      if (persona && persona.promptInjection) p += '\n\n' + persona.promptInjection;
+    }
     const purpose = (d.purpose || '').trim();
     if (purpose) p += '\n\nYOUR PURPOSE (purpose.md):\n' + purpose;
     else p += '\n\nYou have not yet been given a purpose — you are eager for your Commander to assign one.';
@@ -127,12 +135,37 @@ const App = (() => {
     });
   }
 
+  // the PERSONALITY picker: pick the agent's preset vibe at creation (default worker-homie). The chosen
+  // id rides on agent.personaId and shapes the system prompt via composeSystemPrompt → personas.js.
+  function buildPersonas() {
+    const wrap = el('persona-picker'); if (!wrap || typeof Personas === 'undefined') return;
+    wrap.innerHTML = '';
+    const hint = el('persona-hint');
+    if (!Personas.exists(pickedPersona)) pickedPersona = Personas.DEFAULT_ID;
+    const showHint = p => { if (hint) hint.textContent = p.vibe; };
+    Personas.list().forEach(p => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'persona' + (p.id === pickedPersona ? ' sel' : '');
+      b.textContent = p.name; b.title = p.vibe;
+      b.onclick = () => {
+        pickedPersona = p.id;
+        [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        showHint(p); SFX.click();
+      };
+      b.onmouseenter = () => showHint(p);
+      wrap.appendChild(b);
+    });
+    showHint(Personas.get(pickedPersona));
+  }
+
   function initConnect(prefillName) {
     el('in-key').value = Harness.getKey();
     el('in-model').value = Harness.getModel();
     el('in-model').oninput = updateHint;
     if (prefillName) el('in-name').value = prefillName;
     buildSwatches();
+    buildPersonas();
     el('btn-back').onclick = () => { SFX.click(); showTitle(); };
     el('btn-wake').onclick = onWake;
     el('in-name').onkeydown = e => { if (e.key === 'Enter') onWake(); };
@@ -151,7 +184,7 @@ const App = (() => {
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
-    agent = { id: 'agent', name, color: pickedColor, model, purpose: null, createdAt: Date.now() };
+    agent = { id: 'agent', name, color: pickedColor, model, personaId: pickedPersona, purpose: null, createdAt: Date.now() };
     agentDocs(agent);                              // seed identity.md / purpose.md / operating-manual.md
     agent.systemPrompt = composeSystemPrompt(agent);
     Harness.resetTotals();
