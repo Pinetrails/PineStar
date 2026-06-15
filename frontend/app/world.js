@@ -117,7 +117,8 @@ const World = (() => {
       else {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
-        if ((agent.sitting || agent.working) && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk
+        if (agent.goal === 'use') { agent.goal = null; agent.usingProp = null; agent.sitting = false; }  // the prop list may have changed — drop leisure, re-decide next idle tick
+        if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
       }
     }
@@ -159,6 +160,7 @@ const World = (() => {
     const t = spawnTileLocal(), f = footOf(t.x, t.y);
     agent.px = f.x; agent.py = f.y; agent.unplaced = false;
     agent.pathPts = null; agent.target = null; agent.sitting = false; agent.working = false; agent.state = 'idle';
+    agent.goal = null; agent.usingProp = null;
   }
 
   function ensureAgentValid() {
@@ -172,7 +174,8 @@ const World = (() => {
     agent = {
       id: a.id, name: a.name, color: a.color || '#5ad0ff',
       px: 0, py: 0, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: true,
-      phase: U.hash(a.id) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 }
+      phase: U.hash(a.id) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
+      usingProp: null, useUntil: 0, useFace: 'south', useSit: false   // idle leisure: which prop the agent is at + dwell timer + pose
     };
     if (geo) placeAgent();
   }
@@ -227,7 +230,7 @@ const World = (() => {
   function setActivity(kind) {
     activity = kind;
     if (!agent) return;
-    if (kind === 'talk') { agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.sitting = false; agent.working = false; agent.goal = null; agent.dir = 'south'; }
+    if (kind === 'talk') { agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.sitting = false; agent.working = false; agent.goal = null; agent.usingProp = null; agent.dir = 'south'; }
   }
 
   /* ---------- camera helpers ---------- */
@@ -267,6 +270,7 @@ const World = (() => {
   function arrive(now) {
     agent.pathPts = null; agent.target = null;
     if (agent.goal === 'work') { agent.sitting = true; agent.working = true; agent.dir = 'north'; agent.state = 'idle'; }
+    else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); }
     else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 2600); }
   }
   function wander(now) {
@@ -283,11 +287,40 @@ const World = (() => {
     agent.idleUntil = now + 800;
   }
 
+  // the catalog `use` descriptor for a placed prop, or null if it isn't a leisure prop
+  function propUse(p) {
+    if (typeof PropSprites === 'undefined' || typeof PropAnchor === 'undefined') return null;
+    const s = PropSprites.spec(p.t);
+    return s && s.use ? s.use : null;
+  }
+  // idle leisure: pick a reachable interactive prop (couch/tv/arcade/jukebox/bar), walk to
+  // its approach tile, and commit to goal='use'. Returns false if none is reachable (→ wander).
+  function planProp(now) {
+    if (!geo || !geo.props || !geo.props.length) return false;
+    const cands = [];
+    for (const p of geo.props) {
+      const use = propUse(p); if (!use) continue;
+      const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
+      if (a) cands.push({ id: p.id, a });
+    }
+    if (!cands.length) return false;
+    const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
+    for (let k = 0; k < cands.length; k++) {
+      const c = cands[(start + k) % cands.length];
+      if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
+        agent.goal = 'use'; agent.usingProp = c.id; agent.useFace = c.a.face; agent.useSit = c.a.sit;
+        if (!agent.target) arrive(now);   // already standing on the approach tile
+        return true;
+      }
+    }
+    return false;
+  }
+
   function tick(dt, now) {
     if (!agent || agent.unplaced || !geo) return;
     const SPEED = 34;
     if (activity === 'task' && agent.goal !== 'work') {
-      agent.goal = 'work'; agent.sitting = false; agent.working = false;
+      agent.goal = 'work'; agent.sitting = false; agent.working = false; agent.usingProp = null;   // summoned: get up off any prop and head to the desk
       if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { /* already at seat or unreachable */ if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } }
     }
     if (activity !== 'task' && agent.goal === 'work') {
@@ -304,8 +337,12 @@ const World = (() => {
         agent.px += dx / d * s; agent.py += dy / d * s; agent.state = 'walk';
         agent.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
       }
+    } else if (agent.goal === 'use') {
+      // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
+      if (now >= agent.useUntil) { agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
-      wander(now);
+      // ~55% of idle decisions seek a prop to use; otherwise (or if none reachable) wander
+      if (!(U.irnd(0, 99) < 55 && planProp(now))) wander(now);
     }
   }
 
@@ -341,7 +378,7 @@ const World = (() => {
     // placeable props (furniture) — drawn over the bake, y-sorted with agents, under the lightmap
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
-      for (const p of geo.props) items.push({ y: (p.y + (p.h || 1)) * T, draw: () => PropSprites.draw(p, false) });
+      for (const p of geo.props) items.push({ y: (p.y + (p.h || 1)) * T, draw: () => PropSprites.draw(p, !!(agent && agent.usingProp === p.id)) });
     }
     if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
     if (seat) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });
@@ -432,5 +469,5 @@ const World = (() => {
 
   function setOnClick(fn) { onClick = fn; }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, say, getActivity: () => activity, setOnClick, refit };
+  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, say, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, refit };
 })();
