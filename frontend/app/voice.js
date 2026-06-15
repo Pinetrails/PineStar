@@ -53,6 +53,28 @@ const Voice = (() => {
   function refreshVoices() { if (synth) { try { voiceCache = synth.getVoices() || []; } catch (_) { voiceCache = []; } } }
   if (synth) { refreshVoices(); try { synth.onvoiceschanged = refreshVoices; } catch (_) {} }
 
+  // --- Chrome speechSynthesis self-healing -------------------------------------------------
+  // Chrome has two long-standing TTS bugs this app trips over:
+  //  (a) after SpeechRecognition (the mic) has run, the synth engine is left paused/idle and
+  //      synth.speak() silently does nothing until synth.resume() is called. startListening()
+  //      also calls synth.cancel(), which on some builds wedges the queue the same way. This is
+  //      why voice works on turn 1 (no mic yet) but goes silent on every later mic-driven turn.
+  //  (b) the engine auto-pauses on utterances longer than ~15s; resume() un-sticks it.
+  // Fix: kick resume() right before/after speak, and run a low-frequency watchdog that resumes
+  // the engine whenever it reports paused while something is pending. Cheap, idempotent, no-op
+  // in Firefox/Safari (resume() there is harmless).
+  function kickResume() { if (synth) { try { synth.resume(); } catch (_) {} } }
+  let watchdog = null;
+  function startWatchdog() {
+    if (watchdog || !synth) return;
+    watchdog = setInterval(() => {
+      try {
+        if (synth.paused && (synth.speaking || synth.pending)) synth.resume();
+        else if (!synth.speaking && !synth.pending) { clearInterval(watchdog); watchdog = null; }
+      } catch (_) { clearInterval(watchdog); watchdog = null; }
+    }, 4000);
+  }
+
   // FNV-1a — a stable, dependency-free string hash so an agent's voice never changes between sessions.
   function hash(s) { let h = 2166136261 >>> 0; s = String(s || 'agent'); for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
@@ -69,22 +91,56 @@ const Voice = (() => {
     return { voice, pitch, rate };
   }
 
+  // the real utterance build + queue, shared by speak() and its voices-ready retry path.
+  function doSpeak(text, id, onEnd) {
+    if (!synth) { onEnd && onEnd(); return; }
+    // Only cancel when something is actually queued/playing. A cancel() on an empty queue can
+    // leave Chrome's engine paused (the later-turn silence). resume() first un-sticks any pause
+    // left over from the mic's SpeechRecognition run before we enqueue.
+    kickResume();
+    try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {}
+    const u = new SpeechSynthesisUtterance(text);
+    const v = voiceFor(id);
+    if (v.voice) u.voice = v.voice;
+    u.pitch = v.pitch; u.rate = v.rate; u.volume = 1;
+    u.onstart = () => onSpeakStart();
+    u.onend = () => { onSpeakEnd(); onEnd && onEnd(); };
+    u.onerror = () => { onSpeakEnd(); onEnd && onEnd(); };
+    try {
+      synth.speak(u);
+      kickResume();        // Chrome sometimes enqueues paused — resume right after speak()
+      startWatchdog();     // keep resuming if it pauses mid-utterance (~15s bug) or stalls
+    } catch (_) { onSpeakEnd(); onEnd && onEnd(); }
+  }
+
   // the TTS provider seam — Phase 2 swaps this for a neural backend (return a Promise that resolves on end).
   const ttsProvider = {
     name: 'web-speech',
     speak(text, id, onEnd) {
       if (!synth) { onEnd && onEnd(); return; }
-      try { synth.cancel(); } catch (_) {}        // never let two utterances overlap
-      const u = new SpeechSynthesisUtterance(text);
-      const v = voiceFor(id);
-      if (v.voice) u.voice = v.voice;
-      u.pitch = v.pitch; u.rate = v.rate; u.volume = 1;
-      u.onstart = () => onSpeakStart();
-      u.onend = () => { onSpeakEnd(); onEnd && onEnd(); };
-      u.onerror = () => { onSpeakEnd(); onEnd && onEnd(); };
-      try { synth.speak(u); } catch (_) { onSpeakEnd(); onEnd && onEnd(); }
+      // voices may not be loaded yet on a cold first paint — if empty, refresh and retry once on
+      // voiceschanged so we don't speak with a null/default voice (or, on some builds, not at all).
+      if (!voiceCache.length) {
+        refreshVoices();
+        if (!voiceCache.length) {
+          let fired = false;
+          const go = () => { if (fired) return; fired = true; refreshVoices(); doSpeak(text, id, onEnd); };
+          try { synth.addEventListener('voiceschanged', go, { once: true }); } catch (_) {}
+          setTimeout(go, 250);   // hard fallback if voiceschanged never fires
+          return;
+        }
+      }
+      doSpeak(text, id, onEnd);
     },
-    stop() { if (synth) { try { synth.cancel(); } catch (_) {} } onSpeakEnd(); }
+    stop() {
+      if (synth) {
+        // only cancel if there is actually something queued/playing — a cancel() on an empty queue
+        // can leave Chrome's engine wedged (paused), which is what silences later turns.
+        try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {}
+        kickResume();   // un-stick the engine after recognition / a prior cancel
+      }
+      onSpeakEnd();
+    }
   };
 
   function onSpeakStart() { speaking = true; setSpeaking(true); }
