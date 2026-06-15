@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKYNET · AUDIO LAB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root { --amber:#ffb53d; --amber-dim:#7a5410; --bg:#100b04; --panel:#1a1206; --line:#3a2a0e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--amber); font-family:'VT323',monospace; font-size:20px;
+         padding:28px; line-height:1.35; text-shadow:0 0 6px rgba(255,181,61,.35); }
+  h1 { font-size:38px; margin:0 0 2px; letter-spacing:3px; }
+  .sub { color:var(--amber-dim); margin-bottom:22px; }
+  .grid { display:grid; gap:22px; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); max-width:1100px; }
+  .panel { border:1px solid var(--line); background:var(--panel); padding:16px 18px 20px; border-radius:4px; }
+  .panel h2 { font-size:24px; margin:0 0 4px; letter-spacing:2px; }
+  .panel p { color:var(--amber-dim); margin:0 0 14px; font-size:17px; }
+  .btns { display:flex; flex-wrap:wrap; gap:9px; }
+  button { font-family:inherit; font-size:18px; color:var(--amber); background:#241803; border:1px solid var(--line);
+           padding:7px 13px; cursor:pointer; border-radius:3px; text-shadow:inherit; transition:.08s; }
+  button:hover { background:#332305; border-color:var(--amber-dim); }
+  button:active { transform:translateY(1px); }
+  button.old { color:#c98a2e; border-color:#5a3d10; }
+  button.big { font-size:22px; padding:10px 20px; }
+  .row { display:flex; align-items:center; gap:12px; margin:12px 0; flex-wrap:wrap; }
+  input[type=range] { accent-color:var(--amber); width:200px; }
+  .meter { height:14px; border:1px solid var(--line); background:#0c0802; border-radius:8px; overflow:hidden; flex:1; min-width:160px; }
+  .meter > i { display:block; height:100%; width:12%; background:linear-gradient(90deg,#7a5410,#ffb53d); transition:width .12s; }
+  .tag { display:inline-block; font-size:14px; color:var(--amber-dim); border:1px solid var(--line); padding:1px 6px; border-radius:3px; }
+  .full { grid-column:1/-1; }
+  code { color:#ffd98a; }
+</style>
+</head>
+<body>
+  <h1>▮ SKYNET · AUDIO LAB</h1>
+  <div class="sub">A/B the old beeps against the rebuilt engine, and drive the adaptive score with simulated colony activity. <span class="tag">click anywhere first to unlock audio</span></div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>① OLD — buzzy beeps</h2>
+      <p>The original 22-line synth: raw square/saw, instant onset, no filter. This is what the game sounds like today.</p>
+      <div class="btns">
+        <button class="old" data-old="click">click</button>
+        <button class="old" data-old="open">open</button>
+        <button class="old" data-old="close">close</button>
+        <button class="old" data-old="notify">notify</button>
+        <button class="old" data-old="sale">sale</button>
+        <button class="old" data-old="bad">bad</button>
+        <button class="old" data-old="level">level</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>② NEW — designed engine</h2>
+      <p>ADSR + lowpass + filtered noise + reverb + master limiter. Same call sites, warm result.</p>
+      <div class="btns">
+        <button data-new="click">click</button>
+        <button data-new="open">open</button>
+        <button data-new="close">close</button>
+        <button data-new="notify">notify</button>
+        <button data-new="sale">sale</button>
+        <button data-new="bad">bad</button>
+        <button data-new="level">level</button>
+        <button data-new="type">type</button>
+        <button data-new="chime">chime</button>
+        <button data-new="ship">ship</button>
+        <button data-new="alarm">alarm</button>
+        <button data-new="msg">msg</button>
+      </div>
+    </div>
+
+    <div class="panel full">
+      <h2>③ ADAPTIVE SCORE</h2>
+      <p>Generative — no music files. Tempo, brightness and layers follow <code>intensity</code>. Drive it by hand, or fire real <code>U.bus</code> events below and watch the music react.</p>
+      <div class="row">
+        <button class="big" id="music-toggle">▶ START MUSIC</button>
+        <span class="tag">intensity</span>
+        <input type="range" id="int" min="6" max="100" value="12">
+        <div class="meter"><i id="int-bar"></i></div>
+        <span id="int-val" class="tag">0.12</span>
+      </div>
+      <p style="margin-top:6px">Simulate the colony (each pushes energy + plays its sting):</p>
+      <div class="btns">
+        <button data-ev="agent.run.start">agent.run.start</button>
+        <button data-ev="agent.tool_call">tool_call</button>
+        <button data-ev="workitem.placed">workitem.placed</button>
+        <button data-ev="workitem.delivered">workitem.delivered</button>
+        <button data-ev="deliverable">deliverable</button>
+        <button data-ev="sale">sale</button>
+        <button data-ev="level">level</button>
+        <button data-ev="agent.run.error">run.error</button>
+        <button data-ev="channel.inbound">channel.inbound</button>
+        <button data-ev="memory.write">memory.write</button>
+        <button data-ev="agent.run.end">agent.run.end</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/util.js"></script>
+  <script src="js/audio.js"></script>
+  <script>
+    // a faithful copy of the ORIGINAL synth, kept only here for the A/B comparison.
+    const OLD = {
+      tone(freq, dur, type, vol, when) {
+        SFX.boot(); if (!SFX.ctx) return;
+        const c = SFX.ctx, t0 = c.currentTime + (when || 0);
+        const o = c.createOscillator(), g = c.createGain();
+        o.type = type || 'square'; o.frequency.value = freq;
+        g.gain.setValueAtTime((vol || 0.5) * 0.35, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+        o.connect(g); g.connect(c.destination);
+        o.start(t0); o.stop(t0 + dur + 0.02);
+      },
+      click() { OLD.tone(660, .05, 'square', .25); },
+      open() { OLD.tone(440, .06, 'square', .3); OLD.tone(880, .08, 'square', .22, .05); },
+      close() { OLD.tone(520, .05, 'square', .25); OLD.tone(330, .07, 'square', .2, .04); },
+      notify() { OLD.tone(880, .09, 'square', .3); OLD.tone(1318, .12, 'square', .22, .08); },
+      sale() { OLD.tone(523, .08, 'square', .35); OLD.tone(784, .1, 'square', .3, .07); OLD.tone(1046, .16, 'square', .25, .15); },
+      bad() { OLD.tone(220, .12, 'sawtooth', .25); OLD.tone(140, .2, 'sawtooth', .2, .1); },
+      level() {[523, 659, 784, 1046].forEach((f, i) => OLD.tone(f, .12, 'square', .3, i * .09)); }
+    };
+
+    document.querySelectorAll('[data-old]').forEach(b => b.onclick = () => { SFX.boot(); OLD[b.dataset.old](); });
+    document.querySelectorAll('[data-new]').forEach(b => b.onclick = () => { SFX.boot(); SFX[b.dataset.new](); });
+
+    const toggle = document.getElementById('music-toggle');
+    let playing = false;
+    toggle.onclick = () => {
+      SFX.boot();
+      playing = !playing;
+      if (playing) { MUSIC.start(); toggle.textContent = '■ STOP MUSIC'; }
+      else { MUSIC.stop(); toggle.textContent = '▶ START MUSIC'; }
+    };
+
+    const slider = document.getElementById('int'), bar = document.getElementById('int-bar'), val = document.getElementById('int-val');
+    slider.oninput = () => { MUSIC.setIntensity(slider.value / 100); };
+
+    document.querySelectorAll('[data-ev]').forEach(b => b.onclick = () => {
+      SFX.boot();
+      const ev = b.dataset.ev, p = {};
+      if (ev === 'task') p.status = 'running';
+      U.bus.emit(ev, p);
+    });
+
+    // live intensity readout
+    setInterval(() => {
+      const i = MUSIC.intensity();
+      bar.style.width = Math.round(i * 100) + '%';
+      val.textContent = i.toFixed(2);
+      if (document.activeElement !== slider) slider.value = Math.round(i * 100);
+    }, 120);
+  </script>
+</body>
+</html>
