@@ -178,7 +178,11 @@ const App = (() => {
     if (typeof Build !== 'undefined') {
       Build.init({ getStation: () => station, persist: persist, world: World });
       const bbBuild = el('bb-build');
-      if (bbBuild) bbBuild.onclick = () => { SFX.click(); Build.toggle(); };
+      if (bbBuild) {
+        let seenBuild = false; try { seenBuild = !!localStorage.getItem('skynet.refit.seen'); } catch (e) {}
+        if (!seenBuild) bbBuild.classList.add('refit-nudge');   // pulse the dock button until first opened
+        bbBuild.onclick = () => { SFX.click(); bbBuild.classList.remove('refit-nudge'); Build.toggle(); };
+      }
     }
     if (typeof StationUI !== 'undefined') {
       StationUI.enter([agent], {

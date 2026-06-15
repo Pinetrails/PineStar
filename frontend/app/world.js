@@ -115,6 +115,8 @@ const World = (() => {
       if (agent.unplaced) placeAgent();
       else {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
+        agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
+        if ((agent.sitting || agent.working) && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk
         ensureAgentValid();
       }
     }

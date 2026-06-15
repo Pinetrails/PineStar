@@ -339,8 +339,42 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .refit-tip {
   position: fixed; z-index: 3; display: none; pointer-events: none;
   font-size: 13px; letter-spacing: 1px; padding: 2px 8px;
-  background: rgba(3,2,1,.92); border: 1px solid var(--ph-dim); color: var(--ph-bright);
+  background: rgba(3,2,1,.94); border: 1px solid var(--ph-dim); color: var(--ph-bright);
   text-shadow: 0 0 6px var(--ph-glow2); white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0,0,0,.7);
 }
 .refit-tip.ok { border-color: #69ff8e; color: #aaffc8; }
 .refit-tip.bad { border-color: var(--bad); color: #ffb0a8; }
+
+/* primary (safe) action button — inverted phosphor, NOT the danger red */
+.refit-primary { background: var(--ph) !important; color: var(--ink) !important; border-color: var(--ph) !important; text-shadow: none !important; }
+.refit-primary:hover { background: var(--ph-bright) !important; }
+
+/* per-tool keyboard-shortcut hint chip on each tool button */
+.refit-key { font-size: 10px; opacity: .5; border: 1px solid currentColor; border-radius: 2px; padding: 0 3px; margin-left: 4px; }
+.refit-tool.active { box-shadow: inset 0 0 0 2px var(--ph), 0 0 10px var(--ph-glow2); }
+.refit-tool.active .refit-key { opacity: .8; }
+
+/* disabled undo/redo (and any .bb) */
+.bb:disabled { opacity: .32; cursor: default; pointer-events: none; }
+
+/* a brief attention pulse (undo button after a reclaim; dock button on first run) */
+@keyframes refit-pulse { 0%,100% { box-shadow: 0 0 0 0 var(--ph-glow2); } 50% { box-shadow: 0 0 0 3px var(--ph), 0 0 16px var(--ph-glow); } }
+.bb.pulse { animation: refit-pulse .45s ease-in-out 0 2; }
+#bb-build.refit-nudge { color: var(--ph-bright); animation: refit-pulse 2s ease-in-out infinite; }
+
+/* first-use guide card */
+.refit-guide {
+  position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center;
+  background: rgba(2,1,0,.55); backdrop-filter: blur(1px);
+}
+.refit-guide-card {
+  width: min(420px, 88vw); background: var(--panel); padding: 18px 22px 16px;
+  border-radius: 9px; box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 26px var(--ph-glow2), inset 0 0 44px rgba(0,0,0,.85);
+}
+.refit-guide-card h3 { color: var(--ink); background: var(--ph); display: inline-block; padding: 2px 12px; letter-spacing: 2px; margin-bottom: 12px; }
+.refit-guide-card ul { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.refit-guide-card li { color: var(--text); font-size: 15px; line-height: 1.3; }
+.refit-guide-card b { color: var(--ph-bright); font-weight: normal; }
+.refit-guide-card .g-ok { color: #aaffc8; } .refit-guide-card .g-bad { color: #ffb0a8; }
+.refit-guide-card #refit-guide-go { width: 100%; }

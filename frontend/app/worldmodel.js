@@ -19,6 +19,7 @@ const WorldModel = (() => {
   const MARGIN = 3;     // tile padding around the bounding box (hull extrusion + chamfer arcs need room)
   const MIN_ROOM = 3;   // min room floor side, in tiles
   const MIN_HALL = 2;   // min hallway length, in tiles (long axis)
+  const MAX_SPAN = 240; // max station footprint span per axis (keeps the bake canvas bounded)
   const HULL_PAD = 14;  // extra canvas px below the grid for the south hull extrusion (matches v7 H = ROWS*T+14)
 
   /* the paint palette — each is a floor BASE colour; every other floor detail
@@ -133,6 +134,13 @@ const WorldModel = (() => {
       // candidate rects must not overlap EACH OTHER (multi-rect / L-shaped footprints)
       for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++)
         if (rectsHit(rects[i], rects[j])) return fail('OVERLAP', 'self-overlapping footprint');
+      // the whole footprint can't sprawl past a sane span — a room placed thousands of tiles
+      // away would balloon the bake canvas to gigabytes. Reject early so the ghost tints red.
+      let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+      const acc = r => { if (r.x1 < mnx) mnx = r.x1; if (r.y1 < mny) mny = r.y1; if (r.x2 > mxx) mxx = r.x2; if (r.y2 > mxy) mxy = r.y2; };
+      eachRectWorld(ignoreId, (id, rm, r) => acc(r));
+      for (const r of rects) acc(r);
+      if (mxx - mnx + 1 > MAX_SPAN || mxy - mny + 1 > MAX_SPAN) return fail('TOO_FAR', 'too far from the station');
       let hitName = null;
       eachRectWorld(ignoreId, (id, rm, r) => {
         if (hitName) return;
@@ -423,9 +431,12 @@ const WorldModel = (() => {
     // make deserialize TOTAL over any partial/legacy/corrupted v1 blob (it's the persistence seam):
     if (!doc.rooms || typeof doc.rooms !== 'object') doc.rooms = {};
     if (!Array.isArray(doc.order)) doc.order = Object.keys(doc.rooms);
+    // drop order entries with no live room object, and repair any room missing a rects[] array —
+    // so a truncated / hand-edited save can never crash the read paths (eachRectWorld/bounds/project).
+    doc.order = doc.order.filter(id => doc.rooms[id] && typeof doc.rooms[id] === 'object');
+    for (const id of doc.order) { const rm = doc.rooms[id]; if (!Array.isArray(rm.rects)) rm.rects = []; if (!rm.floorPaint) rm.floorPaint = {}; }
     if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'SKYNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
     if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
-    for (const id of doc.order) { const rm = doc.rooms[id]; if (rm && !rm.floorPaint) rm.floorPaint = {}; }
     // spawnRoomId must point at a live non-corridor room (or null) so removeRoom's guard stays meaningful
     if (!doc.meta.spawnRoomId || !doc.rooms[doc.meta.spawnRoomId])
       doc.meta.spawnRoomId = doc.order.find(id => doc.rooms[id] && doc.rooms[id].kind !== 'corridor') || null;
