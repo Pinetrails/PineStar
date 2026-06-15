@@ -295,4 +295,41 @@ A.eq(sb.propsByAgent('coder')[0].id, bayA.id, 'propsByAgent("coder") finds the c
 A.eq(sb.agentRoomId('coder'), sb.spawnRoomId(), 'agentRoomId returns the room the coder bay sits in (capability seam)');
 A.eq(sb.agentRoomId('nobody'), null, 'agentRoomId for an unbound agent is null');
 
+/* ---- Phase B4: FILTER/MERGER junction config carried like agentId (routes/def/bufferSize, sanitized) ---- */
+const jc = WM.create();
+const jr = jc.roomById(jc.spawnRoomId()).rects[0];
+const jx = jr.x1 + 2, jy = jr.y1 + 2;
+const filtP = jc.addProp({ t: 'filter', x: jx, y: jy, w: 1, h: 1, block: false, routes: { code: 'E', research: 'S' }, def: 'E' });
+A.ok(filtP.ok, 'a filter prop places');
+A.eq(JSON.stringify(jc.propById(filtP.id).routes), JSON.stringify({ code: 'E', research: 'S' }), 'addProp carries filter routes');
+A.eq(jc.propById(filtP.id).def, 'E', 'addProp carries the filter default lane');
+// sanitize: a route to a non-lane and a bad default are dropped (a hand-edited save can't inject a bad dir)
+const filtBad = jc.addProp({ t: 'filter', x: jx + 2, y: jy, w: 1, h: 1, block: false, routes: { code: 'X', research: 'S' }, def: 'Z' });
+A.eq(JSON.stringify(jc.propById(filtBad.id).routes), JSON.stringify({ research: 'S' }), 'a route to a bad lane is sanitized out');
+A.eq(jc.propById(filtBad.id).def, undefined, 'a bad default lane is dropped');
+const mrgP = jc.addProp({ t: 'merger', x: jx, y: jy + 2, w: 1, h: 1, block: false, bufferSize: 3 });
+A.eq(jc.propById(mrgP.id).bufferSize, 3, 'addProp carries the merger bufferSize');
+const mrgBad = jc.addProp({ t: 'merger', x: jx + 2, y: jy + 2, w: 1, h: 1, block: false, bufferSize: 1 });
+A.eq(jc.propById(mrgBad.id).bufferSize, undefined, 'a bufferSize < 2 is dropped (the engine default K applies)');
+// projectGeometry carries the config into the local frame (so the bake/pipeline can route by it)
+const gj = jc.projectGeometry();
+const gf = gj.props.find(p => p.id === filtP.id);
+A.eq(JSON.stringify(gf.routes), JSON.stringify({ code: 'E', research: 'S' }), 'projectGeometry carries filter routes');
+A.eq(gf.def, 'E', 'projectGeometry carries the filter default lane');
+A.eq(gj.props.find(p => p.id === mrgP.id).bufferSize, 3, 'projectGeometry carries the merger bufferSize');
+// survives serialize/deserialize (migrate must preserve it, not whitelist it away)
+const jDoc = jc.serialize();
+const reF = WM.deserialize(jDoc).propById(filtP.id);
+A.eq(JSON.stringify(reF.routes), JSON.stringify({ code: 'E', research: 'S' }), 'filter routes survive serialize/deserialize');
+A.eq(reF.def, 'E', 'filter def survives serialize/deserialize');
+A.eq(WM.deserialize(jDoc).propById(mrgP.id).bufferSize, 3, 'merger bufferSize survives serialize/deserialize');
+// configureJunction: set / replace wholesale / clear, with undo
+A.ok(!jc.configureJunction('nope', { def: 'E' }).ok, 'configureJunction on a missing prop fails');
+A.ok(jc.configureJunction(filtP.id, { routes: { code: 'S' }, def: 'S' }).ok, 'configureJunction sets new config');
+A.eq(jc.propById(filtP.id).def, 'S', 'configureJunction replaced the default lane');
+A.eq(JSON.stringify(jc.propById(filtP.id).routes), JSON.stringify({ code: 'S' }), 'configureJunction replaced the routes wholesale');
+A.ok(jc.configureJunction(filtP.id, null).ok && jc.propById(filtP.id).routes === undefined && jc.propById(filtP.id).def === undefined, 'configureJunction(null) clears the config');
+jc.undo();
+A.eq(jc.propById(filtP.id).def, 'S', 'undo restores a prior junction config (configureJunction snapshots)');
+
 A.report('worldmodel');
