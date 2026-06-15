@@ -166,6 +166,28 @@ const Voice = (() => {
 
   function stopSpeaking() { ttsProvider.stop(); }
 
+  // an ambient, muttered aside — station-life flavor (from world.js curiosity remarks), spoken
+  // quieter + a touch slower so it reads as the agent talking to itself, not answering. It NEVER
+  // cuts off a real reply and stays silent during a live exchange (listening / speaking / a run /
+  // a pending re-arm) so it can't collide with conversation or feed the open mic.
+  function mutter(text) {
+    if (!speakReplies || !synth) return;
+    if (speaking || listening || rearmTimer || busyNow()) return;
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    try {
+      kickResume();
+      const u = new SpeechSynthesisUtterance(t.slice(0, 80));
+      const v = voiceFor(activeVoiceId);
+      if (v.voice) u.voice = v.voice;
+      u.pitch = v.pitch; u.rate = Math.max(0.6, v.rate - 0.12); u.volume = 0.5;   // quieter + slower
+      u.onstart = () => onSpeakStart();
+      u.onend = () => onSpeakEnd();
+      u.onerror = () => onSpeakEnd();
+      synth.speak(u); kickResume(); startWatchdog();
+    } catch (_) {}
+  }
+
   /* ======================================================================
      HANDS-FREE VOICE MODE — the self-driving listen → send → speak → listen loop
      ====================================================================== */
@@ -381,7 +403,7 @@ const Voice = (() => {
   function isOn() { return !!(synth && speakReplies); }
 
   return {
-    init, speak, setAgent, isOn,
+    init, speak, mutter, setAgent, isOn,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak,

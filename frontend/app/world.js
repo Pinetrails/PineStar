@@ -245,10 +245,17 @@ const World = (() => {
   function stop() { running = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } }
   function wakeIn() { wakeAt = performance.now(); }
   function refit() { fitNeeded = true; }
-  function say(text) {
+  function say(text, opts) {
     if (!agent) return;
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     agent.say = { text: t.slice(0, 160), until: performance.now() + 4200 };
+    // ambient station-life remarks are muttered ALOUD too (when the agent has a voice and isn't
+    // mid-conversation) so the station feels lived-in. Real replies are spoken by chat.js, not here,
+    // so only {ambient:true} lines speak — and pure filler ("...", "hmm") stays a silent bubble.
+    if (opts && opts.ambient && typeof Voice !== 'undefined' && Voice.mutter
+        && /[a-z]/i.test(t) && !/^h+m+[.…]?$/i.test(t)) {
+      Voice.mutter(t);
+    }
   }
   /* kind: 'task' (walk to the workstation + work) | 'talk' (face the Commander) | 'idle' (wander the station) */
   function setActivity(kind) {
@@ -489,8 +496,11 @@ const World = (() => {
   function curiositySay(lines, prob, now) {
     if (!lines || !lines.length || !agent) return;
     if (agent.say && agent.say.until > now) return;   // never stomp a live (real) message
+    // stay quiet while a voice conversation is actually happening (listening / the agent speaking)
+    if (typeof Voice !== 'undefined'
+        && ((Voice.isListening && Voice.isListening()) || (Voice.isSpeaking && Voice.isSpeaking()))) return;
     if (!U.chance(prob)) return;
-    say(U.pick(lines));
+    say(U.pick(lines), { ambient: true });
   }
 
   function tick(dt, now) {
