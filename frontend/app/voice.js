@@ -320,8 +320,8 @@ const Voice = (() => {
     if (!busyNow() && !speaking) setStatus(savedStatus || (convoMode ? 'voice mode on' : 'online'));
   }
 
-  // a final transcript from the mic. Sends through Chat.send marked { spoken:true } so a genuinely
-  // SPOKEN turn gets the short voice-mode answer — while a TYPED question keeps full written detail.
+  // a final transcript from the mic — sent exactly like a typed message (busy/purpose/task/cost logic
+  // is reused). The agent's spoken reply is driven by the 🔊 toggle in chat.js, not by this path.
   function submitTranscript(text) {
     if (discarding) return;   // teardown in progress — drop the buffered transcript, never send it
     const t = String(text || '').trim();
@@ -333,7 +333,7 @@ const Voice = (() => {
     if (convoMode && /^(exit|stop|end|leave|quit|turn off)\b.*\bvoice\b/.test(norm)) { stopConvo(); return; }
     sentThisListen = true; emptyStreak = 0;
     if (typeof SFX !== 'undefined') SFX.click();
-    if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t, { spoken: true });   // reuses busy/purpose/task logic + cost
+    if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
   }
 
   // mic button: interrupt the agent if it's talking (barge-in), else start/stop a listen. In voice

@@ -142,8 +142,7 @@ const Chat = (() => {
 
   // task-vs-chat classification lives in app/classify.js (pure + unit-tested); see Classify.isTaskDirective.
 
-  async function send(text, opts) {
-    opts = opts || {};   // { spoken } — true when this came from the mic (drives the voice-mode brevity below)
+  async function send(text) {
     if (busy) return;
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
@@ -162,14 +161,14 @@ const Chat = (() => {
     status(isTask ? 'working…' : 'thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to
     // this panel; for talk it speaks the reply as a bubble in the room.
-    // VOICE MODE: only when the Commander actually SPOKE this turn (and the agent will answer aloud)
-    // do we append the short/spoken-style rule. A TYPED conversational question — even with the
-    // speaker on — keeps full written detail (it's just read aloud). Appended LAST so it wins on
-    // format; never baked into the saved prompt and never sent on text/task turns.
-    const voiceTurn = !isTask && !!opts.spoken && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
+    // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
+    // forth. When it's OFF, replies are silent + detailed written text. Appended LAST so it wins on
+    // format; never baked into the saved prompt.
+    const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
     const sys = system
       + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '')
-      + (voiceTurn ? VOICE_MODE_RULES : '');
+      + (willSpeak ? VOICE_MODE_RULES : '');
 
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton) so the per-stream diff is real
     const ac = new AbortController();
@@ -203,8 +202,11 @@ const Chat = (() => {
       } else {
         ws.history.push({ role: 'assistant', content: reply || acc });
         out.done();
-        // a conversational reply: the agent shows it as a room bubble AND speaks it aloud (per-agent voice).
-        if (!isTask) { World.say(reply || acc); if (typeof Voice !== 'undefined') Voice.speak(reply || acc, name); }
+        // a talk reply shows as a room bubble; the agent SPEAKS its reply on every turn (talk or task)
+        // whenever the 🔊 toggle is on — Voice.speak self-gates on it, so this is how you hear your agent
+        // in a real conversation, not just on the handful of messages the classifier counts as "chat".
+        if (!isTask) World.say(reply || acc);
+        if (typeof Voice !== 'undefined') Voice.speak(reply || acc, name);
         // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
         if (endReason && endReason !== 'done') {
           toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
