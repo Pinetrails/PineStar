@@ -157,15 +157,22 @@ const Chat = (() => {
     }
 
     const isTask = !purposeTurn && Classify.isTaskDirective(text);
-    World.setActivity(isTask ? 'task' : 'talk');
-    status(isTask ? 'working…' : 'thinking…');
-    // for a task the agent works at the computer (lit screen) and the result streams to
-    // this panel; for talk it speaks the reply as a bubble in the room.
     // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
     // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
-    // forth. When it's OFF, replies are silent + detailed written text. Appended LAST so it wins on
-    // format; never baked into the saved prompt.
+    // forth. When it's OFF, replies are silent + detailed written text.
     const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    World.setActivity(isTask ? 'task' : 'talk');
+    status(isTask ? 'working…' : 'thinking…');
+    // a task makes the agent walk to the workstation and work, which can take a while. With voice on,
+    // fire an immediate in-character acknowledgment ("on it, boss") AS it heads over — so it answers
+    // right away instead of going silent until the whole task is done. The real result speaks at the end.
+    if (isTask && willSpeak && typeof Voice !== 'undefined' && Voice.ack) {
+      const a = Voice.ack();
+      if (a && typeof World !== 'undefined' && World.say) World.say(a);
+    }
+    // for a task the agent works at the computer (lit screen) and the result streams to this panel;
+    // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
+    // wins on format; it's never baked into the saved prompt.
     const sys = system
       + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '')
       + (willSpeak ? VOICE_MODE_RULES : '');

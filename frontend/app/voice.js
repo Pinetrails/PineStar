@@ -38,6 +38,7 @@ const Voice = (() => {
   // ---- UI handles (wired in init) -----------------------------------------
   let micBtn = null, toggleBtn = null, modeBtn = null, inputEl = null, statusEl = null;
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
+  let activePersonaId = 'worker-homie';   // drives the in-character task acknowledgments
   let listening = false, speaking = false, savedStatus = '';
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open
@@ -166,6 +167,20 @@ const Voice = (() => {
   }
 
   function stopSpeaking() { ttsProvider.stop(); }
+
+  // a quick, in-character spoken acknowledgment ("aight, on it") fired the INSTANT a task is assigned,
+  // so the agent answers right away as it heads to the workstation instead of going silent until the
+  // whole task finishes. Canned per-personality (zero latency, no model call). Returns the phrase so
+  // the caller can also show it as a room bubble. The real result still speaks when the run completes.
+  function ack() {
+    if (!speakReplies || !synth) return '';
+    const persona = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
+    const acks = (persona && persona.acks) || [];
+    if (!acks.length) return '';
+    const phrase = (typeof U !== 'undefined' && U.pick) ? U.pick(acks) : acks[0];
+    ttsProvider.speak(phrase, activeVoiceId, null);
+    return phrase;
+  }
 
   // an ambient, muttered aside — station-life flavor (from world.js curiosity remarks), spoken
   // quieter + a touch slower so it reads as the agent talking to itself, not answering. It NEVER
@@ -362,7 +377,8 @@ const Voice = (() => {
   }
   function setSpeaking(on) {
     if (toggleBtn) toggleBtn.classList.toggle('speaking', on);
-    if (on) setStatus('speaking…');
+    // a task acknowledgment speaks while the run is still going — don't clobber the 'working…' status.
+    if (on) { if (!busyNow()) setStatus('speaking…'); }
     else if (!listening && !busyNow()) setStatus('online');
   }
   function reflectToggle() {
@@ -390,6 +406,7 @@ const Voice = (() => {
   function init(opts) {
     opts = opts || {};
     activeVoiceId = opts.name || 'agent';
+    if (opts.personaId) activePersonaId = opts.personaId;
     convoMode = false;   // a fresh game session starts in push-to-talk; the toggle opts into hands-free
     clearTimeout(rearmTimer); rearmTimer = null; emptyStreak = 0;
     inputEl = el('chat-input'); statusEl = el('chat-status');
@@ -421,7 +438,7 @@ const Voice = (() => {
   function isOn() { return !!(synth && speakReplies); }
 
   return {
-    init, speak, mutter, setAgent, isOn,
+    init, speak, mutter, ack, setAgent, isOn,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak,

@@ -241,7 +241,7 @@ const App = (() => {
       StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');
     }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), awaitingPurpose: opts.awaitingPurpose, onPurpose: onPurpose, onTurn: persist });
-    if (typeof Voice !== 'undefined') Voice.init({ name: agent.name });   // mic (push-to-talk) + this agent's spoken voice
+    if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId });   // mic + this agent's voice & acks
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
     renderRail();
     el('ws-new').onclick = newWorkstream;
