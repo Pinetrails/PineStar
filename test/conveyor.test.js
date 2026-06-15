@@ -169,4 +169,62 @@ for (let i = 0; i < 200 && !wentStraight; i++) {
 }
 A.ok(wentStraight, 'with no junction map a box follows the belt straight through (routing is opt-in)');
 
+/* ---------- Stage 5: FILTER junction (content-routing by payload.tag) ---------- */
+// source (0,0)→E into a FILTER at (1,0); out-lanes E→(2,0)+ and S→(1,1)+.
+const fbelts = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' },
+                { x: 1, y: 1, dir: 'S' }, { x: 1, y: 2, dir: 'S' }, { x: 1, y: 3, dir: 'S' }];
+function filterLane(payload, junc) {
+  const cv = Conveyor.create();
+  cv.enqueueAt(0, 0, payload);
+  let lane = '?', t = 0;
+  for (let i = 0; i < 300 && lane === '?'; i++) {
+    t += 16; cv.tick(16, t, fbelts, junc);
+    const b = cv.peekBoxes().find(x => x.payload && x.payload.workitemId === payload.workitemId);
+    if (b && b.sink <= 0 && (b.x >= 2 || b.y >= 1)) lane = (b.y === 0) ? 'E' : 'S';
+  }
+  return lane;
+}
+const fj = new Map([['1,0', { kind: 'filter', routes: { code: 'S', research: 'E' }, def: 'E' }]]);
+A.eq(filterLane({ workitemId: 'f1', tag: 'code' }, fj), 'S', 'a FILTER routes a code-tagged box down its configured S lane');
+A.eq(filterLane({ workitemId: 'f2', tag: 'research' }, fj), 'E', 'a FILTER routes a research-tagged box down the E lane');
+A.eq(filterLane({ workitemId: 'f3', tag: 'general' }, fj), 'E', 'a FILTER sends an unmatched tag down its default lane');
+A.eq(filterLane({ workitemId: 'f4' }, fj), 'E', 'a FILTER treats a tagless box as general -> the default lane');
+// never-drop: a route pointing at a NON-EXISTENT lane falls back to the default (work is never lost at a filter)
+const fjBad = new Map([['1,0', { kind: 'filter', routes: { code: 'N' }, def: 'E' }]]);
+A.eq(filterLane({ workitemId: 'f5', tag: 'code' }, fjBad), 'E', 'a FILTER route to a missing lane falls back to default (never dropped)');
+// replay-stable: identical input -> identical lane
+A.eq(filterLane({ workitemId: 'f6', tag: 'code' }, fj), filterLane({ workitemId: 'f6', tag: 'code' }, fj), 'FILTER routing is replay-stable');
+
+// the onAdvance seam (what world.js wires to emit('workitem.advanced')) fires the routing decision
+const adv = [];
+const cva = Conveyor.create({ onAdvance: (bx, info) => adv.push(info) });
+cva.enqueueAt(0, 0, { workitemId: 'a1', tag: 'code' });
+let at = 0; for (let i = 0; i < 200 && !adv.length; i++) { at += 16; cva.tick(16, at, fbelts, fj); }
+A.ok(adv.some(i => i.kind === 'filter' && i.lane === 'S' && i.tag === 'code'), 'onAdvance reports a filter routing decision (telemetry seam)');
+
+/* ---------- Stage 5b: MERGER junction (buffer K, emit ONE combined work-item) ---------- */
+// straight line (0,0)→(3,0) with a K=2 MERGER at (2,0): the first inbound box is absorbed, the K-th rides
+// on carrying the combined work-item list and delivers ONCE at the open end.
+const mbelts = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }];
+const mj = new Map([['2,0', { kind: 'merge', bufferSize: 2 }]]);
+function mergeRun() {
+  const del = [];
+  const cv = Conveyor.create({ onDeliver: bx => del.push(bx.payload) });
+  cv.enqueueAt(0, 0, { workitemId: 'm1' });
+  let t = 0; for (let i = 0; i < 30; i++) { t += 16; cv.tick(16, t, mbelts, mj); }  // m1 leads
+  cv.enqueueAt(0, 0, { workitemId: 'm2' });
+  for (let i = 0; i < 300; i++) { t += 16; cv.tick(16, t, mbelts, mj); }
+  return { del, remaining: cv.boxCount() };
+}
+const mr = mergeRun();
+A.eq(mr.del.length, 1, 'a K=2 MERGER emits exactly ONE delivery for two inbound boxes (the other is absorbed)');
+A.ok(mr.del[0] && mr.del[0].merged && mr.del[0].merged.indexOf('m1') >= 0 && mr.del[0].merged.indexOf('m2') >= 0,
+  'the single merged delivery carries BOTH inbound work-item ids');
+A.eq(mr.del[0].mergeCount, 2, 'the merged delivery records its K (mergeCount)');
+A.eq(mr.remaining, 0, 'the belt drains fully (absorbed box sinks, carrier delivers, both despawn)');
+// replay-stable: same combined set every run
+const mr2 = mergeRun();
+A.eq(JSON.stringify(mr.del[0].merged.slice().sort()), JSON.stringify(mr2.del[0].merged.slice().sort()),
+  'MERGER is replay-stable (identical combined set across runs)');
+
 A.report('conveyor');

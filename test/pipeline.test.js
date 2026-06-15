@@ -89,6 +89,31 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.eq(P.resolveTarget(plan, { tag: 'misc' }), 'coder', 'an untagged message takes the default lane');
 }
 
+/* ---- FILTER never-drops: a route to a non-existent lane falls back to the default (visual == dispatch) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'f1', t: 'filter', x: 2, y: 0, w: 1, h: 1, routes: { code: 'N' }, def: 'E' },   // 'N' lane has no belt
+     { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E')]
+  ));
+  A.eq(P.resolveTarget(plan, { tag: 'code' }), 'coder',
+    'a filter route to a missing lane falls back to the default lane (resolveTarget mirrors the engine — work never dropped)');
+}
+
+/* ---- MERGER: bufferSize (K) threaded into the plan junction; a box still resolves through it ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'm1', t: 'merger', x: 2, y: 0, w: 1, h: 1, bufferSize: 3 },
+     { id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'a' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E')]
+  ));
+  const j = plan.junctions['2,0'];
+  A.ok(j && j.kind === 'merge' && j.bufferSize === 3, 'a merger compiles to a merge junction carrying its bufferSize (K)');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'a', 'a box still resolves through a merge to the downstream bay');
+}
+
 /* ---- FILTER_NO_DEFAULT ---- */
 {
   const plan = P.compileRoutingPlan(geo(

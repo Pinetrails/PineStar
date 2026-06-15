@@ -138,7 +138,15 @@
       const here = map[k]; if (!here) return null;   // sank with no bay
       const j = junctions[k];
       let d = here;
-      if (j && j.kind === 'filter') d = (j.routes && j.routes[tag]) || j.def || here;
+      if (j && j.kind === 'filter') {
+        // mirror conveyor.chooseExit EXACTLY: routed lane -> default lane -> first lane (never an invalid dir),
+        // so the agent the sidecar resolves is provably the bay the box physically rides to.
+        const lanes = outLanes(map, t.x, t.y);
+        const want = j.routes && j.routes[tag];
+        d = (want && lanes.indexOf(want) >= 0) ? want
+          : (j.def && lanes.indexOf(j.def) >= 0) ? j.def
+          : (lanes[0] || here);
+      }
       else if (j) { const lanes = outLanes(map, t.x, t.y); d = lanes[0] || here; }   // split/merge: first lane (B3 load-balances)
       const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1];
       if (!map[key(nx, ny)]) return null;            // stepped off the belt with no bay

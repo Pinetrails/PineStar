@@ -31,5 +31,25 @@
     return true;                                    // default: treat as a task so work is visible + tooled
   }
 
-  return { isTaskDirective };
+  /* CONTENT TAG — what KIND of work is this, so a FILTER junction can sort it to the right agent's bay.
+     This is the conveyor's content-router input: getTag(text) -> the tag a work-item box carries, which a
+     filter routes by (config.routes[tag] || config.def). Pure + deterministic + case-insensitive.
+
+     'code' wins over 'research' when both signal (a "look up how to refactor this .ts" IS coding work),
+     because a code task misrouted to a researcher loses the toolchain; an ambiguous prompt defaults to
+     'general' (the filter's catch-all lane) so nothing is ever dropped. Keep both sets CONSERVATIVE —
+     over-tagging mis-sorts work; the default lane is the safe sink. Mirror any change in a filter's routes. */
+  const CODE = /\b(code|coding|program(?:ming)?|script(?:ing)?|function|class|method|variable|module|bug|debug|refactor|compile|deploy|commit|rebase|repo(?:sitory)?|git|api|endpoint|database|query|sql|regex|stack ?trace|exception|crash|typescript|javascript|python|rust|golang|css|html|react|node|npm|webpack|lint|unit ?test)\b|\.(?:js|ts|tsx|jsx|py|rs|go|java|cpp?|cs|css|html?|json|ya?ml|sh|sql)\b/;
+  const RESEARCH = /\b(research|investigate|look ?up|search|google|web ?search|browse|sources?|cite|citations?|references?|study|survey|literature|paper|articles?|news|headlines?|wikipedia|market|trends?|competitors?|background|find out|gather|fact[ -]?check)\b/;
+
+  // the content tag a work-item carries: 'code' | 'research' | 'general' (the default / catch-all lane)
+  function getTag(text) {
+    const t = String(text == null ? '' : text).trim().toLowerCase();
+    if (!t) return 'general';
+    if (CODE.test(t)) return 'code';                // code intent wins (misrouted code loses its toolchain)
+    if (RESEARCH.test(t)) return 'research';
+    return 'general';                               // ambiguous -> the filter's default lane, never dropped
+  }
+
+  return { isTaskDirective, getTag };
 });
