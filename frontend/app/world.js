@@ -34,6 +34,21 @@ const World = (() => {
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
   const tileOf = (px, py) => ({ x: Math.floor(px / T), y: Math.floor(py / T) });
 
+  /* ---------- awareness & curiosity ----------
+     novelty = freshly placed things the agent should wander over and inspect; seen* track what the
+     agent has already taken in (null until the first geo is observed, so a fresh station doesn't
+     trigger a boot-time inspection storm). Curiosity remarks are short, apostrophe-free, and only
+     ever spoken when no real message bubble is live. */
+  let novelty = [], seenProps = null, seenBelts = null;
+  const NOVELTY_MAX = 4;
+  const CURIO_NEW_PROP = ['what is that?', 'new hardware', 'fresh kit', 'ooh, new toy', 'when did this arrive?'];
+  const CURIO_NEW_BELT = ['a conveyor!', 'cargo line', 'where does this go?', 'belt is live'];
+  const CURIO_WATCH = ['cargo inbound', 'steady flow', 'keep it moving', 'hmm', '...'];
+  const CURIO_STUDY = ['interesting', 'huh.', 'noted.', 'fascinating', 'let me see'];
+  const CURIO_LOOK = ['hm.', 'all quiet', 'nice station', 'cozy in here', '...'];
+  const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
+  const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
+
   /* ================= furniture (ported v7 sprites.js F.desk / F.chair) ================= */
   const fpx = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
   const fblink = (p, ph) => ((fnow / p + (ph || 0)) % 1) < 0.5;
@@ -102,6 +117,7 @@ const World = (() => {
   function loadStation(st) {
     if (unsub) { unsub(); unsub = null; }
     station = st; geo = null; cache = null; geoDirty = true; bakeDirty = true; fitNeeded = true;
+    novelty = []; seenProps = null; seenBelts = null;   // re-learn the scene from scratch (no cross-station novelty)
     if (station && station.onChange) unsub = station.onChange(() => { geoDirty = true; });
     rederive();
   }
@@ -118,12 +134,13 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use') { agent.goal = null; agent.usingProp = null; agent.sitting = false; }  // the prop list may have changed — drop leisure, re-decide next idle tick
+        if (agent.goal === 'use' || agent.goal === 'inspect' || agent.goal === 'watch') { agent.goal = null; agent.usingProp = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
       }
     }
+    scanNovelty();   // diff props/belts vs last frame — anything new becomes a "go check it out" target
     geoDirty = false; bakeDirty = true;
   }
 
@@ -177,7 +194,9 @@ const World = (() => {
       id: a.id, name: a.name, color: a.color || '#5ad0ff',
       px: 0, py: 0, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: true,
       phase: U.hash(a.id) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
-      usingProp: null, useUntil: 0, useFace: 'south', useSit: false   // idle leisure: which prop the agent is at + dwell timer + pose
+      usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
+      // awareness & curiosity: head-turn glance (drawBody reads agent.glance), study/observe dwell, fidget + notice cooldowns
+      glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0
     };
     if (geo) placeAgent();
   }
@@ -255,7 +274,7 @@ const World = (() => {
 
   /* ---------- pathing + behaviour ---------- */
   function setPathTo(dest) {
-    agent.pathPts = null; agent.target = null;
+    agent.pathPts = null; agent.target = null; agent.glance = null;
     if (!dest || !geo) return false;
     const cur = tileOf(agent.px, agent.py);
     const p = geo.path(cur.x, cur.y, dest.x, dest.y, blocked);
@@ -273,20 +292,39 @@ const World = (() => {
     agent.pathPts = null; agent.target = null;
     if (agent.goal === 'work') { agent.sitting = true; agent.working = true; agent.dir = 'north'; agent.state = 'idle'; }
     else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); }
+    else if (agent.goal === 'inspect' || agent.goal === 'watch') {
+      // reached the thing — stand, face it, and observe for a spell (belts hold the gaze longer)
+      agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
+      agent.studyUntil = now + (agent.goal === 'watch' ? U.irnd(6000, 14000) : U.irnd(2600, 6000));
+      agent.glanceCd = 0; agent.nextFidget = now + U.irnd(700, 1600);
+      if (agent.goal === 'watch') curiositySay(CURIO_WATCH, 0.5, now);
+      else curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, 0.65, now);
+    }
     else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 2600); }
   }
   function wander(now) {
     const rects = geo.allRects;
     if (!rects.length) { agent.idleUntil = now + 800; return; }
     const cur = tileOf(agent.px, agent.py);
+    const avoid = beltUnion();   // desk footprint + belt tiles: an idle stroll should step AROUND the machinery
     for (let i = 0; i < 24; i++) {
       const r = rects[U.irnd(0, rects.length - 1)];
       const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
       if (!geo.walkable(x, y, blocked)) continue;
-      const p = geo.path(cur.x, cur.y, x, y, blocked);
+      if (avoid.has(x + ',' + y)) continue;                  // don't stroll to a belt tile
+      let p = geo.path(cur.x, cur.y, x, y, avoid);           // prefer a belt-free route
+      if (!p) p = geo.path(cur.x, cur.y, x, y, blocked);     // fall back: a belt bridges the only way across
       if (p && p.length) { agent.goal = null; agent.pathPts = p; agent.pathIdx = 0; agent.state = 'walk'; nextWaypoint(); return; }
     }
     agent.idleUntil = now + 800;
+  }
+
+  /* desk footprint ∪ all belt tiles — the soft no-tread set for casual wandering */
+  function beltUnion() {
+    const s = new Set(blocked);
+    const belts = (geo && geo.belts) || [];
+    for (const b of belts) s.add(b.x + ',' + b.y);
+    return s;
   }
 
   // the catalog `use` descriptor for a placed prop, or null if it isn't a leisure prop
@@ -318,6 +356,140 @@ const World = (() => {
     return false;
   }
 
+  /* ---------- awareness: notice new placements ---------- */
+  // diff this frame's props/belts against what the agent has already taken in; queue the additions
+  function scanNovelty() {
+    const props = (geo && geo.props) || [], belts = (geo && geo.belts) || [];
+    const propIds = new Set(props.map(p => p.id));
+    const beltKeys = new Set(belts.map(b => b.x + ',' + b.y));
+    if (seenProps === null) { seenProps = propIds; seenBelts = beltKeys; return; }   // first look: learn the scene, react to nothing
+    for (const p of props) {
+      if (seenProps.has(p.id)) continue;
+      pushNovelty(Math.floor(p.x + (p.w || 1) / 2), Math.floor(p.y + (p.h || 1) / 2), 'prop', p.id);
+    }
+    for (const b of belts) {                       // a long run lands as one tile-flag, not a spam of them
+      if (seenBelts.has(b.x + ',' + b.y)) continue;
+      pushNovelty(b.x, b.y, 'belt', null); break;
+    }
+    seenProps = propIds; seenBelts = beltKeys;
+  }
+  function pushNovelty(tx, ty, kind, pid) {
+    novelty = novelty.filter(n => !(n.tx === tx && n.ty === ty));   // dedupe the same tile
+    novelty.push({ tx, ty, kind, pid });
+    if (novelty.length > NOVELTY_MAX) novelty.shift();
+    if (agent && activity === 'idle') agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 350);   // react within ~1s
+  }
+
+  /* pixel position of the nearest riding belt box, or null (for gaze-tracking cargo) */
+  function nearestBox() {
+    if (!convey || !convey.peekBoxes) return null;
+    const boxes = convey.peekBoxes(); if (!boxes || !boxes.length) return null;
+    const DV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
+    let best = null, bd = Infinity;
+    for (const b of boxes) {
+      if (b.sink > 0) continue;
+      const v = DV[b.dir] || [0, 0];
+      const bx = (b.x + 0.5 + (b.prog - 0.5) * v[0]) * T, by = (b.y + 0.5 + (b.prog - 0.5) * v[1]) * T;
+      const d = Math.hypot(bx - agent.px, by - agent.py);
+      if (d < bd) { bd = d; best = { x: bx, y: by, d }; }
+    }
+    return best;
+  }
+
+  function setGlance(dir, ms, now) { if (agent) agent.glance = { dir, until: now + ms }; }
+
+  // go inspect the freshest queued placement (pops the queue; tries each until one is reachable)
+  function planInspect(now) {
+    while (novelty.length) {
+      const n = novelty.pop();
+      let foot = { x: n.tx, y: n.ty, w: 1, h: 1 };
+      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p) continue; foot = p; }
+      const extra = n.kind === 'belt' ? beltUnion() : blocked;   // for a belt, stand beside it — not on the machinery
+      const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra });
+      if (a && setPathTo({ x: a.tx, y: a.ty })) {
+        agent.goal = 'inspect'; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = true;
+        if (!agent.target) arrive(now);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ambient curiosity (no fresh placement): study a machine or watch a belt go by
+  function planPOI(now) {
+    const cands = [];
+    const belts = (geo && geo.belts) || [];
+    if (belts.length) { const b = belts[U.irnd(0, belts.length - 1)]; cands.push({ kind: 'watch', foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
+    const props = (geo && geo.props) || [];
+    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks; });   // non-leisure kit (leisure is planProp's job)
+    if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', foot: p, extra: blocked }); }
+    if (cands.length === 2 && U.chance(0.5)) cands.reverse();
+    for (const c of cands) {
+      const a = PropAnchor.deriveAnchor(c.foot, geo, { approach: 'auto', extra: c.extra });
+      if (a && setPathTo({ x: a.tx, y: a.ty })) {
+        agent.goal = c.kind; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = false;
+        if (!agent.target) arrive(now);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // pan the gaze around without moving — "taking the place in"
+  function lookAround(now) {
+    const dir = U.pick(['east', 'west', 'south', 'north']);
+    setGlance(dir, U.irnd(600, 1100), now); agent.dir = dir;
+    agent.idleUntil = now + U.irnd(900, 2200);
+    if (U.chance(0.15)) curiositySay(CURIO_LOOK, 1, now);
+  }
+
+  // the idle menu: new things first, then lounging / studying-a-machine / watching-a-belt, and
+  // failing those (or by default) mostly stroll — but pause to look around a fair bit too.
+  function decideIdle(now) {
+    if (novelty.length && planInspect(now)) return;
+    const r = U.irnd(0, 99);
+    if (r < 30 && planProp(now)) return;
+    if (r < 55 && planPOI(now)) return;
+    if (U.chance(0.4)) lookAround(now); else wander(now);
+  }
+
+  // head-turns that sell "alive": track passing cargo, fidget at the desk, glance at new kit, look around
+  function maybeGlance(now) {
+    if (!agent || agent.unplaced || activity === 'talk') return;
+    if (agent.state === 'walk') return;                              // walking owns the facing
+    if (agent.glance && agent.glance.until > now) return;
+    if (now < (agent.glanceCd || 0)) return;
+    // watching a belt → follow the nearest box
+    if (agent.goal === 'watch') {
+      const box = nearestBox();
+      if (box && box.d < 80) { setGlance(dirToward(agent.px, agent.py, box.x, box.y), U.irnd(500, 900), now); agent.glanceCd = now + U.irnd(700, 1400); return; }
+    }
+    // working at the desk: glance at a freshly placed thing nearby, else fidget-look up from the screen
+    if (agent.working) {
+      if (novelty.length) {
+        const n = novelty[novelty.length - 1], nx = (n.tx + 0.5) * T, ny = (n.ty + 0.5) * T;
+        if (Math.hypot(nx - agent.px, ny - agent.py) < 130) {
+          setGlance(dirToward(agent.px, agent.py, nx, ny), U.irnd(700, 1200), now); agent.glanceCd = now + U.irnd(3000, 5000);
+          curiositySay(n.kind === 'belt' ? CURIO_NEW_BELT : CURIO_NEW_PROP, 0.4, now); return;
+        }
+      }
+      if (now > (agent.nextFidget || 0)) { setGlance(U.pick(['east', 'west', 'south']), U.irnd(500, 950), now); agent.nextFidget = now + U.irnd(9000, 20000); agent.glanceCd = now + 3000; }
+      return;
+    }
+    // a box trundles past an idle agent → a quick look over
+    if (U.chance(0.6)) { const box = nearestBox(); if (box && box.d < 46) { setGlance(dirToward(agent.px, agent.py, box.x, box.y), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(3500, 6000); return; } }
+    // idle / studying: occasional ambient look around
+    if ((agent.goal === 'inspect' || agent.goal == null) && U.chance(0.5)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(2500, 5000); }
+  }
+
+  // a short curiosity remark — only when nothing real is on screen, and only sometimes
+  function curiositySay(lines, prob, now) {
+    if (!lines || !lines.length || !agent) return;
+    if (agent.say && agent.say.until > now) return;   // never stomp a live (real) message
+    if (!U.chance(prob)) return;
+    say(U.pick(lines));
+  }
+
   function tick(dt, now) {
     if (!agent || agent.unplaced || !geo) return;
     const SPEED = 34;
@@ -328,6 +500,11 @@ const World = (() => {
     if (activity !== 'task' && agent.goal === 'work') {
       agent.goal = null; agent.sitting = false; agent.working = false; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200;
     }
+    // freshly placed thing + free to roam → divert and go check it out (even mid-stroll), throttled
+    if (activity === 'idle' && novelty.length && agent.goal === null && !agent.working && !agent.sitting && now >= (agent.noticeCd || 0)) {
+      if (planInspect(now)) agent.noticeCd = now + 1500;
+    }
+    maybeGlance(now);   // head-turns over the top of whatever else the agent is doing
     if (agent.target) {
       const dx = agent.target.x - agent.px, dy = agent.target.y - agent.py, d = Math.hypot(dx, dy);
       if (d < 1.1) {
@@ -342,9 +519,11 @@ const World = (() => {
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
       if (now >= agent.useUntil) { agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
+    } else if (agent.goal === 'inspect' || agent.goal === 'watch') {
+      // observing a machine / belt: hold the gaze until the study timer ends (maybeGlance animates it)
+      if (now >= agent.studyUntil) { agent.goal = null; agent.usingProp = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500); }
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
-      // ~55% of idle decisions seek a prop to use; otherwise (or if none reachable) wander
-      if (!(U.irnd(0, 99) < 55 && planProp(now))) wander(now);
+      decideIdle(now);
     }
   }
 
