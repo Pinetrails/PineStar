@@ -3653,7 +3653,10 @@ const PropSprites = (() => {
      cat       — palette group
      w,h       — default footprint in tiles
      animated  — has a per-frame emissive accent (informational)
-     blocks    — occupies its footprint tiles for pathfinding (agents route around) */
+     blocks    — occupies its footprint tiles for pathfinding (agents route around)
+     use       — OPTIONAL leisure descriptor {kind, sit, approach}: marks a prop an idle
+                 agent can lounge at (couch/tv/arcade/…). world.js derives the approach
+                 tile via propanchor.js; sit=true seats the agent, approach biases the side. */
   const CATALOG = [
     { id: "consoleL", label: "CONSOLE L", cat: "work", w: 3, h: 1, animated: true, blocks: true },
     { id: "bench", label: "BENCH", cat: "work", w: 4, h: 1, animated: true, blocks: true },
@@ -3723,12 +3726,12 @@ const PropSprites = (() => {
     { id: "arc_microfiche", label: "MICROFICHE", cat: "comms", w: 2, h: 1, animated: true, blocks: true },
     { id: "djbooth", label: "DJ BOOTH", cat: "lounge", w: 4, h: 2, animated: true, blocks: true },
     { id: "speaker", label: "SPEAKER", cat: "lounge", w: 1, h: 1, animated: true, blocks: true },
-    { id: "bar", label: "BAR", cat: "lounge", w: 4, h: 1, animated: true, blocks: true },
-    { id: "tv", label: "TV", cat: "lounge", w: 3, h: 1, animated: true, blocks: true },
-    { id: "couch", label: "COUCH", cat: "lounge", w: 5, h: 1, animated: true, blocks: true },
-    { id: "arcade", label: "ARCADE", cat: "lounge", w: 1, h: 2, animated: true, blocks: true },
-    { id: "arcade2", label: "ARCADE II", cat: "lounge", w: 1, h: 2, animated: true, blocks: true },
-    { id: "jukebox", label: "JUKEBOX", cat: "lounge", w: 1, h: 2, animated: true, blocks: true },
+    { id: "bar", label: "BAR", cat: "lounge", w: 4, h: 1, animated: true, blocks: true, use: { kind: 'bar', sit: false, approach: 'south' } },
+    { id: "tv", label: "TV", cat: "lounge", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'tv', sit: false, approach: 'south' } },
+    { id: "couch", label: "COUCH", cat: "lounge", w: 5, h: 1, animated: true, blocks: true, use: { kind: 'couch', sit: true, approach: 'south' } },
+    { id: "arcade", label: "ARCADE", cat: "lounge", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
+    { id: "arcade2", label: "ARCADE II", cat: "lounge", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
+    { id: "jukebox", label: "JUKEBOX", cat: "lounge", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'juke', sit: false, approach: 'south' } },
     { id: "bunk", label: "BUNK", cat: "lounge", w: 2, h: 2, animated: true, blocks: true },
     { id: "quarters_pooltable", label: "POOL TABLE", cat: "lounge", w: 4, h: 2, animated: true, blocks: true },
     { id: "quarters_vending", label: "VENDING", cat: "lounge", w: 1, h: 2, animated: true, blocks: true },

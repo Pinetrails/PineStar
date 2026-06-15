@@ -183,30 +183,48 @@ const StationUI = (() => {
   }
 
   function agHead(a, act, price) {
-    return '<div class="ag-head"><canvas id="ag-portrait" width="34" height="44"></canvas>' +
-      '<div><div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + '</div>' +
-      '<div class="ag-role">▸ ' + crewStatus(act) + '</div>' +
-      '<div class="ag-tags">' +
-      '<span class="tag model">' + esc(a.model || '—') + '</span>' +
-      '<span class="tag">HAB-01</span>' +
-      (price ? '<span class="tag">$' + price.in.toFixed(2) + ' / $' + price.out.toFixed(2) + ' per 1M</span>' : '') +
+    const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
+    const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    return '<div class=”ag-hero”>' +
+      '<div class=”ag-portrait-wrap”><canvas id=”ag-portrait” width=”52” height=”68”></canvas></div>' +
+      '<div class=”ag-info”>' +
+      '<div class=”ag-name” style=”color:' + a.color + '”>' + esc(a.name) + '</div>' +
+      '<div class=”ag-role-line”><span class=”ag-sdot ' + dotCls + '”></span>' + statusText + ' · HAB-01</div>' +
+      '<div class=”ag-tags”>' +
+      '<span class=”tag model”>' + esc(a.model || '—') + '</span>' +
+      (price ? '<span class=”tag dim”>$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
       '</div></div></div>';
   }
 
   function agBrief(a) {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
-    return '<p class="ag-desc">' + (a.purpose
-      ? '“' + esc(a.purpose) + '”'
-      : '<span class="dim">No mission yet — set it in CONFIG ▸ purpose.md, or just tell your agent in COMMS.</span>') + '</p>' +
-      '<div class="ag-task-block"><div class="ag-task-label">LIFETIME USAGE — REAL SPEND</div>' +
-      '<div class="ag-stats">' +
-      '<span>TOKENS <b>' + Number(t.tokens || 0).toLocaleString() + '</b></span>' +
-      '<span>SPEND <b class="pos">$' + Number(t.cost || 0).toFixed(4) + '</b></span>' +
-      '<span>CALLS <b>' + (t.calls || 0) + '</b></span>' +
-      '</div></div>' +
-      '<div class="ag-stats"><span>ON STATION SINCE <b>' + since + '</b></span></div>' +
-      '<div class="ag-note">Every figure here is read straight from this agent\'s real model usage — nothing is simulated.</div>';
+    const fmtTok = n => { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
+    return '<div class=”stat-grid”>' +
+      '<div class=”stat-cell”><div class=”stat-val”>' + (t.calls || 0) + '</div><div class=”stat-lbl”>RUNS</div></div>' +
+      '<div class=”stat-cell”><div class=”stat-val”>' + fmtTok(t.tokens) + '</div><div class=”stat-lbl”>TOKENS</div></div>' +
+      '<div class=”stat-cell”><div class=”stat-val pos”>$' + Number(t.cost || 0).toFixed(4) + '</div><div class=”stat-lbl”>SPENT</div></div>' +
+      '</div>' +
+      '<div class=”ag-mission”><div class=”ag-mission-lbl”>MISSION</div>' +
+      (a.purpose
+        ? '<div class=”ag-mission-text”>' + esc(a.purpose) + '</div>'
+        : '<div class=”ag-mission-cta”>No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
+      '</div>' +
+      '<div class=”ag-foot-row”>on station since <b>' + since + '</b> · all figures are real spend</div>';
+  }
+
+  function agSkills() {
+    const on = SKILLS.filter(s => s.on).length;
+    return '<h4 class=”ms-h”>GRANTED — ' + on + ' LIVE</h4>' +
+      '<div class=”perk-grid”>' +
+      SKILLS.map(s => '<div class=”perk ' + (s.on ? 'on' : '') + '”>' +
+        '<div class=”perk-icon”>' + s.icon + '</div>' +
+        '<div class=”perk-name”>' + s.name + '</div>' +
+        '<div class=”perk-desc”>' + s.tools + '</div>' +
+        '<div class=”perk-stat' + (s.consent ? ' ask' : '') + '”>' +
+        (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
+      '</div>' +
+      '<p class=”sk-note”>Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS.</p>';
   }
 
   function fileCard(a, f) {
@@ -264,9 +282,6 @@ const StationUI = (() => {
 
   function agConfig(a) {
     return '<div class="cf-root">📁 station://agents/' + esc(agSlug(a)) + '/</div>' +
-      '<p class="cf-intro">These are real files. <b>identity.md</b>, <b>purpose.md</b> and ' +
-      '<b>operating-manual.md</b> compose the exact system prompt your agent runs on — edit one and it ' +
-      're-shapes the agent on its next reply. You own them; write them like you mean it.</p>' +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
       memoryCard(a);
   }
@@ -298,6 +313,7 @@ const StationUI = (() => {
     const a = present[sel];
     const act = activity();
     const price = (typeof Harness === 'object' && Harness.priceOf) ? Harness.priceOf(a.model) : null;
+    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills() : agBrief(a);
     body.innerHTML =
       '<div class="ag-wrap"><div class="ag-list">' +
       present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '">' +
@@ -306,9 +322,10 @@ const StationUI = (() => {
       agHead(a, act, price) +
       '<div class="ag-tabs">' +
       '<button class="ag-tab ' + (agTab === 'brief' ? 'sel' : '') + '" data-tab="brief">BRIEF</button>' +
-      '<button class="ag-tab ' + (agTab === 'config' ? 'sel' : '') + '" data-tab="config">CONFIG · .md</button>' +
+      '<button class="ag-tab ' + (agTab === 'skills' ? 'sel' : '') + '" data-tab="skills">SKILLS</button>' +
+      '<button class="ag-tab ' + (agTab === 'config' ? 'sel' : '') + '" data-tab="config">CONFIG</button>' +
       '</div>' +
-      (agTab === 'config' ? agConfig(a) : agBrief(a)) +
+      tabContent +
       '</div></div>';
     body.querySelectorAll('.ag-item').forEach(it =>
       it.addEventListener('click', () => { sel = +it.dataset.i; sfx('click'); rerender('agents'); }));
@@ -324,12 +341,11 @@ const StationUI = (() => {
     if (typeof SPRITES === 'object' && SPRITES.ready) {
       SPRITES.drawBody(pctx, { id: a.id, px: cv.width / 2, py: cv.height - 4, dir: 'south', color: a.color, state: 'idle', sitting: false, working: false, phase: 0 }, performance.now());
     } else {
-      // procedural mini-avatar if the sprite sheet isn't ready
-      pctx.fillStyle = a.color; pctx.fillRect(cv.width / 2 - 5, 14, 10, 22);
-      pctx.fillStyle = '#f0e6c0'; pctx.fillRect(cv.width / 2 - 4, 6, 8, 8);
+      pctx.fillStyle = a.color; pctx.fillRect(cv.width / 2 - 5, 20, 10, 30);
+      pctx.fillStyle = '#f0e6c0'; pctx.fillRect(cv.width / 2 - 4, 10, 8, 9);
     }
   }
-  function openAgent(i) { sel = i; if (open.agents) rerender('agents'); else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '560px' }); }
+  function openAgent(i) { sel = i; if (open.agents) rerender('agents'); else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '600px' }); }
 
   /* ============== SKILLS — capability readout (mirrors the sidecar CAP_REGISTRY) ==============
      The agent's real tools come from the OBJECTS at its workstation (object = capability — see
@@ -691,27 +707,37 @@ const StationUI = (() => {
 
     const statusEl = body.querySelector('#tg-status');
     const msgEl = body.querySelector('#tg-msg');
+    let configured = false;   // a token is already saved by the sidecar -> Connect can reconnect without re-pasting
     function paint(st) {
       const conn = st && st.connected;
-      const color = conn ? '#8f8' : (st && st.configured ? '#fc6' : '#999');
+      configured = !!(st && st.configured);
+      const color = conn ? '#8f8' : (configured ? '#fc6' : '#999');
       statusEl.style.color = color;
       statusEl.textContent = conn ? ('● CONNECTED — polling' + (st.state && st.state !== 'up' ? ' (' + st.state + ')' : ''))
-        : (st && st.configured) ? ('○ configured but offline' + (st.detail ? ' — ' + st.detail : ''))
+        : configured ? ('○ saved but offline — click CONNECT to reconnect' + (st.detail ? ' — ' + st.detail : ''))
         : '○ not connected';
     }
     async function refresh() {
       try { const r = await fetch('/api/channels/telegram/status'); paint(await r.json()); }
-      catch (_) { statusEl.style.color = '#999'; statusEl.textContent = '○ sidecar offline'; }
+      catch (_) { configured = false; statusEl.style.color = '#999'; statusEl.textContent = '○ sidecar offline'; }
     }
     body.querySelector('#tg-connect').addEventListener('click', async () => {
       const token = (body.querySelector('#tg-token').value || '').trim();
-      if (!token) { sfx('bad'); msgEl.textContent = 'paste your @BotFather token first'; return; }
+      // a saved token can be reused (reconnect) — only require a fresh token on first-time setup.
+      if (!token && !configured) { sfx('bad'); msgEl.textContent = 'paste your @BotFather token first'; return; }
       const key = (typeof Harness !== 'undefined' && Harness.getKey()) || '';
       const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
       if (!key || !model) { sfx('bad'); msgEl.textContent = 'connect your agent (API key + model) on the title screen first'; return; }
+      // hand the sidecar the REAL agent identity so Telegram is the SAME agent: the agentId the app uses for runs
+      // (shared notebook/memory/workspace) + the composed system prompt (identity.md/purpose.md/manual.md).
+      const ag = present[0] || {};
+      const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+      const agentId = (ws && ws.agentId) || 'agent';
+      const system = (ag && ag.systemPrompt) || '';
+      const agentName = (ag && ag.name) || '';
       msgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model }) });
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }

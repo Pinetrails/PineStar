@@ -81,6 +81,7 @@
     const personaFor = typeof o.persona === 'function' ? o.persona
       : (() => { const p = (typeof o.persona === 'string' && o.persona) || DEFAULT_PERSONA; return () => p; });
 
+    const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (a configured agentId must match)
     const inflight = new Map();   // agentId -> { runId, abort, superseded }
 
     // chatId -> a per-chat agentId, sanitized to the notebook/fs-jail grammar (/^[A-Za-z0-9_-]{1,40}$/). Telegram
@@ -105,15 +106,20 @@
     async function onInbound(msg) {
       if (!msg || !msg.text) return;   // non-text already filtered by the adapter; belt-and-suspenders
       const chatId = String(msg.chatId);
-      const agentId = agentIdFor(chatId);
 
-      // one run per chat: a new message ABORTS the in-flight run and serves the latest.
+      // Runtime config (live each message): { key, model, agentId?, system? }. When the app supplies the
+      // REAL agentId + composed system prompt at connect, Telegram runs as the SAME agent as in the app —
+      // same notebook (memory), workspace, and identity — just a different session. Absent config falls back
+      // to a per-chat agent (tg_<chatId>) + the default persona.
+      const sec = secrets() || {};
+      const agentId = (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId) : agentIdFor(chatId);
+
+      // one run per chat/agent: a new message ABORTS the in-flight run and serves the latest.
       const prev = inflight.get(agentId);
       if (prev) { prev.superseded = true; try { prev.abort.abort(); } catch (_) {} }
 
       try { emit('channel.inbound', { channel, chatId, agentId, userId: msg.userId || '', kind: msg.chatType === 'group' ? 'group' : 'dm' }); } catch (_) {}
 
-      const sec = secrets() || {};
       if (!sec.key || !sec.model) {
         await deliver(chatId, '⚠ No model/key is configured yet. Open the SKYNET app → Messaging tab and connect.', '', 'error');
         return;
@@ -127,7 +133,7 @@
 
       const isTask = !!classify(msg.text);
       const rec = store.getChatRecord ? store.getChatRecord(chatId) : null;
-      const persona = personaFor(agentId, rec);
+      const persona = sec.system || personaFor(agentId, rec);   // the agent's REAL composed prompt when configured
       const system = persona + (isTask ? TASK_SUFFIX : '');
 
       const runId = newId();

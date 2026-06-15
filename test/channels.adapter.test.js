@@ -71,6 +71,78 @@ async function run() {
     await a.disconnect();
   }
 
+  // ---- B2. owner-only DM admission: first DM claims owner; other users denied; preset owner skips claim ----
+  {
+    const inbox = [], claims = [];
+    const t = fakeTransport([[
+      { id: 1, chat: 'dmA', type: 'dm', user: 'u1', text: 'first', mid: '1' },      // claims ownership
+      { id: 2, chat: 'dmB', type: 'dm', user: 'u2', text: 'intruder', mid: '2' },   // different user -> dropped
+      { id: 3, chat: 'dmA', type: 'dm', user: 'u1', text: 'again', mid: '3' }        // owner -> admitted
+    ]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: m => inbox.push(m), onOwnerClaim: u => claims.push(u), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 6 && inbox.length < 2; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['first', 'again'], 'first DM claims owner; a different user is dropped; owner re-admitted');
+    A.eq(claims, ['u1'], 'onOwnerClaim fired once with the first userId');
+    A.eq(a._internals.owner, 'u1', 'owner recorded on the adapter');
+    await a.disconnect();
+  }
+  {
+    const inbox = [], claims = [];
+    const t = fakeTransport([[
+      { id: 1, chat: 'dmX', type: 'dm', user: 'stranger', text: 'hi', mid: '1' },    // not the preset owner -> dropped
+      { id: 2, chat: 'dmO', type: 'dm', user: 'boss', text: 'yo', mid: '2' }          // preset owner -> admitted
+    ]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'boss',
+      onInbound: m => inbox.push(m), onOwnerClaim: u => claims.push(u), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 6 && !inbox.length; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['yo'], 'preset owner: only the owner is admitted, stranger dropped');
+    A.eq(claims, [], 'no claim fires when owner is preset');
+    await a.disconnect();
+  }
+  {
+    // owner gate is DM-only: a whitelisted GROUP message from any user is still admitted
+    const inbox = [];
+    const t = fakeTransport([[{ id: 1, chat: 'g_ok', type: 'group', user: 'whoever', text: 'grp', mid: '1' }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'boss', allowedChats: ['g_ok'],
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 5 && !inbox.length; i++) await tick();
+    A.eq(inbox.map(m => m.chatId), ['g_ok'], 'group admission is unaffected by the DM owner gate');
+    await a.disconnect();
+  }
+
+  // ---- B4. dropPendingOnConnect: prime the offset past the backlog and discard it (no stale replay) ----
+  {
+    const inbox = [];
+    const t = fakeTransport([
+      [{ id: 100, chat: 'c', type: 'dm', user: 'u', text: 'STALE', mid: '1' }],   // prime poll (offset:-1) -> dropped
+      [{ id: 101, chat: 'c', type: 'dm', user: 'u', text: 'fresh', mid: '2' }]     // first real poll -> delivered
+    ]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'u', dropPendingOnConnect: true,
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 6 && !inbox.length; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['fresh'], 'offline backlog discarded on connect; only fresh delivered');
+    A.eq(t.pollOffsets[0], -1, 'prime poll uses offset -1');
+    A.eq(t.pollOffsets[1], 101, 'real poll seeded to last-backlog-id + 1');
+    await a.disconnect();
+  }
+  {
+    // generic default is OFF: without the flag the backlog IS delivered (no prime poll)
+    const inbox = [];
+    const t = fakeTransport([[{ id: 5, chat: 'c', type: 'dm', user: 'u', text: 'backlog', mid: '1' }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'u',
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 5 && !inbox.length; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['backlog'], 'generic adapter default OFF: backlog delivered');
+    A.eq(t.pollOffsets[0], 0, 'no prime poll when drop-pending is off');
+    await a.disconnect();
+  }
+
   // ---- C. offset advances past processed update ids (each update fetched once) ----
   {
     const inbox = [];
@@ -107,6 +179,18 @@ async function run() {
     const r3 = await a.send('c', 'hard fail');
     A.eq(t.sends.length, 4, 'non-retryable failure -> no resend');
     A.eq(r3.ok, false, 'hard failure surfaced');
+  }
+
+  // ---- D2. send honors 429 retry_after: WAIT the server window before the one-shot resend ----
+  {
+    const waits = [];
+    const t = fakeTransport([[]], [{ ok: false, retryable: true, retryAfter: 3 }, { ok: true, messageId: 'ok' }]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: () => {}, clock: CLOCK, sleep: (ms) => { waits.push(ms); return Promise.resolve(); } });
+    const r = await a.send('c', 'flooded');
+    A.eq(t.sends.length, 2, 'resend fired (after the wait)');
+    A.eq(r.messageId, 'ok', 'resend result returned');
+    A.ok(waits.indexOf(3000) !== -1, 'waited retry_after (3s) before the resend');
   }
 
   // ---- E. disconnect stops the loop; no further onInbound; the parked getUpdates aborts cleanly ----

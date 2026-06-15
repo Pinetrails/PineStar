@@ -76,7 +76,10 @@
       pollTimeoutSec: o.pollTimeoutSec,
       backoffMs: o.backoffMs,
       sleep: o.sleep,
-      startOffset: o.startOffset
+      startOffset: o.startOffset,
+      ownerUserId: o.ownerUserId,
+      onOwnerClaim: o.onOwnerClaim,
+      dropPendingOnConnect: o.dropPendingOnConnect !== false   // Telegram default: discard offline backlog on connect
     });
   }
 
