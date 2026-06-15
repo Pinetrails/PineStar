@@ -20,6 +20,7 @@ const World = (() => {
   let station = null, geo = null, cache = null, geoDirty = true, bakeDirty = true, unsub = null;
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
+  let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
 
   /* ---------- canvas + camera ---------- */
   let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null;
@@ -112,6 +113,7 @@ const World = (() => {
     const oldOrigin = geo ? geo.origin : null;
     geo = next; T = geo.TILE;
     placeDesk();
+    junctions = buildJunctions();
     if (agent) {
       if (agent.unplaced) placeAgent();
       else {
@@ -334,7 +336,7 @@ const World = (() => {
     // conveyor belts (floor machinery) + the live transport sim — local frame, under entities
     if (geo && geo.belts && typeof Conveyor !== 'undefined') {
       if (!convey) convey = Conveyor.create({ onDeliver: onWorkitemDeliver });
-      convey.tick(dt, now, geo.belts);
+      convey.tick(dt, now, geo.belts, junctions);
       convey.drawBelts(ctx, now, T, geo.belts);
     }
 
@@ -457,6 +459,14 @@ const World = (() => {
   function intakeTile() {
     const intake = geo && geo.props && geo.props.find(p => p.t === 'intake');
     return intake ? beltTileNear(intake.x, intake.y, intake.w || 1, intake.h || 1) : null;
+  }
+  // junction props (splitter/...) keyed by tile — the conveyor routes boxes at these tiles
+  function buildJunctions() {
+    let j = null;
+    if (geo && geo.props) for (const p of geo.props) {
+      if (p.t === 'splitter') (j = j || new Map()).set(p.x + ',' + p.y, { kind: 'split' });
+    }
+    return j;
   }
   // a real inbound message arrived — drop a box at the INTAKE so it rides the belts to the desk
   function intakeMessage(payload) {

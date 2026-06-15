@@ -137,4 +137,36 @@ for (let i = 0; i < 40; i++) { now += 16; cvsd.tick(16, now, bp); }   // let it 
 A.eq(dropped.filter(id => id === 'S1').length, 0, 'a dropped (superseded) box NEVER fires onDeliver');
 A.ok(!cvsd.dropWorkitem('S1'), 'dropWorkitem on an already-gone work-item is a no-op');
 
+/* ---------- Stage 4: splitter junction (round-robin fan-out = real parallelism) ---------- */
+// source (0,0)→E into a SPLITTER at (1,0); two out-lanes — E to (2,0)+ and S to (1,1)+.
+const sbelts = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' },
+                { x: 1, y: 1, dir: 'S' }, { x: 1, y: 2, dir: 'S' }, { x: 1, y: 3, dir: 'S' }];
+const sjunc = new Map([['1,0', { kind: 'split' }]]);
+const cvsp = Conveyor.create();
+const seq = [];
+now = 0;
+for (let n = 0; n < 4; n++) {                              // one box at a time so each routing decision is unambiguous
+  cvsp.enqueueAt(0, 0, { workitemId: 'sp' + n });
+  let lane = '?';
+  for (let i = 0; i < 200 && lane === '?'; i++) {
+    now += 16; cvsp.tick(16, now, sbelts, sjunc);
+    const b = cvsp.peekBoxes().find(x => x.payload && x.payload.workitemId === 'sp' + n);
+    if (b && b.sink <= 0 && (b.x >= 2 || b.y >= 1)) lane = (b.y === 0) ? 'E' : 'S';
+  }
+  seq.push(lane);
+  for (let i = 0; i < 200 && cvsp.boxCount() > 0; i++) { now += 16; cvsp.tick(16, now, sbelts, sjunc); }  // drain before next
+}
+A.eq(seq.join(''), 'ESES', 'a splitter round-robins boxes across its out-lanes (deterministic: ' + seq.join('') + ')');
+
+// junctions are OPT-IN: the same belt with no junction map routes a box straight through
+const cvst = Conveyor.create();
+cvst.enqueueAt(0, 0, { workitemId: 'straight' });
+now = 0; let wentStraight = false;
+for (let i = 0; i < 200 && !wentStraight; i++) {
+  now += 16; cvst.tick(16, now, sbelts);                   // no junctions arg
+  const b = cvst.peekBoxes().find(x => x.payload);
+  if (b && b.x >= 2 && b.y === 0) wentStraight = true;
+}
+A.ok(wentStraight, 'with no junction map a box follows the belt straight through (routing is opt-in)');
+
 A.report('conveyor');

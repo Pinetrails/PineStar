@@ -696,6 +696,19 @@ const PropSprites = (() => {
     wear(x + 2, y + 5, w - 4, h - 8, 3, '#1d2420');
   };
 
+  F.splitter = (x, y, w, h, f) => {
+    // SPLITTER — a 1-tile router that fans the work stream across its out-lanes (load-balance = real parallelism)
+    box(x + 1, y + 1, w - 2, h - 2, '#2b332e');
+    px(x + 2, y + 2, w - 4, h - 4, '#161c1a');
+    const c = '#5ad1b3', cy = y + (h >> 1);
+    px(x + 2, cy, w - 4, 1, c);                                       // trunk (incoming lane)
+    px(x + w - 5, y + 3, 1, (h >> 1) - 2, c);                         // branch up
+    px(x + w - 5, cy, 1, (h >> 1) - 2, c);                            // branch down
+    px(x + w - 4, y + 3, 2, 1, c); px(x + w - 4, y + h - 4, 2, 1, c); // lane tips
+    px(x + 3, cy - 1, 1, 1, blink(360, 0) ? '#7df0c8' : '#1d4a44');   // routing LED (cycles as it dispatches lanes)
+    if (f.work) glow(x + 1, y + 1, w - 2, h - 2, c, 0.3);
+  };
+
   F.boxes = (x, y, w, h) => {
     sh(x + 1, y + 10, w - 2);
     px(x + 1, y + 4, 8, 7, '#36424c'); px(x + 1, y + 4, 8, 1, '#46525a'); px(x + 4, y + 4, 2, 7, '#56646e'); // tape
@@ -3694,6 +3707,7 @@ const PropSprites = (() => {
     { id: "treasury_token_furnace", label: "TOKEN FURNACE", cat: "storage", w: 1, h: 2, animated: true, blocks: true },
     { id: "intake", label: "INTAKE", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "outbox", label: "OUTBOX", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
+    { id: "splitter", label: "SPLITTER", cat: "logistics", w: 1, h: 1, animated: true, blocks: false },
     { id: "commswall", label: "COMMS WALL", cat: "comms", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_dish", label: "DISH", cat: "comms", w: 2, h: 2, animated: true, blocks: true },
     { id: "comms_inbox", label: "INBOX", cat: "comms", w: 2, h: 1, animated: true, blocks: true },

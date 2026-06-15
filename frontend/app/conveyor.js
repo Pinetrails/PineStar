@@ -30,6 +30,13 @@ const Conveyor = (() => {
 
   const key = (x, y) => x + ',' + y;
   const buildMap = belts => { const m = new Map(); for (const b of belts) m.set(key(b.x, b.y), b.dir); return m; };
+  // a junction's out-lanes: neighbour belts that DON'T flow back into the tile. Fixed order → deterministic routing.
+  const LANE_ORDER = ['E', 'S', 'W', 'N'];
+  function outLanes(x, y, map) {
+    const lanes = [];
+    for (const d of LANE_ORDER) { const v = DIRV[d], nb = map.get(key(x + v[0], y + v[1])); if (nb && nb !== OPP[d]) lanes.push(d); }
+    return lanes;
+  }
   // classify a tile for its art: which neighbour feeds it, where it drains, is it a bend
   function classify(map, b) {
     const d = b.dir, v = DIRV[d];
@@ -181,8 +188,22 @@ const Conveyor = (() => {
     let boxes = [];
     let nid = 1;
     const pending = [];                                    // enqueueAt() work-items, born inside tick() (live nowMs + dir)
+    const rr = new Map();                                  // per-junction round-robin counter (deterministic splitter routing)
 
-    function reset() { boxes = []; pending.length = 0; }
+    function reset() { boxes = []; pending.length = 0; rr.clear(); }
+
+    /* a junction overrides a box's exit at its tile. SPLITTER = round-robin across out-lanes (load-balance =
+       real parallelism, drawn). Deterministic: a per-tile counter + the fixed LANE_ORDER. (merge/filter: later.) */
+    function chooseExit(jt, x, y, map) {
+      const lanes = outLanes(x, y, map);
+      if (!lanes.length) return null;
+      if (jt.kind === 'split') {
+        const k = key(x, y), n = rr.get(k) || 0;
+        rr.set(k, (n + 1) % lanes.length);
+        return lanes[n % lanes.length];
+      }
+      return null;
+    }
 
     /* event-driven spawn: drop ONE work-item-carrying box at a named SOURCE tile, bypassing the hash
        auto-spawn cadence. The box is actually born inside tick() so it gets the live nowMs and belt dir. */
@@ -209,7 +230,7 @@ const Conveyor = (() => {
       return best;
     }
 
-    function tick(dtMs, nowMs, belts) {
+    function tick(dtMs, nowMs, belts, junctions) {
       const map = buildMap(belts || []);
       const dt = Math.min(64, dtMs) / 1000;
 
@@ -241,8 +262,11 @@ const Conveyor = (() => {
         bx.prog += allowed;
         let guard = 0;
         while (bx.prog >= 1 && guard++ < 8) {
-          const v = DIRV[bx.dir], nx = bx.x + v[0], ny = bx.y + v[1], nd = map.get(key(nx, ny));
-          if (nd) { if (nd !== bx.dir) bx.turn0 = nowMs; bx.x = nx; bx.y = ny; bx.dir = nd; bx.prog -= 1; }
+          let dir = bx.dir;
+          const jt = junctions && junctions.get(key(bx.x, bx.y));            // a junction picks the exit lane (else straight)
+          if (jt) { const ex = chooseExit(jt, bx.x, bx.y, map); if (ex) dir = ex; }
+          const v = DIRV[dir], nx = bx.x + v[0], ny = bx.y + v[1], nd = map.get(key(nx, ny));
+          if (nd) { if (nd !== dir) bx.turn0 = nowMs; bx.x = nx; bx.y = ny; bx.dir = nd; bx.prog -= 1; }
           else {                                                              // rode off the open end → deliver, then sink
             if (bx.payload && onDeliver && !bx.delivered) { bx.delivered = true; onDeliver(bx, bx.x, bx.y); }
             bx.prog = 1; bx.sink = 1; break;
