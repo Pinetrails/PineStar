@@ -147,6 +147,17 @@ const Conveyor = (() => {
   }
   const CARGO_FN = [cargoUtility, cargoProduction, cargoData, cargoCommand, cargoMoney];
 
+  /* a floating amber tag marking a box that carries a REAL work-item (vs ambient cargo) — drawn above the crate */
+  function payloadTag(cx, py) {
+    const yy = py - 11;
+    px(cx, yy + 4, 1, 3, '#2a2418');                    // stem down to the crate
+    px(cx - 3, yy, 7, 5, '#161210');                    // dark outline
+    px(cx - 2, yy + 1, 5, 3, '#e8c860');                // amber face
+    px(cx - 2, yy + 1, 5, 1, '#fff0b0');                // top sheen
+    px(cx - 1, yy + 2, 3, 1, SH('#e8c860', -0.35));     // envelope flap
+    if (bloomOK()) { _ctx.globalAlpha *= 0.4; px(cx - 3, yy, 7, 6, '#e8c860'); _ctx.globalAlpha /= 0.4; }
+  }
+
   /* ---- motion bundle: bob/lean/shadow + spawn-pop + sink-chute. translate-only (no ctx.scale). ---- */
   function boxMotion(bx, now) {
     const s = U.hash('' + bx.id);
@@ -174,12 +185,18 @@ const Conveyor = (() => {
     return { bob, lx: -v[0] * 0.6 + v[0] * slide, ly: -v[1] * 0.6 + v[1] * slide, lift: lift0, alpha, shadowMul };
   }
 
-  function create() {
+  function create(opts) {
+    const onDeliver = (opts && opts.onDeliver) || null;   // called ONCE when a PAYLOAD box rides off the open end
     let boxes = [];
     let nid = 1;
     const lastSpawn = new Map();
+    const pending = [];                                    // enqueueAt() work-items, born inside tick() (live nowMs + dir)
 
-    function reset() { boxes = []; lastSpawn.clear(); }
+    function reset() { boxes = []; lastSpawn.clear(); pending.length = 0; }
+
+    /* event-driven spawn: drop ONE work-item-carrying box at a named SOURCE tile, bypassing the hash
+       auto-spawn cadence. The box is actually born inside tick() so it gets the live nowMs and belt dir. */
+    function enqueueAt(x, y, payload) { pending.push({ x, y, payload }); }
 
     /* distance (in tiles, along the path) to the nearest box ahead — for backpressure spacing */
     function leaderDist(bx, tileMap) {
@@ -216,6 +233,15 @@ const Conveyor = (() => {
         }
       }
 
+      // event-driven work-items (enqueueAt): born here so each gets the live nowMs + the tile's belt dir.
+      // No belt under the tile → nothing rides (the server still ran the work; the world just shows no crate).
+      while (pending.length && boxes.length < MAX_BOXES) {
+        const p = pending.shift();
+        const d = map.get(key(p.x, p.y));
+        if (!d) continue;
+        boxes.push({ id: nid++, x: p.x, y: p.y, dir: d, prog: 0, sink: 0, t0: nowMs, turn0: -1e9, payload: p.payload });
+      }
+
       // advance: cap each box so it never closes within MIN_GAP of the box ahead (no stacking; backpressure)
       for (let i = boxes.length - 1; i >= 0; i--) {
         const bx = boxes[i];
@@ -230,7 +256,10 @@ const Conveyor = (() => {
         while (bx.prog >= 1 && guard++ < 8) {
           const v = DIRV[bx.dir], nx = bx.x + v[0], ny = bx.y + v[1], nd = map.get(key(nx, ny));
           if (nd) { if (nd !== bx.dir) bx.turn0 = nowMs; bx.x = nx; bx.y = ny; bx.dir = nd; bx.prog -= 1; }
-          else { bx.prog = 1; bx.sink = 1; break; }                           // rode off the open end
+          else {                                                              // rode off the open end → deliver, then sink
+            if (bx.payload && onDeliver && !bx.delivered) { bx.delivered = true; onDeliver(bx, bx.x, bx.y); }
+            bx.prog = 1; bx.sink = 1; break;
+          }
         }
       }
       if (boxes.length > MAX_BOXES) boxes.splice(0, boxes.length - MAX_BOXES);
@@ -318,7 +347,8 @@ const Conveyor = (() => {
         const sa = (0.30 - 0.12 * m.lift) * m.shadowMul;
         if (sa > 0) { ctx.globalAlpha = sa * m.alpha; const sw = 9 + Math.round(m.lift * 2); px(cx - (sw >> 1), Math.round(base.py) + 3, sw, 2, '#05080a'); }
         ctx.globalAlpha = m.alpha;
-        CARGO_FN[cargoType(bx.id)](cx, py, h32, bx.dir);
+        CARGO_FN[bx.payload ? 2 : cargoType(bx.id)](cx, py, h32, bx.dir);    // work-items ride as cyan data cassettes
+        if (bx.payload) payloadTag(cx, py);
         ctx.globalAlpha = 1;
       }
     }
@@ -327,7 +357,11 @@ const Conveyor = (() => {
       return { cx: (bx.x + 0.5) * T + (bx.prog - 0.5) * T * v[0], py: (bx.y + 0.5) * T + (bx.prog - 0.5) * T * v[1] };
     }
 
-    return { tick, drawBelts, drawBoxes, reset, boxCount: () => boxes.length, peekBoxes: () => boxes.map(b => ({ x: b.x, y: b.y, dir: b.dir, sink: b.sink, prog: b.prog })) };
+    return {
+      tick, drawBelts, drawBoxes, reset, enqueueAt,
+      boxCount: () => boxes.length,
+      peekBoxes: () => boxes.map(b => ({ id: b.id, x: b.x, y: b.y, dir: b.dir, sink: b.sink, prog: b.prog, payload: b.payload || null }))
+    };
   }
 
   return { create };

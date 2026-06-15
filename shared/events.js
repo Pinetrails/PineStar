@@ -86,6 +86,20 @@
       channel: str, state: { enum: ['up', 'down', 'error'] }, detail: str
     }),
 
+    // ---- logistics / work-item conveyor (boxes that carry REAL work along player-laid belts) ----
+    // a real inbound work-item (e.g. an admitted Telegram message) was queued at a SOURCE — the start of
+    // the belt journey. preview is a short, already-redacted text snippet; queueDepth is the per-agent backlog.
+    'workitem.placed': obj(['workitemId', 'queueId'], {
+      workitemId: str, queueId: str, agentId: str, kind: str, preview: str, queueDepth: int, ts: num
+    }),
+    // a work-item rode into a bay/sink and its payload was consumed (run-start for inbound; reply/file/memory
+    // for outbound). box is an optional short JSON-string summary, not a deep object (keeps validation cheap).
+    'workitem.delivered': obj(['workitemId', 'finalQueueId'], {
+      workitemId: str, finalQueueId: str, agentId: str, box: str, ms: num, ts: num
+    }),
+    // queue-depth telemetry for the backpressure HUD — emitted whenever a per-agent queue depth changes.
+    'queue.status': obj(['queueId'], { queueId: str, depth: int, maxCapacity: int, nextAdvanceAt: num }),
+
     // ---- reserved (P3 mutation API) ----
     'worldChange': obj(['seq'], { seq: int, dirtyTiles: { type: 'array' } }),
 

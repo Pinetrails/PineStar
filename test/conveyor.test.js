@@ -80,4 +80,28 @@ const had = cv3.boxCount();
 for (let i = 0; i < 40; i++) { now += 16; cv3.tick(16, now, []); }   // belts gone
 A.ok(had > 0 && cv3.boxCount() === 0, 'removing all belts sinks every riding box');
 
+/* ---------- payload work-items (enqueueAt + onDeliver) ---------- */
+// a real work-item box, enqueued at a source, rides to the open end and is delivered exactly once.
+const line = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }];
+const delivered = [];
+const cvp = Conveyor.create({ onDeliver: (bx, x, y) => delivered.push({ id: bx.id, payload: bx.payload, x, y }) });
+cvp.enqueueAt(0, 0, { workitemId: 'W1', preview: 'hello' });
+cvp.tick(16, 16, line);                                   // first tick drains pending; ambient skips its warm-up beat
+const pay = cvp.peekBoxes().filter(b => b.payload);
+A.eq(pay.length, 1, 'enqueueAt creates exactly one payload box');
+A.ok(pay[0].x === 0 && pay[0].y === 0 && pay[0].payload.workitemId === 'W1', 'the payload box starts at the source carrying its work-item');
+now = 16;
+for (let i = 0; i < 200 && !delivered.length; i++) { now += 16; cvp.tick(16, now, line); }
+A.eq(delivered.length, 1, 'onDeliver fires exactly once for the payload box (ambient cargo never delivers)');
+A.eq(delivered[0].payload.workitemId, 'W1', 'onDeliver receives the work-item payload');
+A.ok(delivered[0].x === 2 && delivered[0].y === 0, 'delivery happens at the last belt tile (the sink end)');
+
+// enqueueAt on a tile with no belt creates no box and never delivers (no belt path → no crate, work still ran)
+let deliveredN = 0;
+const cvn = Conveyor.create({ onDeliver: () => deliveredN++ });
+cvn.enqueueAt(9, 9, { workitemId: 'W2' });
+now = 0; for (let i = 0; i < 50; i++) { now += 16; cvn.tick(16, now, [{ x: 0, y: 0, dir: 'E' }]); }
+A.eq(cvn.peekBoxes().filter(b => b.payload).length, 0, 'enqueueAt on a non-belt tile creates no payload box');
+A.eq(deliveredN, 0, 'no delivery fires when there is no belt under the work-item');
+
 A.report('conveyor');
