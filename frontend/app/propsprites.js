@@ -1202,9 +1202,9 @@ const PropSprites = (() => {
   F.arcade = (x, y, w, h, f) => {
     // slim ~1-tile cabinet. v7 drew this w+10 ≈ 22px wide (≈2 tiles), so it towered
     // over the couch/tv/jukebox; redrawn at a fixed 13px so it sits in line with them.
-    const cw = 13, bh = h + 7;
-    sh(x + 1, y + bh, cw - 1);                 // floor shadow
-    px(x, y - 1, cw, bh + 1, '#14101e');       // outer shell
+    const cw = 13, bh = h;                     // exactly 2 tiles (24px) tall — fills its footprint, no overhang
+    sh(x + 1, y + bh, cw - 1);                 // floor shadow at the footprint base
+    px(x, y, cw, bh, '#14101e');               // outer shell
     px(x + 1, y, cw - 2, bh, '#2a2438');       // cabinet body
     px(x + 1, y, cw - 2, 1, '#3c3450');        // top sheen
     px(x + 1, y + 1, 1, bh - 2, '#332c44'); px(x + cw - 2, y + 1, 1, bh - 2, '#1e1830'); // cab facets
@@ -1234,9 +1234,9 @@ const PropSprites = (() => {
   };
 
   F.arcade2 = (x, y, w, h, f) => {
-    const cw = 13, bh = h + 7;                 // slim 1-tile cabinet — see F.arcade
+    const cw = 13, bh = h;                     // slim 1-tile cabinet, exactly 2 tiles tall — see F.arcade
     sh(x + 1, y + bh, cw - 1);
-    px(x, y - 1, cw, bh + 1, '#0e1a1e');
+    px(x, y, cw, bh, '#0e1a1e');
     px(x + 1, y, cw - 2, bh, '#1e3038');
     px(x + 1, y, cw - 2, 1, '#2c424c');
     px(x + 1, y + 1, 1, bh - 2, '#263a44'); px(x + cw - 2, y + 1, 1, bh - 2, '#15242a'); // cab facets
