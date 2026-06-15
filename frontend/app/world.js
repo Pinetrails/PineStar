@@ -34,8 +34,16 @@ const World = (() => {
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   const stars = [];
 
-  /* ---------- agent ---------- */
+  /* ---------- agent + crew ----------
+     `agent` is the HERO (crew[0] conceptually): the active agent, with the full state machine — walking,
+     awakening, novelty, glances, couch lounging. `crew` is the EXTRA bodies: the OTHER agents bound to BAY
+     props, rendered as LIGHT static figures standing at their bays (no pathing/AI — they just receive work
+     and light up). Empty crew === today's exact single-agent world; every crew code path is gated so the
+     hero behaves byte-for-byte as before. The crew is derived from the RoutingPlan's bays (syncCrewFromPlan). */
   let agent = null, activity = 'idle';
+  let crew = [];
+  const CREW_COLORS = ['#5ad0ff', '#ff8a5a', '#7df08a', '#e0a0ff', '#ffd45a', '#5affd0', '#ff6a9a'];
+  const crewColor = aid => CREW_COLORS[U.hash('' + aid) % CREW_COLORS.length];
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
   const tileOf = (px, py) => ({ x: Math.floor(px / T), y: Math.floor(py / T) });
   // where the agent is DRAWN: on its couch seat when seated, otherwise its logical foot position
@@ -131,6 +139,7 @@ const World = (() => {
     if (unsub) { unsub(); unsub = null; }
     station = st; geo = null; cache = null; geoDirty = true; bakeDirty = true; fitNeeded = true;
     novelty = []; seenProps = null; seenBelts = null;   // re-learn the scene from scratch (no cross-station novelty)
+    crew = [];                                          // no cross-station crew bodies (rebuilt from the new floor's bays)
     if (station && station.onChange) unsub = station.onChange(() => { geoDirty = true; });
     rederive();
   }
@@ -143,6 +152,7 @@ const World = (() => {
     placeDesk();
     compileRouting();              // recompile the RoutingPlan (+ POST to the sidecar) — the single point floor edits flow through
     junctions = buildJunctions();
+    syncCrewFromPlan();            // reconcile the light crew bodies with the plan's bound bays
     if (agent) {
       if (agent.unplaced) placeAgent();
       else {
@@ -718,7 +728,7 @@ const World = (() => {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
-        const work = (p.t === 'outbox' && outboxLit) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
+        const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
         // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
         const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work) });
@@ -727,6 +737,7 @@ const World = (() => {
     if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
     if (seat) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
+    for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
@@ -755,6 +766,7 @@ const World = (() => {
     }
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     if (agent && !agent.unplaced) drawBubble(now);
+    for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
 
@@ -822,37 +834,40 @@ const World = (() => {
     ctx.globalCompositeOperation = 'source-over'; ctx.setTransform(scale, 0, 0, scale, panX, panY);
   }
 
-  function drawAgent(now) {
+  function drawAgent(now, who) {
+    who = who || agent;   // default = the hero; a crew body passes itself. Hero path is byte-identical (who===agent).
     // while seated on a couch the agent draws on the cushion, not its (adjacent) logical tile — swap
     // px/py for the draw and restore after, so movement/pathing keep using the real logical position.
-    const ox = agent.px, oy = agent.py;
-    if (agent.seated) { agent.px = agent.seatPx; agent.py = agent.seatPy; }
+    const ox = who.px, oy = who.py;
+    if (who.seated) { who.px = who.seatPx; who.py = who.seatPy; }
     try {
-      // color-into-being: the body fades up from a faint silhouette to full as the spark blooms (sprite path)
+      // color-into-being: the body fades up from a faint silhouette to full as the spark blooms (HERO only)
       let bornA = 1;
-      if (bornAt && now - bornAt < 1000) bornA = 0.16 + 0.84 * ((now - bornAt) / 1000);
+      if (who === agent && bornAt && now - bornAt < 1000) bornA = 0.16 + 0.84 * ((now - bornAt) / 1000);
       const prevA = ctx.globalAlpha;
       if (bornA < 1) ctx.globalAlpha = prevA * bornA;
       let geom = null;
-      if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, agent, now);
-      if (!geom) drawFallback(now);
+      if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, who, now);
+      if (!geom) drawFallback(now, who);
       ctx.globalAlpha = prevA;
-      // the wake ripple — a triple-ringed sonar pulse of first breath, in the suit color
-      if (wakeAt && now - wakeAt < 1500) {
-        ctx.save(); ctx.strokeStyle = agent.color;
+      // the wake ripple — a triple-ringed sonar pulse of first breath, in the suit color (hero's awakening
+      // uses the module wakeAt; a crew body uses its own per-body wakeAt set when it receives work)
+      const wa = (who === agent) ? wakeAt : (who.wakeAt || 0);
+      if (wa && now - wa < 1500) {
+        ctx.save(); ctx.strokeStyle = who.color;
         for (let k = 0; k < 3; k++) {
-          const tk = (now - wakeAt) / 1300 - k * 0.18;
+          const tk = (now - wa) / 1300 - k * 0.18;
           if (tk <= 0 || tk >= 1) continue;
           ctx.globalAlpha = (1 - tk) * 0.6 * (1 - k * 0.22); ctx.lineWidth = Math.max(0.5, 1.5 - tk);
-          ctx.beginPath(); ctx.ellipse(agent.px, agent.py, 4 + tk * 22, 2 + tk * 9, 0, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.ellipse(who.px, who.py, 4 + tk * 22, 2 + tk * 9, 0, 0, Math.PI * 2); ctx.stroke();
         }
         ctx.restore();
       }
-    } finally { agent.px = ox; agent.py = oy; }
+    } finally { who.px = ox; who.py = oy; }
   }
 
-  function drawFallback(now) {
-    const a = agent, x = Math.round(a.px), y = Math.round(a.py), h = 13;
+  function drawFallback(now, who) {
+    const a = who || agent, x = Math.round(a.px), y = Math.round(a.py), h = 13;
     const step = a.state === 'walk' ? (Math.floor(now / 140) % 2) : 0;
     const bob = (a.state !== 'walk' && !a.sitting) ? Math.round(Math.sin(now / 600 + a.phase) * 0.7) : 0;
     ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1;
@@ -878,8 +893,9 @@ const World = (() => {
     ctx.restore();
   }
 
-  function drawBubble(now) {
-    const s = agent.say;
+  function drawBubble(now, who) {
+    who = who || agent;
+    const s = who.say;
     if (!s.text || s.until < now) return;
     ctx.font = '8px monospace';
     const maxW = 96, padb = 3, lh = 9;
@@ -892,7 +908,7 @@ const World = (() => {
     if (lines.length === 3) lines[2] = lines[2].replace(/.{0,2}$/, '…');
     const bw = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + padb * 2;
     const bh = lines.length * lh + padb * 2;
-    const rx = rposX(), ry = rposY();
+    const rx = who.seated ? who.seatPx : who.px, ry = who.seated ? who.seatPy : who.py;
     let bx = Math.round(rx - bw / 2); const by = Math.round(ry - 22 - bh);
     bx = Math.max(2, Math.min((cache ? cache.W : 9999) - bw - 2, bx));
     ctx.fillStyle = 'rgba(3,2,1,0.92)'; ctx.fillRect(bx, by, bw, bh);
@@ -988,12 +1004,67 @@ const World = (() => {
     const t = beltTileNear(desk.tx, desk.ty, desk.w, desk.h);
     if (t) convey.enqueueAt(t.x, t.y, { outbound: true, workitemId: (payload && payload.workitemId) || '' });
   }
-  // a payload box reached an open end: inbound -> the agent receives it; outbound -> the OUTBOX dispatches it
+  /* ---------- crew bodies (the OTHER agents, standing at their bays) ---------- */
+  // a LIGHT body: the full agent field-shape (so SPRITES.drawBody/drawFallback never choke) but STATIC —
+  // it never ticks/paths. It only receives work (a say bubble + a wake ripple + a bay work-glow).
+  function makeCrewBody(aid, name, color, fx, fy) {
+    return {
+      id: aid, agentId: aid, name: name || aid, color: color || '#5ad0ff', crewBody: true,
+      px: fx, py: fy, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: false,
+      phase: U.hash('' + aid) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
+      usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
+      seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
+      glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0,
+      wakeAt: 0, workUntil: 0
+    };
+  }
+  // reconcile `crew` with the plan's bound bays: one light body per bay (except the hero's own), standing at
+  // the bay prop's foot. Reuses existing bodies by agentId so a re-bake doesn't wipe a live say bubble.
+  function syncCrewFromPlan() {
+    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { if (crew.length) crew = []; return; }
+    const want = new Map();
+    for (const bay of routingPlan.bays) {
+      if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
+      const p = geo.props && geo.props.find(pp => pp.id === bay.propId);
+      if (!p) continue;
+      const fx = (p.x + (p.w > 1 ? 1 : 0)) * T + T / 2;                // foot at the bay's bottom-centre
+      const fy = (p.y + (p.h || 1) - 1) * T + T - 1;
+      want.set(bay.agentId, { x: fx, y: fy });
+    }
+    crew = crew.filter(b => want.has(b.agentId));                      // drop bodies whose bay is gone
+    for (const [aid, pos] of want) {
+      const b = crew.find(x => x.agentId === aid);
+      if (b) { b.px = pos.x; b.py = pos.y; }
+      else crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
+    }
+  }
+  // the body that runs a given agentId: the hero, a crew body, or null (caller falls back to the hero)
+  function bodyForAgent(aid) {
+    if (!aid) return null;
+    if (agent && aid === agent.id) return agent;
+    return crew.find(b => b.agentId === aid) || null;
+  }
+  function sayAt(body, text) {
+    if (!body) return;
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    body.say = { text: t.slice(0, 160), until: performance.now() + 4200 };
+  }
+  // is a BAY prop's bound agent actively working (so the bay lights up)?
+  function bayLit(p, now) {
+    if (!p.agentId) return false;
+    if (agent && p.agentId === agent.id) return !!agent.working;
+    const b = crew.find(x => x.agentId === p.agentId);
+    return !!(b && b.workUntil > now);
+  }
+  // a payload box reached an open end: route it to the bound agent's bay (the SAME bay the box rode to, per the
+  // plan) and light THAT body. No bay / unrouted -> the hero receives it, exactly as before (never stalls).
   function onWorkitemDeliver(bx) {
     const p = (bx && bx.payload) || {};
     if (p.outbound) { lastOutboxFlash = fnow; return; }   // reply reached the OUTBOX -> flash the chute
-    say('received: ' + (p.preview || 'message'));
-    wakeIn();
+    const aid = (typeof Pipeline !== 'undefined' && routingPlan) ? Pipeline.resolveTarget(routingPlan, { tag: p.tag }) : null;
+    const body = bodyForAgent(aid);
+    if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; body.workUntil = fnow + 4000; }
+    else { say('received: ' + (p.preview || 'message')); wakeIn(); }   // the hero (or an unrouted box) — today's behaviour
   }
   // one app-level EventSource: re-emit validated channel/work-item events onto U.bus, and react in-world
   function connectChannelBridge() {
