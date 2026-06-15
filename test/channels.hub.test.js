@@ -153,6 +153,44 @@ async function run() {
     A.throws(() => makeChannelHub({ runOnce: async () => {}, store: fakeStore() }), 'missing send throws');
   }
 
+  // ---- J. Phase B routing: resolveAgent picks the agent; getTag threads the tag; null falls back ----
+  {
+    const store = fakeStore(); let lastRun = null; const tags = [];
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      getTag: (text) => { tags.push(text); return /code/.test(text) ? 'code' : 'general'; },
+      resolveAgent: (ctx) => ctx.tag === 'code' ? 'coder' : null
+    });
+    await hub.onInbound(dm('write code please'));
+    A.eq(lastRun.agentId, 'coder', 'a routed message fires the bay-bound agent (not tg_<chatId>)');
+    A.eq(tags[0], 'write code please', 'getTag receives the message text (the FILTER routing key)');
+    A.eq((store.hist.get('coder') || []).length, 2, 'transcript stored under the routed agent');
+    await hub.onInbound(dm('just chatting', '777'));
+    A.eq(lastRun.agentId, 'tg_777', 'resolveAgent -> null falls back to tg_<chatId> (real work never stalls)');
+  }
+
+  // ---- K. two chats routed to the SAME agent do NOT cross-cancel (supersede keyed by chatId, not agentId) ----
+  {
+    const store = fakeStore(); const sends = []; const parks = {};
+    const runOnce = async (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      await new Promise(res => { parks[o.runId] = res; if (o.signal.aborted) res(); o.signal.addEventListener('abort', () => res(), { once: true }); });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'reply' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push({ c, t }); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(), resolveAgent: () => 'shared'
+    });
+    const pa = hub.onInbound(dm('from-A', 'A'));   // chat A -> agent 'shared'
+    const pb = hub.onInbound(dm('from-B', 'B'));   // chat B -> the SAME agent 'shared'
+    for (const id in parks) parks[id]();           // release both in-flight runs
+    await Promise.all([pa, pb]);
+    A.eq(sends.length, 2, 'both chats got a reply — neither superseded the other despite sharing an agent');
+    A.ok(sends.some(s => s.c === 'A') && sends.some(s => s.c === 'B'), 'each reply went back to its own chat');
+  }
+
   A.report('channels.hub.test');
 }
 

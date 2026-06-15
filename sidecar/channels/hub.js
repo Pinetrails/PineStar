@@ -74,6 +74,8 @@
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
     const maxMessageLength = o.maxMessageLength || 4096;
     const agentPrefix = o.agentPrefix || 'tg_';
+    const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
+    const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
     if (!store || typeof store.loadHistory !== 'function') throw new Error('makeChannelHub: a channel store is required');
     if (typeof send !== 'function') throw new Error('makeChannelHub: a send(chatId,text) is required');
@@ -82,7 +84,7 @@
       : (() => { const p = (typeof o.persona === 'string' && o.persona) || DEFAULT_PERSONA; return () => p; });
 
     const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (a configured agentId must match)
-    const inflight = new Map();   // agentId -> { runId, abort, superseded }
+    const inflight = new Map();   // chatId -> { runId, abort, superseded } (one run per CONVERSATION, not per agent)
 
     // chatId -> a per-chat agentId, sanitized to the notebook/fs-jail grammar (/^[A-Za-z0-9_-]{1,40}$/). Telegram
     // chat ids are already safe (numeric, '-' for groups); the prefix namespaces them away from the browser 'agent'.
@@ -112,10 +114,16 @@
       // same notebook (memory), workspace, and identity — just a different session. Absent config falls back
       // to a per-chat agent (tg_<chatId>) + the default persona.
       const sec = secrets() || {};
-      const agentId = (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId) : agentIdFor(chatId);
+      // Phase B routing: the placed floor (a posted RoutingPlan) decides WHICH agent runs. resolveAgent
+      // returns the bay-bound agentId, or null -> fall through to today's resolution so real work NEVER stalls.
+      const tag = getTag ? getTag(msg.text) : undefined;
+      const routed = resolveAgent ? resolveAgent({ tag, chatId, text: msg.text }) : null;
+      const agentId = (routed && AID_RE.test(String(routed))) ? String(routed)
+        : (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId) : agentIdFor(chatId);
 
-      // one run per chat/agent: a new message ABORTS the in-flight run and serves the latest.
-      const prev = inflight.get(agentId);
+      // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
+      // agentId, so two chats routed to the SAME agent (via a splitter/filter) never cross-cancel each other.
+      const prev = inflight.get(chatId);
       if (prev) { prev.superseded = true; try { prev.abort.abort(); } catch (_) {} }
 
       try { emit('channel.inbound', { channel, chatId, agentId, userId: msg.userId || '', kind: msg.chatType === 'group' ? 'group' : 'dm' }); } catch (_) {}
@@ -139,7 +147,7 @@
       const runId = newId();
       const ac = new AbortController();
       const myRec = { runId, abort: ac, superseded: false };
-      inflight.set(agentId, myRec);
+      inflight.set(chatId, myRec);
 
       // assemble the reply by buffering agent.token deltas — the SAME reassembly harness.js does in the browser.
       const state = { runId, buf: '', errMsg: null, reason: null };
@@ -160,7 +168,7 @@
       } catch (e) {
         state.errMsg = state.errMsg || ('run failed: ' + ((e && e.message) || e));
       } finally {
-        if (inflight.get(agentId) === myRec) inflight.delete(agentId);
+        if (inflight.get(chatId) === myRec) inflight.delete(chatId);
       }
 
       // a newer message took over this chat — abandon this run's (now stale) partial reply.
