@@ -61,19 +61,19 @@ the single authority `require()`d by both the frontend sim and the sidecar route
 
 **B3 + B4 (a/b/b.2/c/d) DONE + committed on agent/workpipe-b, all `npm run test:fast` green (30 files; classify 65, conveyor 50, pipeline 29, worldmodel 136). NOT merged.** The "connect agents to conveyors" vision is functional end-to-end: author bays + filters in REFIT → work sorts by content to the right bay → that agent appears + lights up → the sidecar dispatches the run there → unroutable floors flagged before spend.
 
-### NEXT — B5 (per-bay capability isolation) + merge to trunk
-- **`sidecar/routing/router.js`** `route()` (or a new method) builds the per-bay `station` from the delivered
-  bay's room objects (`agentRoomId(agentId)` → that room's placed props) and passes it to `runOnce` (which
-  gains an OPTIONAL `station` param; absent = today's hardcoded office). `resolveTools` reused verbatim.
-  `test/capgate.test.js`-style: a bay-room with a cabinet grants fs.*, without one grants none.
-- **Merge:** `sync-agent-tree.ps1 workpipe-b` (rebase onto trunk), `npm run test:fast` green, `git merge
-  agent/workpipe-b` from the integration tree, re-gate, ff master, tear down the worktree. CONFIRM with andro
-  before merging (outward-facing, shared trunk). B3/B4 are independently mergeable green now if desired.
-- **Pending live check:** the B4c/B4d picker UI was verified by the green gate + reuse of proven pieces, but
-  the in-browser click-test is pending a free preview slot (the 5-server cap was full with other worktrees).
-  Re-test via the `workpipe-b-frontend` preview (port 8099) when a slot frees, or post-merge on the trunk
-  preview: open REFIT → PROP/LOGISTICS/BAY → place a bay → the picker opens → assign 'coder' → place a filter
-  + 2 bays → DM 'research…'/'code…' → each sorts to the right bay + that agent lights up.
+| `3a38c54` | **B5** | **Per-bay capability isolation.** worldmodel `CAP_PROP_MAP` (prop→objectType: workstation=compute, cabinet=files, dish=web, server=memory) + `bayObjects(agentId)`. world.js enriches each plan bay with its room's cap-objects (POST dedupe keys on caps too). router `stationFor(agentId)` builds the resolveTools station from those, or null (→ office default). `runOnce` gains optional `o.station`; the hub passes `resolveStation(agentId)` for autonomous bay runs. An UNEQUIPPED bay grants no compute (cost-safe) → build.js shows an amber NO COMPUTE marker. +routing.b5.test (12) + worldmodel 141. |
+
+**PHASE B COMPLETE (B0–B5) + committed on agent/workpipe-b, all `npm run test:fast` green (31 files). NOT merged.** Routing ⊥ capability, both driven by the one placed floor: the bay binding picks WHO runs; the bay room's objects pick WHAT tools (via the unchanged resolveTools); a FILTER sorts work by content; cost-safety ghosts (unroutable + NO COMPUTE) warn before any spend.
+
+### NEXT — merge to trunk (awaiting andro's go-ahead)
+- **Merge:** `gen-trees\sync-agent-tree.ps1 workpipe-b` (rebase onto trunk), `npm run test:fast` green, then from
+  the integration tree `git merge agent/workpipe-b`, re-gate, ff master, tear down the worktree. Outward-facing
+  + shared trunk → CONFIRM with andro first. The whole of B0–B5 is one green branch; mergeable as a unit.
+- **Pending live check (nice-to-have, not blocking):** an in-browser click-test of the B4c/B4d picker UI
+  (place a bay → picker opens → assign 'coder'). Headless gate + the bayObjects/Pipeline browser evals cover
+  the logic; the picker DOM mirrors the proven showGuide modal. Re-test on the `workpipe-b-frontend` preview
+  (port 8099) or post-merge: REFIT → PROP/LOGISTICS/BAY → place a bay (picker opens) → assign → place a filter +
+  2 bays + equip each room with a console → DM 'research…'/'code…' → each sorts to the right bay + lights up.
 
 ### Verifying world.js (browser) — the worktree-served preview
 The running `skynet-frontend` preview serves the *integration tree*, NOT this worktree. Added a
