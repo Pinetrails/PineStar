@@ -41,6 +41,29 @@
     });
   }
 
+  // ---- prompt caching: mark the byte-stable system prefix as cacheable for providers that honor explicit
+  //      breakpoints (Anthropic via OpenRouter). Anthropic caches everything up to & including the marked block,
+  //      so on every turn after the first the system prompt + tool note is a cache HIT (much cheaper input tokens;
+  //      the saving surfaces as `cached_tokens` in usage, which cost.js already reconciles). A pure NO-OP for
+  //      models without explicit caching — their plain-string content is returned untouched, so the wire body is
+  //      byte-identical to before and other providers are unaffected. Returns a new array; never mutates the
+  //      loop's messages. (Caching the growing conversation prefix + the tool list is a planned follow-up; this
+  //      ships the single system breakpoint — the largest stable chunk — as the safe first win.)
+  function supportsExplicitCache(model) {
+    return /anthropic\/|claude/i.test(String(model || ''));
+  }
+  function applyCacheControl(messages, model) {
+    if (!Array.isArray(messages) || !supportsExplicitCache(model)) return messages;
+    let idx = -1;
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i] && messages[i].role === 'system') idx = i; else break;   // last of the LEADING system block
+    }
+    if (idx < 0 || typeof messages[idx].content !== 'string') return messages;  // nothing to cache / already structured
+    const out = messages.slice();
+    out[idx] = { role: 'system', content: [{ type: 'text', text: messages[idx].content, cache_control: { type: 'ephemeral' } }] };
+    return out;
+  }
+
   function makeOpenRouterProvider(opts) {
     opts = opts || {};
     const doFetch = opts.fetch || (typeof fetch !== 'undefined' ? fetch : null);
@@ -50,7 +73,7 @@
     const referer = opts.referer || 'http://127.0.0.1';
 
     async function* stream(req) {
-      const body = { model: req.model, messages: req.messages, stream: true };
+      const body = { model: req.model, messages: applyCacheControl(req.messages, req.model), stream: true };
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
         body.tool_choice = 'auto';
@@ -192,5 +215,5 @@
     return { stream, listModels, contextLimit, priceOf, supportsTools };
   }
 
-  return { makeOpenRouterProvider };
+  return { makeOpenRouterProvider, applyCacheControl };
 });

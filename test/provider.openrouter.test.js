@@ -156,5 +156,36 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'ok', 'after the 408 retry it streams normally');
   }
 
+  // L. prompt caching: applyCacheControl marks the system prefix cacheable for Anthropic-style models ONLY
+  {
+    const { applyCacheControl } = require('../sidecar/providers/openrouter.js');
+    const msgs = [{ role: 'system', content: 'SYS PREFIX' }, { role: 'user', content: 'hi' }];
+
+    const cached = applyCacheControl(msgs, 'anthropic/claude-sonnet-4.6');
+    A.eq(Array.isArray(cached[0].content), true, 'anthropic: system content becomes a block array');
+    A.eq(cached[0].content[0].text, 'SYS PREFIX', 'system text preserved in the block');
+    A.eq(cached[0].content[0].cache_control.type, 'ephemeral', 'ephemeral cache_control breakpoint set on the system block');
+    A.eq(cached[1], msgs[1], 'non-system messages untouched');
+    A.eq(msgs[0].content, 'SYS PREFIX', 'pure: input is NOT mutated');
+
+    A.eq(applyCacheControl(msgs, 'openai/gpt-4o')[0].content, 'SYS PREFIX', 'non-anthropic model: system left as a plain string (no-op)');
+    A.eq(applyCacheControl([{ role: 'user', content: 'hi' }], 'anthropic/claude-3.5')[0].content, 'hi', 'no leading system message -> unchanged');
+    A.eq(applyCacheControl([], 'anthropic/claude-3.5').length, 0, 'empty messages -> unchanged');
+  }
+
+  // L2. caching is actually WIRED into the request body for Anthropic models (and absent for others)
+  {
+    const grab = async (model) => {
+      const calls = [];
+      const capFetch = async (url, opts) => { calls.push(opts); return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }); };
+      await collect(makeOpenRouterProvider({ fetch: capFetch, key: 'k' }), { model, messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'u' }] });
+      return JSON.parse(calls[0].body);
+    };
+    const ant = await grab('anthropic/claude-sonnet-4.6');
+    A.ok(Array.isArray(ant.messages[0].content) && ant.messages[0].content[0].cache_control, 'stream() sends cache_control on the system block for anthropic');
+    const gpt = await grab('openai/gpt-4o');
+    A.eq(gpt.messages[0].content, 'S', 'stream() leaves the system content a plain string for non-anthropic');
+  }
+
   A.report('provider.openrouter.test');
 })();
