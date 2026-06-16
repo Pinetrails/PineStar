@@ -185,20 +185,21 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 @keyframes mic-pulse { 0%,100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 12px var(--bad); } }
 
 .voice-toggle {
-  font-size: 16px; line-height: 0; color: var(--ph);
+  font-size: 19px; line-height: 0; color: var(--ph);
   background: transparent; border: none; padding: 0 7px 0 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center;
-  filter: drop-shadow(0 0 2px var(--ph-glow2)); transition: opacity .12s, color .12s, filter .12s;
+  filter: drop-shadow(0 0 3px var(--ph-glow)); transition: opacity .12s, color .12s, filter .12s;
 }
-.voice-toggle:hover { color: var(--ph-bright); }
-/* muted: dimmed, no glow (the speaker-off + X icon already reads as off) */
-.voice-toggle.off { opacity: .45; filter: none; }
+.voice-toggle:hover { color: var(--ph-bright); filter: drop-shadow(0 0 5px var(--ph-glow)); }
+/* muted: clearly dimmed (the speaker-off + X icon already reads as off), but still legible enough to find + unmute */
+.voice-toggle.off { opacity: .55; filter: none; }
 /* speaking: gentle glow pulse while the agent's voice plays (SVG fills glow via filter, not text-shadow) */
 .voice-toggle.speaking { animation: spk-pulse .7s infinite; }
-@keyframes spk-pulse { 0%,100% { filter: drop-shadow(0 0 2px var(--ph-glow2)); } 50% { filter: drop-shadow(0 0 7px var(--ph-glow)); } }
-/* hands-free VOICE MODE button: dim when off (push-to-talk), lit + glowing when the loop is live */
-.voice-mode { opacity: .55; }
-.voice-mode.on { opacity: 1; filter: drop-shadow(0 0 6px var(--ph-glow)); }
+@keyframes spk-pulse { 0%,100% { filter: drop-shadow(0 0 3px var(--ph-glow)); } 50% { filter: drop-shadow(0 0 8px var(--ph-glow)); } }
+/* hands-free VOICE MODE button: full-strength so it reads on the dark header; the icon (bubble vs waveform)
+   + an extra glow when live carry the on/off state, not a heavy dim */
+.voice-mode { opacity: .9; }
+.voice-mode.on { opacity: 1; filter: drop-shadow(0 0 7px var(--ph-glow)); }
 /* hands-free was on last session but a refresh dropped it (the mic needs a fresh click) → pulse to invite a one-tap resume */
 .voice-mode.resume { opacity: 1; animation: voice-resume 1.4s ease-in-out infinite; }
 @keyframes voice-resume { 0%,100% { filter: drop-shadow(0 0 2px var(--ph-glow2)); } 50% { filter: drop-shadow(0 0 9px var(--ph-glow)); } }
