@@ -29,6 +29,7 @@ const World = (() => {
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
   let drag = null, hoverAgent = false, onClick = null, onArcade = null, wakeAt = 0;
+  let listenersBound = false;   // #stage is one static canvas reused for the app's life; bind its input handlers ONCE (init re-runs on every game re-entry)
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -273,42 +274,49 @@ const World = (() => {
     if (!stars.length) for (let i = 0; i < 90; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
     resize();
     try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; }); ro.observe(cv.parentElement || cv); } catch (e) {}
-    window.addEventListener('resize', resize);
+    // bind the window + canvas input handlers exactly ONCE — #stage is a single static element reused for the
+    // whole app lifetime, and init() re-runs on every game re-entry (connect/disconnect/new-agent). Re-binding
+    // would stack duplicate handlers that all mutate the shared pan/zoom/drag state. (ctx/resize above are safe
+    // to redo each time; the ResizeObserver self-guards with ro.disconnect().)
+    if (!listenersBound) {
+      listenersBound = true;
+      window.addEventListener('resize', resize);
 
-    cv.addEventListener('wheel', ev => {
-      ev.preventDefault();
-      const c = toCanvas(ev), wx = (c.x - panX) / scale, wy = (c.y - panY) / scale;
-      scale = clampz(scale * Math.exp(-ev.deltaY * 0.0015), MINZ, MAXZ);
-      panX = c.x - wx * scale; panY = c.y - wy * scale;
-      camLerp = null;   // the user is driving the camera — stop any in-progress focus ease
-    }, { passive: false });
-    cv.addEventListener('mousedown', ev => { camLerp = null; const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
-    cv.addEventListener('mousemove', ev => {
-      if (drag) {
-        const c = toCanvas(ev);
-        panX += c.x - drag.sx; panY += c.y - drag.sy; drag.sx = c.x; drag.sy = c.y; drag.moved = true;
-        cv.style.cursor = 'grabbing'; return;
-      }
-      const wp = toWorld(ev);
-      const hit = agentHit(wp);
-      // rising edge: it notices the Commander's cursor land on it and turns to meet you
-      if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
-      if (hit !== hoverAgent) hoverAgent = hit;
-      cv.style.cursor = (hit || arcadeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets are clickable too
-    });
-    cv.addEventListener('mouseup', ev => {
-      const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
-      if (wasDrag) return;
-      const wp = toWorld(ev);
-      if (agentHit(wp)) {
-        if (agent && activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
-        if (onClick) onClick(); return;
-      }
-      const arc = arcadeAt(wp);
-      if (arc && onArcade) onArcade(arc);
-    });
-    cv.addEventListener('mouseleave', () => { hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
-    connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
+      cv.addEventListener('wheel', ev => {
+        ev.preventDefault();
+        const c = toCanvas(ev), wx = (c.x - panX) / scale, wy = (c.y - panY) / scale;
+        scale = clampz(scale * Math.exp(-ev.deltaY * 0.0015), MINZ, MAXZ);
+        panX = c.x - wx * scale; panY = c.y - wy * scale;
+        camLerp = null;   // the user is driving the camera — stop any in-progress focus ease
+      }, { passive: false });
+      cv.addEventListener('mousedown', ev => { camLerp = null; const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
+      cv.addEventListener('mousemove', ev => {
+        if (drag) {
+          const c = toCanvas(ev);
+          panX += c.x - drag.sx; panY += c.y - drag.sy; drag.sx = c.x; drag.sy = c.y; drag.moved = true;
+          cv.style.cursor = 'grabbing'; return;
+        }
+        const wp = toWorld(ev);
+        const hit = agentHit(wp);
+        // rising edge: it notices the Commander's cursor land on it and turns to meet you
+        if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
+        if (hit !== hoverAgent) hoverAgent = hit;
+        cv.style.cursor = (hit || arcadeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets are clickable too
+      });
+      cv.addEventListener('mouseup', ev => {
+        const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
+        if (wasDrag) return;
+        const wp = toWorld(ev);
+        if (agentHit(wp)) {
+          if (agent && activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
+          if (onClick) onClick(); return;
+        }
+        const arc = arcadeAt(wp);
+        if (arc && onArcade) onArcade(arc);
+      });
+      cv.addEventListener('mouseleave', () => { hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
+    }
+    connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts (self-guards with `bridged`)
   }
 
   function resize() {
@@ -343,11 +351,12 @@ const World = (() => {
   // the Turn: the newborn finds the Commander — head leads, then the body pivots north -> side -> south and holds your gaze
   function awakenTurn() {
     if (!agent) return;
-    const side = (cache && agent.px > cache.W / 2) ? 'west' : 'east';
+    const a = agent;   // capture THIS agent: a disconnect+new-agent during the ~1s turn must not rotate the replacement
+    const side = (cache && a.px > cache.W / 2) ? 'west' : 'east';
     setGlance(side, 650, performance.now());
-    setTimeout(() => { if (agent) agent.dir = side; }, 240);
-    setTimeout(() => { if (agent) setGlance('south', 700, performance.now()); }, 760);
-    setTimeout(() => { if (agent) agent.dir = 'south'; }, 1000);
+    setTimeout(() => { if (agent === a) a.dir = side; }, 240);
+    setTimeout(() => { if (agent === a) setGlance('south', 700, performance.now()); }, 760);
+    setTimeout(() => { if (agent === a) a.dir = 'south'; }, 1000);
   }
   function truthPulse() { truthPulseAt = performance.now(); }
   function endAwakening() { wakeDarkTarget = 0; dawnAt = performance.now(); wakeIn(); }   // DAWN: light floods + ripple fires (agent stays frozen/facing-you for the final line)
@@ -830,7 +839,7 @@ const World = (() => {
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
       if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
-      else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } } }
+      else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } else { agent.working = true; agent.dir = 'north'; } } }   // no desk (degenerate room): latch working in place so a real task is never silently dropped
     }
     if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon')) {
       agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now;   // just finished real work → relaxed, downtime clock resets

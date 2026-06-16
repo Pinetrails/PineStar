@@ -542,6 +542,9 @@ const WorldModel = (() => {
       const propsLocal = [];
       for (const p of doc.props) {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
+        // a prop orphaned onto the void (its room was removed/moved out from under it) must NOT render over
+        // empty space nor block walking there — the read paths assume the OFF_DECK invariant the validators enforce.
+        if (isVoid(lx, ly)) continue;
         const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
         propsLocal.push(lp);
@@ -551,7 +554,7 @@ const WorldModel = (() => {
       // belts: shift into the local frame for the renderer/transport. Belts are WALKABLE — they
       // are never added to blockedTiles (floor machinery; boxes ride above, agents step across).
       const beltsLocal = [];
-      for (const k in doc.belts) { const p = k.split(','); beltsLocal.push({ x: +p[0] - ox, y: +p[1] - oy, dir: doc.belts[k] }); }
+      for (const k in doc.belts) { const p = k.split(','); const lx = +p[0] - ox, ly = +p[1] - oy; if (isVoid(lx, ly)) continue; beltsLocal.push({ x: lx, y: ly, dir: doc.belts[k] }); }   // skip belts left on void by a room removal/move
       const walkable = (lx, ly, extra) => {
         if (lx < 0 || ly < 0 || lx >= COLS || ly >= ROWS) return false;
         if (zoneGrid[idx(lx, ly)] == null) return false;
@@ -601,6 +604,7 @@ const WorldModel = (() => {
       if (!p) return fail('NOT_FOUND', 'no such prop');
       const aid = String(agentId || '').trim();
       if (aid && !AID_RE.test(aid)) return fail('BAD_AGENT', 'agentId must match ' + AID_RE);
+      if ((p.agentId || '') === aid) return { ok: true, id: propId, agentId: aid || null };   // no-op: don't burn an undo slot / wipe redo (matches the other mutators)
       snapshot();
       if (aid) p.agentId = aid; else delete p.agentId;   // empty string unbinds
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);

@@ -3,7 +3,7 @@
    Toggled from the dock. Dims the live sim and drops the Commander into an in-fiction
    station-editor over the SAME procedural art: pan/zoom camera, phosphor build grid,
    a ghost preview that snaps to tiles and tints green/red via the model's validators,
-   and an in-fiction toolbar — PLACE ROOM · HALLWAY · PAINT · MOVE · RECLAIM · UNDO.
+   and an in-fiction toolbar — PLACE ROOM · HALLWAY · PAINT · MOVE · RECLAIM · PROP · BELT · UNDO.
 
    It reads + mutates the canonical WorldModel station (the single source of truth) and
    re-bakes via StationBake on every change, then persists through the injected save hook.
@@ -26,6 +26,7 @@ const Build = (() => {
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, dpr = 1, ro = null;
   let raf = 0, running = false;
   let cache = null, cacheGeo = null, bakeDirty = true, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
+  let noComputeBays = [];   // bound-bay-with-no-computer rects, precomputed per floor edit (not rescanned every frame)
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT' };
@@ -102,7 +103,7 @@ const Build = (() => {
       <canvas class="refit-canvas"></canvas>
       <div class="refit-top">
         <span class="refit-title">▮ REFIT MODE</span>
-        <span class="refit-sub" id="refit-sub">DRAG TO PLACE ROOMS · RUN CORRIDORS · PAINT DECKS</span>
+        <span class="refit-sub" id="refit-sub">DRAG TO PLACE ROOMS · RUN CORRIDORS · PAINT DECKS · PLACE PROPS · LAY CONVEYORS</span>
         <span class="refit-spacer"></span>
         <button class="bb sm" id="refit-help" title="how to build">? HELP</button>
         <button class="bb sm" id="refit-undo" title="undo (Ctrl+Z)">↶ UNDO</button>
@@ -263,6 +264,7 @@ const Build = (() => {
           <li>Rooms &amp; halls that <b>touch auto-connect</b> with a door.</li>
           <li><span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked (a tip says why).</li>
           <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
+          <li><b>PROP</b> places furniture · <b>BELT</b> lays a conveyor — boxes flow the way you drag.</li>
           <li>Your agent walks the rooms + corridors you build.</li>
         </ul>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
@@ -589,6 +591,16 @@ const Build = (() => {
     cacheGeo = station.projectGeometry();
     cache = StationBake.bake(cacheGeo);
     valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
+    // precompute the bound-bay-with-no-computer set here (per floor edit) instead of rescanning every frame:
+    // station.bayObjects() does a full doc.props scan per bay, so the old per-frame loop was ~O(props^2) at 60fps.
+    noComputeBays = [];
+    if (typeof station.bayObjects === 'function') {
+      for (const p of (cacheGeo.props || [])) {
+        if (p.t !== 'bay' || !p.agentId) continue;
+        if (station.bayObjects(p.agentId).indexOf('computer') >= 0) continue;
+        noComputeBays.push({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 });
+      }
+    }
     bakeDirty = false;
   }
 
@@ -717,14 +729,9 @@ const Build = (() => {
       }
     }
     // B5 cost-safety: a BOUND bay whose room has no workstation can't run — the compute gate stays shut, so
-    // routed work would silently do nothing. Surface it (amber) so the Commander knows to equip the bay.
-    if (typeof station.bayObjects === 'function') {
-      for (const p of (cacheGeo.props || [])) {
-        if (p.t !== 'bay' || !p.agentId) continue;
-        if (station.bayObjects(p.agentId).indexOf('computer') >= 0) continue;
-        mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'NO COMPUTE');
-      }
-    }
+    // routed work would silently do nothing. Surface it (amber). The set is precomputed in rebake() per floor
+    // edit, so this draw is a cheap iteration rather than an O(props^2) station.bayObjects() rescan every frame.
+    for (const rect of noComputeBays) mark(rect, '255,190,60', 'NO COMPUTE');
   }
 
   function drawHover(t) {
