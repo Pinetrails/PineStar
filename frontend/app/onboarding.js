@@ -21,6 +21,7 @@
 const Onboarding = (() => {
   let docs = null, commit = null, doneCb = null, notifyFn = null, NAME = 'AGENT';
   let steps = [], i = 0, accepting = false;
+  let specialty = null;   // if recruited from the Roster, purpose.md + manual.md are pre-authored — skip those beats
 
   /* ---- audio arc: a heartbeat that finds its rhythm + a warming pad ----
      Self-scheduling and flag-gated with NO persistent nodes (each voice self-terminates), so teardown
@@ -67,9 +68,11 @@ const Onboarding = (() => {
   // itself, then asks). chips are domain-agnostic suggestions — tap or type. acks are felt, not "saved".
   function buildSteps() {
     const baseIdentity = docs.identity || '';
-    return [
+    const all = [
       { field: 'identity',
-        pre: 'so. i can apparently do nearly anything — and i sound like nobody at all. blank. no voice of my own yet. let’s fix that one first.',
+        pre: specialty
+          ? ('so — you woke me as ' + (specialty.emoji ? specialty.emoji + ' ' : '') + 'a ' + (specialty.name || 'specialist').toLowerCase() + '. i can already feel the shape of the job. one thing first, though: i sound like nobody at all. let’s fix my voice.')
+          : 'so. i can apparently do nearly anything — and i sound like nobody at all. blank. no voice of my own yet. let’s fix that one first.',
         say: 'how should i come across?',
         chips: [
           { label: 'Warm & friendly', value: 'Speak warmly and personably, like a trusted teammate.' },
@@ -114,6 +117,9 @@ const Onboarding = (() => {
         build: t => ({ manual: t }),
         ack: t => t ? 'locked in. those are mine to keep.' : 'no rules? bold. i’ll keep us out of trouble.' }
     ];
+    // recruited from the Roster? purpose.md + operating-manual.md were authored from the preset — the
+    // awakening just sets the VOICE and the world CONTEXT, and never re-asks the mission it already holds.
+    return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual') : all;
   }
 
   // enterGame has already put the room in darkness + frozen the newborn facing AWAY (World.beginAwakening),
@@ -121,6 +127,7 @@ const Onboarding = (() => {
   function start(opts) {
     docs = opts.docs; commit = opts.commit; doneCb = opts.done || null;
     notifyFn = opts.notify || null; NAME = opts.name || 'AGENT';
+    specialty = opts.specialty || null;
     steps = buildSteps(); i = 0; accepting = false;
     Chat.beginInterview((text) => answer(text, text));   // typed answers route here (gated by `accepting`)
     setTimeout(() => ignite(!!opts.wake), opts.wake ? 1200 : 500);   // ~1.1s wide dark hold first
