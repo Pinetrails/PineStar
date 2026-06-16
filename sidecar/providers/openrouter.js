@@ -50,7 +50,7 @@
     const referer = opts.referer || 'http://127.0.0.1';
 
     async function* stream(req) {
-      const body = { model: req.model, messages: req.messages, stream: true, usage: { include: true } };
+      const body = { model: req.model, messages: req.messages, stream: true };
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
         body.tool_choice = 'auto';
