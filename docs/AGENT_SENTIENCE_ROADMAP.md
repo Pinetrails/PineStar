@@ -35,7 +35,7 @@
 
 ### Tier 1 — purposeful idle (common)  ✅ shipped
 - [x] Lounge on couch + watch TV; tend the desk (lonely); pace (restless); gaze into the void (long downtime)
-- [ ] **Caretaker rounds**: a deliberate 2–3 stop lap (belt→machine→desk) with an ownership beat at each
+- [x] **Caretaker rounds**: a deliberate 2–3 stop lap with an ownership beat at each (`maybeRounds`/`roundsNext`, goal `rounds`)
 - [ ] **Revisit a favorite spot** (see Tier 3 memory)
 
 ### Tier 2 — reactive / aware (uncommon; triggered by the world)  ✅ partly shipped
@@ -54,7 +54,7 @@
 - [ ] **The double-take**: walk past something, stop, slowly walk back to look again
 - [ ] **Mimic the cursor**: very rarely, track the Commander's mouse for a few seconds (it sees you moving)
 - [ ] **Off-beat timing**: occasionally hold a pose far longer than expected (unsettling duration)
-- [ ] **Sleep / power-down** in deep `drift` phase: sits, head dips, near-frozen, until something stirs it
+- [x] **Sleep / power-down** in deep `drift` phase: sits, dead still, until summon / a placement / time stirs it (`sleep`, goal `sleep`)
 
 ### Tier 4 — AGENT ACTS ON THE STATION (rare → showcase; needs a safety-design pass) ⛔ not started
 > The big leap: the agent calls the same mutation API the REFIT builder uses (`station.addProp/moveProp/...`),
@@ -82,4 +82,5 @@
 ## Pass log
 - **Pass 1**: rhythm phases (`phaseOf`) + quirk layer (`maybeQuirk`: listen/scan/ponder/gaze-out/long-stare) + this roadmap. The long stare is the headline eerie beat.
 - **Pass 2**: embodied reactions — **startle** at sudden nearby change, **settle-scan** on study arrivals + **glance back** when leaving, and a new **face-a-wall** quirk.
-- **Pass 3**: ⭐ THE BIG ONE — the agent **acts on the station**: rarely walks to empty floor and places its OWN decor (real `addProp`), and at cap rearranges by removing one of its own. Hard safety rails (validated placement = never the Commander's props; capped; rare). Verified the rails against the real worldmodel (9/9). Next up: caretaker rounds, belt-yield, cross-room work-pulse reactions, sleep/power-down in `drift`, and a silent agent-mutation lane (avoid undo pollution).
+- **Pass 3**: ⭐ THE BIG ONE — the agent **acts on the station**: rarely walks to empty floor and places its OWN decor (real `addProp`), and at cap rearranges by removing one of its own. Hard safety rails (validated placement = never the Commander's props; capped; rare). Verified the rails against the real worldmodel (9/9).
+- **Pass 4**: **caretaker rounds** (a deliberate 2–3 stop lap with an ownership beat at each — purpose, not aimless) + **sleep/power-down** in the deep `drift` mood (sits dead still until summon / a placement / time wakes it — the eerie "is it dormant?"). Next up: belt-yield while walking, cross-room work-pulse reactions, the silent agent-mutation lane, and Tier 5 memory (favorite spot + mourning, wake ritual).
