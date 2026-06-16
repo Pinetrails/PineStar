@@ -377,7 +377,10 @@ async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
-  const { key, model, system, messages = [], agentId = 'agent', isTask = false } = body || {};
+  const { model, system, messages = [], agentId = 'agent', isTask = false } = body || {};
+  // Desktop build: the key is injected into our env from the OS keychain (read only here),
+  // so the browser no longer sends it. Browser build still POSTs body.key, which wins.
+  const key = String((body && body.key) || '').trim() || String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
   if (!key || !model) { res.writeHead(400); return res.end('missing key/model'); }
 
   res.writeHead(200, {
@@ -756,7 +759,8 @@ async function handleTts(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
   catch (e) { return fallback('bad json'); }
-  const key = String((body && body.key) || '').trim();
+  // browser sends body.key; desktop build falls back to the keychain key in our env
+  const key = String((body && body.key) || '').trim() || String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
   let text = String((body && body.text) || '').replace(/\s+/g, ' ').trim();
   // backstop cap (the client already segments to <1000): if it ever overruns, cut back to the last
   // sentence boundary within the window rather than chopping mid-word.

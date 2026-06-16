@@ -18,8 +18,28 @@ const Harness = (() => {
   // not persisted — on resume it stays 0 until the next real turn measures the live context.
   let lastTokensIn = 0;
 
-  const getKey = () => localStorage.getItem(LS.key) || '';
-  const setKey = k => localStorage.setItem(LS.key, k || '');
+  // Desktop (Tauri) build: the BYOK key lives in the OS keychain — never in localStorage and
+  // never returned to this WebView. Rust stores it and injects it into the sidecar's env at spawn
+  // (read only there). The browser build keeps the localStorage transport unchanged.
+  const TAURI = (typeof window !== 'undefined') && window.__TAURI__ && window.__TAURI__.core;
+  const DESKTOP = !!TAURI;
+  const invoke = (cmd, args) => TAURI.invoke(cmd, args);
+  let _configured = false;   // desktop: cached "is a key stored?" (loaded by init())
+
+  /* desktop: load the keychain "configured?" flag once at boot, before the connect screen reads it */
+  async function init() {
+    if (!DESKTOP) return;
+    try { _configured = await invoke('harness_has_key'); } catch (_) { _configured = false; }
+  }
+  /* whether a key is set — works in both modes; never exposes the value */
+  function configured() { return DESKTOP ? _configured : !!getKey(); }
+
+  // getKey() returns the real key in the browser; in desktop it returns '' (the key isn't here).
+  const getKey = () => DESKTOP ? '' : (localStorage.getItem(LS.key) || '');
+  const setKey = k => {
+    if (DESKTOP) { _configured = !!(k && String(k).trim()); return invoke('harness_store_key', { key: k || '' }); }
+    localStorage.setItem(LS.key, k || '');
+  };
   const getModel = () => localStorage.getItem(LS.model) || '';
   const setModel = m => localStorage.setItem(LS.model, m || '');
   const getProv = () => localStorage.getItem(LS.prov) || 'openrouter';
@@ -74,15 +94,18 @@ const Harness = (() => {
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
   async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal }) {
     const key = getKey(), model = getModel();
-    if (!key) throw new Error('no API key set');
+    // desktop: the sidecar already holds the key (from the keychain, in its env) — don't send it.
+    if (!DESKTOP && !key) throw new Error('no API key set');
     if (!model) throw new Error('no model selected');
 
     let res;
     try {
+      const reqBody = { model, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
+      if (!DESKTOP) reqBody.key = key;
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, model, system, messages, agentId: agentId || 'agent', isTask: !!isTask })
+        body: JSON.stringify(reqBody)
       });
     } catch (e) {
       throw new Error('cannot reach the SKYNET sidecar — start it with `npm start` (node sidecar/index.js)');
@@ -168,7 +191,7 @@ const Harness = (() => {
   }
 
   return {
-    getKey, setKey, getModel, setModel, getProv, setProv,
+    getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },

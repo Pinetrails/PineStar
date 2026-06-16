@@ -592,9 +592,10 @@ const StationUI = (() => {
   // the shape is a LIST so extra providers slot in later without touching this view.
   function connectedKeys() {
     const h = H(); if (!h || !h.getKey) return [];
-    const k = h.getKey();
-    if (!k) return [];
-    return [{ provider: 'openrouter', key: k, model: (h.getModel && h.getModel()) || '' }];
+    // desktop: the key is in the OS keychain (getKey returns ''); use configured() to know it's set.
+    const set = (h.configured && h.configured()) || !!h.getKey();
+    if (!set) return [];
+    return [{ provider: 'openrouter', key: h.getKey(), model: (h.getModel && h.getModel()) || '' }];
   }
   function keysFor(id) { return connectedKeys().filter(x => x.provider === id); }
 

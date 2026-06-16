@@ -198,6 +198,10 @@ const App = (() => {
 
   function initConnect(prefillName) {
     el('in-key').value = Harness.getKey();
+    // desktop: the key lives in the OS keychain (getKey returns ''); show that it's already set.
+    if (Harness.configured && Harness.configured() && !el('in-key').value) {
+      el('in-key').placeholder = '•••••••• stored in keychain — leave blank to keep';
+    }
     el('in-model').value = Harness.getModel();
     el('in-model').oninput = updateHint;
     if (prefillName) el('in-name').value = prefillName;
@@ -247,15 +251,20 @@ const App = (() => {
     const bc = el('btn-roster-clear'); if (bc) bc.classList.add('hidden');
   }
 
-  function onWake() {
+  async function onWake() {
     SFX.boot(); SFX.open();
     const key = el('in-key').value.trim();
     const model = el('in-model').value.trim();
     const name = (el('in-name').value.trim() || 'AGENT').toUpperCase().slice(0, 18);   // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too)
     const msg = el('connect-msg'); msg.className = 'msg';
-    if (!key) { msg.textContent = 'enter your OpenRouter API key (openrouter.ai/keys).'; return; }
+    const configured = !!(Harness.configured && Harness.configured());
+    if (!key && !configured) { msg.textContent = 'enter your OpenRouter API key (openrouter.ai/keys).'; return; }
     if (!model) { msg.textContent = 'choose or type a model slug.'; return; }
-    Harness.setKey(key); Harness.setModel(model); Harness.setProv('openrouter');
+    // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
+    // setKey is async in desktop (writes the keychain + respawns the sidecar); await it so the run
+    // that follows hits a sidecar that already has the key.
+    if (key) await Harness.setKey(key);
+    Harness.setModel(model); Harness.setProv('openrouter');
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
@@ -406,7 +415,8 @@ const App = (() => {
   function startCreation() { SFX.boot(); SFX.open(); resumingSaved = null; show('screen-connect'); initConnect(); }
 
   /* ---------- boot ---------- */
-  function init() {
+  async function init() {
+    if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
     if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
     el('btn-begin').onclick = startCreation;
     el('btn-newagent').onclick = () => { SFX.click(); Save.clear(); startCreation(); };
@@ -414,7 +424,7 @@ const App = (() => {
 
     const saved = Save.load();
     if (saved && saved.agent) {
-      if (Harness.getKey()) { resumeInto(saved); return; }   // auto-resume on refresh
+      if (Harness.getKey() || (Harness.configured && Harness.configured())) { resumeInto(saved); return; }   // auto-resume on refresh
       resumingSaved = saved;
       show('screen-connect'); initConnect(saved.agent.name);
       el('connect-msg').textContent = 're-enter your key to resume ' + saved.agent.name + '.';

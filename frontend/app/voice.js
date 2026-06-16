@@ -286,7 +286,10 @@ const Voice = (() => {
   function startSynth(job) {
     if (job.result) return;
     const key = apiKey(), cfg = ttsConfig();
-    if (!key || ttsDisabled || Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'browser' }); return; }
+    // desktop: the key lives in the sidecar's env (keychain), so apiKey() is '' — gate on "configured?"
+    // and send no key; the sidecar /api/tts falls back to its env key.
+    const haveKey = !!key || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
+    if (!haveKey || ttsDisabled || Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'browser' }); return; }
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     job.result = fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
