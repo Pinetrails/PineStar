@@ -169,11 +169,15 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 #chat-input { flex: 1; width: auto; min-width: 0; border: none; background: transparent; padding: 4px 2px; }
 #chat-input:focus { box-shadow: none; }
 
-/* ---------- voice: push-to-talk mic + agent-voice toggle ---------- */
+/* ---------- voice controls: phosphor line-icons (theme-tinted via currentColor) ---------- */
+.voice-toggle svg, .mic-btn svg { width: 1em; height: 1em; display: block; pointer-events: none; }
+
 .mic-btn {
-  flex: 0 0 auto; font-family: inherit; font-size: 17px; line-height: 1;
+  flex: 0 0 auto; font-size: 17px; line-height: 0;
   color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-dim);
-  padding: 4px 8px; cursor: pointer; border-radius: 4px; user-select: none;
+  padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  filter: drop-shadow(0 0 2px var(--ph-glow2)); transition: color .12s, border-color .12s, background .12s;
 }
 .mic-btn:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
 /* listening: red glow + pulse so it's unmistakable the mic is hot */
@@ -181,19 +185,23 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 @keyframes mic-pulse { 0%,100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 12px var(--bad); } }
 
 .voice-toggle {
-  font-family: inherit; font-size: 14px; line-height: 1; color: var(--ink);
-  background: transparent; border: none; padding: 0 6px 0 0; cursor: pointer; user-select: none;
+  font-size: 16px; line-height: 0; color: var(--ph);
+  background: transparent; border: none; padding: 0 7px 0 0; cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center;
+  filter: drop-shadow(0 0 2px var(--ph-glow2)); transition: opacity .12s, color .12s, filter .12s;
 }
-.voice-toggle.off { opacity: .55; }
-/* speaking: gentle pulse on the speaker glyph while the agent's voice plays */
+.voice-toggle:hover { color: var(--ph-bright); }
+/* muted: dimmed, no glow (the speaker-off + X icon already reads as off) */
+.voice-toggle.off { opacity: .45; filter: none; }
+/* speaking: gentle glow pulse while the agent's voice plays (SVG fills glow via filter, not text-shadow) */
 .voice-toggle.speaking { animation: spk-pulse .7s infinite; }
-@keyframes spk-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes spk-pulse { 0%,100% { filter: drop-shadow(0 0 2px var(--ph-glow2)); } 50% { filter: drop-shadow(0 0 7px var(--ph-glow)); } }
 /* hands-free VOICE MODE button: dim when off (push-to-talk), lit + glowing when the loop is live */
-.voice-mode { opacity: .6; }
-.voice-mode.on { opacity: 1; text-shadow: 0 0 8px var(--ph-glow), 0 0 14px var(--ph-glow2); }
+.voice-mode { opacity: .55; }
+.voice-mode.on { opacity: 1; filter: drop-shadow(0 0 6px var(--ph-glow)); }
 /* hands-free was on last session but a refresh dropped it (the mic needs a fresh click) → pulse to invite a one-tap resume */
 .voice-mode.resume { opacity: 1; animation: voice-resume 1.4s ease-in-out infinite; }
-@keyframes voice-resume { 0%,100% { text-shadow: 0 0 4px var(--ph-glow2); } 50% { text-shadow: 0 0 11px var(--ph-glow), 0 0 18px var(--ph-glow2); } }
+@keyframes voice-resume { 0%,100% { filter: drop-shadow(0 0 2px var(--ph-glow2)); } 50% { filter: drop-shadow(0 0 9px var(--ph-glow)); } }
 
 /* ---------- onboarding / save additions ---------- */
 .title-btns { display: flex; flex-direction: column; gap: 12px; align-items: center; }

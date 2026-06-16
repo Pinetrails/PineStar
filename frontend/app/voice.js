@@ -28,6 +28,17 @@ const Voice = (() => {
   const REARM_DELAY = 350;                 // ms after the agent stops talking before the mic re-opens (echo guard)
   const MAX_EMPTY = 3;                      // consecutive silent listens before the loop goes passive
 
+  // Phosphor line-icons for the voice controls — single-color (currentColor) so they inherit the active
+  // theme's phosphor tint + glow, matching the terminal UI instead of the off-brand OS color emoji.
+  // Swapped by reflect*()/init below.
+  const ICON = {
+    mic: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 7.4a4.4 4.4 0 0 0 8.8 0"/><path d="M8 11.8v2.6"/><path d="M5.5 14.4h5"/></g></svg>',
+    spkOn: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2L8 3.2v9.6L4.5 10h-2z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M10.4 6.3a2.7 2.7 0 0 1 0 3.4"/><path d="M12.1 4.7a5 5 0 0 1 0 6.6"/></g></svg>',
+    spkOff: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2L8 3.2v9.6L4.5 10h-2z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M10.9 6.3 13.5 8.9"/><path d="M13.5 6.3 10.9 8.9"/></g></svg>',
+    modePtt: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.6 3.4H13.4V10H7L4 12.6V10H2.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><g fill="currentColor"><circle cx="5.5" cy="6.7" r=".85"/><circle cx="8" cy="6.7" r=".85"/><circle cx="10.5" cy="6.7" r=".85"/></g></svg>',
+    modeLive: '<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6.5v3"/><path d="M6.33 4v8"/><path d="M9.67 5.5v5"/><path d="M13 6.8v2.4"/></g></svg>'
+  };
+
   const canListen = () => !!SR;
   const canSpeak = () => !!synth;
 
@@ -606,7 +617,7 @@ const Voice = (() => {
   function reflectToggle() {
     if (!toggleBtn) return;
     toggleBtn.classList.toggle('off', !speakReplies);
-    toggleBtn.textContent = speakReplies ? '🔊' : '🔇';
+    toggleBtn.innerHTML = speakReplies ? ICON.spkOn : ICON.spkOff;
     toggleBtn.title = speakReplies ? 'agent voice: ON — click to mute' : 'agent voice: OFF — click to unmute';
     toggleBtn.setAttribute('aria-pressed', speakReplies ? 'true' : 'false');
     toggleBtn.setAttribute('aria-label', speakReplies ? 'Agent voice: on, click to mute' : 'Agent voice: off, click to unmute');
@@ -614,7 +625,7 @@ const Voice = (() => {
   function reflectMode() {
     if (!modeBtn) return;
     modeBtn.classList.toggle('on', convoMode);
-    modeBtn.textContent = convoMode ? '🎙️' : '💬';
+    modeBtn.innerHTML = convoMode ? ICON.modeLive : ICON.modePtt;
     modeBtn.title = convoMode
       ? 'voice mode: ON (hands-free) — click for push-to-talk'
       : 'voice mode: OFF (push-to-talk) — click for hands-free conversation';
@@ -658,7 +669,7 @@ const Voice = (() => {
 
     if (micBtn) {
       if (!canListen()) micBtn.style.display = 'none';      // graceful degradation
-      else micBtn.onclick = () => onMicClick();
+      else { micBtn.onclick = () => onMicClick(); micBtn.innerHTML = ICON.mic; }
     }
     if (toggleBtn) {
       if (!canSpeak()) toggleBtn.style.display = 'none';
