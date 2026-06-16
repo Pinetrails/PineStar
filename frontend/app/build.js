@@ -56,7 +56,7 @@ const Build = (() => {
     document.body.classList.add('refit-on');
     unsub = station.onChange(() => { bakeDirty = true; updateUndoRedo(); });
     bakeDirty = true;
-    convey = (typeof Conveyor !== 'undefined') ? Conveyor.create() : null;
+    convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver }) : null;
     lastFrameTs = 0;
     if (!stars.length) seedStars();
     resize();
@@ -108,6 +108,7 @@ const Build = (() => {
         <button class="bb sm" id="refit-undo" title="undo (Ctrl+Z)">↶ UNDO</button>
         <button class="bb sm" id="refit-redo" title="redo (Ctrl+Shift+Z)">↷ REDO</button>
         <button class="bb sm" id="refit-fit" title="frame the station">⊹ FIT</button>
+        <button class="bb sm" id="refit-test" title="send test work down your belts — watch it sort to the bays (no bot needed)">▸ TEST</button>
         <button class="bb sm refit-primary" id="refit-done" title="finish + save (Esc)">✓ DONE</button>
       </div>
       <div class="refit-dock">
@@ -139,6 +140,7 @@ const Build = (() => {
     root.querySelector('#refit-done').onclick = close;
     root.querySelector('#refit-help').onclick = showGuide;
     root.querySelector('#refit-fit').onclick = () => { fitCamera(); };
+    root.querySelector('#refit-test').onclick = (e) => sendTestBoxes(e);
     undoBtn.onclick = () => { if (station.undo().ok) sfx('click'); else sfx('bad'); };
     redoBtn.onclick = () => { if (station.redo().ok) sfx('click'); else sfx('bad'); };
 
@@ -264,6 +266,7 @@ const Build = (() => {
           <li><span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked (a tip says why).</li>
           <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
           <li>Your agent walks the rooms + corridors you build.</li>
+          <li><b>BELT</b> (7) + <b>PROP ▸ LOGISTICS</b> (INTAKE · BAY · FILTER) wire work to your agents — the floor <b>IS</b> the routing. Hit <b>▸ TEST</b> to watch a box ride.</li>
         </ul>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
@@ -382,6 +385,29 @@ const Build = (() => {
     }
     g.querySelector('#j-cancel').onclick = closeP;
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
+  }
+
+  /* ---------- test run (Polish B): send work down your belts with NO bot connected, and watch it sort to the
+     bays right here in REFIT — the build-time payoff + the first thing a tutorial points at. ---------- */
+  function onBuildDeliver(bx) { pushFlash([{ x1: bx.x, y1: bx.y, x2: bx.x, y2: bx.y }], false); sfx('click'); }   // box finished — flash where it landed
+  // the INTAKE's belt-adjacent tile (where a box spawns), or null if no INTAKE sits on a belt
+  function intakeBeltTile() {
+    const intake = station.props().find(p => p.t === 'intake');
+    if (!intake) return null;
+    const w = intake.w || 1, h = intake.h || 1;
+    for (let yy = intake.y - 1; yy <= intake.y + h; yy++)
+      for (let xx = intake.x - 1; xx <= intake.x + w; xx++)
+        if (station.beltAt(xx, yy)) return { x: xx, y: yy };
+    return null;
+  }
+  let _testN = 0;
+  // fire one box per content tag at the INTAKE so you watch them SORT through your FILTERs to the right bays
+  function sendTestBoxes(ev) {
+    if (!convey) return;
+    const t = intakeBeltTile();
+    if (!t) { flashTip(ev, 'place an INTAKE on a belt first', false); sfx('bad'); return; }
+    for (const tag of ['code', 'research', 'general']) convey.enqueueAt(t.x, t.y, { workitemId: 'test-' + (++_testN), tag, preview: 'test ' + tag });
+    flashTip(ev, 'test work riding — watch it sort', true); sfx('click');
   }
 
   /* ---------- camera + sizing ---------- */
@@ -761,7 +787,10 @@ const Build = (() => {
     if (!convey) return;
     const belts = station.belts();
     const dt = lastFrameTs ? (now - lastFrameTs) : 16; lastFrameTs = now;
-    convey.tick(dt, now, belts);
+    // route the preview boxes through the SAME junctions the compiled plan uses, so a TEST box sorts exactly as
+    // real work will (build-time "does my routing work?" loop). null until a junction exists -> boxes go straight.
+    const jmap = (valPlan && valPlan.junctions && Object.keys(valPlan.junctions).length) ? new Map(Object.entries(valPlan.junctions)) : null;
+    convey.tick(dt, now, belts, jmap);
     convey.drawBelts(ctx, now, t, belts);
   }
   function drawConveyorBoxes(now, t) { if (convey) convey.drawBoxes(ctx, now, t); }
