@@ -1,0 +1,88 @@
+# Connectors — generic MCP bridge
+
+**Branch:** `agent/mcp-bridge` · **Status:** Slice 1 (protocol layer) landed; wiring + UI ahead.
+
+## Goal
+
+Give the harness's agents **connectors**: the ability to reach external tools/services the way
+Claude/Anthropic "Custom Connectors" do — via the **Model Context Protocol (MCP)**. One generic
+MCP-client integration unlocks the whole ecosystem (GitHub, Slack, Notion, filesystem, Postgres,
+…) instead of N bespoke service tools. MCP is **model-agnostic**, so it works over OpenRouter
+regardless of the Anthropic API ban — the protocol is about tools, not the model endpoint.
+
+## Why it fits this codebase (it's almost entirely additive)
+
+The harness was built for this. Its spine is **"object = capability made real"**
+(`sidecar/capability/registry.js`): placing a room object grants a capability (computer = compute
+gate, dish = web, cabinet = files, notebook = memory). A connector is just **another object type**
+whose presence grants its tools.
+
+Three facts make the bridge additive:
+
+1. **Tools register fresh per run** in `runOnce` (`sidecar/index.js`) — so per-run MCP tool
+   registration is natural; no global toolset policy to fight.
+2. **The dispatch boundary is uniform** (`sidecar/tools/registry.js`): capability gate →
+   schema-validate → consent gate → timeout → run. An MCP tool that conforms to the tool-def
+   shape gets the same enforcement as `fs.write` — including the live consent prompt.
+3. **Every dispatched tool already emits `agent.tool_call` / `agent.tool_result`**
+   (`sidecar/loop.js`). MCP calls surface on the bus and in the world FOR FREE — **no
+   owner-gated `shared/events.js` change needed** for the MVP.
+
+## Key design decisions
+
+- **Transport: remote MCP first (Streamable HTTP + SSE), stdio in Phase 2.** Remote matches
+  "Custom Connectors", is fetch-only (zero-dep, Node 18+, the repo ethos), and needs no
+  subprocess jail. stdio (the big local-server ecosystem) requires `child_process` spawning +
+  Windows Job-Object/AppContainer jailing — the SAME machinery the planned `terminal`/`shell.exec`
+  capability needs, so the two should land together later.
+- **Dynamic capability resolution.** `CAP_REGISTRY` is static (objectType → grant[]) but MCP tools
+  are discovered at runtime. The capability gate is exact-match on tool NAME
+  (`resolved.tools.indexOf(name)`), so discovered MCP tool names must be **unioned into
+  `resolved.tools`** at resolve time when the agent's room contains a connector object. A static
+  `connector` entry in `CAP_REGISTRY` marks the object; the manager injects the dynamic grants.
+- **Naming.** `mcp__<connectorId>__<tool>`, sanitized to `^[A-Za-z0-9_-]{1,64}$` (already wire-safe;
+  no dotted-name translation needed). Namespacing prevents collisions with built-ins and across
+  connectors.
+- **Consent posture.** The Commander placing + configuring a connector is itself consent to that
+  integration. So: read-only tools (`annotations.readOnlyHint`) auto-allow like `web_search`;
+  every other MCP tool is treated as mutating/execute and routed through the consent broker.
+  `surface:'autonomous'` (e.g. a Telegram run) default-denies ungranted MCP mutations.
+- **Secrets** (server URL, bearer/OAuth token) live in a PROTECTED sibling file under
+  `sidecar/workspaces/connectors/` — outside the fs jail, never on the bus, never returned by a
+  status route — exactly like the Telegram channel secrets.
+
+## Build slices
+
+- [x] **Slice 1 — protocol layer (pure, host-free, tested).** `sidecar/mcp/client.js` (JSON-RPC 2.0
+  client over an injected transport: initialize/listTools/callTool/notify + id correlation,
+  pagination, timeout, close) and `sidecar/mcp/translate.js` (MCP tool → registry tool def).
+  `test/mcp.client.test.js` covers handshake, pagination, errors, translation, and end-to-end
+  dispatch through the real registry. Deterministic (counter ids, injected time).
+- [ ] **Slice 2 — HTTP/SSE transport.** `sidecar/mcp/transport.http.js`: Streamable-HTTP + SSE over
+  global `fetch`, bearer auth, SSRF-style host guard (reuse `web.js` philosophy), bounded.
+- [ ] **Slice 3 — connector manager.** `sidecar/mcp/manager.js`: host singleton (like `telegram`/
+  `router`) holding connector configs, keeping clients warm, caching `tools/list`, exposing
+  `toolsFor(connectorId)` + `call(...)`, handling `tools/list_changed` refresh.
+- [ ] **Slice 4 — wiring.** In `runOnce`: register manager-provided MCP tool defs into the registry,
+  union their names into `resolved.tools` + `networkCaps` when the room has a `connector` object;
+  add a `connector` entry to `CAP_REGISTRY`; `/api/connectors/*` routes (add/list/test/remove);
+  persist secrets.
+- [ ] **Slice 5 — world + UI.** A "connector portal" prop sprite + a Connectors panel
+  (add server URL/token, see discovered tools, enable/disable) — the gamified projection.
+
+## Open decisions for andro
+
+1. **Auth:** bearer-token paste only for the MVP, or full OAuth 2.1 device-code flow (dovetails with
+   the planned ChatGPT/Codex OAuth work)?
+2. **Connector scope:** station-wide (any agent with a portal) vs. per-agent (only the agent whose
+   bay holds the portal)? Per-agent matches the existing per-bay capability isolation (B5).
+3. **stdio in scope at all**, or remote-only until the `terminal`/shell.exec jail exists?
+
+## Guardrails honored
+
+- New code under `sidecar/mcp/` + a new test; `shared/events.js` / `shared/schema.js` untouched
+  (additive, no owner-gated change). `CAP_REGISTRY` edit (Slice 4) is in `sidecar/`, not the
+  owned contract.
+- Pure modules, injected deps, no ambient time/randomness (passes `lint-determinism`); no new
+  literal `emit()` names (passes `lint-emits`).
+- `npm run test:fast` green before any merge to trunk.

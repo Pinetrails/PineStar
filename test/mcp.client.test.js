@@ -1,0 +1,163 @@
+/* node test/mcp.client.test.js — the MCP connector protocol layer:
+   (A-D) the JSON-RPC client: initialize handshake, tools/list pagination, tools/call + error
+         rejection, notifications / unknown ids / close — all over a fake duplex transport.
+   (E)   MCP-tool -> registry-tool TRANSLATION (name/scope/consent/schema/content rendering).
+   (F)   end-to-end: a translated MCP tool dispatched through the REAL registry boundary
+         (capability gate + schema-validate) with NO host I/O. */
+'use strict';
+const A = require('./_assert.js');
+const { makeMcpClient } = require('../sidecar/mcp/client.js');
+const { makeMcpToolDef, mcpToolName } = require('../sidecar/mcp/translate.js');
+const { makeRegistry } = require('../sidecar/tools/registry.js');
+
+// a fake duplex transport: a request (id+method) auto-responds via the injected handle(); a handle that throws
+// becomes a JSON-RPC error response; returning undefined never responds (to exercise timeouts/close). Records all sent.
+function makeFakeTransport(handle) {
+  let onMsg = null;
+  const sent = [];
+  return {
+    sent,
+    send(msg) {
+      sent.push(msg);
+      if (msg && msg.id != null && msg.method) {
+        Promise.resolve().then(() => {
+          let res;
+          try { const r = handle(msg); if (r === undefined) return; res = { jsonrpc: '2.0', id: msg.id, result: r }; }
+          catch (e) { res = { jsonrpc: '2.0', id: msg.id, error: { code: e.code || -32000, message: e.message } }; }
+          if (onMsg) onMsg(res);
+        });
+      }
+      return Promise.resolve();
+    },
+    onMessage(cb) { onMsg = cb; },
+    emit(msg) { if (onMsg) onMsg(msg); },     // push a server-initiated message (notification / stray response)
+    close() { this.closed = true; }
+  };
+}
+
+(async () => {
+  // ===== A. initialize handshake =====
+  {
+    const seenInit = [];
+    const tp = makeFakeTransport(req => {
+      if (req.method === 'initialize') { seenInit.push(req.params); return { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'fake', version: '1' } }; }
+      throw new Error('unexpected ' + req.method);
+    });
+    const client = makeMcpClient({ transport: tp });
+    const res = await client.initialize();
+    A.eq(res.serverInfo.name, 'fake', 'initialize returns serverInfo');
+    A.eq(seenInit.length, 1, 'exactly one initialize request sent');
+    A.ok(!!seenInit[0].clientInfo, 'initialize carried clientInfo');
+    A.eq(seenInit[0].protocolVersion, '2025-06-18', 'initialize carried the protocol version');
+    const notif = tp.sent.find(m => m.method === 'notifications/initialized');
+    A.ok(notif && notif.id == null, 'an initialized notification follows, with NO id');
+  }
+
+  // ===== B. tools/list pagination (nextCursor) =====
+  {
+    let page = 0;
+    const tp = makeFakeTransport(req => {
+      if (req.method !== 'tools/list') throw new Error('unexpected');
+      page++;
+      if (page === 1) { A.ok(!req.params.cursor, 'first page sends no cursor'); return { tools: [{ name: 'a', inputSchema: { type: 'object' } }], nextCursor: 'c2' }; }
+      A.eq(req.params.cursor, 'c2', 'second page echoes the nextCursor');
+      return { tools: [{ name: 'b', inputSchema: { type: 'object' } }] };
+    });
+    const client = makeMcpClient({ transport: tp });
+    const tools = await client.listTools();
+    A.eq(tools.map(t => t.name), ['a', 'b'], 'listTools concatenates across paginated pages');
+    A.eq(page, 2, 'pagination stops when nextCursor is absent');
+  }
+
+  // ===== C. tools/call + JSON-RPC error rejection =====
+  {
+    const tp = makeFakeTransport(req => {
+      if (req.method === 'tools/call' && req.params.name === 'ok') return { content: [{ type: 'text', text: 'hello' }] };
+      if (req.method === 'tools/call' && req.params.name === 'boom') { const e = new Error('nope'); e.code = -32001; throw e; }
+      throw new Error('unexpected');
+    });
+    const client = makeMcpClient({ transport: tp });
+    const r = await client.callTool('ok', { x: 1 });
+    A.eq(r.content[0].text, 'hello', 'callTool resolves with the result');
+    const callMsg = tp.sent.find(m => m.method === 'tools/call');
+    A.eq(callMsg.params.arguments.x, 1, 'arguments are forwarded under params.arguments');
+    let threw = false;
+    try { await client.callTool('boom', {}); } catch (e) { threw = true; A.eq(e.code, -32001, 'JSON-RPC error code surfaced on the thrown error'); }
+    A.ok(threw, 'a JSON-RPC error response rejects the call');
+  }
+
+  // ===== D. notifications, unknown ids, close-rejects-pending =====
+  {
+    const tp = makeFakeTransport(() => ({}));
+    const client = makeMcpClient({ transport: tp });
+    let got = null;
+    client.onNotification('notifications/tools/list_changed', p => { got = p || true; });
+    tp.emit({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
+    A.ok(got, 'a server notification reaches its handler');
+    A.notThrows(() => tp.emit({ jsonrpc: '2.0', id: 9999, result: {} }), 'a response with an unknown id is a no-op');
+
+    const tp2 = makeFakeTransport(() => undefined);   // never responds
+    const c2 = makeMcpClient({ transport: tp2 });
+    const p = c2.request('tools/list', {});
+    c2.close('test');
+    let closedRej = false;
+    try { await p; } catch (e) { closedRej = true; }
+    A.ok(closedRej, 'a pending request rejects when the client closes');
+    A.eq(c2.isClosed(), true, 'client reports closed');
+    A.eq(tp2.closed, true, 'close() tears down the transport');
+  }
+
+  // ===== E. translate: MCP tool -> registry tool def =====
+  {
+    A.eq(mcpToolName('My Server!', 'do.thing'), 'mcp__My_Server__do_thing', 'name is sanitized + namespaced');
+
+    const calls = [];
+    const def = makeMcpToolDef({
+      connectorId: 'gh', label: 'GitHub',
+      mcpTool: { name: 'create_issue', description: 'Open an issue', inputSchema: { type: 'object', required: ['title'], properties: { title: { type: 'string' } } } },
+      call: (name, args) => { calls.push([name, args]); return Promise.resolve({ content: [{ type: 'text', text: 'created #1' }] }); }
+    });
+    A.eq(def.name, 'mcp__gh__create_issue', 'translated tool name');
+    A.eq(def.scope, 'execute', 'a non-readOnly MCP tool is execute scope');
+    A.eq(def.requiresConsent, true, 'a mutating MCP tool requires consent');
+    A.eq(def.capability, 'mcp:gh', 'capability is namespaced to the connector');
+    A.eq(def.schema.required[0], 'title', 'inputSchema is passed through to schema-lite');
+
+    const out = await def.run({ title: 'hi' }, {});
+    A.eq(calls[0][0], 'create_issue', 'run() calls the MCP tool by its ORIGINAL (un-namespaced) name');
+    A.eq(out.content, 'created #1', 'text content blocks are rendered to plain text');
+
+    const ro = makeMcpToolDef({ connectorId: 'gh', mcpTool: { name: 'list_issues', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } }, call: () => Promise.resolve({ content: [] }) });
+    A.eq(ro.scope, 'read', 'readOnlyHint -> read scope');
+    A.eq(ro.requiresConsent, false, 'a readOnly MCP tool needs no consent (like web_search)');
+
+    const errDef = makeMcpToolDef({ connectorId: 'x', mcpTool: { name: 't', inputSchema: { type: 'object' } }, call: () => Promise.resolve({ isError: true, content: [{ type: 'text', text: 'bad input' }] }) });
+    let rThrew = false;
+    try { await errDef.run({}, {}); } catch (e) { rThrew = true; A.ok(e.message.indexOf('bad input') >= 0, 'isError text surfaced in the thrown error'); }
+    A.ok(rThrew, 'an MCP isError result makes run() throw (-> clean isError downstream)');
+  }
+
+  // ===== F. end-to-end: dispatch a translated MCP tool through the REAL registry boundary =====
+  {
+    const reg = makeRegistry();
+    const def = makeMcpToolDef({
+      connectorId: 'fs',
+      mcpTool: { name: 'read_file', inputSchema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } } },
+      call: (name, args) => Promise.resolve({ content: [{ type: 'text', text: 'FILE:' + args.path }] })
+    });
+    reg.register(def);
+    const mk = (args) => ({ id: 'c', name: def.name, args: args, argsRaw: JSON.stringify(args), parseError: null });
+
+    const bad = await reg.dispatch(mk({}));                                   // missing required `path`
+    A.eq(bad.isError, true, 'the registry schema-validates a translated MCP tool BEFORE run()');
+
+    const denied = await reg.dispatch(mk({ path: '/x' }), { canUse: () => ({ ok: false, reason: 'not placed' }) });
+    A.eq(denied.summary, 'capdenied', 'an MCP tool obeys the capability gate');
+
+    const okr = await reg.dispatch(mk({ path: '/etc/hosts' }), { canUse: () => ({ ok: true }) });
+    A.eq(okr.ok, true, 'a granted, valid MCP dispatch succeeds');
+    A.eq(okr.content, 'FILE:/etc/hosts', 'dispatch returns the MCP tool output');
+  }
+
+  A.report('mcp.client.test');
+})();
