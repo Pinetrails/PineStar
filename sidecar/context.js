@@ -28,12 +28,35 @@
   }
 
   // ---- secret redaction (module-level so it's usable without a context instance) ----
+  // Key/token shapes scrubbed before anything is logged, streamed, or persisted. Each pattern is
+  // distinctive enough (vendor prefix + a length floor) that it does not eat ordinary prose. This is
+  // ALWAYS-ON — there is deliberately no toggle the model could flip off. Most-specific vendor prefixes
+  // run first; the broad `sk-` catch-all and `Bearer` run last. All replacements are length-shrinking,
+  // so a single pass per pattern fully scrubs (no pattern reintroduces a matchable shape).
+  const SECRET_PATTERNS = [
+    [/-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z]+ )?PRIVATE KEY-----/g, '[redacted-private-key]'],
+    [/sk-or-v1-[A-Za-z0-9_\-]{8,}/g, '[redacted-key]'],                 // OpenRouter
+    [/sk-ant-[A-Za-z0-9_\-]{8,}/g, '[redacted-key]'],                   // Anthropic
+    [/sk-proj-[A-Za-z0-9_\-]{16,}/g, '[redacted-key]'],                 // OpenAI project key
+    [/\bsk_(?:live|test)_[A-Za-z0-9]{16,}\b/g, '[redacted-key]'],       // Stripe secret/restricted
+    [/\b(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}\b/g, '[redacted-key]'], // AWS access key id
+    [/\bAIza[0-9A-Za-z_\-]{35}\b/g, '[redacted-key]'],                  // Google API key
+    [/\bya29\.[0-9A-Za-z_\-]{20,}/g, '[redacted-key]'],                 // Google OAuth access token
+    [/\bgh[pousr]_[A-Za-z0-9]{36,}\b/g, '[redacted-key]'],              // GitHub token (classic)
+    [/\bgithub_pat_[A-Za-z0-9_]{60,}\b/g, '[redacted-key]'],            // GitHub fine-grained PAT
+    [/\bglpat-[A-Za-z0-9_\-]{20,}\b/g, '[redacted-key]'],               // GitLab PAT
+    [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, '[redacted-key]'],            // Slack token
+    [/\bhf_[A-Za-z0-9]{30,}\b/g, '[redacted-key]'],                     // HuggingFace
+    [/\bxai-[A-Za-z0-9]{20,}\b/g, '[redacted-key]'],                    // xAI
+    [/\bAC[a-f0-9]{32}\b/g, '[redacted-key]'],                          // Twilio account SID
+    [/\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}/g, '[redacted-jwt]'], // JWT
+    [/\b\d{8,10}:[A-Za-z0-9_\-]{30,}\b/g, '[redacted-token]'],          // Telegram bot token (this app uses these)
+    [/sk-[A-Za-z0-9_\-]{16,}/g, '[redacted-key]'],                      // generic OpenAI-style (broad — keep last)
+    [/\bBearer\s+[A-Za-z0-9._\-]{12,}/g, 'Bearer [redacted-key]'],      // Authorization: Bearer <token>
+  ];
   function redactStr(s) {
-    return s
-      .replace(/sk-or-v1-[A-Za-z0-9_\-]{8,}/g, '[redacted-key]')
-      .replace(/sk-ant-[A-Za-z0-9_\-]{8,}/g, '[redacted-key]')
-      .replace(/sk-[A-Za-z0-9_\-]{16,}/g, '[redacted-key]')
-      .replace(/\bBearer\s+[A-Za-z0-9._\-]{12,}/g, 'Bearer [redacted-key]');
+    for (let i = 0; i < SECRET_PATTERNS.length; i++) s = s.replace(SECRET_PATTERNS[i][0], SECRET_PATTERNS[i][1]);
+    return s;
   }
   function redact(x) {
     if (typeof x === 'string') return redactStr(x);

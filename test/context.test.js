@@ -74,6 +74,20 @@ A.ok(JSON.stringify(red).indexOf('sk-or-v1-') < 0 && JSON.stringify(red).indexOf
 A.eq(red.list[1], 'safe', 'safe values preserved in arrays');
 A.ok(JSON.stringify(obj).indexOf('sk-or-v1-') >= 0, 'redact did NOT mutate the input object');
 
+// ---- redact: expanded vendor/token coverage (harness #6) ----
+A.ok(redact('aws AKIAIOSFODNN7EXAMPLE done').indexOf('AKIA') < 0, 'aws access key id redacted');
+A.ok(redact('google AIzaSyA1234567890abcdefghijklmnopqrstuv key').indexOf('AIzaSy') < 0, 'google api key redacted');
+A.ok(redact('gh ghp_0123456789abcdefghijklmnopqrstuvwxyz12 token').indexOf('ghp_') < 0, 'github token redacted');
+A.ok(redact('slack xoxb-123456789012-abcdefghijklmnop here').indexOf('xoxb-') < 0, 'slack token redacted');
+A.ok(redact('stripe sk_live_0123456789abcdefXYZ done').indexOf('sk_live_') < 0, 'stripe secret redacted');
+A.ok(redact('jwt eyJhbGciOiJI.eyJzdWIiOiIx.SflKxwRJSMeKKF2QT done').indexOf('eyJhbGciOiJI') < 0, 'jwt redacted');
+A.ok(redact('bot 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawX run').indexOf('AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawX') < 0, 'telegram bot token redacted');
+const pem = '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqEXAMPLE\n-----END PRIVATE KEY-----';
+A.ok(redact(pem).indexOf('MIIEvQIBADANBgkqEXAMPLE') < 0, 'PEM private key block redacted');
+// guard against over-redaction of ordinary text that merely contains a colon / short prefixes
+A.eq(redact('the task is done at 12:00'), 'the task is done at 12:00', 'ordinary text with a colon is NOT redacted');
+A.eq(redact('ask the desk clerk for a task list'), 'ask the desk clerk for a task list', 'ordinary prose is NOT redacted');
+
 // ---- renderRecall (Cortex M-mem.1): pure, char-capped recalled-memory fence ----
 A.eq(renderRecall([], { limit: 1500 }), { text: '', count: 0, chars: 0 }, 'no records -> empty recall');
 A.eq(renderRecall(null), { text: '', count: 0, chars: 0 }, 'null records -> empty recall (tolerant)');
