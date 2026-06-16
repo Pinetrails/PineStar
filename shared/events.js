@@ -50,14 +50,24 @@
       agentId: str, runId: str, message: str, transient: bool
     }),
     'run.cancel': obj(['runId'], { runId: str }),
+    // context was compacted mid-run (Hermes-style cache-aware compaction): tokens before/after + items removed.
+    'agent.compact': obj(['agentId', 'runId'], {
+      agentId: str, runId: str, beforeTokens: int, afterTokens: int, removed: int, reason: str
+    }),
 
     // ---- memory / context (Cortex) ----
     // a recalled-memory fence was injected into this run's prompt (count = records included; chars = fence size).
     'memory.recall': obj(['agentId', 'runId', 'count'], { agentId: str, runId: str, count: int, chars: int }),
-    // a memory record was committed — after the user approved a proposal, or via notebook.write. scope optional.
-    'memory.write': obj(['agentId', 'runId', 'id', 'kind'], { agentId: str, runId: str, id: str, kind: str, scope: str }),
+    // a memory record was committed — after the user approved a proposal, or via notebook.write. scope/streamId optional.
+    'memory.write': obj(['agentId', 'runId', 'id', 'kind'], { agentId: str, runId: str, id: str, kind: str, scope: str, streamId: str }),
     // a memory record was removed — user pressed forget, or a proposal was discarded.
     'memory.forget': obj(['agentId', 'id'], { agentId: str, id: str, reason: str }),
+    // reflection PROPOSED a record for Keep/Edit/Discard turn-in (not yet committed). scope/streamId optional.
+    'memory.proposed': obj(['agentId', 'runId', 'id', 'kind'], { agentId: str, runId: str, id: str, kind: str, scope: str, streamId: str }),
+    // a stored record was actually surfaced into a prompt this run — drives useCount/trust (one per included id).
+    'memory.used': obj(['agentId', 'runId', 'id'], { agentId: str, runId: str, id: str }),
+    // a signed trust adjustment for a record (Keep/Edit/Discard, pin, forget) — folded into computed trust.
+    'memory.feedback': obj(['agentId', 'id', 'delta'], { agentId: str, id: str, delta: num, reason: str }),
 
     // ---- capability / permission ----
     'capdenied': obj(['agentId', 'need', 'reason'], { agentId: str, need: str, reason: str }),
