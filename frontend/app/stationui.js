@@ -414,10 +414,9 @@ const StationUI = (() => {
     w.create(title.slice(0, 160), { activate: false });   // a new TO DO workstream; don't hijack the active chat
     persistWS(); sync();
   }
-  // open a card's conversation in COMMS (switch the active workstream) — never mid-run
+  // open a card's conversation in COMMS (switch the active workstream) — safe mid-run now (per-stream channels)
   function openStream(id) {
     const w = WS(); if (!w) return;
-    if (typeof Chat === 'object' && Chat.isBusy && Chat.isBusy()) return;
     const s = w.get(id); if (!s) return;
     w.switch(id);
     if (typeof Chat === 'object' && Chat.load) Chat.load(s);
@@ -435,7 +434,6 @@ const StationUI = (() => {
   function assignTask(id) {
     const w = WS(); if (!w) return;
     const s = w.get(id); if (!s) return;
-    if (typeof Chat === 'object' && Chat.isBusy && Chat.isBusy()) return;
     w.switch(id);
     if (typeof Chat === 'object' && Chat.load) Chat.load(s);
     sync();
