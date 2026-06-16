@@ -60,15 +60,16 @@ const XpStore = (() => {
 
     // persist at run end (captures the whole run's accrual) and on any level-up/milestone — not on every
     // mid-run tool tick (onTurn already saves per turn; this just avoids chatty writes).
-    if (name === 'agent.run.end' || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length) { try { persistFn(); } catch (_) {} }
+    if (name === 'agent.run.end' || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length || rs.awards.milestones.length) { try { persistFn(); } catch (_) {} }
   }
 
   function init(opts) {
     opts = opts || {};
     if (opts.getAgent) getAgent = opts.getAgent;
     if (opts.persist) persistFn = opts.persist;
-    // resumed rollup from the save, else a fresh one
-    station = (opts.station && typeof opts.station === 'object') ? opts.station : (station || (typeof Xp !== 'undefined' ? Xp.fresh() : null));
+    // resumed rollup from the save, else a fresh one. NB: fall back to fresh (not the prior in-memory
+    // station) so creating a NEW agent mid-session doesn't inherit the previous colony's XP.
+    station = (opts.station && typeof opts.station === 'object') ? opts.station : (typeof Xp !== 'undefined' ? Xp.fresh() : null);
     const a = getAgent();
     if (a && !a.stats && typeof Xp !== 'undefined') a.stats = Xp.fresh();   // seed new OR migrated-but-empty agents
     pushToWorld(a);

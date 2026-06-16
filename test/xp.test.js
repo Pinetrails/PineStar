@@ -124,4 +124,15 @@ const vr = Xp.applyEvent(near, done(1));
 A.eq(vr.stats.level, 10, 'crossing 2250 xp -> level 10');
 A.ok(vr.awards.milestones.indexOf('veteran') !== -1, 'veteran milestone at level 10');
 
+// ---- defensive: a corrupted / hand-edited save must never poison the meters with NaN/Infinity ----
+const bad = { xp: Infinity, level: Infinity, lifetimeXp: NaN, confidence: Infinity, samples: NaN, counters: {}, milestones: [], run: {} };
+const cb = Xp.compute(bad);
+A.ok(Number.isFinite(cb.level) && Number.isFinite(cb.pct) && Number.isFinite(cb.toNext), 'compute() never emits NaN/Infinity from a corrupted save');
+A.eq(cb.confLabel, '—', 'corrupted confidence -> calibrating dash, never "NaN%"');
+const rb = Xp.applyEvent(bad, done(1));
+A.ok(Number.isFinite(rb.stats.xp) && Number.isFinite(rb.stats.confidence) && Number.isFinite(rb.stats.level), 'applyEvent sanitizes non-finite stats');
+A.eq(Xp.levelForXp(Infinity), 1, 'levelForXp(Infinity) -> 1, never Infinity');
+A.eq(Xp.applyEvent(Xp.fresh(), { name:'memory.feedback', payload:{ agentId:'a', id:'m', delta: Infinity } }).awards.xp, 0, 'non-finite feedback delta -> 0 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), { name:'memory.feedback', payload:{ agentId:'a', id:'m', delta: 1000 } }).awards.xp, 50, 'a huge finite feedback delta is capped at +50 xp');
+
 A.report('xp.test');

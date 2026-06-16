@@ -47,7 +47,7 @@
       case 'agent.tool_result': { const ok = !!p.ok && !p.isError; return { xp: ok ? 1 : 0, quality: null }; }   // XP only — one tool slip shouldn't tank reliability; the RUN outcome is the honest signal
       case 'memory.write':       return { xp: 5, quality: null };   // growth/learning, not reliability
       case 'memory.used':        return { xp: 8, quality: null };   // reuse — the behaviour we most want
-      case 'memory.feedback': { const d = (typeof p.delta === 'number') ? p.delta : 0; return { xp: d > 0 ? Math.round(d * 5) : 0, quality: d > 0 ? 1 : (d < 0 ? 0 : null) }; }
+      case 'memory.feedback': { const d = (typeof p.delta === 'number' && Number.isFinite(p.delta)) ? p.delta : 0; const eff = Math.min(Math.max(d, 0), 10); return { xp: d > 0 ? Math.round(eff * 5) : 0, quality: d > 0 ? 1 : (d < 0 ? 0 : null) }; }
       case 'workitem.delivered': return { xp: 15, quality: null };  // XP for real async work; reliability rides channel.delivery
       case 'channel.delivery':   return { xp: p.ok ? 3 : 0, quality: p.ok ? 1 : 0 };
       default:                   return { xp: 0, quality: null };
@@ -57,7 +57,8 @@
   // ---- the curve ----
   function xpForLevel(level) { level = Math.max(1, Math.floor(level || 1)); return LEVEL_K * level * (level - 1); }
   function levelForXp(xp) {
-    xp = Math.max(0, Math.floor(xp || 0));
+    if (!Number.isFinite(xp)) return 1;   // defensive: a corrupted save must never yield Infinity/NaN levels
+    xp = Math.max(0, Math.floor(xp));
     // largest n with LEVEL_K*n*(n-1) <= xp  ->  n = floor((1 + sqrt(1 + 4*xp/LEVEL_K)) / 2)
     return Math.max(1, Math.floor((1 + Math.sqrt(1 + (4 * xp) / LEVEL_K)) / 2));
   }
@@ -73,6 +74,17 @@
   // ---- the stats shape (used for BOTH a single agent and the station rollup) ----
   function fresh() { return { xp: 0, level: 1, lifetimeXp: 0, confidence: SEED_CONF, samples: 0, counters: {}, milestones: [] }; }
   function clone(s) { return s ? JSON.parse(JSON.stringify(s)) : fresh(); }
+  // defensive: a corrupted / hand-edited save must never let a non-finite value (NaN/Infinity) poison the
+  // meters. The schema validator blocks these at the bus; this is belt-and-suspenders on the persisted state.
+  function num(v, d) { return Number.isFinite(v) ? v : d; }
+  function sanitize(s) {
+    s.confidence = Math.max(0, Math.min(100, num(s.confidence, SEED_CONF)));
+    s.xp = Math.max(0, Math.floor(num(s.xp, 0)));
+    s.lifetimeXp = Math.max(0, Math.floor(num(s.lifetimeXp, 0)));
+    s.samples = Math.max(0, Math.floor(num(s.samples, 0)));
+    s.level = Math.max(1, Math.floor(num(s.level, 1)));
+    return s;
+  }
 
   // ---- milestones — declarative; each fires ONCE when its predicate first holds ----
   const MILESTONES = [
@@ -91,7 +103,7 @@
   // ev = { name, payload }.  returns { stats, awards } where
   //   awards = { xp, levelFrom, levelTo, levelUp, milestones[] }
   function applyEvent(stats, ev) {
-    const s = clone(stats);
+    const s = sanitize(clone(stats));
     if (!s.counters) s.counters = {};
     if (!s.milestones) s.milestones = [];
     if (!s.run || typeof s.run !== 'object') s.run = { id: null, toolXp: 0 };
@@ -139,13 +151,13 @@
   // ---- render-state for the gauges (pure transform → render-agnostic, mirrors CtxGauge.compute) ----
   function compute(stats) {
     const s = stats || fresh();
-    const level = Math.max(1, s.level || 1);
+    const level = Math.max(1, Math.floor(num(s.level, 1)));
     const base = xpForLevel(level), next = xpForLevel(level + 1), span = Math.max(1, next - base);
-    const xp = Math.max(0, s.xp || 0);
+    const xp = Math.max(0, Math.floor(num(s.xp, 0)));
     const inLevel = Math.max(0, xp - base);
     const frac = Math.max(0, Math.min(1, inLevel / span));
-    const known = (s.samples || 0) >= MIN_SAMPLES;          // honesty: no fabricated % before calibration
-    const conf = Math.round(Math.max(0, Math.min(100, s.confidence || 0)));
+    const known = Math.max(0, Math.floor(num(s.samples, 0))) >= MIN_SAMPLES;   // honesty: no fabricated % before calibration
+    const conf = Math.round(Math.max(0, Math.min(100, num(s.confidence, 0))));
     const bonus = Math.round((trustMult(s) - 1) * 100);     // current XP trust bonus as a percent (0 / 15 / 30 / 50)
     return {
       level, xp, lifetimeXp: Math.max(0, s.lifetimeXp || 0),

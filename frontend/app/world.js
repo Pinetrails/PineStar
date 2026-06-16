@@ -1892,9 +1892,10 @@ const World = (() => {
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires the gold ring
     setXp: (a, s) => { xpAgent = a || null; xpStation = s || null; },
     pulseLevelUp: (level) => {
-      levelUpAt = performance.now();
-      // a brief "LEVEL N" caption rides the gold ripple — but never stomp a live (real) message bubble
-      if (agent && level != null) { const t = performance.now(); if (!(agent.say && agent.say.until > t)) agent.say = { text: 'LEVEL ' + level, until: t + 2600 }; }
+      const now = performance.now();   // one clock read so the ripple + caption share an origin
+      levelUpAt = now;
+      // a brief "LEVEL N" caption rides the gold ripple — but never stomp a live, NON-EMPTY (real) message bubble
+      if (agent && level != null && !(agent.say && agent.say.text && agent.say.until > now)) agent.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
