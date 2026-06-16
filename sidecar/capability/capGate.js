@@ -20,7 +20,20 @@
 
   function attenuate(resolved, allowedSubset) {
     const allow = allowedSubset instanceof Set ? allowedSubset : new Set(allowedSubset || []);
-    return Object.assign({}, resolved, { tools: resolved.tools.filter(t => allow.has(t)) });
+    const tools = (resolved.tools || []).filter(t => allow.has(t));
+    const keep = new Set(tools);
+    // project the dependent per-tool policy onto the attenuated set too, so a delegate cannot carry stale
+    // grants / approvalRules / networkCaps for a tool it no longer has (the intersection must be monotonic
+    // across the WHOLE policy object, not just `tools`).
+    const grants = (resolved.grants || []).filter(g => keep.has(g.tool));
+    const approvalRules = {}, networkCaps = {};
+    for (const t of tools) {
+      if (resolved.approvalRules && (t in resolved.approvalRules)) approvalRules[t] = resolved.approvalRules[t];
+      if (resolved.networkCaps && (t in resolved.networkCaps)) networkCaps[t] = resolved.networkCaps[t];
+    }
+    // NOTE: hasCompute is intentionally NOT attenuated by the tool subset — compute is a room-level gate
+    // (a computer placed in the room), not a callable tool, so it isn't expressed in `allowedSubset`.
+    return Object.assign({}, resolved, { tools, grants, approvalRules, networkCaps });
   }
 
   function makeCapCtx(resolved, extra) {

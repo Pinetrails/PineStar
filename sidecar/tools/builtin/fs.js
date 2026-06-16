@@ -21,6 +21,13 @@
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(id || '')) throw new Error('bad agentId');
     return id;
   }
+  // require an explicit agentId: silently defaulting every un-attributed call to a shared 'agent' bucket
+  // would merge two agents' workspaces — the exact silent cross-agent data loss the project forbids.
+  function reqAgentId(ctx) {
+    const aid = ctx && ctx.agentId;
+    if (!aid) throw new Error('fs tool requires ctx.agentId — refusing to fall back to a shared workspace');
+    return aid;
+  }
   function kb(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
   function emitDeliverable(ctx, aid, pathStr) {
     if (!ctx || typeof ctx.emit !== 'function') return;
@@ -37,11 +44,27 @@
     const READ_RETURN = (deps.limits && deps.limits.readReturn) || 200000;
 
     async function workspaceRoot(agentId) {
-      const dir = P.join(ROOT, safeAgentId(agentId || 'agent'));
+      const dir = P.join(ROOT, safeAgentId(agentId));   // safeAgentId rejects a missing/invalid id — no shared default bucket
       await fsp.mkdir(dir, { recursive: true });
       return dir;
     }
-    // Resolve a relative path and PROVE it stays inside the agent's workspace.
+    // realpath the deepest EXISTING ancestor of `abs` (the target itself may not exist yet, e.g. a fresh write),
+    // then re-append the not-yet-created tail, so a symlink/junction anywhere up the chain resolves to its real target.
+    async function realCanonical(abs) {
+      const tail = [];
+      let cur = abs;
+      for (;;) {
+        try { const real = await fsp.realpath(cur); return tail.length ? P.join(real, ...tail.reverse()) : real; }
+        catch (e) {
+          if (!(e && e.code === 'ENOENT')) return abs;     // permission/other: fall back to the lexical path (already prefix-checked)
+          const parent = P.dirname(cur);
+          if (parent === cur) return abs;                  // reached the filesystem root without resolving anything
+          tail.push(P.basename(cur)); cur = parent;
+        }
+      }
+    }
+    // Resolve a relative path and PROVE it stays inside the agent's workspace — lexically AND, when realpath is
+    // available, after canonicalising symlinks (a pre-existing link inside the jail must not point outside it).
     async function resolveInside(agentId, rel) {
       rel = String(rel == null ? '' : rel);
       if (P.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel) || /^[A-Za-z]:/.test(rel) || rel.indexOf('\0') >= 0)
@@ -49,6 +72,11 @@
       const base = await workspaceRoot(agentId);
       const abs = P.resolve(base, rel || '.');
       if (abs !== base && abs.indexOf(base + P.sep) !== 0) throw new Error('path escapes workspace');
+      if (typeof fsp.realpath === 'function') {
+        let realBase; try { realBase = await fsp.realpath(base); } catch (_) { realBase = base; }
+        const realAbs = await realCanonical(abs);
+        if (realAbs !== realBase && realAbs.indexOf(realBase + P.sep) !== 0) throw new Error('path escapes workspace (symlink)');
+      }
       return { base, abs };
     }
 
@@ -57,7 +85,7 @@
       description: 'Write a UTF-8 text file into your workspace. This is where your deliverables (reports, notes, code) are saved.',
       schema: { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
       run: async (args, ctx) => {
-        const aid = (ctx && ctx.agentId) || 'agent';
+        const aid = reqAgentId(ctx);
         const { abs } = await resolveInside(aid, args.path);
         const data = Buffer.from(String(args.content), 'utf8');
         if (data.length > WRITE_BYTES) throw new Error('file too large (' + data.length + ' > ' + WRITE_BYTES + ' bytes)');
@@ -73,7 +101,7 @@
       description: 'Read a UTF-8 text file from your workspace.',
       schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } },
       run: async (args, ctx) => {
-        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', args.path);
+        const { abs } = await resolveInside(reqAgentId(ctx), args.path);
         let txt;
         try { txt = await fsp.readFile(abs, 'utf8'); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
@@ -101,7 +129,7 @@
       description: 'List files in your workspace. Pass { "recursive": true } to see the whole tree (directories end with "/"); optional "path" lists one subdirectory.',
       schema: { type: 'object', properties: { path: { type: 'string' }, recursive: { type: 'boolean' } } },
       run: async (args, ctx) => {
-        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', (args && args.path) || '.');
+        const { abs } = await resolveInside(reqAgentId(ctx), (args && args.path) || '.');
         if (args && args.recursive) {
           const out = []; await walk(abs, '', out, 500);
           return { content: out.length ? out.join('\n') : '(empty)', summary: out.length + ' entr' + (out.length === 1 ? 'y' : 'ies') };
@@ -118,7 +146,7 @@
       description: 'Append UTF-8 text to a workspace file (creates it if missing) WITHOUT rewriting what is already there. Use this to add to a file you are building up.',
       schema: { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
       run: async (args, ctx) => {
-        const aid = (ctx && ctx.agentId) || 'agent';
+        const aid = reqAgentId(ctx);
         const { abs } = await resolveInside(aid, args.path);
         let existing = '';
         try { existing = await fsp.readFile(abs, 'utf8'); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
@@ -138,7 +166,7 @@
       description: 'Edit a workspace file by exact text replacement: every occurrence of "find" becomes "replace". Errors if "find" is absent — read the file first so your "find" matches exactly.',
       schema: { type: 'object', required: ['path', 'find', 'replace'], properties: { path: { type: 'string' }, find: { type: 'string' }, replace: { type: 'string' } } },
       run: async (args, ctx) => {
-        const aid = (ctx && ctx.agentId) || 'agent';
+        const aid = reqAgentId(ctx);
         const { abs } = await resolveInside(aid, args.path);
         let txt;
         try { txt = await fsp.readFile(abs, 'utf8'); }

@@ -71,6 +71,7 @@
     h = String(h).toLowerCase();
     return h === '::1' || h === '::' ||
       /^::ffff:/.test(h) ||                                      // IPv4-mapped (Node renders 127.0.0.1 as ::ffff:7f00:1)
+      /^64:ff9b:/.test(h) ||                                     // NAT64 well-known prefix 64:ff9b::/96 — embeds an IPv4 (e.g. ::7f00:1 = 127.0.0.1)
       /^fe[89ab][0-9a-f]:/.test(h) ||                            // fe80::/10 link-local
       /^f[cd][0-9a-f]{2}:/.test(h);                              // fc00::/7 unique-local
   }

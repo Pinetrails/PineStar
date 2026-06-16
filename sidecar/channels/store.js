@@ -72,7 +72,10 @@
     }
     function writeJsonAtomic(file, value) {
       ensureRoot();
-      const tmp = file + '.' + (++tmpSeq) + '.tmp';
+      // include the pid so two sidecar processes transiently sharing CHANNELS_DIR (e.g. a stale instance during
+      // a restart — the case the Telegram 409 guard exists for) can't emit the same temp name and clobber each other.
+      const pid = (typeof process !== 'undefined' && process.pid) ? process.pid + '.' : '';
+      const tmp = file + '.' + pid + (++tmpSeq) + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(value));
       fs.renameSync(tmp, file);   // atomic replace
     }

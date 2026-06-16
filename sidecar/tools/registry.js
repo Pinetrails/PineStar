@@ -62,7 +62,9 @@
       const tool = tools[call.name];
       if (!tool) return errResult('unknown tool: ' + call.name);
 
-      // capability gate (M1.3): is this tool granted to the agent right now?
+      // capability gate (M1.3): is this tool granted to the agent right now? dispatch is a GENERIC dispatcher;
+      // the capability layer is supplied by the edge (index.js makeCapCtx always provides canUse for real runs).
+      // Its ABSENCE is the explicit "no-gate" mode used by unit tests that exercise a tool in isolation.
       if (ctx.canUse) {
         const g = ctx.canUse(call, tool);
         if (!g || !g.ok) return errResult('capability denied: ' + ((g && g.reason) || call.name), 'capdenied');
@@ -79,7 +81,9 @@
         if (!c || !c.allow) return errResult('consent denied for ' + call.name + (c && c.reason ? ': ' + c.reason : ''), 'denied');
       }
 
-      // run once, bounded by the per-tool timeout; any throw becomes an isError result
+      // run once, bounded by the per-tool timeout; any throw becomes an isError result. NOTE: the timeout
+      // bounds only the RESULT — fs/notebook builtins have no AbortSignal, so a write that "times out" may
+      // still land on disk. web.* tools self-abort via their own AbortController.
       const timeoutMs = tool.timeoutMs || ctx.timeoutMs || 0;
       try {
         const out = await withTimeout(tool.run(call.args, ctx), timeoutMs);

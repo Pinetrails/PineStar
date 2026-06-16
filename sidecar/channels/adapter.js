@@ -158,18 +158,24 @@
         started = true; stopped = false;
         ac = new AbortController();
         loopDone = (async () => {
-          // proactively clear any stale webhook on this token so getUpdates can't 409 forever (Telegram-only;
-          // guarded so generic transports/fakes without the method are unaffected).
-          if (typeof transport.deleteWebhook === 'function') { try { await transport.deleteWebhook(); } catch (_) {} }
-          if (dropPending && !Number.isFinite(o.startOffset)) {
-            try {
-              const raw = await transport.getUpdates({ offset: -1, timeoutSec: 0, signal: ac.signal });
-              const ups = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.updates) ? raw.updates : []);
-              for (const ru of ups) { let n; try { n = normalize(ru); } catch (_) {} if (n && Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1); }
-              // the next poll uses `offset` (= last backlog id + 1), which confirms+discards the backlog; we did NOT dispatch it.
-            } catch (e) { if (stopped || isAbort(e)) return; /* fatal/transient handled by the loop below */ }
+          try {
+            // proactively clear any stale webhook on this token so getUpdates can't 409 forever (Telegram-only;
+            // guarded so generic transports/fakes without the method are unaffected).
+            if (typeof transport.deleteWebhook === 'function') { try { await transport.deleteWebhook(); } catch (_) {} }
+            if (dropPending && !Number.isFinite(o.startOffset)) {
+              try {
+                const raw = await transport.getUpdates({ offset: -1, timeoutSec: 0, signal: ac.signal });
+                const ups = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.updates) ? raw.updates : []);
+                for (const ru of ups) { let n; try { n = normalize(ru); } catch (_) {} if (n && Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1); }
+                // the next poll uses `offset` (= last backlog id + 1), which confirms+discards the backlog; we did NOT dispatch it.
+              } catch (e) { if (stopped || isAbort(e)) return; /* fatal/transient handled by the loop below */ }
+            }
+            if (!stopped) await loop();
+          } finally {
+            // a fatal/normal loop exit must leave the adapter RE-connectable; otherwise `started` stays true and
+            // a later connect() silently no-ops (the adapter reports started-but-dead). disconnect() also resets it.
+            started = false;
           }
-          if (!stopped) await loop();
         })();
         return Promise.resolve();
       },
