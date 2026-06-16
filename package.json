@@ -10,6 +10,13 @@
     "test": "node test/validate_map.js && node test/test_world.js && npm run test:fast",
     "start": "node sidecar/index.js",
     "sidecar": "node sidecar/index.js",
-    "serve": "npx -y http-server frontend -c-1 -p 8087"
+    "serve": "npx -y http-server frontend -c-1 -p 8087",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:icon": "tauri icon src-tauri/icon-source.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
   }
 }
