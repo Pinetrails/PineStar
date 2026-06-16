@@ -494,6 +494,10 @@ async function runOnce(o) {
   //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
   //      the loop keeps the full history (never a silent drop). ----
   const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model), compactAt: 0.65, keepTail: 6 });
+  // The summarizer is itself a paid model call, so its cost is RECONCILED and folded into this run's ledger
+  // entry (and surfaced as an agent.cost event), never invisible — the cost spine stays honest about the
+  // overhead of compaction itself. Tallied here; the loop adds nothing for it.
+  let compactionUsd = 0, compactionTokens = 0;
   async function summarize(older) {
     const transcript = older.map(mm => {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
@@ -503,8 +507,14 @@ async function runOnce(o) {
       { role: 'system', content: 'You compress an earlier slice of an agent conversation into a dense factual summary. Preserve decisions made, facts and data learned (with sources), files written, tool results, and any still-open tasks. Drop pleasantries. Output ONLY the summary prose.' },
       { role: 'user', content: 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript }
     ] };
-    let out = '';
-    for await (const ev of provider.stream(req)) { if (ev && ev.type === 'text') out += ev.delta; }
+    let out = '', usage = null;
+    for await (const ev of provider.stream(req)) {
+      if (ev && ev.type === 'text') out += ev.delta;
+      else if (ev && ev.type === 'usage') usage = ev.usage;
+    }
+    const c = cost.reconcile(usage, model);
+    compactionUsd += c.usd || 0; compactionTokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+    emit('agent.cost', { agentId, runId, usd: c.usd || 0, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0, reasoningTokens: c.reasoningTokens || 0, cachedTokens: c.cachedTokens || 0, model, reconciled: true });
     return out.trim();
   }
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
@@ -589,7 +599,8 @@ async function runOnce(o) {
   } finally {
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
-    try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: (result && result.usd) || 0, tokens: (result && result.tokens) || 0 }); } catch (_) {}
+    // compactionUsd/Tokens fold in the summarizer's own (reconciled) cost so the ledger total = every agent.cost.
+    try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: ((result && result.usd) || 0) + compactionUsd, tokens: ((result && result.tokens) || 0) + compactionTokens }); } catch (_) {}
     budget.clearLive(runId);
   }
   return result;
