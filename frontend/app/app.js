@@ -11,6 +11,7 @@ const App = (() => {
   let pickedColor = SUITS[0];
   let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'worker-homie';
   let pickedSpecialty = null;   // a Recruitment-Bay specialty chosen at the connect screen — seeds the new agent's purpose/manual at wake
+  let prePickPersona = null;    // the persona selected BEFORE a roster pick overrode it — restored if the pick is cleared
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
 
@@ -98,16 +99,22 @@ const App = (() => {
     Marketplace.open({
       mode: 'deploy',
       agentName: agent.name,
+      currentSpecialtyId: agent.specialtyId || null,   // lets the bay flag which card is already DEPLOYED
       notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
       draftFromAgent: () => (typeof Specialties !== 'undefined') ? Specialties.fromAgent(agent) : null,
       onDeploy: deploySpecialty
     });
   }
-  function deploySpecialty(spec) {
+  function deploySpecialty(spec, opts) {
     if (!agent || typeof Specialties === 'undefined') return;
-    const patch = Specialties.compose(spec);
+    opts = opts || {};
+    // opt-in: also adopt the specialty's recommended VOICE. Set personaId BEFORE the recompose so the new
+    // voice folds into the live prompt; we deliberately don't re-init Voice (that would drop hands-free mode) —
+    // the spoken TTS timbre catches up on the next load, the text voice changes immediately.
+    if (opts.adoptVoice && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) agent.personaId = spec.persona;
     agent.specialtyId = spec.id;
-    if (patch) applyAgentConfig(patch);   // folds purpose + manual into the live prompt, persists, syncs channels
+    const patch = Specialties.compose(spec);
+    if (patch) applyAgentConfig(patch);   // folds purpose + manual (+ any new persona) into the live prompt, persists, syncs channels
     if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('agents');   // refresh an open dossier
   }
 
@@ -194,8 +201,9 @@ const App = (() => {
     if (prefillName) el('in-name').value = prefillName;
     buildSwatches();
     buildPersonas();
-    pickedSpecialty = null; resetRosterPick();   // a fresh connect screen carries no stale specialty pick
+    pickedSpecialty = null; prePickPersona = null; resetRosterPick();   // a fresh connect screen carries no stale specialty pick
     const br = el('btn-roster'); if (br) br.onclick = openRosterPicker;
+    const bc = el('btn-roster-clear'); if (bc) bc.onclick = clearRosterPick;
     el('btn-back').onclick = () => { SFX.click(); showTitle(); };
     el('btn-wake').onclick = onWake;
     el('in-name').onkeydown = e => { if (e.key === 'Enter') onWake(); };
@@ -214,23 +222,34 @@ const App = (() => {
     });
   }
   function applyRosterPick(spec) {
+    if (prePickPersona === null) prePickPersona = pickedPersona;   // remember the pre-recruit voice so a CLEAR can restore it
     pickedSpecialty = spec;
     // adopt the specialty's recommended VOICE (the Commander can still re-pick a persona below)
     if (typeof Personas !== 'undefined' && Personas.exists(spec.persona)) { pickedPersona = spec.persona; buildPersonas(); }
-    const nameEl = el('in-name'); if (nameEl && !nameEl.value.trim()) nameEl.value = (spec.name || '').toUpperCase();
+    const nameEl = el('in-name'); if (nameEl && !nameEl.value.trim()) nameEl.value = (spec.name || '').toUpperCase().slice(0, 18);
     const pick = el('roster-pick');
-    if (pick) { pick.textContent = spec.emoji + ' ' + spec.name + ' — ' + spec.tagline + ' · tap to change'; pick.classList.add('chosen'); }
+    if (pick) { pick.textContent = spec.emoji + ' ' + spec.name + ' — ' + spec.tagline + ' · tap to change'; pick.classList.add('chosen'); pick.onclick = openRosterPicker; }
+    const bc = el('btn-roster-clear'); if (bc) bc.classList.remove('hidden');
+  }
+  // CLEAR a roster pick: drop the specialty, restore the pre-pick voice, and return the form to "none chosen".
+  function clearRosterPick() {
+    SFX.click();
+    pickedSpecialty = null;
+    if (prePickPersona !== null && typeof Personas !== 'undefined') { pickedPersona = prePickPersona; buildPersonas(); }
+    prePickPersona = null;
+    resetRosterPick();
   }
   function resetRosterPick() {
     const pick = el('roster-pick');
-    if (pick) { pick.textContent = "none chosen — you'll set its mission at wake"; pick.classList.remove('chosen'); }
+    if (pick) { pick.textContent = "none chosen — you'll set its mission at wake"; pick.classList.remove('chosen'); pick.onclick = null; }
+    const bc = el('btn-roster-clear'); if (bc) bc.classList.add('hidden');
   }
 
   function onWake() {
     SFX.boot(); SFX.open();
     const key = el('in-key').value.trim();
     const model = el('in-model').value.trim();
-    const name = (el('in-name').value.trim() || 'AGENT').toUpperCase();
+    const name = (el('in-name').value.trim() || 'AGENT').toUpperCase().slice(0, 18);   // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too)
     const msg = el('connect-msg'); msg.className = 'msg';
     if (!key) { msg.textContent = 'enter your OpenRouter API key (openrouter.ai/keys).'; return; }
     if (!model) { msg.textContent = 'choose or type a model slug.'; return; }

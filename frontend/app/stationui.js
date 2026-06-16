@@ -200,6 +200,8 @@ const StationUI = (() => {
       '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + '</div>' +
       '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
       '<div class="ag-tags">' +
+      // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
+      ((typeof Specialties !== 'undefined' && a.specialtyId) ? (function () { var s = Specialties.get(a.specialtyId); return s ? '<span class="tag">' + esc(s.emoji + ' ' + s.name) + '</span>' : ''; })() : '') +
       '<span class="tag model">' + esc(a.model || '—') + '</span>' +
       (price ? '<span class="tag dim">$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
       '</div></div></div>';
