@@ -200,12 +200,23 @@ const Chat = (() => {
       const src = finalize ? (finalText || acc) : acc;
       const pending = src.slice(spokenIdx);
       if (!pending) return;
-      if (finalize) { Voice.speakChunk(pending, name); spokenIdx = src.length; return; }
-      // stream only COMPLETE sentence(s): require trailing whitespace after the terminator so a decimal
-      // or abbreviation sitting at the buffer edge ("3." / "e.g.") isn't spoken as a finished sentence.
-      let cut = -1; const re = /[.!?…]+["')\]]?\s/g; let m;
-      while ((m = re.exec(pending)) !== null) cut = re.lastIndex;
-      if (cut < 0) { if (pending.length < 200) return; cut = pending.length; }   // runaway guard
+      if (finalize) { if (pending.trim()) { Voice.speakChunk(pending, name); spokenIdx = src.length; } return; }
+      let cut = -1;
+      if (spokenIdx === 0) {
+        // FIRST chunk: get him talking ASAP — flush on the earliest clause boundary (comma/dash/colon/
+        // sentence end), or after just a few words if none has appeared, so the voice starts almost as soon
+        // as he begins typing instead of waiting for a whole sentence + its synth round-trip.
+        const clause = /[,;:—–-]\s|[.!?…]+["')\]]?\s/.exec(pending);
+        if (clause) cut = clause.index + clause[0].length;
+        else if (pending.length >= 18) { const ls = pending.lastIndexOf(' '); if (ls > 0) cut = ls + 1; }   // ~3-4 words → flush at a word boundary
+        if (cut < 0) { if (pending.length < 48) return; cut = pending.length; }
+      } else {
+        // later chunks: complete sentence(s) for natural prosody. Require trailing whitespace after the
+        // terminator so a decimal/abbreviation at the buffer edge ("3." / "e.g.") isn't spoken early.
+        const re = /[.!?…]+["')\]]?\s/g; let m;
+        while ((m = re.exec(pending)) !== null) cut = re.lastIndex;
+        if (cut < 0) { if (pending.length < 200) return; cut = pending.length; }   // runaway guard
+      }
       const chunk = pending.slice(0, cut);
       if (chunk.trim()) { Voice.speakChunk(chunk, name); spokenIdx += cut; }
     };
