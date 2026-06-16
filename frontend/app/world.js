@@ -281,7 +281,8 @@ const World = (() => {
       quirkKind: null,   // which rare quirk is currently playing (drives the gaze flavor in maybeGlance)
       placeTarget: null, removeId: null,   // pending station edit when goal==='place' (add decor at target, or remove its own)
       roundsQueue: null, roundsCd: 0,   // caretaker-lap stop queue + cooldown
-      fond: new Map(), revisitCd: 0   // SPATIAL MEMORY: tileKey -> affection; builds where it dwells, drives revisit-a-haunt + mourning
+      fond: new Map(), revisitCd: 0,   // SPATIAL MEMORY: tileKey -> affection; builds where it dwells, drives revisit-a-haunt + mourning
+      pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0   // CONSIDERED MOVEMENT: brief mid-stroll holds, belt-yield to cargo, the rare double-take
     };
     if (geo) placeAgent();
   }
@@ -470,6 +471,32 @@ const World = (() => {
     if (!agent.pathPts || agent.pathIdx >= agent.pathPts.length) { agent.target = null; return; }
     const wp = agent.pathPts[agent.pathIdx++];
     agent.target = footOf(wp.x, wp.y);
+    maybeStrollBeat();   // CONSIDERED MOVEMENT: a casual stroll occasionally hesitates / doubles back — not a sprite on rails
+  }
+  const OPP = { north: 'south', south: 'north', east: 'west', west: 'east' };
+  // only while casually wandering (never a summon/goal walk): a brief considered pause, or the rare eerie double-take
+  function maybeStrollBeat() {
+    if (!agent || agent.goal != null || activity !== 'idle' || agent.unplaced) return;
+    const now = fnow;
+    if (now < (agent.pauseCd || 0)) return;
+    // THE DOUBLE-TAKE (rare): stop and turn to look back the way it came, as if something caught its attention
+    if (now >= (agent.lookBackCd || 0) && U.chance(0.045 * (agent.pers ? agent.pers.curious : 1))) {
+      agent.pauseUntil = now + U.irnd(900, 1700); agent.pauseLook = 'back';
+      agent.pauseCd = now + U.irnd(9000, 16000); agent.lookBackCd = now + U.irnd(50000, 95000);
+      curiositySay(['hm?', '...', 'did something move', 'thought i saw something'], 0.22, now);
+      return;
+    }
+    // a considered pause mid-stroll: a beat of weight, then on it goes
+    if (U.chance(0.12)) { agent.pauseUntil = now + U.irnd(320, 720); agent.pauseLook = null; agent.pauseCd = now + U.irnd(6000, 13000); }
+  }
+  // active cargo passing right in front of it while it walks → wait a beat and let it go by (belt-yield)
+  function shouldYieldToCargo() {
+    if (!convey || !agent.target) return false;
+    const box = nearestBox();
+    if (!box) return false;
+    // a box is right here (≈1.2 tiles) — either on top of the agent or about to occupy the tile it's stepping toward
+    const dxT = box.x - agent.target.x, dyT = box.y - agent.target.y;
+    return box.d < 15 || Math.hypot(dxT, dyT) < 15;
   }
   // a quick 2-beat settle-scan (left, then right) before committing the gaze to finalDir — reads as deliberate "taking it in"
   function scanThen(now, finalDir) {
@@ -480,7 +507,7 @@ const World = (() => {
     setTimeout(() => { if (guard()) { agent.glance = null; agent.dir = finalDir; } }, 860);
   }
   function arrive(now) {
-    agent.pathPts = null; agent.target = null;
+    agent.pathPts = null; agent.target = null; agent.pauseUntil = 0; agent.pauseLook = null;
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
     if (FOND[agent.goal]) noteFond(now, FOND[agent.goal]);   // dwelling somewhere by choice deepens attachment to that tile
     if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
@@ -1142,7 +1169,7 @@ const World = (() => {
     }
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
-      if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
+      if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
       else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } } }
     }
     if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon')) {
@@ -1154,15 +1181,26 @@ const World = (() => {
     }
     maybeGlance(now);   // head-turns over the top of whatever else the agent is doing
     if (agent.target) {
-      const dx = agent.target.x - agent.px, dy = agent.target.y - agent.py, d = Math.hypot(dx, dy);
-      if (d < 1.1) {
-        agent.px = agent.target.x; agent.py = agent.target.y;
-        if (agent.pathPts && agent.pathIdx < agent.pathPts.length) nextWaypoint();
-        else arrive(now);
+      // belt-yield: about to cross a belt with cargo bearing down → pause and let it pass (only on a casual stroll)
+      if (now >= (agent.pauseUntil || 0) && now >= (agent.yieldCd || 0) && agent.goal == null && shouldYieldToCargo()) {
+        agent.pauseUntil = now + U.irnd(450, 850); agent.pauseLook = 'cargo'; agent.yieldCd = now + 2600;
+      }
+      if (now < (agent.pauseUntil || 0)) {
+        // a deliberate hold mid-walk: stand, and (for a look-back / yield) turn toward what stopped it
+        agent.state = 'idle';
+        if (agent.pauseLook === 'back') agent.dir = OPP[agent.dir] || agent.dir;
+        else if (agent.pauseLook === 'cargo') { const b = nearestBox(); if (b) agent.dir = dirToward(agent.px, agent.py, b.x, b.y); }
       } else {
-        const s = Math.min(d, SPEED * dt / 1000);
-        agent.px += dx / d * s; agent.py += dy / d * s; agent.state = 'walk';
-        agent.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+        const dx = agent.target.x - agent.px, dy = agent.target.y - agent.py, d = Math.hypot(dx, dy);
+        if (d < 1.1) {
+          agent.px = agent.target.x; agent.py = agent.target.y;
+          if (agent.pathPts && agent.pathIdx < agent.pathPts.length) nextWaypoint();
+          else arrive(now);
+        } else {
+          const s = Math.min(d, SPEED * dt / 1000);
+          agent.px += dx / d * s; agent.py += dy / d * s; agent.state = 'walk';
+          agent.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+        }
       }
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
@@ -1732,5 +1770,5 @@ const World = (() => {
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, sitting: agent.sitting, dir: agent.dir, tile: tileOf(agent.px, agent.py), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
+    dbg: () => agent && { goal: agent.goal, sitting: agent.sitting, state: agent.state, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
 })();
