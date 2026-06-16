@@ -29,7 +29,10 @@ const CHATS = [
   'hi', 'hey there', 'hello!', 'yo', 'how are you?', "how's it going",
   'who are you', 'what is your name', 'what are you', 'are you alive?',
   'thanks!', 'thank you', 'ty', 'nice', 'cool', 'good job', 'well done',
-  'ok', 'okay', 'lol', 'nvm', 'bye', 'see ya'
+  'ok', 'okay', 'lol', 'nvm', 'bye', 'see ya',
+  // common greeting phrasings that used to fall through to the TASK default
+  'how are you doing today', 'how are you today', 'how are you doing',
+  'are you doing okay', 'are you doing alright', 'how is everything', "how's everything"
 ];
 
 for (const t of TASKS) A.ok(isTaskDirective(t) === true, 'TASK: ' + JSON.stringify(t));
@@ -39,6 +42,8 @@ for (const c of CHATS) A.ok(isTaskDirective(c) === false, 'chat: ' + JSON.string
 A.ok(isTaskDirective('') === false, 'empty -> not a task');
 A.ok(isTaskDirective('   ') === false, 'whitespace -> not a task');
 A.ok(isTaskDirective('how are you, and can you research llamas?') === true, 'courtesy + intent -> task');
+A.ok(isTaskDirective('how are you, please write report.md') === true, 'about-self prefix + real intent -> task');
+A.ok(isTaskDirective('what are you waiting for? search for X') === true, 'rhetorical about-self + verb -> task (loosened ABOUT_SELF must not swallow it)');
 
 /* ---------- getTag — the FILTER content-router input (code | research | general) ---------- */
 // code work -> 'code' (so a FILTER sorts it to the coder agent's bay)

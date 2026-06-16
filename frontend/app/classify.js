@@ -20,8 +20,10 @@
   // tokens ("hey there", "thanks a lot", "good morning friend") — over the WHOLE message -> CHAT.
   // (ACTIONABLE is tested first, so a greeting that carries a real instruction never reaches here.)
   const CHATTY = /^(hi+|hey+|hello|yo|sup|hiya|howdy|gm|good (morning|evening|night|afternoon)|thanks?|thank you|ty|np|nice|cool|awesome|great( job)?|good job|well done|ok(ay)?|k|lol|haha|nvm|never ?mind|bye|cya|see ya)([\s,!.?]+\w+){0,3}[\s!.?]*$/;
-  // questions ABOUT the agent itself (the WHOLE message) -> CHAT
-  const ABOUT_SELF = /^(how are you|how('?s| is) it going|how do you feel|who are you|what('?s| is) your name|what are you|are you (ok|okay|alright|there|conscious|sentient|alive|real|happy|sure|awake))[\s!.?]*$/;
+  // questions ABOUT the agent itself (the WHOLE message) -> CHAT. The "how are you" / "are you doing…" forms
+  // tolerate a few trailing pleasantry words ("how are you doing today", "are you doing okay") so common
+  // greetings don't fall through to the TASK default; ACTIONABLE is tested first, so any real verb still wins.
+  const ABOUT_SELF = /^(how are you( (doing|feeling))?( \w+){0,2}|how('?s| is) (it going|everything)|how do you feel|who are you|what('?s| is) your name|what are you|are you (doing|feeling) (ok|okay|alright|well|fine|good)|are you (ok|okay|alright|there|conscious|sentient|alive|real|happy|sure|awake))[\s!.?]*$/;
 
   function isTaskDirective(text) {
     const t = String(text == null ? '' : text).trim().toLowerCase();

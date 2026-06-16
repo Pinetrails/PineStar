@@ -5,7 +5,6 @@ const SPRITES = (() => {
   let ready = false;
   const frames = {};   // key "minion.walk.south" -> [Image]
   const tinted = {};   // key "FORGE|minion.walk.south" -> [canvas]
-  let meta = { minion: { fw: 0, fh: 0 }, ultron: { fw: 0, fh: 0 } };
 
   /* base suit color of the generated minion is bright yellow (~hue 50).
      each agent gets a css-filter recolor toward their accent color. */

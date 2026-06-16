@@ -12,7 +12,7 @@ const ARCADE = (() => {
   const HI_KEY = 'skynet_arcade_hi';
   let cv = null, ctx = null, raf = 0, mounted = false, hidden = false;
   let last = 0, acc = 0, frameN = 0;
-  let keys = {}, kd = null, ku = null;
+  let keys = {}, kd = null, ku = null, clk = null;
   let C = {};                        // theme colors, sampled at mount + refreshed
   let st = null;                     // game state
 
@@ -420,7 +420,8 @@ const ARCADE = (() => {
     sampleColors();
     keys = {};
     reset('attract');
-    cv.addEventListener('click', () => { if (st.mode === 'attract' || st.mode === 'over') startGame(); });
+    clk = () => { if (st.mode === 'attract' || st.mode === 'over') startGame(); };
+    cv.addEventListener('click', clk);
     kd = onKey(true); ku = onKey(false);
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
@@ -434,7 +435,8 @@ const ARCADE = (() => {
     cancelAnimationFrame(raf);
     if (kd) window.removeEventListener('keydown', kd);
     if (ku) window.removeEventListener('keyup', ku);
-    kd = ku = null; cv = ctx = null;
+    if (cv && clk) cv.removeEventListener('click', clk);   // symmetric with kd/ku teardown (avoids a stacked handler if a canvas is reused)
+    kd = ku = clk = null; cv = ctx = null;
   }
   /* roll-up support: freeze the cabinet without tearing it down */
   function pause() { hidden = true; if (st && st.mode === 'play') st.mode = 'pause'; keys = {}; }
