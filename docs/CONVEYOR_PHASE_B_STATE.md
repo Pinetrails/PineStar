@@ -82,15 +82,6 @@ world.js is not headless; verify via that preview: `preview_eval` to compile a s
 `Pipeline`/`resolveTarget`, instrument `ctx.fillRect` to confirm bodies drew (screenshots time out on the
 continuously-animating canvas). Drive real work via the awakening (which calls `connectChannelBridge`).
 
-## NEXT — B5 (per-bay capability) + merge
-- `sidecar/routing/router.js` `route()` builds the per-bay `station` from the delivered bay's room objects
-  (`agentRoomId`→room's placed objects) and passes it to `runOnce` (which gains an OPTIONAL `station` param;
-  absent = today's hardcoded office). `resolveTools` reused verbatim. `test/capgate.test.js`: a bay-room with a
-  cabinet grants fs.*, without one grants none.
-- Then `sync-agent-tree.ps1 workpipe-b` (rebase onto trunk), `npm run test:fast` green, `git merge
-  agent/workpipe-b` from the integration tree, re-gate, ff master, tear down the worktree. B1–B3 are
-  independently mergeable green BEFORE the XL B4 if you want to de-risk.
-
 ## Gotchas already discovered
 - `worldmodel.migrate()` whitelists prop fields → had to add `agentId` to the whitelist or it drops silently.
 - hub `inflight`/supersede must key by **chatId**, not agentId (else routing two chats to one agent cross-cancels).

@@ -11,7 +11,10 @@ from rusty to pristine. The twist: **the way you build the station literally con
 multi-agent org.** A room is a capability-scoped team, a hallway is an authorized handoff lane, a
 placed object is a real capability grant. The layout you draw *is* the workflow the agents run.
 
-> **Status: planning.** No app code yet. This folder currently holds the build plan.
+> **Status: harness backend + live world, on `feat/harness-backend`.** The live app is in `frontend/app/`
+> (the vanilla-JS canvas world, station builder, conveyor pipeline, and comms), the Node agent-host sidecar
+> in `sidecar/` (the model→tool→loop runtime, cost accounting, capabilities, messaging channels, routing),
+> and the shared event contract in `shared/`. Headless test gate: `npm run test:fast`.
 
 ## Read these in order
 

@@ -31,9 +31,11 @@ function walk(dir, out) {
 
 const files = [];
 for (const r of ROOTS) walk(path.join(base, r), files);
-// frontend/app/pipeline.js is the ONE frontend module the sidecar require()s (the shared belt-graph
-// routing compiler), so its determinism is backend-load-bearing — scan it even though the app shim isn't.
+// the frontend modules the sidecar require()s are backend-load-bearing, so scan them too even though the
+// rest of the app shim isn't: pipeline.js (the shared belt-graph routing compiler) and classify.js (the
+// TASK/content-tag classifier that runs INSIDE the deterministic sidecar — index.js require()s both).
 files.push(path.join(base, 'frontend', 'app', 'pipeline.js'));
+files.push(path.join(base, 'frontend', 'app', 'classify.js'));
 
 const banned = [/\bMath\.random\b/, /\bDate\.now\b/, /\bperformance\.now\b/, /\bnew\s+Date\s*\(\s*\)/];
 const labels = ['Math.random', 'Date.now', 'performance.now', 'new Date()'];

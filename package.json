@@ -2,7 +2,7 @@
   "name": "skynet-harness",
   "version": "0.0.0",
   "private": true,
-  "description": "Skynet — a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "description": "Skynet — a real, gamified, downloadable AI-agent harness. The v7 pixel-art world (frontend/app) is driven by a real Node agent-harness sidecar (model→tool→loop runtime, cost, capabilities, messaging channels, routing) over the shared U.bus event contract; headless suite via `npm run test:fast`.",
   "scripts": {
     "validate": "node test/validate_map.js",
     "test:world": "node test/test_world.js",

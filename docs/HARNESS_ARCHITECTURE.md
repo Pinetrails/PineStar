@@ -7,7 +7,8 @@
 ## 1. Purpose & the one bet
 
 Turn the ~126-line one-shot BYOK streaming wrapper (`frontend/app/harness.js`) into a real agentic
-harness: a `model → tool → result → loop` with capabilities, budget governance, context management,
+harness — **now landed** as `sidecar/index.js` (HTTP/WS host + `runOnce`) + `sidecar/loop.js`: a
+`model → tool → result → loop` with capabilities, budget governance, context management,
 cancellation, and **truthful telemetry**. The central bet: the kept v7 pixel canvas is driven **only**
 by validated `U.bus` events the harness emits, so the world is never set-dressing — every token, tool
 call, and dollar on screen corresponds to a real runtime transition.
@@ -74,6 +75,14 @@ test/
   _assert.js     eq / throws / collectBus / replayProvider   (zero-dep, matches err()+process.exit convention)
   *.test.js      contract · loop.replay · tools · capgate · context · budget · save.migrate
 ```
+
+> **As-built note (the tree above is the original target shape; this is what actually shipped):** the
+> harness logic landed as `sidecar/index.js` (the HTTP/WS composition root + `runOnce`) plus
+> `sidecar/loop.js` — there is no separate `harness.js`, `budget.js` (per-run caps live in the loop),
+> `queue.js`, `secrets.js`, `catalog.js` (folded into `providers/openrouter.js`), `bridge.js`, or
+> `frontend/app/telemetry.js`. Two subtrees that shipped but aren't drawn above: `sidecar/channels/`
+> (messaging ingress — adapter/hub/store/sse/telegram) and `sidecar/routing/` (the server-authoritative
+> RoutingPlan store). `frontend/app/harness.js` is the live browser shim.
 
 Placement note: `shared/` and `sidecar/` live at the **gen/ root** (siblings of `frontend/` and
 `test/`). Through M2, all of it is exercised headlessly under `node` (no browser). At M3 the browser
