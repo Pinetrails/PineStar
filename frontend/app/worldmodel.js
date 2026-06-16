@@ -22,6 +22,37 @@ const WorldModel = (() => {
   const MAX_SPAN = 240; // max station footprint span per axis (keeps the bake canvas bounded)
   const HULL_PAD = 14;  // extra canvas px below the grid for the south hull extrusion (matches v7 H = ROWS*T+14)
 
+  /* FILTER/MERGER junction config carried on a prop (additive, like a BAY's agentId; the pipeline reads
+     routes/def for filters, bufferSize for mergers). Sanitized so a hand-edited save can never inject a bad lane. */
+  const JDIRS = { E: 1, W: 1, N: 1, S: 1 };
+  const cleanDir = d => (JDIRS[d] ? d : null);
+  function cleanRoutes(r) {
+    if (!r || typeof r !== 'object') return null;
+    const out = {}; let n = 0;
+    for (const k in r) { const key = String(k).slice(0, 24); if (key && JDIRS[r[k]]) { out[key] = r[k]; n++; } }
+    return n ? out : null;
+  }
+  const cleanBuf = b => { const n = b | 0; return n >= 2 ? n : null; };
+  // copy any present + valid junction config from src onto dst (mutates dst; additive — absent fields untouched)
+  function applyJunctionCfg(dst, src) {
+    const routes = cleanRoutes(src.routes); if (routes) dst.routes = routes;
+    const def = cleanDir(src.def); if (def) dst.def = def;
+    const buf = cleanBuf(src.bufferSize); if (buf) dst.bufferSize = buf;
+    return dst;
+  }
+
+  /* Phase B5 — object = capability, made real on the placed floor. A prop type maps to a CAP_REGISTRY
+     objectType (computer=compute · cabinet=files · dish=web · notebook=memory); the props in a BAY's room are
+     that agent's grants (via the sidecar's resolveTools). DATA, deliberately tunable — only a few intuitive
+     props grant reach; everything else is inert decor. A bay with no `computer` prop can't run (compute gate
+     stays shut = cost-safe), which the REFIT validator surfaces as NO COMPUTE. */
+  const CAP_PROP_MAP = {
+    console: 'computer', consoleL: 'computer', desk: 'computer', desk2: 'computer', pixelrig: 'computer', bench: 'computer',  // a workstation = compute
+    war_intelcab: 'cabinet', safe: 'cabinet', vault: 'cabinet', rack: 'cabinet', shelf: 'cabinet',                            // a locked cabinet = files
+    comms_dish: 'dish', comms_uplink: 'dish', comms_beacon: 'dish',                                                           // a comms dish = web
+    gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook'                                             // a server/databank = memory
+  };
+
   /* the paint palette — each is a floor BASE colour; every other floor detail
      (seams / rivets / vents / hatches) is derived from it via U.shade in the bake. */
   const FLOOR_STYLES = {
@@ -302,6 +333,8 @@ const WorldModel = (() => {
       // floor rugs pass block:false so agents walk over/along them (they're flat decor, not obstacles).
       const prop = { id, t, x, y, w, h };
       if (opts.block === false) prop.block = false;
+      if (typeof opts.agentId === 'string' && opts.agentId) prop.agentId = opts.agentId;   // a BAY binds a belt endpoint to an agent
+      applyJunctionCfg(prop, opts);   // a FILTER/MERGER carries its routes/def/bufferSize (inert on other props)
       doc.props.push(prop);
       emit([{ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 }]);
       return { ok: true, id };
@@ -509,7 +542,9 @@ const WorldModel = (() => {
       const propsLocal = [];
       for (const p of doc.props) {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
-        propsLocal.push({ id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false });
+        const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
+        if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
+        propsLocal.push(lp);
         if (p.block === false) continue;   // flat decor (rugs / wall panels) never blocks walking
         for (let yy = ly; yy < ly + h; yy++) for (let xx = lx; xx < lx + w; xx++) blockedTiles.add(xx + ',' + yy);
       }
@@ -559,6 +594,50 @@ const WorldModel = (() => {
       };
     }
 
+    /* ---------- agent-bay binding (Phase B: a belt endpoint named for an agent) ---------- */
+    const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (mirrors the sidecar hub)
+    function assignPropAgent(propId, agentId) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      const aid = String(agentId || '').trim();
+      if (aid && !AID_RE.test(aid)) return fail('BAD_AGENT', 'agentId must match ' + AID_RE);
+      snapshot();
+      if (aid) p.agentId = aid; else delete p.agentId;   // empty string unbinds
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, agentId: aid || null };
+    }
+    // set/replace a FILTER's routes+def or a MERGER's bufferSize (cfg null/empty clears). Mirrors assignPropAgent.
+    function configureJunction(propId, cfg) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      snapshot();
+      delete p.routes; delete p.def; delete p.bufferSize;   // replace wholesale
+      if (cfg) applyJunctionCfg(p, cfg);
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, routes: p.routes || null, def: p.def || null, bufferSize: p.bufferSize || null };
+    }
+    const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
+    const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
+    function agentRoomId(agentId) {   // the room the agent's BAY sits in — the capability-isolation seam
+      const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
+      return bay ? roomAt(bay.x, bay.y) : null;
+    }
+    // Phase B5: the capability objectTypes (CAP_REGISTRY) granted by the cap-props sharing the agent's BAY room —
+    // exactly what the sidecar feeds resolveTools, so each bay's tools are what you placed in its room. Deduped.
+    function bayObjects(agentId) {
+      const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
+      const room = bay ? roomAt(bay.x, bay.y) : null;
+      if (!room) return [];
+      const seen = {}, out = [];
+      for (const p of doc.props) {
+        const cap = CAP_PROP_MAP[p.t];
+        if (!cap || seen[cap]) continue;
+        if (roomAt(p.x, p.y) !== room) continue;
+        seen[cap] = true; out.push(cap);
+      }
+      return out;
+    }
+
     /* ---------- serialize / subscribe ---------- */
     const serialize = () => clone(doc);
     function onChange(fn) { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; }
@@ -572,8 +651,10 @@ const WorldModel = (() => {
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
-      addProp, removeProp, moveProp,
+      addProp, removeProp, moveProp, assignPropAgent, configureJunction,
       setBelt, removeBelt, placeBeltRun,
+      // agent-bay binding queries
+      propsByType, propsByAgent, agentRoomId, bayObjects,
       undo, redo, canUndo, canRedo,
       // projection + io
       projectGeometry, serialize, onChange,
@@ -596,7 +677,7 @@ const WorldModel = (() => {
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }

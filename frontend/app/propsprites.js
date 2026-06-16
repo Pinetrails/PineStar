@@ -709,6 +709,31 @@ const PropSprites = (() => {
     if (f.work) glow(x + 1, y + 1, w - 2, h - 2, c, 0.3);
   };
 
+  F.bay = (x, y, w, h, f) => {
+    // BAY — a docking bay where a SPECIFIC agent receives work off the belt. Nameplate names the bound
+    // agent (lit) or reads UNASSIGNED (dim). Routing (who runs) is the bay's agentId; capability is its room.
+    const bound = !!(f && f.agentId), c = bound ? '#5ad1b3' : '#3a464a';
+    box(x + 1, y + 2, w - 2, h - 3, '#252d2a');                       // platform casing
+    px(x + 2, y + 3, w - 4, h - 6, '#161c1a');
+    const cy = y + ((h - 2) >> 1);
+    // docking guides (chevrons pointing IN — work arrives here)
+    px(x + 3, cy, 2, 1, c); px(x + 4, cy - 1, 1, 3, c);
+    px(x + w - 5, cy, 2, 1, c); px(x + w - 5, cy - 1, 1, 3, c);
+    // nameplate
+    const npx = x + 3, npy = y + h - 7, npw = w - 6;
+    px(npx - 1, npy - 1, npw + 2, 7, '#0c1210');
+    px(npx, npy, npw, 5, bound ? '#13211a' : '#101619');
+    if (bound) {
+      px(npx, npy, npw, 1, '#1e3a2c');                                // lit top edge
+      ctx.fillStyle = '#7df0c8'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(String(f.agentId).replace(/^tg_/, '').slice(0, 5).toUpperCase(), npx + 1, npy);
+      if (f.work) glow(x + 1, y + 2, w - 2, h - 3, c, 0.3);
+    } else {
+      px(npx + 2, npy + 2, npw - 4, 1, '#2a3438');                    // dim "unassigned" bar
+    }
+    px(x + 2, y + 2, 1, 1, bound ? (blink(700, 0) ? '#7df0c8' : '#1d4a44') : '#3a2418');   // bound LED
+  };
+
   F.boxes = (x, y, w, h) => {
     sh(x + 1, y + 10, w - 2);
     px(x + 1, y + 4, 8, 7, '#36424c'); px(x + 1, y + 4, 8, 1, '#46525a'); px(x + 4, y + 4, 2, 7, '#56646e'); // tape
@@ -3713,6 +3738,7 @@ const PropSprites = (() => {
     { id: "intake", label: "INTAKE", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "outbox", label: "OUTBOX", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "splitter", label: "SPLITTER", cat: "logistics", w: 1, h: 1, animated: true, blocks: false },
+    { id: "bay", label: "BAY", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "commswall", label: "COMMS WALL", cat: "comms", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_dish", label: "DISH", cat: "comms", w: 2, h: 2, animated: true, blocks: true },
     { id: "comms_inbox", label: "INBOX", cat: "comms", w: 2, h: 1, animated: true, blocks: true },
@@ -3759,7 +3785,7 @@ const PropSprites = (() => {
   function draw(f, work) {
     const fn = F[f.t]; if (!fn) return;
     const X = f.x * TILE, Y = f.y * TILE, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
-    fn(X, Y, W, H, { x: f.x, work: !!work });
+    fn(X, Y, W, H, { x: f.x, work: !!work, agentId: f.agentId || null });
   }
 
   return {
