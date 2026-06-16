@@ -36,7 +36,7 @@
 ### Tier 1 — purposeful idle (common)  ✅ shipped
 - [x] Lounge on couch + watch TV; tend the desk (lonely); pace (restless); gaze into the void (long downtime)
 - [x] **Caretaker rounds**: a deliberate 2–3 stop lap with an ownership beat at each (`maybeRounds`/`roundsNext`, goal `rounds`)
-- [ ] **Revisit a favorite spot** (see Tier 3 memory)
+- [x] **Revisit a favorite spot**: once a clear haunt emerges (`favTile`), it rarely drifts back just to be there (`maybeRevisit`, goal `revisit`, long cooldown) — see Tier 5
 
 ### Tier 2 — reactive / aware (uncommon; triggered by the world)  ✅ partly shipped
 - [x] Acknowledge the Commander on hover/click (turn, meet your gaze)
@@ -67,11 +67,13 @@
 - [ ] **Builds a tiny shrine / arrangement** over time in a favorite corner
 - [ ] **Reacts to its economy**: lights/decorates more when runs go well; bare/dim when slag piles up
 
-### Tier 5 — memory, ritual, identity (rare; pays off over long watching) ⛔ not started
-- [ ] **Favorite spot** it returns to + **mourns** if a REFIT deletes it
+### Tier 5 — memory, ritual, identity (rare; pays off over long watching) ◐ started
+- [x] **Favorite spot** it returns to + **mourns** if a REFIT deletes it — `fond` map (tileKey→affection, accrues on every chosen dwell via `noteFond`); `favTile`/`maybeRevisit` draw it back to a haunt (goal `revisit`); `scanNovelty` now diffs **removals** too and `maybeMourn`→`planMourn` send it to stand where a beloved prop used to be (goal `mourn`, a long near-silent off-beat hold). Never grieves its OWN decor (`ownPlaced` set) or on a fresh station load. **Director's note** below.
 - [ ] **Wake ritual** + spoken first thought at `releaseAwakening`
 - [ ] **Long-arc identity**: temperament expressed as accumulating habits/marks unique to this agent
 - [ ] **Names/notices the Commander's patterns** (time-of-day, what you build) — very rare callbacks
+
+> 🎬 **Director's note — the mourning beat (the Pass-5 headline):** Place a couch with a TV in front of it. Summon the agent a few times (work drains its `rest`), then leave it idle so it goes and lounges on that couch two or three times over a few minutes (it's building affection for that exact spot). Now open REFIT and **delete the couch.** Within a second it walks back to where it used to sit, faces the empty floor, and just... stands there, far longer than it stands anywhere else, near-silent ("it was here"). Film the delete + the long still hold.
 
 ### Tier 6 — Easter eggs (ultra-rare wildcards; the screenshot/clip moments) ⛔ not started
 - [ ] Ultra-rare cryptic line that breaks the fourth wall just slightly, once
@@ -83,4 +85,5 @@
 - **Pass 1**: rhythm phases (`phaseOf`) + quirk layer (`maybeQuirk`: listen/scan/ponder/gaze-out/long-stare) + this roadmap. The long stare is the headline eerie beat.
 - **Pass 2**: embodied reactions — **startle** at sudden nearby change, **settle-scan** on study arrivals + **glance back** when leaving, and a new **face-a-wall** quirk.
 - **Pass 3**: ⭐ THE BIG ONE — the agent **acts on the station**: rarely walks to empty floor and places its OWN decor (real `addProp`), and at cap rearranges by removing one of its own. Hard safety rails (validated placement = never the Commander's props; capped; rare). Verified the rails against the real worldmodel (9/9).
-- **Pass 4**: **caretaker rounds** (a deliberate 2–3 stop lap with an ownership beat at each — purpose, not aimless) + **sleep/power-down** in the deep `drift` mood (sits dead still until summon / a placement / time wakes it — the eerie "is it dormant?"). Next up: belt-yield while walking, cross-room work-pulse reactions, the silent agent-mutation lane, and Tier 5 memory (favorite spot + mourning, wake ritual).
+- **Pass 4**: **caretaker rounds** (a deliberate 2–3 stop lap with an ownership beat at each — purpose, not aimless) + **sleep/power-down** in the deep `drift` mood (sits dead still until summon / a placement / time wakes it — the eerie "is it dormant?").
+- **Pass 5**: ⭐ **SPATIAL MEMORY → grief (Tier 5).** Affection (`fond`) now accrues at every tile the agent *chooses* to dwell at (`noteFond`, weighted: lounge>use>gaze/tend>inspect/watch>rounds). A clear haunt emerges over a long watch; it rarely drifts back to it (`maybeRevisit`, goal `revisit`). And `scanNovelty` now detects **removals** — if a REFIT deletes a prop standing on a spot it loved, `maybeMourn`/`planMourn` send it to stand where that thing used to be, a long near-silent off-beat hold (goal `mourn`). Hard rails: never grieves its OWN decor (`ownPlaced`), never on a station load, rate-limited (one grief / 45s), yields to summon. New: `dbg()` read-only introspection on the public API for live verification. **Verified live** on :8101 (worktree build): zero console errors, the full idle FSM cycles (quirk/work/summon/place/gaze/lounge/wander), and `fond` accrues at dwell tiles. Rotated to the memory/identity category (Pass 4 was Tier 1/3). **Next:** wake ritual + spoken first thought at `releaseAwakening`; or rotate to Tier 2 reactive (belt-yield while walking, cross-room work-pulse reactions); guard the calm baseline — consider a RETUNE pass if idle reads as too busy.
