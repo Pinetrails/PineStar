@@ -838,6 +838,94 @@ const StationUI = (() => {
     refresh();
   }
 
+  /* ============== CONNECTORS — attach MCP servers so agents gain external tools ==============
+     A connector is a remote MCP (Model Context Protocol) server. Once added + connected, its tools
+     become real agent tools, gated by the same consent prompt as everything else. The server URL +
+     optional bearer token are stored by the sidecar (never displayed) via /api/connectors. */
+  function buildConnectors(body) {
+    body.innerHTML =
+      '<h4 class="ms-h">MCP CONNECTORS</h4>' +
+      '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
+        'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
+        '<span class="dim">(Remote http(s) servers; bearer token optional. The token is stored locally by the sidecar and never displayed.)</span></p>' +
+      '<div id="mc-list" class="mc-list">loading…</div>' +
+      '<h4 class="ms-h">ADD A CONNECTOR</h4>' +
+      '<div class="mc-form">' +
+        '<input id="mc-id" class="key-input" placeholder="id — e.g. github (a-z 0-9 _ -)" autocomplete="off" spellcheck="false" maxlength="40">' +
+        '<input id="mc-label" class="key-input" placeholder="label (optional)" autocomplete="off" spellcheck="false">' +
+        '<input id="mc-url" class="key-input" placeholder="https://server.example/mcp" autocomplete="off" spellcheck="false">' +
+        '<input id="mc-token" type="password" class="key-input" placeholder="bearer token (optional)" autocomplete="off" spellcheck="false">' +
+        '<button class="bb sm" id="mc-add">+ ADD &amp; CONNECT</button>' +
+      '</div>' +
+      '<div id="mc-msg" class="msg"></div>';
+
+    const listEl = body.querySelector('#mc-list');
+    const msgEl = body.querySelector('#mc-msg');
+
+    function badge(state) {
+      return ({ up: ['#8f8', '● connected'], connecting: ['var(--gold)', '◌ connecting…'],
+                down: ['#999', '○ disabled'], error: ['var(--bad)', '✕ error'] })[state] || ['#999', '○ ' + esc(state || 'unknown')];
+    }
+    function row(c) {
+      const b = badge(c.state);
+      const tools = (c.tools && c.tools.length) ? '<div class="mc-tools">' + c.tools.map(t => '<code>' + esc(t) + '</code>').join('') + '</div>' : '';
+      const detail = (c.state === 'error' && c.detail) ? '<div class="mc-detail">' + esc(c.detail) + '</div>' : '';
+      return '<div class="mc-row" data-id="' + esc(c.id) + '" data-url="' + esc(c.url) + '" data-enabled="' + (c.enabled ? '1' : '0') + '">' +
+        '<div class="mc-top"><b>' + esc(c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
+          '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
+        '<div class="mc-url dim">' + esc(c.url) + (c.hasToken ? ' · token saved' : '') + '</div>' + detail + tools +
+        '<div class="mc-acts">' +
+          '<button class="bb xs" data-act="refresh">↻ REFRESH</button>' +
+          '<button class="bb xs" data-act="toggle">' + (c.enabled ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
+          '<button class="bb xs danger" data-act="remove">✕ REMOVE</button>' +
+        '</div></div>';
+    }
+    async function refresh() {
+      try {
+        const j = await (await fetch('/api/connectors')).json();
+        const list = (j && j.connectors) || [];
+        listEl.innerHTML = list.length ? list.map(row).join('')
+          : '<div class="fb-empty">NO CONNECTORS YET.<br><span>Add an MCP server below to give your agents new tools.</span></div>';
+      } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage connectors.</div>'; }
+    }
+    listEl.addEventListener('click', async ev => {
+      const btn = ev.target.closest('button[data-act]'); if (!btn) return;
+      const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      btn.disabled = true;
+      try {
+        if (btn.dataset.act === 'remove') { await post('/api/connectors/remove', { id }); notify('Connector "' + id + '" removed'); sfx('click'); }
+        else if (btn.dataset.act === 'refresh') {
+          msgEl.textContent = 'refreshing ' + id + '…';
+          const j = await (await post('/api/connectors/refresh', { id })).json().catch(() => ({}));
+          msgEl.textContent = (j.status && j.status.state === 'up') ? ('✓ ' + id + ' — ' + (j.status.toolCount || 0) + ' tool(s)') : ('✕ ' + id + ' — ' + ((j.status && j.status.detail) || j.error || 'not connected'));
+          sfx('click');
+        } else if (btn.dataset.act === 'toggle') {
+          await post('/api/connectors', { id, url: rowEl.dataset.url, enabled: rowEl.dataset.enabled !== '1' }); sfx('click');
+        }
+      } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'request failed'); sfx('bad'); }
+      refresh();
+    });
+    body.querySelector('#mc-add').addEventListener('click', async () => {
+      const id = (body.querySelector('#mc-id').value || '').trim();
+      const url = (body.querySelector('#mc-url').value || '').trim();
+      const label = (body.querySelector('#mc-label').value || '').trim();
+      const token = (body.querySelector('#mc-token').value || '').trim();
+      if (!id || !url) { sfx('bad'); msgEl.textContent = 'an id and a server URL are required'; return; }
+      msgEl.textContent = 'connecting ' + id + '…';
+      try {
+        const j = await (await fetch('/api/connectors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, url, label, token }) })).json().catch(() => ({}));
+        if (j.error) { msgEl.textContent = '✕ ' + j.error; sfx('bad'); }
+        else if (j.status && j.status.state === 'up') {
+          msgEl.textContent = '✓ connected — ' + (j.status.toolCount || 0) + ' tool(s) available'; sfx('click'); notify('Connector "' + id + '" connected', 'good');
+          ['#mc-id', '#mc-label', '#mc-url', '#mc-token'].forEach(s => { body.querySelector(s).value = ''; });
+        } else { msgEl.textContent = '✕ ' + ((j.status && j.status.detail) || ('state: ' + (j.state || 'error'))); sfx('bad'); }
+      } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
+      refresh();
+    });
+    refresh();
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
@@ -845,6 +933,7 @@ const StationUI = (() => {
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
+    connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
   };
 

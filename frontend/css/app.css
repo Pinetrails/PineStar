@@ -589,3 +589,17 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .refit-guide-card b { color: var(--ph-bright); font-weight: normal; }
 .refit-guide-card .g-ok { color: #aaffc8; } .refit-guide-card .g-bad { color: #ffb0a8; }
 .refit-guide-card #refit-guide-go { width: 100%; }
+
+/* ---------- CONNECTORS panel (MCP) ---------- */
+.mc-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }
+.mc-row { border: 1px solid var(--ph-dim); border-radius: 6px; padding: 8px 10px; background: rgba(0,0,0,.35); }
+.mc-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.mc-top b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
+.mc-state { margin-left: auto; font-size: 13px; white-space: nowrap; }
+.mc-url { font-size: 12px; word-break: break-all; margin-top: 2px; }
+.mc-detail { font-size: 12px; color: var(--bad); margin-top: 4px; }
+.mc-tools { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.mc-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px; padding: 1px 5px; background: rgba(0,0,0,.4); }
+.mc-acts { margin-top: 8px; display: flex; gap: 6px; }
+.mc-form { display: flex; flex-direction: column; gap: 6px; }
+.bb.xs { font-size: 11px; padding: 2px 7px; }

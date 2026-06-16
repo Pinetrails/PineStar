@@ -72,8 +72,15 @@ Three facts make the bridge additive:
   = per-agent). `CAP_REGISTRY.connector` marker entry. `/api/connectors` (GET list, POST upsert,
   POST remove, POST refresh) — tokens accepted + persisted server-side, never echoed back. Boot
   warming. Verified by a live boot-smoke (routes + token-never-leaks + persistence).
-- [ ] **Slice 5 — world + UI.** A "connector portal" prop sprite + a Connectors panel
-  (add server URL/token, see discovered tools, enable/disable) — the gamified projection.
+- [x] **Slice 5a — Connectors panel.** `stationui.js` `buildConnectors` + a `data-term="connectors"`
+  toolbar button + `app.css` styles: add / enable / disable / remove / refresh MCP servers, see each
+  server's discovered tools, live over `/api/connectors`. The token field is never re-displayed.
+  Browser-verified (panel renders every state, zero console errors; live API round-trip confirmed
+  separately via the boot-smoke).
+- [ ] **Slice 5b — connector-portal prop (optional).** A placeable `connector` prop sprite
+  (propsprites.js / worldmodel.js / build.js) bound to a connectorId, so per-bay placement is visual
+  in the builder — the gamified projection. Functional per-agent scope already works without it (the
+  panel + room-object resolution); this is purely the visual layer.
 
 ## Open decisions for andro
 
