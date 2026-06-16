@@ -70,8 +70,8 @@ A.eq(canc.stats.samples, 0, 'cancelled is not a reliability sample');
 
 // ---- levels are monotonic; level-up fires on threshold crossing ----
 const four = run([done(), done(), done(), done()]);
-A.eq(four.stats.xp, 60, '4 done = 60 xp');
-A.eq(four.stats.level, 2, '60 xp -> level 2');
+A.eq(four.stats.xp, 65, '4 done = 65 xp (first 3 are base 15; the 4th, now calibrated+reliable, gets +30%)');
+A.eq(four.stats.level, 2, '65 xp -> level 2');
 A.eq(four.awards[0].levelUp, false, 'no level-up on the first run');
 A.ok(four.awards[3].levelUp === true && four.awards[3].levelTo === 2, 'level-up fires crossing 50 xp');
 
@@ -93,5 +93,35 @@ A.eq(g.pct, 50, '50% through level 2');
 A.eq(g.known, true, 'known with 5 samples');
 A.eq(g.confLabel, '70%', 'confLabel renders the percent');
 A.eq(g.band, 'reliable', '70% -> reliable band');
+A.eq(g.bonus, 30, 'compute exposes the +30% XP trust bonus');
+A.eq(Xp.compute(Xp.fresh()).bonus, 0, 'no XP bonus while calibrating');
+
+// ---- confidence-scaled XP: reliable agents grow faster, never a penalty ----
+const cal = { xp:0, level:1, lifetimeXp:0, confidence:90, samples:5, counters:{}, milestones:[], run:{id:null,toolXp:0} };
+A.eq(Xp.applyEvent(cal, done(1)).awards.xp, 23, 'trusted (90%): 15 base x1.5 = 23');
+A.eq(Xp.applyEvent(Object.assign({}, cal, {confidence:70}), done(1)).awards.xp, 20, 'reliable (70%): 15 x1.3 = 20');
+A.eq(Xp.applyEvent(Object.assign({}, cal, {confidence:30}), done(1)).awards.xp, 15, 'low confidence: base only, never a penalty');
+A.eq(Xp.applyEvent(Object.assign({}, cal, {samples:1}), done(1)).awards.xp, 15, 'uncalibrated: no bonus regardless of confidence');
+
+// ---- per-run tool-success cap (anti-grind); tool results are XP-only (no reliability sample) ----
+let ts = Xp.fresh();
+const tool = runId => { ts = Xp.applyEvent(ts, { name:'agent.tool_result', payload:{ runId, callId:'c', ok:true, isError:false } }).stats; };
+for (let i=0;i<15;i++) tool('r1');
+A.eq(ts.xp, 10, '15 tool successes in one run cap at 10 xp');
+A.eq(ts.samples, 0, 'tool results carry no reliability sample');
+A.eq(ts.confidence, 50, 'tool results never move confidence');
+for (let i=0;i<5;i++) tool('r2');
+A.eq(ts.xp, 15, 'a new run refreshes the tool-xp cap (+5)');
+
+// ---- expanded milestone table ----
+let ms = Xp.fresh();
+for (let i=0;i<10;i++) ms = Xp.applyEvent(ms, { name:'memory.write', payload:{ agentId:'a', runId:'r', id:'m'+i, kind:'fact' } }).stats;
+A.ok(ms.milestones.indexOf('archivist') !== -1, 'archivist at 10 memory writes');
+const nightShift = Xp.applyEvent(Xp.fresh(), { name:'workitem.delivered', payload:{ workitemId:'w', finalQueueId:'q' } });
+A.ok(nightShift.awards.milestones.indexOf('night_shift') !== -1, 'night_shift on first external delivery');
+const near = { xp:2249, level:9, lifetimeXp:2249, confidence:50, samples:0, counters:{}, milestones:[], run:{id:null,toolXp:0} };
+const vr = Xp.applyEvent(near, done(1));
+A.eq(vr.stats.level, 10, 'crossing 2250 xp -> level 10');
+A.ok(vr.awards.milestones.indexOf('veteran') !== -1, 'veteran milestone at level 10');
 
 A.report('xp.test');

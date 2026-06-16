@@ -217,7 +217,8 @@ const StationUI = (() => {
       '<div class="stat-cell"><div class="stat-val">' + g.level + '</div><div class="stat-lbl">LEVEL</div></div>' +
       '<div class="stat-cell"><div class="stat-val' + (g.known ? ' pos' : '') + '">' + g.confLabel + '</div><div class="stat-lbl">CONFIDENCE</div></div>' +
       '<div class="stat-cell"><div class="stat-val">' + g.pct + '%</div><div class="stat-lbl">TO LV ' + (g.level + 1) + '</div></div>' +
-      '</div>') : '';
+      '</div>' +
+      '<div class="ag-foot-row">reliability <b>' + g.band + '</b>' + (g.bonus ? ' · +' + g.bonus + '% XP' : '') + ' · ' + g.milestones.length + ' milestone' + (g.milestones.length === 1 ? '' : 's') + '</div>') : '';
     return growth + '<div class="stat-grid">' +
       '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
       '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +

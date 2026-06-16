@@ -1836,7 +1836,7 @@ const World = (() => {
     ctx.fillStyle = 'rgba(255,212,90,0.18)'; ctx.fillRect(x + 1, y + 1, fillW, bh - 2);   // XP fill toward next level
     ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText('STATION Lv ' + s.level + '  ' + s.pct + '%  · ' + (s.known ? s.confLabel : '—'), x + 6, y + bh / 2 + 0.5);
+    ctx.fillText('STATION Lv ' + s.level + '   REL ' + (s.known ? s.confLabel : '—'), x + 6, y + bh / 2 + 0.5);
   }
 
   /* ---------- CONTEXT-WINDOW gauge: the agent's memory core, made physical ----------
@@ -1890,7 +1890,12 @@ const World = (() => {
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires the gold ring
-    setXp: (a, s) => { xpAgent = a || null; xpStation = s || null; }, pulseLevelUp: () => { levelUpAt = performance.now(); },
+    setXp: (a, s) => { xpAgent = a || null; xpStation = s || null; },
+    pulseLevelUp: (level) => {
+      levelUpAt = performance.now();
+      // a brief "LEVEL N" caption rides the gold ripple — but never stomp a live (real) message bubble
+      if (agent && level != null) { const t = performance.now(); if (!(agent.say && agent.say.until > t)) agent.say = { text: 'LEVEL ' + level, until: t + 2600 }; }
+    },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
 })();

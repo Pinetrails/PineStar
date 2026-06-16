@@ -13,9 +13,9 @@ const XpStore = (() => {
   let persistFn = () => {};
   let wired = false;
 
-  // which REAL events feed growth in this first slice. The engine handles more (tool_result,
-  // memory.write, workitem.delivered, channel.delivery); we start narrow + honest and widen later.
-  const FEED = ['agent.run.end', 'memory.used'];
+  // the REAL outcomes that feed growth. run.end + channel.delivery + memory.feedback move CONFIDENCE
+  // (reliability); the rest are XP-only (tool successes are per-run capped in the engine). All flow on U.bus.
+  const FEED = ['agent.run.end', 'agent.tool_result', 'memory.write', 'memory.used', 'memory.feedback', 'workitem.delivered', 'channel.delivery'];
 
   const MILESTONE_TEXT = {
     first_light: 'Milestone — first task shipped',
@@ -30,7 +30,7 @@ const XpStore = (() => {
   }
 
   function celebrateAgent(a, level) {
-    if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp();
+    if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(level);
     if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((a.name || 'Agent') + ' reached Level ' + level, 'gold');
   }
@@ -58,7 +58,9 @@ const XpStore = (() => {
     for (const id of ra.awards.milestones) announceMilestone(id);   // agent-scoped milestones
     if (rs.awards.levelUp) celebrateStation(rs.awards.levelTo);
 
-    if (ra.awards.xp || rs.awards.xp || ra.awards.levelUp) { try { persistFn(); } catch (_) {} }
+    // persist at run end (captures the whole run's accrual) and on any level-up/milestone — not on every
+    // mid-run tool tick (onTurn already saves per turn; this just avoids chatty writes).
+    if (name === 'agent.run.end' || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length) { try { persistFn(); } catch (_) {} }
   }
 
   function init(opts) {

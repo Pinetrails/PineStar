@@ -25,6 +25,7 @@
   const ALPHA = 0.25;       // EWMA weight — how fast confidence tracks recent form
   const SEED_CONF = 50;     // neutral starting confidence (held, not shown, until calibrated)
   const MIN_SAMPLES = 3;    // real reliability signals needed before confidence is "known"
+  const TOOL_XP_CAP = 10;   // anti-grind: max RAW tool-success XP counted per run (before the trust bonus)
 
   // ---- XP + reliability per REAL outcome ----
   // returns { xp, quality } : xp is positive-only (failures never subtract);
@@ -43,7 +44,7 @@
           default:          return { xp: 0, quality: null };
         }
       }
-      case 'agent.tool_result': { const ok = !!p.ok && !p.isError; return { xp: ok ? 1 : 0, quality: ok ? 1 : 0 }; }
+      case 'agent.tool_result': { const ok = !!p.ok && !p.isError; return { xp: ok ? 1 : 0, quality: null }; }   // XP only — one tool slip shouldn't tank reliability; the RUN outcome is the honest signal
       case 'memory.write':       return { xp: 5, quality: null };   // growth/learning, not reliability
       case 'memory.used':        return { xp: 8, quality: null };   // reuse — the behaviour we most want
       case 'memory.feedback': { const d = (typeof p.delta === 'number') ? p.delta : 0; return { xp: d > 0 ? Math.round(d * 5) : 0, quality: d > 0 ? 1 : (d < 0 ? 0 : null) }; }
@@ -61,16 +62,28 @@
     return Math.max(1, Math.floor((1 + Math.sqrt(1 + (4 * xp) / LEVEL_K)) / 2));
   }
 
+  // reliable agents grow FASTER: a trust multiplier on earned XP, but ONLY once calibrated, and NEVER a
+  // penalty (sub-45% confidence just earns base). Tiers align with the confidence bands in compute().
+  function trustMult(s) {
+    if ((s.samples || 0) < MIN_SAMPLES) return 1;
+    const c = s.confidence || 0;
+    return c >= 85 ? 1.5 : c >= 65 ? 1.3 : c >= 45 ? 1.15 : 1;
+  }
+
   // ---- the stats shape (used for BOTH a single agent and the station rollup) ----
   function fresh() { return { xp: 0, level: 1, lifetimeXp: 0, confidence: SEED_CONF, samples: 0, counters: {}, milestones: [] }; }
   function clone(s) { return s ? JSON.parse(JSON.stringify(s)) : fresh(); }
 
   // ---- milestones — declarative; each fires ONCE when its predicate first holds ----
   const MILESTONES = [
-    { id: 'first_light', when: (c) => (c.tasksDone || 0) >= 1 },
-    { id: 'pack_rat',    when: (c) => (c.memReused || 0) >= 1 },
-    { id: 'centurion',   when: (c) => (c.tasksDone || 0) >= 100 },
-    { id: 'trusted',     when: (c, s) => s.samples >= MIN_SAMPLES && s.confidence >= 80 },
+    { id: 'first_light', when: (c) => (c.tasksDone || 0) >= 1 },     // first task shipped
+    { id: 'pack_rat',    when: (c) => (c.memReused || 0) >= 1 },     // first memory reused
+    { id: 'archivist',   when: (c) => (c.memWrites || 0) >= 10 },    // built a real memory bank
+    { id: 'workhorse',   when: (c) => (c.tasksDone || 0) >= 25 },    // 25 tasks shipped
+    { id: 'centurion',   when: (c) => (c.tasksDone || 0) >= 100 },   // 100 tasks shipped
+    { id: 'night_shift', when: (c) => (c.delivered || 0) >= 1 },     // delivered work via an external channel
+    { id: 'trusted',     when: (c, s) => s.samples >= MIN_SAMPLES && s.confidence >= 85 },   // reliability -> TRUSTED
+    { id: 'veteran',     when: (c, s) => s.level >= 10 },            // reached level 10
   ];
   function bump(c, k) { c[k] = (c[k] || 0) + 1; }
 
@@ -81,13 +94,23 @@
     const s = clone(stats);
     if (!s.counters) s.counters = {};
     if (!s.milestones) s.milestones = [];
+    if (!s.run || typeof s.run !== 'object') s.run = { id: null, toolXp: 0 };
     const name = (ev && ev.name) || '', p = (ev && ev.payload) || {};
     const sc = scoreEvent(name, p);
     const awards = { xp: 0, levelFrom: s.level, levelTo: s.level, levelUp: false, milestones: [] };
 
-    // XP — monotonic
-    if (sc.xp > 0) {
-      s.xp += sc.xp; s.lifetimeXp += sc.xp; awards.xp = sc.xp;
+    // base XP, with a per-run cap on high-frequency tool successes (anti-grind)
+    let base = sc.xp;
+    if (name === 'agent.tool_result' && base > 0) {
+      if (p.runId !== s.run.id) s.run = { id: p.runId || null, toolXp: 0 };
+      base = Math.min(base, Math.max(0, TOOL_XP_CAP - s.run.toolXp));
+      s.run.toolXp += base;
+    }
+
+    // XP — monotonic, scaled by the agent's ESTABLISHED reliability (trust bonus uses pre-update confidence)
+    if (base > 0) {
+      const gained = Math.round(base * trustMult(s));
+      s.xp += gained; s.lifetimeXp += gained; awards.xp = gained;
       const lvl = levelForXp(s.xp);
       if (lvl > s.level) { awards.levelUp = true; awards.levelTo = lvl; }
       s.level = lvl;
@@ -123,11 +146,12 @@
     const frac = Math.max(0, Math.min(1, inLevel / span));
     const known = (s.samples || 0) >= MIN_SAMPLES;          // honesty: no fabricated % before calibration
     const conf = Math.round(Math.max(0, Math.min(100, s.confidence || 0)));
+    const bonus = Math.round((trustMult(s) - 1) * 100);     // current XP trust bonus as a percent (0 / 15 / 30 / 50)
     return {
       level, xp, lifetimeXp: Math.max(0, s.lifetimeXp || 0),
       inLevel, span, toNext: Math.max(0, next - xp),
       frac, pct: Math.round(frac * 100),
-      known, confidence: known ? conf : null, confLabel: known ? (conf + '%') : '—',
+      known, confidence: known ? conf : null, confLabel: known ? (conf + '%') : '—', bonus,
       band: !known ? 'calibrating' : conf >= 85 ? 'trusted' : conf >= 65 ? 'reliable' : conf >= 45 ? 'steady' : 'building',
       milestones: (s.milestones || []).slice(),
     };
