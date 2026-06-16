@@ -41,15 +41,15 @@
 ### Tier 2 — reactive / aware (uncommon; triggered by the world)  ✅ partly shipped
 - [x] Acknowledge the Commander on hover/click (turn, meet your gaze)
 - [x] Anticipation at INTAKE / exhale at OUTBOX
-- [ ] **Startle**: something appears/box materializes within ~2 tiles → sharp 200ms snap + bob spike + dir flip
-- [ ] **Settle-scan on arrival** (glance L, R, then commit) + **parting glance** on leaving
+- [x] **Startle**: something appears within ~3 tiles → sharp 240ms snap + dir flip + a beat (`pushNovelty`)
+- [x] **Settle-scan on arrival** (glance L, R, then commit) + **parting glance** on leaving (`scanThen`, dwell-clear)
 - [ ] **Belt-yield while walking**: step to the tile edge, let active cargo pass, continue
 - [ ] **React to the work pulse from across the room** (snap toward intake/outbox lighting up, anywhere)
 
 ### Tier 3 — the uncanny inner life (rare; the "why did it do that" beats)  ◐ started
 - [x] **Quirk layer** (`maybeQuirk`): freeze-and-listen, slow room scan, ponder-facing-away, gaze-out
 - [x] **THE LONG STARE** at the Commander — holds eye contact 14–34s, near-silent (rarest quirk)
-- [ ] **Face a wall/corner** and stand there (eerie, unexplained)
+- [x] **Face a wall/corner** and stand there (eerie, unexplained) — `quirkFaceWall` (9% of quirks)
 - [ ] **Anomaly beats**: stop dead-center of a room and face a cardinal direction, motionless
 - [ ] **The double-take**: walk past something, stop, slowly walk back to look again
 - [ ] **Mimic the cursor**: very rarely, track the Commander's mouse for a few seconds (it sees you moving)
@@ -79,4 +79,5 @@
 - [ ] Date/▢-triggered specials (only if a real clock is available, not faked)
 
 ## Pass log
-- **Pass 1** (commit pending): rhythm phases (`phaseOf`) + quirk layer (`maybeQuirk`: listen/scan/ponder/gaze-out/long-stare) + this roadmap. The long stare is the headline eerie beat.
+- **Pass 1**: rhythm phases (`phaseOf`) + quirk layer (`maybeQuirk`: listen/scan/ponder/gaze-out/long-stare) + this roadmap. The long stare is the headline eerie beat.
+- **Pass 2**: embodied reactions — **startle** at sudden nearby change, **settle-scan** on study arrivals + **glance back** when leaving, and a new **face-a-wall** quirk. Next up: caretaker rounds / belt-yield / cross-room work-pulse reactions, then the design pass for Tier 4 (agent acting ON the station).

@@ -95,6 +95,7 @@ const World = (() => {
   const Q_PONDER = ['hm.', '...', 'i wonder', 'strange', 'thinking'];
   const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
   const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
+  const Q_STARTLE = ['!', 'whoa', 'what was that', 'huh!', 'oh'];   // sudden change right beside it
   const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
   const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
 
@@ -448,6 +449,14 @@ const World = (() => {
     const wp = agent.pathPts[agent.pathIdx++];
     agent.target = footOf(wp.x, wp.y);
   }
+  // a quick 2-beat settle-scan (left, then right) before committing the gaze to finalDir — reads as deliberate "taking it in"
+  function scanThen(now, finalDir) {
+    const guard = () => agent && (agent.goal === 'inspect' || agent.goal === 'watch');
+    const sides = U.chance(0.5) ? ['west', 'east'] : ['east', 'west'];
+    setGlance(sides[0], 380, now);
+    setTimeout(() => { if (guard()) setGlance(sides[1], 380, performance.now()); }, 420);
+    setTimeout(() => { if (guard()) { agent.glance = null; agent.dir = finalDir; } }, 860);
+  }
   function arrive(now) {
     agent.pathPts = null; agent.target = null;
     if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
@@ -458,16 +467,17 @@ const World = (() => {
       agent.useUntil = now + U.irnd(18000, 30000); agent.glanceCd = 0; agent.nextFidget = now + U.irnd(1500, 3500);
       takeSeat(); curiositySay(agent.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
-    else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze') {
+    else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare') {
       // reached the thing — stand, face it, observe for a spell. Familiar things hold the gaze less (habituation).
       agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
       agent.glanceCd = 0; agent.nextFidget = now + U.irnd(700, 1600);
+      if (agent.goal === 'quirk' || agent.goal === 'stare') { agent.studyUntil = now + U.irnd(4000, 9000); return; }   // a walked quirk (face-a-wall): hold the pose, silent
       const fam = agent.studyKey ? (seenCount.get(agent.studyKey) || 0) : 0, famK = 1 / (1 + fam * 0.8);
       if (agent.studyKey) seenCount.set(agent.studyKey, fam + 1);
       if (agent.goal === 'tend') { agent.studyUntil = now + U.irnd(3500, 8000); curiositySay(agent.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
       else if (agent.goal === 'gaze') { agent.studyUntil = now + U.irnd(4000, 8000); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
-      else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); }
-      else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); }
+      else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, agent.useFace); }
+      else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, agent.useFace); }
     }
     else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 2600); }
   }
@@ -617,7 +627,14 @@ const World = (() => {
     novelty = novelty.filter(n => !(n.tx === tx && n.ty === ty));   // dedupe the same tile
     novelty.push({ tx, ty, kind, pid });
     if (novelty.length > NOVELTY_MAX) novelty.shift();
-    if (agent && activity === 'idle') agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 350);   // react within ~1s
+    if (agent && activity === 'idle') {
+      agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 350);   // react within ~1s (then it walks over to inspect)
+      // STARTLE: something materialized right beside it → a sharp snap toward it + a beat, distinct from the calm far-off notice
+      if (!agent.working && !agent.unplaced) {
+        const d = Math.hypot((tx + 0.5) * T - agent.px, (ty + 0.5) * T - agent.py);
+        if (d < 3.4 * T) { const dir = dirToward(agent.px, agent.py, (tx + 0.5) * T, (ty + 0.5) * T); setGlance(dir, 240, fnow); agent.dir = dir; agent.glanceCd = fnow + 600; curiositySay(Q_STARTLE, 0.5, fnow); }
+      }
+    }
   }
 
   /* pixel position of the nearest riding belt box, or null (for gaze-tracking cargo) */
@@ -753,11 +770,12 @@ const World = (() => {
     if (!U.chance(0.13 * (0.6 + agent.pers.restless * 0.4))) return false;
     quirkCd = now + U.irnd(24000, 60000);    // quirks stay special
     const r = U.irnd(0, 999);
-    if (r < 360) return quirkListen(now);    // 36% — freeze + snap toward a sound only it heard
-    if (r < 600) return quirkScan(now);      // 24% — a slow, deliberate sweep of the room
-    if (r < 800) return quirkPonder(now);    // 20% — stops, faces away, lost in thought
-    if (r < 930) return planGazeOut(now);    // 13% — drifts to the edge and stares into the void
-    return quirkStare(now);                  //  7% — the long stare straight at YOU (rarest, eeriest)
+    if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
+    if (r < 540) return quirkScan(now);      // 22% — a slow, deliberate sweep of the room
+    if (r < 720) return quirkPonder(now);    // 18% — stops, faces away, lost in thought
+    if (r < 850) return planGazeOut(now);    // 13% — drifts to the edge and stares into the void
+    if (r < 940) return quirkFaceWall(now);  //  9% — walks to a wall and just faces it (unexplained)
+    return quirkStare(now);                  //  6% — the long stare straight at YOU (rarest, eeriest)
   }
   function startQuirk(now, kind, ms, face) {
     agent.goal = 'quirk'; agent.quirkKind = kind; agent.usingProp = null; agent.studyKey = null;
@@ -772,6 +790,22 @@ const World = (() => {
     return true;
   }
   function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), U.pick(['north', 'east', 'west'])); curiositySay(Q_PONDER, 0.4, now); return true; }
+  function quirkFaceWall(now) {   // walks to a wall and just... faces it. no explanation. (uses arrive's quirk dwell)
+    if (!geo || !geo.allRects || !geo.allRects.length) return false;
+    const DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
+    for (let tries = 0; tries < 30; tries++) {
+      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
+      const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
+      if (!geo.walkable(tx, ty, blocked)) continue;
+      const walls = DIRS.filter(([d, dx, dy]) => !geo.walkable(tx + dx, ty + dy, blocked));
+      if (!walls.length) continue;
+      if (!setPathTo({ x: tx, y: ty })) continue;
+      agent.goal = 'quirk'; agent.quirkKind = 'wall'; agent.useFace = U.pick(walls)[0]; agent.usingProp = null; agent.studyKey = null;
+      if (!agent.target) arrive(now);
+      return true;
+    }
+    return false;
+  }
   function quirkStare(now) {   // turns to the Commander and holds eye contact, mostly in silence
     agent.goal = 'stare'; agent.quirkKind = 'stare'; agent.usingProp = null; agent.studyKey = null;
     agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.studyUntil = now + U.irnd(14000, 34000); agent.glanceCd = now + 1200;
@@ -924,7 +958,11 @@ const World = (() => {
       if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare') {
       // observing / tending / gazing / a quirk / the long stare: hold until the dwell ends (maybeGlance animates it), then re-decide
-      if (now >= agent.studyUntil) { agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500); }
+      if (now >= agent.studyUntil) {
+        const back = (agent.goal === 'inspect' || agent.goal === 'watch') ? agent.useFace : null;   // a glance back at what it studied as it turns away
+        agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500);
+        if (back && U.chance(0.5)) setGlance(back, U.irnd(500, 900), now);
+      }
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
       decideIdle(now);
     }
