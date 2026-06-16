@@ -15,3 +15,7 @@ Desktop.ini
 
 # agent runtime workspaces / notes (created by tools at run time)
 workspaces/
+
+# rust / tauri desktop shell build output
+src-tauri/target/
+src-tauri/gen/

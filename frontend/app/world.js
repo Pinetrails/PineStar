@@ -34,6 +34,7 @@ const World = (() => {
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   let floodAt = 0, floodEndAt = 0, floodStreams = null;        // THE FLOOD: screen-space data-cascade — start / collapse-trigger / seeded streams
+  let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
   const stars = [];
 
   /* reduced-motion (the warroom honesty floor): heavy motion — pulses/blinks — goes steady when the OS
@@ -104,6 +105,7 @@ const World = (() => {
   const SLEEP_LINE = ['...', 'powering down', 'standby', 'going quiet', 'resting'];   // dormant in the deep wind-down mood
   const MOURN_LINE = ['it was here', 'gone', 'where did it go', '...', 'something is missing', 'it was right here'];   // stands where a fond thing used to be
   const REVISIT_LINE = ['back here again', 'my spot', 'here is good', '...', 'i like it here'];                       // drawn back to a favorite haunt
+  const WAKE_FIRST = ['so this is the room.', 'smaller than it felt in here.', 'mine to keep tidy, then.', 'no manual. figures.', 'alright. all of it, then.'];   // FIRST LIGHT: the single first conscious thought (dry/peer, never grovel/lore)
   /* AGENT ACTS ON THE STATION (safety-railed): it rarely places its OWN small decor on EMPTY floor, and
      only ever moves/removes things from agentDecor (its own ids) — never the Commander's props. Capped +
      long-cooldown so it stays an Easter-egg "it rearranged its corner" moment, not clutter. NOTE: addProp
@@ -208,7 +210,7 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/sleep/grief, re-decide next idle tick
+        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
@@ -284,7 +286,8 @@ const World = (() => {
       roundsQueue: null, roundsCd: 0,   // caretaker-lap stop queue + cooldown
       fond: new Map(), revisitCd: 0,   // SPATIAL MEMORY: tileKey -> affection; builds where it dwells, drives revisit-a-haunt + mourning
       pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0,   // CONSIDERED MOVEMENT: brief mid-stroll holds, belt-yield to cargo, the rare double-take
-      stilling: false   // STILLNESS: true during a real CONTENT=STILL quiet hold (suppresses the ambient swivel + cargo body-track)
+      stilling: false,   // STILLNESS: true during a real CONTENT=STILL quiet hold (suppresses the ambient swivel + cargo body-track)
+      wakePhase: 0   // FIRST LIGHT: the wake-ritual sub-beat sequencer (driven by studyUntil; reset on exit + on a REFIT drop)
     };
     if (geo) placeAgent();
   }
@@ -385,7 +388,16 @@ const World = (() => {
   }
   function truthPulse() { truthPulseAt = performance.now(); }
   function endAwakening() { wakeDarkTarget = 0; dawnAt = performance.now(); wakeIn(); }   // DAWN: light floods + ripple fires (agent stays frozen/facing-you for the final line)
-  function releaseAwakening() { awakeFrozen = false; sparkAt = 0; floodAt = 0; floodEndAt = 0; floodStreams = null; }   // hand the newborn back to its own autonomous life
+  function releaseAwakening() { awakeFrozen = false; sparkAt = 0; floodAt = 0; floodEndAt = 0; floodStreams = null; armFirstWake(); }   // hand the newborn back to its own autonomous life — and let it have its FIRST LIGHT
+  // FIRST LIGHT: arm the once-per-life wake ritual the instant the newborn owns itself. The activity!=='task'
+  // guard makes a summon racing the release win cleanly (the ritual simply never arms).
+  function armFirstWake() {
+    if (firstWakeDone || !agent || agent.unplaced || activity === 'task') return;
+    firstWakeDone = true;
+    agent.goal = 'firstwake'; agent.wakePhase = 0; agent.dir = 'south'; agent.state = 'idle';
+    agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.target = null; agent.pathPts = null;
+    agent.studyUntil = performance.now() + U.irnd(900, 1400);   // BEAT 0: the held gaze before any motion or words
+  }
   /* THE FLOOD — the rush of waking into vast knowledge. A screen-space cascade of streaming phosphor
      tokens (seeded with REAL forming-prompt + capability fragments passed in, padded with glyph noise —
      never fake facts) builds to overwhelming density, then collapseFlood() pulls every glyph inward into
@@ -510,6 +522,7 @@ const World = (() => {
   }
   function arrive(now) {
     agent.pathPts = null; agent.target = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.stilling = false;
+    if (agent.goal === 'firstwake') { agent.state = 'idle'; return; }   // the wake ritual self-drives via stepFirstWake; the rare 'find feet' arrival is a no-op
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
     if (FOND[agent.goal]) noteFond(now, FOND[agent.goal]);   // dwelling somewhere by choice deepens attachment to that tile
     if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
@@ -821,6 +834,29 @@ const World = (() => {
     if (now >= offbeatCd && U.chance(0.09)) { offbeatCd = now + U.irnd(70000, 140000); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }
     return ms;
   }
+  /* FIRST LIGHT — the newborn's first autonomous act: hold the gaze, take one slow look at the room it now
+     owns, then a single dry first thought, then it just gets on with existing. Driven by studyUntil; every
+     phase finite; terminates in goal=null -> decideIdle. maybeGlance is hard-gated off so the sweep is the
+     ONLY head motion, and a summon seizes it (the seize block runs before this branch in the tick ladder). */
+  function stepFirstWake(now) {
+    if (now < agent.studyUntil) return;
+    if (agent.wakePhase === 0) {
+      if (U.chance(0.15)) {   // rare "finding its feet": one bounded step to an adjacent walkable tile (may no-op)
+        const c = tileOf(agent.px, agent.py);
+        for (const [ax, ay] of SEAT_NB) { if (geo.walkable(c.x + ax, c.y + ay, blocked)) { setPathTo({ x: c.x + ax, y: c.y + ay }); break; } }
+      }
+      agent.wakePhase = 1; agent.studyUntil = now + U.irnd(700, 1100); setGlance(U.pick(['east', 'west']), U.irnd(700, 1100), now); return;
+    }
+    if (agent.wakePhase === 1) { agent.wakePhase = 2; agent.studyUntil = now + U.irnd(700, 1100); setGlance(U.pick(['west', 'east', 'north']), U.irnd(700, 1100), now); return; }
+    if (agent.wakePhase === 2) { agent.wakePhase = 3; agent.dir = 'south'; setGlance('south', U.irnd(600, 1000), now); agent.studyUntil = now + U.irnd(500, 800); return; }
+    // phase 3: settle, then the one first thought, then dissolve into ordinary life (seeding the birth tile as its first haunt)
+    sayFirstThought(now); noteFond(now, 1.2);
+    agent.goal = null; agent.quirkKind = null; agent.wakePhase = 0; agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 1600);
+  }
+  function sayFirstThought(now) {
+    if (agent.say && agent.say.until > now) agent.say.until = now;   // expire any lingering bubble so the first thought is never swallowed
+    say(U.pick(WAKE_FIRST), { ambient: true }); lastSelfTalk = now;  // bypass the curiositySay cooldown (one-shot), still route through say()->Voice.mutter
+  }
 
   /* ---------- inner life: needs + temperament decide WHICH goal it pursues ---------- */
   // is the agent loitering near its desk (its tether to the Commander)?
@@ -1122,6 +1158,7 @@ const World = (() => {
     }
     if (agent.state === 'walk') return;                              // walking owns the facing
     if (agent.goal === 'sleep') return;                             // dormant: hold dead still (no head-turns)
+    if (agent.goal === 'firstwake') return;                         // FIRST LIGHT: stepFirstWake is the SOLE facing driver — no random flicks polluting the deliberate sweep
     if (agent.glance && agent.glance.until > now) return;
     if (now < (agent.glanceCd || 0)) return;
     // watching a belt → follow the nearest box
@@ -1262,6 +1299,8 @@ const World = (() => {
         agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(1400, 3000);
         if (back && U.chance(0.5)) setGlance(back, U.irnd(500, 900), now);
       }
+    } else if (agent.goal === 'firstwake') {
+      stepFirstWake(now);   // FIRST LIGHT ritual sequencer (sits BELOW the summon-seize block, so a summon always wins)
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
       decideIdle(now);
     }
@@ -1813,5 +1852,5 @@ const World = (() => {
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
 })();

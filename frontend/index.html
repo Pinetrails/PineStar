@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/marketplace.css">
 </head>
 <body class="theme-amber">
 
@@ -59,6 +60,13 @@
     <label>PERSONALITY <span class="dim">— how your agent talks (you can change it later)</span></label>
     <div id="persona-picker" class="persona-picker"></div>
     <div id="persona-hint" class="dim hint">—</div>
+
+    <label>SPECIALTY <span class="dim">— what your agent is FOR (optional)</span></label>
+    <div class="roster-row">
+      <button type="button" id="btn-roster" class="btn">☰ BROWSE THE ROSTER ▸</button>
+      <span id="roster-pick" class="dim hint">none chosen — you'll set its mission at wake</span>
+      <button type="button" id="btn-roster-clear" class="btn hidden" title="clear the chosen specialty">✕ CLEAR</button>
+    </div>
 
     <div id="connect-msg" class="msg"></div>
     <div class="connect-actions">
@@ -120,6 +128,7 @@
 
   <footer id="bottombar">
     <button class="bb" data-term="agents">☻ AGENTS</button>
+    <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist presets and deploy one to your agent">☰ ROSTER</button>
     <button class="bb" data-term="skills">✦ SKILLS</button>
     <button class="bb" data-term="tasks">▤ TASKS</button>
     <button class="bb" id="bb-build" title="BUILD — lay out your station: place rooms, run corridors, paint decks">⚒ BUILD</button>
@@ -152,6 +161,7 @@
 <script src="app/workstreams.js"></script>
 <script src="app/channels.js"></script>
 <script src="app/personas.js"></script>
+<script src="app/specialties.js"></script>
 <script src="app/chat.js"></script>
 <script src="app/voice.js"></script>
 <script src="app/stationui.js"></script>
@@ -160,6 +170,7 @@
 <script src="app/build.js"></script>
 <script src="app/save.js"></script>
 <script src="app/onboarding.js"></script>
+<script src="app/marketplace.js"></script>
 <script src="app/app.js"></script>
 </body>
 </html>

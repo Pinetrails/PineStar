@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core permissions for the main Skynet window. The window only loads the local sidecar over http(127.0.0.1); it uses no extra Tauri IPC surface.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
