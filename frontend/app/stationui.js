@@ -138,7 +138,7 @@ const StationUI = (() => {
       '<span class="dot on"></span>' +
       '<div class="crew-main">' +
       '<div class="crew-name" style="color:' + a.color + '">' + esc(a.name) +
-      '<span class="crew-room">HAB-01</span></div>' +
+      '<span class="crew-room">HAB-01' + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
       '<div class="crew-status" id="cs-' + a.id + '">…</div>' +
       '</div></li>').join('');
     $('#crew-n').textContent = present.length + (present.length === 1 ? ' UNIT' : ' UNITS');
@@ -211,7 +211,14 @@ const StationUI = (() => {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
     const fmtTok = n => { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
-    return '<div class="stat-grid">' +
+    // AGENT GROWTH — Level / Confidence / progress-to-next. Confidence reads "—" until calibrated (honest cold-start).
+    const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
+    const growth = g ? ('<div class="stat-grid">' +
+      '<div class="stat-cell"><div class="stat-val">' + g.level + '</div><div class="stat-lbl">LEVEL</div></div>' +
+      '<div class="stat-cell"><div class="stat-val' + (g.known ? ' pos' : '') + '">' + g.confLabel + '</div><div class="stat-lbl">CONFIDENCE</div></div>' +
+      '<div class="stat-cell"><div class="stat-val">' + g.pct + '%</div><div class="stat-lbl">TO LV ' + (g.level + 1) + '</div></div>' +
+      '</div>') : '';
+    return growth + '<div class="stat-grid">' +
       '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
       '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
       '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +

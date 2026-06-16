@@ -5,7 +5,7 @@
 
 const Save = (() => {
   const KEY = 'skynet.save';
-  const CURRENT = 2;
+  const CURRENT = 3;
 
   // forward-only migrations: { fromVersion: (doc) => upgradedDoc }
   const migrations = {
@@ -17,6 +17,15 @@ const Save = (() => {
         ? Workstreams.migrateV1(doc)
         : { workstreams: [], activeId: null, generalId: null };
       return { agent: doc.agent, usage: doc.usage, workstreams: slice.workstreams, activeId: slice.activeId, generalId: slice.generalId };
+    },
+    // v2 -> v3 (agent growth): seed the XP/level/confidence stats on the agent + a station-wide rollup.
+    // Honest cold-start: fresh meters (confidence shows "calibrating" until real outcomes arrive). The
+    // literal keeps save.js decoupled from xp.js load order; it mirrors Xp.fresh() exactly.
+    2: doc => {
+      const fresh = () => ({ xp: 0, level: 1, lifetimeXp: 0, confidence: 50, samples: 0, counters: {}, milestones: [] });
+      if (doc.agent && typeof doc.agent === 'object' && (!doc.agent.stats || typeof doc.agent.stats !== 'object')) doc.agent.stats = fresh();
+      if (!doc.stationStats || typeof doc.stationStats !== 'object') doc.stationStats = fresh();
+      return doc;
     }
   };
 

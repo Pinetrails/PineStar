@@ -50,6 +50,9 @@ const World = (() => {
      hero behaves byte-for-byte as before. The crew is derived from the RoutingPlan's bays (syncCrewFromPlan). */
   let agent = null, activity = 'idle';
   let crew = [];
+  // AGENT GROWTH HUD: live, already-computed Xp.compute() snapshots pushed in by XpStore (the persisted
+  // agent + station stats live elsewhere; the world only renders them). levelUpAt fires the gold pulse.
+  let xpAgent = null, xpStation = null, levelUpAt = 0;
   const CREW_COLORS = ['#5ad0ff', '#ff8a5a', '#7df08a', '#e0a0ff', '#ffd45a', '#5affd0', '#ff6a9a'];
   const crewColor = aid => CREW_COLORS[U.hash('' + aid) % CREW_COLORS.length];
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
@@ -1397,6 +1400,7 @@ const World = (() => {
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
+    drawStationXp();    // screen-space station growth readout (Level / XP / Confidence)
 
     if (running) raf = requestAnimationFrame(frame);
   }
@@ -1533,6 +1537,17 @@ const World = (() => {
         }
         ctx.restore();
       }
+      // the LEVEL-UP pulse — the same sonar ring as waking, but GOLD, fired by XpStore on a level gain (hero only)
+      if (who === agent && levelUpAt && now - levelUpAt < 1500) {
+        ctx.save(); ctx.strokeStyle = '#ffd45a';
+        for (let k = 0; k < 3; k++) {
+          const tk = (now - levelUpAt) / 1300 - k * 0.18;
+          if (tk <= 0 || tk >= 1) continue;
+          ctx.globalAlpha = (1 - tk) * 0.7 * (1 - k * 0.2); ctx.lineWidth = Math.max(0.5, 1.6 - tk);
+          ctx.beginPath(); ctx.ellipse(who.px, who.py, 5 + tk * 26, 2.5 + tk * 11, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
+      }
       // a soft "I'm listening to you" pulse at the feet — an in-world cue the mic is open and he's hearing
       // you (distinct from just standing facing the Commander). Only while the mic is actually live (hero).
       if (listening) {
@@ -1568,6 +1583,14 @@ const World = (() => {
     ctx.strokeStyle = agent.color; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = agent.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(label, rx, by + bh / 2);
+    // a small gold "Lv N" chip riding just right of the name tag (the hero's earned seasoning at a glance)
+    if (xpAgent && xpAgent.level) {
+      const lv = 'Lv ' + xpAgent.level;
+      const lw = ctx.measureText(lv).width, cw = lw + 6, cx = bx + bw + 2;
+      ctx.fillStyle = 'rgba(4,3,2,0.88)'; ctx.fillRect(cx, by, cw, bh);
+      ctx.strokeStyle = '#ffd45a'; ctx.lineWidth = 1; ctx.strokeRect(cx + 0.5, by + 0.5, cw - 1, bh - 1);
+      ctx.fillStyle = '#ffd45a'; ctx.fillText(lv, cx + cw / 2, by + bh / 2);
+    }
     ctx.restore();
   }
 
@@ -1800,6 +1823,21 @@ const World = (() => {
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
   }
+  // bottom-left STATION growth readout — Level + XP fill + Confidence (screen-space overlay). The number
+  // is the colony's cumulative, honest track record; confidence reads "—" until the meters are calibrated.
+  function drawStationXp() {
+    const s = xpStation; if (!s || !s.level) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const H = cv.height / dpr, pad = 8, bw = 150, bh = 16;
+    const x = pad, y = H - bh - pad;
+    ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
+    const fillW = Math.round((bw - 2) * (s.frac || 0));
+    ctx.fillStyle = 'rgba(255,212,90,0.18)'; ctx.fillRect(x + 1, y + 1, fillW, bh - 2);   // XP fill toward next level
+    ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('STATION Lv ' + s.level + '  ' + s.pct + '%  · ' + (s.known ? s.confLabel : '—'), x + 6, y + bh / 2 + 0.5);
+  }
 
   /* ---------- CONTEXT-WINDOW gauge: the agent's memory core, made physical ----------
      A segmented "memory bank" standing beside the workstation that fills toward the model's REAL
@@ -1851,6 +1889,8 @@ const World = (() => {
   }
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
+    // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires the gold ring
+    setXp: (a, s) => { xpAgent = a || null; xpStation = s || null; }, pulseLevelUp: () => { levelUpAt = performance.now(); },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
 })();

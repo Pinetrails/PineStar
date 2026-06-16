@@ -14,6 +14,7 @@ const App = (() => {
   let prePickPersona = null;    // the persona selected BEFORE a roster pick overrode it — restored if the pick is cleared
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
+  let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
 
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -133,7 +134,8 @@ const App = (() => {
 
   function persist() {
     if (!agent) return;
-    Save.write(Object.assign({ agent, usage: Harness.totals(), station: station ? station.serialize() : undefined }, Workstreams.serialize()));
+    const stationStats = (typeof XpStore !== 'undefined') ? XpStore.stationStats() : undefined;
+    Save.write(Object.assign({ agent, usage: Harness.totals(), station: station ? station.serialize() : undefined, stationStats }, Workstreams.serialize()));
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
@@ -273,6 +275,7 @@ const App = (() => {
     Harness.resetTotals();
     Workstreams.reset();   // a fresh General stream for the new agent
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
+    pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
     enterGame({ awaitingPurpose: true, wake: true, specialty: pickedSpecialty });
     persist();   // so a refresh mid-onboarding resumes to the purpose step
   }
@@ -286,6 +289,7 @@ const App = (() => {
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
+    pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     enterGame({ awaitingPurpose: !agent.purpose, wake: false });
     persist();   // lock any v1->v2 migration to disk now (don't re-migrate every load)
   }
@@ -330,6 +334,9 @@ const App = (() => {
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }
+    // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
+    // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: () => agent, station: pendingStationStats, persist: persist }); pendingStationStats = null; }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
