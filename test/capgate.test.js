@@ -56,6 +56,16 @@ function station(objsByRoom, assignedRoom) {
   A.eq(attenuate(r, ['notebook.read', 'web.fetch']).tools, ['notebook.read'], 'attenuate intersects; never adds web.fetch');
 }
 
+// ---- C2. makeCapCtx threads run-scoped extras (runId) onto the ctx tools/dispatch consume (B1 seam) ----
+{
+  const r = resolveTools('ag', station({ quarters: ['notebook'] }, 'quarters'));
+  const cc = makeCapCtx(r, { runId: 'run_42' });
+  A.eq(cc.runId, 'run_42', 'makeCapCtx surfaces runId from extra (so a tool can stamp sourceRunId)');
+  A.eq(cc.agentId, 'ag', 'capCtx still carries agentId');
+  A.eq(typeof cc.canUse, 'function', 'capCtx still exposes canUse');
+  A.eq(typeof cc.canRun, 'function', 'capCtx still exposes the compute gate');
+}
+
 function setup() {
   const bus = A.makeBus();
   const seq = A.collectBus(bus, events.names());
