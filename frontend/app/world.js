@@ -94,6 +94,7 @@ const World = (() => {
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
      Lines stay sparse and unresolved; the SILENCE is the unsettling part. */
   let quirkCd = 0;   // quirks stay special — long cooldown between them
+  let offbeatCd = 0;   // OFF-BEAT HOLD: rare, separately-gated multiplier that stretches ONE dwell to an unsettling length
   const Q_PONDER = ['hm.', '...', 'i wonder', 'strange', 'thinking'];
   const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
   const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
@@ -282,7 +283,8 @@ const World = (() => {
       placeTarget: null, removeId: null,   // pending station edit when goal==='place' (add decor at target, or remove its own)
       roundsQueue: null, roundsCd: 0,   // caretaker-lap stop queue + cooldown
       fond: new Map(), revisitCd: 0,   // SPATIAL MEMORY: tileKey -> affection; builds where it dwells, drives revisit-a-haunt + mourning
-      pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0   // CONSIDERED MOVEMENT: brief mid-stroll holds, belt-yield to cargo, the rare double-take
+      pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0,   // CONSIDERED MOVEMENT: brief mid-stroll holds, belt-yield to cargo, the rare double-take
+      stilling: false   // STILLNESS: true during a real CONTENT=STILL quiet hold (suppresses the ambient swivel + cargo body-track)
     };
     if (geo) placeAgent();
   }
@@ -486,8 +488,8 @@ const World = (() => {
       curiositySay(['hm?', '...', 'did something move', 'thought i saw something'], 0.22, now);
       return;
     }
-    // a considered pause mid-stroll: a beat of weight, then on it goes
-    if (U.chance(0.12)) { agent.pauseUntil = now + U.irnd(320, 720); agent.pauseLook = null; agent.pauseCd = now + U.irnd(6000, 13000); }
+    // a considered pause mid-stroll: a beat of weight, then on it goes (rarer now — a stroll shouldn't be peppered with stutters)
+    if (U.chance(0.07)) { agent.pauseUntil = now + U.irnd(320, 720); agent.pauseLook = null; agent.pauseCd = now + U.irnd(10000, 18000); }
   }
   // active cargo passing right in front of it while it walks → wait a beat and let it go by (belt-yield)
   function shouldYieldToCargo() {
@@ -507,7 +509,7 @@ const World = (() => {
     setTimeout(() => { if (guard()) { agent.glance = null; agent.dir = finalDir; } }, 860);
   }
   function arrive(now) {
-    agent.pathPts = null; agent.target = null; agent.pauseUntil = 0; agent.pauseLook = null;
+    agent.pathPts = null; agent.target = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.stilling = false;
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
     if (FOND[agent.goal]) noteFond(now, FOND[agent.goal]);   // dwelling somewhere by choice deepens attachment to that tile
     if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
@@ -522,11 +524,11 @@ const World = (() => {
       // reached the thing — stand, face it, observe for a spell. Familiar things hold the gaze less (habituation).
       agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
       agent.glanceCd = 0; agent.nextFidget = now + U.irnd(700, 1600);
-      if (agent.goal === 'quirk' || agent.goal === 'stare') { agent.studyUntil = now + U.irnd(4000, 9000); return; }   // a walked quirk (face-a-wall): hold the pose, silent
+      if (agent.goal === 'quirk' || agent.goal === 'stare') { const base = agent.quirkKind === 'vigil' ? U.irnd(12000, 26000) : U.irnd(4000, 9000); agent.studyUntil = now + offbeat(now, base); return; }   // a walked quirk (face-a-wall) or the VIGIL: hold the pose, silent — vigil holds far longer
       const fam = agent.studyKey ? (seenCount.get(agent.studyKey) || 0) : 0, famK = 1 / (1 + fam * 0.8);
       if (agent.studyKey) seenCount.set(agent.studyKey, fam + 1);
-      if (agent.goal === 'tend') { agent.studyUntil = now + U.irnd(3500, 8000); curiositySay(agent.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
-      else if (agent.goal === 'gaze') { agent.studyUntil = now + U.irnd(4000, 8000); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
+      if (agent.goal === 'tend') { agent.studyUntil = now + offbeat(now, U.irnd(3500, 8000)); curiositySay(agent.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
+      else if (agent.goal === 'gaze') { agent.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
       else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, agent.useFace); }
       else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, agent.useFace); }
     }
@@ -556,7 +558,7 @@ const World = (() => {
       }
       agent.placeTarget = null; agent.removeId = null; agent.goal = null; agent.idleUntil = now + U.irnd(900, 2000);
     }
-    else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 2600); }
+    else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(1600, 3600); }
   }
   function wander(now) {
     const rects = geo.allRects;
@@ -802,8 +804,22 @@ const World = (() => {
   function lookAround(now) {
     const dir = U.pick(['east', 'west', 'south', 'north']);
     setGlance(dir, U.irnd(600, 1100), now); agent.dir = dir;
-    agent.idleUntil = now + U.irnd(900, 2200);
+    agent.idleUntil = now + U.irnd(2200, 4200);
     if (U.chance(0.15)) curiositySay(CURIO_LOOK, 1, now);
+  }
+  // CONTENT = STILL: the calm default — just be here, holding the facing, genuinely motionless for a long beat.
+  // maybeGlance's `stilling` early-out suppresses the ambient swivel AND the cargo body-track, so it's true stillness.
+  function standStill(now) {
+    agent.goal = null; agent.stilling = true; agent.usingProp = null; agent.state = 'idle';
+    agent.glance = null; agent.trackUntil = 0;   // drop any in-flight head-turn / box-track so nothing bleeds into the hold
+    agent.idleUntil = now + offbeat(now, U.irnd(4500, 9000));
+  }
+  // OFF-BEAT HOLD: rarely (and on its own long cooldown) stretch a single dwell to ~2.2x-3.0x — a learned rhythm that
+  // suddenly refuses to end. Skipped under reduceMotion so motion-sensitive users keep the normal cadence.
+  function offbeat(now, ms) {
+    if (reduceMotion()) return ms;
+    if (now >= offbeatCd && U.chance(0.09)) { offbeatCd = now + U.irnd(70000, 140000); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }
+    return ms;
   }
 
   /* ---------- inner life: needs + temperament decide WHICH goal it pursues ---------- */
@@ -871,15 +887,16 @@ const World = (() => {
      Eerie through stillness + ambiguity (the "why did it just do that"), never spooky one-liners. */
   function maybeQuirk(now) {
     if (now < quirkCd) return false;
-    if (!U.chance(0.13 * (0.6 + agent.pers.restless * 0.4))) return false;
-    quirkCd = now + U.irnd(24000, 60000);    // quirks stay special
+    if (!U.chance(0.085 * (0.6 + agent.pers.restless * 0.4))) return false;
+    quirkCd = now + U.irnd(45000, 90000);    // quirks stay special — even rarer now, so each lands with weight
     const r = U.irnd(0, 999);
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
-    if (r < 540) return quirkScan(now);      // 22% — a slow, deliberate sweep of the room
-    if (r < 720) return quirkPonder(now);    // 18% — stops, faces away, lost in thought
-    if (r < 850) return planGazeOut(now);    // 13% — drifts to the edge and stares into the void
-    if (r < 940) return quirkFaceWall(now);  //  9% — walks to a wall and just faces it (unexplained)
-    return quirkStare(now);                  //  6% — the long stare straight at YOU (rarest, eeriest)
+    if (r < 520) return quirkScan(now);      // 20% — a slow, deliberate sweep of the room
+    if (r < 680) return quirkPonder(now);    // 16% — stops, faces away, lost in thought
+    if (r < 790) return planGazeOut(now);    // 11% — drifts to the edge and stares into the void
+    if (r < 870) return quirkFaceWall(now);  //  8% — walks to a wall and just faces it (unexplained)
+    if (r < 945 && quirkVigil(now)) return true;   // ~7.5% — the VIGIL: dead-center, faces one wall, holds (falls through to the stare if no center is free)
+    return quirkStare(now);                  // ~5.5% — the long stare straight at YOU (rarest, eeriest)
   }
   function startQuirk(now, kind, ms, face) {
     agent.goal = 'quirk'; agent.quirkKind = kind; agent.usingProp = null; agent.studyKey = null;
@@ -905,6 +922,19 @@ const World = (() => {
       if (!walls.length) continue;
       if (!setPathTo({ x: tx, y: ty })) continue;
       agent.goal = 'quirk'; agent.quirkKind = 'wall'; agent.useFace = U.pick(walls)[0]; agent.usingProp = null; agent.studyKey = null;
+      if (!agent.target) arrive(now);
+      return true;
+    }
+    return false;
+  }
+  function quirkVigil(now) {   // walks to a room's center, faces ONE cardinal, holds dead still — the held emptiness (silent)
+    if (!geo || !geo.allRects || !geo.allRects.length) return false;
+    for (let t = 0; t < 24; t++) {
+      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
+      const tx = (r.x1 + r.x2) >> 1, ty = (r.y1 + r.y2) >> 1;
+      if (!geo.walkable(tx, ty, blocked)) continue;
+      if (!setPathTo({ x: tx, y: ty })) continue;
+      agent.goal = 'quirk'; agent.quirkKind = 'vigil'; agent.useFace = U.pick(['north', 'south', 'east', 'west']); agent.usingProp = null; agent.studyKey = null;
       if (!agent.target) arrive(now);
       return true;
     }
@@ -1044,6 +1074,7 @@ const World = (() => {
   // the current mood phase, + how long since real work) leads; novelty + rare quirks interrupt. The SAME
   // planners run, but now there is a legible reason behind every move so it stops reading as aimless.
   function decideIdle(now) {
+    agent.stilling = false;                            // every fresh decision starts clean (standStill re-sets it)
     if (pendingMourn && planMourn(now)) return;        // grief reflex: a beloved spot was just emptied — go stand where it was
     if (novelty.length && planInspect(now)) return;   // curiosity reflex: a fresh placement always wins
     if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
@@ -1054,9 +1085,13 @@ const World = (() => {
     const wStim = ((100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless) * ph.stim;   // boredom climbs with downtime
     const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
-    if (top < 28) {                                                                    // content -> light ambient life
-      if (U.chance(0.18) && maybeRevisit(now)) return;                                 //   sometimes just drift back to its favorite spot
-      if (U.chance(0.5)) lookAround(now); else wander(now); return;
+    if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
+      if (U.chance(0.10) && maybeRevisit(now)) return;                                 //   occasionally drift back to its favorite spot
+      const r = U.irnd(0, 99);
+      if (r < 62) standStill(now);                                                      //   62% just stand and be here
+      else if (r < 84) lookAround(now);                                                 //   22% a slow look around
+      else wander(now);                                                                 //   16% a short stroll
+      return;
     }
     if (top === wRest) { if (planProp(now)) return; }                                  // tired -> lounge / couch
     else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
@@ -1114,6 +1149,7 @@ const World = (() => {
     }
     // a quirk in progress: scan pans itself (timed); the others mostly hold their pose with a rare flick
     if (agent.goal === 'quirk') {
+      if (agent.quirkKind === 'vigil') { agent.glanceCd = now + 6000; return; }   // the VIGIL holds dead still — zero head-turns, the held emptiness
       if (agent.quirkKind !== 'scan' && U.chance(0.3)) setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(400, 800), now);
       agent.glanceCd = now + U.irnd(1200, 2600);
       return;
@@ -1130,10 +1166,17 @@ const World = (() => {
       if (now > (agent.nextFidget || 0)) { setGlance(U.pick(['east', 'west', 'south']), U.irnd(500, 950), now); agent.nextFidget = now + U.irnd(9000, 20000); agent.glanceCd = now + 3000; }
       return;
     }
+    // a true quiet hold (CONTENT=STILL): suppress BOTH the cargo body-track below AND the ambient swivel — only a rare slow shift breaks it
+    if (agent.stilling) {
+      if (now < (agent.glanceCd || 0)) return;
+      if (U.chance(0.18)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 800), now); agent.glanceCd = now + U.irnd(6000, 11000); }
+      else agent.glanceCd = now + U.irnd(5000, 9000);
+      return;
+    }
     // a box trundles past an idle agent → turn the WHOLE BODY to track it (held by trackUntil in tick), not just the eyes
     if (U.chance(0.6)) { const box = nearestBox(); if (box && box.d < 56) { const bd = dirToward(agent.px, agent.py, box.x, box.y); setGlance(bd, U.irnd(500, 1000), now); agent.dir = bd; agent.trackUntil = now + U.irnd(1200, 2600); agent.glanceCd = now + U.irnd(3000, 5500); return; } }
     // idle / studying / tending / gazing / on a rounds stop: occasional ambient look around
-    if ((agent.goal === 'inspect' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'rounds' || agent.goal == null) && U.chance(0.5)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(2500, 5000); }
+    if ((agent.goal === 'inspect' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'rounds' || agent.goal == null) && U.chance(0.32)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(4500, 8000); }
   }
 
   // a short curiosity remark — only when nothing real is on screen, and only sometimes
@@ -1169,7 +1212,7 @@ const World = (() => {
     }
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
-      if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
+      if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
       else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } } }
     }
     if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon')) {
@@ -1216,7 +1259,7 @@ const World = (() => {
       // observing / tending / gazing / a quirk / the long stare / grief / a haunt revisit: hold until the dwell ends (maybeGlance animates it), then re-decide
       if (now >= agent.studyUntil) {
         const back = (agent.goal === 'inspect' || agent.goal === 'watch') ? agent.useFace : null;   // a glance back at what it studied as it turns away
-        agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500);
+        agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(1400, 3000);
         if (back && U.chance(0.5)) setGlance(back, U.irnd(500, 900), now);
       }
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
@@ -1770,5 +1813,5 @@ const World = (() => {
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, sitting: agent.sitting, state: agent.state, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
 })();
