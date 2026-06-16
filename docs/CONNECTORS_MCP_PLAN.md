@@ -58,11 +58,13 @@ Three facts make the bridge additive:
   pagination, timeout, close) and `sidecar/mcp/translate.js` (MCP tool → registry tool def).
   `test/mcp.client.test.js` covers handshake, pagination, errors, translation, and end-to-end
   dispatch through the real registry. Deterministic (counter ids, injected time).
-- [ ] **Slice 2 — HTTP/SSE transport.** `sidecar/mcp/transport.http.js`: Streamable-HTTP + SSE over
-  global `fetch`, bearer auth, SSRF-style host guard (reuse `web.js` philosophy), bounded.
-- [ ] **Slice 3 — connector manager.** `sidecar/mcp/manager.js`: host singleton (like `telegram`/
-  `router`) holding connector configs, keeping clients warm, caching `tools/list`, exposing
-  `toolsFor(connectorId)` + `call(...)`, handling `tools/list_changed` refresh.
+- [x] **Slice 2 — HTTP/SSE transport.** `sidecar/mcp/transport.http.js`: Streamable-HTTP + SSE over
+  injected `fetch`, bearer auth, session-id capture/echo, http-only-for-localhost guard (so the
+  token is never sent cleartext to a remote host), bounded by timeout. `test/mcp.transport.test.js`.
+- [x] **Slice 3 — connector manager.** `sidecar/mcp/manager.js`: host singleton (like `telegram`/
+  `router`) holding connector configs, keeping a client warm per connector, caching `tools/list`,
+  exposing `toolDefsFor(id)` + per-agent `toolDefsForObjects(roomObjects)` + `call(...)`. Tokens
+  never appear in summaries. Same test file.
 - [ ] **Slice 4 — wiring.** In `runOnce`: register manager-provided MCP tool defs into the registry,
   union their names into `resolved.tools` + `networkCaps` when the room has a `connector` object;
   add a `connector` entry to `CAP_REGISTRY`; `/api/connectors/*` routes (add/list/test/remove);
