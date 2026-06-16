@@ -75,7 +75,7 @@
       const u = normalizeUnit(m[2]);
       if (!u || u === 's' || n <= 0) return null;           // sub-minute intervals are meaningless vs a 60s tick
       const minutes = n * (u === 'm' ? 1 : u === 'h' ? 60 : 1440);
-      if (minutes < 1) return null;
+      // (the guard above already forces u∈{m,h,d} and n≥1, so minutes≥1 here — no sub-minute case to reject)
       return { kind: 'interval', minutes: minutes, display: 'every ' + humanDuration(minutes * MIN) };
     }
 

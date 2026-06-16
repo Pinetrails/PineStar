@@ -82,7 +82,7 @@
     if (typeof send !== 'function') throw new Error('makeChannelHub: a send(chatId,text) is required');
 
     const personaFor = typeof o.persona === 'function' ? o.persona
-      : (() => { const p = (typeof o.persona === 'string' && o.persona) || DEFAULT_PERSONA; return () => p; });
+      : (() => { const p = (typeof o.persona === 'string' && o.persona) || DEFAULT_PERSONA; return () => p; })();
 
     const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (a configured agentId must match)
     const inflight = new Map();   // chatId -> { runId, abort, superseded } (one run per CONVERSATION, not per agent)

@@ -5,8 +5,8 @@
 
    SSE handling (verified against OpenRouter, June 2026): skip ':' keep-alive comments, honor the
    '[DONE]' sentinel, buffer partial reads across chunks, and accumulate tool-call argument
-   fragments BY INDEX. We do NOT send `usage:{include:true}` — it is a deprecated no-op; usage
-   (incl. real billed `cost`) is always returned in the final chunk. */
+   fragments BY INDEX. We send `usage:{include:true}` so the final chunk carries the real billed
+   `cost` (cost.js prefers usage.cost over the catalog estimate). */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'));
@@ -19,7 +19,7 @@
   const BASE = 'https://openrouter.ai/api/v1';
 
   // The OpenRouter /models catalog is key-independent, so it is shared across every per-run
-  // provider instance: warmed once (see warmCatalog), it makes priceOf/contextLimit live for all
+  // provider instance: warmed once (see loadCatalog), it makes priceOf/contextLimit live for all
   // runs without a per-run /models round-trip. Concurrent loads dedupe on CATALOG_PROMISE.
   let CATALOG = null;
   let CATALOG_PROMISE = null;
@@ -31,13 +31,18 @@
   }
 
   const RETRY_DELAYS = [400, 1200];   // up to 2 retries (no jitter -> determinism); retryability comes from classifyApiError
+  const CATALOG_TIMEOUT_MS = 15000;   // a hung /models socket must not pin CATALOG_PROMISE forever
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
   function delay(ms, signal) {
     return new Promise((resolve, reject) => {
-      const t = setTimeout(resolve, ms);
-      if (signal && typeof signal.addEventListener === 'function') {
-        signal.addEventListener('abort', () => { clearTimeout(t); reject(abortError()); }, { once: true });
-      }
+      // remove the abort listener on the normal (timer-wins) path too — { once:true } only fires it on abort,
+      // so otherwise it would accumulate orphaned listeners on the longer-lived per-run signal across retries.
+      const onAbort = () => { clearTimeout(t); reject(abortError()); };
+      const t = setTimeout(() => {
+        if (signal && typeof signal.removeEventListener === 'function') signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      if (signal && typeof signal.addEventListener === 'function') signal.addEventListener('abort', onAbort, { once: true });
     });
   }
 
@@ -127,8 +132,12 @@
       if (CATALOG && CATALOG.length) return CATALOG;   // only a NON-empty catalog is a cache hit
       if (!CATALOG_PROMISE) {
         CATALOG_PROMISE = (async () => {
+          // bound the GET with an internal AbortController (mirrors tools/builtin/web.js): a stalled socket
+          // otherwise leaves this promise pending forever, and line 144 below could never reset it for a retry.
+          const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+          const timer = ac ? setTimeout(() => ac.abort(), CATALOG_TIMEOUT_MS) : null;
           try {
-            const res = await doFetch(baseUrl + '/models', {});
+            const res = await doFetch(baseUrl + '/models', ac ? { signal: ac.signal } : {});
             const j = await res.json();
             return (j.data || []).map(m => ({
               id: m.id,
@@ -138,6 +147,7 @@
               supportsTools: !!(m.supported_parameters && m.supported_parameters.indexOf('tools') >= 0)
             }));
           } catch (e) { return []; }
+          finally { if (timer) clearTimeout(timer); }
         })();
       }
       CATALOG = await CATALOG_PROMISE;

@@ -6,6 +6,11 @@
 let fail = 0, pass = 0;
 const err = m => { fail++; console.log('FAIL: ' + m); };
 
+// Safety net: an async test that throws BEFORE reaching report() must FAIL the run, not pass silently.
+// Several async suites use a bare `(async () => { ... })()` with no .catch(); this guarantees an
+// unhandled rejection aborts non-zero regardless of the Node --unhandled-rejections flag.
+process.on('unhandledRejection', e => { console.log('FAIL: unhandledRejection — ' + ((e && e.stack) || e)); process.exit(1); });
+
 function ok(cond, msg) { if (cond) pass++; else err(msg || 'expected truthy value'); }
 
 function eq(actual, expected, msg) {

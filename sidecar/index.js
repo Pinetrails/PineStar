@@ -157,7 +157,7 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 const QUEUE_CAP = 64;
 const queueDepth = new Map();
 const activeItem = new Map();   // agentId -> the newest in-flight workitemId; older ones the hub superseded
-function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) || 0) + d); queueDepth.set(agentId, n); return n; }
+function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) || 0) + d); if (n === 0) queueDepth.delete(agentId); else queueDepth.set(agentId, n); return n; }   // reclaim the key at 0 so the map can't grow unbounded across distinct chats
 
 // the placed floor's RoutingPlan (posted by the app on every geo change). resolveTarget answers "which agent
 // runs this work-item?"; a non-deployable plan (cycle/orphan/dead-bay) is refused so routing can't loop.
@@ -205,12 +205,20 @@ function startTelegram(token, key, model, agentCfg) {
     onInbound: (m) => {
       // WORK-ITEM INTERCEPT: an admitted message becomes a box that rides the player-laid belts to the
       // agent. This is pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of
-      // whether any belt/INTAKE exists. agentId MIRRORS the hub's OWN resolution (a configured agentId else
-      // tg_<chatId>) so the HUD attributes work to the same agent the hub actually runs (hub.js AID_RE/secrets).
+      // whether any belt/INTAKE exists. agentId MIRRORS the hub's FULL resolution order (Phase B: the placed
+      // floor's RoutingPlan first, then a configured agentId, else tg_<chatId>) so the HUD attributes work to
+      // the SAME agent the hub actually runs — see hub.js onInbound (resolveAgent -> sec.agentId -> agentIdFor).
       let agentId = '', workitemId = '';
       try {
         const sec = (channelSecrets && channelSecrets.telegram) || {};
-        agentId = (sec.agentId && /^[A-Za-z0-9_-]{1,40}$/.test(String(sec.agentId))) ? String(sec.agentId) : hub._internals.agentIdFor(String(m && m.chatId));
+        const chatId = String(m && m.chatId);
+        const text = String((m && m.text) || '');
+        const tag = Classify.getTag ? Classify.getTag(text) : undefined;
+        const routed = router.resolveTarget({ tag, chatId, text });
+        const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+        agentId = (routed && AID_RE.test(String(routed))) ? String(routed)
+          : (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId)
+          : hub._internals.agentIdFor(chatId);
         workitemId = crypto.randomUUID();
         const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
         // a prior in-flight item for this chat is about to be ABORTED by the hub — drop its box off the belt.
@@ -280,6 +288,7 @@ server.on('error', (e) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log('▲ SKYNET sidecar → http://127.0.0.1:' + PORT + '   (serving frontend + agent runtime)');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
+  // (the GET self-bounds with an internal timeout in loadCatalog, so a hung socket can't pin it forever).
   makeOpenRouterProvider({ fetch: globalThis.fetch }).listModels().then(
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
@@ -539,7 +548,11 @@ async function handleCancel(req, res) {
 // bot. Headless polling then works even with no browser open. The secrets are NEVER echoed back.
 async function handleChannelConnect(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }   // room for the composed system prompt
+  // 256KB: ample room for a large composed dossier system prompt. Distinguish an oversized body (413) from
+  // malformed JSON (400) so an over-cap prompt is diagnosable rather than surfacing as a confusing "bad json".
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 18)) || {}; }
+  catch (e) { const tooBig = /too large/i.test(String((e && e.message) || e)); return json(tooBig ? 413 : 400, { error: tooBig ? 'request body too large' : 'bad json' }); }
   // reuse the saved values when the request omits them, so RECONNECT is one click (no re-pasting the token).
   const saved = (channelSecrets && channelSecrets.telegram) || {};
   const token = String(body.token || '').trim() || String(saved.token || '');
@@ -560,7 +573,9 @@ async function handleChannelConnect(req, res) {
 // The hub reads channelSecrets.telegram live, so the next inbound uses the updated prompt. No-op if unconfigured.
 async function handleChannelSync(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 18)) || {}; }
+  catch (e) { const tooBig = /too large/i.test(String((e && e.message) || e)); return json(tooBig ? 413 : 400, { error: tooBig ? 'request body too large' : 'bad json' }); }
   const t = (channelSecrets && channelSecrets.telegram) || null;
   if (!t || !t.token) return json(200, { synced: false });   // nothing connected/configured — ignore quietly
   const patch = {};
@@ -616,9 +631,9 @@ function pcmToWav(pcm, sampleRate, channels) {
   h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
   return Buffer.concat([h, pcm]);
 }
-// the voice cache writes one file per distinct spoken line and never pruned them — over weeks as the
-// PRIMARY interaction that's hundreds of MB of orphaned audio. Sweep opportunistically (throttled, after
-// the response, never blocking it): unlink stale .tmp orphans, then evict oldest by mtime past a cap.
+// the voice cache writes one file per distinct spoken line; left unbounded that would be hundreds of MB of
+// orphaned audio over weeks (voice is the PRIMARY interaction). So we sweep opportunistically (throttled,
+// after the response, never blocking it): unlink stale .tmp orphans, then evict oldest by mtime past a cap.
 async function maybeEvictVoiceCache() {
   if (evictingVoiceCache) return;
   evictingVoiceCache = true;

@@ -5,6 +5,7 @@
 'use strict';
 const A = require('./_assert.js');
 const { makeOpenRouterProvider } = require('../sidecar/providers/openrouter.js');
+const { normalizeFinish } = require('../sidecar/providers/provider.js');
 
 const line = obj => 'data: ' + JSON.stringify(obj);
 const sseFetch = (sseText, status) => async () => new Response(sseText, { status: status || 200, headers: { 'Content-Type': 'text/event-stream' } });
@@ -154,6 +155,24 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     const evs = await collect(makeOpenRouterProvider({ fetch: timeout, key: 'k' }), { model: 'm', messages: [] });
     A.eq(m, 2, 'a 408 timeout now retries (classifier-derived; was fail-fast under the status whitelist)');
     A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'ok', 'after the 408 retry it streams normally');
+  }
+
+  // L. normalizeFinish truth table — EVERY 'done' event routes through this normalizer (openrouter.js:97);
+  //    lock the full alias map so a dropped alias (e.g. end_turn silently becoming 'error') is caught.
+  //    Previously only the stop/tool_calls identity cases were ever exercised.
+  {
+    A.eq(normalizeFinish('tool_use'), 'tool_calls', 'tool_use -> tool_calls');
+    A.eq(normalizeFinish('function_call'), 'tool_calls', 'function_call -> tool_calls');
+    A.eq(normalizeFinish('tool_calls'), 'tool_calls', 'tool_calls identity');
+    A.eq(normalizeFinish('max_tokens'), 'length', 'max_tokens -> length');
+    A.eq(normalizeFinish('length'), 'length', 'length identity');
+    A.eq(normalizeFinish('end_turn'), 'stop', 'end_turn -> stop');
+    A.eq(normalizeFinish('stop_sequence'), 'stop', 'stop_sequence -> stop');
+    A.eq(normalizeFinish('stop'), 'stop', 'stop identity');
+    A.eq(normalizeFinish('content_filter'), 'content_filter', 'content_filter identity');
+    A.eq(normalizeFinish(null), 'stop', 'null -> stop (no finish_reason)');
+    A.eq(normalizeFinish(undefined), 'stop', 'undefined -> stop');
+    A.eq(normalizeFinish('weird-unknown'), 'error', 'unknown alias -> error');
   }
 
   A.report('provider.openrouter.test');

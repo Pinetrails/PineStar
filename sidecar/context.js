@@ -64,7 +64,9 @@
     const out = { text: '', count: 0, chars: 0 };
     if (!Array.isArray(records) || !records.length) return out;
     const lines = [];
-    let used = 0;
+    // seed the budget with the fixed fence overhead (<recalled-memory> wrapper + header) so out.chars
+    // actually honours `limit` — counting only the joined lines let the wrapper push the fence past the cap.
+    let used = ('<recalled-memory>\n' + header + '\n</recalled-memory>').length;
     for (const r of records) {
       let line = recallLine(r);
       if (!line) continue;
@@ -101,7 +103,7 @@
 
     function estimateMessages(messages) {
       let t = 0;
-      for (const m of messages) t += estimateTokens(m && m.content) + MSG_OVERHEAD;
+      for (const m of (messages || [])) t += estimateTokens(m && m.content) + MSG_OVERHEAD;
       return t;
     }
 

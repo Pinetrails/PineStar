@@ -19,7 +19,7 @@
     const priceOf = opts.priceOf;
 
     function dollars(usage, model) {
-      if (usage && usage.cost != null && isFinite(usage.cost)) return usage.cost;
+      if (usage && usage.cost != null && isFinite(usage.cost)) return Number(usage.cost);
       const p = priceOf && priceOf(model);
       if (!p) return 0;
       const inT = num(usage && usage.prompt_tokens), outT = num(usage && usage.completion_tokens);

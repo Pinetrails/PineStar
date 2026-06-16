@@ -4,7 +4,7 @@
    chunking, not-configured guard, surface:'autonomous' + task classification, and abort-on-new-message. */
 'use strict';
 const A = require('./_assert.js');
-const { makeChannelHub, chunkText, endNote } = require('../sidecar/channels/hub.js');
+const { makeChannelHub, chunkText, endNote, _internals } = require('../sidecar/channels/hub.js');
 
 function fakeStore() {
   const hist = new Map(), recs = new Map(), appends = [];
@@ -67,6 +67,27 @@ async function run() {
     A.ok(lastRun.system.indexOf('You are ULTRON, the Commander\'s agent.') === 0, 'the REAL composed system prompt is used, not the default persona');
     A.eq((store.hist.get('agent') || []).length, 2, 'history stored under the shared agentId');
     A.eq(store.hist.has('tg_555'), false, 'did NOT create a separate tg_<chatId> agent');
+  }
+
+  // ---- B3. no configured system + no persona option -> the DEFAULT_PERSONA *string* is used ----
+  //      (regression lock for the un-invoked-IIFE bug: personaFor returned the factory fn, so the system
+  //       prompt was the stringified source "() => p ..." instead of the persona text.)
+  {
+    const store = fakeStore(); let lastRun = null;
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({ runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen() });
+    await hub.onInbound(dm('hello there'));
+    A.ok(lastRun.system.indexOf(_internals.DEFAULT_PERSONA) === 0, 'default persona STRING used as the system prompt when none configured');
+    A.eq(lastRun.system.indexOf('=>'), -1, 'system prompt is NOT a stringified function (the IIFE was invoked)');
+  }
+
+  // ---- B4. a STRING persona option is used verbatim (the non-function personaFor branch, now invoked) ----
+  {
+    const store = fakeStore(); let lastRun = null;
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({ runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(), persona: 'You are TestBot, reachable over chat.' });
+    await hub.onInbound(dm('hi'));
+    A.ok(lastRun.system.indexOf('You are TestBot, reachable over chat.') === 0, 'string persona option used verbatim');
   }
 
   // ---- C. error / capdenied surfaced; assistant turn NOT persisted on error ----
