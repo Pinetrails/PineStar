@@ -433,7 +433,9 @@ async function runOnce(o) {
     networkOf: (call) => !!resolved.networkCaps[call.name],
     surface: surface, prompt: prompt
   });
-  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs });
+  // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
+  // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
+  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId });
 
   // ---- provider + cost ----
   const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, key });
