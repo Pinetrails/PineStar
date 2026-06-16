@@ -41,6 +41,17 @@ const WorldModel = (() => {
     return dst;
   }
 
+  /* Airlock door state — the worktree-isolation mechanic, carried on an 'airlock' prop exactly like a
+     BAY carries agentId. A room containing a SEALING airlock (closed|jammed) is cut off: projectGeometry
+     drops its boundary doors so canStep — and thus every agent path — can't cross in or out. That mirrors
+     an unmerged worktree: the agent's room is private until "merged".
+       open   = merged / connected to trunk (DEFAULT — stored as an absent field, so old docs are unchanged)
+       closed = private, unmerged (sealed)
+       jammed = a merge conflict (sealed + a red spark on the prop) */
+  const DOOR_STATES = { open: 1, closed: 1, jammed: 1 };
+  const cleanDoor = s => (DOOR_STATES[s] ? s : null);
+  const doorSeals = s => s === 'closed' || s === 'jammed';
+
   /* Phase B5 — object = capability, made real on the placed floor. A prop type maps to a CAP_REGISTRY
      objectType (computer=compute · cabinet=files · dish=web · notebook=memory); the props in a BAY's room are
      that agent's grants (via the sidecar's resolveTools). DATA, deliberately tunable — only a few intuitive
@@ -93,7 +104,7 @@ const WorldModel = (() => {
   function freshDoc(createdAt) {
     const doc = {
       schema: 'skynet.station', version: 1, _nid: 1,
-      meta: { name: 'SKYNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null },
+      meta: { name: 'SKYNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null, trunkRoomId: null },
       rooms: {}, order: [], props: [], belts: {}
     };
     // seed the shabby starter HAB (18×11 floor — the v7 / world.js starter room), so a new
@@ -106,6 +117,7 @@ const WorldModel = (() => {
     };
     doc.order.push(id);
     doc.meta.spawnRoomId = id;
+    doc.meta.trunkRoomId = id;   // the starter HAB is the integration hub — it never seals
     return doc;
   }
 
@@ -335,6 +347,7 @@ const WorldModel = (() => {
       if (opts.block === false) prop.block = false;
       if (typeof opts.agentId === 'string' && opts.agentId) prop.agentId = opts.agentId;   // a BAY binds a belt endpoint to an agent
       applyJunctionCfg(prop, opts);   // a FILTER/MERGER carries its routes/def/bufferSize (inert on other props)
+      if (cleanDoor(opts.door)) prop.door = opts.door;   // an AIRLOCK carries its seal state (inert on other props)
       doc.props.push(prop);
       emit([{ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 }]);
       return { ok: true, id };
@@ -481,8 +494,19 @@ const WorldModel = (() => {
 
       const isCorridor = z => corridor[z] === true;
 
+      /* worktree isolation: a room holding a SEALING airlock (closed|jammed) gets NO boundary doors
+         below, so canStep can't cross its edge — the agent is sealed in, like an unmerged branch. The
+         trunk room (the integration hub) never seals, so the station can't be severed from its core. */
+      const sealed = new Set();
+      for (const p of doc.props) {
+        if (p.t !== 'airlock' || !doorSeals(p.door)) continue;
+        const rid = roomAt(p.x, p.y);
+        if (rid && rid !== doc.meta.trunkRoomId) sealed.add(rid);
+      }
+
       /* auto-doors: open a threshold wherever two different zones are orthogonally adjacent,
-         so abutting rooms/corridors connect with no manual door tool (foundation default). */
+         so abutting rooms/corridors connect with no manual door tool (foundation default). A seam is
+         skipped when either side's room is sealed — that absence is exactly what isolates the room. */
       const doorDefs = [];
       const doorSet = new Set();
       const addDoor = (x1, y1, x2, y2) => {
@@ -491,11 +515,12 @@ const WorldModel = (() => {
         doorDefs.push([x1, y1, x2, y2]);
         doorSet.add(k); doorSet.add(x2 + ',' + y2 + '>' + x1 + ',' + y1);
       };
+      const linkable = (a, b) => b != null && b !== a && !sealed.has(a) && !sealed.has(b);
       for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
         const z = zoneGrid[idx(x, y)];
         if (z == null) continue;
-        if (x + 1 < COLS) { const nz = zoneGrid[idx(x + 1, y)]; if (nz != null && nz !== z) addDoor(x, y, x + 1, y); }
-        if (y + 1 < ROWS) { const nz = zoneGrid[idx(x, y + 1)]; if (nz != null && nz !== z) addDoor(x, y, x, y + 1); }
+        if (x + 1 < COLS) { const nz = zoneGrid[idx(x + 1, y)]; if (linkable(z, nz)) addDoor(x, y, x + 1, y); }
+        if (y + 1 < ROWS) { const nz = zoneGrid[idx(x, y + 1)]; if (linkable(z, nz)) addDoor(x, y, x, y + 1); }
       }
 
       const canStep = (x1, y1, x2, y2) => {
@@ -544,6 +569,7 @@ const WorldModel = (() => {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
         const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
+        if (p.door) lp.door = p.door;   // an AIRLOCK's seal state -> the prop sprite's status light / jam spark
         propsLocal.push(lp);
         if (p.block === false) continue;   // flat decor (rugs / wall panels) never blocks walking
         for (let yy = ly; yy < ly + h; yy++) for (let xx = lx; xx < lx + w; xx++) blockedTiles.add(xx + ',' + yy);
@@ -606,6 +632,19 @@ const WorldModel = (() => {
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
       return { ok: true, id: propId, agentId: aid || null };
     }
+    // cycle an AIRLOCK's door state (open|closed|jammed) — the worktree merge/isolation handle. Mirrors
+    // assignPropAgent. 'open' clears the field (= default) so docs stay clean. A full re-bake (emit []) is
+    // used because sealing flips the room's whole wall/threshold boundary, not just the prop's footprint.
+    function setDoorState(propId, state) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      const s = cleanDoor(state);
+      if (!s) return fail('BAD_STATE', 'door state must be open|closed|jammed');
+      snapshot();
+      if (s === 'open') delete p.door; else p.door = s;
+      emit([]);
+      return { ok: true, id: propId, door: p.door || 'open' };
+    }
     // set/replace a FILTER's routes+def or a MERGER's bufferSize (cfg null/empty clears). Mirrors assignPropAgent.
     function configureJunction(propId, cfg) {
       const p = doc.props.find(q => q.id === propId);
@@ -651,7 +690,7 @@ const WorldModel = (() => {
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
-      addProp, removeProp, moveProp, assignPropAgent, configureJunction,
+      addProp, removeProp, moveProp, assignPropAgent, configureJunction, setDoorState,
       setBelt, removeBelt, placeBeltRun,
       // agent-bay binding queries
       propsByType, propsByAgent, agentRoomId, bayObjects,
@@ -677,7 +716,7 @@ const WorldModel = (() => {
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }
@@ -687,6 +726,9 @@ const WorldModel = (() => {
     // spawnRoomId must point at a live non-corridor room (or null) so removeRoom's guard stays meaningful
     if (!doc.meta.spawnRoomId || !doc.rooms[doc.meta.spawnRoomId])
       doc.meta.spawnRoomId = doc.order.find(id => doc.rooms[id] && doc.rooms[id].kind !== 'corridor') || null;
+    // trunkRoomId (the integration-hub room that never seals) — additive; default to the spawn room.
+    if (!doc.meta.trunkRoomId || !doc.rooms[doc.meta.trunkRoomId])
+      doc.meta.trunkRoomId = doc.meta.spawnRoomId || doc.order.find(id => doc.rooms[id] && doc.rooms[id].kind !== 'corridor') || null;
     return doc;
   }
 

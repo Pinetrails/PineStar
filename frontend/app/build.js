@@ -410,6 +410,44 @@ const Build = (() => {
     flashTip(ev, 'test work riding — watch it sort', true); sfx('click');
   }
 
+  /* ---------- AIRLOCK door-state picker (doors / worktree isolation): cycle a room's seal.
+     closed/jammed SEAL the room — its agent can't path in or out (an unmerged worktree); open = merged. */
+  function openDoorPicker(propId, ev) {
+    if (!root || root.querySelector('.refit-door-picker')) return;
+    const p = station.propById(propId); if (!p || p.t !== 'airlock') return;
+    const cur = p.door || 'open';
+    const room = station.roomAt(p.x, p.y);
+    const isTrunk = !!(room && typeof station.doc === 'function' && station.doc().meta.trunkRoomId === room);
+    const STATES = [
+      { id: 'closed', label: '▦ SEALED' },
+      { id: 'open', label: '▢ OPEN' },
+      { id: 'jammed', label: '✖ JAMMED' },
+    ];
+    const rows = STATES.map(s => `<button type="button" class="bb sm door-state${s.id === cur ? ' active' : ''}" data-st="${s.id}">${s.label}</button>`).join('');
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-door-picker';
+    g.innerHTML = `
+      <div class="refit-guide-card">
+        <h3>▮ AIRLOCK — WORKTREE ISOLATION</h3>
+        <ul><li>A <b>SEALED</b> room is private — its agent can’t path in or out (an unmerged branch).</li>
+        <li><b>OPEN</b> = merged to the trunk hub · <b>JAMMED</b> = a merge conflict (sealed).</li>
+        ${isTrunk ? '<li><b>This is the trunk room</b> — it never seals (the integration hub).</li>' : ''}</ul>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${rows}</div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="btn-sm" id="door-cancel">CANCEL</button>
+        </div>
+      </div>`;
+    root.appendChild(g);
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    g.querySelectorAll('.door-state').forEach(b => b.onclick = () => {
+      const res = station.setDoorState(propId, b.dataset.st);
+      if (res && res.ok) { sfx('click'); flashTip(ev, 'airlock → ' + res.door, true); closeP(); }
+      else sfx('bad');
+    });
+    g.querySelector('#door-cancel').onclick = closeP;
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+  }
+
   /* ---------- camera + sizing ---------- */
   function resize() {
     if (!cv) return;
@@ -532,9 +570,9 @@ const Build = (() => {
     feedback(station.moveRoom(d.roomId, dx, dy), ev, 'relocated');
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
-  // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing)
-  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1 };
+  // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
+  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); };
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1 };
   function commitPropStamp(d, ev) {
     // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
     if (PROP_EDITABLE[propType] && !d.moved) {
@@ -543,7 +581,9 @@ const Build = (() => {
       if (ep && ep.t === propType) { openPropEditor(exist, ep.t, ev); return; }
     }
     const s = propSpec(propType);
-    const res = station.addProp({ t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h, block: s.blocks !== false });
+    const placement = { t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h, block: s.blocks !== false };
+    if (propType === 'airlock') placement.door = 'closed';   // a fresh airlock seals its room (then click to cycle)
+    const res = station.addProp(placement);
     if (res && res.ok) {
       pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
       if (PROP_EDITABLE[propType] && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop

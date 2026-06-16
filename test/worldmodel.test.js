@@ -373,4 +373,59 @@ A.ok(PL.ok(fplan), 'after configuring routes the placed-filter floor is DEPLOYAB
 A.eq(PL.resolveTarget(fplan, { tag: 'code' }), 'coder', 'code routes to the coder bay');
 A.eq(PL.resolveTarget(fplan, { tag: 'research' }), 'researcher', 'research routes to the researcher bay');
 
+/* ---- Doors / worktree isolation: a SEALED airlock drops its room's boundary doors (canStep can't cross) ---- */
+const dr = WM.create();                                    // HAB-01 {0..17,0..10} = spawn = trunk
+const habR = dr.spawnRoomId();
+const labR = dr.addRoom({ kind: 'lab', rect: { x1: 18, y1: 0, x2: 26, y2: 8 } }).id;  // abuts the hab (shared seam)
+const g0 = dr.projectGeometry();
+const Ld = (wx, wy) => [wx - g0.origin.tx, wy - g0.origin.ty];     // world -> local
+const habTile = Ld(3, 5), labTile = Ld(22, 5);
+A.ok(g0.path(habTile[0], habTile[1], labTile[0], labTile[1]), 'rooms are connected before any airlock');
+const doors0 = g0.doorDefs.length;
+A.ok(doors0 > 0, 'auto-doors exist along the abutting seam');
+
+// a SEALED airlock in the lab cuts it off
+const al = dr.addProp({ t: 'airlock', x: 20, y: 4, w: 1, h: 1, block: false, door: 'closed' });
+A.ok(al.ok, 'an airlock prop places on the deck');
+A.eq(dr.propById(al.id).door, 'closed', 'addProp carries opts.door onto the airlock');
+const g1 = dr.projectGeometry();
+A.ok(g1.doorDefs.length < doors0, 'sealing the lab drops its boundary doors');
+A.eq(g1.path(habTile[0], habTile[1], labTile[0], labTile[1]), null, 'a sealed room is unreachable (isolation via the existing pathing)');
+A.ok(g1.walkable(labTile[0], labTile[1]), 'the sealed room is still walkable INSIDE (the agent is just sealed in)');
+A.eq(g1.props.find(p => p.id === al.id).door, 'closed', 'projectGeometry carries the door state to the renderer');
+
+// reopen -> reconnected, and 'open' clears the field so docs stay clean
+A.ok(dr.setDoorState(al.id, 'open').ok && dr.propById(al.id).door === undefined, 'setDoorState open clears the field (= default)');
+const g2 = dr.projectGeometry();
+A.ok(g2.path(habTile[0], habTile[1], labTile[0], labTile[1]), 'reopening reconnects the room');
+A.eq(g2.doorDefs.length, doors0, 'reopening restores every boundary door');
+
+// jammed (a merge conflict) also seals
+A.ok(dr.setDoorState(al.id, 'jammed').ok && dr.propById(al.id).door === 'jammed', 'setDoorState jammed sets the field');
+A.eq(dr.projectGeometry().path(habTile[0], habTile[1], labTile[0], labTile[1]), null, 'a jammed room is sealed too');
+
+// validation + undo (setDoorState snapshots)
+A.ok(!dr.setDoorState('nope', 'open').ok, 'setDoorState on a missing prop fails');
+A.eq(dr.setDoorState(al.id, 'ajar').error, 'BAD_STATE', 'setDoorState rejects an unknown state');
+dr.setDoorState(al.id, 'closed'); dr.undo();
+A.eq(dr.propById(al.id).door, 'jammed', 'undo restores a prior door state');
+
+// the TRUNK room never seals — the integration hub can't be severed from the station
+const tr = WM.create();
+const trZ = tr.roomById(tr.spawnRoomId()).rects[0];        // freshDoc made the spawn room the trunk
+tr.addRoom({ kind: 'lab', rect: { x1: 18, y1: 0, x2: 26, y2: 8 } });
+const trDoors = tr.projectGeometry().doorDefs.length;
+tr.addProp({ t: 'airlock', x: trZ.x1 + 2, y: trZ.y1 + 2, w: 1, h: 1, block: false, door: 'closed' });
+A.eq(tr.projectGeometry().doorDefs.length, trDoors, 'a closed airlock in the trunk room does NOT seal it');
+
+// door state survives serialize/deserialize; bad/legacy door values are sanitized; trunkRoomId backfills
+const drDoc = dr.serialize();
+A.eq(WM.deserialize(drDoc).propById(al.id).door, 'jammed', 'prop.door survives serialize/deserialize');
+A.eq(JSON.stringify(WM.deserialize(drDoc).serialize()), JSON.stringify(drDoc), 'a doc with airlocks round-trips identically');
+const legacyDoor = WM.deserialize({ schema: 'skynet.station', version: 1,
+  rooms: { rD: { id: 'rD', kind: 'hab', name: 'D', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rD'],
+  props: [{ id: 'pA', t: 'airlock', x: 2, y: 2, w: 1, h: 1, door: 'ajar' }] });   // junk door value
+A.eq(legacyDoor.propById('pA').door, undefined, 'migrate drops an invalid door value');
+A.eq(legacyDoor.doc().meta.trunkRoomId, 'rD', 'migrate backfills trunkRoomId to the spawn room');
+
 A.report('worldmodel');

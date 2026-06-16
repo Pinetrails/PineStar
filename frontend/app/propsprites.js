@@ -3704,6 +3704,35 @@ const PropSprites = (() => {
   if (lit) glow(ledX - 1, ledY - 1, 3, 3, '#ffb84d', 0.30);
 };
 
+  F.airlock = (x, y, w, h, f) => {
+    // AIRLOCK — the worktree-isolation handle. A blast-door panel whose status lamp + shutter reflect the
+    // room's merge state: open = green / retracted (a lit central gap) · closed = amber / sealed seam ·
+    // jammed = red / a sparking seam. Drawn per-frame so f.door drives it live (set via setDoorState).
+    const st = (f && f.door) || 'open';
+    const sealed = st === 'closed' || st === 'jammed', jam = st === 'jammed';
+    const lc = jam ? '#ff5a4a' : sealed ? '#ffb347' : '#41ff8a';     // status colour
+    sh(x + 1, y + h - 1, w - 2);                                      // floor contact shadow
+    box(x + 1, y + 2, w - 2, h - 3, '#222a2e');                       // door-frame casing
+    inset(x + 2, y + 3, w - 4, h - 6, '#0c1417');                     // recessed track
+    // shutter leaves: retracted (open) leave a lit central gap; sealed they meet in the middle
+    const cx = x + (w >> 1), back = sealed ? 0 : 2, leafW = (w >> 1) - 2 - back;
+    const dc = jam ? '#3a2a24' : '#2a333a';
+    px(x + 2, y + 3, leafW, h - 6, dc); px(cx + back, y + 3, leafW, h - 6, dc);              // left + right leaves
+    px(x + 2, y + 3, leafW, 1, U.shade(dc, 0.28)); px(cx + back, y + 3, leafW, 1, U.shade(dc, 0.28)); // leaf sheen
+    px(x + 3, y + 4, 1, 1, '#caa84a'); px(cx + back + leafW - 2, y + 4, 1, 1, '#caa84a');    // hazard ticks
+    if (sealed) {
+      px(cx - 1, y + 3, 2, h - 6, U.shade(dc, -0.5));                 // the sealed seam
+      if (jam && blink(150)) { px(cx, y + 5, 1, 1, '#fff'); px(cx + 1, y + 4, 1, 1, '#ffd9a0'); } // jam spark
+    } else {
+      glow(cx - 2, y + 3, 4, h - 6, '#41ff8a', 0.22 + 0.1 * Math.sin(now / 400));            // open-gap glow
+    }
+    // status lamp on the lintel
+    px(cx - 1, y, 2, 2, '#0c1417');
+    const on = jam ? blink(170) : sealed ? blink(680) : true;
+    px(cx - 1, y, 2, 2, on ? lc : U.shade(lc, -0.65));
+    glow(cx - 2, y - 1, 4, 3, lc, jam ? 0.45 + 0.2 * Math.sin(now / 110) : sealed ? 0.18 : 0.24);
+  };
+
   /* ============ CATALOG — every placeable prop ============
      id        — F key (the draw fn) AND the model's prop.t
      label     — palette button text
@@ -3771,6 +3800,7 @@ const PropSprites = (() => {
     { id: "filter", label: "FILTER", cat: "logistics", w: 1, h: 1, animated: true, blocks: false },
     { id: "merger", label: "MERGER", cat: "logistics", w: 1, h: 1, animated: true, blocks: false },
     { id: "bay", label: "BAY", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
+    { id: "airlock", label: "AIRLOCK", cat: "isolation", w: 1, h: 1, animated: true, blocks: false },
     { id: "commswall", label: "COMMS WALL", cat: "comms", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_dish", label: "DISH", cat: "comms", w: 2, h: 2, animated: true, blocks: true },
     { id: "comms_inbox", label: "INBOX", cat: "comms", w: 2, h: 1, animated: true, blocks: true },
@@ -3817,7 +3847,7 @@ const PropSprites = (() => {
   function draw(f, work) {
     const fn = F[f.t]; if (!fn) return;
     const X = f.x * TILE, Y = f.y * TILE, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
-    fn(X, Y, W, H, { x: f.x, work: !!work, agentId: f.agentId || null });
+    fn(X, Y, W, H, { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null });
   }
 
   return {
