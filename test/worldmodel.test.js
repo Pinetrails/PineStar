@@ -353,4 +353,24 @@ cap2.assignPropAgent(b2.id, 'r');
 cap2.addProp({ t: 'plant', x: cr2.x1 + 5, y: cr2.y1 + 2, w: 1, h: 1, block: false });
 A.eq(JSON.stringify(cap2.bayObjects('r')), '[]', 'decor (a plant) grants no capabilities');
 
+/* ---- Polish P1: a PLACED filter, configured via configureJunction, compiles DEPLOYABLE (the editor's path) ---- */
+const PL = require('../frontend/app/pipeline.js');
+const fp = WM.create();
+const fpr = fp.roomById(fp.spawnRoomId()).rects[0];
+const fx = fpr.x1 + 2, fy = fpr.y1 + 2;
+fp.addProp({ t: 'intake', x: fx - 1, y: fy - 1, w: 1, h: 1, block: false });
+fp.placeBeltRun({ tx: fx, ty: fy }, { tx: fx + 5, ty: fy });             // E lane -> coder bay
+fp.placeBeltRun({ tx: fx + 2, ty: fy + 1 }, { tx: fx + 2, ty: fy + 3 }); // S lane -> researcher bay
+const fJunc = fp.addProp({ t: 'filter', x: fx + 2, y: fy, w: 1, h: 1, block: false });
+const fcoder = fp.addProp({ t: 'bay', x: fx + 6, y: fy - 1, w: 2, h: 2, block: false });
+const fres = fp.addProp({ t: 'bay', x: fx + 1, y: fy + 4, w: 2, h: 2, block: false });
+fp.assignPropAgent(fcoder.id, 'coder');
+fp.assignPropAgent(fres.id, 'researcher');
+A.ok(!PL.ok(PL.compileRoutingPlan(fp.projectGeometry())), 'a placed filter with NO routes is non-deployable (FILTER_NO_DEFAULT)');
+A.ok(fp.configureJunction(fJunc.id, { routes: { code: 'E', research: 'S' }, def: 'E' }).ok, 'configureJunction sets the filter routes (the editor path)');
+const fplan = PL.compileRoutingPlan(fp.projectGeometry());
+A.ok(PL.ok(fplan), 'after configuring routes the placed-filter floor is DEPLOYABLE');
+A.eq(PL.resolveTarget(fplan, { tag: 'code' }), 'coder', 'code routes to the coder bay');
+A.eq(PL.resolveTarget(fplan, { tag: 'research' }), 'researcher', 'research routes to the researcher bay');
+
 A.report('worldmodel');

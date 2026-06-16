@@ -289,15 +289,14 @@ const App = (() => {
     ul.querySelectorAll('.ws-row').forEach(li => li.onclick = () => switchWorkstream(li.dataset.id));
     if (typeof StationUI !== 'undefined' && StationUI.refreshBoard) StationUI.refreshBoard();
   }
-  // no switching mid-run: one #chat-log streams the active run, so a swap would render into the wrong stream.
+  // switching mid-run is fine now: each workstream keeps its own run-state in Channels (channels.js) and
+  // Chat.load re-renders the in-flight stream on switch — the run you left keeps streaming in the background.
   function switchWorkstream(id) {
-    if (Chat.isBusy && Chat.isBusy()) return;
     if (id === Workstreams.activeId()) return;
     const ws = Workstreams.switch(id); if (!ws) return;
     SFX.click(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
   function newWorkstream() {
-    if (Chat.isBusy && Chat.isBusy()) return;
     const ws = Workstreams.create(null);
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }

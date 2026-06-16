@@ -28,15 +28,18 @@ function voiceModeRules() {
 
 const Chat = (() => {
   let log, input, statusEl;
-  let system = '', name = 'AGENT', activeWs = null, busy = false;
+  let system = '', name = 'AGENT', activeWs = null;
   let onTurn = null, interview = null;   // interview: the AWAKENING answer handler — while set, COMMS input feeds onboarding, not the model
-  let currentAbort = null, currentRunId = null;   // the in-flight run, so DISCONNECT can cancel it
+  // THE GATE: per-workstream run-state (busy / runId / in-flight text / tool lines / pending approval) lives in
+  // Channels (channels.js) so streams are isolated and survive a switch — chat.js is the DOM view over it. The
+  // one thing that can't live in the pure model is the live AbortController (not serializable), so it stays here.
+  const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
+  let activeLiveRow = null;     // streaming DOM row for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
   const el = id => document.getElementById(id);
 
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
-    busy = false;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     input.value = '';
     load(opts.ws);
@@ -52,14 +55,18 @@ const Chat = (() => {
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
+    // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
+    if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
     if (log) log.innerHTML = '';
     renderHistory();
-    status(interview ? 'waking…' : (busy ? 'working…' : 'online'));
+    replayChannel();   // re-render an in-flight stream we left running: tool lines / partial reply / pending approval
+    status(interview ? 'waking…' : (isBusy() ? 'working…' : 'online'));
   }
 
   function setSystem(s) { system = s; }
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
-  function isBusy() { return busy; }
+  function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
+  function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
   function status(s) { if (statusEl) statusEl.textContent = s; }
 
   function row(role) {
@@ -98,20 +105,25 @@ const Chat = (() => {
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
   }
-  function permissionRow(ev) {
+  // p = a consent payload { promptId, tool, argsSummary } — works for both a live onPermission event and a
+  // Channels snapshot.pending (re-rendered after a switch). ws is the origin stream, so the answer routes to
+  // THAT stream's run (per-channel runId), not a single global one.
+  function permissionRow(p, ws) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
-    r.body.appendChild(document.createTextNode('🔒 ' + name + ' wants to ' + actionPhrase(ev) + ' '));
+    r.body.appendChild(document.createTextNode('🔒 ' + name + ' wants to ' + actionPhrase(p) + ' '));
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     let decided = false;
     function decide(decision, doneLabel, isDeny) {
       if (decided) return; decided = true;
-      Harness.consent(currentRunId, ev.promptId, decision);
+      const rid = (ws && typeof Channels !== 'undefined') ? Channels.runIdOf(ws.id) : null;
+      Harness.consent(rid, p.promptId, decision);
+      if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id);
       btns.remove();
       const tag = document.createElement('span');
       tag.className = 'consent-result' + (isDeny ? ' err' : '');
       tag.textContent = doneLabel;
       r.body.appendChild(tag);
-      status(busy ? 'working…' : 'online');
+      status(isBusy() ? 'working…' : 'online');
     }
     const mk = (text, decision, cls, doneLabel, isDeny) => {
       const b = document.createElement('button');
@@ -126,7 +138,7 @@ const Chat = (() => {
     mk('Deny', 'deny', 'deny', '✕ denied', true);
     r.body.appendChild(btns);
     status('awaiting your approval…');
-    if (typeof StationUI !== 'undefined') StationUI.notify(name + ' needs approval to ' + actionPhrase(ev), 'warn');
+    if (typeof StationUI !== 'undefined') StationUI.notify(name + ' needs approval to ' + actionPhrase(p), 'warn');
     log.scrollTop = log.scrollHeight;
   }
 
@@ -136,6 +148,23 @@ const Chat = (() => {
       if (m.role === 'user') addUser(m.content);
       else row('agent').body.textContent = m.content;
     }
+  }
+
+  // SWITCH-SURVIVAL: re-render whatever in-flight run we left on the now-displayed stream — its streamed
+  // tool lines, its partial reply, and any pending approval — from the Channels snapshot. For an idle stream
+  // the snapshot is empty and this is a no-op. (Live token re-binding for a stream switched-to MID-run lands
+  // with the frontend-hud change that lifts the "can't switch while busy" guard — see the GATE handoff note.)
+  function replayChannel() {
+    activeLiveRow = null;
+    if (!activeWs || typeof Channels === 'undefined') return;
+    const s = Channels.snapshot(activeWs.id);
+    if (!s) return;
+    for (const t of s.tools) toolLine(t.text, t.isErr);
+    if (s.busy || s.acc) {
+      const o = streamingAgent(); if (s.acc) o.append(s.acc);
+      if (s.busy) activeLiveRow = o; else o.done();   // a still-running stream keeps its live row so new tokens flow into it
+    }
+    if (s.pending) permissionRow(s.pending, activeWs);
   }
 
   function streamingAgent() {
@@ -153,10 +182,10 @@ const Chat = (() => {
 
   async function send(text) {
     if (interview) { interview(text); return; }   // THE AWAKENING owns the input: route the answer to onboarding, no model call
-    if (busy) return;
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
-    busy = true;
+    if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
+    Channels.begin(ws.id);
     addUser(text); ws.history.push({ role: 'user', content: text });
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
@@ -186,10 +215,10 @@ const Chat = (() => {
 
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton) so the per-stream diff is real
     const ac = new AbortController();
-    currentAbort = ac; currentRunId = null;
+    aborters.set(ws.id, ac);
     const callNames = {};   // callId -> tool name (the frozen agent.tool_result has no name field)
     const seenDeliv = {};   // title -> true (one openable row per produced file)
-    const out = streamingAgent();
+    activeLiveRow = streamingAgent();
     let acc = '';
     // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
@@ -223,36 +252,35 @@ const Chat = (() => {
     try {
       const { text: reply, error, endReason } = await Harness.chat({
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal,
-        onRunId: id => { currentRunId = id; if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
-        onToken: d => { acc += d; out.append(d); if (!isTask) World.say(acc); if (willSpeak) pushSpeech(false); App.refreshUsage(); },
+        onRunId: id => { Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
-        onToolCall: ev => { callNames[ev.callId] = ev.name; toolLine('▶ ' + ev.name + ' ' + brief(ev.argsSummary)); },
-        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; toolLine((ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''), ev.isError); },
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) toolLine(t); },
+        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) toolLine(t, ev.isError); },
         onDeliverable: ev => {
           if (ev.kind === 'file' && !seenDeliv[ev.title]) {
-            seenDeliv[ev.title] = true; deliverableLine(ev.title, ev.agentId);
+            seenDeliv[ev.title] = true; if (isActiveWs(ws)) deliverableLine(ev.title, ev.agentId);
             // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock
-            if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: ev.kind, runId: currentRunId, t: Date.now() });
+            if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: ev.kind, runId: Channels.runIdOf(ws.id), t: Date.now() });
             if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold');
           }
         },
-        onPermission: ev => permissionRow(ev)
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); if (isActiveWs(ws)) permissionRow(ev, ws); }
       });
       if (error) {
-        out.error(error);
-        if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error));
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }
         if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
       } else {
         ws.history.push({ role: 'assistant', content: reply || acc });
-        out.done();
+        if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
         finalReply = reply || acc;
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally — so the agent starts talking while
         // the rest is still generating, instead of after the whole reply + a full TTS round-trip.
-        if (!isTask) World.say(reply || acc);
+        if (!isTask && isActiveWs(ws)) World.say(reply || acc);
         // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
         if (endReason && endReason !== 'done') {
-          toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
+          if (isActiveWs(ws)) toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? 'reached this run\'s cost limit'
             : endReason === 'cancelled' ? 'run cancelled'
             : 'stopped (' + endReason + ')'));
@@ -261,16 +289,16 @@ const Chat = (() => {
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
-      out.error(aborted ? '— disconnected —' : (e.message || String(e)));
-      if (!isTask && !aborted) World.say('…connection trouble…');
+      if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
     } finally {
-      currentAbort = null; currentRunId = null;
-      busy = false; status('online');
-      // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering
-      // off between turns); otherwise he stands up and goes back to idle station life.
+      aborters.delete(ws.id);
+      Channels.end(ws.id);
+      if (isActiveWs(ws)) { status('online'); activeLiveRow = null; }
+      // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off
+      // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
+      // stream is the one on screen — a background stream finishing must not move the view.
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
-      World.setActivity(stayFacing ? 'talk' : 'idle');
-      if (stayFacing && World.focusAgent) World.focusAgent({ soft: true });
+      if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
       if (typeof Workstreams !== 'undefined') {
@@ -293,8 +321,10 @@ const Chat = (() => {
      req.on('close') then stops the loop) AND tell the sidecar to kill the run by id — belt-and-suspenders. */
   function abort() {
     if (typeof Voice !== 'undefined' && Voice.stopConvo) Voice.stopConvo();   // drop hands-free on disconnect
-    if (currentAbort) { try { currentAbort.abort(); } catch (_) {} }
-    if (currentRunId) Harness.cancel(currentRunId);
+    // cancel EVERY in-flight run (not just one global): abort each fetch + tell the sidecar to kill the run by id
+    for (const ac of aborters.values()) { try { ac.abort(); } catch (_) {} }
+    if (typeof Channels !== 'undefined') for (const id of Channels.busyIds()) { const rid = Channels.runIdOf(id); if (rid) Harness.cancel(rid); }
+    aborters.clear();
   }
 
   /* ---------- THE AWAKENING (onboarding) interview ----------

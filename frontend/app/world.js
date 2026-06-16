@@ -88,6 +88,25 @@ const World = (() => {
   const SELF_DISPATCH = ['sent', 'delivered', 'thats away', 'reply is out', 'done and gone'];
   const SELF_GREET = ['yes, Commander?', 'still here', 'watching', 'at your service', 'go ahead'];
   const SELF_ACK = ['hm?', 'yes?', 'still here', 'watching'];
+  /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
+     (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
+     Lines stay sparse and unresolved; the SILENCE is the unsettling part. */
+  let quirkCd = 0;   // quirks stay special — long cooldown between them
+  const Q_PONDER = ['hm.', '...', 'i wonder', 'strange', 'thinking'];
+  const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
+  const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
+  const Q_STARTLE = ['!', 'whoa', 'what was that', 'huh!', 'oh'];   // sudden change right beside it
+  const SELF_PLACE = ['there', 'better', 'that belongs here', 'mine now', 'hm, nice'];   // after placing its own decor
+  const SELF_ROUNDS = ['all in order', 'good', 'belt is humming', 'as it should be', 'checks out'];   // ownership beat on a caretaker lap
+  const SLEEP_LINE = ['...', 'powering down', 'standby', 'going quiet', 'resting'];   // dormant in the deep wind-down mood
+  /* AGENT ACTS ON THE STATION (safety-railed): it rarely places its OWN small decor on EMPTY floor, and
+     only ever moves/removes things from agentDecor (its own ids) — never the Commander's props. Capped +
+     long-cooldown so it stays an Easter-egg "it rearranged its corner" moment, not clutter. NOTE: addProp
+     hits the undo stack + persists (the wow: the corner changes between visits); a silent/agent-only
+     mutation lane is a future refinement. */
+  let placeCd = 0;
+  const agentDecor = [];   // ids of decor THIS agent placed — the ONLY props it will ever move or remove
+  const AGENT_DECOR = ['plant', 'coffee', 'cans', 'poster'];   // 1x1, blocks:false (never obstructs the agent or the Commander)
   const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
   const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
 
@@ -160,6 +179,7 @@ const World = (() => {
     if (unsub) { unsub(); unsub = null; }
     station = st; geo = null; cache = null; geoDirty = true; bakeDirty = true; fitNeeded = true;
     novelty = []; seenProps = null; seenBelts = null;   // re-learn the scene from scratch (no cross-station novelty)
+    agentDecor.length = 0; placeCd = 0;                 // forget which decor it placed (the new floor is a clean slate)
     crew = [];                                          // no cross-station crew bodies (rebuilt from the new floor's bays)
     if (station && station.onChange) unsub = station.onChange(() => { geoDirty = true; });
     rederive();
@@ -180,7 +200,7 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation, re-decide next idle tick
+        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'sleep') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/sleep, re-decide next idle tick
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
@@ -250,7 +270,10 @@ const World = (() => {
       // INNER LIFE: a fixed temperament + three slow-draining needs that drive WHICH goal it pursues
       pers: makePersonality(a.id),
       needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
-      lastTaskAt: 0, thinkUntil: 0, settleUntil: 0, trackUntil: 0   // machine-state timers (think-before-work, settle-before-typing, downtime, body-track)
+      lastTaskAt: 0, thinkUntil: 0, settleUntil: 0, trackUntil: 0,   // machine-state timers (think-before-work, settle-before-typing, downtime, body-track)
+      quirkKind: null,   // which rare quirk is currently playing (drives the gaze flavor in maybeGlance)
+      placeTarget: null, removeId: null,   // pending station edit when goal==='place' (add decor at target, or remove its own)
+      roundsQueue: null, roundsCd: 0   // caretaker-lap stop queue + cooldown
     };
     if (geo) placeAgent();
   }
@@ -440,6 +463,14 @@ const World = (() => {
     const wp = agent.pathPts[agent.pathIdx++];
     agent.target = footOf(wp.x, wp.y);
   }
+  // a quick 2-beat settle-scan (left, then right) before committing the gaze to finalDir — reads as deliberate "taking it in"
+  function scanThen(now, finalDir) {
+    const guard = () => agent && (agent.goal === 'inspect' || agent.goal === 'watch');
+    const sides = U.chance(0.5) ? ['west', 'east'] : ['east', 'west'];
+    setGlance(sides[0], 380, now);
+    setTimeout(() => { if (guard()) setGlance(sides[1], 380, performance.now()); }, 420);
+    setTimeout(() => { if (guard()) { agent.glance = null; agent.dir = finalDir; } }, 860);
+  }
   function arrive(now) {
     agent.pathPts = null; agent.target = null;
     if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
@@ -450,16 +481,33 @@ const World = (() => {
       agent.useUntil = now + U.irnd(18000, 30000); agent.glanceCd = 0; agent.nextFidget = now + U.irnd(1500, 3500);
       takeSeat(); curiositySay(agent.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
-    else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze') {
+    else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare') {
       // reached the thing — stand, face it, observe for a spell. Familiar things hold the gaze less (habituation).
       agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
       agent.glanceCd = 0; agent.nextFidget = now + U.irnd(700, 1600);
+      if (agent.goal === 'quirk' || agent.goal === 'stare') { agent.studyUntil = now + U.irnd(4000, 9000); return; }   // a walked quirk (face-a-wall): hold the pose, silent
       const fam = agent.studyKey ? (seenCount.get(agent.studyKey) || 0) : 0, famK = 1 / (1 + fam * 0.8);
       if (agent.studyKey) seenCount.set(agent.studyKey, fam + 1);
       if (agent.goal === 'tend') { agent.studyUntil = now + U.irnd(3500, 8000); curiositySay(agent.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
       else if (agent.goal === 'gaze') { agent.studyUntil = now + U.irnd(4000, 8000); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
-      else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); }
-      else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); }
+      else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, agent.useFace); }
+      else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, agent.useFace); }
+    }
+    else if (agent.goal === 'rounds') {
+      // a stop on the caretaker lap — face it, a brief ownership beat, then tick advances to the next stop
+      agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
+      agent.glanceCd = 0; agent.studyUntil = now + U.irnd(1500, 3000); curiositySay(SELF_ROUNDS, 0.4, now);
+    }
+    else if (agent.goal === 'place') {
+      // it acts on the station: drops a piece of its OWN decor on the empty tile, or removes one it placed before
+      agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.dir = agent.useFace || 'south';
+      if (agent.placeTarget && station.addProp) {
+        const tg = agent.placeTarget, res = station.addProp({ t: tg.t, x: tg.x, y: tg.y, w: 1, h: 1, block: false });
+        if (res && res.ok) { agentDecor.push(res.id); if (seenProps) seenProps.add(res.id); curiositySay(SELF_PLACE, 0.6, now); }   // suppress self-novelty so it doesn't go inspect its own work
+      } else if (agent.removeId && station.removeProp) {
+        station.removeProp(agent.removeId); const i = agentDecor.indexOf(agent.removeId); if (i >= 0) agentDecor.splice(i, 1); curiositySay(SELF_PLACE, 0.4, now);
+      }
+      agent.placeTarget = null; agent.removeId = null; agent.goal = null; agent.idleUntil = now + U.irnd(900, 2000);
     }
     else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 2600); }
   }
@@ -609,7 +657,15 @@ const World = (() => {
     novelty = novelty.filter(n => !(n.tx === tx && n.ty === ty));   // dedupe the same tile
     novelty.push({ tx, ty, kind, pid });
     if (novelty.length > NOVELTY_MAX) novelty.shift();
-    if (agent && activity === 'idle') agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 350);   // react within ~1s
+    if (agent && activity === 'idle') {
+      if (agent.goal === 'sleep') { agent.goal = null; agent.sitting = false; agent.glanceCd = 0; agent.studyUntil = 0; }   // a placement stirs it from dormancy
+      agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 350);   // react within ~1s (then it walks over to inspect)
+      // STARTLE: something materialized right beside it → a sharp snap toward it + a beat, distinct from the calm far-off notice
+      if (!agent.working && !agent.unplaced) {
+        const d = Math.hypot((tx + 0.5) * T - agent.px, (ty + 0.5) * T - agent.py);
+        if (d < 3.4 * T) { const dir = dirToward(agent.px, agent.py, (tx + 0.5) * T, (ty + 0.5) * T); setGlance(dir, 240, fnow); agent.dir = dir; agent.glanceCd = fnow + 600; curiositySay(Q_STARTLE, 0.5, fnow); }
+      }
+    }
   }
 
   /* pixel position of the nearest riding belt box, or null (for gaze-tracking cargo) */
@@ -727,23 +783,165 @@ const World = (() => {
     return false;
   }
 
-  // THE WANT ENGINE — replaces the flat dice roll. Whichever drive is most unmet (tilted by temperament
-  // + how long since real work) leads; novelty is the reflex that always interrupts. The SAME planners
-  // run, but now there is a legible reason behind every move so it stops reading as aimless.
+  /* ---------- rhythm: a free-running mood that re-weights the idle menu over minutes ----------
+     Repeated watching reveals structure — it is clearly 'in a different mode' than ten minutes ago.
+     Never overrides a summon (decideIdle only runs while idle); just tilts what it gravitates to. */
+  const PHASES = [
+    { tag: 'focus', rest: 0.8, stim: 0.9, soc: 1.25, restless: 1.25 },   // hovers near the desk, antsy for work
+    { tag: 'roam', rest: 0.8, stim: 1.4, soc: 0.9, restless: 1.15 },     // wants to wander + study
+    { tag: 'ease', rest: 1.4, stim: 0.85, soc: 1.0, restless: 0.7 },     // gravitates to the couch
+    { tag: 'drift', rest: 1.2, stim: 0.7, soc: 0.85, restless: 0.55 },   // sleepy, sparse, long dwells
+  ];
+  function phaseOf(now) { return PHASES[(Math.floor(now / 210000) + (agent ? agent.phase : 0)) % PHASES.length]; }  // ~3.5 min per phase, offset per agent
+
+  /* ---------- quirks: rare, gated, UNPREDICTABLE one-offs — the off-screen inner life surfacing ----------
+     Eerie through stillness + ambiguity (the "why did it just do that"), never spooky one-liners. */
+  function maybeQuirk(now) {
+    if (now < quirkCd) return false;
+    if (!U.chance(0.13 * (0.6 + agent.pers.restless * 0.4))) return false;
+    quirkCd = now + U.irnd(24000, 60000);    // quirks stay special
+    const r = U.irnd(0, 999);
+    if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
+    if (r < 540) return quirkScan(now);      // 22% — a slow, deliberate sweep of the room
+    if (r < 720) return quirkPonder(now);    // 18% — stops, faces away, lost in thought
+    if (r < 850) return planGazeOut(now);    // 13% — drifts to the edge and stares into the void
+    if (r < 940) return quirkFaceWall(now);  //  9% — walks to a wall and just faces it (unexplained)
+    return quirkStare(now);                  //  6% — the long stare straight at YOU (rarest, eeriest)
+  }
+  function startQuirk(now, kind, ms, face) {
+    agent.goal = 'quirk'; agent.quirkKind = kind; agent.usingProp = null; agent.studyKey = null;
+    agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.studyUntil = now + ms; agent.glanceCd = 0;
+    if (face) { agent.dir = face; setGlance(face, U.irnd(300, 600), now); }
+    return true;
+  }
+  function quirkListen(now) { const d = U.pick(['east', 'west', 'south', 'north']); startQuirk(now, 'listen', U.irnd(2200, 4500), d); setGlance(d, 260, now); curiositySay(Q_LISTEN, 0.22, now); return true; }
+  function quirkScan(now) {
+    startQuirk(now, 'scan', U.irnd(3200, 4600), 'north');
+    ['north', 'east', 'south', 'west'].forEach((d, i) => setTimeout(() => { if (agent && agent.goal === 'quirk' && agent.quirkKind === 'scan') { agent.dir = d; setGlance(d, 900, performance.now()); } }, i * 850));
+    return true;
+  }
+  function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), U.pick(['north', 'east', 'west'])); curiositySay(Q_PONDER, 0.4, now); return true; }
+  function quirkFaceWall(now) {   // walks to a wall and just... faces it. no explanation. (uses arrive's quirk dwell)
+    if (!geo || !geo.allRects || !geo.allRects.length) return false;
+    const DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
+    for (let tries = 0; tries < 30; tries++) {
+      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
+      const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
+      if (!geo.walkable(tx, ty, blocked)) continue;
+      const walls = DIRS.filter(([d, dx, dy]) => !geo.walkable(tx + dx, ty + dy, blocked));
+      if (!walls.length) continue;
+      if (!setPathTo({ x: tx, y: ty })) continue;
+      agent.goal = 'quirk'; agent.quirkKind = 'wall'; agent.useFace = U.pick(walls)[0]; agent.usingProp = null; agent.studyKey = null;
+      if (!agent.target) arrive(now);
+      return true;
+    }
+    return false;
+  }
+  function quirkStare(now) {   // turns to the Commander and holds eye contact, mostly in silence
+    agent.goal = 'stare'; agent.quirkKind = 'stare'; agent.usingProp = null; agent.studyKey = null;
+    agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.studyUntil = now + U.irnd(14000, 34000); agent.glanceCd = now + 1200;
+    agent.dir = 'south'; setGlance('south', 700, now); curiositySay(Q_STARE, 0.18, now);   // mostly silent — the stillness is the unsettling part
+    return true;
+  }
+
+  /* ---------- the agent ACTS ON the station: place / rearrange its OWN decor (rare, safety-railed) ---------- */
+  function emptySpotNear() {
+    if (!geo || !station || !station.canPlaceProp) return null;
+    const cur = tileOf(agent.px, agent.py);
+    const belts = new Set(((geo && geo.belts) || []).map(b => b.x + ',' + b.y));
+    for (let tries = 0; tries < 40; tries++) {
+      const x = cur.x + U.irnd(-5, 5), y = cur.y + U.irnd(-5, 5);
+      if (Math.abs(x - cur.x) + Math.abs(y - cur.y) < 2) continue;
+      if (!geo.walkable(x, y, blocked)) continue;                 // free floor (no blocking prop / desk / chamfer)
+      if (belts.has(x + ',' + y)) continue;                       // not on a belt
+      if (seat && x === seat.tx && y === seat.ty) continue;       // not the work seat
+      const t = AGENT_DECOR[U.irnd(0, AGENT_DECOR.length - 1)];
+      if (!station.canPlaceProp(t, x, y, 1, 1).ok) continue;      // model: on a deck, no prop overlap (never the Commander's stuff)
+      for (const [ax, ay] of SEAT_NB) if (geo.walkable(x + ax, y + ay, blocked) && !belts.has((x + ax) + ',' + (y + ay))) return { x, y, t, ax: x + ax, ay: y + ay };
+    }
+    return null;
+  }
+  function maybePlace(now) {
+    if (now < placeCd || !station || !station.addProp || !geo) return false;
+    if (!U.chance(0.5)) return false;                              // even when eligible, only sometimes
+    if (agentDecor.length >= 3) {                                  // at cap -> sometimes REARRANGE: remove one of ITS OWN (a fresh one may return later)
+      if (!U.chance(0.5) || !station.removeProp) return false;
+      const id = agentDecor[U.irnd(0, agentDecor.length - 1)];
+      const p = geo.props && geo.props.find(q => q.id === id);
+      if (!p) { const i = agentDecor.indexOf(id); if (i >= 0) agentDecor.splice(i, 1); return false; }
+      let ap = null; for (const [ax, ay] of SEAT_NB) if (geo.walkable(p.x + ax, p.y + ay, blocked)) { ap = { x: p.x + ax, y: p.y + ay }; break; }
+      if (!ap || !setPathTo({ x: ap.x, y: ap.y })) return false;
+      placeCd = now + U.irnd(120000, 240000);
+      agent.goal = 'place'; agent.placeTarget = null; agent.removeId = id; agent.useFace = dirToward(ap.x * T, ap.y * T, (p.x + 0.5) * T, (p.y + 0.5) * T);
+      if (!agent.target) arrive(now);
+      return true;
+    }
+    if ((geo.props || []).filter(p => AGENT_DECOR.indexOf(p.t) >= 0).length >= 5) return false;   // floor-wide decor cap (reload-safe; never clutters a station already full of decor)
+    const spot = emptySpotNear();
+    if (!spot || !setPathTo({ x: spot.ax, y: spot.ay })) return false;
+    placeCd = now + U.irnd(120000, 240000);
+    agent.goal = 'place'; agent.placeTarget = spot; agent.removeId = null; agent.useFace = dirToward(spot.ax * T, spot.ay * T, (spot.x + 0.5) * T, (spot.y + 0.5) * T);
+    if (!agent.target) arrive(now);
+    return true;
+  }
+
+  /* ---------- power-down: in the deep wind-down mood it goes dormant where it stands (the eerie "is it off?") ---------- */
+  function sleep(now) {
+    agent.goal = 'sleep'; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null;
+    agent.sitting = true; agent.working = false; agent.state = 'idle';
+    agent.glance = null;                                      // frozen: maybeGlance skips goal==='sleep', so no lingering cooldown to leak
+    agent.studyUntil = now + U.irnd(20000, 55000);
+    curiositySay(SLEEP_LINE, 0.3, now);
+    return true;
+  }
+
+  /* ---------- caretaker rounds: a deliberate 2-3 stop lap of the station, an ownership beat at each ---------- */
+  function maybeRounds(now) {
+    if (now < (agent.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
+    const cur = tileOf(agent.px, agent.py), stops = [];
+    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }
+    const belts = (geo.belts || []); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
+    if (stops.length < 2) return false;
+    for (let i = stops.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = stops[i]; stops[i] = stops[j]; stops[j] = t; }   // shuffle
+    const q = [];
+    for (const st of stops.slice(0, U.irnd(2, 3))) {
+      const foot = st.belt ? { x: st.belt.x, y: st.belt.y, w: 1, h: 1 } : st.prop;
+      const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra: st.belt ? beltUnion() : blocked });
+      if (a) q.push({ tx: a.tx, ty: a.ty, face: a.face });
+    }
+    if (q.length < 2) return false;
+    agent.roundsQueue = q; agent.roundsCd = now + U.irnd(60000, 130000);
+    return roundsNext(now);
+  }
+  function roundsNext(now) {
+    while (agent.roundsQueue && agent.roundsQueue.length) {
+      const s = agent.roundsQueue.shift();
+      if (setPathTo({ x: s.tx, y: s.ty })) { agent.goal = 'rounds'; agent.useFace = s.face; if (!agent.target) arrive(now); return true; }
+    }
+    agent.goal = null; agent.roundsQueue = null; agent.idleUntil = now + U.irnd(400, 1400); return true;   // lap complete -> back to the menu
+  }
+
+  // THE WANT ENGINE — replaces the flat dice roll. Whichever drive is most unmet (tilted by temperament,
+  // the current mood phase, + how long since real work) leads; novelty + rare quirks interrupt. The SAME
+  // planners run, but now there is a legible reason behind every move so it stops reading as aimless.
   function decideIdle(now) {
     if (novelty.length && planInspect(now)) return;   // curiosity reflex: a fresh placement always wins
-    const n = agent.needs, p = agent.pers, idleAge = now - (agent.lastTaskAt || now);
-    const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody);
-    const wStim = (100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless;   // boredom climbs with downtime
-    const wSoc = (100 - n.social);
+    if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
+    if (maybePlace(now)) return;                       // rarest: it places / rearranges its OWN decor (acts on the station)
+    const n = agent.needs, p = agent.pers, ph = phaseOf(now), idleAge = now - (agent.lastTaskAt || now);
+    if (ph.tag === 'drift' && idleAge > 45000 && n.rest > 50 && U.chance(0.22) && sleep(now)) return;   // deep downtime in the wind-down mood -> power down where it stands
+    const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody) * ph.rest;
+    const wStim = ((100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless) * ph.stim;   // boredom climbs with downtime
+    const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) { if (U.chance(0.5)) lookAround(now); else wander(now); return; }   // content -> light ambient life
     if (top === wRest) { if (planProp(now)) return; }                                  // tired -> lounge / couch
     else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
     else {                                                                             // bored / restless
+      if (U.chance(0.3) && maybeRounds(now)) return;                                    //   do a deliberate caretaker lap (purpose, not aimless)
       if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
       if (idleAge > 30000 && U.chance(0.35) && planGazeOut(now)) return;               //   long quiet -> contemplate the void
-      if (p.restless > 1.0 && pace(now)) return;                                       //   antsy -> pace in place
+      if (p.restless * ph.restless > 1.0 && pace(now)) return;                          //   antsy -> pace in place
     }
     // graceful fallbacks so it never freezes
     if (U.chance(0.45 * p.curious) && planPOI(now)) return;
@@ -765,6 +963,7 @@ const World = (() => {
       return;
     }
     if (agent.state === 'walk') return;                              // walking owns the facing
+    if (agent.goal === 'sleep') return;                             // dormant: hold dead still (no head-turns)
     if (agent.glance && agent.glance.until > now) return;
     if (now < (agent.glanceCd || 0)) return;
     // watching a belt → follow the nearest box
@@ -776,6 +975,18 @@ const World = (() => {
     if (agent.goal === 'lounge') {
       if (U.chance(0.25)) { setGlance(U.pick(['east', 'west', 'south']), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(2600, 5200); }
       else agent.glanceCd = now + U.irnd(1200, 2400);
+      return;
+    }
+    // THE LONG STARE: hold the gaze on the Commander, only the rare slow head-tilt — the stillness is the point
+    if (agent.goal === 'stare') {
+      if (U.chance(0.15)) { setGlance(U.pick(['south', 'east', 'west']), U.irnd(500, 1100), now); agent.glanceCd = now + U.irnd(2200, 4500); }
+      else { agent.dir = 'south'; agent.glanceCd = now + U.irnd(1600, 3200); }
+      return;
+    }
+    // a quirk in progress: scan pans itself (timed); the others mostly hold their pose with a rare flick
+    if (agent.goal === 'quirk') {
+      if (agent.quirkKind !== 'scan' && U.chance(0.3)) setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(400, 800), now);
+      agent.glanceCd = now + U.irnd(1200, 2600);
       return;
     }
     // working at the desk: glance at a freshly placed thing nearby, else fidget-look up from the screen
@@ -792,8 +1003,8 @@ const World = (() => {
     }
     // a box trundles past an idle agent → turn the WHOLE BODY to track it (held by trackUntil in tick), not just the eyes
     if (U.chance(0.6)) { const box = nearestBox(); if (box && box.d < 56) { const bd = dirToward(agent.px, agent.py, box.x, box.y); setGlance(bd, U.irnd(500, 1000), now); agent.dir = bd; agent.trackUntil = now + U.irnd(1200, 2600); agent.glanceCd = now + U.irnd(3000, 5500); return; } }
-    // idle / studying / tending / gazing: occasional ambient look around
-    if ((agent.goal === 'inspect' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal == null) && U.chance(0.5)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(2500, 5000); }
+    // idle / studying / tending / gazing / on a rounds stop: occasional ambient look around
+    if ((agent.goal === 'inspect' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'rounds' || agent.goal == null) && U.chance(0.5)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(2500, 5000); }
   }
 
   // a short curiosity remark — only when nothing real is on screen, and only sometimes
@@ -857,9 +1068,17 @@ const World = (() => {
     } else if (agent.goal === 'lounge') {
       // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
       if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
-    } else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze') {
-      // observing / tending the desk / gazing into the void: hold until the dwell ends (maybeGlance animates it), then re-decide
-      if (now >= agent.studyUntil) { agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500); }
+    } else if (agent.goal === 'rounds') {
+      if (now >= agent.studyUntil) roundsNext(now);   // ownership pause done -> walk to the next stop (or end the lap)
+    } else if (agent.goal === 'sleep') {
+      if (now >= agent.studyUntil) { agent.goal = null; agent.sitting = false; agent.glanceCd = 0; agent.state = 'idle'; agent.idleUntil = now + U.irnd(600, 1800); }   // wakes naturally from dormancy
+    } else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare') {
+      // observing / tending / gazing / a quirk / the long stare: hold until the dwell ends (maybeGlance animates it), then re-decide
+      if (now >= agent.studyUntil) {
+        const back = (agent.goal === 'inspect' || agent.goal === 'watch') ? agent.useFace : null;   // a glance back at what it studied as it turns away
+        agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(500, 1500);
+        if (back && U.chance(0.5)) setGlance(back, U.irnd(500, 900), now);
+      }
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
       decideIdle(now);
     }
