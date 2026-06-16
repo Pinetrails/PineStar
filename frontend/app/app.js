@@ -102,7 +102,12 @@ const App = (() => {
 
   function persist() {
     if (!agent) return;
-    Save.write(Object.assign({ agent, usage: Harness.totals(), station: station ? station.serialize() : undefined }, Workstreams.serialize()));
+    // serialize defensively: a corrupt station graph must not throw out of persist() and break the unrelated
+    // UI action that triggered the save (persist runs on nearly every chat turn / config edit / board change).
+    let stationDoc;
+    try { stationDoc = station ? station.serialize() : undefined; }
+    catch (e) { console.warn('[persist] station serialize failed — saving without the station:', e); }
+    Save.write(Object.assign({ agent, usage: Harness.totals(), station: stationDoc }, Workstreams.serialize()));
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
@@ -306,7 +311,7 @@ const App = (() => {
 
   /* ---------- title ---------- */
   function showTitle() {
-    const saved = Save.has() ? Save.load() : null;
+    const saved = Save.load();   // load() already returns null when absent/corrupt — no need for a separate has() read
     const has = !!(saved && saved.agent);
     el('btn-resume').classList.toggle('hidden', !has);
     el('btn-newagent').classList.toggle('hidden', !has);

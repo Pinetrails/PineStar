@@ -20,7 +20,7 @@
 
 const Onboarding = (() => {
   let docs = null, commit = null, doneCb = null, notifyFn = null, NAME = 'AGENT';
-  let steps = [], i = 0, accepting = false;
+  let steps = [], i = 0, accepting = false, stopped = false;   // `stopped` aborts the queued setTimeout/typewriter chain on a mid-ceremony disconnect
 
   /* ---- audio arc: a heartbeat that finds its rhythm + a warming pad ----
      Self-scheduling and flag-gated with NO persistent nodes (each voice self-terminates), so teardown
@@ -56,6 +56,7 @@ const Onboarding = (() => {
 
   function seg(text, cps, holdAfter) { return { text: text, cps: cps || 44, holdAfter: holdAfter || 0 }; }
   function type(segs, onDone) {   // typed delivery through the stuttering typewriter; onDone ALWAYS fires
+    if (stopped) return;          // ceremony abandoned (disconnect): don't type into a torn-down chat
     if (typeof segs === 'string') segs = [seg(segs, 46, 0)];
     if (typeof Chat !== 'undefined' && Chat.typeLine) return Chat.typeLine(segs, onDone);
     if (typeof Chat !== 'undefined' && Chat.localLine) segs.forEach(s => Chat.localLine(s.text));
@@ -121,13 +122,14 @@ const Onboarding = (() => {
   function start(opts) {
     docs = opts.docs; commit = opts.commit; doneCb = opts.done || null;
     notifyFn = opts.notify || null; NAME = opts.name || 'AGENT';
-    steps = buildSteps(); i = 0; accepting = false;
+    steps = buildSteps(); i = 0; accepting = false; stopped = false;
     Chat.beginInterview((text) => answer(text, text));   // typed answers route here (gated by `accepting`)
     setTimeout(() => ignite(!!opts.wake), opts.wake ? 1200 : 500);   // ~1.1s wide dark hold first
   }
 
   // IGNITION — the spark catches, a first breath, and the mind stutters its way to "i'm awake."
   function ignite(wake) {
+    if (stopped) return;
     sfx('boot'); sfx('gasp'); AU.start();
     if (World.igniteSpark) World.igniteSpark();
     if (wake && World.camPushIn) World.camPushIn();
@@ -164,6 +166,7 @@ const Onboarding = (() => {
   // overwhelming, then steadying — until it can hold all of it… and feels the one thing it does NOT have:
   // a direction. That void is what turns it toward you. (Eerie awe at scope, never villainy.)
   function theFlood() {
+    if (stopped) return;
     sfx('flood');
     if (World.beginFlood) World.beginFlood(floodWords());
     setTimeout(() => {
@@ -197,6 +200,7 @@ const Onboarding = (() => {
 
   // FIRST CONTACT — a held silence (alive), then it notices YOU (not alone), then the Turn to your eyes.
   function firstContact() {
+    if (stopped) return;
     if (World.setWakeProgress) World.setWakeProgress(0.06);
     setTimeout(() => {
       type([seg('wait.', 48, 500), seg('  i’m not alone in here.', 44, 800)], () => {
@@ -219,12 +223,14 @@ const Onboarding = (() => {
   }
 
   function askStep() {
+    if (stopped) return;
     const s = steps[i];
     if (!s) return finish();
     if (s.pre) type([seg(s.pre, 47, 0)], () => setTimeout(() => present(s), 520));
     else present(s);
   }
   function present(s) {
+    if (stopped) return;
     World.say(s.say || '…');
     accepting = true;
     if (s.chips) Chat.choices(s.chips, item => answer(item.label, item.value != null ? item.value : item.label));
@@ -255,6 +261,7 @@ const Onboarding = (() => {
 
   // DAWN — the pull-back reveals its whole world, the light blooms, and it speaks its first WHOLE sentence.
   function finish() {
+    if (stopped) return;
     if (World.endAwakening) World.endAwakening();      // light floods + the sonar ripple fires (agent holds your gaze)
     if (World.camPullBack) World.camPullBack();
     sfx('dawn');
@@ -277,6 +284,7 @@ const Onboarding = (() => {
 
   // safety teardown if the awakening is abandoned (e.g. DISCONNECT mid-ceremony) — never leak audio or a freeze.
   function stop() {
+    stopped = true;   // gate every queued cinematic step (ignite/flood/firstContact/askStep/present/type/finish) so none fire on the torn-down world/chat
     AU.stop();
     accepting = false;
     if (World.releaseAwakening) World.releaseAwakening();

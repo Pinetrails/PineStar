@@ -222,7 +222,9 @@ const StationUI = (() => {
       '<div class="ag-foot-row">on station since <b>' + since + '</b> · all figures are real spend</div>';
   }
 
-  function agSkills() {
+  // ONE source for the SKILLS readout (perk grid + note) — used by both the standalone SKILLS window
+  // (buildSkills) and the dossier SKILLS tab, so the two can never drift apart again.
+  function skillsHtml() {
     const on = SKILLS.filter(s => s.on).length;
     return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
       '<div class="perk-grid">' +
@@ -233,7 +235,11 @@ const StationUI = (() => {
         '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
-      '<p class="sk-note">Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS.</p>';
+      '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
+      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory), ' +
+      'so the room layout IS the permission system. Read-only skills run freely, and the agent\'s own private ' +
+      '<b>notebook memory</b> saves without asking; only <b>writing to your files</b> pauses for a one-click ' +
+      'approval in COMMS before it runs. TERMINAL (sandboxed shell) is the next capability coming online.</p>';
   }
 
   function fileCard(a, f) {
@@ -280,13 +286,15 @@ const StationUI = (() => {
   function loadMemory(a) {
     const pre = $('#cf-mem');
     if (!pre) return;
+    const reqId = String(a.id);
+    pre.dataset.agent = reqId;   // stamp the request: a slower fetch for a previously-selected agent must not write into the now-current agent's card
     if (!(typeof Harness === 'object' && Harness.notebook)) { pre.textContent = 'Notebook unavailable — start the sidecar to read it.'; return; }
     Harness.notebook(a.id).then(notes => {
-      const cur = $('#cf-mem'); if (!cur) return;   // dossier may have closed/retabbed mid-fetch
+      const cur = $('#cf-mem'); if (!cur || cur.dataset.agent !== reqId) return;   // closed/retabbed OR switched agents mid-fetch
       cur.textContent = notesText(notes, a.name);
       const cnt = $('#cf-mem-cnt');
       if (cnt) cnt.textContent = notes.length + (notes.length === 1 ? ' note' : ' notes');
-    }).catch(() => { const cur = $('#cf-mem'); if (cur) cur.textContent = 'Could not read the notebook.'; });
+    }).catch(() => { const cur = $('#cf-mem'); if (cur && cur.dataset.agent === reqId) cur.textContent = 'Could not read the notebook.'; });
   }
 
   function agConfig(a) {
@@ -322,7 +330,7 @@ const StationUI = (() => {
     const a = present[sel];
     const act = activity();
     const price = (typeof Harness === 'object' && Harness.priceOf) ? Harness.priceOf(a.model) : null;
-    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills() : agBrief(a);
+    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? skillsHtml() : agBrief(a);
     body.innerHTML =
       '<div class="ag-wrap"><div class="ag-list">' +
       present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '">' +
@@ -372,22 +380,7 @@ const StationUI = (() => {
     { icon: '⌨️', name: 'TERMINAL',    tools: 'shell.exec',               on: false }
   ];
   function buildSkills(body) {
-    const on = SKILLS.filter(s => s.on).length;
-    body.innerHTML =
-      '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
-      '<div class="perk-grid">' +
-      SKILLS.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
-        '<div class="perk-icon">' + s.icon + '</div>' +
-        '<div class="perk-name">' + s.name + '</div>' +
-        '<div class="perk-desc">' + s.tools + '</div>' +
-        '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
-        (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
-      '</div>' +
-      '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
-      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory), ' +
-      'so the room layout IS the permission system. Read-only skills run freely, and the agent\'s own private ' +
-      '<b>notebook memory</b> saves without asking; only <b>writing to your files</b> pauses for a one-click ' +
-      'approval in COMMS before it runs. TERMINAL (sandboxed shell) is the next capability coming online.</p>';
+    body.innerHTML = skillsHtml();
   }
 
   /* ============== TASKS — the project-board view of WORKSTREAMS (card ≡ workstream) ==============
@@ -821,9 +814,11 @@ const StationUI = (() => {
     }, { w: '430px', onClose: () => { try { ARCADE.unmount(); } catch (_) {} } });
   }
 
-  // called on disconnect — tear down floating windows, keep persisted state
+  // called on disconnect — tear down floating windows + the 1s tick, keep persisted state
   function leave() {
     Object.keys(open).forEach(k => closeTerm(k));
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = 0; }   // stop the per-second crew tick running against torn-down state
+    started = false; present = [];                                // so the next enter() starts a fresh tick
   }
 
   return { init, enter, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };

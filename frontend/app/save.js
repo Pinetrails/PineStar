@@ -22,7 +22,13 @@ const Save = (() => {
 
   function migrate(doc) {
     let v = doc.version || 0;
+    // a save written by a NEWER build is a different shape — refuse it rather than relabel it as CURRENT
+    // (stamping doc.version=CURRENT and writing it back would silently corrupt the newer save).
+    if (v > CURRENT) { console.warn('[save] newer save version', v, '(> ' + CURRENT + ') — refusing to downgrade'); return null; }
     while (v < CURRENT && migrations[v]) { doc = migrations[v](doc); v++; doc.version = v; }
+    // a gap in the migration ladder left us short of CURRENT — the data is still an older shape, so don't
+    // mislabel it as fully-migrated (which downstream code would then trust).
+    if (v < CURRENT) { console.warn('[save] no migration path from version', v); return null; }
     doc.version = CURRENT;
     return doc;
   }
