@@ -221,9 +221,35 @@ const Voice = (() => {
       // it to onFail (fallback) rather than treating it as a clean finish (which would go SILENT).
       a.onerror = () => { if (done) return; done = true; cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); };
       const p = a.play();
-      if (p && p.catch) p.catch(() => { if (done) return; done = true; cleanup(); onFail ? onFail() : endOk(); });
+      if (p && p.catch) p.catch(err => {
+        if (done) return; done = true; cleanup();
+        // browser still blocking audio (no gesture yet) → tell the user instead of going silently quiet
+        if (err && err.name === 'NotAllowedError') setStatus('🔇 tap anywhere to turn on the agent\'s voice');
+        onFail ? onFail() : endOk();
+      });
     } catch (_) { cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); }
   }
+
+  /* Browsers block programmatic <audio> playback until the page has had a user gesture — so right after a
+     hard refresh the agent's FIRST spoken reply can come back SILENT (the audio plays seconds after you
+     typed, not tied to that gesture). Unlock the audio path on the first gesture with a muted, valid silent
+     WAV play, so the neural voice always plays. Idempotent; runs exactly once. */
+  let audioArmed = false;
+  function silentWav() {
+    const n = 8, b = new ArrayBuffer(44 + n), v = new DataView(b);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
+    v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+    for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);   // unsigned-8-bit silence
+    return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+  }
+  function armAudio() {
+    if (audioArmed) return; audioArmed = true;
+    try { const u = silentWav(); const a = new Audio(u); a.volume = 0; const p = a.play(); if (p && p.catch) p.catch(() => {}); setTimeout(() => { try { URL.revokeObjectURL(u); } catch (_) {} }, 1000); } catch (_) {}
+    try { if (typeof SFX !== 'undefined' && SFX.boot) SFX.boot(); } catch (_) {}   // also resume the SFX audio context
+  }
+
   /* ======================================================================
      SPEAK QUEUE — stream the reply sentence-by-sentence so the FIRST words play while the rest is still
      being generated/synthesized (kills the multi-second "dead air" before the agent talks). Chunks are
@@ -645,6 +671,8 @@ const Voice = (() => {
     // Escape always drops out of hands-free (never auto-arm on load — the first listen needs a click,
     // which also satisfies the browser mic-permission gesture).
     if (!init._esc) { init._esc = true; document.addEventListener('keydown', e => { if (e.key === 'Escape' && convoMode) { savePref(LS_CONVO, false); stopConvo(); } }); }
+    // unlock browser audio on the first user gesture so the agent's voice is never silently swallowed after a reload
+    if (!init._audio) { init._audio = true; ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, armAudio, { once: true, capture: true })); }
     // were they hands-free last session? the refresh reset it — invite a one-tap resume (skipped during the
     // awakening, which owns the COMMS input). Never auto-starts; the click is the required mic-permission gesture.
     if (opts.resumeCue !== false && canListen() && loadPref(LS_CONVO, false)) showResumeCue();
