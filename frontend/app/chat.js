@@ -4,6 +4,28 @@
    Supports: preloaded history (resume), and an "awaiting purpose" first-message mode. */
 'use strict';
 
+// VOICE MODE augmentation — appended to the system prompt (per-turn, ephemeral) only when the
+// agent is about to SPEAK a conversational reply. Forces a short, spoken-style answer; the paired
+// text/task turns get NO augmentation, so written replies keep full structure (the whole "voice =
+// laid-back back-and-forth, type = detailed" split is produced by the presence/absence of this block).
+function voiceModeRules() {
+  // the format rules are fixed; the closing line is the ACTIVE PERSONA's spoken-delivery hint, so the 5
+  // personalities sound distinct out loud (the voice channel was flattening them into one generic-casual tone).
+  let hint = 'sound like a relaxed buddy giving a quick answer across the room';
+  try {
+    if (typeof Voice !== 'undefined' && Voice.personaId && typeof Personas !== 'undefined') {
+      const p = Personas.get(Voice.personaId());
+      if (p && p.voiceModeHint) hint = p.voiceModeHint;
+    }
+  } catch (_) {}
+  return "\n\n[VOICE MODE — you're talking out loud, not typing.] Reply the way you'd actually SAY it:"
+    + " 1-3 short sentences, max. Use contractions (you're, gonna, it's, lemme). Plain spoken words only —"
+    + " absolutely NO markdown, asterisks, bullet points, numbered lists, headers, code blocks, emoji, or links;"
+    + " those can't be heard. Don't read out URLs or file paths character-by-character — just say what you did."
+    + " No throat-clearing, no 'As an AI', no 'I'd be happy to', no recapping the question. " + hint + "."
+    + " If the real answer is long, give the one-line version out loud and offer to drop the details in chat.";
+}
+
 const Chat = (() => {
   let log, input, statusEl;
   let system = '', name = 'AGENT', activeWs = null, busy = false;
@@ -142,11 +164,25 @@ const Chat = (() => {
     }
 
     const isTask = Classify.isTaskDirective(text);
-    World.setActivity(isTask ? 'task' : 'talk');
-    status(isTask ? 'working…' : 'thinking…');
-    // for a task the agent works at the computer (lit screen) and the result streams to
-    // this panel; for talk it speaks the reply as a bubble in the room.
-    const sys = system + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '');
+    // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
+    // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
+    // forth. When it's OFF, replies are silent + detailed written text.
+    const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    // In a voice conversation the agent stays ONE-ON-ONE: he faces the Commander and answers on the
+    // spot instead of walking to the workstation — even for "task"-classified messages (the work still
+    // runs, just not as a visible desk trip). Only a SILENT task (speaker off) walks over to work.
+    const stance = (isTask && !willSpeak) ? 'task' : 'talk';
+    World.setActivity(stance);
+    // in a spoken conversation, gently frame the agent so you can actually see who you're talking to
+    // (no-op if he's already comfortably on-screen; self-cancels the moment you pan/zoom).
+    if (stance === 'talk' && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
+    status(stance === 'task' ? 'working…' : 'thinking…');
+    // for a task the agent works at the computer (lit screen) and the result streams to this panel;
+    // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
+    // wins on format; it's never baked into the saved prompt.
+    const sys = system
+      + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '')
+      + (willSpeak ? voiceModeRules() : '');
 
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton) so the per-stream diff is real
     const ac = new AbortController();
@@ -155,11 +191,29 @@ const Chat = (() => {
     const seenDeliv = {};   // title -> true (one openable row per produced file)
     const out = streamingAgent();
     let acc = '';
+    // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
+    // streams — so it starts talking while the rest is still generating, instead of after the whole reply
+    // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
+    let spokenIdx = 0, finalReply = '';
+    const pushSpeech = (finalize, finalText) => {
+      if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
+      const src = finalize ? (finalText || acc) : acc;
+      const pending = src.slice(spokenIdx);
+      if (!pending) return;
+      if (finalize) { Voice.speakChunk(pending, name); spokenIdx = src.length; return; }
+      // stream only COMPLETE sentence(s): require trailing whitespace after the terminator so a decimal
+      // or abbreviation sitting at the buffer edge ("3." / "e.g.") isn't spoken as a finished sentence.
+      let cut = -1; const re = /[.!?…]+["')\]]?\s/g; let m;
+      while ((m = re.exec(pending)) !== null) cut = re.lastIndex;
+      if (cut < 0) { if (pending.length < 200) return; cut = pending.length; }   // runaway guard
+      const chunk = pending.slice(0, cut);
+      if (chunk.trim()) { Voice.speakChunk(chunk, name); spokenIdx += cut; }
+    };
     try {
       const { text: reply, error, endReason } = await Harness.chat({
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal,
         onRunId: id => { currentRunId = id; if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
-        onToken: d => { acc += d; out.append(d); if (!isTask) World.say(acc); App.refreshUsage(); },
+        onToken: d => { acc += d; out.append(d); if (!isTask) World.say(acc); if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; toolLine('▶ ' + ev.name + ' ' + brief(ev.argsSummary)); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; toolLine((ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''), ev.isError); },
@@ -179,7 +233,12 @@ const Chat = (() => {
         if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
       } else {
         ws.history.push({ role: 'assistant', content: reply || acc });
-        out.done(); if (!isTask) World.say(reply || acc);
+        out.done();
+        finalReply = reply || acc;
+        // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
+        // it arrives (onToken → pushSpeech) and flushed in the finally — so the agent starts talking while
+        // the rest is still generating, instead of after the whole reply + a full TTS round-trip.
+        if (!isTask) World.say(reply || acc);
         // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
         if (endReason && endReason !== 'done') {
           toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
@@ -195,7 +254,12 @@ const Chat = (() => {
       if (!isTask && !aborted) World.say('…connection trouble…');
     } finally {
       currentAbort = null; currentRunId = null;
-      busy = false; status('online'); World.setActivity('idle');   // task done → agent stands up
+      busy = false; status('online');
+      // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering
+      // off between turns); otherwise he stands up and goes back to idle station life.
+      const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
+      World.setActivity(stayFacing ? 'talk' : 'idle');
+      if (stayFacing && World.focusAgent) World.focusAgent({ soft: true });
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
       if (typeof Workstreams !== 'undefined') {
@@ -206,12 +270,18 @@ const Chat = (() => {
       App.refreshUsage();
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       if (onTurn) onTurn();
+      // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
+      // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
+      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
+      // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
+      if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
     }
   }
 
   /* DISCONNECT (or any teardown) cancels the in-flight billable run: abort the fetch (the sidecar's
      req.on('close') then stops the loop) AND tell the sidecar to kill the run by id — belt-and-suspenders. */
   function abort() {
+    if (typeof Voice !== 'undefined' && Voice.stopConvo) Voice.stopConvo();   // drop hands-free on disconnect
     if (currentAbort) { try { currentAbort.abort(); } catch (_) {} }
     if (currentRunId) Harness.cancel(currentRunId);
   }
@@ -272,5 +342,5 @@ const Chat = (() => {
     return () => { killed = true; };
   }
 
-  return { init, load, send, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, choices, typeLine };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, choices, typeLine };
 })();

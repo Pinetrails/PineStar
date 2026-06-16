@@ -166,8 +166,31 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 
 #chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
 #chat-inputrow .prompt { color: var(--ph); }
-#chat-input { border: none; background: transparent; padding: 4px 2px; }
+#chat-input { flex: 1; width: auto; min-width: 0; border: none; background: transparent; padding: 4px 2px; }
 #chat-input:focus { box-shadow: none; }
+
+/* ---------- voice: push-to-talk mic + agent-voice toggle ---------- */
+.mic-btn {
+  flex: 0 0 auto; font-family: inherit; font-size: 17px; line-height: 1;
+  color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-dim);
+  padding: 4px 8px; cursor: pointer; border-radius: 4px; user-select: none;
+}
+.mic-btn:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+/* listening: red glow + pulse so it's unmistakable the mic is hot */
+.mic-btn.rec { color: var(--bad); border-color: var(--bad); animation: mic-pulse 1s infinite; }
+@keyframes mic-pulse { 0%,100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 12px var(--bad); } }
+
+.voice-toggle {
+  font-family: inherit; font-size: 14px; line-height: 1; color: var(--ink);
+  background: transparent; border: none; padding: 0 6px 0 0; cursor: pointer; user-select: none;
+}
+.voice-toggle.off { opacity: .55; }
+/* speaking: gentle pulse on the speaker glyph while the agent's voice plays */
+.voice-toggle.speaking { animation: spk-pulse .7s infinite; }
+@keyframes spk-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+/* hands-free VOICE MODE button: dim when off (push-to-talk), lit + glowing when the loop is live */
+.voice-mode { opacity: .6; }
+.voice-mode.on { opacity: 1; text-shadow: 0 0 8px var(--ph-glow), 0 0 14px var(--ph-glow2); }
 
 /* ---------- onboarding / save additions ---------- */
 .title-btns { display: flex; flex-direction: column; gap: 12px; align-items: center; }
@@ -175,6 +198,15 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .swatch { width: 30px; height: 30px; border: 2px solid var(--ph-dim); cursor: pointer; }
 .swatch:hover { border-color: var(--ph); }
 .swatch.sel { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
+
+/* personality picker — selectable vibe chips on the create screen */
+.persona-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.persona {
+  font-family: inherit; font-size: 14px; color: var(--ph); background: var(--panel2);
+  border: 2px solid var(--ph-dim); padding: 4px 10px; cursor: pointer; letter-spacing: 1px;
+}
+.persona:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+.persona.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
 
 /* ============================================================
    STATION HUD — top bar · crew manifest · bottom bar · panels.

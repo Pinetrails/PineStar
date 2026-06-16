@@ -122,6 +122,9 @@ const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the SKYNET st
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
   + 'report what you actually found; never claim you cannot act.';
+const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
+try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
+let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 function loadChannelSecrets() {
@@ -254,6 +257,7 @@ function stopTelegram() {
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
@@ -595,6 +599,118 @@ function consentSummary(call) {
   const a = (call && call.args) || {};
   if (typeof a.path === 'string' && a.path) return a.path;
   try { const s = JSON.stringify(a); return s.length > 80 ? s.slice(0, 77) + '…' : s; } catch (_) { return ''; }
+}
+
+/* POST /api/tts — neural text-to-speech via OpenRouter's /audio/speech (same BYOK key the browser
+   already sends to /api/run; no extra secret). Returns mp3 bytes, or a small {fallback:true} JSON so
+   the browser drops back to its built-in speechSynthesis. Results are cached on disk by
+   (model,voice,speed,text) so repeated lines (acks, catchphrases) cost nothing and play instantly. */
+const TTS_DEFAULT_MODEL = 'google/gemini-3.1-flash-tts-preview';
+// prepend a 44-byte WAV header so the browser can play raw PCM (Gemini TTS only outputs pcm).
+function pcmToWav(pcm, sampleRate, channels) {
+  const bits = 16, blockAlign = channels * bits / 8, byteRate = sampleRate * blockAlign;
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8);
+  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(channels, 22);
+  h.writeUInt32LE(sampleRate, 24); h.writeUInt32LE(byteRate, 28); h.writeUInt16LE(blockAlign, 32); h.writeUInt16LE(bits, 34);
+  h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+// the voice cache writes one file per distinct spoken line and never pruned them — over weeks as the
+// PRIMARY interaction that's hundreds of MB of orphaned audio. Sweep opportunistically (throttled, after
+// the response, never blocking it): unlink stale .tmp orphans, then evict oldest by mtime past a cap.
+async function maybeEvictVoiceCache() {
+  if (evictingVoiceCache) return;
+  evictingVoiceCache = true;
+  try {
+    const names = await fsp.readdir(VOICE_CACHE_DIR);
+    const now = Date.now();
+    const audio = []; let total = 0;
+    for (const n of names) {
+      const fp = path.join(VOICE_CACHE_DIR, n);
+      let st; try { st = await fsp.stat(fp); } catch (_) { continue; }
+      if (!st.isFile()) continue;
+      if (n.endsWith('.tmp')) { if (now - st.mtimeMs > 5 * 60 * 1000) { try { await fsp.unlink(fp); } catch (_) {} } continue; }
+      audio.push({ fp, mtime: st.mtimeMs, size: st.size }); total += st.size;
+    }
+    const MAX_FILES = 600, MAX_BYTES = 200 * 1024 * 1024, LOW = 0.8;
+    if (audio.length <= MAX_FILES && total <= MAX_BYTES) return;
+    audio.sort((a, b) => a.mtime - b.mtime);   // oldest first
+    let files = audio.length, bytes = total;
+    for (const f of audio) {
+      if (files <= MAX_FILES * LOW && bytes <= MAX_BYTES * LOW) break;
+      try { await fsp.unlink(f.fp); files--; bytes -= f.size; } catch (_) {}
+    }
+  } catch (_) { /* eviction must never throw into the request path */ }
+  finally { evictingVoiceCache = false; }
+}
+async function handleTts(req, res) {
+  const fallback = (reason) => { console.error('[tts] fallback →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
+  catch (e) { return fallback('bad json'); }
+  const key = String((body && body.key) || '').trim();
+  let text = String((body && body.text) || '').replace(/\s+/g, ' ').trim();
+  // backstop cap (the client already segments to <1000): if it ever overruns, cut back to the last
+  // sentence boundary within the window rather than chopping mid-word.
+  if (text.length > 1200) { const head = text.slice(0, 1200); const m = head.match(/[\s\S]*[.!?]["')\]]?(?=\s|$)/); text = (m && m[0].length > 600 ? m[0] : head).trim(); }
+  const model = String((body && body.model) || TTS_DEFAULT_MODEL).trim();
+  const voice = String((body && body.voice) || 'Umbriel').trim();
+  if (!text) return fallback('no text');
+  if (!key) return fallback('no key');
+
+  // cache the synthesized (speed-independent) audio by model+voice+text; per-personality pacing is
+  // applied client-side via Audio.playbackRate, so it stays out of the key for better cache hits.
+  const ck = crypto.createHash('sha1').update(model + '|' + voice + '|' + text).digest('hex');
+  const serveCached = async () => {
+    for (const ext of ['wav', 'mp3']) {
+      try {
+        const buf = await fsp.readFile(path.join(VOICE_CACHE_DIR, ck + '.' + ext));
+        res.writeHead(200, { 'Content-Type': ext === 'mp3' ? 'audio/mpeg' : 'audio/wav', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
+        res.end(buf); return true;
+      } catch (_) { /* try next ext */ }
+    }
+    return false;
+  };
+  if (await serveCached()) return;
+
+  // pcm is the only format Gemini TTS supports (and is widely available); we wrap it to WAV below.
+  const payload = { model, input: text, voice, response_format: 'pcm' };
+  let or;
+  try {
+    or = await fetch('https://openrouter.ai/api/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'SKYNET' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
+  if (!or.ok) {
+    let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
+    return fallback('openrouter ' + or.status + (detail ? ' — ' + detail : ''));
+  }
+  const ct = (or.headers.get('content-type') || '').toLowerCase();
+  let buf;
+  try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
+  if (!buf || !buf.length) return fallback('empty audio');
+
+  // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
+  let outType = 'audio/wav', ext = 'wav';
+  if (/pcm|octet-stream/.test(ct) || /rate=|channels=/.test(ct)) {
+    const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
+    const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
+    buf = pcmToWav(buf, rate, channels);
+  } else if (/mpeg|mp3/.test(ct)) { outType = 'audio/mpeg'; ext = 'mp3'; }
+  else if (/wav/.test(ct)) { outType = 'audio/wav'; ext = 'wav'; }
+  else if (/ogg/.test(ct)) { outType = 'audio/ogg'; ext = 'ogg'; }
+  // anything else (e.g. a 200 with a JSON error body, or an unexpected codec) is NOT silently wrapped as
+  // WAV — that would ship a corrupt blob the browser fails to decode into silence. Fall back cleanly.
+  else { return fallback('unexpected content-type: ' + ct); }
+
+  try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + ext)); } catch (_) {}
+  res.writeHead(200, { 'Content-Type': outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
+  res.end(buf);
+  // every 32nd miss, sweep the cache AFTER the response so it never adds latency to a spoken reply.
+  if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
 }
 
 function readBody(req, max) {

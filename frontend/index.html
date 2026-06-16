@@ -56,6 +56,10 @@
     <label>AVATAR SUIT</label>
     <div id="swatches" class="swatches"></div>
 
+    <label>PERSONALITY <span class="dim">— how your agent talks (you can change it later)</span></label>
+    <div id="persona-picker" class="persona-picker"></div>
+    <div id="persona-hint" class="dim hint">—</div>
+
     <div id="connect-msg" class="msg"></div>
     <div class="connect-actions">
       <button id="btn-back" class="btn">‹ BACK</button>
@@ -105,11 +109,12 @@
   </div>
 
   <aside id="chat-panel">
-    <h3>▮ COMMS<span class="h3-right"><span class="ws-cost" id="ws-cost"></span><span class="dim" id="chat-status">offline</span></span></h3>
+    <h3>▮ COMMS<span class="h3-right"><button id="voice-mode" class="voice-toggle voice-mode" title="voice mode" aria-label="Voice mode (hands-free)" aria-pressed="false">💬</button><button id="voice-toggle" class="voice-toggle" title="agent voice" aria-label="Agent voice" aria-pressed="true">🔊</button><span class="ws-cost" id="ws-cost"></span><span class="dim" id="chat-status" role="status" aria-live="polite" aria-atomic="true">offline</span></span></h3>
     <div id="chat-log" class="scrolly"></div>
     <div id="chat-inputrow">
       <span class="prompt">&gt;</span>
-      <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off">
+      <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off" aria-label="Message your agent">
+      <button id="chat-mic" class="mic-btn" title="push to talk" aria-label="Push to talk" aria-pressed="false">🎤</button>
     </div>
   </aside>
 
@@ -141,10 +146,13 @@
 <script src="app/data-shim.js"></script>
 <script src="js/assets.js"></script>
 <script src="app/harness.js"></script>
+<script src="app/ctxgauge.js"></script>
 <script src="app/world.js"></script>
 <script src="app/classify.js"></script>
 <script src="app/workstreams.js"></script>
+<script src="app/personas.js"></script>
 <script src="app/chat.js"></script>
+<script src="app/voice.js"></script>
 <script src="app/stationui.js"></script>
 <script src="app/worldmodel.js"></script>
 <script src="app/stationbake.js"></script>
