@@ -24,6 +24,8 @@ const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
+const { selectProvider } = require('./providers/factory.js');
+const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, makeContext } = require('./context.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -170,6 +172,40 @@ function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the ag
 }
 let channelSecrets = loadChannelSecrets();
 const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() } });
+
+// ---- Codex (personal ChatGPT subscription) OAuth tokens — a protected sibling of the fs jail, SAME posture
+//      as the channel secrets above: the agent's own fs.* tools can't reach it, and the access/refresh tokens
+//      are NEVER placed on the event bus. Shape: { access_token, refresh_token, last_refresh, auth_mode }. ----
+const CODEX_TOKENS_FILE = path.join(WORKSPACES, 'codex', 'tokens.json');
+function loadCodexTokens() {
+  try { const raw = JSON.parse(fs.readFileSync(CODEX_TOKENS_FILE, 'utf8')); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
+  catch (e) { return null; }
+}
+function saveCodexTokens(obj) {
+  try {
+    fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true });
+    const tmp = CODEX_TOKENS_FILE + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(obj));
+    fs.renameSync(tmp, CODEX_TOKENS_FILE);
+  } catch (e) { console.warn('[codex] token persist failed:', (e && e.message) || e); }
+}
+function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} }
+let codexTokens = loadCodexTokens();
+
+// Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
+// rotated tokens. Throws an auth error otherwise — `reloginRequired` tells the caller whether to prompt a new
+// ChatGPT sign-in (dead/missing refresh token) or surface a transient "retry later" (quota/network).
+async function ensureCodexAccessToken() {
+  if (!codexTokens || !codexTokens.access_token) {
+    const e = new Error('Not signed in to ChatGPT — connect a ChatGPT subscription first.');
+    e.code = 'codex_not_connected'; e.reloginRequired = true; throw e;
+  }
+  if (!codexAuth.accessTokenIsExpiring(codexTokens.access_token, codexAuth.REFRESH_SKEW_SECONDS, Date.now())) return codexTokens.access_token;
+  const next = await codexAuth.refreshTokens({ fetch: globalThis.fetch, refresh_token: codexTokens.refresh_token, now: Date.now() });
+  codexTokens = Object.assign({}, codexTokens, next);
+  saveCodexTokens(codexTokens);
+  return codexTokens.access_token;
+}
 // channel.* / workitem.* / queue.* telemetry: validated + redacted, logged to the sidecar console AND
 // forwarded to open browser EventSources (the station HUD). The bot token / OR key are NEVER placed on a
 // payload — nothing to leak here — and redact() runs before validate() as a second backstop.
@@ -298,6 +334,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
   if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
+  if (req.method === 'POST' && req.url === '/api/auth/codex/start') return handleCodexStart(req, res);
+  if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
+  if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
+  if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
@@ -377,8 +417,9 @@ async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
-  const { key, model, system, messages = [], agentId = 'agent', isTask = false } = body || {};
-  if (!key || !model) { res.writeHead(400); return res.end('missing key/model'); }
+  const { key, model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
+  const usingCodex = (provider === 'codex' || provider === 'openai-codex');   // Codex authenticates by OAuth token, not an API key
+  if (!model || (!key && !usingCodex)) { res.writeHead(400); return res.end('missing key/model'); }
 
   res.writeHead(200, {
     'Content-Type': 'application/x-ndjson; charset=utf-8',
@@ -427,7 +468,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask,
+      key, model, system, messages, agentId, isTask, provider,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent
     });
@@ -488,7 +529,24 @@ async function runOnce(o) {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId });
 
   // ---- provider + cost ----
-  const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, key });
+  // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
+  // an API key. A dead/missing token surfaces as a clean run.error so the UI can prompt a re-sign-in; everything
+  // downstream of the provider seam (loop, cost, gauge) is identical to the OpenRouter path.
+  const usingCodex = (o.provider === 'codex' || o.provider === 'openai-codex');
+  let provider;
+  if (usingCodex) {
+    let codexToken;
+    try { codexToken = await ensureCodexAccessToken(); }
+    catch (e) {
+      emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: !(e && e.reloginRequired), message: 'ChatGPT sign-in needed: ' + ((e && e.message) || e) });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+    provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token: codexToken });
+  } else {
+    provider = selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key });
+  }
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
@@ -697,6 +755,57 @@ function handleChannelStatus(req, res) {
   const t = (channelSecrets && channelSecrets.telegram) || {};
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ connected: telegramStatus.connected, configured: !!t.token, state: telegramStatus.state, detail: telegramStatus.detail || '' }));
+}
+
+/* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
+// The device-code flow is driven from the browser in three short requests so no long connection is held open:
+//   POST /start         -> { user_code, verification_uri, device_auth_id, interval }   (show the code, open the URL)
+//   POST /poll {…}       -> { status:'pending' } until the user finishes, then exchanges + persists -> { status:'connected' }
+//   GET  /status         -> { connected, configured }   (never returns the tokens themselves)
+//   POST /logout         -> forgets the stored tokens
+// Tokens live ONLY in the protected CODEX_TOKENS_FILE (loadCodexTokens/saveCodexTokens) — never on the bus.
+
+// POST /api/auth/codex/start — ask OpenAI for a device/user code. Returns the code + the URL the user opens.
+async function handleCodexStart(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const d = await codexAuth.startDeviceLogin({ fetch: globalThis.fetch });
+    json(200, { user_code: d.user_code, verification_uri: d.verification_uri, device_auth_id: d.device_auth_id, interval: d.interval, expires_in: d.expires_in });
+  } catch (e) {
+    json(502, { error: (e && e.message) || 'failed to start ChatGPT sign-in', code: (e && e.code) || 'device_code_request_failed' });
+  }
+}
+
+// POST /api/auth/codex/poll { device_auth_id, user_code } — one poll tick. Pending until the user finishes in the
+// browser; on completion it exchanges the authorization_code for tokens and persists them.
+async function handleCodexPoll(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const device_auth_id = String(body.device_auth_id || ''), user_code = String(body.user_code || '');
+  if (!device_auth_id || !user_code) return json(400, { error: 'missing device_auth_id / user_code' });
+  try {
+    const poll = await codexAuth.pollDeviceLogin({ fetch: globalThis.fetch, device_auth_id, user_code });
+    if (poll.pending) return json(200, { status: 'pending' });
+    const creds = await codexAuth.exchangeCode({ fetch: globalThis.fetch, authorization_code: poll.authorization_code, code_verifier: poll.code_verifier, now: Date.now() });
+    codexTokens = { access_token: creds.access_token, refresh_token: creds.refresh_token, last_refresh: creds.last_refresh, auth_mode: creds.auth_mode };
+    saveCodexTokens(codexTokens);
+    console.log('  · ChatGPT subscription connected (Codex OAuth) — agents can now run on it');
+    json(200, { status: 'connected' });
+  } catch (e) {
+    json(502, { status: 'error', error: (e && e.message) || 'ChatGPT sign-in failed', code: (e && e.code) || 'device_code_poll_error' });
+  }
+}
+
+// GET /api/auth/codex/status — booleans only; never the tokens.
+function handleCodexStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '' }));
+}
+
+// POST /api/auth/codex/logout — forget the stored ChatGPT credentials.
+function handleCodexLogout(req, res) {
+  codexTokens = null; clearCodexTokens();
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
 }
 
 /* ------------------------------- helpers ------------------------------- */
