@@ -59,4 +59,22 @@ function planWith(objects) {
 // no posted plan -> null (routed-mode off; the office default applies everywhere)
 A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null');
 
+// the router round-robins SPLITTER dispatch across both bound agents (stateful, matches the engine's spread)
+{
+  const plan = Pipeline.compileRoutingPlan({
+    belts: [{ x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }, { x: 4, y: 0, dir: 'E' },
+            { x: 2, y: 1, dir: 'S' }, { x: 2, y: 2, dir: 'S' }, { x: 2, y: 3, dir: 'S' }],
+    props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 }, { id: 'sp', t: 'splitter', x: 2, y: 0, w: 1, h: 1 },
+            { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' },
+            { id: 'br', t: 'bay', x: 1, y: 4, w: 2, h: 2, agentId: 'researcher' }]
+  });
+  const r = makeRouter();
+  A.ok(r.setPlan(plan).ok, 'a splitter floor with two bound bays is deployable');
+  const seq = [r.resolveTarget({}), r.resolveTarget({}), r.resolveTarget({}), r.resolveTarget({})];
+  A.eq(seq.join(','), 'coder,researcher,coder,researcher', 'the router spreads splitter dispatch across both agents (' + seq.join(',') + ')');
+  // setPlan resets the round-robin (a new floor starts fresh)
+  r.setPlan(plan);
+  A.eq(r.resolveTarget({}), 'coder', 're-posting the plan resets the round-robin to the first lane');
+}
+
 A.report('routing.b5');

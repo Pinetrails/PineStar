@@ -10,19 +10,26 @@ const Pipeline = require('../../frontend/app/pipeline.js');
 
 function makeRouter() {
   let plan = null;
+  let rr = {};   // per-SPLITTER-tile round-robin counter so dispatch spreads work across lanes (matches the engine)
 
   // store a posted plan. null/empty clears it (no routing floor). A plan with BLOCKING errors is refused.
   function setPlan(p) {
     if (!p || typeof p !== 'object') { plan = null; return { ok: true, cleared: true }; }
     if (!Array.isArray(p.errors)) { plan = null; return { ok: false, error: 'malformed plan' }; }
     if (!Pipeline.ok(p)) { plan = null; return { ok: false, error: 'plan has blocking errors', codes: p.errors.filter(e => !e.warn).map(e => e.code) }; }
-    plan = p; return { ok: true, hash: p.hash || null, bays: (p.bays || []).length };
+    plan = p; rr = {}; return { ok: true, hash: p.hash || null, bays: (p.bays || []).length };   // new floor -> reset round-robin
   }
-  function clearPlan() { plan = null; }
+  function clearPlan() { plan = null; rr = {}; }
   function getPlan() { return plan; }
   function hasPlan() { return !!plan; }
-  // the agentId a work-item routes to, or null (caller falls back to its default resolution — never stalls)
-  function resolveTarget(ctx) { return plan ? Pipeline.resolveTarget(plan, ctx || {}) : null; }
+  // the agentId a work-item routes to, or null (caller falls back to its default resolution — never stalls).
+  // The picker advances a per-splitter-tile counter, so successive work-items spread across the splitter's lanes
+  // (a FILTER stays deterministic by tag and ignores it) — dispatch load-balances instead of always lane 0.
+  function resolveTarget(ctx) {
+    if (!plan) return null;
+    const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
+    return Pipeline.resolveTarget(plan, ctx || {}, pick);
+  }
 
   /* Phase B5 — per-bay capability isolation. The resolveTools-shaped station for a BAY-bound agent, built from
      the objects the floor placed in that bay's room (carried on the posted plan). null for any agent WITHOUT a

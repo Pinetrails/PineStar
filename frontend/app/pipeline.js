@@ -123,9 +123,13 @@
     return plan;
   }
 
-  // which agentId does a work-item with this tag route to? Follows belt flow from the (first) source,
-  // applying FILTER content-routing by tag, until it reaches a bound bay. null = no bay on the route.
-  function resolveTarget(plan, ctx) {
+  // which agentId does a work-item with this tag route to? Follows belt flow from the (first) source, applying
+  // FILTER content-routing by tag, until it reaches a bound bay. null = no bay on the route.
+  // `pick(tileKey, laneCount) -> index` chooses the lane at a SPLIT/MERGE junction (FILTER is deterministic by
+  // tag and ignores it). Omitted -> lane 0 (a pure, replay-stable read). The sidecar router passes a stateful
+  // round-robin picker so autonomous dispatch genuinely SPREADS splitter work across agents, matching the
+  // engine's load-balance intent instead of always running the first lane.
+  function resolveTarget(plan, ctx, pick) {
     if (!plan || !plan.sources || !plan.sources.length) return null;
     const tag = (ctx && ctx.tag) || 'general';
     const map = plan.belts, junctions = plan.junctions, bayAt = plan.bayTileToAgent;
@@ -147,7 +151,10 @@
           : (j.def && lanes.indexOf(j.def) >= 0) ? j.def
           : (lanes[0] || here);
       }
-      else if (j) { const lanes = outLanes(map, t.x, t.y); d = lanes[0] || here; }   // split/merge: first lane (B3 load-balances)
+      else if (j) {   // SPLIT/MERGE: pick a lane (default 0; the router's picker round-robins to spread work)
+        const lanes = outLanes(map, t.x, t.y);
+        if (lanes.length) { const i = pick ? ((pick(k, lanes.length) % lanes.length) + lanes.length) % lanes.length : 0; d = lanes[i]; } else d = here;
+      }
       const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1];
       if (!map[key(nx, ny)]) return null;            // stepped off the belt with no bay
       t = { x: nx, y: ny };

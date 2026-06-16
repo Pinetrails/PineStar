@@ -1541,8 +1541,10 @@ const World = (() => {
       }
       return;
     }
-    // INBOUND: route the delivered box to its bound agent's bay (the SAME bay it rode to) and light THAT body.
-    const aid = (typeof Pipeline !== 'undefined' && routingPlan) ? Pipeline.resolveTarget(routingPlan, { tag: p.tag }) : null;
+    // INBOUND: light the bay the box ACTUALLY rode to (its landing tile) — exact even past a SPLITTER's
+    // round-robin; fall back to resolveTarget(tag) only if it didn't land on a bound bay tile (open-end sink).
+    const landed = (routingPlan && routingPlan.bayTileToAgent) ? routingPlan.bayTileToAgent[bx.x + ',' + bx.y] : null;
+    const aid = landed || ((typeof Pipeline !== 'undefined' && routingPlan) ? Pipeline.resolveTarget(routingPlan, { tag: p.tag }) : null);
     const body = bodyForAgent(aid);
     if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; body.workUntil = fnow + 4000; }
     else { say('received: ' + (p.preview || 'message')); wakeIn(); }   // the hero (or an unrouted box) — today's behaviour
