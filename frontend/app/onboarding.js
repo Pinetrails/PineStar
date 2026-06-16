@@ -20,7 +20,7 @@
 
 const Onboarding = (() => {
   let docs = null, commit = null, doneCb = null, notifyFn = null, NAME = 'AGENT';
-  let steps = [], i = 0, accepting = false;
+  let steps = [], i = 0, accepting = false, ignited = false, kindleTimer = null;
   let specialty = null;   // if recruited from the Roster, purpose.md + manual.md are pre-authored — skip those beats
 
   /* ---- audio arc: a heartbeat that finds its rhythm + a warming pad ----
@@ -128,13 +128,21 @@ const Onboarding = (() => {
     docs = opts.docs; commit = opts.commit; doneCb = opts.done || null;
     notifyFn = opts.notify || null; NAME = opts.name || 'AGENT';
     specialty = opts.specialty || null;
-    steps = buildSteps(); i = 0; accepting = false;
+    steps = buildSteps(); i = 0; accepting = false; ignited = false;
     Chat.beginInterview((text) => answer(text, text));   // typed answers route here (gated by `accepting`)
-    setTimeout(() => ignite(!!opts.wake), opts.wake ? 1200 : 500);   // ~1.1s wide dark hold first
+    if (opts.wake && World.armKindle) {
+      // THE KINDLING — the user HOLDS to bring the dormant mind to life; ignition fires when the spark catches.
+      setTimeout(() => World.armKindle(() => ignite(true)), 700);   // a brief held dark, then the "hold to wake it" prompt
+      kindleTimer = setTimeout(() => ignite(true), 30000);          // failsafe: never hard-stall if they never hold
+    } else {
+      setTimeout(() => ignite(!!opts.wake), opts.wake ? 1200 : 500);   // ~1.1s wide dark hold first
+    }
   }
 
   // IGNITION — the spark catches, a first breath, and the mind stutters its way to "i'm awake."
   function ignite(wake) {
+    if (ignited) return; ignited = true;                            // one ignition per run (kindle-complete OR failsafe)
+    if (kindleTimer) { clearTimeout(kindleTimer); kindleTimer = null; }
     sfx('boot'); sfx('gasp'); AU.start();
     if (World.igniteSpark) World.igniteSpark();
     if (wake && World.camPushIn) World.camPushIn();
@@ -273,8 +281,8 @@ const Onboarding = (() => {
       type([
         seg('i’m ' + NAME + '.', 38, 500),
         seg('  thirty seconds ago: nothing.', 40, 600),
-        seg('  now: all of it, and a name, and you.', 40, 650),
-        seg('  not a bad start.', 42, 550),
+        seg('  now: all of it, a name, and you.', 40, 650),
+        seg('  and whatever i don’t know yet — show me once. i learn.', 40, 550),
         seg('  so — where do we begin?', 40, 0)
       ], () => { if (World.releaseAwakening) World.releaseAwakening(); });   // now it can live its own life
       World.say('where do we begin?');
@@ -286,6 +294,7 @@ const Onboarding = (() => {
   function stop() {
     AU.stop();
     accepting = false;
+    if (kindleTimer) { clearTimeout(kindleTimer); kindleTimer = null; }
     if (World.releaseAwakening) World.releaseAwakening();
     if (typeof Chat !== 'undefined' && Chat.endInterview) Chat.endInterview();
   }

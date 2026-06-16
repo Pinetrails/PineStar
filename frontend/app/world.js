@@ -35,6 +35,7 @@ const World = (() => {
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   let floodAt = 0, floodEndAt = 0, floodStreams = null;        // THE FLOOD: screen-space data-cascade — start / collapse-trigger / seeded streams
   let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
+  let kindleArmed = false, kindleP = 0, kindleHolding = false, kindlePeak = 0, kindleDone = null;   // THE KINDLING: the user HOLDS to wake the dormant mind; their attention fills kindleP (0..1) → ignition
   const stars = [];
 
   /* reduced-motion (the warroom honesty floor): heavy motion — pulses/blinks — goes steady when the OS
@@ -322,7 +323,7 @@ const World = (() => {
       panX = c.x - wx * scale; panY = c.y - wy * scale;
       camLerp = null;   // the user is driving the camera — stop any in-progress focus ease
     }, { passive: false });
-    cv.addEventListener('mousedown', ev => { camLerp = null; const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
+    cv.addEventListener('mousedown', ev => { if (kindleArmed) { kindleHolding = true; return; } camLerp = null; const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
     cv.addEventListener('mousemove', ev => {
       if (drag) {
         const c = toCanvas(ev);
@@ -337,6 +338,7 @@ const World = (() => {
       cv.style.cursor = (hit || arcadeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets are clickable too
     });
     cv.addEventListener('mouseup', ev => {
+      if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
       const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
       if (wasDrag) return;
       const wp = toWorld(ev);
@@ -347,7 +349,7 @@ const World = (() => {
       const arc = arcadeAt(wp);
       if (arc && onArcade) onArcade(arc);
     });
-    cv.addEventListener('mouseleave', () => { hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
+    cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
   }
 
@@ -375,7 +377,16 @@ const World = (() => {
   function camCenterOn(px, py, sc) { sc = clampz(sc, MINZ, MAXZ); return [sc, cv.width / 2 - px * sc, cv.height * 0.46 - py * sc]; }
   function beginAwakening() { awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; camAnim = null; if (agent) agent.dir = 'north'; }   // newborn faces AWAY until the Turn
   function setWakeProgress(p) { p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
-  function igniteSpark() { sparkAt = performance.now(); bornAt = performance.now(); wakeDark = 0.985; wakeDarkTarget = 0.985; }   // the mind catches fire — snap to near-total dark so the spark is the ONLY light
+  function igniteSpark() { sparkAt = performance.now(); bornAt = performance.now(); wakeDark = 0.985; wakeDarkTarget = 0.985; kindleArmed = false; kindleP = 0; }   // the mind catches fire — snap to near-total dark so the spark is the ONLY light (and end any kindle)
+  /* THE KINDLING — the pre-ignition beat: one dim, almost-dead ember sits where the mind will be, and the
+     user must HOLD to bring it to life. Sustained attention fills kindleP; releasing lets it ebb. When it
+     fills, onDone() fires the ignition. A gentle push-in makes the ember intimate while you hold. */
+  function armKindle(onDone) {
+    kindleArmed = true; kindleP = 0; kindleHolding = false; kindlePeak = 0; kindleDone = onDone || null;
+    wakeDark = 0.985; wakeDarkTarget = 0.985;
+    if (cache && agent && !agent.unplaced) { const [s, x, y] = camCenterOn(agent.px, agent.py - 4, 2.4); camTweenTo(s, x, y, 1400); }
+  }
+  function kindleHold(down) { if (kindleArmed) kindleHolding = !!down; }
   function camPushIn() { if (!cache || !agent || agent.unplaced) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, 3.2); camTweenTo(s, x, y, 2600); }
   function camCreep() { if (!cache || !agent || agent.unplaced || camAnim) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, scale * 1.035); camTweenTo(s, x, y, 600); }   // a hair closer with each truth
   function camPunch() { if (!agent || agent.unplaced || camAnim) return; const b = scale; const [s1, x1, y1] = camCenterOn(agent.px, agent.py - 4, b * 1.06); const [s0, x0, y0] = camCenterOn(agent.px, agent.py - 4, b); camTweenTo(s1, x1, y1, 150, t => t, () => camTweenTo(s0, x0, y0, 240)); }   // eyes finding yours
@@ -391,7 +402,7 @@ const World = (() => {
   }
   function truthPulse() { truthPulseAt = performance.now(); }
   function endAwakening() { wakeDarkTarget = 0; dawnAt = performance.now(); wakeIn(); }   // DAWN: light floods + ripple fires (agent stays frozen/facing-you for the final line)
-  function releaseAwakening() { awakeFrozen = false; sparkAt = 0; floodAt = 0; floodEndAt = 0; floodStreams = null; armFirstWake(); }   // hand the newborn back to its own autonomous life — and let it have its FIRST LIGHT
+  function releaseAwakening() { awakeFrozen = false; sparkAt = 0; floodAt = 0; floodEndAt = 0; floodStreams = null; kindleArmed = false; kindleP = 0; kindleHolding = false; armFirstWake(); }   // hand the newborn back to its own autonomous life — and let it have its FIRST LIGHT
   // FIRST LIGHT: arm the once-per-life wake ritual the instant the newborn owns itself. The activity!=='task'
   // guard makes a summon racing the release win cleanly (the ritual simply never arms).
   function armFirstWake() {
@@ -1313,6 +1324,12 @@ const World = (() => {
   function frame(now) {
     const dt = Math.min(64, now - last); last = now; fnow = now;
     if (wakeDark !== wakeDarkTarget) { wakeDark += (wakeDarkTarget - wakeDark) * Math.min(1, dt / 260); if (Math.abs(wakeDark - wakeDarkTarget) < 0.002) wakeDark = wakeDarkTarget; }
+    if (kindleArmed) {   // THE KINDLING: the user's hold fills the spark; release lets it ebb; full → ignite
+      kindleP = kindleHolding ? Math.min(1, kindleP + dt / 1500) : Math.max(0, kindleP - dt / 900);
+      if (kindleP > kindlePeak) kindlePeak = kindleP;
+      wakeDarkTarget = 0.985 - 0.05 * kindleP;   // the room hints awake as it kindles (still dark until ignition)
+      if (kindleP >= 1) { kindleArmed = false; kindleHolding = false; const cb = kindleDone; kindleDone = null; if (cb) cb(); }
+    }
     if (camAnim) {   // the scripted awakening camera owns {scale,panX,panY} while a move runs
       camAnim.t = Math.min(1, camAnim.t + dt / camAnim.dur);
       const k = camAnim.ease(camAnim.t);
@@ -1393,6 +1410,7 @@ const World = (() => {
       ctx.fillRect(0, 0, cv.width, cv.height);
       ctx.setTransform(scale, 0, 0, scale, panX, panY);
     }
+    if (kindleArmed || kindleP > 0) drawKindle(now);   // THE KINDLING — dormant ember + hold prompt + awareness bar (pre-ignition)
     if (floodAt) drawFlood(now);   // THE FLOOD — the cascade of knowledge streaming in, over the dark room
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     drawDeskGauge(now);   // the context-window memory core at the workstation (world-space, above the lightmap)
@@ -1415,6 +1433,46 @@ const World = (() => {
       ctx.fillStyle = g; ctx.fillRect(f.x - f.r * 0.7, f.y - f.r * 0.7, f.r * 1.4, f.r * 1.4);
     }
     ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // THE KINDLING render — a dim dormant ember the user's hold brings to life: it brightens and pulls motes
+  // inward as kindleP fills, under a screen-space prompt ("hold to wake it") + an awareness bar. Pre-ignition.
+  function drawKindle(now) {
+    if (!kindleArmed && kindleP <= 0) return;
+    const p = kindleP;
+    if (agent && !agent.unplaced) {
+      const hx = agent.px, hy = agent.py - 12;
+      ctx.globalCompositeOperation = 'lighter';
+      const breathe = 0.6 + 0.4 * Math.sin(now / (kindleHolding ? 200 : 900));   // faster pulse while held
+      const er = 2 + p * 11, a = Math.min(1, (0.10 + 0.9 * p) * (0.65 + 0.35 * breathe));
+      const g = ctx.createRadialGradient(hx, hy, 0.4, hx, hy, er + 3);
+      g.addColorStop(0, 'rgba(255,240,205,' + a.toFixed(3) + ')'); g.addColorStop(1, 'rgba(255,240,205,0)');
+      ctx.fillStyle = g; ctx.fillRect(hx - er - 3, hy - er - 3, (er + 3) * 2, (er + 3) * 2);
+      const n = Math.floor(4 + 11 * p);   // motes pulled inward as it kindles
+      for (let k = 0; k < n; k++) {
+        const seed = k * 1.7, ang = now / 1300 + seed * 2.4, rad = (17 - 12 * p) + (k % 4) * 3 + Math.sin(now / 600 + seed) * 2;
+        const mx = hx + Math.cos(ang) * rad, my = hy + Math.sin(ang) * rad * 0.5;
+        ctx.fillStyle = 'rgba(255,244,214,' + (0.32 * p).toFixed(3) + ')';
+        ctx.fillRect(mx - 0.6, my - 0.6, 1.4, 1.4);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const cw = cv.width, ch = cv.height;
+    const promptA = (1 - p) * (0.45 + 0.55 * Math.abs(Math.sin(now / 700)));   // a breathing prompt that fades as it fills
+    if (promptA > 0.02) {
+      const label = (kindlePeak > 0.12 && !kindleHolding && p > 0.01) ? 'don’t stop —' : 'hold to wake it';
+      ctx.font = "16px 'VT323', 'Courier New', monospace";
+      ctx.fillStyle = 'rgba(255,170,60,' + promptA.toFixed(3) + ')';
+      ctx.fillText(label, cw / 2, ch * 0.74);
+    }
+    const bw = Math.min(260, cw * 0.42), bh = 6, bx = Math.round((cw - bw) / 2), by = Math.round(ch * 0.78);   // the awareness bar
+    ctx.fillStyle = 'rgba(8,10,9,0.55)'; ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = 'rgba(255,170,60,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.fillStyle = '#ffcf6a'; ctx.fillRect(bx + 1, by + 1, Math.max(0, (bw - 2) * p), bh - 2);
+    ctx.textAlign = 'left';
+    ctx.setTransform(scale, 0, 0, scale, panX, panY);
   }
 
   // the soul kindling: an ignition spark at the head, a halo that grows with consciousness, drifting motes.
@@ -1873,7 +1931,7 @@ const World = (() => {
     ctx.textAlign = 'left';
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
+  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
     // AGENT GROWTH: XpStore pushes the hero's pre-computed Xp.compute() snapshot here (station arg unused —
     // the colony headline is the top-bar STATION chip); pulseLevelUp fires the gold ring.
     setXp: (a) => { xpAgent = a || null; },
