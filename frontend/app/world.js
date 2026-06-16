@@ -96,6 +96,15 @@ const World = (() => {
   const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
   const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
   const Q_STARTLE = ['!', 'whoa', 'what was that', 'huh!', 'oh'];   // sudden change right beside it
+  const SELF_PLACE = ['there', 'better', 'that belongs here', 'mine now', 'hm, nice'];   // after placing its own decor
+  /* AGENT ACTS ON THE STATION (safety-railed): it rarely places its OWN small decor on EMPTY floor, and
+     only ever moves/removes things from agentDecor (its own ids) — never the Commander's props. Capped +
+     long-cooldown so it stays an Easter-egg "it rearranged its corner" moment, not clutter. NOTE: addProp
+     hits the undo stack + persists (the wow: the corner changes between visits); a silent/agent-only
+     mutation lane is a future refinement. */
+  let placeCd = 0;
+  const agentDecor = [];   // ids of decor THIS agent placed — the ONLY props it will ever move or remove
+  const AGENT_DECOR = ['plant', 'coffee', 'cans', 'poster'];   // 1x1, blocks:false (never obstructs the agent or the Commander)
   const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
   const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
 
@@ -168,6 +177,7 @@ const World = (() => {
     if (unsub) { unsub(); unsub = null; }
     station = st; geo = null; cache = null; geoDirty = true; bakeDirty = true; fitNeeded = true;
     novelty = []; seenProps = null; seenBelts = null;   // re-learn the scene from scratch (no cross-station novelty)
+    agentDecor.length = 0; placeCd = 0;                 // forget which decor it placed (the new floor is a clean slate)
     crew = [];                                          // no cross-station crew bodies (rebuilt from the new floor's bays)
     if (station && station.onChange) unsub = station.onChange(() => { geoDirty = true; });
     rederive();
@@ -188,7 +198,7 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk, re-decide next idle tick
+        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement, re-decide next idle tick
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
@@ -259,7 +269,8 @@ const World = (() => {
       pers: makePersonality(a.id),
       needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
       lastTaskAt: 0, thinkUntil: 0, settleUntil: 0, trackUntil: 0,   // machine-state timers (think-before-work, settle-before-typing, downtime, body-track)
-      quirkKind: null   // which rare quirk is currently playing (drives the gaze flavor in maybeGlance)
+      quirkKind: null,   // which rare quirk is currently playing (drives the gaze flavor in maybeGlance)
+      placeTarget: null, removeId: null   // pending station edit when goal==='place' (add decor at target, or remove its own)
     };
     if (geo) placeAgent();
   }
@@ -478,6 +489,17 @@ const World = (() => {
       else if (agent.goal === 'gaze') { agent.studyUntil = now + U.irnd(4000, 8000); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
       else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, agent.useFace); }
       else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, agent.useFace); }
+    }
+    else if (agent.goal === 'place') {
+      // it acts on the station: drops a piece of its OWN decor on the empty tile, or removes one it placed before
+      agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.dir = agent.useFace || 'south';
+      if (agent.placeTarget && station.addProp) {
+        const tg = agent.placeTarget, res = station.addProp({ t: tg.t, x: tg.x, y: tg.y, w: 1, h: 1, block: false });
+        if (res && res.ok) { agentDecor.push(res.id); if (seenProps) seenProps.add(res.id); curiositySay(SELF_PLACE, 0.6, now); }   // suppress self-novelty so it doesn't go inspect its own work
+      } else if (agent.removeId && station.removeProp) {
+        station.removeProp(agent.removeId); const i = agentDecor.indexOf(agent.removeId); if (i >= 0) agentDecor.splice(i, 1); curiositySay(SELF_PLACE, 0.4, now);
+      }
+      agent.placeTarget = null; agent.removeId = null; agent.goal = null; agent.idleUntil = now + U.irnd(900, 2000);
     }
     else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 2600); }
   }
@@ -813,12 +835,54 @@ const World = (() => {
     return true;
   }
 
+  /* ---------- the agent ACTS ON the station: place / rearrange its OWN decor (rare, safety-railed) ---------- */
+  function emptySpotNear() {
+    if (!geo || !station || !station.canPlaceProp) return null;
+    const cur = tileOf(agent.px, agent.py);
+    const belts = new Set(((geo && geo.belts) || []).map(b => b.x + ',' + b.y));
+    for (let tries = 0; tries < 40; tries++) {
+      const x = cur.x + U.irnd(-5, 5), y = cur.y + U.irnd(-5, 5);
+      if (Math.abs(x - cur.x) + Math.abs(y - cur.y) < 2) continue;
+      if (!geo.walkable(x, y, blocked)) continue;                 // free floor (no blocking prop / desk / chamfer)
+      if (belts.has(x + ',' + y)) continue;                       // not on a belt
+      if (seat && x === seat.tx && y === seat.ty) continue;       // not the work seat
+      const t = AGENT_DECOR[U.irnd(0, AGENT_DECOR.length - 1)];
+      if (!station.canPlaceProp(t, x, y, 1, 1).ok) continue;      // model: on a deck, no prop overlap (never the Commander's stuff)
+      for (const [ax, ay] of SEAT_NB) if (geo.walkable(x + ax, y + ay, blocked) && !belts.has((x + ax) + ',' + (y + ay))) return { x, y, t, ax: x + ax, ay: y + ay };
+    }
+    return null;
+  }
+  function maybePlace(now) {
+    if (now < placeCd || !station || !station.addProp || !geo) return false;
+    if (!U.chance(0.5)) return false;                              // even when eligible, only sometimes
+    if (agentDecor.length >= 3) {                                  // at cap -> sometimes REARRANGE: remove one of ITS OWN (a fresh one may return later)
+      if (!U.chance(0.5) || !station.removeProp) return false;
+      const id = agentDecor[U.irnd(0, agentDecor.length - 1)];
+      const p = geo.props && geo.props.find(q => q.id === id);
+      if (!p) { const i = agentDecor.indexOf(id); if (i >= 0) agentDecor.splice(i, 1); return false; }
+      let ap = null; for (const [ax, ay] of SEAT_NB) if (geo.walkable(p.x + ax, p.y + ay, blocked)) { ap = { x: p.x + ax, y: p.y + ay }; break; }
+      if (!ap || !setPathTo({ x: ap.x, y: ap.y })) return false;
+      placeCd = now + U.irnd(120000, 240000);
+      agent.goal = 'place'; agent.placeTarget = null; agent.removeId = id; agent.useFace = dirToward(ap.x * T, ap.y * T, (p.x + 0.5) * T, (p.y + 0.5) * T);
+      if (!agent.target) arrive(now);
+      return true;
+    }
+    if ((geo.props || []).filter(p => AGENT_DECOR.indexOf(p.t) >= 0).length >= 5) return false;   // floor-wide decor cap (reload-safe; never clutters a station already full of decor)
+    const spot = emptySpotNear();
+    if (!spot || !setPathTo({ x: spot.ax, y: spot.ay })) return false;
+    placeCd = now + U.irnd(120000, 240000);
+    agent.goal = 'place'; agent.placeTarget = spot; agent.removeId = null; agent.useFace = dirToward(spot.ax * T, spot.ay * T, (spot.x + 0.5) * T, (spot.y + 0.5) * T);
+    if (!agent.target) arrive(now);
+    return true;
+  }
+
   // THE WANT ENGINE — replaces the flat dice roll. Whichever drive is most unmet (tilted by temperament,
   // the current mood phase, + how long since real work) leads; novelty + rare quirks interrupt. The SAME
   // planners run, but now there is a legible reason behind every move so it stops reading as aimless.
   function decideIdle(now) {
     if (novelty.length && planInspect(now)) return;   // curiosity reflex: a fresh placement always wins
     if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
+    if (maybePlace(now)) return;                       // rarest: it places / rearranges its OWN decor (acts on the station)
     const n = agent.needs, p = agent.pers, ph = phaseOf(now), idleAge = now - (agent.lastTaskAt || now);
     const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody) * ph.rest;
     const wStim = ((100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless) * ph.stim;   // boredom climbs with downtime

@@ -60,8 +60,9 @@
 > The big leap: the agent calls the same mutation API the REFIT builder uses (`station.addProp/moveProp/...`),
 > so it changes the world. NEEDS a design workflow first: persistence policy, undo, never-touch-user-props,
 > "agent-owned" tagging, frequency budget. Candidates:
-- [ ] **Nesting**: places a small decor prop (plant/poster/cans/coffee) it "brought" on empty floor near its haunts
-- [ ] **Tidying / rearranging**: nudges its OWN placed decor; straightens
+- [x] **Nesting**: rarely places a small decor prop (plant/poster/cans/coffee) on EMPTY floor near its haunts (`maybePlace`/`emptySpotNear`; real `station.addProp`, validated by `canPlaceProp` so it can never overlap the Commander's props; capped 3/agent + 5 floor-wide; ~2–4 min cooldown)
+- [x] **Tidying / rearranging**: at cap, sometimes removes one of its OWN decor (`agentDecor` ids only) so the corner changes over time
+  - ⚠ tradeoffs to revisit: `addProp`/`removeProp` hit the **undo stack** + **persist** (intended wow, but a silent agent-only mutation lane would be cleaner); `agentDecor` is in-memory so cross-reload it can't re-identify its own — the floor-wide cap bounds total clutter regardless
 - [ ] **Leaves a mark / artifact**: a rare object that persists (a signature the Commander finds later)
 - [ ] **Builds a tiny shrine / arrangement** over time in a favorite corner
 - [ ] **Reacts to its economy**: lights/decorates more when runs go well; bare/dim when slag piles up
@@ -80,4 +81,5 @@
 
 ## Pass log
 - **Pass 1**: rhythm phases (`phaseOf`) + quirk layer (`maybeQuirk`: listen/scan/ponder/gaze-out/long-stare) + this roadmap. The long stare is the headline eerie beat.
-- **Pass 2**: embodied reactions — **startle** at sudden nearby change, **settle-scan** on study arrivals + **glance back** when leaving, and a new **face-a-wall** quirk. Next up: caretaker rounds / belt-yield / cross-room work-pulse reactions, then the design pass for Tier 4 (agent acting ON the station).
+- **Pass 2**: embodied reactions — **startle** at sudden nearby change, **settle-scan** on study arrivals + **glance back** when leaving, and a new **face-a-wall** quirk.
+- **Pass 3**: ⭐ THE BIG ONE — the agent **acts on the station**: rarely walks to empty floor and places its OWN decor (real `addProp`), and at cap rearranges by removing one of its own. Hard safety rails (validated placement = never the Commander's props; capped; rare). Verified the rails against the real worldmodel (9/9). Next up: caretaker rounds, belt-yield, cross-room work-pulse reactions, sleep/power-down in `drift`, and a silent agent-mutation lane (avoid undo pollution).
