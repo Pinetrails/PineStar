@@ -13,6 +13,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 keyring = { version = "3", features = ["windows-native"] }
+uuid = { version = "1", features = ["v4"] }
 
 # A small, fast desktop binary — strip symbols and optimize for size in release.
 [profile.release]

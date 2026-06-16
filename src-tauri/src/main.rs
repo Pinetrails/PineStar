@@ -5,10 +5,10 @@
 // WebView2 window. The sidecar's lifetime is bound to this process.
 //
 // Secrets (roadmap 2.1): the BYOK API key lives in the OS keychain (never in
-// localStorage). The Rust side stores/reads it via the `keyring` crate and injects
-// it into the sidecar's env at spawn (SKYNET_OPENROUTER_KEY) — read only there.
-// Changing the key re-spawns the sidecar on the SAME fixed port so the running
-// window keeps working without a URL change.
+// localStorage). The Rust side stores/reads it via the `keyring` crate. The key is
+// injected into the sidecar's env at spawn AND can be updated live by POSTing it to
+// the sidecar's token-guarded /api/key endpoint — so changing the key never restarts
+// the sidecar (which would kill the page the user is on).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::net::{TcpListener, TcpStream};
@@ -22,9 +22,11 @@ use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
 const KEYCHAIN_ACCOUNT: &str = "openrouter";
 
-/// Shared runtime state: the fixed sidecar port, the project root, and the live child.
+/// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
+/// only with the sidecar), the project root, and the live child.
 struct AppState {
     port: u16,
+    ipc_token: String,
     root: PathBuf,
     sidecar: Mutex<Option<Child>>,
 }
@@ -60,7 +62,7 @@ fn read_key() -> Option<String> {
         .filter(|k| !k.trim().is_empty())
 }
 
-// ---- sidecar spawn / respawn ----
+// ---- sidecar ----
 
 /// Reserve an unused loopback port, then release it so the sidecar can bind it.
 fn free_port() -> u16 {
@@ -106,14 +108,14 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
-/// Kill any running sidecar and spawn a fresh one on the fixed port, injecting the
-/// keychain key (if any) as SKYNET_OPENROUTER_KEY. Returns true once it's listening.
-fn respawn_sidecar(state: &AppState) -> bool {
-    state.kill_sidecar();
+/// Spawn the sidecar ONCE, injecting the keychain key (if any) as SKYNET_OPENROUTER_KEY
+/// and the per-launch IPC token. Returns true once it's listening.
+fn spawn_sidecar(state: &AppState) -> bool {
     let entry = state.root.join("sidecar").join("index.js");
     let mut cmd = Command::new("node");
     cmd.arg(&entry)
         .env("SKYNET_PORT", state.port.to_string())
+        .env("SKYNET_IPC_TOKEN", &state.ipc_token)
         .current_dir(&state.root);
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
@@ -138,10 +140,31 @@ fn respawn_sidecar(state: &AppState) -> bool {
     }
 }
 
+/// Push the live BYOK key to the already-running sidecar (no restart). The raw key is
+/// the request body, authenticated by the per-launch IPC token. Blocks until the
+/// sidecar acks, so the key is live before the caller proceeds to a run.
+fn push_key(state: &AppState, key: &str) {
+    use std::io::{Read, Write};
+    let body = key.as_bytes();
+    let head = format!(
+        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        state.ipc_token,
+        body.len()
+    );
+    if let Ok(mut s) = TcpStream::connect(("127.0.0.1", state.port)) {
+        let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
+        let _ = s.write_all(head.as_bytes());
+        let _ = s.write_all(body);
+        let _ = s.flush();
+        let mut buf = [0u8; 64];
+        let _ = s.read(&mut buf); // wait for the 200 ack before returning
+    }
+}
+
 // ---- Tauri commands (called from the frontend Harness seam) ----
 
-/// Store (or, for an empty value, clear) the BYOK key in the OS keychain, then
-/// restart the sidecar so it picks up the new key from its env.
+/// Store (or, for an empty value, clear) the BYOK key in the OS keychain, then push it
+/// to the running sidecar — no restart, so the current page is never disrupted.
 #[tauri::command]
 fn harness_store_key(key: String, state: State<AppState>) -> Result<(), String> {
     let entry = keychain_entry().map_err(|e| e.to_string())?;
@@ -151,7 +174,7 @@ fn harness_store_key(key: String, state: State<AppState>) -> Result<(), String> 
     } else {
         entry.set_password(trimmed).map_err(|e| e.to_string())?;
     }
-    respawn_sidecar(&state);
+    push_key(&state, trimmed);
     Ok(())
 }
 
@@ -161,13 +184,13 @@ fn harness_has_key() -> bool {
     read_key().is_some()
 }
 
-/// Remove the BYOK key from the keychain and restart the sidecar without it.
+/// Remove the BYOK key from the keychain and clear it on the running sidecar.
 #[tauri::command]
 fn harness_clear_key(state: State<AppState>) -> Result<(), String> {
     if let Ok(entry) = keychain_entry() {
         let _ = entry.delete_credential();
     }
-    respawn_sidecar(&state);
+    push_key(&state, "");
     Ok(())
 }
 
@@ -188,13 +211,14 @@ fn main() {
         .setup(|app| {
             let root = project_root(app.handle());
             let port = free_port();
+            let ipc_token = uuid::Uuid::new_v4().to_string();
             let state = AppState {
                 port,
+                ipc_token,
                 root,
                 sidecar: Mutex::new(None),
             };
-            // Initial spawn — injects the key if one is already stored.
-            let ready = respawn_sidecar(&state);
+            let ready = spawn_sidecar(&state);
             app.manage(state);
 
             let url: WebviewUrl = if ready {

@@ -35,6 +35,9 @@ const { makeRouter } = require('./routing/router.js');
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
+// Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
+// in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
+let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
 const WORKSPACES = path.resolve(__dirname, 'workspaces');
 const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
@@ -290,6 +293,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
+  if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
@@ -372,15 +376,24 @@ async function handleBudgetResume(req, res) {
   json(200, { resumed: scope, cap, status: budget.status(Date.now()) });
 }
 
+/* desktop key push: the parent shell sets the live BYOK key here (token-gated), so changing the
+   key never restarts the sidecar. SKYNET_IPC_TOKEN is a per-launch secret only the shell knows. */
+async function handleSetKey(req, res) {
+  const token = String(process.env.SKYNET_IPC_TOKEN || '');
+  if (!token || req.headers['x-skynet-token'] !== token) { res.writeHead(403); return res.end('forbidden'); }
+  try { runtimeKey = String(await readBody(req, 1 << 14) || '').trim(); } catch (_) {}
+  res.writeHead(200); return res.end('ok');
+}
+
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false } = body || {};
-  // Desktop build: the key is injected into our env from the OS keychain (read only here),
-  // so the browser no longer sends it. Browser build still POSTs body.key, which wins.
-  const key = String((body && body.key) || '').trim() || String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
+  // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and
+  // updatable via /api/key). The browser build still sends body.key, which wins.
+  const key = String((body && body.key) || '').trim() || runtimeKey;
   if (!key || !model) { res.writeHead(400); return res.end('missing key/model'); }
 
   res.writeHead(200, {
@@ -759,8 +772,8 @@ async function handleTts(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
   catch (e) { return fallback('bad json'); }
-  // browser sends body.key; desktop build falls back to the keychain key in our env
-  const key = String((body && body.key) || '').trim() || String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
+  // browser sends body.key; desktop build falls back to the live keychain key (runtimeKey)
+  const key = String((body && body.key) || '').trim() || runtimeKey;
   let text = String((body && body.text) || '').replace(/\s+/g, ' ').trim();
   // backstop cap (the client already segments to <1000): if it ever overruns, cut back to the last
   // sentence boundary within the window rather than chopping mid-word.
