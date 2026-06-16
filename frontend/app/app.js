@@ -12,6 +12,10 @@ const App = (() => {
   let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'worker-homie';
   let pickedSpecialty = null;   // a Recruitment-Bay specialty chosen at the connect screen — seeds the new agent's purpose/manual at wake
   let prePickPersona = null;    // the persona selected BEFORE a roster pick overrode it — restored if the pick is cleared
+  let pickedProvider = 'openrouter';   // 'openrouter' (BYO API key) | 'codex' (personal ChatGPT subscription via OAuth)
+  let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
+  let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
+  let codexPoll = null;                // the setTimeout handle for the device-code poll loop
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
@@ -156,9 +160,96 @@ const App = (() => {
 
   function updateHint() {
     const id = el('in-model').value.trim(), hint = el('model-hint');
+    if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription — no per-token cost'; return; }
     const p = Harness.priceOf(id);
     if (p) hint.innerHTML = 'pricing: <b>$' + p.in.toFixed(2) + '</b> /1M in · <b>$' + p.out.toFixed(2) + '</b> /1M out';
     else hint.textContent = id ? 'custom slug — live cost shown as you spend' : 'pick or type a model slug';
+  }
+
+  /* ---------- provider toggle + ChatGPT (Codex OAuth) sign-in ---------- */
+  // The five models the Codex backend exposes for a personal ChatGPT plan (mirrors the sidecar's static
+  // catalog). OpenRouter's /models datalist doesn't list these, so we swap it in when Codex is selected.
+  const CODEX_MODELS = ['gpt-5.1-codex', 'gpt-5.1-codex-mini', 'gpt-5.1', 'gpt-5-codex', 'gpt-5'];
+
+  function selectProviderUI(p) {
+    pickedProvider = (p === 'codex') ? 'codex' : 'openrouter';
+    document.querySelectorAll('.provider-row .prov').forEach(b => b.classList.toggle('sel', b.dataset.prov === pickedProvider));
+    const isCodex = pickedProvider === 'codex';
+    el('key-block').classList.toggle('hidden', isCodex);
+    el('codex-block').classList.toggle('hidden', !isCodex);
+    if (isCodex) {
+      const dl = el('model-list'); dl.innerHTML = '';
+      for (const id of CODEX_MODELS) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
+      el('model-count').textContent = '(ChatGPT subscription)';
+      const mi = el('in-model'); if (!/codex|gpt-5/i.test(mi.value)) mi.value = CODEX_MODELS[0];
+      updateHint();
+      refreshCodexStatus();
+    } else {
+      stopCodexPoll(); codexFlow = null;
+      loadModels();
+    }
+  }
+
+  // GET /api/auth/codex/status -> reflect connected/not into the sign-in block (never touches the tokens).
+  async function refreshCodexStatus() {
+    const statusEl = el('codex-status'), signinBtn = el('btn-codex-signin'), logoutBtn = el('btn-codex-logout');
+    let j = { connected: false };
+    try { const r = await fetch('/api/auth/codex/status'); j = await r.json(); } catch (_) {}
+    codexConnected = !!j.connected;
+    if (codexConnected) {
+      statusEl.innerHTML = '<span class="conn-dot" style="background:#69ff8e;box-shadow:0 0 8px rgba(105,255,142,.7)"></span>connected to ChatGPT — your agents can run on your subscription';
+      statusEl.className = 'codex-status ok';
+      signinBtn.textContent = '↻ RE-SIGN IN';
+      logoutBtn.classList.remove('hidden');
+    } else {
+      statusEl.textContent = 'not connected — sign in to use your ChatGPT subscription';
+      statusEl.className = 'codex-status';
+      signinBtn.textContent = '⏼ SIGN IN WITH CHATGPT ▸';
+      logoutBtn.classList.add('hidden');
+    }
+  }
+
+  // Kick off the device-code flow: request a code, show it + open the verification page, then poll until done.
+  async function startCodexSignIn() {
+    SFX.click();
+    const statusEl = el('codex-status'), codeEl = el('codex-code'), openBtn = el('btn-codex-open');
+    stopCodexPoll();
+    statusEl.textContent = 'requesting a sign-in code…'; statusEl.className = 'codex-status';
+    let d;
+    try { const r = await fetch('/api/auth/codex/start', { method: 'POST' }); d = await r.json(); if (!r.ok) throw new Error(d.error || ('start failed (' + r.status + ')')); }
+    catch (e) { statusEl.textContent = 'could not start sign-in: ' + ((e && e.message) || e); statusEl.className = 'codex-status bad'; return; }
+    codexFlow = { device_auth_id: d.device_auth_id, user_code: d.user_code, verification_uri: d.verification_uri, deadline: Date.now() + ((d.expires_in || 900) * 1000) };
+    codeEl.textContent = d.user_code; codeEl.classList.remove('hidden');
+    openBtn.classList.remove('hidden');
+    openBtn.onclick = () => { try { window.open(d.verification_uri, '_blank', 'noopener'); } catch (_) {} };
+    statusEl.innerHTML = 'enter this code at <b>' + d.verification_uri + '</b> (opening it now)…';
+    try { window.open(d.verification_uri, '_blank', 'noopener'); } catch (_) {}
+    pollCodex(d.interval || 5);
+  }
+
+  // One poll tick on a timer; the sidecar reports pending until the user finishes, then connects + persists.
+  function pollCodex(intervalS) {
+    codexPoll = setTimeout(async () => {
+      if (!codexFlow) return;
+      if (Date.now() > codexFlow.deadline) { el('codex-status').textContent = 'sign-in timed out — start again'; el('codex-status').className = 'codex-status bad'; codexFlow = null; return; }
+      let j;
+      try {
+        const r = await fetch('/api/auth/codex/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_auth_id: codexFlow.device_auth_id, user_code: codexFlow.user_code }) });
+        j = await r.json();
+      } catch (e) { j = { status: 'pending' }; }   // transient network blip — keep polling
+      if (!codexFlow) return;                        // bailed out (back/disconnect) while awaiting
+      if (j.status === 'connected') { codexFlow = null; el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden'); SFX.open(); refreshCodexStatus(); return; }
+      if (j.status === 'error') { el('codex-status').textContent = 'sign-in failed: ' + (j.error || 'try again'); el('codex-status').className = 'codex-status bad'; codexFlow = null; return; }
+      pollCodex(intervalS);                          // pending — schedule the next tick
+    }, Math.max(2, intervalS) * 1000);
+  }
+  function stopCodexPoll() { if (codexPoll) { clearTimeout(codexPoll); codexPoll = null; } }
+
+  async function codexLogout() {
+    SFX.click(); stopCodexPoll(); codexFlow = null;
+    el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden');
+    try { await fetch('/api/auth/codex/logout', { method: 'POST' }); } catch (_) {}
+    refreshCodexStatus();
   }
 
   function buildSwatches() {
@@ -206,10 +297,14 @@ const App = (() => {
     pickedSpecialty = null; prePickPersona = null; resetRosterPick();   // a fresh connect screen carries no stale specialty pick
     const br = el('btn-roster'); if (br) br.onclick = openRosterPicker;
     const bc = el('btn-roster-clear'); if (bc) bc.onclick = clearRosterPick;
-    el('btn-back').onclick = () => { SFX.click(); showTitle(); };
+    el('btn-back').onclick = () => { SFX.click(); stopCodexPoll(); codexFlow = null; showTitle(); };
     el('btn-wake').onclick = onWake;
     el('in-name').onkeydown = e => { if (e.key === 'Enter') onWake(); };
-    loadModels();
+    // provider toggle + ChatGPT sign-in wiring; selectProviderUI() also loads the right model catalog.
+    document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
+    el('btn-codex-signin').onclick = startCodexSignIn;
+    el('btn-codex-logout').onclick = codexLogout;
+    selectProviderUI(Harness.getProv());
   }
 
   // THE ROSTER at create-time: open the Recruitment Bay in PICK mode; the chosen specialty pre-fills the
@@ -249,13 +344,20 @@ const App = (() => {
 
   function onWake() {
     SFX.boot(); SFX.open();
-    const key = el('in-key').value.trim();
+    stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
     const model = el('in-model').value.trim();
     const name = (el('in-name').value.trim() || 'AGENT').toUpperCase().slice(0, 18);   // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too)
     const msg = el('connect-msg'); msg.className = 'msg';
-    if (!key) { msg.textContent = 'enter your OpenRouter API key (openrouter.ai/keys).'; return; }
     if (!model) { msg.textContent = 'choose or type a model slug.'; return; }
-    Harness.setKey(key); Harness.setModel(model); Harness.setProv('openrouter');
+    if (pickedProvider === 'codex') {
+      if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return; }
+      Harness.setKey('');                                   // the Codex path authenticates by OAuth token, not a key
+      Harness.setModel(model); Harness.setProv('codex');
+    } else {
+      const key = el('in-key').value.trim();
+      if (!key) { msg.textContent = 'enter your OpenRouter API key (openrouter.ai/keys).'; return; }
+      Harness.setKey(key); Harness.setModel(model); Harness.setProv('openrouter');
+    }
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
@@ -414,7 +516,9 @@ const App = (() => {
 
     const saved = Save.load();
     if (saved && saved.agent) {
-      if (Harness.getKey()) { resumeInto(saved); return; }   // auto-resume on refresh
+      // auto-resume on refresh: an OpenRouter key in hand, OR the Codex provider (which holds its OAuth
+      // tokens server-side — a missing/expired token surfaces as a run error that prompts re-sign-in).
+      if (Harness.getKey() || Harness.getProv() === 'codex') { resumeInto(saved); return; }
       resumingSaved = saved;
       show('screen-connect'); initConnect(saved.agent.name);
       el('connect-msg').textContent = 're-enter your key to resume ' + saved.agent.name + '.';

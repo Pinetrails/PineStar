@@ -73,8 +73,8 @@ const Harness = (() => {
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
   async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal }) {
-    const key = getKey(), model = getModel();
-    if (!key) throw new Error('no API key set');
+    const key = getKey(), model = getModel(), provider = getProv();
+    if (provider !== 'codex' && !key) throw new Error('no API key set');   // Codex authenticates by OAuth token (server-side), not a key
     if (!model) throw new Error('no model selected');
 
     let res;
@@ -82,7 +82,7 @@ const Harness = (() => {
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, model, system, messages, agentId: agentId || 'agent', isTask: !!isTask })
+        body: JSON.stringify({ key, model, provider, system, messages, agentId: agentId || 'agent', isTask: !!isTask })
       });
     } catch (e) {
       throw new Error('cannot reach the SKYNET sidecar — start it with `npm start` (node sidecar/index.js)');
