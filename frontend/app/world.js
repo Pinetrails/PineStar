@@ -1042,7 +1042,7 @@ const World = (() => {
         ctx.fillText(tok, dx, dy);
       }
     }
-    ctx.globalCompositeOperation = 'source-over'; ctx.setTransform(scale, 0, 0, scale, panX, panY);
+    ctx.globalCompositeOperation = 'source-over'; ctx.textBaseline = 'alphabetic'; ctx.setTransform(scale, 0, 0, scale, panX, panY);   // restore the baseline we changed, so later text drawers don't inherit 'top'
   }
 
   function drawAgent(now) {
@@ -1136,7 +1136,7 @@ const World = (() => {
     ctx.fillStyle = 'rgba(3,2,1,0.92)'; ctx.fillRect(bx, by, bw, bh);
     ctx.strokeStyle = '#ffaa33'; ctx.lineWidth = 1; ctx.strokeRect(bx + .5, by + .5, bw - 1, bh - 1);
     ctx.fillStyle = '#ffaa33'; ctx.fillRect(Math.round(rx) - 1, by + bh, 3, 2);
-    ctx.fillStyle = '#ffd9a3'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffd9a3'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';   // own our baseline — never inherit a stray one (the line-y math assumes alphabetic)
     lines.forEach((l, i) => ctx.fillText(l, bx + padb, by + padb + lh * (i + 1) - 2));
   }
 
