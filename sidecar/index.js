@@ -14,6 +14,8 @@ const crypto = require('node:crypto');
 
 const { runAgentLoop } = require('./loop.js');
 const { makeCostEngine } = require('./cost.js');
+const { makeLedger } = require('./ledger.js');
+const { makeBudget } = require('./budget.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
@@ -22,7 +24,7 @@ const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { makeEmitter } = require('../shared/emitter.js');
-const { redact, renderRecall, injectRecall } = require('./context.js');
+const { redact, renderRecall, injectRecall, makeContext } = require('./context.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
@@ -35,6 +37,15 @@ const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
 const WORKSPACES = path.resolve(__dirname, 'workspaces');
 const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+// Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
+// (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
+// can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.
+const num = (v, d) => { const n = parseFloat(v); return isFinite(n) && n > 0 ? n : d; };
+const BUDGET_CAPS = {
+  perRun: num(process.env.SKYNET_BUDGET_PER_RUN, 3),
+  perDay: num(process.env.SKYNET_BUDGET_PER_DAY, 40),
+  global: num(process.env.SKYNET_BUDGET_GLOBAL, 100)
+};
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // The agent's toolset is NOT a host-side constant — it is projected from the objects placed in the
 // agent's room (CAP_REGISTRY: computer/dish/cabinet/notebook). See handleRun's station + resolveTools.
@@ -44,6 +55,23 @@ process.on('unhandledRejection', e => console.error('unhandledRejection:', (e &&
 process.on('uncaughtException', e => console.error('uncaughtException:', (e && e.stack) || e));
 
 try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
+
+/* ---- spend ledger + budget (Wave 1 cost spine) ----
+   The ledger is an append-only JSONL of finished runs (sibling of the fs jail, so the agent's own fs.* tools can
+   neither read nor rewrite the spend record). appendFileSync is a crash-safe single-line append on local fs. The
+   budget governs the soft cross-run pools over it; the host injects Date.now() at this composition boundary. */
+const LEDGER_FILE = path.join(WORKSPACES, 'ledger.jsonl');
+const ledgerIo = {
+  readAll() {
+    try {
+      return fs.readFileSync(LEDGER_FILE, 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+    } catch (e) { return []; }
+  },
+  append(entry) { try { fs.appendFileSync(LEDGER_FILE, JSON.stringify(entry) + '\n'); } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); } }
+};
+const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
+const budget = makeBudget({ caps: { day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
@@ -266,6 +294,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/events') return handleChannelEvents(req, res);
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
+  if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
+  if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
@@ -320,6 +350,24 @@ function handleRouting(req, res) {
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
+}
+
+/* ---- GET /api/budget/status — the live spend pools (day + global) vs their caps, plus session resume headroom.
+   Read-only; safe to poll for the budget HUD. The ledger + in-flight tallies back it, so it survives restarts. ---- */
+function handleBudgetStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(Object.assign({ perRun: BUDGET_CAPS.perRun, totalUsd: ledger.totalUsd(), runs: ledger.count() }, budget.status(Date.now()))));
+}
+/* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
+   base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */
+async function handleBudgetResume(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const scope = String(body.scope || '').trim();
+  if (scope !== 'day' && scope !== 'global') return json(400, { error: 'scope must be "day" or "global"' });
+  const cap = budget.resume(scope);
+  if (cap == null) return json(409, { error: 'that budget scope is not governed (no cap set)' });
+  json(200, { resumed: scope, cap, status: budget.status(Date.now()) });
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
@@ -441,6 +489,28 @@ async function runOnce(o) {
   const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, key });
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
+  // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
+  //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
+  //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
+  //      the loop keeps the full history (never a silent drop). ----
+  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model), compactAt: 0.65, keepTail: 6 });
+  async function summarize(older) {
+    const transcript = older.map(mm => {
+      const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
+      return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
+    }).join('\n').slice(0, 16000);
+    const req = { model, stream: true, signal, messages: [
+      { role: 'system', content: 'You compress an earlier slice of an agent conversation into a dense factual summary. Preserve decisions made, facts and data learned (with sources), files written, tool results, and any still-open tasks. Drop pleasantries. Output ONLY the summary prose.' },
+      { role: 'user', content: 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript }
+    ] };
+    let out = '';
+    for await (const ev of provider.stream(req)) { if (ev && ev.type === 'text') out += ev.delta; }
+    return out.trim();
+  }
+  // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
+  // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
+  const runBudget = { check: (spentThisRun) => budget.check(runId, agentId, spentThisRun, Date.now(), emit) };
+
   // a task needs tool calls — refuse a model we KNOW can't call tools, up front, with an actionable message
   // (supportsTools returns null when the catalog is cold, so this never false-refuses a real model).
   if (isTask && provider.supportsTools(model) === false) {
@@ -503,15 +573,26 @@ async function runOnce(o) {
     if (recall.text) { msgs = injectRecall(msgs, recall.text); emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars }); }
   } catch (_) {}
 
-  await runAgentLoop({
-    messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
-    limits: { maxIters: CAPS.maxIters, maxCostUsd: CAPS.maxCostUsd },
-    signal: signal, clock: { now: () => Date.now() },
-    agentId, runId, model, trigger: trigger,
-    // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
-    // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
-    approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
-  });
+  let result;
+  try {
+    result = await runAgentLoop({
+      messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
+      // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`.
+      limits: { maxIters: CAPS.maxIters, maxCostUsd: BUDGET_CAPS.perRun },
+      budget: runBudget, context: ctxMgr, summarize,
+      signal: signal, clock: { now: () => Date.now() },
+      agentId, runId, model, trigger: trigger,
+      // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
+      // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
+      approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
+    });
+  } finally {
+    // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
+    // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
+    try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: (result && result.usd) || 0, tokens: (result && result.tokens) || 0 }); } catch (_) {}
+    budget.clearLive(runId);
+  }
+  return result;
 }
 
 // POST /api/consent { runId, promptId, decision } — the browser's answer to a live permission.prompt. Resolves the

@@ -63,6 +63,32 @@ A.eq(ctx.compact(longH, fakeSummarize), c, 'compact deterministic given summariz
 const shortH = [m('user', 'x')];
 A.eq(ctx.compact(shortH, fakeSummarize), { summary: '', tail: shortH }, 'history <= keepTail -> no summary');
 
+// ---- planCompaction (pure, tool-pairing-safe split for the loop's auto-compaction) ----
+// plain turns: split keeps the last keepTail (2), folds the rest
+const plain = [m('user', '1'), m('assistant', '2'), m('user', '3'), m('assistant', '4'), m('user', '5')];
+const pp = ctx.planCompaction(plain);
+A.eq(pp.older.length, 3, 'plain history: 3 oldest turns are foldable');
+A.eq(pp.tail.length, 2, 'plain history: last keepTail turns stay in the tail');
+A.eq(pp.tail[1], m('user', '5'), 'tail ends at the newest turn');
+A.eq(ctx.planCompaction(plain), pp, 'planCompaction deterministic');
+
+// pairing safety: the naive last-2 boundary would start the tail on an orphan tool result; snap it earlier so the
+// tail begins at the assistant turn that OWNS those tool results (else the next model call 400s).
+const withTools = [m('user', 'u1'), m('assistant', 'A'), m('tool', 't1'), m('tool', 't2')];
+const ws = ctx.planCompaction(withTools);
+A.eq(ws.tail[0].role, 'assistant', 'tail starts at the owning assistant, never an orphan tool result');
+A.eq(ws.tail.length, 3, 'the whole assistant+tool group is kept together in the tail');
+A.eq(ws.older, [m('user', 'u1')], 'only the safely-foldable prefix is older');
+
+// history <= keepTail -> nothing foldable
+A.eq(ctx.planCompaction([m('user', 'x')]), { older: [], tail: [m('user', 'x')] }, 'short history -> nothing to fold');
+// degenerate all-tool history -> refuse to fold (no safe boundary) rather than orphan a result
+A.eq(ctx.planCompaction([m('tool', 'a'), m('tool', 'b'), m('tool', 'c')]).older.length, 0, 'no safe boundary -> fold nothing');
+// planCompaction does not mutate input
+const pcBefore = JSON.stringify(withTools);
+ctx.planCompaction(withTools);
+A.eq(JSON.stringify(withTools), pcBefore, 'planCompaction does not mutate input');
+
 // ---- redact: strips key-shaped secrets, recurses, never mutates ----
 A.ok(redact('my key is sk-or-v1-abcdef0123456789zzzz here').indexOf('sk-or-v1-') < 0, 'openrouter key redacted');
 A.ok(redact('sk-ant-api03-AAAA1111BBBB2222').indexOf('sk-ant-') < 0, 'anthropic key redacted');

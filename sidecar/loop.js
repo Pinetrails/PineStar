@@ -115,11 +115,40 @@
     const trigger = o.trigger || 'directive';
     const approxTokens = o.approxTokens || 0;   // initial rough estimate; feeds the error classifier's overflow ratio
     const contextLimit = o.contextLimit || 0;   // 0 = unknown (cold catalog) -> the ratio heuristic is skipped
+    // OPTIONAL cross-run cost governor (sidecar/budget.js): consulted in the guards each turn; null = ungoverned
+    // (every existing caller/test, byte-identical). The per-RUN ceiling stays maxCostUsd below.
+    const budget = o.budget;
+    // OPTIONAL context manager (sidecar/context.js) + summarizer for auto-compaction; both absent = never compact.
+    const context = o.context;
+    const summarize = o.summarize;
 
-    let spentUsd = 0, turns = 0;
+    let spentUsd = 0, turns = 0, spentTokens = 0;
+    let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
     function end(reason) {
       emit('agent.run.end', { agentId, runId, reason, turns, usd: spentUsd });
-      return { reason, messages, usd: spentUsd, turns };
+      return { reason, messages, usd: spentUsd, turns, tokens: spentTokens };
+    }
+
+    // Fold older history into a summary when the live prompt is past the context manager's threshold, so a long
+    // run shrinks instead of overflowing. Tool-pairing-safe (planCompaction snaps the boundary); only compacts
+    // when a REAL summary comes back (a failed/empty summarizer skips this turn — never a silent context drop).
+    async function maybeCompact() {
+      if (!context || !lastUsage || !context.shouldCompact(lastUsage)) return;
+      let i = 0;
+      while (i < messages.length && messages[i].role === 'system') i++;   // leading system prefix kept verbatim
+      const prefix = messages.slice(0, i);
+      const plan = context.planCompaction(messages.slice(i));
+      if (!plan.older.length) return;                                     // nothing safely foldable yet
+      const beforeTokens = lastUsage.prompt_tokens || lastUsage.promptTokens || 0;
+      let summary = '';
+      try { summary = summarize ? await summarize(plan.older) : ''; } catch (e) { return; }
+      if (signal.aborted || !summary) return;
+      const note = { role: 'system', content: '<conversation_summary>\n' + summary + '\n</conversation_summary>' };
+      const rebuilt = prefix.concat([note], plan.tail);
+      const afterTokens = context.estimateMessages(rebuilt);
+      messages.length = 0; for (const mm of rebuilt) messages.push(mm);
+      lastUsage = null;   // the next turn re-measures against the compacted prompt before considering another fold
+      emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'context' });
     }
 
     emit('agent.run.start', { agentId, runId, trigger, model });
@@ -128,12 +157,22 @@
       // (1) GUARDS — before any paid call
       if (signal.aborted) return end('cancelled');
       if (turns >= maxIters) return end('max_iters');
-      if (spentUsd >= maxCostUsd) return end('budget');
+      if (spentUsd >= maxCostUsd) return end('budget');   // per-RUN hard ceiling
+      // CROSS-RUN BUDGET: day/global pool over the ledger. check() emits any threshold crossing itself and
+      // returns a block descriptor when a soft cap is reached (no resume headroom left) -> stop as 'budget'.
+      if (budget) {
+        const b = budget.check(spentUsd);
+        if (b) return end('budget');
+      }
       // COMPUTE GATE: a model turn needs a compute capability (a computer in the room).
       if (capCtx && typeof capCtx.canRun === 'function' && !capCtx.canRun()) {
         emit('capdenied', { agentId, need: 'compute', reason: capCtx.computeReason || 'no compute capability in room' });
         return end('error');
       }
+      // CONTEXT COMPACTION: fold older turns into a summary if the last prompt crossed the threshold (no-op
+      // until a context manager + summarizer are injected). Runs before turns++ so it cannot inflate the count.
+      await maybeCompact();
+      if (signal.aborted) return end('cancelled');   // a cancel during summarization ends cleanly
       turns++;
 
       // (2) STREAM one model call
@@ -164,6 +203,8 @@
       // (3) RECONCILE cost (authoritative; overwrites the estimate)
       const final = cost ? cost.reconcile(usage, model) : { usd: 0, tokensIn: 0, tokensOut: 0, reasoningTokens: 0, cachedTokens: 0 };
       spentUsd += final.usd || 0;
+      spentTokens += (final.tokensIn || 0) + (final.tokensOut || 0);
+      lastUsage = usage;   // feeds the next turn's compaction decision (shouldCompact reads prompt_tokens)
       emit('agent.cost', {
         agentId, runId, usd: final.usd || 0, tokensIn: final.tokensIn || 0, tokensOut: final.tokensOut || 0,
         reasoningTokens: final.reasoningTokens || 0, cachedTokens: final.cachedTokens || 0, model, reconciled: true

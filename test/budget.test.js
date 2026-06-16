@@ -1,0 +1,101 @@
+/* node test/budget.test.js — cross-run spend governance. Tests the pure evaluate() decision and the
+   stateful makeBudget governor against a fake ledger + a collecting emit (zero disk, zero network). */
+'use strict';
+const A = require('./_assert.js');
+const { evaluate, makeBudget } = require('../sidecar/budget.js');
+
+// ---- evaluate(): pure decision over caps + totals (+ overrides) ----
+{
+  // under all caps -> nothing blocked, nothing warned
+  let r = evaluate({ day: 40, global: 100 }, { day: 10, global: 10 });
+  A.eq(r.blocked, null, 'under caps -> not blocked');
+  A.eq(r.warn, [], 'under the warn band -> no warnings');
+
+  // warn band (>=80% of cap, <100%)
+  r = evaluate({ day: 40, global: 100 }, { day: 33, global: 10 });
+  A.eq(r.blocked, null, '82.5% of day -> warn, not block');
+  A.eq(r.warn, ['day'], 'day enters the warn band');
+
+  // at/over cap -> blocked; run<day<global priority when several are over
+  r = evaluate({ day: 40, global: 100 }, { day: 40, global: 100 });
+  A.eq(r.blocked, 'day', 'day at cap blocks; day precedes global in priority');
+
+  r = evaluate({ global: 100 }, { global: 120 });
+  A.eq(r.blocked, 'global', 'global over cap blocks when it is the only governed scope');
+
+  // overrides (resume headroom) lift the effective cap
+  r = evaluate({ day: 40 }, { day: 45 }, { day: 20 });
+  A.eq(r.blocked, null, 'a resume override (40+20=60) clears a 45 spend');
+  A.ok(Math.abs(r.scopes.day.cap - 60) < 1e-9, 'effective cap reflects the override');
+
+  // an absent/zero/Infinity cap is ungoverned (never blocks, never appears)
+  r = evaluate({ day: 0, global: Infinity }, { day: 1e9, global: 1e9 });
+  A.eq(r.blocked, null, 'zero/Infinity caps are ungoverned');
+  A.eq(Object.keys(r.scopes).length, 0, 'ungoverned scopes are omitted from the breakdown');
+}
+
+// fake ledger: completed-run spend by day-window + grand total, both injectable
+function fakeLedger(day, total) { return { usdForDay: () => day, totalUsd: () => total }; }
+function collector() { const evs = []; return { emit: (name, payload) => evs.push({ name, payload }), evs }; }
+
+// ---- makeBudget.check(): live spend + ledger -> block + threshold emission ----
+{
+  const c = collector();
+  const b = makeBudget({ caps: { day: 40, global: 100 }, ledger: fakeLedger(0, 0), clock: { now: () => 0 } });
+
+  // run r1 spends $10 -> well under -> proceed, no threshold
+  A.eq(b.check('r1', 'a', 10, 0, c.emit), null, '$10 of a $40 day -> proceed');
+  A.eq(c.evs.length, 0, 'no threshold under the warn band');
+
+  // r1 climbs to $33 -> 82.5% of the $40 day pool -> warn (one budget.threshold, scope day)
+  A.eq(b.check('r1', 'a', 33, 0, c.emit), null, 'still under cap -> proceed');
+  const warns = c.evs.filter(e => e.name === 'budget.threshold');
+  A.eq(warns.length, 1, 'exactly one threshold at the warn crossing');
+  A.eq(warns[0].payload.scope, 'day', 'warn names the day scope');
+  A.ok(Math.abs(warns[0].payload.cap - 40) < 1e-9, 'threshold carries the effective cap');
+
+  // re-checking in the warn band does NOT re-emit (de-duped per scope+level)
+  b.check('r1', 'a', 34, 0, c.emit);
+  A.eq(c.evs.filter(e => e.name === 'budget.threshold').length, 1, 'warn threshold is not re-emitted');
+
+  // r1 hits $40 -> day pool at cap -> blocked + a second (cap-level) threshold
+  const blk = b.check('r1', 'a', 40, 0, c.emit);
+  A.eq(blk && blk.scope, 'day', 'day at cap -> block descriptor names day');
+  A.ok(Math.abs(blk.usd - 40) < 1e-9, 'block carries the spend');
+  A.eq(c.evs.filter(e => e.name === 'budget.threshold').length, 2, 'a distinct cap-level threshold fired');
+}
+
+// ---- live spend across DISTINCT runs shares the pool (the global-pool guard Hermes lacked) ----
+{
+  const b = makeBudget({ caps: { global: 10 }, ledger: fakeLedger(0, 0), clock: { now: () => 0 } });
+  A.eq(b.check('r1', 'a', 6, 0, null), null, 'run1 $6 of the $10 global pool -> ok');
+  const blk = b.check('r2', 'b', 5, 0, null);   // r1 still live at $6 + r2 $5 = $11 > $10
+  A.eq(blk && blk.scope, 'global', 'two concurrent runs together exhaust the shared global pool');
+  // when run1 finishes (its spend leaves the live tally), run2 alone fits again
+  b.clearLive('r1');
+  A.eq(b.check('r2', 'b', 5, 0, null), null, 'after run1 clears, run2 alone is back under the pool');
+}
+
+// ---- the ledger's PERSISTED spend counts toward the pool (survives restarts) ----
+{
+  const b = makeBudget({ caps: { global: 10 }, ledger: fakeLedger(0, 8), clock: { now: () => 0 } });
+  const blk = b.check('r1', 'a', 3, 0, null);   // 8 already on disk + 3 live = 11 > 10
+  A.eq(blk && blk.scope, 'global', 'prior recorded spend (8) + this run (3) breaches the pool');
+}
+
+// ---- resume(): one-click headroom unblocks the scope and lets it warn again ----
+{
+  const c = collector();
+  const b = makeBudget({ caps: { day: 40 }, ledger: fakeLedger(0, 0), clock: { now: () => 0 } });
+  A.ok(b.check('r1', 'a', 40, 0, c.emit), 'day starts blocked at cap');
+  const newCap = b.resume('day');                 // +40 base -> effective 80
+  A.ok(Math.abs(newCap - 80) < 1e-9, 'resume grants another base-cap of headroom');
+  A.eq(b.check('r1', 'a', 40, 0, c.emit), null, 'after resume the $40 spend is under the $80 effective cap');
+  A.eq(b.resume('run'), null, 'resuming an ungoverned scope -> null');
+
+  const st = b.status(0);
+  A.ok(Math.abs(st.day.cap - 80) < 1e-9, 'status reports the lifted effective cap');
+  A.ok(Math.abs(st.overrides.day - 40) < 1e-9, 'status exposes the override headroom');
+}
+
+A.report('budget.test');

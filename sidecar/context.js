@@ -180,7 +180,20 @@
       return { summary, tail };
     }
 
-    return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, redact, contextLimit };
+    // Plan a TOOL-PAIRING-SAFE compaction split (pure, sync, no summarizer): the foldable `older` slice and the
+    // verbatim `tail`. Like compact() it keeps ~keepTail messages, but SNAPS the boundary earlier so the tail never
+    // begins with an orphan `role:'tool'` result whose owning assistant turn was folded into the summary — that
+    // orphan would 400 the next model call. The loop folds `older` into a summary; `tail` is replayed untouched.
+    function planCompaction(history) {
+      history = history || [];
+      if (history.length <= keepTail) return { older: [], tail: history.slice() };
+      let cut = history.length - keepTail;                 // tail = history.slice(cut)
+      while (cut > 0 && history[cut] && history[cut].role === 'tool') cut--;   // snap to a turn-group start
+      if (cut <= 0) return { older: [], tail: history.slice() };
+      return { older: history.slice(0, cut), tail: history.slice(cut) };
+    }
+
+    return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, redact, contextLimit, keepTail };
   }
 
   return { makeContext, redact, renderRecall, injectRecall };

@@ -9,6 +9,7 @@ const { makeReplayProvider } = require('../sidecar/providers/replay.js');
 const { makeCostEngine } = require('../sidecar/cost.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
+const { makeContext } = require('../sidecar/context.js');
 
 // a minimal write-like tool + an open capCtx, for the L2 tool-call repair cases
 const WRITE_SCHEMA = { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } };
@@ -186,6 +187,67 @@ function chatFixture() {
 
     const bad = await runWithError(httpErr(400, 'malformed request'));
     A.eq(bad.seq.find(e => e.name === 'agent.run.error').payload.transient, false, 'malformed 400 -> transient:false');
+  }
+
+  // ---- budget guard: a block descriptor from budget.check ends the run as 'budget' BEFORE any paid call ----
+  {
+    const { seq, emit } = setup();
+    const provider = makeReplayProvider(chatFixture());
+    const blockingBudget = { check: () => ({ scope: 'day', usd: 50, cap: 40 }) };
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'hi' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r', budget: blockingBudget });
+    A.eq(res.reason, 'budget', 'a budget block ends the run as budget');
+    A.eq(provider.callCount(), 0, 'no model call is made when the budget blocks up front');
+    A.eq(names(seq), ['agent.run.start', 'agent.run.end'], 'budget block: start then end, no paid turn');
+  }
+
+  // ---- a permissive budget does not interfere; the loop returns total tokens (for the ledger) ----
+  {
+    const { emit } = setup();
+    const provider = makeReplayProvider(chatFixture());
+    let sawSpent = -1;
+    const okBudget = { check: (spent) => { sawSpent = spent; return null; } };
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'hi' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r', budget: okBudget });
+    A.eq(res.reason, 'done', 'a permissive budget does not interfere');
+    A.eq(sawSpent, 0, 'budget.check sees $0 spent before the first turn');
+    A.eq(res.tokens, 15, 'the loop returns total tokens (10 in + 5 out) for the ledger');
+  }
+
+  // ---- auto-compaction: once the live prompt crosses the threshold, older turns fold into a summary; the tool
+  //      turn-group is kept intact in the tail (pairing-safe) and one agent.compact is emitted ----
+  {
+    const { seq, emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const fixture = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'final' }, { type: 'usage', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const provider = makeReplayProvider(fixture);
+    const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });   // 8 prompt tokens > 6.5 -> compact
+    let summarizedOlder = null;
+    const summarize = async (older) => { summarizedOlder = older; return 'SUMMARY'; };
+    const messages = [{ role: 'user', content: 'do it' }];
+    const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize });
+
+    const comp = seq.filter(e => e.name === 'agent.compact');
+    A.eq(comp.length, 1, 'exactly one agent.compact when the prompt crosses the threshold');
+    A.eq(comp[0].payload.beforeTokens, 8, 'compact beforeTokens = the prior turn prompt tokens');
+    A.ok(typeof comp[0].payload.afterTokens === 'number' && comp[0].payload.afterTokens >= 0, 'afterTokens is a real estimate');
+    A.eq(comp[0].payload.reason, 'context', 'compaction reason tagged context');
+    A.eq(res.reason, 'done', 'the run completes after compacting');
+    A.eq(summarizedOlder.length, 1, 'only the original user turn was folded; the assistant+tool group stayed in the tail');
+    A.eq(messages[0].role, 'system', 'compacted history now leads with a system summary note');
+    A.ok(messages[0].content.indexOf('<conversation_summary>') === 0 && messages[0].content.indexOf('SUMMARY') >= 0, 'the summary was folded into the leading note');
+  }
+
+  // ---- no context manager -> compaction is a no-op (existing callers byte-identical) ----
+  {
+    const { seq, emit } = setup();
+    const provider = makeReplayProvider(chatFixture());
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'hi' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model' });
+    A.eq(res.reason, 'done', 'no context manager -> normal completion');
+    A.eq(seq.filter(e => e.name === 'agent.compact').length, 0, 'no agent.compact without a context manager');
   }
 
   A.report('loop.replay.test');
