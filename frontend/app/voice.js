@@ -24,6 +24,7 @@ const Voice = (() => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   const synth = ('speechSynthesis' in window) ? window.speechSynthesis : null;
   const LS_SPEAK = 'skynet.voice.speak';
+  const LS_CONVO = 'skynet.voice.convo';   // remembers the user WAS hands-free, so a refresh can offer one-tap resume
   const REARM_DELAY = 350;                 // ms after the agent stops talking before the mic re-opens (echo guard)
   const MAX_EMPTY = 3;                      // consecutive silent listens before the loop goes passive
 
@@ -47,6 +48,7 @@ const Voice = (() => {
   let sentThisListen = false;       // did the just-finished listen actually send a message?
   let discarding = false;           // teardown in progress → drop any buffered transcript (don't send)
   let forcedSpeak = false;          // voice mode flipped the speaker on for us → restore the user's mute on exit
+  let resumePending = false;        // a refresh dropped hands-free → the mode button pulses to invite one-tap resume
 
   // a single status seam: prefer Chat.status (it owns #chat-status), fall back to the DOM node.
   function setStatus(s) {
@@ -399,15 +401,18 @@ const Voice = (() => {
   // so it also flips the speaker on. OFF tears the loop down.
   function toggleVoiceMode() {
     if (!SR) return;
+    clearResumeCue();
     convoMode = !convoMode;
     if (typeof SFX !== 'undefined') SFX.open();
     if (convoMode) {
+      savePref(LS_CONVO, true);   // remember the hands-free intent so a refresh can offer one-tap resume
       if (!speakReplies) { speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle(); }  // you have to hear it (restored on exit)
       emptyStreak = 0;
       reflectMode();
       if (!busyNow() && !listening && !speaking) startListening();
       else setStatus('voice mode on');
     } else {
+      savePref(LS_CONVO, false);   // deliberate exit — don't nag to resume next session
       stopConvo();
     }
   }
@@ -529,7 +534,7 @@ const Voice = (() => {
     // mentions "voice" ("stop using that formal voice") no longer tears the session down by accident.
     const cmd = norm.replace(/^(?:ok(?:ay)?|hey|um|uh|so|please|yeah|now|can you|could you|would you|i want to|i'd like to|let'?s)[,\s]+/, '').trim();
     if (convoMode && (/^(?:exit|stop|end|leave|quit|turn off)\s+(?:the\s+|this\s+)?voice\s*mode\b/.test(cmd)
-                      || /^(?:exit|leave)\s+(?:the\s+|this\s+)?voice\b/.test(cmd))) { stopConvo(); return; }
+                      || /^(?:exit|leave)\s+(?:the\s+|this\s+)?voice\b/.test(cmd))) { savePref(LS_CONVO, false); stopConvo(); return; }
     sentThisListen = true; emptyStreak = 0;
     // a dedicated "got it" cue (not the generic send click) so the user knows their words landed —
     // closes the perceived gap until the agent's first spoken word.
@@ -541,6 +546,7 @@ const Voice = (() => {
   // mode the loop manages re-opening; clicking just lets you jump in (or resume from passive).
   function onMicClick() {
     if (!SR) return;
+    clearResumeCue();
     // barge-in: interrupt whenever the agent is making OR about to make sound (talking() also covers the
     // neural-fetch gap, where `speaking` is still false but a reply is imminent) — stopSpeaking aborts it.
     if (talking()) { stopSpeaking(); setTimeout(() => { if (!busyNow() && !listening) startListening(); }, 150); return; }
@@ -589,6 +595,23 @@ const Voice = (() => {
     modeBtn.setAttribute('aria-pressed', convoMode ? 'true' : 'false');
     modeBtn.setAttribute('aria-label', convoMode ? 'Voice mode: on (hands-free), click for push-to-talk' : 'Voice mode: off (push-to-talk), click for hands-free');
   }
+  // a refresh always drops hands-free to push-to-talk (the first listen needs a fresh click for mic
+  // permission — we can't auto-open it). Instead of going silently quiet, pulse the mode button and hint so
+  // resuming the conversation is one obvious tap. Cleared the moment the user engages voice again.
+  function showResumeCue() {
+    if (!modeBtn || !canListen()) return;
+    resumePending = true;
+    modeBtn.classList.add('resume');
+    modeBtn.title = 'tap to resume hands-free voice mode';
+    modeBtn.setAttribute('aria-label', 'Resume hands-free voice mode');
+    setStatus('tap 🎙️ to resume voice mode');
+  }
+  function clearResumeCue() {
+    if (!resumePending) return;
+    resumePending = false;
+    if (modeBtn) modeBtn.classList.remove('resume');
+    reflectMode();   // restore the normal title/aria for the current mode
+  }
   function toggleSpeakReplies() {
     speakReplies = !speakReplies; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;   // a manual speaker change is the user's own choice — keep it (don't restore on voice-mode exit)
@@ -621,7 +644,11 @@ const Voice = (() => {
     }
     // Escape always drops out of hands-free (never auto-arm on load — the first listen needs a click,
     // which also satisfies the browser mic-permission gesture).
-    if (!init._esc) { init._esc = true; document.addEventListener('keydown', e => { if (e.key === 'Escape' && convoMode) stopConvo(); }); }
+    if (!init._esc) { init._esc = true; document.addEventListener('keydown', e => { if (e.key === 'Escape' && convoMode) { savePref(LS_CONVO, false); stopConvo(); } }); }
+    // were they hands-free last session? the refresh reset it — invite a one-tap resume (skipped during the
+    // awakening, which owns the COMMS input). Never auto-starts; the click is the required mic-permission gesture.
+    if (opts.resumeCue !== false && canListen() && loadPref(LS_CONVO, false)) showResumeCue();
+    else clearResumeCue();
   }
 
   // let other code (or a future hotkey) retarget the active voice when the workstream's agent changes.

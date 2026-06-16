@@ -250,7 +250,7 @@ const App = (() => {
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
-    if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId });   // mic + this agent's per-persona voice
+    if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
     renderRail();
     el('ws-new').onclick = newWorkstream;
