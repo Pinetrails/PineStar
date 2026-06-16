@@ -150,6 +150,16 @@ const Harness = (() => {
     try { await fetch('/api/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId }) }); } catch (_) {}
   }
 
+  // E-STOP: stop EVERY in-flight run on the sidecar in one call — browser runs AND any messaging-hub/Telegram
+  // runs. Returns how many were halted (0 if the sidecar is unreachable). Safe to call when nothing is running.
+  async function haltAll() {
+    try {
+      const r = await fetch('/api/halt', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const j = await r.json().catch(() => ({}));
+      return (j && typeof j.halted === 'number') ? j.halted : 0;
+    } catch (_) { return 0; }
+  }
+
   // answer a live permission.prompt: decision ∈ once|always|full|deny. Resolves the run's paused dispatch so it
   // continues (or denies). Separate request from the open /api/run stream — no deadlock.
   async function consent(runId, promptId, decision) {
@@ -159,7 +169,7 @@ const Harness = (() => {
 
   return {
     getKey, setKey, getModel, setModel, getProv, setProv,
-    listModels, priceOf, contextLimitOf, contextState, chat, cancel, consent, notebook,
+    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
     resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; lastTokensIn = 0; }

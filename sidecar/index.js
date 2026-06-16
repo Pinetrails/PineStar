@@ -16,6 +16,7 @@ const { runAgentLoop } = require('./loop.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
+const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
@@ -287,6 +288,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
+  if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
@@ -626,6 +628,17 @@ async function handleCancel(req, res) {
   const ac = runId && runs.get(runId);
   if (ac) ac.abort();
   res.writeHead(200); res.end('ok');
+}
+
+// POST /api/halt — the E-STOP. Abort EVERY in-flight run so one click stops all spend immediately: the browser
+// runs (the `runs` Map) AND any messaging-hub/Telegram runs (the hub keeps each run's AbortController in its
+// inflight map). Idempotent. Each run's own finally cleans its maps + auto-denies any open consent prompt; hub
+// runs are marked `superseded` first so their (now stale) partial reply isn't delivered after the kill.
+function handleHalt(req, res) {
+  const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
+  const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ halted }));
 }
 
 // POST /api/channels/telegram/connect { token, key, model } — the Messaging tab hands over the BotFather token
