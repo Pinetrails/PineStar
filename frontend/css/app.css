@@ -169,40 +169,36 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 #chat-input { flex: 1; width: auto; min-width: 0; border: none; background: transparent; padding: 4px 2px; }
 #chat-input:focus { box-shadow: none; }
 
-/* ---------- voice controls: phosphor line-icons (theme-tinted via currentColor) ---------- */
-.voice-toggle svg, .mic-btn svg { width: 1em; height: 1em; display: block; pointer-events: none; }
-
-.mic-btn {
-  flex: 0 0 auto; font-size: 17px; line-height: 0;
-  color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-dim);
+/* ---------- voice controls: a matched set of bordered phosphor chips in the COMMS input row.
+   Defined dark boxes (not bare glyphs) so they punctuate the amber UI and read as real controls;
+   active states invert/recolor so the live one stands out at a glance. ---------- */
+.mic-btn, .voice-toggle {
+  flex: 0 0 auto; font-size: 17px; line-height: 0; color: var(--ph);
+  background: var(--panel2); border: 2px solid var(--ph-dim);
   padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
-  filter: drop-shadow(0 0 2px var(--ph-glow2)); transition: color .12s, border-color .12s, background .12s;
+  transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
 }
-.mic-btn:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
-/* listening: red glow + pulse so it's unmistakable the mic is hot */
+.mic-btn svg, .voice-toggle svg { width: 1em; height: 1em; display: block; pointer-events: none; }
+.mic-btn:hover, .voice-toggle:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+
+/* mic listening: red border + glow pulse so it's unmistakable the mic is hot */
 .mic-btn.rec { color: var(--bad); border-color: var(--bad); animation: mic-pulse 1s infinite; }
 @keyframes mic-pulse { 0%,100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 12px var(--bad); } }
 
-.voice-toggle {
-  font-size: 19px; line-height: 0; color: var(--ph);
-  background: transparent; border: none; padding: 0 7px 0 0; cursor: pointer; user-select: none;
-  display: inline-flex; align-items: center;
-  filter: drop-shadow(0 0 3px var(--ph-glow)); transition: opacity .12s, color .12s, filter .12s;
-}
-.voice-toggle:hover { color: var(--ph-bright); filter: drop-shadow(0 0 5px var(--ph-glow)); }
-/* muted: clearly dimmed (the speaker-off + X icon already reads as off), but still legible enough to find + unmute */
-.voice-toggle.off { opacity: .55; filter: none; }
-/* speaking: gentle glow pulse while the agent's voice plays (SVG fills glow via filter, not text-shadow) */
-.voice-toggle.speaking { animation: spk-pulse .7s infinite; }
-@keyframes spk-pulse { 0%,100% { filter: drop-shadow(0 0 3px var(--ph-glow)); } 50% { filter: drop-shadow(0 0 8px var(--ph-glow)); } }
-/* hands-free VOICE MODE button: full-strength so it reads on the dark header; the icon (bubble vs waveform)
-   + an extra glow when live carry the on/off state, not a heavy dim */
-.voice-mode { opacity: .9; }
-.voice-mode.on { opacity: 1; filter: drop-shadow(0 0 7px var(--ph-glow)); }
-/* hands-free was on last session but a refresh dropped it (the mic needs a fresh click) → pulse to invite a one-tap resume */
-.voice-mode.resume { opacity: 1; animation: voice-resume 1.4s ease-in-out infinite; }
-@keyframes voice-resume { 0%,100% { filter: drop-shadow(0 0 2px var(--ph-glow2)); } 50% { filter: drop-shadow(0 0 9px var(--ph-glow)); } }
+/* agent-voice MUTED: red so "the agent is silenced" is impossible to miss */
+.voice-toggle.off { color: var(--bad); border-color: var(--bad); }
+.voice-toggle.off:hover { background: var(--ph-faint); }
+/* agent-voice speaking: amber glow pulse on the chip */
+.voice-toggle.speaking { animation: chip-spk .8s infinite; }
+@keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
+
+/* hands-free LIVE: filled phosphor (inverted) so the active mode clearly pops out of the row */
+.voice-mode.on { color: var(--ink); background: var(--ph); border-color: var(--ph); box-shadow: 0 0 11px var(--ph-glow); }
+.voice-mode.on:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); }
+/* hands-free was on last session but a refresh dropped it → pulse the chip to invite a one-tap resume */
+.voice-mode.resume { animation: chip-resume 1.3s ease-in-out infinite; }
+@keyframes chip-resume { 0%,100% { box-shadow: 0 0 0 0 var(--ph-glow2); border-color: var(--ph-dim); } 50% { box-shadow: 0 0 12px 1px var(--ph-glow); border-color: var(--ph); } }
 
 /* ---------- onboarding / save additions ---------- */
 .title-btns { display: flex; flex-direction: column; gap: 12px; align-items: center; }
