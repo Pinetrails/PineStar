@@ -709,6 +709,36 @@ const PropSprites = (() => {
     if (f.work) glow(x + 1, y + 1, w - 2, h - 2, c, 0.3);
   };
 
+  F.filter = (x, y, w, h, f) => {
+    // FILTER — the content-router: sorts the work stream by a box's TAG to a chosen out-lane (code/research/…).
+    // Violet casing + tri-coloured lane tips set it apart from the SPLITTER's symmetric green load-balance fan.
+    box(x + 1, y + 1, w - 2, h - 2, '#2e2b36');
+    px(x + 2, y + 2, w - 4, h - 4, '#181520');
+    const cy = y + (h >> 1);
+    px(x + 2, cy, w - 5, 1, '#b48af0');                               // trunk in (violet accent)
+    px(x + w - 5, y + 3, 1, h - 6, '#6a4a9a');                        // sorting rail
+    px(x + w - 4, y + 3, 2, 1, '#4ad9ff');                            // top lane tip — cyan (code)
+    px(x + w - 4, cy, 2, 1, '#e8c860');                               // mid lane tip — amber (research)
+    px(x + w - 4, y + h - 4, 2, 1, '#8a9a90');                        // bottom lane tip — neutral (default)
+    px(x + 3, cy - 1, 1, 1, blink(420, 0) ? '#d8b8ff' : '#3a2a4a');   // sorting LED
+    if (f.work) glow(x + 1, y + 1, w - 2, h - 2, '#b48af0', 0.3);
+  };
+
+  F.merger = (x, y, w, h, f) => {
+    // MERGER — buffers K inbound boxes and emits ONE combined box (a map-reduce barrier). Amber, with two
+    // input stubs converging to a single out lane — the visual inverse of the splitter's fan.
+    box(x + 1, y + 1, w - 2, h - 2, '#33302b');
+    px(x + 2, y + 2, w - 4, h - 4, '#1c1813');
+    const cy = y + (h >> 1), c = '#e0a45a';
+    px(x + 3, y + 3, 2, 1, c); px(x + 3, y + h - 4, 2, 1, c);         // two input stubs (top-left + bottom-left)
+    px(x + 4, y + 3, 1, Math.max(1, cy - (y + 3)), c);               // top input converges to centre
+    px(x + 4, cy, 1, Math.max(1, (y + h - 4) - cy), c);             // bottom input converges to centre
+    px(x + 4, cy, w - 6, 1, c);                                       // combined out lane
+    px(x + w - 4, cy, 2, 1, c);                                       // out tip
+    px(x + 3, cy + 1, 1, 1, blink(520, 0) ? '#ffd488' : '#5a4424');   // buffer LED
+    if (f.work) glow(x + 1, y + 1, w - 2, h - 2, c, 0.3);
+  };
+
   F.bay = (x, y, w, h, f) => {
     // BAY — a docking bay where a SPECIFIC agent receives work off the belt. Nameplate names the bound
     // agent (lit) or reads UNASSIGNED (dim). Routing (who runs) is the bay's agentId; capability is its room.
@@ -3738,6 +3768,8 @@ const PropSprites = (() => {
     { id: "intake", label: "INTAKE", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "outbox", label: "OUTBOX", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "splitter", label: "SPLITTER", cat: "logistics", w: 1, h: 1, animated: true, blocks: false },
+    { id: "filter", label: "FILTER", cat: "logistics", w: 1, h: 1, animated: true, blocks: false },
+    { id: "merger", label: "MERGER", cat: "logistics", w: 1, h: 1, animated: true, blocks: false },
     { id: "bay", label: "BAY", cat: "logistics", w: 2, h: 2, animated: true, blocks: false },
     { id: "commswall", label: "COMMS WALL", cat: "comms", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_dish", label: "DISH", cat: "comms", w: 2, h: 2, animated: true, blocks: true },

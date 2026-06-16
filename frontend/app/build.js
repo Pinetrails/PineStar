@@ -312,6 +312,78 @@ const Build = (() => {
     try { input.focus(); input.select(); } catch (_) {}
   }
 
+  /* ---------- FILTER/MERGER junction editor (Polish P1): make content-routing reachable from the UI.
+     A FILTER needs routes (tag -> out-lane) + a default lane or it's non-deployable (FILTER_NO_DEFAULT);
+     a MERGER just needs its buffer size K. Both call station.configureJunction. Opens on place/click. */
+  const J_DIRV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
+  const J_OPP = { E: 'W', W: 'E', S: 'N', N: 'S' };
+  const J_LANES = ['E', 'S', 'W', 'N'];   // fixed order — mirrors pipeline.js / conveyor.js
+  const J_ARROW = { E: '→ E', S: '↓ S', W: '← W', N: '↑ N' };
+  // the out-lanes leaving this tile: neighbouring belts that don't flow back in (where work can exit)
+  function junctionOutLanes(tx, ty) {
+    const out = [];
+    for (const d of J_LANES) { const v = J_DIRV[d], nb = station.beltAt(tx + v[0], ty + v[1]); if (nb && nb !== J_OPP[d]) out.push(d); }
+    return out;
+  }
+  function openJunctionEditor(propId, ev) {
+    if (!root || root.querySelector('.refit-junction-editor')) return;
+    const p = station.propById(propId); if (!p || (p.t !== 'filter' && p.t !== 'merger')) return;
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-junction-editor';
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+
+    if (p.t === 'merger') {
+      const k = Math.max(2, p.bufferSize | 0 || 2);
+      g.innerHTML = '<div class="refit-guide-card"><h3>▮ MERGER</h3>'
+        + '<ul><li>Buffers <b>K</b> inbound boxes, then emits ONE combined box (a map-reduce barrier).</li></ul>'
+        + '<label style="display:block;margin:6px 0;font:11px monospace;color:#cfe">combine K = '
+        + '<input id="mrg-k" type="number" min="2" max="9" value="' + k + '" style="width:48px;margin-left:6px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;padding:3px"/></label>'
+        + '<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SET</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
+      root.appendChild(g);
+      g.querySelector('#j-ok').onclick = () => {
+        const v = Math.max(2, Math.min(9, parseInt(g.querySelector('#mrg-k').value, 10) || 2));
+        const res = station.configureJunction(propId, { bufferSize: v });
+        if (res && res.ok) { sfx('click'); flashTip(ev, 'merger K=' + v, true); } else { sfx('bad'); }
+        closeP();
+      };
+    } else {
+      const lanes = junctionOutLanes(p.x, p.y);
+      const cur = { routes: (p.routes && typeof p.routes === 'object') ? Object.assign({}, p.routes) : {}, def: p.def || null };
+      const selOf = tag => (tag === '__def__' ? cur.def : cur.routes[tag]);
+      const ROWS = [['code', 'CODE'], ['research', 'RESEARCH'], ['__def__', 'EVERYTHING ELSE']];
+      const rowHtml = ROWS.map(([tag, label]) => {
+        const btns = lanes.length
+          ? lanes.map(d => '<button type="button" class="bb sm lane-btn" data-tag="' + tag + '" data-dir="' + d + '"'
+              + (selOf(tag) === d ? ' style="background:#2a4a3a;border-color:#5ad1b3"' : '') + '>' + J_ARROW[d] + '</button>').join('')
+          : '<span style="color:#ff8a5a;font:10px monospace">lay belts OUT of this filter first</span>';
+        return '<div style="display:flex;align-items:center;gap:5px;margin:3px 0"><span style="width:104px;font:10px monospace;color:#9fb">' + label + ' →</span>' + btns + '</div>';
+      }).join('');
+      g.innerHTML = '<div class="refit-guide-card"><h3>▮ FILTER — route by content</h3>'
+        + '<ul><li>Each <b>kind</b> of work routes to the out-lane you pick; the rest take <b>EVERYTHING ELSE</b>.</li>'
+        + '<li>Put a <b>BAY</b> on a lane to send that work to a specific agent.</li></ul>'
+        + '<div class="refit-filter-rows">' + rowHtml + '</div>'
+        + '<div style="display:flex;gap:6px;margin-top:8px"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SAVE ROUTES</button><button type="button" class="btn-sm" id="j-clear">CLEAR</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
+      root.appendChild(g);
+      g.querySelectorAll('.lane-btn').forEach(b => b.onclick = () => {
+        const tag = b.dataset.tag, dir = b.dataset.dir;
+        if (tag === '__def__') cur.def = (cur.def === dir) ? null : dir;
+        else if (cur.routes[tag] === dir) delete cur.routes[tag]; else cur.routes[tag] = dir;
+        g.querySelectorAll('.lane-btn[data-tag="' + tag + '"]').forEach(x => {
+          const on = selOf(tag) === x.dataset.dir;
+          x.style.background = on ? '#2a4a3a' : ''; x.style.borderColor = on ? '#5ad1b3' : '';
+        });
+      });
+      g.querySelector('#j-ok').onclick = () => {
+        const res = station.configureJunction(propId, { routes: cur.routes, def: cur.def });
+        if (res && res.ok) { sfx('click'); flashTip(ev, cur.def ? 'filter routes saved' : 'set a default lane', !!cur.def); if (cur.def) closeP(); }
+        else { sfx('bad'); }
+      };
+      g.querySelector('#j-clear').onclick = () => { station.configureJunction(propId, null); sfx('click'); flashTip(ev, 'filter cleared', true); closeP(); };
+    }
+    g.querySelector('#j-cancel').onclick = closeP;
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+  }
+
   /* ---------- camera + sizing ---------- */
   function resize() {
     if (!cv) return;
@@ -434,18 +506,21 @@ const Build = (() => {
     feedback(station.moveRoom(d.roomId, dx, dy), ev, 'relocated');
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
+  // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing)
+  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); };
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1 };
   function commitPropStamp(d, ev) {
-    // BAY tool: a click (no drag) on an existing bay re-opens its agent picker instead of stamping a duplicate
-    if (propType === 'bay' && !d.moved) {
+    // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
+    if (PROP_EDITABLE[propType] && !d.moved) {
       const exist = station.propAt(d.cur.tx, d.cur.ty);
       const ep = exist && station.propById(exist);
-      if (ep && ep.t === 'bay') { openBayPicker(exist, ev); return; }
+      if (ep && ep.t === propType) { openPropEditor(exist, ep.t, ev); return; }
     }
     const s = propSpec(propType);
     const res = station.addProp({ t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h, block: s.blocks !== false });
     if (res && res.ok) {
       pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
-      if (propType === 'bay' && res.id) { openBayPicker(res.id, ev); return; }   // bind the freshly-placed bay immediately
+      if (PROP_EDITABLE[propType] && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
     }
     feedback(res, ev, 'placed ' + propType);
   }
