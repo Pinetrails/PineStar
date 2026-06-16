@@ -65,10 +65,13 @@ Three facts make the bridge additive:
   `router`) holding connector configs, keeping a client warm per connector, caching `tools/list`,
   exposing `toolDefsFor(id)` + per-agent `toolDefsForObjects(roomObjects)` + `call(...)`. Tokens
   never appear in summaries. Same test file.
-- [ ] **Slice 4 — wiring.** In `runOnce`: register manager-provided MCP tool defs into the registry,
-  union their names into `resolved.tools` + `networkCaps` when the room has a `connector` object;
-  add a `connector` entry to `CAP_REGISTRY`; `/api/connectors/*` routes (add/list/test/remove);
-  persist secrets.
+- [x] **Slice 4 — wiring.** `index.js`: a manager singleton (`makeHttpTransport`), connector configs
+  persisted to the protected `workspaces/connectors/connectors.json`; in `runOnce`, MCP tool defs for
+  the agent's room connector objects are registered + unioned into `resolved.tools`/`networkCaps`/
+  `approvalRules`; the single-agent browser office auto-includes every configured connector (one agent
+  = per-agent). `CAP_REGISTRY.connector` marker entry. `/api/connectors` (GET list, POST upsert,
+  POST remove, POST refresh) — tokens accepted + persisted server-side, never echoed back. Boot
+  warming. Verified by a live boot-smoke (routes + token-never-leaks + persistence).
 - [ ] **Slice 5 — world + UI.** A "connector portal" prop sprite + a Connectors panel
   (add server URL/token, see discovered tools, enable/disable) — the gamified projection.
 

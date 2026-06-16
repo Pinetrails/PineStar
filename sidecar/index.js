@@ -34,6 +34,8 @@ const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeSseHub } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
+const { makeConnectorManager } = require('./mcp/manager.js');
+const { makeHttpTransport } = require('./mcp/transport.http.js');
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -247,6 +249,30 @@ function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) 
 // runs this work-item?"; a non-deployable plan (cycle/orphan/dead-bay) is refused so routing can't loop.
 const router = makeRouter();
 
+/* ---- MCP connectors (the "connectors" capability): configured MCP servers whose live tools become real
+   agent tools. Tokens persist in a PROTECTED sibling file (outside the fs jail, never on the bus, never
+   returned by /api/connectors — only `hasToken`); the manager keeps one warm client per connector and projects
+   its tools/list into per-agent registry tools at run time. Mirrors the Telegram channel's config lifecycle. */
+const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
+const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
+function loadConnectorConfigs() {
+  try { const raw = JSON.parse(fs.readFileSync(CONNECTORS_FILE, 'utf8')); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
+  catch (e) { return []; }   // missing/corrupt -> nothing configured
+}
+let connectorConfigs = loadConnectorConfigs();
+function saveConnectorConfigs() {
+  try {
+    fs.mkdirSync(CONNECTORS_DIR, { recursive: true });
+    const tmp = CONNECTORS_FILE + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, connectors: connectorConfigs }));
+    fs.renameSync(tmp, CONNECTORS_FILE);   // atomic replace
+  } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
+}
+const connectors = makeConnectorManager({
+  makeTransport: makeHttpTransport, clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
+});
+
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
@@ -365,6 +391,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
+  if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
+  if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
+  if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
+  if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
@@ -392,6 +422,12 @@ server.listen(PORT, '127.0.0.1', () => {
     if (t.enabled && t.token && t.key && t.model) { startTelegram(t.token, t.key, t.model, { agentId: t.agentId, system: t.system, name: t.name }); console.log('  · telegram auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
+  // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
+  // connector that is down/errors simply projects no tools — it never blocks the host or a run).
+  try {
+    for (const c of connectorConfigs) { if (c && c.enabled !== false && c.url) connectors.configure(c.id, c).catch(() => {}); }
+    if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
+  } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
 });
 
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
@@ -446,6 +482,48 @@ async function handleSetKey(req, res) {
   if (!token || req.headers['x-skynet-token'] !== token) { res.writeHead(403); return res.end('forbidden'); }
   try { runtimeKey = String(await readBody(req, 1 << 14) || '').trim(); } catch (_) {}
   res.writeHead(200); return res.end('ok');
+}
+
+/* ---- /api/connectors: the Connectors panel manages MCP servers. A token is accepted here, persisted to the
+   protected sibling file, and NEVER echoed back (list/status carry `hasToken` only, never the value). ---- */
+function handleConnectorsList(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ connectors: connectors.list() }));
+}
+async function handleConnectorUpsert(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const id = String(body.id || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return json(400, { error: 'connector id must be 1-40 chars of [A-Za-z0-9_-]' });
+  const url = String(body.url || '').trim();
+  if (!url) return json(400, { error: 'a server URL is required' });
+  const prev = connectorConfigs.find(c => c.id === id) || {};
+  const cfg = {
+    id: id, url: url,
+    token: ('token' in body && body.token !== '') ? String(body.token) : (prev.token || ''),   // a blank token keeps the saved one
+    label: String(body.label || prev.label || id),
+    enabled: body.enabled !== false
+  };
+  connectorConfigs = connectorConfigs.filter(c => c.id !== id).concat([cfg]);
+  saveConnectorConfigs();
+  let result; try { result = await connectors.configure(id, cfg); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'configure failed' }; }
+  json(result.ok ? 200 : 502, Object.assign({ status: connectors.status(id) }, result));
+}
+async function handleConnectorRemove(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const id = String(body.id || '').trim();
+  connectorConfigs = connectorConfigs.filter(c => c.id !== id);
+  saveConnectorConfigs();
+  await connectors.remove(id);
+  json(200, { ok: true });
+}
+async function handleConnectorRefresh(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const id = String(body.id || '').trim();
+  let result; try { result = await connectors.refresh(id); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
+  json(200, Object.assign({ status: connectors.status(id) }, result));
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
@@ -547,13 +625,30 @@ async function runOnce(o) {
   //      run — no host-side toolset policy. Phase B5: a routed bay passes its OWN station (o.station) built from
   //      the objects in that bay's room, so per-bay caps are isolated; absent (browser chat / unrouted work) =
   //      the full default office, unchanged. ----
-  const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: [
+  const defaultObjects = [
     { instanceId: 'pc1', objectType: 'computer' },
     { instanceId: 'dish1', objectType: 'dish' },
     { instanceId: 'cab1', objectType: 'cabinet' },
     { instanceId: 'nb1', objectType: 'notebook' }
-  ] } } };
+  ];
+  // the single-agent browser office also gets every configured connector portal — there is exactly ONE agent
+  // here, so this IS per-agent; routed multi-agent bays instead pass their OWN room objects (o.station) so each
+  // bay only reaches the connectors physically placed in it.
+  for (const cid of connectors.ids()) defaultObjects.push({ instanceId: 'conn_' + cid, objectType: 'connector', connectorId: cid });
+  const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   const resolved = resolveTools(agentId, station);
+  // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
+  // Register them into this run's fresh registry and union their names into the resolved set so the capability
+  // gate, network classification, and the wire tool-list treat them exactly like a built-in. Never breaks a run.
+  try {
+    const room = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
+    for (const def of connectors.toolDefsForObjects((room && room.objects) || [])) {
+      registry.register(def);
+      if (resolved.tools.indexOf(def.name) < 0) resolved.tools.push(def.name);
+      resolved.networkCaps[def.name] = true;
+      resolved.approvalRules[def.name] = { requiresConsent: !!def.requiresConsent, scope: def.scope, network: true };
+    }
+  } catch (e) { console.warn('[mcp] connector tool projection failed:', (e && e.message) || e); }
   // P1.5: the real informed-consent broker. surface:'interactive' + prompt ⇒ ungranted mutations ask live;
   // surface:'autonomous' (no one watching, e.g. a Telegram chat) ⇒ default-deny on any ungranted mutation
   // (silence is not consent). Read-only/non-network auto-allows; the hardline floor sits below Full Access.

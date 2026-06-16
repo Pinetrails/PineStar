@@ -33,7 +33,13 @@
     dish: [
       { capId: 'web', tool: 'web_search', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'web_fetch', scope: 'read', requiresConsent: false, network: true }
-    ]
+    ],
+    // CONNECTORS: a 'connector' object is a DYNAMIC capability — its grants are the tools its configured MCP
+    // server reports at runtime (tools/list), which can't be statically listed here. The connector manager
+    // (sidecar/mcp/manager.js) unions those live tool names into the agent's resolved set per run; the placed
+    // instance's binding ({ connectorId }) selects WHICH server. This empty marker just declares 'connector' a
+    // known, placeable capability object so the builder/world can treat it like any other room object.
+    connector: []
     // M5 next: terminal (shell.exec, jailed under Windows AppContainer/Job-Object)
   };
 
