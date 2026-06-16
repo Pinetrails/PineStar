@@ -185,22 +185,56 @@ const Conveyor = (() => {
 
   function create(opts) {
     const onDeliver = (opts && opts.onDeliver) || null;   // called ONCE when a PAYLOAD box rides off the open end
+    const onAdvance = (opts && opts.onAdvance) || null;    // junction telemetry seam: (bx, info) on each routing decision
     let boxes = [];
     let nid = 1;
     const pending = [];                                    // enqueueAt() work-items, born inside tick() (live nowMs + dir)
     const rr = new Map();                                  // per-junction round-robin counter (deterministic splitter routing)
+    const mbuf = new Map();                                // per-merge-tile absorbed payloads (combined on the K-th box)
 
-    function reset() { boxes = []; pending.length = 0; rr.clear(); }
+    function reset() { boxes = []; pending.length = 0; rr.clear(); mbuf.clear(); }
 
-    /* a junction overrides a box's exit at its tile. SPLITTER = round-robin across out-lanes (load-balance =
-       real parallelism, drawn). Deterministic: a per-tile counter + the fixed LANE_ORDER. (merge/filter: later.) */
-    function chooseExit(jt, x, y, map) {
+    /* a junction overrides a box's exit at its tile. Three kinds, all deterministic (per-tile state + the
+       fixed LANE_ORDER, no RNG/clock):
+         SPLIT  — round-robin across out-lanes (load-balance = real parallelism, drawn).
+         FILTER — route by the box's payload.tag (config.routes[tag] || config.def), so content sorts to the
+                  right agent's bay. A tag pointing at a missing lane falls back to def then the first lane —
+                  a filter NEVER drops work (mirrors pipeline.resolveTarget so visual == dispatch).
+         MERGE  — buffer K inbound boxes per-tile; the first K-1 are ABSORBED (return false = consume, no
+                  delivery), the K-th rides on carrying the combined work-item list (config.bufferSize = K).
+       Returns an out-lane dir, or null (go straight), or false (merge consumed this box — sink it, no deliver). */
+    function chooseExit(jt, bx, x, y, map) {
       const lanes = outLanes(x, y, map);
-      if (!lanes.length) return null;
+      if (!lanes.length) return null;                      // open-end junction: nothing to override, deliver/sink
+      const k = key(x, y);
       if (jt.kind === 'split') {
-        const k = key(x, y), n = rr.get(k) || 0;
+        const n = rr.get(k) || 0;
         rr.set(k, (n + 1) % lanes.length);
         return lanes[n % lanes.length];
+      }
+      if (jt.kind === 'filter') {
+        const tag = (bx.payload && bx.payload.tag) || 'general';
+        const want = jt.routes && jt.routes[tag];
+        const dir = (want && lanes.indexOf(want) >= 0) ? want
+                  : (jt.def && lanes.indexOf(jt.def) >= 0) ? jt.def
+                  : lanes[0];                              // safety: an unroutable tag takes the first lane, never dropped
+        if (onAdvance) onAdvance(bx, { kind: 'filter', tile: { x, y }, lane: dir, tag });
+        return dir;
+      }
+      if (jt.kind === 'merge') {
+        const K = Math.max(2, jt.bufferSize | 0 || 2);
+        const buf = mbuf.get(k) || mbuf.set(k, []).get(k);
+        buf.push(bx.payload || null);
+        if (buf.length < K) {                              // not the K-th yet: this box is absorbed into the merge
+          bx.merged = true;
+          if (onAdvance) onAdvance(bx, { kind: 'merge', tile: { x, y }, absorbed: true });
+          return false;                                    // CONSUME sentinel — caller sinks it without delivering
+        }
+        mbuf.set(k, []);                                   // K reached: clear buffer; this box becomes the carrier
+        const ids = buf.map(p => p && p.workitemId).filter(Boolean);
+        bx.payload = Object.assign({}, bx.payload, { merged: ids, mergeCount: K });
+        if (onAdvance) onAdvance(bx, { kind: 'merge', tile: { x, y }, lane: lanes[0], merged: ids });
+        return lanes[0];                                   // merge fans IN, rides out the single out-lane
       }
       return null;
     }
@@ -264,7 +298,11 @@ const Conveyor = (() => {
         while (bx.prog >= 1 && guard++ < 8) {
           let dir = bx.dir;
           const jt = junctions && junctions.get(key(bx.x, bx.y));            // a junction picks the exit lane (else straight)
-          if (jt) { const ex = chooseExit(jt, bx.x, bx.y, map); if (ex) dir = ex; }
+          if (jt) {
+            const ex = chooseExit(jt, bx, bx.x, bx.y, map);
+            if (ex === false) { bx.sink = 1; break; }                        // merge absorbed it — sink, never deliver
+            if (ex) dir = ex;
+          }
           const v = DIRV[dir], nx = bx.x + v[0], ny = bx.y + v[1], nd = map.get(key(nx, ny));
           if (nd) { if (nd !== dir) bx.turn0 = nowMs; bx.x = nx; bx.y = ny; bx.dir = nd; bx.prog -= 1; }
           else {                                                              // rode off the open end → deliver, then sink

@@ -261,4 +261,96 @@ A.notThrows(() => {
   g.projectGeometry();
 }, 'a legacy/partial props blob is repaired without crashing');
 
+/* ---- Phase B: BAY agent-binding (additive prop.agentId — who runs at this belt endpoint) ---- */
+const sb = WM.create();
+const bz = sb.roomById(sb.spawnRoomId()).rects[0];
+const bayA = sb.addProp({ t: 'bay', x: bz.x1 + 2, y: bz.y1 + 2, w: 2, h: 2, block: false, agentId: 'coder' });
+A.ok(bayA.ok, 'a BAY prop places');
+A.eq(sb.propById(bayA.id).agentId, 'coder', 'addProp carries opts.agentId onto the prop');
+const deskP = sb.addProp({ t: 'desk', x: bz.x1 + 6, y: bz.y1 + 2, w: 2, h: 1 });
+A.eq(sb.propById(deskP.id).agentId, undefined, 'a prop placed without agentId is unbound');
+// projectGeometry carries it into the local frame; unbound props project agentId:null
+const gb = sb.projectGeometry();
+A.eq(gb.props.find(p => p.t === 'bay').agentId, 'coder', 'projectGeometry carries the bay agentId');
+A.eq(gb.props.find(p => p.t === 'desk').agentId, null, 'an unbound prop projects agentId:null');
+// agentId survives a serialize/deserialize round-trip (migrate must preserve it, not whitelist it away)
+const sbDoc = sb.serialize();
+A.eq(WM.deserialize(sbDoc).propById(bayA.id).agentId, 'coder', 'prop.agentId survives serialize/deserialize');
+A.eq(JSON.stringify(WM.deserialize(sbDoc).serialize()), JSON.stringify(sbDoc), 'a doc with bound props round-trips identically');
+// an OLD save (bay with no agentId) loads UNBOUND — backward compatible
+const legacy = WM.deserialize({ schema: 'skynet.station', version: 1,
+  rooms: { rH: { id: 'rH', kind: 'hab', name: 'H', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rH'],
+  props: [{ id: 'p9', t: 'bay', x: 2, y: 2, w: 2, h: 2 }] });
+A.eq(legacy.propById('p9').agentId, undefined, 'a legacy bay (no agentId) loads unbound');
+// assignPropAgent: validate, bind, unbind
+A.ok(!sb.assignPropAgent('nope', 'x').ok, 'assignPropAgent on a missing prop fails');
+A.eq(sb.assignPropAgent(deskP.id, 'bad agent!').error, 'BAD_AGENT', 'assignPropAgent rejects a malformed agentId');
+A.ok(sb.assignPropAgent(deskP.id, 'writer').ok && sb.propById(deskP.id).agentId === 'writer', 'assignPropAgent binds a valid agentId');
+A.ok(sb.assignPropAgent(deskP.id, '').ok && sb.propById(deskP.id).agentId === undefined, 'assignPropAgent with "" unbinds');
+sb.undo();
+A.eq(sb.propById(deskP.id).agentId, 'writer', 'undo restores a prior binding (assignPropAgent snapshots)');
+// queries
+A.eq(sb.propsByType('bay').length, 1, 'propsByType("bay") finds the bay');
+A.eq(sb.propsByAgent('coder')[0].id, bayA.id, 'propsByAgent("coder") finds the coder bay');
+A.eq(sb.agentRoomId('coder'), sb.spawnRoomId(), 'agentRoomId returns the room the coder bay sits in (capability seam)');
+A.eq(sb.agentRoomId('nobody'), null, 'agentRoomId for an unbound agent is null');
+
+/* ---- Phase B4: FILTER/MERGER junction config carried like agentId (routes/def/bufferSize, sanitized) ---- */
+const jc = WM.create();
+const jr = jc.roomById(jc.spawnRoomId()).rects[0];
+const jx = jr.x1 + 2, jy = jr.y1 + 2;
+const filtP = jc.addProp({ t: 'filter', x: jx, y: jy, w: 1, h: 1, block: false, routes: { code: 'E', research: 'S' }, def: 'E' });
+A.ok(filtP.ok, 'a filter prop places');
+A.eq(JSON.stringify(jc.propById(filtP.id).routes), JSON.stringify({ code: 'E', research: 'S' }), 'addProp carries filter routes');
+A.eq(jc.propById(filtP.id).def, 'E', 'addProp carries the filter default lane');
+// sanitize: a route to a non-lane and a bad default are dropped (a hand-edited save can't inject a bad dir)
+const filtBad = jc.addProp({ t: 'filter', x: jx + 2, y: jy, w: 1, h: 1, block: false, routes: { code: 'X', research: 'S' }, def: 'Z' });
+A.eq(JSON.stringify(jc.propById(filtBad.id).routes), JSON.stringify({ research: 'S' }), 'a route to a bad lane is sanitized out');
+A.eq(jc.propById(filtBad.id).def, undefined, 'a bad default lane is dropped');
+const mrgP = jc.addProp({ t: 'merger', x: jx, y: jy + 2, w: 1, h: 1, block: false, bufferSize: 3 });
+A.eq(jc.propById(mrgP.id).bufferSize, 3, 'addProp carries the merger bufferSize');
+const mrgBad = jc.addProp({ t: 'merger', x: jx + 2, y: jy + 2, w: 1, h: 1, block: false, bufferSize: 1 });
+A.eq(jc.propById(mrgBad.id).bufferSize, undefined, 'a bufferSize < 2 is dropped (the engine default K applies)');
+// projectGeometry carries the config into the local frame (so the bake/pipeline can route by it)
+const gj = jc.projectGeometry();
+const gf = gj.props.find(p => p.id === filtP.id);
+A.eq(JSON.stringify(gf.routes), JSON.stringify({ code: 'E', research: 'S' }), 'projectGeometry carries filter routes');
+A.eq(gf.def, 'E', 'projectGeometry carries the filter default lane');
+A.eq(gj.props.find(p => p.id === mrgP.id).bufferSize, 3, 'projectGeometry carries the merger bufferSize');
+// survives serialize/deserialize (migrate must preserve it, not whitelist it away)
+const jDoc = jc.serialize();
+const reF = WM.deserialize(jDoc).propById(filtP.id);
+A.eq(JSON.stringify(reF.routes), JSON.stringify({ code: 'E', research: 'S' }), 'filter routes survive serialize/deserialize');
+A.eq(reF.def, 'E', 'filter def survives serialize/deserialize');
+A.eq(WM.deserialize(jDoc).propById(mrgP.id).bufferSize, 3, 'merger bufferSize survives serialize/deserialize');
+// configureJunction: set / replace wholesale / clear, with undo
+A.ok(!jc.configureJunction('nope', { def: 'E' }).ok, 'configureJunction on a missing prop fails');
+A.ok(jc.configureJunction(filtP.id, { routes: { code: 'S' }, def: 'S' }).ok, 'configureJunction sets new config');
+A.eq(jc.propById(filtP.id).def, 'S', 'configureJunction replaced the default lane');
+A.eq(JSON.stringify(jc.propById(filtP.id).routes), JSON.stringify({ code: 'S' }), 'configureJunction replaced the routes wholesale');
+A.ok(jc.configureJunction(filtP.id, null).ok && jc.propById(filtP.id).routes === undefined && jc.propById(filtP.id).def === undefined, 'configureJunction(null) clears the config');
+jc.undo();
+A.eq(jc.propById(filtP.id).def, 'S', 'undo restores a prior junction config (configureJunction snapshots)');
+
+/* ---- Phase B5: bayObjects — the cap-props sharing a bay's room become that agent's capability objectTypes ---- */
+const cap = WM.create();
+const cr = cap.roomById(cap.spawnRoomId()).rects[0];
+const cbx = cr.x1 + 2, cby = cr.y1 + 2;
+const capBay = cap.addProp({ t: 'bay', x: cbx, y: cby, w: 2, h: 2, block: false });
+cap.assignPropAgent(capBay.id, 'coder');
+A.eq(JSON.stringify(cap.bayObjects('coder')), '[]', 'a bare bay grants no capability objects');
+cap.addProp({ t: 'console', x: cbx + 3, y: cby, w: 2, h: 1, block: true });       // a workstation -> compute
+cap.addProp({ t: 'war_intelcab', x: cbx, y: cby + 3, w: 1, h: 2, block: true });  // a cabinet -> files
+A.eq(cap.bayObjects('coder').slice().sort().join(','), 'cabinet,computer', 'cap-props in the bay room map to their capability objectTypes');
+cap.addProp({ t: 'desk', x: cbx + 3, y: cby + 2, w: 2, h: 1, block: true });      // a 2nd workstation
+A.eq(cap.bayObjects('coder').filter(o => o === 'computer').length, 1, 'duplicate compute objects de-dupe');
+A.eq(JSON.stringify(cap.bayObjects('nobody')), '[]', 'an agent with no bay -> no capability objects');
+// decor in the room never grants reach
+const cap2 = WM.create();
+const cr2 = cap2.roomById(cap2.spawnRoomId()).rects[0];
+const b2 = cap2.addProp({ t: 'bay', x: cr2.x1 + 2, y: cr2.y1 + 2, w: 2, h: 2, block: false });
+cap2.assignPropAgent(b2.id, 'r');
+cap2.addProp({ t: 'plant', x: cr2.x1 + 5, y: cr2.y1 + 2, w: 1, h: 1, block: false });
+A.eq(JSON.stringify(cap2.bayObjects('r')), '[]', 'decor (a plant) grants no capabilities');
+
 A.report('worldmodel');

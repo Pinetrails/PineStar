@@ -28,6 +28,7 @@ const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeSseHub } = require('./channels/sse.js');
+const { makeRouter } = require('./routing/router.js');
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -158,6 +159,10 @@ const queueDepth = new Map();
 const activeItem = new Map();   // agentId -> the newest in-flight workitemId; older ones the hub superseded
 function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) || 0) + d); queueDepth.set(agentId, n); return n; }
 
+// the placed floor's RoutingPlan (posted by the app on every geo change). resolveTarget answers "which agent
+// runs this work-item?"; a non-deployable plan (cycle/orphan/dead-bay) is refused so routing can't loop.
+const router = makeRouter();
+
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
@@ -178,7 +183,12 @@ function startTelegram(token, key, model, agentCfg) {
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     secrets: () => { const t = (channelSecrets && channelSecrets.telegram) || {}; return { key: t.key, model: t.model, agentId: t.agentId, system: t.system }; },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
-    newId: () => crypto.randomUUID(), maxMessageLength: 4096
+    newId: () => crypto.randomUUID(), maxMessageLength: 4096,
+    // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
+    // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
+    resolveAgent: (ctx) => router.resolveTarget(ctx),
+    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
+    resolveStation: (agentId) => router.stationFor(agentId)                     // B5: a bay's room objects = that agent's caps
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
@@ -255,6 +265,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/events') return handleChannelEvents(req, res);
+  if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
@@ -297,6 +308,18 @@ function handleChannelEvents(req, res) {
   const done = () => { clearInterval(ka); sse.remove(res); };   // evict on disconnect — mirrors /api/run cleanup; idempotent
   const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch (_) { done(); } }, 25000);   // keep-alive; self-evicts on write failure
   req.on('close', done); req.on('aborted', done); res.on('error', done);
+}
+
+/* ---- POST /api/routing: the app posts its compiled RoutingPlan on every floor change; the router stores
+   it (or REFUSES a non-deployable one), and from then on the floor decides which agent each inbound runs. ---- */
+function handleRouting(req, res) {
+  readBody(req, 1 << 20).then(raw => {
+    let plan = null;
+    if (raw && raw.trim()) { try { plan = JSON.parse(raw); } catch (_) { res.writeHead(400); return res.end('bad json'); } }
+    const r = router.setPlan(plan);
+    res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(r));
+  }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
@@ -389,10 +412,12 @@ async function runOnce(o) {
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() } }).register(registry);
   throttleSearch(registry);
 
-  // ---- capabilities: the office workstation. Each placed object IS a capability grant (CAP_REGISTRY):
-  //      computer = compute gate · dish = web · cabinet = files · notebook = memory. resolveTools
-  //      projects them into the agent's tools FRESH per run — no host-side toolset policy. ----
-  const station = { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: [
+  // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
+  //      web · cabinet = files · notebook = memory. resolveTools projects them into the agent's tools FRESH per
+  //      run — no host-side toolset policy. Phase B5: a routed bay passes its OWN station (o.station) built from
+  //      the objects in that bay's room, so per-bay caps are isolated; absent (browser chat / unrouted work) =
+  //      the full default office, unchanged. ----
+  const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: [
     { instanceId: 'pc1', objectType: 'computer' },
     { instanceId: 'dish1', objectType: 'dish' },
     { instanceId: 'cab1', objectType: 'cabinet' },

@@ -1,0 +1,139 @@
+/* test/pipeline.test.js — headless tests for the belt-graph -> RoutingPlan compiler (frontend/app/pipeline.js).
+   Pure function of geo {props, belts}; no DOM, no time, no RNG — loads with a plain require(). */
+'use strict';
+const A = require('./_assert.js');
+const P = require('../frontend/app/pipeline.js');
+
+const geo = (props, belts) => ({ props, belts });
+const belt = (x, y, dir) => ({ x, y, dir });
+
+/* ---- a complete INTAKE -> belt -> BAY floor routes + validates clean ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E')]
+  ));
+  A.eq(plan.sources.length, 1, 'one INTAKE source bound to its belt tile');
+  A.eq(plan.bays.length, 1, 'one BAY bound to its belt tile');
+  A.eq(plan.bays[0].agentId, 'coder', 'the bay carries its agentId');
+  A.eq(plan.reach.coder, true, 'the coder bay is reachable from the source');
+  A.eq(plan.errors.length, 0, 'a complete intake->belt->bay floor has no errors');
+  A.ok(P.ok(plan), 'plan is deployable');
+  A.eq(P.resolveTarget(plan, { tag: 'anything' }), 'coder', 'resolveTarget routes work to the single bay');
+}
+
+/* ---- ORPHAN_SOURCE: an intake with no adjacent belt ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 }], [belt(8, 8, 'E')]
+  ));
+  A.ok(plan.errors.some(e => e.code === 'ORPHAN_SOURCE'), 'an intake with no belt -> ORPHAN_SOURCE');
+  A.ok(!P.ok(plan), 'an orphan-source plan is not deployable');
+}
+
+/* ---- DEAD_BAY: a bay unreachable from any source ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 8, y: 8, w: 2, h: 2, agentId: 'lonely' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(9, 8, 'E')]   // bay belt disconnected from the source belt
+  ));
+  A.eq(plan.reach.lonely, false, 'an unconnected bay is not reachable');
+  A.ok(plan.errors.some(e => e.code === 'DEAD_BAY' && e.agentId === 'lonely'), '-> DEAD_BAY');
+}
+
+/* ---- CYCLE: a belt loop is a HARD error (a loop = infinite paid runOnce) ---- */
+{
+  const plan = P.compileRoutingPlan(geo([], [belt(0, 0, 'E'), belt(1, 0, 'S'), belt(1, 1, 'W'), belt(0, 1, 'N')]));
+  A.ok(plan.errors.some(e => e.code === 'CYCLE'), 'a belt loop -> CYCLE');
+  A.ok(!P.ok(plan), 'a cyclic plan is never deployable');
+}
+
+/* ---- DUP_AGENT: two bays bound to the same agent ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' },
+     { id: 'b2', t: 'bay', x: 5, y: 5, w: 2, h: 2, agentId: 'coder' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 6, 'E')]
+  ));
+  A.ok(plan.errors.some(e => e.code === 'DUP_AGENT' && e.agentId === 'coder'), 'two bays, one agent -> DUP_AGENT');
+}
+
+/* ---- UNBOUND_BAY is a warning, not a blocker ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 }, { id: 'b1', t: 'bay', x: 3, y: 0, w: 2, h: 2 }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E')]
+  ));
+  A.ok(plan.errors.some(e => e.code === 'UNBOUND_BAY' && e.warn), 'a bay with no agent -> UNBOUND_BAY (warn)');
+  A.ok(P.ok(plan), 'a warning does not block deploy');
+}
+
+/* ---- FILTER content-routing: code->coder (E lane), research->researcher (S lane), default->coder ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'f1', t: 'filter', x: 2, y: 0, w: 1, h: 1, routes: { code: 'E', research: 'S' }, def: 'E' },
+     { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' },
+     { id: 'br', t: 'bay', x: 1, y: 3, w: 2, h: 2, agentId: 'researcher' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'),   // E lane -> coder bay (@4,0)
+     belt(2, 1, 'S'), belt(2, 2, 'S')]                                      // S lane -> researcher bay (@2,2)
+  ));
+  A.eq(plan.errors.length, 0, 'a complete filter floor has no errors (default present, both bays reachable)');
+  A.eq(plan.reach.coder, true, 'coder reachable via the E lane');
+  A.eq(plan.reach.researcher, true, 'researcher reachable via the S lane');
+  A.eq(P.resolveTarget(plan, { tag: 'code' }), 'coder', "a 'code' message routes to the coder bay");
+  A.eq(P.resolveTarget(plan, { tag: 'research' }), 'researcher', "a 'research' message routes to the researcher bay");
+  A.eq(P.resolveTarget(plan, { tag: 'misc' }), 'coder', 'an untagged message takes the default lane');
+}
+
+/* ---- FILTER never-drops: a route to a non-existent lane falls back to the default (visual == dispatch) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'f1', t: 'filter', x: 2, y: 0, w: 1, h: 1, routes: { code: 'N' }, def: 'E' },   // 'N' lane has no belt
+     { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E')]
+  ));
+  A.eq(P.resolveTarget(plan, { tag: 'code' }), 'coder',
+    'a filter route to a missing lane falls back to the default lane (resolveTarget mirrors the engine — work never dropped)');
+}
+
+/* ---- MERGER: bufferSize (K) threaded into the plan junction; a box still resolves through it ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'm1', t: 'merger', x: 2, y: 0, w: 1, h: 1, bufferSize: 3 },
+     { id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'a' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E')]
+  ));
+  const j = plan.junctions['2,0'];
+  A.ok(j && j.kind === 'merge' && j.bufferSize === 3, 'a merger compiles to a merge junction carrying its bufferSize (K)');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'a', 'a box still resolves through a merge to the downstream bay');
+}
+
+/* ---- FILTER_NO_DEFAULT ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'f1', t: 'filter', x: 1, y: 0, w: 1, h: 1, routes: { code: 'E' } }],   // no def
+    [belt(1, 0, 'E'), belt(2, 0, 'E')]
+  ));
+  A.ok(plan.errors.some(e => e.code === 'FILTER_NO_DEFAULT'), 'a filter with no default lane -> FILTER_NO_DEFAULT');
+}
+
+/* ---- resolveTarget null fallback + replay-stable hash ---- */
+{
+  A.eq(P.resolveTarget({ sources: [] }, { tag: 'x' }), null, 'no source -> resolveTarget null (caller falls back, never stalls)');
+  const mk = () => geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 }, { id: 'b1', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'a' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E')]
+  );
+  A.eq(P.compileRoutingPlan(mk()).hash, P.compileRoutingPlan(mk()).hash, 'two identical floors -> identical plan.hash');
+  const other = geo([{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 }], [belt(1, 0, 'E')]);
+  A.ok(P.compileRoutingPlan(mk()).hash !== P.compileRoutingPlan(other).hash, 'a different floor -> a different hash');
+}
+
+A.report('pipeline');
