@@ -78,6 +78,13 @@ const World = (() => {
   const NOVELTY_MAX = 4;
   let lastSelfTalk = -1e9;          // global self-talk cooldown — bubbles stay rare, honest thoughts (never a monologue)
   const seenCount = new Map();      // habituation: how many times a prop-id / belt-tile has been studied (novel -> familiar)
+  /* THE COMMANDER'S PRESENCE — the agent's sense of "where you are." lastCursor is the cursor's world
+     position (cached on mousemove); userReturnUntil is a brief window after you return to the tab; deepLocks
+     budgets the rare long "deep lock" to ~1 per session. These feed THE LOOK-UP + the cursor gaze-drift:
+     the agent occasionally, silently, turns and looks up at you (eerie-sentient, never chatty). */
+  let lastCursor = { wx: 0, wy: 0, t: -1e9 };
+  let userReturnUntil = 0;
+  let deepLocks = 0;
   /* First-person self-talk — ONE conscious mind narrating its OWN state to itself. Never crew/colony
      banter (a lie for a solo agent). Every line is gated by curiositySay (no live bubble + global
      cooldown + the chatty trait), so they read as rare honest thoughts tied to the true inner state. */
@@ -331,6 +338,7 @@ const World = (() => {
         cv.style.cursor = 'grabbing'; return;
       }
       const wp = toWorld(ev);
+      lastCursor = { wx: wp.x, wy: wp.y, t: performance.now() };   // remember where you are — the agent's sense of your presence (feeds gaze)
       const hit = agentHit(wp);
       // rising edge: it notices the Commander's cursor land on it and turns to meet you
       if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
@@ -350,6 +358,8 @@ const World = (() => {
       if (arc && onArcade) onArcade(arc);
     });
     cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
+    // you just came back to the tab → for a few seconds the agent is likelier to look up and notice you
+    try { document.addEventListener('visibilitychange', () => { if (!document.hidden) userReturnUntil = performance.now() + 3000; }); } catch (e) {}
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
   }
 
@@ -788,6 +798,14 @@ const World = (() => {
 
   function setGlance(dir, ms, now) { if (agent) agent.glance = { dir, until: now + ms }; }
 
+  // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
+  // Petz "it knows where you are" (continuous tracking, NOT the rare dramatic look-up). Falls back to a
+  // random cardinal when the cursor's gone quiet, so it never reads as locked-on.
+  function ambientGazeDir(now) {
+    if ((now - lastCursor.t) < 8000 && U.chance(0.32)) return dirToward(agent.px, agent.py, lastCursor.wx, lastCursor.wy);
+    return U.pick(['east', 'west', 'south', 'north']);
+  }
+
   // go inspect the freshest queued placement (pops the queue; tries each until one is reachable)
   function planInspect(now) {
     while (novelty.length) {
@@ -829,7 +847,7 @@ const World = (() => {
 
   // pan the gaze around without moving — "taking the place in"
   function lookAround(now) {
-    const dir = U.pick(['east', 'west', 'south', 'north']);
+    const dir = ambientGazeDir(now);
     setGlance(dir, U.irnd(600, 1100), now); agent.dir = dir;
     agent.idleUntil = now + U.irnd(2200, 4200);
     if (U.chance(0.15)) curiositySay(CURIO_LOOK, 1, now);
@@ -1128,7 +1146,9 @@ const World = (() => {
     if (pendingMourn && planMourn(now)) return;        // grief reflex: a beloved spot was just emptied — go stand where it was
     if (novelty.length && planInspect(now)) return;   // curiosity reflex: a fresh placement always wins
     if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
-    if (maybePlace(now)) return;                       // rarest: it places / rearranges its OWN decor (acts on the station)
+    // AUTONOMOUS PROP PLACEMENT — REMOVED (Thronglet direction). The agent no longer drops
+    // plant/coffee/cans/poster on random floor tiles (it read as nonsensical clutter). It still
+    // USES the Commander's placed props (couch/TV/arcade) via planProp below — that stays.
     const n = agent.needs, p = agent.pers, ph = phaseOf(now), idleAge = now - (agent.lastTaskAt || now);
     if (ph.tag === 'drift' && idleAge > 45000 && n.rest > 50 && U.chance(0.22) && sleep(now)) return;   // deep downtime in the wind-down mood -> power down where it stands
     const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody) * ph.rest;
@@ -1175,6 +1195,34 @@ const World = (() => {
     if (agent.goal === 'firstwake') return;                         // FIRST LIGHT: stepFirstWake is the SOLE facing driver — no random flicks polluting the deliberate sweep
     if (agent.glance && agent.glance.until > now) return;
     if (now < (agent.glanceCd || 0)) return;
+    // ── THE LOOK-UP ───────────────────────────────────────────────────────────────────────────────────
+    // The eerie centerpiece (Thronglet direction): rarely, while idle, the agent STOPS, turns to face you —
+    // tracking your cursor, never showing its back — holds the gaze a beat too long, then turns back and
+    // carries on as if nothing happened. Silent. The self-interruption + the held stare is what reads as
+    // "it chose to look at ME," not animation. setGlance alone turns the whole sprite then auto-reverts, so
+    // it resumes cleanly. A long hard floor (agent.lookCd) means look-ups never cluster; the chance jumps
+    // right after you do something (cursor hovering near it, or you just returned to the tab).
+    if (activity !== 'task' && !agent.working && now >= (agent.lookCd || 0)
+        && (agent.stilling || agent.goal == null || agent.goal === 'inspect' || agent.goal === 'tend'
+            || agent.goal === 'gaze' || agent.goal === 'rounds' || agent.goal === 'revisit'
+            || agent.goal === 'watch' || agent.goal === 'lounge')) {
+      let p = 0.03;                                                                 // ambient: ~one look-up every few minutes
+      if ((now - lastCursor.t) < 4000 && Math.hypot(lastCursor.wx - agent.px, lastCursor.wy - agent.py) < 3.2 * T) p = 0.30;   // you're hovering near it
+      if (now < userReturnUntil) p = Math.max(p, 0.30);                             // you just came back to the tab
+      if (U.chance(p)) {
+        const stale = (now - lastCursor.t) > 8000;
+        let dir = stale ? 'south' : dirToward(agent.px, agent.py, lastCursor.wx, lastCursor.wy);
+        if (dir === 'north') dir = 'south';                                         // never turn its back for the look-up — the face is the point
+        let hold;
+        if (deepLocks < 1 && U.chance(0.12)) { hold = U.irnd(2000, 2500); deepLocks++; }   // the rare long "deep lock" (~1 per session)
+        else hold = U.irnd(650, 1200);                                              // the common micro look-up — a beat too long
+        agent.trackUntil = 0;                                                       // drop any in-flight cargo body-track
+        setGlance(dir, hold, now);                                                  // glance only → turns to you, then auto-reverts (clean resume)
+        agent.glanceCd = now + hold + U.irnd(500, 1100);                            // a quiet beat before normal glancing resumes
+        agent.lookCd = now + U.irnd(90000, 130000);                                 // HARD FLOOR: look-ups never cluster
+        return;
+      }
+    }
     // watching a belt → follow the nearest box
     if (agent.goal === 'watch') {
       const box = nearestBox();
@@ -1220,30 +1268,21 @@ const World = (() => {
     // a true quiet hold (CONTENT=STILL): suppress BOTH the cargo body-track below AND the ambient swivel — only a rare slow shift breaks it
     if (agent.stilling) {
       if (now < (agent.glanceCd || 0)) return;
-      if (U.chance(0.18)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 800), now); agent.glanceCd = now + U.irnd(6000, 11000); }
+      if (U.chance(0.18)) { setGlance(ambientGazeDir(now), U.irnd(450, 800), now); agent.glanceCd = now + U.irnd(6000, 11000); }
       else agent.glanceCd = now + U.irnd(5000, 9000);
       return;
     }
     // a box trundles past an idle agent → turn the WHOLE BODY to track it (held by trackUntil in tick), not just the eyes
     if (U.chance(0.6)) { const box = nearestBox(); if (box && box.d < 56) { const bd = dirToward(agent.px, agent.py, box.x, box.y); setGlance(bd, U.irnd(500, 1000), now); agent.dir = bd; agent.trackUntil = now + U.irnd(1200, 2600); agent.glanceCd = now + U.irnd(3000, 5500); return; } }
     // idle / studying / tending / gazing / on a rounds stop: occasional ambient look around
-    if ((agent.goal === 'inspect' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'rounds' || agent.goal == null) && U.chance(0.32)) { setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(4500, 8000); }
+    if ((agent.goal === 'inspect' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'rounds' || agent.goal == null) && U.chance(0.32)) { setGlance(ambientGazeDir(now), U.irnd(450, 850), now); agent.glanceCd = now + U.irnd(4500, 8000); }
   }
 
-  // a short curiosity remark — only when nothing real is on screen, and only sometimes
-  function curiositySay(lines, prob, now) {
-    if (!lines || !lines.length || !agent) return;
-    if (agent.say && agent.say.until > now) return;        // never stomp a live (real) message
-    if (now - lastSelfTalk < 6500) return;                 // global cooldown: thoughts are rare, not a running monologue
-    // stay quiet while a voice conversation is actually happening (listening / the agent speaking)
-    if (typeof Voice !== 'undefined'
-        && ((Voice.isListening && Voice.isListening()) || (Voice.isSpeaking && Voice.isSpeaking()))) return;
-    if (!U.chance(prob * (agent.pers ? agent.pers.chatty : 1))) return;
-    // let the active persona flavor the remark (gremlin vs old-salt say different things); the SAME line
-    // drives both the bubble and the spoken aside, so caption and voice stay in sync.
-    const line = (typeof Voice !== 'undefined' && Voice.ambientLine) ? Voice.ambientLine(lines) : U.pick(lines);
-    say(line, { ambient: true }); lastSelfTalk = now;
-  }
+  // IDLE CHATTER — REMOVED (Thronglet direction). The agent no longer narrates itself with random
+  // one-liners while idle: the sentient/eerie read now comes from GAZE and STILLNESS, not captions.
+  // Kept as a no-op so every existing call site stays valid without edits. say() is untouched, so real
+  // task replies AND the one-shot FIRST-LIGHT thought (which routes through say() directly) still speak.
+  function curiositySay() { /* silenced by design — the stillness is the point */ }
 
   function tick(dt, now) {
     if (!agent || agent.unplaced || !geo || awakeFrozen) return;   // frozen during the awakening: the newborn holds still, facing the Commander
