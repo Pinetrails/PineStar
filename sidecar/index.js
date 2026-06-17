@@ -287,7 +287,13 @@ function stopTelegram() {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+  // Desktop build serves the frontend from the Tauri origin, so its /api/* calls are cross-origin.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.writeHead(204); return res.end();
+  }
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);

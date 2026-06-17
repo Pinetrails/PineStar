@@ -218,24 +218,21 @@ fn main() {
                 root,
                 sidecar: Mutex::new(None),
             };
-            let ready = spawn_sidecar(&state);
+            let _ = spawn_sidecar(&state);
             app.manage(state);
 
-            let url: WebviewUrl = if ready {
-                WebviewUrl::External(
-                    format!("http://127.0.0.1:{port}/")
-                        .parse()
-                        .expect("valid sidecar url"),
-                )
-            } else {
-                eprintln!("[skynet] sidecar did not come up on port {port}");
-                WebviewUrl::App("index.html".into())
-            };
+            // The frontend is served LOCALLY (bundled via frontendDist), NOT from the sidecar's
+            // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
+            // rewrites the frontend's root-relative /api/* fetches to the sidecar's port.
+            let init = format!(
+                "window.__SKYNET_API__='http://127.0.0.1:{port}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__SKYNET_API__+u;return _sf(u,o)}};"
+            );
 
-            WebviewWindowBuilder::new(app, "main", url)
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("SKYNET")
                 .inner_size(1280.0, 832.0)
                 .min_inner_size(960.0, 600.0)
+                .initialization_script(&init)
                 .center()
                 .visible(false)
                 // Reveal only after the document paints — avoids a white flash.

@@ -1,7 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core permissions for the main Skynet window. The window only loads the local sidecar over http(127.0.0.1); it uses no extra Tauri IPC surface.",
-  "windows": ["main"],
+  "description": "Core permissions for the Skynet window plus the app's own keychain commands (harness_store_key/has_key/clear_key, allowed by default once a capability applies). Wildcard window match so it also covers the window created dynamically in setup().",
+  "windows": ["*"],
+  "remote": { "urls": ["http://127.0.0.1:*/**", "http://localhost:*/**"] },
   "permissions": ["core:default"]
 }
