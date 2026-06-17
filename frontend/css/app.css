@@ -218,6 +218,8 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 
 /* ---------- onboarding / save additions ---------- */
 .title-btns { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.title-data { display: flex; gap: 10px; align-items: center; }
+.title-status { color: var(--ph-bright); font-size: 13px; letter-spacing: 1px; min-height: 16px; }
 .swatches { display: flex; gap: 8px; }
 .swatch { width: 30px; height: 30px; border: 2px solid var(--ph-dim); cursor: pointer; }
 .swatch:hover { border-color: var(--ph); }

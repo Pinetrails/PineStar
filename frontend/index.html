@@ -28,6 +28,12 @@
       <button id="btn-begin" class="btn-xl">▮ NEW STATION ▮</button>
       <button id="btn-newagent" class="btn hidden">⟲ NEW AGENT</button>
     </div>
+    <div class="title-data">
+      <button id="btn-export" class="btn-sm hidden">⭳ EXPORT AGENT</button>
+      <button id="btn-import" class="btn-sm">⭱ IMPORT</button>
+      <input id="file-import" type="file" accept="application/json,.json" hidden>
+    </div>
+    <div id="data-status" class="title-status"></div>
     <div class="title-foot">BYOK · v0.2 · save + onboarding</div>
   </div>
 </section>
@@ -191,6 +197,7 @@
 <script src="app/stationbake.js"></script>
 <script src="app/build.js"></script>
 <script src="app/save.js"></script>
+<script src="app/backup.js"></script>
 <script src="app/onboarding.js"></script>
 <script src="app/marketplace.js"></script>
 <script src="app/xpstore.js"></script>

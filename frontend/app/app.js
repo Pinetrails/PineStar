@@ -521,6 +521,7 @@ const App = (() => {
     el('btn-resume').classList.toggle('hidden', !has);
     el('btn-newagent').classList.toggle('hidden', !has);
     el('btn-begin').classList.toggle('hidden', has);
+    el('btn-export').classList.toggle('hidden', !has);   // only export when there's an agent to back up
     if (has) el('btn-resume').textContent = '▮ RESUME — ' + saved.agent.name + ' ▮';
     show('screen-title');
   }
@@ -534,6 +535,28 @@ const App = (() => {
     el('btn-begin').onclick = startCreation;
     el('btn-newagent').onclick = () => { SFX.click(); Save.clear(); startCreation(); };
     el('btn-resume').onclick = () => { const s = Save.load(); if (s) { SFX.open(); resumeInto(s); } };
+
+    // data portability — the safety net for the localStorage-fragile agent. Export bundles every
+    // skynet.* key + a memory snapshot into one file; import restores it on any browser.
+    const dataStatus = m => { const n = el('data-status'); if (n) n.textContent = m || ''; };
+    el('btn-export').onclick = async () => {
+      SFX.click(); dataStatus('exporting…');
+      const r = await Backup.exportAll();
+      dataStatus(r && r.ok
+        ? 'saved ' + r.file + ' — ' + r.keys + ' keys' + (r.notes ? ' + ' + r.notes + ' memories' : '')
+        : 'export failed');
+    };
+    const fileImport = el('file-import');
+    el('btn-import').onclick = () => { SFX.click(); fileImport.value = ''; fileImport.click(); };
+    fileImport.onchange = async () => {
+      const f = fileImport.files && fileImport.files[0];
+      if (!f) return;
+      const r = await Backup.importFile(f);
+      if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.error && SFX.error(); return; }
+      SFX.boot();
+      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys' + (r.memories ? ' (' + r.memories + ' memories in file)' : ''));
+      showTitle();   // re-render so RESUME surfaces the restored agent
+    };
 
     const saved = Save.load();
     if (saved && saved.agent) {
