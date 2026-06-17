@@ -175,6 +175,7 @@
       // were function_call items so we can emit tool_done + compute the finish reason).
       const toolIndexOf = new Map();   // output_index -> harness tool index
       const itemKind = new Map();      // output_index -> 'function_call' | 'message' | 'reasoning'
+      const argsLen = new Map();       // output_index -> chars of tool-args already emitted (de-dupe across arg shapes)
       let nextToolIndex = 0;
       let sawToolCall = false;
 
@@ -204,19 +205,34 @@
               sawToolCall = true;
               const idx = nextToolIndex++;
               toolIndexOf.set(oi, idx);
+              argsLen.set(oi, 0);
               yield { type: 'tool_start', index: idx, id: item.call_id || item.id || ('call_' + idx), name: item.name || '' };
-              if (typeof item.arguments === 'string' && item.arguments) yield { type: 'tool_args', index: idx, chunk: item.arguments };
+              if (typeof item.arguments === 'string' && item.arguments) { yield { type: 'tool_args', index: idx, chunk: item.arguments }; argsLen.set(oi, item.arguments.length); }
             }
             return;
           }
           case 'response.function_call_arguments.delta': {
-            const idx = toolIndexOf.get(ev.output_index);
-            if (idx != null && typeof ev.delta === 'string' && ev.delta) yield { type: 'tool_args', index: idx, chunk: ev.delta };
+            const oi = ev.output_index, idx = toolIndexOf.get(oi);
+            if (idx != null && typeof ev.delta === 'string' && ev.delta) { yield { type: 'tool_args', index: idx, chunk: ev.delta }; argsLen.set(oi, (argsLen.get(oi) || 0) + ev.delta.length); }
+            return;
+          }
+          case 'response.function_call_arguments.done': {
+            // Some models (e.g. gpt-5.3-codex-spark) SKIP the streaming `.delta` events and deliver the
+            // complete arguments only in this terminal event. Emit them iff no fragments were seen — otherwise
+            // this is just a stream terminator and re-emitting would duplicate the JSON (-> broken tool call).
+            const oi = ev.output_index, idx = toolIndexOf.get(oi);
+            if (idx != null && (argsLen.get(oi) || 0) === 0 && typeof ev.arguments === 'string' && ev.arguments) { yield { type: 'tool_args', index: idx, chunk: ev.arguments }; argsLen.set(oi, ev.arguments.length); }
             return;
           }
           case 'response.output_item.done': {
             const oi = ev.output_index;
-            if (itemKind.get(oi) === 'function_call' && toolIndexOf.has(oi)) yield { type: 'tool_done', index: toolIndexOf.get(oi) };
+            if (itemKind.get(oi) === 'function_call' && toolIndexOf.has(oi)) {
+              const idx = toolIndexOf.get(oi), item = ev.item || {};
+              // last-resort fallback: if NOTHING delivered the args (no inline, no delta, no args.done), take
+              // them off the completed item so a tool never dispatches with empty arguments.
+              if ((argsLen.get(oi) || 0) === 0 && typeof item.arguments === 'string' && item.arguments) { yield { type: 'tool_args', index: idx, chunk: item.arguments }; argsLen.set(oi, item.arguments.length); }
+              yield { type: 'tool_done', index: idx };
+            }
             return;
           }
           case 'response.completed': {

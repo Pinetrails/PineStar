@@ -67,6 +67,39 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.filter(e => e.type === 'tool_args').map(e => e.chunk).join(''), '{"a":1}', 'inline arguments on item.added are emitted');
   }
 
+  // B3. REASONING-MODEL shape (gpt-5.3-codex-spark): args arrive ONLY in function_call_arguments.done, with NO
+  //     .delta stream. The whole arguments JSON must still be emitted exactly once (was dropped -> empty call).
+  {
+    const sse = [
+      ev({ type: 'response.output_item.added', output_index: 1, item: { type: 'function_call', call_id: 'call_z', name: 'fs_write', arguments: '' } }),
+      ev({ type: 'response.function_call_arguments.done', output_index: 1, arguments: '{"path":"t.txt","content":"hi"}', item_id: 'fc_z' }),
+      ev({ type: 'response.output_item.done', output_index: 1, item: { type: 'function_call', call_id: 'call_z', arguments: '{"path":"t.txt","content":"hi"}' } }),
+      ev({ type: 'response.completed', response: { status: 'completed' } }),
+      'data: [DONE]', ''
+    ].join('\n');
+    const p = makeCodexProvider({ fetch: sseFetch(sse), token: 'acc' });
+    const evs = await collect(p, { model: 'gpt-5.3-codex-spark', messages: [], tools: [{ type: 'function', function: { name: 'fs_write' } }] });
+    A.eq(evs.filter(e => e.type === 'tool_args').map(e => e.chunk).join(''), '{"path":"t.txt","content":"hi"}', 'args.done-only shape emits the full arguments');
+    A.eq(evs.find(e => e.type === 'done').finishReason, 'tool_calls', 'still finishes as tool_calls');
+  }
+
+  // B4. NO DOUBLE-EMIT: when BOTH .delta fragments AND a terminal .done arrive (the gpt-5.4/5.5 shape), the
+  //     args must concatenate to the JSON ONCE — the .done is a terminator, not a re-send.
+  {
+    const sse = [
+      ev({ type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', call_id: 'c', name: 'fs_write' } }),
+      ev({ type: 'response.function_call_arguments.delta', output_index: 0, delta: '{"path":' }),
+      ev({ type: 'response.function_call_arguments.delta', output_index: 0, delta: '"a.txt"}' }),
+      ev({ type: 'response.function_call_arguments.done', output_index: 0, arguments: '{"path":"a.txt"}' }),
+      ev({ type: 'response.output_item.done', output_index: 0, item: { type: 'function_call', call_id: 'c', arguments: '{"path":"a.txt"}' } }),
+      ev({ type: 'response.completed', response: { status: 'completed' } }),
+      'data: [DONE]', ''
+    ].join('\n');
+    const p = makeCodexProvider({ fetch: sseFetch(sse), token: 'acc' });
+    const evs = await collect(p, { model: 'gpt-5.5', messages: [], tools: [{ type: 'function', function: { name: 'fs_write' } }] });
+    A.eq(evs.filter(e => e.type === 'tool_args').map(e => e.chunk).join(''), '{"path":"a.txt"}', 'delta+done shape concatenates the args exactly once (no duplication)');
+  }
+
   // C. request shape + chat->Responses input conversion (system lifted to instructions, store:false, stream:true, tools mapped)
   {
     let captured = null;
