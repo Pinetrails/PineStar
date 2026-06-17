@@ -41,6 +41,9 @@ const { makeSseHub } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
+const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
+const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
+const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -64,6 +67,19 @@ const BUDGET_CAPS = {
   global: num(process.env.SKYNET_BUDGET_GLOBAL, 100)
 };
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
+// ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
+// is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the LIVE BYOK
+// key (runtimeKey); a job with no model falls back to SKYNET_DEFAULT_MODEL; absent either, a due job
+// no-capability-skips rather than firing (cron is inert without a configured key). Cadence + the self-healing
+// lease ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
+const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CRON_ENABLED || '').trim());
+const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
+const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
+const CRON_DEFAULT_MODEL = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+const CRON_PERSONA = 'You are an autonomous SKYNET station agent running a SCHEDULED routine — no human is watching. '
+  + 'Carry out the task with your REAL tools (web search/read, files, memory); ground every factual claim in what the '
+  + 'tools actually return and cite sources; save any durable deliverable to your workspace with fs_write. Be concise. '
+  + 'If there is genuinely nothing new or noteworthy to report this run, reply with EXACTLY "[SILENT]" and nothing else.';
 // The agent's toolset is NOT a host-side constant — it is projected from the objects placed in the
 // agent's room (CAP_REGISTRY: computer/dish/cabinet/notebook). See handleRun's station + resolveTools.
 
@@ -362,6 +378,42 @@ const connectors = makeConnectorManager({
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
+/* ---- cron / scheduled routines store + tick driver (CRON Commit 4b). The job DEFINITIONS persist in a
+   PROTECTED sibling of the fs jail (WORKSPACES/cron.jobs.json, the allowlist idiom above: versioned envelope,
+   atomic temp+rename, load→corrupt→empty fail-closed) so the agent's own fs.* tools can neither read nor rewrite
+   its own schedule. The cron-math + lifecycle reducer are pure (cron.js / cron-store.js); the timer, the
+   now-source, id minting and this fs are the ambient half that lives ONLY here. The driver is constructed
+   unconditionally (cheap, no I/O), but it only ever runs when the boot block below arms the timer behind the
+   SKYNET_CRON_ENABLED gate — so with cron off this is dead weight, never a behavior change. ---- */
+const CRON_FILE = path.join(WORKSPACES, 'cron.jobs.json');
+function loadCronJobs() {
+  try { return cronStore.loadEnvelope(fs.readFileSync(CRON_FILE, 'utf8')).jobs; }
+  catch (e) { return []; }   // missing/corrupt -> nothing scheduled (fail-closed)
+}
+let cronJobs = loadCronJobs();
+function saveCronJobs() {   // throws on failure (the CRUD routes let it surface); the driver's setJobs catches+logs
+  const tmp = CRON_FILE + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cronStore.toEnvelope(cronJobs)));
+  fs.renameSync(tmp, CRON_FILE);   // atomic replace
+}
+// validated + redacted cron telemetry -> the sidecar console AND the live station HUD (the SAME SSE bridge the
+// channel/work-item events ride). No secret is ever on a cron.* payload; redact() runs as a second backstop.
+const cronBus = { emit: (name, payload) => {
+  try { console.log('[cron]', name, JSON.stringify(payload)); } catch (_) {}
+  try { sse.broadcast(name, payload); } catch (_) {}
+} };
+const cronEmitValidated = makeEmitter(cronBus, e => console.warn('[cron-event]', e.kind, e.event, (e.errors || []).join(';')));
+const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redact(payload)); } catch (_) { return false; } };
+// the autonomous tick driver — pure orchestration with every ambient dep injected here (timer/now/id/fs/key).
+const cronDriver = makeCronDriver({
+  getJobs: () => cronJobs,
+  setJobs: (jobs) => { cronJobs = jobs; try { saveCronJobs(); } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); } },
+  runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
+  emit: cronEmit, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
+  getKey: () => runtimeKey, defaultModel: CRON_DEFAULT_MODEL, persona: CRON_PERSONA, maxRunMs: CRON_MAX_RUN_MS
+});
+let cronTimer = null;
+
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
@@ -527,6 +579,18 @@ server.listen(PORT, '127.0.0.1', () => {
     for (const c of connectorConfigs) { if (c && c.enabled !== false && c.url) connectors.configure(c.id, c).catch(() => {}); }
     if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
+  // cron (OPT-IN via SKYNET_CRON_ENABLED): RESUME by running ONE immediate reconcile tick — catching up any
+  // fires missed while the host was down (at-most-one within grace, else fast-forward+skip; never a backlog) —
+  // BEFORE arming the interval. Inert when off: no timer, no fire, the browser path is byte-identical.
+  try {
+    if (CRON_ENABLED) {
+      console.log('  · cron enabled — ' + cronJobs.length + ' routine(s); running boot reconcile');
+      cronDriver.applyTick(Date.now());                                  // resume reconcile BEFORE the timer arms
+      cronTimer = setInterval(() => { try { cronDriver.applyTick(Date.now()); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
+      if (cronTimer.unref) cronTimer.unref();                            // the http server keeps the process alive; the ticker alone shouldn't
+      console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
+    }
+  } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
 });
 
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
