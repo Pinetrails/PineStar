@@ -35,13 +35,18 @@ const Chat = (() => {
   // one thing that can't live in the pure model is the live AbortController (not serializable), so it stays here.
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
   let activeLiveRow = null;     // streaming DOM row for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
+  let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
+  const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const el = id => document.getElementById(id);
+
+  const KIND_TAG = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
 
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     input.value = '';
+    wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     load(opts.ws);
     input.onkeydown = e => {
       if (e.key === 'Enter' && !e.isComposing) {
@@ -140,6 +145,83 @@ const Chat = (() => {
     status('awaiting your approval…');
     if (typeof StationUI !== 'undefined') StationUI.notify(name + ' needs approval to ' + actionPhrase(p), 'warn');
     log.scrollTop = log.scrollHeight;
+  }
+
+  // Cortex (M-mem.5b) — THE TURN-IN BEAT. After a run, reflection proposes durable memories; the Commander
+  // decides Keep / Edit / Discard. Keep/Edit commit a real memory (the click IS the consent, §5.6); every
+  // verdict feeds the agent's confidence. This is the gamified formation loop — the agent learns, you approve.
+  function proposalCard(batch, ws) {
+    if (!batch || !batch.proposals || !batch.proposals.length) return;
+    const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin');
+    const n = batch.proposals.length;
+    head.body.appendChild(document.createTextNode('🧠 ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — keep ' + (n > 1 ? 'them' : 'it') + '?'));
+
+    for (const prop of batch.proposals) {
+      const item = document.createElement('div'); item.className = 'turnin-item';
+      const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = KIND_TAG[prop.kind] || 'NOTE';
+      const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = prop.content;
+      const btns = document.createElement('span'); btns.className = 'consent-btns';
+      item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
+      head.body.appendChild(item);
+
+      let decided = false;
+      function settle(label, isDeny) {
+        decided = true; btns.remove();
+        const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
+        item.appendChild(tag);
+      }
+      async function submit(verdict, content, label, isDeny) {
+        if (decided) return; decided = true;
+        const r = await Harness.memoryTurnin({ agentId: batch.agentId, runId: batch.runId, id: prop.id, verdict, content });
+        if (r && r.ok) settle(label, isDeny);
+        else { decided = false; if (typeof StationUI !== 'undefined') StationUI.notify('could not save that memory — try again', 'warn'); }
+      }
+      function mkBtn(label, cls, onClick) {
+        const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = onClick; btns.appendChild(b); return b;
+      }
+      function renderChoices() {
+        btns.innerHTML = '';
+        mkBtn('Keep', '', () => submit('keep', null, '✓ kept in memory', false));
+        mkBtn('Edit', '', enterEdit);
+        mkBtn('Discard', 'deny', () => submit('discard', null, '✕ discarded', true));
+      }
+      // inline edit: swap the belief into an input; Save commits the edited text (verdict 'edit'), Cancel restores.
+      function enterEdit() {
+        if (decided) return;
+        const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'turnin-edit'; inp.value = prop.content;
+        item.replaceChild(inp, text); inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
+        const commit = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } text.textContent = v; item.replaceChild(text, inp); submit('edit', v, '✓ saved (edited)', false); };
+        const cancel = () => { item.replaceChild(text, inp); renderChoices(); };
+        btns.innerHTML = '';
+        mkBtn('Save', '', commit);
+        mkBtn('Cancel', '', cancel);
+        inp.onkeydown = e => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') cancel(); };
+      }
+      renderChoices();
+    }
+    if (typeof StationUI !== 'undefined') StationUI.notify(name + ' has ' + n + (n > 1 ? ' memories' : ' memory') + ' to review', 'gold');
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // register ONCE: reflection announces proposals via the memory.proposed SSE event (re-emitted on U.bus). It
+  // fires once per proposal, so debounce per-run, then fetch the full batch (with content) and render the beat
+  // in the active stream when it's the proposing agent (else a soft notify — the agent learned something).
+  function wireProposals() {
+    if (proposalsWired || typeof U === 'undefined' || !U.bus) return;
+    proposalsWired = true;
+    U.bus.on('memory.proposed', p => {
+      const runId = p && p.runId; const agentId = (p && p.agentId) || 'agent';
+      if (!runId || proposalRunsSeen.has(runId)) return;
+      proposalRunsSeen.add(runId);
+      setTimeout(async () => {
+        const proposals = await Harness.memoryProposals(runId, agentId);
+        if (!proposals.length) return;
+        const batch = { runId, agentId, proposals };
+        const onActiveAgent = activeWs && (activeWs.agentId || 'agent') === agentId;
+        if (onActiveAgent) proposalCard(batch, activeWs);
+        else if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
+      }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
+    });
   }
 
   function renderHistory() {

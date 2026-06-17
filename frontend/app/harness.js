@@ -191,9 +191,30 @@ const Harness = (() => {
     try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
   }
 
+  // Cortex (M-mem.5b): after a run, reflection may PROPOSE durable memories (announced via the memory.proposed
+  // SSE event). Fetch the pending candidates WITH content for the Keep/Edit/Discard turn-in beat. [] on failure.
+  async function memoryProposals(runId, agentId) {
+    try {
+      const q = '?agent=' + encodeURIComponent(agentId || 'agent') + (runId ? '&run=' + encodeURIComponent(runId) : '');
+      const r = await fetch('/api/memory/proposals' + q, { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.proposals) ? j.proposals : [];
+    } catch (e) { return []; }
+  }
+  // submit one turn-in verdict. Keep/Edit commit a real memory (→ memory.write); every verdict → memory.feedback.
+  // The sidecar re-broadcasts those over the SSE bus, so XP + the dossier update live without a local emit here.
+  async function memoryTurnin(o) {
+    try {
+      const r = await fetch('/api/memory/turnin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
+      return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
+    } catch (e) { return { ok: false }; }
+  }
+
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
+    memoryProposals, memoryTurnin,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
     resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; lastTokensIn = 0; }

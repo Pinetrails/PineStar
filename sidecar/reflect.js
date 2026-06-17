@@ -15,9 +15,11 @@
   'use strict';
 
   const KIND = { FACT: 'fact', SKILL: 'skill', PREFERENCE: 'profile', PROFILE: 'profile', NOTE: 'note' };
+  const KIND_LABEL = { fact: 'Fact', skill: 'Skill', profile: 'Preference', note: 'Note' };
   const MAX_CONTENT = 280;        // a memory is a short durable belief, not a transcript
   const DEFAULT_MAX = 5;          // never dump a wall of proposals at the turn-in beat
   const PROMPT_CAP = 4000;        // chars of recent exchange fed to the aux model
+  const MIN_REFLECT_CHARS = 200;  // skip reflection on trivial exchanges (one cheap call still costs)
   const LINE = /^\s*[-*•]?\s*(FACT|SKILL|PREFERENCE|PROFILE|NOTE)\s*[:\-—]\s*(.+?)\s*$/i;
 
   // the reflection prompt: the recent user/assistant exchange (system + tool turns stripped), tail-capped.
@@ -83,5 +85,48 @@
     return { proposals: proposals, prompt: prompt };
   }
 
-  return { reflect, buildPrompt, parse };
+  // ---- M-mem.5b turn-in helpers (pure; the host injects now/id/runId so this stays deterministic) ----
+
+  // Is this exchange worth one reflection call? Needs at least one user + one agent string turn and enough
+  // total substance — so a trivial "thanks"/"ok" run never burns an aux-model call.
+  function worthReflecting(messages, minChars) {
+    minChars = minChars == null ? MIN_REFLECT_CHARS : minChars;
+    let chars = 0, hasUser = false, hasAgent = false;
+    for (const m of (Array.isArray(messages) ? messages : [])) {
+      if (!m || typeof m.content !== 'string') continue;
+      if (m.role === 'user') { hasUser = true; chars += m.content.length; }
+      else if (m.role === 'assistant') { hasAgent = true; chars += m.content.length; }
+    }
+    return hasUser && hasAgent && chars >= minChars;
+  }
+
+  // Map a Kept/Edited proposal into the §5.2 notebook record shape — so rank()/renderRecall AND the legacy
+  // title/body readers (notebook.read, the dossier) all render it. `content` (the possibly user-edited belief)
+  // mirrors into `body`; `title` is the kind label so a list of typed memories reads cleanly. Stats stay 0 —
+  // useCount/trust ride the agent.* event log (memory.used/feedback), never seeded here.
+  function recordFromProposal(prop, opts) {
+    prop = prop || {}; opts = opts || {};
+    const now = opts.now != null ? opts.now : 0;
+    const kind = prop.kind || 'note';
+    const content = String(opts.content != null ? opts.content : (prop.content || '')).trim();
+    return {
+      id: opts.id || 'note_1', kind: kind,
+      title: KIND_LABEL[kind] || 'Note', body: content, content: content,
+      scope: prop.scope || 'global', streamId: prop.streamId || null,
+      sourceRunId: opts.runId || prop.sourceRunId || null,
+      createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
+    };
+  }
+
+  // The signed trust/XP feedback for a turn-in verdict (§5.7). Keep = strong positive (the user confirmed the
+  // agent's judgment); Edit = lighter positive (it was worth keeping but needed fixing); Discard = negative
+  // (the agent proposed something not worth remembering) — so confidence honestly tracks proposal acceptance.
+  function feedbackFor(verdict) {
+    if (verdict === 'keep') return { delta: 2, reason: 'kept' };
+    if (verdict === 'edit') return { delta: 1, reason: 'edited' };
+    if (verdict === 'discard') return { delta: -1, reason: 'discarded' };
+    return null;   // unknown verdict -> no feedback
+  }
+
+  return { reflect, buildPrompt, parse, worthReflecting, recordFromProposal, feedbackFor, KIND_LABEL };
 });

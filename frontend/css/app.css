@@ -171,6 +171,25 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .consent-result { font-size: 13px; letter-spacing: 0.5px; color: var(--ph); }
 .consent-result.err { color: var(--bad); }
 
+/* Cortex turn-in beat: reflection proposed durable memories — Keep / Edit / Discard (the formation loop) */
+.cmsg.turnin .body { color: var(--ph-bright); }
+.turnin-item {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  margin-top: 8px; padding: 7px 9px; border-radius: 3px;
+  background: var(--ph-faint); border-left: 2px solid var(--gold);
+}
+.turnin-kind {
+  font-size: 10px; letter-spacing: 1px; color: var(--gold);
+  border: 1px solid var(--gold); border-radius: 2px; padding: 1px 5px; flex: 0 0 auto; opacity: 0.9;
+}
+.turnin-text { flex: 1 1 180px; color: var(--ph-bright); font-size: 14px; line-height: 1.35; }
+.turnin-item .consent-btns { margin-top: 0; flex: 0 0 auto; }
+.turnin-edit {
+  flex: 1 1 180px; font: inherit; font-size: 14px; color: var(--ph-bright);
+  background: var(--ink); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 2px 6px;
+}
+.turnin-edit:focus { outline: none; border-color: var(--ph); }
+
 /* THE AWAKENING — tappable suggestion chips in COMMS (the gamified first-meeting onboarding) */
 .choice-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 1px 0 3px; }
 .choice {
