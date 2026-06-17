@@ -314,7 +314,7 @@ const StationUI = (() => {
   function fileCard(a, f) {
     const val = docVal(a, f.key), editing = !!agEdit[f.key];
     const head =
-      '<div class="cf-head"><span class="cf-name">📄 ' + f.file + '</span>' +
+      '<div class="cf-head"><span class="cf-name">▤ ' + f.file + '</span>' +
       '<span class="cf-badge you">' + f.badge + '</span>' +
       '<span class="cf-bytes">' + (val || '').length + ' chars</span>' +
       (editing ? '' : '<button class="bb sm cf-edit" data-edit="' + f.key + '">✎ EDIT</button>') +
@@ -336,7 +336,7 @@ const StationUI = (() => {
   // by loadMemory() after the async fetch — so it survives the (config-tab) rerenders without a refetch race.
   function memoryCard(a) {
     return '<div class="cf cf-ro">' +
-      '<div class="cf-head"><span class="cf-name">📄 memory.md</span>' +
+      '<div class="cf-head"><span class="cf-name">▤ memory.md</span>' +
       '<span class="cf-badge agent">AGENT-WRITTEN</span>' +
       '<span class="cf-bytes" id="cf-mem-cnt"></span></div>' +
       '<div class="cf-desc">' + esc(a.name) + '\'s own notebook — the durable notes it saves with its ' +
@@ -346,7 +346,7 @@ const StationUI = (() => {
   // render the fetched notes as markdown-ish text (textContent, so note contents are never interpreted).
   function notesText(notes, name) {
     if (!notes.length) return name + ' hasn\'t saved any notes yet. Give it a task and it\'ll record durable ' +
-      'facts here with its notebook tool — they show up in COMMS and NOTIFICATIONS as 📄 note deliverables.';
+      'facts here with its notebook tool — they show up in COMMS and NOTIFICATIONS as ▤ note deliverables.';
     return notes.map(n => {
       const when = n.ts ? new Date(n.ts).toLocaleString() : '';
       return '## ' + (n.title || '(untitled)') + (when ? '   — ' + when : '') + '\n' + (n.body || '');
@@ -365,7 +365,7 @@ const StationUI = (() => {
   }
 
   function agConfig(a) {
-    return '<div class="cf-root">📁 station://agents/' + esc(agSlug(a)) + '/</div>' +
+    return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
       memoryCard(a);
   }
@@ -439,13 +439,13 @@ const StationUI = (() => {
      writes to the user's files ask the Commander before they run; the private notebook does not).
      Kept in sync with the registry by hand; TERMINAL (shell.exec) is the registry's own "M5 next". */
   const SKILLS = [
-    { icon: '🖥️', name: 'COMPUTE',     tools: 'model.chat',               on: true },
-    { icon: '🔎', name: 'WEB SEARCH',  tools: 'web_search',               on: true },
-    { icon: '📥', name: 'WEB FETCH',   tools: 'web_fetch',                on: true },
-    { icon: '📂', name: 'READ FILES',  tools: 'fs.read · fs.list',        on: true },
-    { icon: '✏️', name: 'WRITE FILES', tools: 'fs.write · append · edit', on: true, consent: true },
-    { icon: '🧠', name: 'MEMORY',      tools: 'notebook.read · write',    on: true },
-    { icon: '⌨️', name: 'TERMINAL',    tools: 'shell.exec',               on: false }
+    { icon: '▣', name: 'COMPUTE',     tools: 'model.chat',               on: true },
+    { icon: '⌕', name: 'WEB SEARCH',  tools: 'web_search',               on: true },
+    { icon: '⇩', name: 'WEB FETCH',   tools: 'web_fetch',                on: true },
+    { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        on: true },
+    { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', on: true, consent: true },
+    { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    on: true },
+    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec',               on: false }
   ];
   function buildSkills(body) {
     const on = SKILLS.filter(s => s.on).length;

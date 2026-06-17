@@ -217,7 +217,7 @@ const Marketplace = (() => {
   /* ---------- save / edit a specialty ---------- */
   function saveFormHTML() {
     const editing = editingId ? Specialties.get(editingId) : null;
-    const d = editing || (ctx && ctx.draftFromAgent && ctx.draftFromAgent()) || { name: 'My Specialist', emoji: '⭐', tagline: '', purpose: '', manual: '' };
+    const d = editing || (ctx && ctx.draftFromAgent && ctx.draftFromAgent()) || { name: 'My Specialist', emoji: '✦', tagline: '', purpose: '', manual: '' };
     const hasMission = (d.purpose && d.purpose.trim()) || (d.manual && d.manual.trim());
     const title = editing ? 'EDIT SPECIALTY' : ('SAVE ' + (((ctx && ctx.agentName) || 'THIS AGENT')).toUpperCase() + ' AS A SPECIALTY');
     const intro = editing
@@ -230,7 +230,7 @@ const Marketplace = (() => {
       '<div class="mkt-save-h">' + esc(title) + '</div>' +
       '<p class="mkt-hint">' + intro + '</p>' +
       '<div class="mkt-save-row">' +
-        '<label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-f-emoji" maxlength="2" value="' + esc(d.emoji || '⭐') + '"></label>' +
+        '<label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-f-emoji" maxlength="2" value="' + esc(d.emoji || '✦') + '"></label>' +
         '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-f-name" maxlength="28" value="' + esc(d.name || '') + '" placeholder="e.g. Night-Shift Researcher"></label>' +
       '</div>' +
       '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-f-tag" maxlength="48" value="' + esc(d.tagline || '') + '" placeholder="one line — what it’s for"></label>' +
@@ -249,7 +249,7 @@ const Marketplace = (() => {
       if (!name) { sfx('bad'); note('give your specialty a name', 'bad'); return; }
       const spec = Object.assign({}, base, {
         name,
-        emoji: (body.querySelector('#mkt-f-emoji').value || '⭐').trim() || '⭐',
+        emoji: (body.querySelector('#mkt-f-emoji').value || '✦').trim() || '✦',
         tagline: (body.querySelector('#mkt-f-tag').value || '').trim()
       });
       if (editing) spec.id = editing.id;   // upsert in place (saveCustom keeps an existing custom id)

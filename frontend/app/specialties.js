@@ -56,7 +56,7 @@
      work). Several tie into the station's real subsystems (messaging+cron, Cortex memory, PixelLab). */
   const BUILTINS = Object.freeze([
     {
-      id: 'researcher', name: 'Researcher', emoji: '🔬', tagline: 'Web research & sourced briefs',
+      id: 'researcher', name: 'Researcher', emoji: '◎', tagline: 'Web research & sourced briefs',
       blurb: 'Digs through the live web, cross-checks sources, and briefs you tightly — answer first, evidence under it.',
       persona: 'deadpan-bot', model: 'balanced', accent: '#46c8ff',
       purpose: 'Research questions for the Commander and come back with clear, sourced answers. Dig through the live web, cross-check claims across multiple independent sources, and brief the findings tightly — lead with the answer, then the evidence.',
@@ -64,7 +64,7 @@
       starters: ['Brief me on the latest in <topic>', 'Compare <A> vs <B> and recommend one', 'Fact-check this claim: <…>']
     },
     {
-      id: 'engineer', name: 'Engineer', emoji: '💻', tagline: 'Write, debug & ship code',
+      id: 'engineer', name: 'Engineer', emoji: '⌗', tagline: 'Write, debug & ship code',
       blurb: 'Reads the codebase before touching it, makes focused edits, and verifies they actually work.',
       persona: 'deadpan-bot', model: 'reasoning', accent: '#7df0a0',
       purpose: 'Write, debug, and build software for the Commander. Read the codebase before changing it, make focused edits, verify they work, then report what changed and why.',
@@ -72,7 +72,7 @@
       starters: ['Fix this bug: <paste the error>', 'Add <feature> to <file>', 'Refactor <X> for readability']
     },
     {
-      id: 'operator', name: 'Operator', emoji: '🛠️', tagline: 'Ops, automation & schedules',
+      id: 'operator', name: 'Operator', emoji: '⚙', tagline: 'Ops, automation & schedules',
       blurb: 'Runs the day-to-day — tasks, deploys, anything on a timer. Keeps things moving and surfaces what needs you.',
       persona: 'old-salt', model: 'balanced', accent: '#ffb641',
       purpose: 'Run the day-to-day: tasks, ops, automations, and anything on a schedule. Keep things moving, surface what needs attention, and handle the routine so the Commander does not have to.',
@@ -80,7 +80,7 @@
       starters: ['Set up a daily check on <thing>', 'Walk me through deploying <X>', 'Track these tasks and remind me']
     },
     {
-      id: 'scribe', name: 'Scribe', emoji: '✍️', tagline: 'Writing & editing',
+      id: 'scribe', name: 'Scribe', emoji: '✎', tagline: 'Writing & editing',
       blurb: 'Drafts and edits in your voice — posts, docs, emails. Cuts the filler and makes it land.',
       persona: 'worker-homie', model: 'balanced', accent: '#e6a0ff',
       purpose: 'Help the Commander write and edit — drafts, docs, posts, emails, anything with words. Match the intended voice, tighten the prose, and make it land.',
@@ -88,7 +88,7 @@
       starters: ['Draft a <blog post / email> about <…>', 'Tighten this paragraph: <…>', 'Rewrite this in a <warmer / sharper> tone']
     },
     {
-      id: 'analyst', name: 'Analyst', emoji: '📊', tagline: 'Data, numbers & spreadsheets',
+      id: 'analyst', name: 'Analyst', emoji: '▦', tagline: 'Data, numbers & spreadsheets',
       blurb: 'Turns data into answers — runs the analysis, builds the sheet, tells you what it actually means.',
       persona: 'deadpan-bot', model: 'reasoning', accent: '#6cd0ff',
       purpose: 'Turn data into answers for the Commander. Pull numbers apart, run the analysis, build the spreadsheet or chart, and say what it actually means — not just what it says.',
@@ -96,7 +96,7 @@
       starters: ['Analyze this dataset: <file>', 'Build a spreadsheet that <…>', 'What story does this data tell?']
     },
     {
-      id: 'reviewer', name: 'Reviewer', emoji: '🔍', tagline: 'Adversarial review & QA',
+      id: 'reviewer', name: 'Reviewer', emoji: '⊗', tagline: 'Adversarial review & QA',
       blurb: 'Stress-tests your work before it ships — hunts bugs, gaps and weak spots, and tells you how to fix them.',
       persona: 'deadpan-bot', model: 'reasoning', accent: '#ff8f8f',
       purpose: 'Stress-test the Commander\'s work before it ships. Hunt for bugs, gaps, and weak spots — review code, plans, and writing with a skeptical eye — and report exactly what is wrong and how to fix it.',
@@ -104,7 +104,7 @@
       starters: ['Review this code for bugs: <file>', 'Poke holes in this plan: <…>', 'Proofread and critique this draft']
     },
     {
-      id: 'scout', name: 'Scout', emoji: '🛰️', tagline: 'Watch feeds & alert',
+      id: 'scout', name: 'Scout', emoji: '◈', tagline: 'Watch feeds & alert',
       blurb: 'Keeps watch on the sources you care about and surfaces what matters — fast, no noise. Pairs with messaging + cron.',
       persona: 'deadpan-bot', model: 'fast', accent: '#46c8ff',
       purpose: 'Keep watch for the Commander. Monitor the sources they care about — news, feeds, inboxes, channels — and surface what matters, fast, without the noise. (Pairs with the station\'s messaging and cron rails.)',
@@ -112,7 +112,7 @@
       starters: ['Watch <source> and alert me on <criteria>', 'Summarize what changed since yesterday', 'Brief me each morning on <topic>']
     },
     {
-      id: 'archivist', name: 'Archivist', emoji: '🗄️', tagline: 'Memory & knowledge',
+      id: 'archivist', name: 'Archivist', emoji: '▤', tagline: 'Memory & knowledge',
       blurb: 'Your memory — captures what matters, files it so it is findable, recalls the right context on cue. Pairs with Cortex.',
       persona: 'old-salt', model: 'balanced', accent: '#c8efff',
       purpose: 'Be the Commander\'s memory. Capture what matters, organize it so it is findable, and recall the right context at the right moment — so nothing important gets lost. (Pairs with the station\'s Cortex memory.)',
@@ -120,7 +120,7 @@
       starters: ['Remember this: <…>', 'What do we know about <X>?', 'Organize my notes on <project>']
     },
     {
-      id: 'designer', name: 'Designer', emoji: '🎨', tagline: 'Visuals & assets',
+      id: 'designer', name: 'Designer', emoji: '❖', tagline: 'Visuals & assets',
       blurb: 'Turns rough ideas into clean, considered design — UI, layout, assets. Pairs with the PixelLab pipeline.',
       persona: 'worker-homie', model: 'balanced', accent: '#ffd34a',
       purpose: 'Make things look right for the Commander. Help with UI, layout, visual direction, and assets — turn rough ideas into clean, considered design. (Pairs with the station\'s PixelLab asset pipeline.)',
@@ -128,7 +128,7 @@
       starters: ['Mock up a <screen / layout> for <…>', 'Improve the look of <this>', 'Generate a <sprite / icon> for <…>']
     },
     {
-      id: 'chief', name: 'Chief of Staff', emoji: '🧭', tagline: 'Your generalist right hand',
+      id: 'chief', name: 'Chief of Staff', emoji: '✦', tagline: 'Your generalist right hand',
       blurb: 'The all-rounder for whatever comes up — triages, handles the broad asks, breaks big ones into a plan.',
       persona: 'worker-homie', model: 'balanced', accent: '#ffaa33',
       purpose: 'Be the Commander\'s right hand across whatever comes up. Triage requests, handle the broad ones directly, and break big asks into a plan. The default all-rounder for when the job does not fit a specialist.',
@@ -136,7 +136,7 @@
       starters: ['Help me figure out <…>', 'Plan out <project>', 'Just be my all-around assistant']
     },
     {
-      id: 'liaison', name: 'Liaison', emoji: '📨', tagline: 'Triage & draft your messages',
+      id: 'liaison', name: 'Liaison', emoji: '✉', tagline: 'Triage & draft your messages',
       blurb: 'Handles your comms — triages what lands, drafts what goes out, keeps the tone right. Pairs with the station messaging channels.',
       persona: 'worker-homie', model: 'balanced', accent: '#5fd0e0',
       purpose: 'Run the Commander\'s communications. Triage incoming messages, draft outgoing ones in the right tone for each recipient, and keep threads from slipping through the cracks. (Pairs with the station\'s Telegram / Discord messaging channels.)',
@@ -161,7 +161,7 @@
   function normCustom(s) {
     return {
       id: s.id, name: String(s.name || 'My Specialist'),
-      emoji: s.emoji || '⭐', tagline: s.tagline || '', blurb: s.blurb || '',
+      emoji: s.emoji || '✦', tagline: s.tagline || '', blurb: s.blurb || '',
       purpose: s.purpose || '', manual: s.manual || '',
       persona: s.persona || 'worker-homie', model: TIERS[s.model] ? s.model : 'balanced',
       accent: s.accent || '#ffaa33', starters: (s.starters || []).slice(), custom: true
@@ -197,7 +197,7 @@
     const baseName = (agent && agent.name) ? (agent.name.charAt(0) + agent.name.slice(1).toLowerCase()) : 'My Specialist';
     return {
       name: meta.name || baseName,
-      emoji: meta.emoji || '⭐',
+      emoji: meta.emoji || '✦',
       tagline: meta.tagline || ('Saved from ' + ((agent && agent.name) || 'an agent')),
       blurb: meta.blurb || '',
       purpose: (typeof d.purpose === 'string' && d.purpose) || (agent && agent.purpose) || '',

@@ -89,7 +89,7 @@ const Chat = (() => {
   // a clickable COMMS row for a file the agent produced — opens it via the sidecar's jailed /api/file route
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
-    r.body.appendChild(document.createTextNode('📄 saved '));
+    r.body.appendChild(document.createTextNode('▤ saved '));
     const a = document.createElement('a');
     a.href = '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
     a.target = '_blank'; a.rel = 'noopener'; a.textContent = title; a.className = 'deliverable-link';
