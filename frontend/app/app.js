@@ -140,8 +140,10 @@ const App = (() => {
   function persist() {
     if (!agent) return;
     const stationStats = (typeof XpStore !== 'undefined') ? XpStore.stationStats() : undefined;
+    const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
-    Save.write(Object.assign({ agent, usage: Harness.totals(), station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
+    const doc = Save.write(Object.assign({ agent, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
+    if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
@@ -409,6 +411,7 @@ const App = (() => {
     agent = saved.agent;
     agentDocs(agent);                              // seed config docs for older saves that predate them
     agent.systemPrompt = composeSystemPrompt(agent);
+    if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);   // keep the provider with the agent (codex vs openrouter)
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
@@ -567,11 +570,21 @@ const App = (() => {
       const r = await Backup.importFile(f);
       if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.error && SFX.error(); return; }
       SFX.boot();
-      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys' + (r.memories ? ' (' + r.memories + ' memories in file)' : ''));
+      const mem = (typeof r.memoriesRestored === 'number') ? r.memoriesRestored
+        : (r.memories ? r.memories + ' in file' : 0);
+      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys'
+        + (mem ? ' + ' + mem + ' memories' : ''));
       showTitle();   // re-render so RESUME surfaces the restored agent
     };
 
-    const saved = Save.load();
+    // durable restore: adopt whichever of {localStorage cache, sidecar mirror} is NEWER. This is what brings
+    // the agent back after a browser-cache wipe (local gone, the sidecar still holds it) and refreshes the
+    // cache to match. Best-effort: an unreachable sidecar just falls back to the local cache.
+    if (typeof CloudSave !== 'undefined') CloudSave.installUnloadFlush();
+    const saved = (typeof CloudSave !== 'undefined') ? await CloudSave.reconcile(Save.load()) : Save.load();
+    // restore the provider BEFORE the credential check so a codex agent (tokens server-side) jumps straight
+    // in after a wipe/origin-reset instead of being misrouted to an OpenRouter key prompt.
+    if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
     if (saved && saved.agent) {
       // auto-resume on refresh: an OpenRouter key in hand, the desktop keychain holds one (configured),
       // OR the Codex provider (which holds its OAuth tokens server-side — a missing/expired token surfaces

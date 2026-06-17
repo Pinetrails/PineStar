@@ -124,11 +124,38 @@ const Backup = (() => {
     });
   }
 
+  // push the bundle's memory snapshot back to the sidecar so a restored/moved agent isn't amnesiac. The route
+  // merges additively (existing notes win), so this is safe to call even over an agent that already has memory.
+  // Best-effort: a UI-only preview or unreachable sidecar just yields 0 restored.
+  function restoreNotebook(notes) {
+    return fetch('/api/notebook/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'agent', notes: notes })
+    }).then(r => r.ok ? r.json() : null).then(j => (j && j.ok) ? (j.added || 0) : 0).catch(() => 0);
+  }
+
   async function importFile(file) {
     let doc;
     try { doc = JSON.parse(await readFileText(file)); }
     catch (_) { return { ok: false, error: 'file is not valid JSON' }; }
-    return applyBundle(doc);
+    const res = applyBundle(doc);
+    if (res.ok) {
+      // re-stamp the imported save to NOW and write it through to the durable sidecar mirror. The bundle carries
+      // the export-time updatedAt; without this, a boot-reconcile on a machine whose sidecar holds a NEWER save
+      // would silently revert the just-imported agent. Stamping now() makes the import win the anti-clobber guard.
+      try {
+        const raw = localStorage.getItem('skynet.save');
+        if (raw) {
+          const d = JSON.parse(raw); d.updatedAt = Date.now();
+          localStorage.setItem('skynet.save', JSON.stringify(d));
+          if (typeof CloudSave !== 'undefined' && CloudSave.push) CloudSave.push(d);
+        }
+      } catch (_) {}
+    }
+    if (res.ok && Array.isArray(doc.notebook) && doc.notebook.length) {
+      res.memoriesRestored = await restoreNotebook(doc.notebook);   // fold memory back into the sidecar
+    }
+    return res;
   }
 
   return { exportAll, importFile, applyBundle, validate, collectStore, build, SCHEMA, VERSION };

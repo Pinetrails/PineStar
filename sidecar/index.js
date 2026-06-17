@@ -21,6 +21,9 @@ const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
+const { makeSaveStore } = require('./savestore.js');
+const { mergeNotes } = require('./notebookrestore.js');
+const { makeRunStore } = require('./runstore.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
@@ -98,6 +101,27 @@ const ledgerIo = {
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
 const budget = makeBudget({ caps: { day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
 
+// run-history log (M-save P4): the OUTCOME of each finished run ({runId, agentId, reason, turns, tokens, usd,
+// title, ts}), append-only + fsync'd like the ledger and a sibling of the fs jail (the agent can't rewrite its
+// own history). The ledger answers "what did it cost"; this answers "what happened" — the durable substrate a
+// future autopsy/replay view reads. It learns nothing; the cortex does that from the live message log.
+const RUNS_FILE = path.join(WORKSPACES, 'runs.jsonl');
+const runsIo = {
+  readAll() {
+    try {
+      return fs.readFileSync(RUNS_FILE, 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+    } catch (e) { return []; }
+  },
+  append(entry) {
+    let fd = null;
+    try { fd = fs.openSync(RUNS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
+    catch (e) { console.warn('[runs] append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+  }
+};
+const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
+
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
 
@@ -125,6 +149,12 @@ const notebookStore = {
     } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
   }
 };
+
+// PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
+// the sidecar's own disk (the app-data dir that survives a browser cache wipe). Same containment as the
+// notebook: a sibling of the fs jail. Holds NO secret (the key/tokens live elsewhere). The frontend keeps
+// localStorage as a fast cache and writes through here on every persist; on boot it pulls the newer of the two.
+const saveStore = makeSaveStore({ fs, pathMod: path, root: WORKSPACES, clock: { now: () => Date.now() } });
 
 /* ---- Cortex M-mem.5b: post-run reflection -> Keep/Edit/Discard turn-in ----
    After a substantive browser run COMPLETES, one cheap aux-model call (the same seam summarize() uses)
@@ -455,7 +485,11 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
+  if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/runs') === 0) return serveRuns(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
   return serveStatic(req, res);
@@ -868,6 +902,12 @@ async function runOnce(o) {
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
     // result.usd/tokens already INCLUDE the summarizer's spend (the loop folds it into spentUsd as it accrues).
     try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: (result && result.usd) || 0, tokens: (result && result.tokens) || 0 }); } catch (_) {}
+    // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
+    try {
+      let title = '';
+      for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title });
+    } catch (_) {}
     budget.clearLive(runId);
   }
 
@@ -1232,6 +1272,67 @@ function serveNotebook(req, res) {
       : [];
     json(200, { notes });
   } catch (e) { json(200, { notes: [] }); }   // tolerate missing/corrupt — empty memory, never a 500
+}
+// POST /api/notebook/restore { agent?, notes:[...] } — fold a backup's memory snapshot back into the agent's
+// notebook (M-save P2). This is the ONLY HTTP write to the notebook, and it is user-initiated (import/restore),
+// never reachable by the agent itself: the web tool's SSRF guard blocks 127.0.0.1 and the fs jail can't reach
+// the store, so a run/prompt-injection cannot drive it. ADDITIVE merge by id (existing notes always win), so a
+// restore can only ADD memory the target lacks — it can never destroy or mutate what the agent already formed.
+async function handleNotebookRestore(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 8 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agent = String(body.agent || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
+  const incoming = Array.isArray(body.notes) ? body.notes : [];
+  try {
+    const prev = notebookStore.get('notebook:' + agent);
+    const existing = Array.isArray(prev) ? prev : [];
+    const merged = mergeNotes(existing, incoming);
+    notebookStore.set('notebook:' + agent, merged);
+    json(200, { ok: true, total: merged.length, added: merged.length - existing.length });
+  } catch (e) { json(400, { error: (e && e.message) || 'restore failed' }); }
+}
+
+// GET /api/save?agent=<id> — the durable agent save mirror (M-save). Returns the stored save envelope so the
+// frontend can adopt it after a localStorage wipe (or pull the newer of local/remote on a normal boot). No
+// secret is returned: the envelope never contains the API key/tokens. Missing -> { save: null }, never a 500.
+function serveSaveLoad(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const doc = saveStore.load(agent);
+    json(200, { save: doc || null });
+  } catch (e) { json(200, { save: null }); }
+}
+// POST /api/save { agent?, ...envelope } — write through the localStorage save to durable disk. The body IS the
+// save envelope (with its schema/version/updatedAt); `agent` selects the record (defaults to 'agent'). The
+// store refuses a write whose updatedAt regressed, so a stale tab can't clobber a newer save (returns stale:true).
+async function handleSaveWrite(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 8 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }   // up to 8MB (station + workstreams can be large)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'a save envelope object is required' });
+  // the record key is the agent's OWN id — body.agent is the agent OBJECT ({id,name,...}), not a selector
+  // string, so derive from body.agent.id (an explicit body.agentId wins if a future caller sends one).
+  const agentId = String(body.agentId || (body.agent && body.agent.id) || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
+  try {
+    const result = saveStore.save(agentId, body);
+    json(200, result);
+  } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
+}
+// GET /api/runs?agent=<id>&limit=<n> — the agent's run history (M-save P4), newest-first. Read-only; the store
+// is append-only and a sibling of the fs jail, so the agent can neither read nor rewrite its own history.
+function serveRuns(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+    json(200, { runs: runStore.list(agent, { limit }) });
+  } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
 }
 
 // GET /api/memory/proposals?agent=<id>&run=<id> — the pending Keep/Edit/Discard candidates reflection raised

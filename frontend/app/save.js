@@ -53,10 +53,12 @@ const Save = (() => {
     } catch (e) { console.warn('[save] load failed:', e); return null; }
   }
 
+  // returns the persisted doc (so callers can mirror the EXACT envelope to the durable sidecar), or null on
+  // failure. The doc carries a fresh updatedAt stamp, which the sidecar uses to reject stale write-throughs.
   function write(state) {
     const doc = Object.assign({ schema: 'skynet.save', version: CURRENT, updatedAt: Date.now() }, state);
-    try { localStorage.setItem(KEY, JSON.stringify(doc)); return true; }
-    catch (e) { console.warn('[save] write failed:', e); return false; }
+    try { localStorage.setItem(KEY, JSON.stringify(doc)); return doc; }
+    catch (e) { console.warn('[save] write failed:', e); return null; }
   }
 
   function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
