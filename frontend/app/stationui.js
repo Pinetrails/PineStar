@@ -1009,6 +1009,146 @@ const StationUI = (() => {
     refresh();
   }
 
+  /* ============== ROUTINES — scheduled autonomous runs (server-owned cron) ==============
+     A routine wakes on a schedule and runs the agent UNATTENDED. The definitions live SERVER-side
+     (schedule + boot-frozen secrets never touch the browser), so this panel is a thin CRUD client over
+     /api/cron — render from GET, mutate via POST, re-fetch. Honest by construction: it shows a next-fire /
+     last-result only from real server data, and says plainly when the scheduler tick is off. */
+  function fmtRel(iso) {
+    if (!iso) return '—';
+    const t = Date.parse(iso); if (isNaN(t)) return '—';
+    const d = t - Date.now(), a = Math.abs(d);
+    if (a < 60000) return 'now';
+    const span = a < 3600000 ? (Math.round(a / 60000) + 'm') : a < 86400000 ? (Math.round(a / 3600000) + 'h') : (Math.round(a / 86400000) + 'd');
+    return d >= 0 ? ('in ' + span) : (span + ' ago');
+  }
+  function buildRoutines(body) {
+    body.innerHTML =
+      '<h4 class="ms-h">SCHEDULED ROUTINES</h4>' +
+      '<p class="set-about">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
+        'With no one watching, ungranted file writes are denied silently unless you have pre-approved them. ' +
+        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
+      '<div id="rt-gate" class="set-about"></div>' +
+      '<div id="rt-list" class="mc-list">loading…</div>' +
+      '<h4 class="ms-h">ADD A ROUTINE</h4>' +
+      '<div class="mc-form">' +
+        '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
+        '<textarea id="rt-prompt" class="key-input" rows="2" placeholder="what should it do each run? e.g. search for new AI-policy news and summarize the top 3" style="resize:vertical"></textarea>' +
+        '<input id="rt-sched" class="key-input" placeholder="schedule — every 30m · in 2h · 2026-07-01T09:00" autocomplete="off">' +
+        '<div id="rt-preview" class="dim" style="min-height:1em;font-size:.9em"></div>' +
+        '<input id="rt-agent" class="key-input" placeholder="agent id (optional — default: agent)" maxlength="40" autocomplete="off">' +
+        '<button class="bb sm" id="rt-add">+ ADD ROUTINE</button>' +
+      '</div>' +
+      '<div id="rt-msg" class="msg"></div>' +
+      '<div id="rt-out" class="msg" hidden style="white-space:pre-wrap;max-height:220px;overflow:auto"></div>';
+
+    const listEl = body.querySelector('#rt-list'), gateEl = body.querySelector('#rt-gate');
+    const msgEl = body.querySelector('#rt-msg'), outEl = body.querySelector('#rt-out');
+    const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+
+    function lastResult(j) {
+      if (!j.lastRunAt) return '<span class="dim">never run</span>';
+      const ok = j.lastStatus === 'ok';
+      return '<span class="' + (ok ? 'pos' : '') + '"' + (ok ? '' : ' style="color:var(--bad)"') + '>' + (ok ? '✓ ok' : '✕ ' + esc(j.lastReason || 'error')) + '</span> <span class="dim">' + esc(fmtRel(j.lastRunAt)) + '</span>';
+    }
+    function row(j) {
+      const on = j.enabled;
+      const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>' : '<span class="dim">○ paused</span>';
+      const next = on && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
+      return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '">' +
+        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + '</div>' +
+        '<div class="mc-url dim">runs as ' + esc(j.agentId || 'agent') + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
+        (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
+        '<div class="mc-acts">' +
+          '<button class="bb xs" data-act="run">▶ RUN NOW</button>' +
+          '<button class="bb xs" data-act="toggle">' + (on ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
+          '<button class="bb xs danger" data-act="remove">✕ DELETE</button>' +
+        '</div></div>';
+    }
+    async function refresh() {
+      try {
+        const j = await (await fetch('/api/cron')).json();
+        const jobs = (j && j.jobs) || [];
+        gateEl.innerHTML = j && j.enabled
+          ? '<span style="color:var(--gold)">● scheduler armed — routines fire automatically.</span>'
+          : '<span class="dim">○ scheduler is OFF (set SKYNET_CRON_ENABLED=1 to fire automatically). You can still ▶ RUN NOW any routine.</span>';
+        listEl.innerHTML = jobs.length ? jobs.map(row).join('')
+          : '<div class="fb-empty">NO ROUTINES YET.<br><span>Add one below to put your agent to work on a schedule.</span></div>';
+      } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage routines.</div>'; }
+    }
+
+    // live schedule preview (debounced) — the honest "next fires", straight from the server math.
+    let pvTimer = null;
+    const schedInp = body.querySelector('#rt-sched'), pvEl = body.querySelector('#rt-preview');
+    schedInp.addEventListener('input', () => {
+      clearTimeout(pvTimer);
+      const v = schedInp.value.trim();
+      if (!v) { pvEl.textContent = ''; return; }
+      pvTimer = setTimeout(async () => {
+        try {
+          const r = await (await post('/api/cron/preview', { schedule: v })).json();
+          if (r && r.ok) pvEl.innerHTML = '✓ ' + esc(r.display) + ' → next: ' + r.next.slice(0, 3).map(t => esc(fmtRel(t))).join(', ');
+          else pvEl.innerHTML = '<span style="color:var(--bad)">' + esc((r && r.error) || 'unrecognized schedule') + '</span>';
+        } catch (_) {}
+      }, 300);
+    });
+
+    // row actions: run-now (stream + show the reply), toggle enable/disable, delete (two-step arm/confirm).
+    listEl.addEventListener('click', async ev => {
+      const btn = ev.target.closest('button[data-act]'); if (!btn) return;
+      const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      const act = btn.dataset.act;
+      if (act === 'remove') {
+        if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
+        sfx('bad'); try { await post('/api/cron/remove', { id }); notify('routine deleted'); } catch (_) {} refresh(); return;
+      }
+      if (act === 'toggle') {
+        sfx('click'); const on = rowEl.dataset.on === '1';
+        try { await post('/api/cron/update', { id, patch: { enabled: !on } }); } catch (_) {} refresh(); return;
+      }
+      if (act === 'run') {
+        sfx('click'); btn.disabled = true; const old = btn.textContent; btn.textContent = '… running';
+        outEl.hidden = false; outEl.textContent = 'running…';
+        try {
+          const resp = await post('/api/cron/run', { id });
+          if (!resp.ok || !resp.body) { const e = await resp.json().catch(() => ({})); outEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.error) || ('http ' + resp.status)) + '</span>'; sfx('bad'); }
+          else {
+            const reader = resp.body.getReader(), dec = new TextDecoder(); let sbuf = '', reply = '', err = '';
+            for (;;) {
+              const r = await reader.read(); if (r.done) break;
+              sbuf += dec.decode(r.value, { stream: true });
+              let nl; while ((nl = sbuf.indexOf('\n')) >= 0) { const line = sbuf.slice(0, nl); sbuf = sbuf.slice(nl + 1); if (!line.trim()) continue; try { const e = JSON.parse(line); if (e.name === 'agent.token') reply += ((e.payload && e.payload.delta) || ''); else if (e.name === 'agent.run.error') err = (e.payload && e.payload.message) || 'run error'; } catch (_) {} }
+            }
+            outEl.innerHTML = err ? ('<span style="color:var(--bad)">✕ ' + esc(err) + '</span>') : esc(reply || '(no output)');
+            notify(err ? 'routine run failed' : 'routine ran', err ? 'warn' : 'good');
+          }
+        } catch (e) { outEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'run failed') + '</span>'; sfx('bad'); }
+        btn.disabled = false; btn.textContent = old; refresh();
+      }
+    });
+
+    body.querySelector('#rt-add').addEventListener('click', async () => {
+      const name = (body.querySelector('#rt-name').value || '').trim();
+      const prompt = (body.querySelector('#rt-prompt').value || '').trim();
+      const schedule = (body.querySelector('#rt-sched').value || '').trim();
+      const agentId = (body.querySelector('#rt-agent').value || '').trim();
+      if (!prompt || !schedule) { sfx('bad'); msgEl.textContent = 'a prompt and a schedule are required'; return; }
+      msgEl.textContent = 'saving…';
+      try {
+        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined })).json();
+        if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
+        else {
+          msgEl.textContent = ''; notify('routine "' + (name || 'unnamed') + '" scheduled', 'good'); sfx('click');
+          ['#rt-name', '#rt-prompt', '#rt-sched', '#rt-agent'].forEach(s => { body.querySelector(s).value = ''; });
+          pvEl.textContent = '';
+        }
+      } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'failed to reach the sidecar') + '</span>'; sfx('bad'); }
+      refresh();
+    });
+
+    refresh();
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
@@ -1017,6 +1157,7 @@ const StationUI = (() => {
     settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
     connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
+    routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
   };
 
