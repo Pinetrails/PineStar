@@ -190,6 +190,32 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
+/* Cortex MEMORY CORE (M-mem.6): the provenance panel — every belief, traceable, with pin/edit/forget */
+.mc-note { font-size: 12px; color: var(--ph-dim); line-height: 1.4; margin: 2px 0 10px; }
+.mc-note b { color: var(--ph); font-weight: 600; }
+.mc-list { display: flex; flex-direction: column; gap: 8px; }
+.mc-empty { color: var(--ph-dim); font-size: 13px; line-height: 1.5; padding: 10px 4px; }
+.mc-rec {
+  padding: 8px 10px; border-radius: 3px; background: var(--ph-faint);
+  border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim);
+}
+.mc-rec.pinned { border-left-color: var(--gold); }
+.mc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.mc-rectitle { color: var(--ph-bright); font-size: 13px; font-weight: 600; }
+.mc-pinflag { margin-left: auto; color: var(--gold); font-size: 11px; letter-spacing: 0.5px; }
+.mc-body { color: var(--ph-bright); font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.mc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 7px; font-size: 11px; color: var(--ph-dim); letter-spacing: 0.3px; }
+.mc-prov { cursor: default; }
+.mc-trust { display: inline-flex; align-items: center; gap: 6px; }
+.mc-trk { display: inline-block; width: 54px; height: 5px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-dim); overflow: hidden; vertical-align: middle; }
+.mc-fill { display: block; height: 100%; background: var(--gold); }
+.mc-acts { margin-top: 8px; }
+.mc-edit {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--ph-bright);
+  background: var(--ink); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 6px; min-height: 48px; resize: vertical;
+}
+.mc-edit:focus { outline: none; border-color: var(--ph); }
+
 /* THE AWAKENING — tappable suggestion chips in COMMS (the gamified first-meeting onboarding) */
 .choice-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 1px 0 3px; }
 .choice {

@@ -211,10 +211,29 @@ const Harness = (() => {
     } catch (e) { return { ok: false }; }
   }
 
+  // Cortex (M-mem.6) — the Memory Core: the FULL provenance-bearing §5.2 records (kind/sourceRunId/useCount/
+  // trust/pinned/timestamps), which the slim /api/notebook view drops. [] on any failure.
+  async function memoryRecords(agentId) {
+    try {
+      const r = await fetch('/api/memory/records?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.records) ? j.records : [];
+    } catch (e) { return []; }
+  }
+  // the three Memory Core mutations (the user's click IS the consent). { ok } on success.
+  function memoryMutate(path, o) {
+    return fetch('/api/memory/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) })
+      .then(r => r.ok ? r.json().catch(() => ({ ok: true })) : { ok: false }).catch(() => ({ ok: false }));
+  }
+  const memoryPin = o => memoryMutate('pin', o);
+  const memoryEdit = o => memoryMutate('edit', o);
+  const memoryForget = o => memoryMutate('forget', o);
+
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
-    memoryProposals, memoryTurnin,
+    memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
     resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; lastTokensIn = 0; }

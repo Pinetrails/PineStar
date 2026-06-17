@@ -163,8 +163,9 @@ const StationUI = (() => {
      system prompt the model runs on, so editing one here re-shapes the agent for real (App's
      applyAgentConfig, injected as access.config.apply). memory.md is the agent's own notebook —
      shown read-only and honestly labelled, because the agent writes it, not the Commander. */
-  let agTab = 'brief';      // 'brief' | 'config'
+  let agTab = 'brief';      // 'brief' | 'growth' | 'memory' | 'skills' | 'config'
   const agEdit = {};        // config fileKey -> true while its editor is open
+  let memLiveWired = false, memRefreshTimer = 0;   // M-mem.6: the once-wired, debounced Memory Core live-refresh
 
   const CONFIG_FILES = [
     { key: 'identity', file: 'identity.md', badge: 'YOU WRITE THIS',
@@ -331,43 +332,114 @@ const StationUI = (() => {
     return '<div class="cf">' + head + bodyHtml + '</div>';
   }
 
-  // memory.md is the agent's REAL notebook, read live from the sidecar (Harness.notebook). The agent writes
-  // these notes itself with the notebook tool; the card is read-only. Rendered as a placeholder, then filled
-  // by loadMemory() after the async fetch — so it survives the (config-tab) rerenders without a refetch race.
-  function memoryCard(a) {
-    return '<div class="cf cf-ro">' +
-      '<div class="cf-head"><span class="cf-name">▤ memory.md</span>' +
-      '<span class="cf-badge agent">AGENT-WRITTEN</span>' +
-      '<span class="cf-bytes" id="cf-mem-cnt"></span></div>' +
-      '<div class="cf-desc">' + esc(a.name) + '\'s own notebook — the durable notes it saves with its ' +
-      'notebook tool while working, read live from its workspace. Read-only here; the agent owns it.</div>' +
-      '<pre class="cf-body ro" id="cf-mem">reading notebook…</pre></div>';
+  // ---- M-mem.6 MEMORY CORE: the moat made visible. Every stored belief, its provenance (the run that
+  //      earned it), its real useCount/trust (a reduction over the memory.* log — NOT invented), and pin /
+  //      edit / forget. Rendered as a .gx-framed placeholder, then filled by loadMemoryCore() after the async
+  //      fetch (survives retab without a refetch race). Record cards are built as DOM (textContent bodies —
+  //      a poisoned/injection entry is inspectable + deletable here but never interpreted, §5.6). ----
+  const MEM_KIND = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
+
+  function agMemory(a) {
+    return '<div class="gx">' +
+      '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // MEMORY CORE</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
+      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">PROVENANCE</div><span class="gx-clear"><span class="k">TRACED</span><span class="v">&#10003;</span></span></div></div>' +
+      '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
+      '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
+      '<div id="mc-list" class="mc-list"><span class="dim">reading memory core&hellip;</span></div>' +
+      '</div>';
   }
-  // render the fetched notes as markdown-ish text (textContent, so note contents are never interpreted).
-  function notesText(notes, name) {
-    if (!notes.length) return name + ' hasn\'t saved any notes yet. Give it a task and it\'ll record durable ' +
-      'facts here with its notebook tool — they show up in COMMS and NOTIFICATIONS as ▤ note deliverables.';
-    return notes.map(n => {
-      const when = n.ts ? new Date(n.ts).toLocaleString() : '';
-      return '## ' + (n.title || '(untitled)') + (when ? '   — ' + when : '') + '\n' + (n.body || '');
-    }).join('\n\n');
+
+  function loadMemoryCore(a) {
+    const host = $('#mc-list'); if (!host) return;
+    if (!(typeof Harness === 'object' && Harness.memoryRecords)) { host.textContent = 'Memory Core unavailable — start the sidecar to read it.'; return; }
+    Harness.memoryRecords(a.id).then(records => {
+      const cur = $('#mc-list'); if (!cur) return;   // dossier may have closed/retabbed mid-fetch
+      renderMemoryList(cur, records, a);
+      const cnt = $('#mc-count'); if (cnt) cnt.textContent = records.length + (records.length === 1 ? ' belief' : ' beliefs');
+    }).catch(() => { const cur = $('#mc-list'); if (cur) cur.textContent = 'Could not read the Memory Core.'; });
   }
-  function loadMemory(a) {
-    const pre = $('#cf-mem');
-    if (!pre) return;
-    if (!(typeof Harness === 'object' && Harness.notebook)) { pre.textContent = 'Notebook unavailable — start the sidecar to read it.'; return; }
-    Harness.notebook(a.id).then(notes => {
-      const cur = $('#cf-mem'); if (!cur) return;   // dossier may have closed/retabbed mid-fetch
-      cur.textContent = notesText(notes, a.name);
-      const cnt = $('#cf-mem-cnt');
-      if (cnt) cnt.textContent = notes.length + (notes.length === 1 ? ' note' : ' notes');
-    }).catch(() => { const cur = $('#cf-mem'); if (cur) cur.textContent = 'Could not read the notebook.'; });
+
+  function renderMemoryList(host, records, a) {
+    host.innerHTML = '';
+    if (!records.length) {
+      const p = el('div', 'mc-empty');
+      p.textContent = a.name + ' has no stored memories yet. As it works and you Keep what it learns, durable '
+        + 'beliefs collect here — each typed, scored, and traceable to the run that earned it.';
+      host.appendChild(p); return;
+    }
+    // pinned first, then most-trusted, then most-recent — the order recall itself favours
+    const sorted = records.slice().sort((x, y) =>
+      (!!y.pinned - !!x.pinned) || ((y.trust || 0) - (x.trust || 0)) || ((y.createdAt || 0) - (x.createdAt || 0)));
+    for (const rec of sorted) host.appendChild(memCard(rec, a));
+  }
+
+  function memCard(rec, a) {
+    const card = el('div', 'mc-rec' + (rec.pinned ? ' pinned' : ''));
+    const head = el('div', 'mc-head');
+    const tag = el('span', 'turnin-kind'); tag.textContent = MEM_KIND[rec.kind] || 'NOTE'; head.appendChild(tag);
+    if (rec.kind === 'note' && rec.title) { const t = el('span', 'mc-rectitle'); t.textContent = rec.title; head.appendChild(t); }
+    if (rec.pinned) { const p = el('span', 'mc-pinflag'); p.textContent = '★ pinned'; head.appendChild(p); }
+    card.appendChild(head);
+
+    const bodyEl = el('div', 'mc-body'); bodyEl.textContent = rec.body || '(empty)'; card.appendChild(bodyEl);
+
+    const meta = el('div', 'mc-meta');
+    const prov = el('span', 'mc-prov');
+    const when = rec.createdAt ? new Date(rec.createdAt).toLocaleDateString() : '—';
+    prov.textContent = '◉ learned ' + when + (rec.sourceRunId ? ' · run ' + String(rec.sourceRunId).slice(0, 8) : '');
+    prov.title = rec.sourceRunId ? ('earned in run ' + rec.sourceRunId) : 'origin run unknown';   // drill-to-the-run (identity)
+    meta.appendChild(prov);
+    const used = el('span', 'mc-used');
+    used.textContent = rec.useCount ? ('used ' + rec.useCount + '×') : 'never recalled';
+    meta.appendChild(used);
+    const pct = Math.max(0, Math.min(100, Math.round((rec.trust || 0) * 100)));
+    const trust = el('span', 'mc-trust', 'trust <span class="mc-trk"><span class="mc-fill" style="width:' + pct + '%;"></span></span>');   // numeric pct only — safe
+    meta.appendChild(trust);
+    card.appendChild(meta);
+
+    const btns = el('div', 'consent-btns mc-acts'); card.appendChild(btns);
+    const reload = () => loadMemoryCore(a);
+    const mk = (label, cls, fn) => { const b = el('button', 'consent-btn' + (cls ? ' ' + cls : '')); b.textContent = label; b.onclick = fn; btns.appendChild(b); return b; };
+    mk(rec.pinned ? 'Unpin' : 'Pin', '', async () => { const r = await Harness.memoryPin({ agentId: a.id, id: rec.id, pinned: !rec.pinned }); if (r && r.ok) { sfx('click'); reload(); } });
+    mk('Edit', '', () => editMemCard(card, bodyEl, btns, rec, a));
+    // forget is destructive → two-step inline confirm (auto-disarms after 3s)
+    let armed = false;
+    const fbtn = mk('Forget', 'deny', async () => {
+      if (!armed) { armed = true; fbtn.textContent = 'Confirm forget'; setTimeout(() => { if (armed) { armed = false; fbtn.textContent = 'Forget'; } }, 3000); return; }
+      const r = await Harness.memoryForget({ agentId: a.id, id: rec.id }); if (r && r.ok) { sfx('click'); reload(); }
+    });
+    return card;
+  }
+
+  // inline edit (mirrors the CONFIG file editor + the turn-in beat): swap the body for a textarea + Save/Cancel.
+  function editMemCard(card, bodyEl, btns, rec, a) {
+    const ta = el('textarea', 'cf-ta mc-edit'); ta.value = rec.body || ''; ta.spellcheck = false;
+    card.replaceChild(ta, bodyEl); ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
+    btns.innerHTML = '';
+    const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+    const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+    save.onclick = async () => { const v = ta.value.trim(); if (!v) { ta.focus(); return; } const r = await Harness.memoryEdit({ agentId: a.id, id: rec.id, content: v }); if (r && r.ok) { sfx('click'); loadMemoryCore(a); } };
+    cancel.onclick = () => loadMemoryCore(a);
+  }
+
+  // register ONCE: a live memory event (write/used/feedback/forget) refreshes the open Memory Core list,
+  // debounced so a burst of memory.used during a run repaints just once. Refreshes only the list (not the
+  // whole dossier) and only when the MEMORY tab is actually showing.
+  function wireMemoryLive() {
+    if (memLiveWired || typeof U === 'undefined' || !U.bus) return;
+    memLiveWired = true;
+    const bump = () => {
+      if (!open['agents'] || agTab !== 'memory') return;
+      clearTimeout(memRefreshTimer);
+      memRefreshTimer = setTimeout(() => { const a = present[sel]; if (a) loadMemoryCore(a); }, 400);
+    };
+    U.bus.on('memory.write', bump); U.bus.on('memory.used', bump);
+    U.bus.on('memory.feedback', bump); U.bus.on('memory.forget', bump);
   }
 
   function agConfig(a) {
     return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
-      CONFIG_FILES.map(f => fileCard(a, f)).join('') +
-      memoryCard(a);
+      CONFIG_FILES.map(f => fileCard(a, f)).join('');
   }
 
   function wireConfig(body) {
@@ -397,7 +469,7 @@ const StationUI = (() => {
     const a = present[sel];
     const act = activity();
     const price = (typeof Harness === 'object' && Harness.priceOf) ? Harness.priceOf(a.model) : null;
-    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills() : agTab === 'growth' ? agGrowth(a) : agBrief(a);
+    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills() : agTab === 'growth' ? agGrowth(a) : agTab === 'memory' ? agMemory(a) : agBrief(a);
     body.innerHTML =
       '<div class="ag-wrap"><div class="ag-list">' +
       present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '">' +
@@ -407,6 +479,7 @@ const StationUI = (() => {
       '<div class="ag-tabs">' +
       '<button class="ag-tab ' + (agTab === 'brief' ? 'sel' : '') + '" data-tab="brief">BRIEF</button>' +
       '<button class="ag-tab ' + (agTab === 'growth' ? 'sel' : '') + '" data-tab="growth">GROWTH</button>' +
+      '<button class="ag-tab ' + (agTab === 'memory' ? 'sel' : '') + '" data-tab="memory">MEMORY</button>' +
       '<button class="ag-tab ' + (agTab === 'skills' ? 'sel' : '') + '" data-tab="skills">SKILLS</button>' +
       '<button class="ag-tab ' + (agTab === 'config' ? 'sel' : '') + '" data-tab="config">CONFIG</button>' +
       '</div>' +
@@ -416,7 +489,8 @@ const StationUI = (() => {
       it.addEventListener('click', () => { sel = +it.dataset.i; sfx('click'); rerender('agents'); }));
     body.querySelectorAll('.ag-tab').forEach(tb =>
       tb.addEventListener('click', () => { agTab = tb.dataset.tab; sfx('click'); rerender('agents'); }));
-    if (agTab === 'config') { wireConfig(body); loadMemory(a); }
+    if (agTab === 'config') wireConfig(body);
+    if (agTab === 'memory') { wireMemoryLive(); loadMemoryCore(a); }
     drawPortrait(body.querySelector('#ag-portrait'), a);
   }
   function drawPortrait(cv, a) {
