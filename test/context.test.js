@@ -1,7 +1,7 @@
 /* node test/context.test.js — pure context-transform tests (zero IO). */
 'use strict';
 const A = require('./_assert.js');
-const { makeContext, redact, renderRecall, injectRecall } = require('../sidecar/context.js');
+const { makeContext, redact, renderRecall, injectRecall, rank } = require('../sidecar/context.js');
 
 const ctx = makeContext({ contextLimit: 1000, compactAt: 0.65, keepTail: 2 });
 const m = (role, content) => ({ role, content });
@@ -163,5 +163,42 @@ const noUser = [m('system', 'SYS'), m('assistant', 'a1')];
 const appended = injectRecall(noUser, rec.text);
 A.eq(appended.length, 3, 'fence appended when there is no user message');
 A.eq(appended[2].role, 'system', 'appended fence is a system note');
+
+// ---- M-mem.3 rank(): pure BM25-ish relevance + recency/trust/pin boosts; `now` injected (deterministic) ----
+const recA = { id: 'm1', kind: 'note', title: 'deploy steps', body: 'run npm publish then tag the release', createdAt: 1000, trust: 0 };
+const recB = { id: 'm2', kind: 'note', title: 'coffee order', body: 'oat flat white no sugar', createdAt: 1000, trust: 0 };
+const recC = { id: 'm3', kind: 'note', title: 'db backup', body: 'nightly postgres dump to s3', createdAt: 1000, trust: 0 };
+const corpus = [recA, recB, recC];
+
+// relevance: a query that overlaps a record's terms ranks it first
+A.eq(rank(corpus, 'how do I deploy and publish a release', { now: 1000 })[0].id, 'm1', 'query-relevant record ranks first');
+A.eq(rank(corpus, 'where is the postgres backup', { now: 1000 })[0].id, 'm3', 'relevance picks the matching record');
+
+// empty inputs are safe
+A.eq(rank([], 'anything', { now: 0 }).length, 0, 'no records -> empty ranking');
+A.eq(rank(corpus, '', { now: 1000 }).length, 3, 'empty query still returns records (recency floor, no regression vs M-mem.1)');
+
+// recency floor: with an off-topic query, the NEWER record still ranks above an older one
+const older = { id: 'old', kind: 'note', title: 'misc', body: 'unrelated jotting', createdAt: 0 };
+const newer = { id: 'new', kind: 'note', title: 'misc', body: 'unrelated jotting', createdAt: 6048e5 };
+A.eq(rank([older, newer], 'zzz nomatch', { now: 6048e5 })[0].id, 'new', 'newer record wins on the recency floor when nothing is relevant');
+
+// pinned is a hard top, beating an otherwise more-relevant record
+const pinned = { id: 'pin', kind: 'note', title: 'pinned', body: 'totally unrelated', createdAt: 0, pinned: true };
+A.eq(rank([recA, pinned], 'deploy publish release', { now: 1e9 })[0].id, 'pin', 'pinned record is a hard top');
+
+// trust breaks ties between equally (ir)relevant, equally recent records
+const lo = { id: 'lo', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0 };
+const hi = { id: 'hi', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0.9 };
+A.eq(rank([lo, hi], 'zzz', { now: 1000 })[0].id, 'hi', 'higher trust ranks higher among equals');
+
+// k limit + determinism
+A.ok(rank(corpus, 'deploy', { now: 1000, k: 2 }).length === 2, 'k caps the returned count');
+A.eq(JSON.stringify(rank(corpus, 'deploy release', { now: 1000 }).map(r => r.id)),
+     JSON.stringify(rank(corpus, 'deploy release', { now: 1000 }).map(r => r.id)), 'rank is deterministic for the same inputs + now');
+
+// ranked output flows through renderRecall unchanged (composition: rank -> renderRecall)
+const rr = renderRecall(rank(corpus, 'deploy release', { now: 1000 }), { limit: 1500 });
+A.ok(rr.count === 3 && rr.text.indexOf('deploy steps') >= 0, 'rank feeds renderRecall; relevant note surfaces');
 
 A.report('context.test');

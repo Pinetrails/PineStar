@@ -24,7 +24,7 @@ const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
-const { renderRecall, injectRecall } = require('../sidecar/context.js');
+const { renderRecall, injectRecall, rank } = require('../sidecar/context.js');
 
 const ROOT = path.join(os.tmpdir(), 'skynet-itest-' + process.pid);
 
@@ -140,21 +140,27 @@ const fixture = {
   let wrote = true; try { await fsp.access(path.join(ROOT, 'agent', 'unsanctioned.md')); } catch (e) { wrote = false; }
   A.ok(!wrote, 'the denied write never touched disk (no action on deny)');
 
-  // ---- Cortex (M-mem.1): the recalled-memory injection the host performs before a run. Mirrors index.js's
-  //      composition exactly — populated notebook yields a fence right before the user message; an empty
-  //      notebook is byte-identical (the memoryless run is unchanged). ----
+  // ---- Cortex (M-mem.3): the recalled-memory injection the host performs before a run. Mirrors index.js's
+  //      composition exactly — RANK the notebook by relevance to THIS message (BM25 + recency/trust/pin),
+  //      surface the top few as a fence before the user message, and emit memory.used per surfaced record.
+  //      An empty notebook is byte-identical (the memoryless run is unchanged). ----
   {
     const notes = [{ id: 'note_1', title: 'API base', body: 'openrouter.ai/api/v1', ts: 1 },
-                   { id: 'note_2', title: 'User tz', body: 'PST', ts: 2 }];
-    const convo = [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'what timezone am I in?' }];
-    const r = renderRecall(notes.slice().reverse(), { limit: 1500 });
-    A.eq(r.count, 2, 'both stored notes are recalled');
+                   { id: 'note_2', title: 'User tz', body: 'PST timezone', ts: 2 }];
+    const convo = [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'what is the api base url again?' }];
+    const ranked = rank(notes, 'what is the api base url again?', { now: 100 });
+    A.eq(ranked[0].id, 'note_1', 'M-mem.3: the query-relevant note ranks first');
+    const r = renderRecall(ranked, { limit: 1500 });
+    A.eq(r.count, 2, 'both notes recalled (recency floor keeps the off-topic one)');
     A.ok(r.text.indexOf('User tz') >= 0 && r.text.indexOf('API base') >= 0, "recall surfaces the agent's own notes");
     const withMem = injectRecall(convo, r.text);
     A.eq(withMem.length, 3, 'recall adds exactly one system note');
     A.eq(withMem[2], convo[1], 'fence sits immediately before the newest user message');
     A.ok(withMem[1].role === 'system' && /recalled-memory/.test(withMem[1].content), 'fence is a system note');
-    const empty = injectRecall(convo, renderRecall([], {}).text);
+    // index.js emits memory.used for the first `count` ranked records — mirror that id set (relevance-ordered)
+    A.eq(JSON.stringify(ranked.slice(0, r.count).map(x => x.id)), JSON.stringify(['note_1', 'note_2']),
+      'memory.used fires for each surfaced record');
+    const empty = injectRecall(convo, renderRecall(rank([], 'q', { now: 0 }), {}).text);
     A.eq(JSON.stringify(empty), JSON.stringify(convo), 'empty notebook -> byte-identical messages (memoryless run unchanged)');
   }
 
