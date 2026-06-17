@@ -58,6 +58,7 @@ const WORLD = (() => {
   let poolBusyUntil = 0;
   const pairCd = {};     // "A|B" -> next encounter time
   let scanAcc = 0;
+  let lastCrewLook = 0;  // colony-wide gate: only ONE crew member looks up at the Commander at a time
 
   function mkBody(a) {
     const st = MAP.stations[a.id];
@@ -70,7 +71,7 @@ const WORLD = (() => {
       phase: U.hash(a.id) % 10, breakUntil: 0, nextWander: nowMs + U.rnd(2000, 14000),
       socialSpot: null,
       plan: null, meet: null, glance: null, act: null,
-      glanceCd: 0, meetCd: 0, nextFidget: nowMs + U.rnd(6000, 20000)
+      glanceCd: 0, meetCd: 0, nextFidget: nowMs + U.rnd(6000, 20000), lookCd: 0
     };
   }
 
@@ -554,6 +555,18 @@ const WORLD = (() => {
       if (b.state === 'walk') continue;
       if (b.glance && b.glance.until > nowMs) continue;
       if (b.glanceCd > nowMs) continue;
+      // ── THE LOOK-UP (crew, lighter) ───────────────────────────────────────────────────────────────
+      // rarely, ONE crew member quietly looks up from whatever it's doing — straight at the Commander
+      // (the camera) — holds a beat, then carries on. One at a time (lastCrewLook) + a long per-body floor
+      // (b.lookCd): the colony should feel watched, not staring. drawBody renders a glancing worker facing
+      // you (the typing pose yields to it), so it reads as "it looked up from its work and saw me."
+      if (nowMs - lastCrewLook > 12000 && nowMs > (b.lookCd || 0) && U.chance(0.004)) {
+        setGlance(b, 'south', U.rnd(700, 1300));
+        b.glanceCd = nowMs + U.rnd(2200, 3600);
+        b.lookCd = nowMs + U.rnd(150000, 240000);
+        lastCrewLook = nowMs;
+        continue;
+      }
       let done = false;
       for (const w of walkers) {
         if (w === b) continue;
