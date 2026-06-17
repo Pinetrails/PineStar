@@ -56,10 +56,21 @@
     function readWrapper(file) {
       try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return undefined; }
     }
+    // atomic temp+rename, with the temp file fsync'd before the rename so the DURABLE store of record actually
+    // survives a hard power loss (the ledger/runs siblings fsync their appends; this is the same guarantee). The
+    // fsync is capability-guarded: the real node:fs supplies openSync/writeSync/fsyncSync, while the in-memory
+    // test fs (writeFileSync/renameSync only) falls back to the plain path — keeps the store deterministic + testable.
     function writeAtomic(file, value) {
       ensureRoot();
       const tmp = file + '.' + (++tmpSeq) + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(value));
+      const data = JSON.stringify(value);
+      if (typeof fs.openSync === 'function' && typeof fs.fsyncSync === 'function' && typeof fs.writeSync === 'function') {
+        let fd = null;
+        try { fd = fs.openSync(tmp, 'w'); fs.writeSync(fd, data); fs.fsyncSync(fd); }
+        finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+      } else {
+        fs.writeFileSync(tmp, data);   // test/in-memory fs: no fsync available, plain write
+      }
       fs.renameSync(tmp, file);   // atomic replace
     }
 

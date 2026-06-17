@@ -107,4 +107,27 @@ const envelope = (over) => Object.assign({ schema: 'skynet.save', version: 3, up
   A.throws(() => s.save('agent', 'nope'), 'non-object doc rejected');
 }
 
+// ---- H. when the fs supports it, the durable write fsyncs the temp BEFORE the rename (power-loss safety) ----
+{
+  const calls = [];
+  const files = new Map();
+  let cur = null;
+  const fsyncFs = {
+    readFileSync(p) { if (!files.has(p)) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } return files.get(p); },
+    writeFileSync() { calls.push('writeFileSync'); },   // the durable path must NOT use this when openSync is present
+    renameSync(a, b) { files.set(b, files.get(a)); files.delete(a); calls.push('rename'); },
+    mkdirSync() {},
+    openSync(p) { cur = { path: p, buf: '' }; calls.push('open'); return 7; },
+    writeSync(fd, data) { cur.buf = String(data); calls.push('write'); },
+    fsyncSync() { calls.push('fsync'); },
+    closeSync() { files.set(cur.path, cur.buf); calls.push('close'); }   // commit the buffered temp on close
+  };
+  const s = makeSaveStore({ fs: fsyncFs, pathMod, root: ROOT, clock });
+  s.save('agent', envelope({ updatedAt: 1 }));
+  A.ok(calls.indexOf('fsync') >= 0, 'durable path fsyncs the temp file');
+  A.ok(calls.indexOf('fsync') < calls.indexOf('rename'), 'fsync happens BEFORE the rename');
+  A.eq(calls.indexOf('writeFileSync'), -1, 'plain writeFileSync NOT used when fsync is available');
+  A.eq(s.load('agent').agent.name, 'NOVA', 'durable-path write round-trips');
+}
+
 A.report('save.test');

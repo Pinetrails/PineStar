@@ -44,6 +44,11 @@ const CloudSave = (() => {
   }
 
   // queue a write-through; coalesces a burst of persists into one POST after the debounce settles.
+  // SINGLE-WRITER assumption: the app is single-agent/single-session, so this mirrors whatever localStorage
+  // holds with last-write-wins (the sidecar rejects only a STALE-timestamp write). Two live tabs editing the
+  // SAME agent at once can still clobber each other envelope-for-envelope — the same limitation the localStorage
+  // layer it shadows already has. A cross-tab write-leader (storage-event/BroadcastChannel) is the fix if/when
+  // multi-tab editing becomes a real workflow; out of scope while one session is the design.
   function push(doc) {
     if (!isSave(doc)) return;
     pending = doc;                     // keep only the newest
@@ -72,8 +77,13 @@ const CloudSave = (() => {
       return local;
     }
     if (!isSave(local) || num(remote.updatedAt) > num(local.updatedAt)) {
-      try { localStorage.setItem('skynet.save', JSON.stringify(remote)); } catch (_) {}   // adopt remote into the cache
-      return remote;
+      // adopt remote into the cache, then re-read it through Save.load() so the MIGRATION LADDER runs on it.
+      // The durable mirror is designed to outlive the cache and survive app updates, so it can legitimately be
+      // an OLDER schema (v1/v2) than this build. resumeInto() assumes a current-schema doc (reads .workstreams,
+      // expects .agent.stats); adopting a raw v1/v2 remote would silently drop history + skip the XP seed.
+      try { localStorage.setItem('skynet.save', JSON.stringify(remote)); } catch (_) {}
+      try { const migrated = (typeof Save !== 'undefined' && Save.load) ? Save.load() : null; if (migrated) return migrated; } catch (_) {}
+      return remote;   // fallback only if Save is somehow unavailable — better the raw doc than nothing
     }
     if (num(local.updatedAt) > num(remote.updatedAt)) push(local);   // local is ahead — let the server catch up
     return local;
