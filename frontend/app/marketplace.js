@@ -20,11 +20,15 @@
    UMD-light: a `Marketplace` global. */
 'use strict';
 const Marketplace = (() => {
-  let root = null, ctx = null, view = 'grid';   // 'grid' | 'save'
+  let root = null, ctx = null, view = 'grid';   // 'grid' | 'save' | 'launch'
   let opener = null;                            // the element focus came from, restored on close
   let editingId = null;                         // when set, the save form edits this custom (not a new save)
+  let launchId = null;                          // when set (view='launch'), the recipe being configured to launch
+  let tab = 'agents';                           // 'agents' (specialties) | 'recipes' (missions) — the deploy-bay tab
   let glassOpen = false;                        // the "what I've learned about you" panel expanded? (per-session)
-  const expanded = {};                          // specId -> preview open (persists across re-renders)
+  const expanded = {};                          // specId/recipeId -> preview open (persists across re-renders)
+
+  const hasRecipes = () => typeof Recipes !== 'undefined';   // the Recipe library is optional (degrades to agents-only)
 
   /* ---------- personalization (the recommender's read surface) ---------- */
   const FAM_TAGS = ['code', 'research', 'general'];   // the interest vocabulary (mirrors classify.js / profile.js)
@@ -58,7 +62,9 @@ const Marketplace = (() => {
     close();                                    // tear down any prior instance first…
     opener = trigger;                           // …then remember who opened us (close() cleared it)
     ctx = context || {};
-    view = 'grid'; editingId = null;
+    view = 'grid'; editingId = null; launchId = null;
+    // start on the requested tab (deploy mode only — pick mode at wake has no recipes to launch)
+    tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();                        // first run: open the glass box so the consent note is seen once
     root = el('div', 'mkt-scrim');
     root.innerHTML =
@@ -82,7 +88,7 @@ const Marketplace = (() => {
   function close() {
     if (!root) return;
     document.removeEventListener('keydown', onKey, true);
-    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null;
+    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null; launchId = null;
     const o = opener; opener = null;
     try { if (o && o.focus) o.focus(); } catch (_) {}   // restore focus to whatever opened the bay
   }
@@ -104,17 +110,21 @@ const Marketplace = (() => {
     }
   }
   function subtitle() {
-    return ctx && ctx.mode === 'pick'
-      ? 'choose a specialist to wake your agent as'
-      : 'deploy a specialty onto ' + ((ctx && ctx.agentName) || 'your agent') + ' — or save this one as a template';
+    if (ctx && ctx.mode === 'pick') return 'choose a specialist to wake your agent as';
+    const who = (ctx && ctx.agentName) || 'your agent';
+    return tab === 'recipes'
+      ? 'launch a ready-made mission — ' + who + ' picks it up in a fresh workstream'
+      : 'deploy a specialty onto ' + who + ' — or save this one as a template';
   }
 
   /* ---------- render ---------- */
   function render() {
     if (!root) return;
     const body = root.querySelector('.mkt-body');
-    body.innerHTML = view === 'save' ? saveFormHTML() : gridHTML();
+    const sub = root.querySelector('#mkt-sub'); if (sub) sub.textContent = subtitle();   // keep the header line tab-aware
+    body.innerHTML = view === 'save' ? saveFormHTML() : view === 'launch' ? launchFormHTML() : gridHTML();
     if (view === 'save') wireSaveForm(body);
+    else if (view === 'launch') wireLaunchForm(body);
     else {
       wireGrid(body);
       // a re-render (delete / view switch) can orphan focus on a removed node — keep it inside the dialog
@@ -122,8 +132,26 @@ const Marketplace = (() => {
     }
   }
 
+  // the two-tab head: AGENTS (specialties) | RECIPES (missions). Deploy mode only — at wake (pick mode) the
+  // bay is specialties-only, and if the Recipe library module didn't load we silently degrade to agents-only.
+  function tabsHTML() {
+    if (ctx && ctx.mode === 'pick') return '';
+    if (!hasRecipes()) return '';
+    const t = (id, label) => '<button class="mkt-tab' + (tab === id ? ' on' : '') + '" role="tab" aria-selected="' +
+      (tab === id ? 'true' : 'false') + '" data-tab="' + id + '">' + label + '</button>';
+    return '<div class="mkt-tabs" role="tablist">' + t('agents', '☰ AGENTS') + t('recipes', '❒ RECIPES') + '</div>';
+  }
+
   function gridHTML() {
     const deploy = !ctx || ctx.mode !== 'pick';
+    let html = tabsHTML();
+    html += glassHTML();        // "STATION FAMILIARITY" — the shared glass box of what the station has learned (deploy mode, both tabs)
+    html += (deploy && tab === 'recipes') ? recipesPaneHTML() : agentsPaneHTML(deploy);
+    return html;
+  }
+
+  // the AGENTS tab — the specialty catalog (the bay's original content) + its affinity-ranked shelf
+  function agentsPaneHTML(deploy) {
     const toolbar = deploy
       ? '<div class="mkt-toolbar">' +
           '<button class="bb sm mkt-saveas">＋ SAVE THIS AGENT AS A SPECIALTY</button>' +
@@ -134,7 +162,6 @@ const Marketplace = (() => {
     const builtins = Specialties.builtins();
     const customs = Specialties.customs();
     let html = toolbar;
-    html += glassHTML();        // "STATION FAMILIARITY" — the glass box of what the station has learned (deploy mode)
     html += recShelfHTML();     // "RECOMMENDED FOR YOU" — the affinity-ranked shelf, pinned above the full catalog
     html += '<div class="mkt-sect-h">▮ CATALOG</div>';
     html += '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>';
@@ -143,6 +170,52 @@ const Marketplace = (() => {
       ? '<div class="mkt-grid">' + customs.map(cardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no saved specialists yet — ' + (deploy ? 'hit “＋ save this agent as a specialty” above' : 'save an agent as a specialty in-game') + ' to grow your own roster.</div>';
     return html;
+  }
+
+  // the RECIPES tab — the Mission Library: ready-made parameterized jobs you launch into a fresh workstream
+  function recipesPaneHTML() {
+    if (!hasRecipes()) return '<div class="mkt-empty">the recipe library isn’t available.</div>';
+    const builtins = Recipes.builtins();
+    let html = '<div class="mkt-toolbar"><span class="mkt-hint">pick a mission, fill in the blanks, and ' +
+      esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
+    html += recipeRecShelfHTML();   // "RECOMMENDED FOR YOU" — recipes ranked by the same affinity engine
+    html += '<div class="mkt-sect-h">▮ MISSION LIBRARY</div>';
+    html += '<div class="mkt-grid">' + builtins.map(recipeCardHTML).join('') + '</div>';
+    return html;
+  }
+
+  // one recipe card: emoji/name/tagline, blurb, a collapsed preview of the directive + its inputs, and LAUNCH.
+  function recipeCardHTML(r) {
+    const isOpen = !!expanded[r.id];
+    const nParams = (r.params || []).length;
+    const setupChip = '<span class="mkt-chip" title="inputs this mission asks for">' +
+      (nParams ? ('▤ ' + nParams + ' input' + (nParams === 1 ? '' : 's')) : '◷ no setup') + '</span>';
+    const paramList = nParams
+      ? '<div class="mkt-prev-h">INPUTS</div><ul class="mkt-starters">' +
+          r.params.map(p => '<li>' + esc(p.label) + (p.required ? '' : ' <i>(optional)</i>') + '</li>').join('') + '</ul>'
+      : '';
+    const preview =
+      '<div class="mkt-prevbox">' +
+        '<div class="mkt-prev-h">WHAT IT SENDS</div><pre class="mkt-prev-pre">' + esc(r.task) + '</pre>' +
+        paramList +
+      '</div>';
+    const launchLabel = nParams ? '▸ SET UP &amp; LAUNCH' : '▸ LAUNCH';
+    return '<div class="mkt-card' + (isOpen ? ' open' : '') + '" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      '<div class="mkt-card-top">' +
+        '<span class="mkt-emoji" aria-hidden="true">' + esc(r.emoji) + '</span>' +
+        '<div class="mkt-card-id">' +
+          '<div class="mkt-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
+          '<div class="mkt-tag">' + esc(r.tagline) + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="mkt-blurb">' + esc(r.blurb || r.tagline) + '</div>' +
+      '<div class="mkt-chips">' + setupChip + '</div>' +
+      preview +
+      '<div class="mkt-card-acts">' +
+        '<button class="bb sm mkt-prev" data-id="' + esc(r.id) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + (isOpen ? '▾ HIDE' : '▸ PREVIEW') + '</button>' +
+        '<button class="bb sm mkt-launch" data-id="' + esc(r.id) + '">' + launchLabel + '</button>' +
+      '</div>' +
+    '</div>';
   }
 
   function cardHTML(s) {
@@ -231,19 +304,28 @@ const Marketplace = (() => {
       '<div class="mkt-fam-body">' + consent + '<div class="mkt-fam-bars">' + bars + '</div>' + acts + '</div></div>';
   }
 
-  /* ---------- the recommender: rank the catalog by the Commander's affinity, top 3 above the fold ---------- */
-  function recommended() {
-    if (ctx && ctx.mode === 'pick') return null;
+  /* ---------- the recommender: rank a catalog by the Commander's affinity, top 3 above the fold ----------
+     The engine (Profile.score/explain) is item-type-agnostic — it only needs each item's `tags` weight map —
+     so the SAME ranker drives the AGENTS shelf (specialties) and the RECIPES shelf (missions). Returns null
+     (no shelf) unless there's a profile, a dominant signal, and learning is on — a shelf only shows when earned. */
+  function rankItems(items, excludeId) {
     const ps = profileApi(); if (!ps) return null;
     const summ = ps.summary(); if (!summ || !summ.dominant) return null;   // no signal (or seed) yet → no shelf
     if (ps.enabled && !ps.enabled()) return null;                          // paused → don't push picks
-    const curId = ctx && ctx.currentSpecialtyId;
-    const ranked = Specialties.builtins()
-      .map((s, idx) => ({ s, idx, score: ps.score(s.tags || {}) }))
-      .filter(r => r.s.id !== curId && r.score > 0)                        // skip what's already deployed
+    const ranked = (items || [])
+      .map((it, idx) => ({ it, idx, score: ps.score(it.tags || {}) }))
+      .filter(r => r.it.id !== excludeId && r.score > 0)                   // skip the excluded id (e.g. already-deployed)
       .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))             // score desc, catalog order as a stable tiebreak
       .slice(0, 3);
-    return ranked.length ? ranked.map(r => r.s) : null;
+    return ranked.length ? ranked.map(r => r.it) : null;
+  }
+  function recommended() {
+    if (ctx && ctx.mode === 'pick') return null;
+    return rankItems(Specialties.builtins(), ctx && ctx.currentSpecialtyId);   // skip what's already deployed
+  }
+  function recommendedRecipes() {
+    if (!hasRecipes()) return null;
+    return rankItems(Recipes.builtins(), null);                            // recipes aren't "deployed" — nothing to exclude
   }
   // the honest because-line for an item: the tag that actually dominated its score (or '' if nothing did).
   function becauseText(s) {
@@ -255,6 +337,23 @@ const Marketplace = (() => {
     const items = recommended(); if (!items) return '';
     return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div>' +
       '<div class="mkt-rec-rail">' + items.map(recCardHTML).join('') + '</div>';
+  }
+  function recipeRecShelfHTML() {
+    const items = recommendedRecipes(); if (!items) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div>' +
+      '<div class="mkt-rec-rail">' + items.map(recipeRecCardHTML).join('') + '</div>';
+  }
+  function recipeRecCardHTML(r) {
+    const why = becauseText(r);
+    return '<div class="mkt-rec" style="--accent:' + esc(r.accent) + '">' +
+      '<div class="mkt-rec-top">' +
+        '<span class="mkt-rec-emoji" aria-hidden="true">' + esc(r.emoji) + '</span>' +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div>' +
+          '<div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div>' +
+      '</div>' +
+      (why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(why) + '</div>' : '') +
+      '<button class="bb sm mkt-launch mkt-rec-go" data-id="' + esc(r.id) + '">' + ((r.params || []).length ? '▸ SET UP' : '▸ LAUNCH') + '</button>' +
+    '</div>';
   }
   function recCardHTML(s) {
     const deploy = !ctx || ctx.mode !== 'pick';
@@ -316,6 +415,22 @@ const Marketplace = (() => {
       }
     }));
 
+    // TAB switch: AGENTS ⇄ RECIPES (deploy mode). Drop any open sub-view; the glass box state carries over.
+    body.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
+      const next = b.dataset.tab;
+      if (!next || next === tab) return;
+      tab = next; view = 'grid'; editingId = null; launchId = null; sfx('click'); render();
+    }));
+
+    // LAUNCH a recipe: if it asks for inputs, step into the param form; otherwise fire it straight off.
+    body.querySelectorAll('.mkt-launch').forEach(b => b.addEventListener('click', () => {
+      if (!hasRecipes()) return;
+      const r = Recipes.get(b.dataset.id); if (!r) return;
+      sfx('click');
+      if (r.params && r.params.length) { launchId = r.id; view = 'launch'; render(); }
+      else launchRecipeNow(r, {});
+    }));
+
     /* ---- the glass box: expand/collapse, first-run consent, pause, forget ---- */
     const famHead = body.querySelector('.mkt-fam-head');
     if (famHead) famHead.addEventListener('click', () => { glassOpen = !glassOpen; sfx('click'); render(); });
@@ -343,6 +458,63 @@ const Marketplace = (() => {
       const ps = profileApi(); if (ps && ps.forget) ps.forget();
       sfx('close'); note('profile wiped — the station forgot what it learned', 'good'); render();
     });
+  }
+
+  /* ---------- launch a recipe (fill its params, then hand it to the app) ----------
+     Handing back is a single ctx.onLaunch(recipe, values) — the app mints a workstream and Chat.send()s the
+     filled directive (the recipe analogue of onDeploy). The bay never touches Workstreams/Chat itself. */
+  function launchRecipeNow(r, values) {
+    // the app's onLaunch returns false on a no-op (no agent / empty directive); only claim success + close if it
+    // actually fired. A missing onLaunch (e.g. a synthetic context) is treated as success so the bay still closes.
+    const ok = !ctx || !ctx.onLaunch || ctx.onLaunch(r, values) !== false;
+    if (ok) {
+      note('mission launched: ' + r.name + ' — ' + ((ctx && ctx.agentName) || 'your agent') + ' is on it', 'good');
+      close();
+    } else { sfx('bad'); note('could not launch ' + r.name + ' — nothing to send', 'bad'); }
+  }
+  function launchFormHTML() {
+    const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
+    if (!r) return gridHTML();   // recipe vanished mid-flight → fall back to the grid (defensive)
+    const who = (ctx && ctx.agentName) || 'your agent';
+    const fields = (r.params || []).map(p =>
+      '<label class="mkt-lbl">' + esc(p.label) +
+        (p.required ? ' <span class="mkt-req" title="required">*</span>' : ' <span class="mkt-opt">(optional)</span>') +
+        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '"></textarea>' +
+      '</label>').join('');
+    return '<div class="mkt-save mkt-launch-form">' +
+      '<div class="mkt-save-h">' + esc('▸ LAUNCH — ' + r.name) + '</div>' +
+      '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
+      (fields || '<p class="mkt-hint">this mission needs no setup — just launch it.</p>') +
+      '<p class="mkt-hint mkt-launch-note">▸ opens a fresh workstream and sets <b>' + esc(who) + '</b> to work on it.</p>' +
+      '<div class="mkt-save-acts">' +
+        '<button class="bb sm mkt-cancel">‹ BACK</button>' +
+        '<button class="bb sm mkt-do-launch">▸ LAUNCH MISSION</button>' +
+      '</div>' +
+    '</div>';
+  }
+  function wireLaunchForm(body) {
+    const back = body.querySelector('.mkt-cancel');
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; launchId = null; render(); });
+    // clear the error highlight as soon as the Commander starts typing in a flagged field
+    body.querySelectorAll('.mkt-p-in').forEach(inp => inp.addEventListener('input', () => inp.classList.remove('mkt-bad')));
+    const go = body.querySelector('.mkt-do-launch');
+    if (go) go.addEventListener('click', () => {
+      const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
+      if (!r) { view = 'grid'; launchId = null; render(); return; }
+      const values = {};
+      body.querySelectorAll('.mkt-p-in').forEach(inp => { values[inp.dataset.key] = inp.value; });
+      const missing = Recipes.requiredMissing(r, values);
+      if (missing.length) {
+        sfx('bad');
+        missing.forEach(k => { const f = body.querySelector('.mkt-p-in[data-key="' + k + '"]'); if (f) f.classList.add('mkt-bad'); });
+        const f0 = body.querySelector('.mkt-p-in[data-key="' + missing[0] + '"]'); if (f0) f0.focus();
+        note('fill in: ' + missing.join(', '), 'bad');
+        return;
+      }
+      launchId = null;
+      launchRecipeNow(r, values);
+    });
+    const first = body.querySelector('.mkt-p-in'); if (first) first.focus();
   }
 
   /* ---------- save / edit a specialty ---------- */
