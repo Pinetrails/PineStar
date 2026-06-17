@@ -120,7 +120,7 @@ A.eq(R.requiredMissing('morning-brief', {}), ['topic'], 'only the required param
 /* ---------- custom (save-your-own) round-trip ---------- */
 A.eq(R.customs().length, 0, 'no customs at first (node has no localStorage)');
 const saved = R.saveCustom({ name: 'Nightly Standup', emoji: '🌙', tagline: 'end-of-day rollup', task: 'Summarize what shipped today and what is blocked.', params: [] });
-A.ok(saved.id.indexOf('custom-') === 0, 'a saved custom gets a custom- id: ' + saved.id);
+A.ok(saved.id.indexOf('custom-recipe-') === 0, 'a saved mission id is namespaced custom-recipe- (never collides with a custom specialty): ' + saved.id);
 A.eq(saved.custom, true, 'a saved custom is flagged custom=true');
 A.ok(saved.tags && Object.keys(saved.tags).length >= 1, 'a saved custom carries ranking tags (classified in-browser; general fallback under node)');
 A.ok(Array.isArray(saved.params), 'a saved custom carries a params array');
@@ -150,6 +150,46 @@ A.eq(R.removeCustom(saved.id), true, 'removeCustom returns true when it removed 
 A.ok(!R.exists(saved.id), 'the removed custom is gone');
 A.eq(R.removeCustom('nope'), false, 'removeCustom returns false for an unknown id');
 R.removeCustom(clash.id);   // tidy up the collision custom too
+
+/* ---------- paramsFromTemplate(): authoring derives the input form from the task template ---------- */
+A.eq(R.paramsFromTemplate('a fixed mission with no tokens').length, 0, 'a template with no tokens yields a one-tap mission (no params)');
+const pp = R.paramsFromTemplate('Brief me on {topic} since {look_back} — more on {topic}');
+A.eq(pp.length, 2, 'distinct tokens become params (duplicates collapsed)');
+A.eq(pp.map(p => p.key), ['topic', 'look_back'], 'params follow first-seen token order, de-duplicated');
+A.eq(pp[1].label, 'Look Back', 'a snake_case token gets a humanized Title-Case label');
+A.ok(pp.every(p => p.required), 'authored template params are required by default');
+
+// humanize handles acronym boundaries and NEVER yields a blank or indistinguishable label (review hardening)
+A.eq(R.paramsFromTemplate('Check {HTTPStatus}')[0].label, 'HTTP Status', 'humanize splits an acronym boundary (HTTPStatus -> HTTP Status)');
+A.eq(R.paramsFromTemplate('Do {_} now.')[0].label, '_', 'a token that humanizes to empty falls back to the raw key (never a blank launch field)');
+const dupL = R.paramsFromTemplate('{look_back} vs {lookBack}');
+A.eq(dupL.length, 2, 'snake and camel variants are distinct params (de-duped by key, not label)');
+A.ok(dupL[0].label !== dupL[1].label, 'two tokens that would collapse to the same label are disambiguated');
+A.ok(dupL[0].label.indexOf('look_back') >= 0 && dupL[1].label.indexOf('lookBack') >= 0, 'the disambiguator appends the raw key');
+const caseL = R.paramsFromTemplate('Compare {topic} vs {Topic}.');
+A.ok(caseL[0].label !== caseL[1].label, 'case-variant tokens ({topic} vs {Topic}) get distinguishable labels');
+
+// auto-derive is driven by the NORMALIZED params: a keyless/garbage params array still falls through to derivation
+// (a hand-edited / corrupted import can't produce an ungated mission that ships a literal {token})
+const garbage = R.saveCustom({ name: 'Garbage In', task: 'Do {x} please.', params: [{ label: 'no key here' }] });
+A.eq(garbage.params.map(p => p.key), ['x'], 'a keyless params array does not suppress template derivation');
+A.eq(R.requiredMissing(garbage.id, {}), ['x'], 'the re-derived param still gates launch (no ungated {tokens})');
+A.ok(R.fillTask(garbage.id, { x: 'it' }).indexOf('Do it please.') >= 0, 'the re-derived mission fills correctly');
+R.removeCustom(garbage.id);
+
+// an authored custom (only name + task template) gets its params auto-derived and launches like a built-in
+const authored = R.saveCustom({ name: 'Standup', task: 'Summarize {project} progress and flag blockers.' });
+A.eq(authored.params.map(p => p.key), ['project'], 'a saved custom auto-derives its params from the template');
+A.eq(R.requiredMissing(authored.id, {}), ['project'], 'the derived param gates launch');
+A.ok(R.fillTask(authored.id, { project: 'Skynet' }).indexOf('Summarize Skynet progress') >= 0, 'the authored custom fills + launches via the same primitive');
+R.removeCustom(authored.id);
+
+// explicit params still win over derivation (back-compat for an imported custom that supplies its own)
+const explicit = R.saveCustom({ name: 'Explicit', task: 'Do {x}.', params: [{ key: 'x', label: 'The X', required: false, default: 'nothing' }] });
+A.eq(explicit.params[0].label, 'The X', 'explicit params override template derivation');
+A.eq(explicit.params[0].required, false, 'explicit optional flag is honored over the required-by-default derivation');
+A.eq(R.fillTask(explicit.id, {}), 'Do nothing.', 'an explicit optional default fills when blank');
+R.removeCustom(explicit.id);
 
 /* ---------- draft(): the P3 "save what you keep asking for" seam ---------- */
 const d = R.draft({ name: 'My Mission', task: 'Do the thing.' });
