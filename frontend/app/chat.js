@@ -193,6 +193,10 @@ const Chat = (() => {
     }
 
     const isTask = Classify.isTaskDirective(text);
+    // fold the interest tag of a real task into the local user-affinity profile (the signal classify.js
+    // already computes here and otherwise discards). Captures only a derived {code|research|general}
+    // count — never the message text. Gated on the user's learning flag inside the store.
+    if (isTask && typeof ProfileStore !== 'undefined') ProfileStore.observeMessage(text);
     // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
     // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
     // forth. When it's OFF, replies are silent + detailed written text.
