@@ -555,7 +555,10 @@ const App = (() => {
       const r = await Backup.importFile(f);
       if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.error && SFX.error(); return; }
       SFX.boot();
-      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys' + (r.memories ? ' (' + r.memories + ' memories in file)' : ''));
+      const mem = (typeof r.memoriesRestored === 'number') ? r.memoriesRestored
+        : (r.memories ? r.memories + ' in file' : 0);
+      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys'
+        + (mem ? ' + ' + mem + ' memories' : ''));
       showTitle();   // re-render so RESUME surfaces the restored agent
     };
 

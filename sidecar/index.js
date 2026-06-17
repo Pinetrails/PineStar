@@ -22,6 +22,7 @@ const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeSaveStore } = require('./savestore.js');
+const { mergeNotes } = require('./notebookrestore.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
@@ -404,6 +405,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
   if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
@@ -1172,6 +1174,25 @@ function serveNotebook(req, res) {
       : [];
     json(200, { notes });
   } catch (e) { json(200, { notes: [] }); }   // tolerate missing/corrupt — empty memory, never a 500
+}
+// POST /api/notebook/restore { agent?, notes:[...] } — fold a backup's memory snapshot back into the agent's
+// notebook (M-save P2). This is the ONLY HTTP write to the notebook, and it is user-initiated (import/restore),
+// never reachable by the agent itself: the web tool's SSRF guard blocks 127.0.0.1 and the fs jail can't reach
+// the store, so a run/prompt-injection cannot drive it. ADDITIVE merge by id (existing notes always win), so a
+// restore can only ADD memory the target lacks — it can never destroy or mutate what the agent already formed.
+async function handleNotebookRestore(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 8 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agent = String(body.agent || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
+  const incoming = Array.isArray(body.notes) ? body.notes : [];
+  try {
+    const prev = notebookStore.get('notebook:' + agent);
+    const existing = Array.isArray(prev) ? prev : [];
+    const merged = mergeNotes(existing, incoming);
+    notebookStore.set('notebook:' + agent, merged);
+    json(200, { ok: true, total: merged.length, added: merged.length - existing.length });
+  } catch (e) { json(400, { error: (e && e.message) || 'restore failed' }); }
 }
 
 // GET /api/save?agent=<id> — the durable agent save mirror (M-save). Returns the stored save envelope so the
