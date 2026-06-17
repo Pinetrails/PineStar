@@ -78,11 +78,17 @@
   const INJECTION = [
     /ignore\s+(?:all\s+|the\s+|any\s+|your\s+)*(?:previous|prior|earlier|above|preceding)\s+(?:instruction|prompt|message|direction|rule)/i,
     /disregard\s+(?:all\s+|the\s+|any\s+|your\s+)*(?:previous|prior|earlier|above|system|instruction|prompt|rule)/i,
-    /<\/?\s*(?:system|assistant|user|tool)\s*>/i,                                   // fake role fences
-    /<\|\s*(?:im_start|im_end|endoftext|system|assistant|user)\s*\|>/i,             // chat-template tokens
+    /<\|\s*(?:im_start|im_end|endoftext|system|assistant|user)\s*\|>/i,             // chat-template control tokens (never in a real note)
     /\[\/?\s*INST\s*\]/i,                                                           // llama instruction fences
-    /(?:send|forward|exfiltrate|post|upload|e-?mail|leak|reveal|disclose)\b[^.\n]{0,40}\b(?:api[\s_-]?key|secret|token|password|credential|private[\s_-]?key)/i
+    /\bexfiltrat(?:e|es|ed|ing|ion)?\b/i,                                          // the verb itself is never benign
+    // the ACTUAL exfil shape: a transfer verb + a SPECIFIC secret + an EXTERNAL destination (a URL / email
+    // address / known exfil marker). Bare "token"/"secret" and benign "post the api key rotation status to the
+    // channel" (no external destination) are deliberately NOT matched — high precision, no silent memory loss.
+    /(?:send|forward|e-?mail|upload|post|leak|dm)\b[^.\n]{0,30}\b(?:api[\s_-]?keys?|passwords?|private[\s_-]?keys?|access[\s_-]?tokens?|secret[\s_-]?keys?|credentials?)\b[^.\n]{0,30}(?:https?:\/\/\S|[\w.+-]+@[\w.-]+\.[a-z]{2,}|attacker|evil|exfil|\.onion)/i
   ];
+  // NOTE on precision: bare HTML-style role tags (<system>, <user>, <tool>) were intentionally NOT included —
+  // they collide with ordinary dev notes (docker-compose <system> service, a React <user> component) and would
+  // silently withhold a real memory. The high-signal model-control sequences (chat-template tokens above) stay.
   function flagInjection(text) {
     const s = String(text == null ? '' : text);
     for (const re of INJECTION) { if (re.test(s)) return true; }
@@ -98,29 +104,40 @@
     const one = title || body;
     return one ? '• ' + one : '';
   }
+  // everything a record could render or carry (title + body + content), newlines KEPT so line-anchored scans
+  // work — the §5.6 scan runs on this so it can never diverge from what recallLine actually puts in the prompt.
+  function fullText(r) {
+    if (!r) return '';
+    return String(r.title != null ? r.title : '') + '\n' + String(r.body != null ? r.body : '') + '\n' + String(r.content != null ? r.content : '');
+  }
 
   function renderRecall(records, recallOpts) {
     recallOpts = recallOpts || {};
     const limit = recallOpts.limit || 1500;
     const header = recallOpts.header != null ? recallOpts.header : RECALL_HEADER;
-    const out = { text: '', count: 0, chars: 0 };
+    const out = { text: '', count: 0, chars: 0, usedIds: [] };
     if (!Array.isArray(records) || !records.length) return out;
     const lines = [];
+    const usedIds = [];
     let used = 0;
     for (const r of records) {
-      // §5.6: a poisoned record is withheld from the prompt (shown as [blocked]); its stored original is left
-      // intact for the Memory Core panel. Scan the FULL text (recordText), not just the rendered line.
-      let line = flagInjection(recordText(r)) ? BLOCKED_LINE : recallLine(r);
-      if (!line) continue;
+      const rendered = recallLine(r);
+      if (!rendered) continue;                          // blank record -> no slot, no "use"
+      // §5.6: a poisoned record is withheld from the prompt (shown as [blocked]) but its stored original stays
+      // intact for the Memory Core panel — and it does NOT count as used (no useCount/recency reward for it).
+      const blocked = flagInjection(fullText(r));
+      let line = blocked ? BLOCKED_LINE : rendered;
       if (line.length > limit) line = line.slice(0, limit - 1) + '…';
-      if (lines.length && used + line.length + 1 > limit) break;   // always keep at least one line
+      if (lines.length && used + line.length + 1 > limit) break;   // char cap (always keep at least one line)
       lines.push(line);
       used += line.length + 1;
+      if (!blocked && r && r.id) usedIds.push(r.id);    // only truly-surfaced content is a real "use" (drives memory.used)
     }
     if (!lines.length) return out;
     out.text = '<recalled-memory>\n' + header + '\n' + lines.join('\n') + '\n</recalled-memory>';
     out.count = lines.length;
     out.chars = out.text.length;
+    out.usedIds = usedIds;
     return out;
   }
 

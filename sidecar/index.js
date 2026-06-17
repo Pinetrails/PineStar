@@ -1108,13 +1108,16 @@ async function runOnce(o) {
       // M-mem.6: surfacing a record IS a use — fold useCount++ / lastUsedAt back onto the stored record (the
       // reduction that makes the Memory Core stats AND rank()'s recency/trust boosts REAL), then emit. One
       // store write per run (only when something changed); the bumped recs don't affect THIS run's ranking.
-      if (runId) {
+      // Credit memory.used ONLY for the records whose real content actually surfaced — renderRecall returns
+      // those ids (it EXCLUDES the [blocked] poisoned records + any skipped/char-capped ones), so a withheld
+      // record never gains useCount/recency (which would otherwise make it a sticky slot-squatter), and the
+      // old positional ranked[i] aliasing is gone.
+      if (runId && recall.usedIds && recall.usedIds.length) {
         const usedAt = Date.now();
         let updated = recs;
-        for (let i = 0; i < recall.count && i < ranked.length; i++) {
-          const r = ranked[i]; if (!r || !r.id) continue;
-          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id: r.id } }, { now: usedAt });
-          emit('memory.used', { agentId, runId, id: r.id });
+        for (const id of recall.usedIds) {
+          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
+          emit('memory.used', { agentId, runId, id });
         }
         if (updated !== recs) notebookStore.set('notebook:' + agentId, updated);
       }
