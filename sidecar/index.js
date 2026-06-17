@@ -28,6 +28,7 @@ const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext } = require('./context.js');
+const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
@@ -124,6 +125,63 @@ const notebookStore = {
     } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
   }
 };
+
+/* ---- Cortex M-mem.5b: post-run reflection -> Keep/Edit/Discard turn-in ----
+   After a substantive browser run COMPLETES, one cheap aux-model call (the same seam summarize() uses)
+   proposes durable facts/preferences/skills. The PURE reflect() does the parsing + guardrails (redact,
+   dedup vs the store, length/count caps); auto-proposals are CANDIDATES ONLY — they never auto-write (§5.6).
+   Proposals are held in-memory (ephemeral — a restart just re-proposes next run) keyed by runId, and the
+   frontend turns them in: Keep/Edit -> memory.write (a real §5.2 record), every verdict -> memory.feedback
+   (which calibrates the agent's confidence). The run stream is already closed, so the proposed/write/feedback
+   events ride the always-on SSE bus (chanEmit) -> the browser U.bus -> XP + the dossier. */
+const REFLECT_TIMEOUT_MS = 30000;
+const PROPOSALS_CAP = 64;
+const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, proposals:[{id,kind,content,scope}] }
+const latestProposalRun = new Map();   // agentId -> newest pending runId (fetch fallback when the runId is unknown)
+function stashProposals(agentId, runId, proposals) {
+  proposalsByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
+  latestProposalRun.set(agentId, runId);
+  while (proposalsByRun.size > PROPOSALS_CAP) { const k = proposalsByRun.keys().next().value; proposalsByRun.delete(k); }
+}
+// fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
+async function runReflection(o) {
+  const { agentId, runId, messages, provider, model, cost } = o;
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, REFLECT_TIMEOUT_MS);
+  let usd = 0, tokens = 0;
+  // the aux-model call: mirrors summarize() — ONE streamed completion, reconciled for cost. reflect() builds
+  // the prompt (recent user/agent exchange) and parses the tagged reply; here we only supply the model.
+  const propose = async (prompt) => {
+    const req = { model, stream: true, signal: ac.signal, messages: [
+      { role: 'system', content: 'You are an agent reflecting right after finishing a task. Extract only DURABLE, reusable memories worth keeping for future runs — stable user preferences, learned facts (state the gist, not the whole result), or repeatable skills. One per line, each tagged FACT:, PREFERENCE:, or SKILL:. Skip anything transient, run-specific, or already obvious. If nothing is worth keeping, reply NONE.' },
+      { role: 'user', content: prompt }
+    ] };
+    let out = '', usage = null;
+    for await (const ev of provider.stream(req)) {
+      if (ev && ev.type === 'text') out += ev.delta;
+      else if (ev && ev.type === 'usage') usage = ev.usage;
+    }
+    const c = cost.reconcile(usage, model);
+    usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+    return out;
+  };
+  try {
+    const stored = notebookStore.get('notebook:' + agentId);
+    const existing = Array.isArray(stored) ? stored : [];
+    const out = await reflect({ agentId, runId, messages }, { propose, redact, existing, clock: { now: () => Date.now() }, max: 5 });
+    const proposals = (out && out.proposals) || [];
+    if (proposals.length) {
+      stashProposals(agentId, runId, proposals.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' })));
+      for (const p of proposals) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
+    }
+  } catch (e) { console.warn('[cortex] reflection failed:', (e && e.message) || e); }
+  finally {
+    clearTimeout(timer);
+    // book the reflection's own spend into the append-only ledger so the day/global pools stay honest (the run
+    // already booked the loop's spend before this fired). A second entry for the same runId just sums.
+    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens }); } catch (_) {} }
+  }
+}
 
 /* ---- consent (P1.5): the four-tier broker's host-side state ----
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
@@ -398,6 +456,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
+  if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
@@ -587,7 +647,8 @@ async function handleRun(req, res) {
     await runOnce({
       key, model, system, messages, agentId, isTask, provider,
       emit, signal: ac.signal, runId, trigger: 'directive',
-      surface: 'interactive', prompt: promptConsent
+      surface: 'interactive', prompt: promptConsent,
+      reflect: true   // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
     });
   } catch (e) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
@@ -808,6 +869,14 @@ async function runOnce(o) {
     // result.usd/tokens already INCLUDE the summarizer's spend (the loop folds it into spentUsd as it accrues).
     try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: (result && result.usd) || 0, tokens: (result && result.tokens) || 0 }); } catch (_) {}
     budget.clearLive(runId);
+  }
+
+  // Cortex M-mem.5b: post-run reflection (browser runs only; the hub omits o.reflect). Fire-and-forget so the
+  // reply has no added latency and the input isn't held — proposals arrive a beat later over the SSE bus as a
+  // Keep/Edit/Discard turn-in. Gated to a COMPLETED run with a substantive exchange; reflect() dedups vs the
+  // store and never auto-writes (§5.6). result.messages is the live conversation (the agent's replies included).
+  if (o.reflect && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)) {
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
   }
   return result;
 }
@@ -1163,6 +1232,64 @@ function serveNotebook(req, res) {
       : [];
     json(200, { notes });
   } catch (e) { json(200, { notes: [] }); }   // tolerate missing/corrupt — empty memory, never a 500
+}
+
+// GET /api/memory/proposals?agent=<id>&run=<id> — the pending Keep/Edit/Discard candidates reflection raised
+// for a run (with content; the memory.proposed SSE event is just the trigger and carries no content). Read-only;
+// falls back to the agent's newest pending batch when the runId is unknown. Empty (never a 500) if none.
+function serveProposals(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const runId = u.searchParams.get('run') || '';
+    let batch = runId && proposalsByRun.get(runId);
+    if (!batch) { const lr = latestProposalRun.get(agent); batch = lr && proposalsByRun.get(lr); }
+    if (!batch || batch.agentId !== agent) return json(200, { runId: runId || null, agentId: agent, proposals: [] });
+    json(200, { runId: batch.runId, agentId: agent, proposals: batch.proposals });
+  } catch (e) { json(200, { proposals: [] }); }
+}
+
+// POST /api/memory/turnin { agentId, runId, id, verdict:'keep'|'edit'|'discard', content? } — resolve ONE proposal.
+// Keep/Edit COMMIT a real §5.2 record (the user's click IS the consent §5.6) -> memory.write; EVERY verdict ->
+// memory.feedback (Keep/Edit positive, Discard negative) so the agent's confidence tracks proposal acceptance.
+// Events ride the SSE bus (the run stream is closed) so they reach the browser U.bus exactly once — no double-count.
+async function handleMemoryTurnin(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const runId = String(body.runId || '');
+  const id = String(body.id || '');
+  const verdict = String(body.verdict || '');
+  const fb = feedbackFor(verdict);
+  if (!fb) return json(400, { error: 'verdict must be keep, edit, or discard' });
+  const batch = proposalsByRun.get(runId);
+  const prop = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
+  if (!prop) return json(404, { error: 'no such proposal (it may have expired)' });
+  // resolved either way — drop it from the pending batch (and the batch entry when it empties)
+  batch.proposals = batch.proposals.filter(p => p.id !== id);
+  if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }
+
+  let writtenId = null;
+  if (verdict === 'discard') {
+    // no record is written; the negative feedback still calibrates confidence (a quality=0 sample). The proposal's
+    // transient id won't match a stored record — that's fine; this signal is "the agent's pick was rejected".
+    chanEmit('memory.feedback', { agentId, id: prop.id, delta: fb.delta, reason: fb.reason });
+    return json(200, { ok: true, verdict, id: null });
+  }
+  const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
+  if (!content) return json(400, { error: 'a kept memory cannot be empty' });
+  const stored = notebookStore.get('notebook:' + agentId);
+  const list = Array.isArray(stored) ? stored : [];
+  writtenId = 'note_' + (list.length + 1);
+  const rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
+  list.push(rec);
+  notebookStore.set('notebook:' + agentId, list);
+  chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
+  chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
+  json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
 }
 async function serveStatic(req, res) {
   try {
