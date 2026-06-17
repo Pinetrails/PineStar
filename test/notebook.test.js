@@ -83,6 +83,20 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.eq(mw.payload.runId, 'run_42', 'memory.write carries runId (contract requires it)');
     A.eq(mw.payload.kind, 'note', 'memory.write kind = note');
     A.eq(mw.payload.scope, 'global', 'memory.write scope = global');
+    A.eq(mw.payload.streamId, undefined, 'no streamId emitted for a global (non-workstream) write');
+
+    // M-mem.2b: a note written WITHIN a workstream (ctx.streamId) is stamped stream-scoped working memory
+    const { seq: seqS, emit: emitS } = setup();
+    const storeS = memStore();
+    const regS = makeRegistry();
+    makeNotebookTools({ store: storeS, clock: makeClock(7000) }).register(regS);
+    await regS.dispatch(dcall('notebook.write', { title: 't', body: 'b' }), { agentId: 'ag', emit: emitS, runId: 'run_9', streamId: 'ws_abc' });
+    const ns = storeS.get('notebook:ag')[0];
+    A.eq(ns.scope, 'stream', 'M-mem.2b: a note written in a workstream is stream-scoped working memory');
+    A.eq(ns.streamId, 'ws_abc', 'M-mem.2b: streamId stamped from ctx.streamId');
+    const mws = seqS.find(e => e.name === 'memory.write');
+    A.eq(mws.payload.scope, 'stream', 'memory.write scope = stream when in a workstream');
+    A.eq(mws.payload.streamId, 'ws_abc', 'memory.write carries the streamId');
 
     // M-mem.6 regression guard: ids are collision-proof (max+1), NOT positional (length+1). A store with a gap
     // — as left by a forget that removed an earlier record — must NOT reissue an id that already exists.
