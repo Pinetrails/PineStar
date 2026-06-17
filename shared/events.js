@@ -81,6 +81,38 @@
     'object.reclaim': obj(['room', 'objectType', 'instanceId'], { room: str, objectType: str, instanceId: str }),
     'budget.threshold': obj(['scope', 'usd', 'cap'], { scope: { enum: ['run', 'day', 'global'] }, usd: num, cap: num }),
 
+    // ---- cron / scheduled routines (autonomous, unattended fires; producers in the index.js tick driver) ----
+    // the scheduler tick ran: how many due jobs it planned / fired / skipped this pass (the war-room pulse).
+    'cron.tick': obj(['fired', 'skipped'], { fired: int, skipped: int, planned: int }),
+    // a scheduled job fired a run — runId links to the agent.* run it launched; scheduledFor = ms it was due.
+    'cron.fire': obj(['jobId', 'runId'], { jobId: str, runId: str, scheduledFor: num }),
+    // a due job was NOT fired this tick (already running, disabled, stale-fast-forwarded, ungated, lease-reclaimed).
+    'cron.skipped': obj(['jobId', 'reason'], {
+      jobId: str, reason: { enum: ['already-running', 'disabled', 'caught-up', 'no-capability', 'stale-lock-reclaimed'] }
+    }),
+    // a fired job's run finished: ok / failed (always delivered) / silent ([SILENT] suppressed delivery, audit kept).
+    'cron.result': obj(['jobId', 'runId', 'outcome'], {
+      jobId: str, runId: str, outcome: { enum: ['ok', 'failed', 'silent'] }, reason: str
+    }),
+
+    // ---- execution spine: checkpoints · shell · verification (producers in the exec-spine modules) ----
+    // a shadow-git workspace snapshot was taken before a mutating turn (the rollback net). files/bytes = snapshot size.
+    'checkpoint.created': obj(['agentId', 'runId', 'turn', 'snapshotId'], {
+      agentId: str, runId: str, turn: int, snapshotId: str, files: int, bytes: int, label: str
+    }),
+    // the workspace was rolled back to a prior snapshot (manual rewind or a policy auto-restore).
+    'checkpoint.restored': obj(['agentId', 'runId', 'toSnapshotId'], {
+      agentId: str, runId: str, toSnapshotId: str, reason: str
+    }),
+    // a shell command ran (gated by consent + an auto-checkpoint). cmdSummary is redacted; cwd is the jail root.
+    'shell.exec': obj(['agentId', 'runId', 'callId', 'exitCode'], {
+      agentId: str, runId: str, callId: str, cmdSummary: str, cwd: str, exitCode: int, ms: num, truncated: bool
+    }),
+    // post-edit verification: the project's own check, or an LSP lint-DELTA (only NEWLY-introduced diagnostics).
+    'verify.result': obj(['agentId', 'runId', 'passed'], {
+      agentId: str, runId: str, tool: str, passed: bool, added: int, removed: int, summary: str
+    }),
+
     // ---- messaging-channel ingress (Telegram/Discord adapters; producers wired in C5) ----
     // a message arrived on a platform, was admitted, and was mapped to an agent (the trigger-source telemetry
     // that agent.run.start.trigger only labels). channel/chatId/userId are not secrets; the bot token never appears.
