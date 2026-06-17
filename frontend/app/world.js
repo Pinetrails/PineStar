@@ -1457,6 +1457,7 @@ const World = (() => {
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
+    drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
 
     if (running) raf = requestAnimationFrame(frame);
@@ -1741,6 +1742,7 @@ const World = (() => {
      INTAKE/belt path exists, nothing rides (the sidecar already ran the work either way). */
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
   let bridged = false, lastOutboxFlash = -1e9;
+  let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
 
   // a belt tile on/adjacent to a footprint (its tiles + a 1-tile ring), used as a box spawn point (local frame)
   function beltTileNear(tx, ty, tw, th) {
@@ -1804,6 +1806,11 @@ const World = (() => {
     // tag the box with its content kind (the same getTag the sidecar routes by) so a FILTER sorts it visibly
     const p = payload || {};
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
+    // ride inbound work as ORE: its visible MASS scales with how much there is to chew on. This is a
+    // message-size proxy (an honest visual heuristic) until a per-box cost.estimate->reconcile recolor
+    // lands; the REWARDED signal (product vs slag) is bound to real reconciled outcomes, never to this.
+    p.box = 'ore';
+    if (p.weight == null) { const n = String(p.preview || p.text || '').length; p.weight = Math.max(0.08, Math.min(1, n / 280)); }
     if (t) convey.enqueueAt(t.x, t.y, p);
     // ANTICIPATE: an idle agent senses work on the line and perks up toward the dock before any summon lands
     if (agent && !agent.unplaced && activity === 'idle' && !agent.working) {
@@ -1817,7 +1824,9 @@ const World = (() => {
   function outboundMessage(payload) {
     if (!convey || !desk) return;
     const t = beltTileNear(desk.tx, desk.ty, desk.w, desk.h);
-    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, workitemId: (payload && payload.workitemId) || '' });
+    // the reply rode out and was actually sent (workitem.delivered fires only after a successful send),
+    // so this box is a banked PRODUCT (green). Failed/superseded runs emit no delivered box at all.
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', workitemId: (payload && payload.workitemId) || '' });
   }
   /* ---------- crew bodies (the OTHER agents, standing at their bays) ---------- */
   // a LIGHT body: the full agent field-shape (so SPRITES.drawBody/drawFallback never choke) but STATIC —
@@ -1898,6 +1907,19 @@ const World = (() => {
     U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
+    // THE FLOOR ECONOMY — fold the harness's real cost/outcome events into the at-a-glance floor HUD
+    // (drawFloorStats). harness.js re-emits every sidecar event onto U.bus, and routed/crew runs arrive
+    // the same way over the SSE bridge, so these tally the WHOLE station's spend->yield, not just the hero.
+    if (!floor && typeof FloorStats !== 'undefined') floor = FloorStats.create();
+    U.bus.on('agent.cost', p => { if (floor) floor.onEvent('agent.cost', p); });
+    U.bus.on('workitem.delivered', p => { if (floor) floor.onEvent('workitem.delivered', p); });
+    U.bus.on('agent.run.end', p => {
+      if (!floor) return;
+      floor.onEvent('agent.run.end', p);
+      // a run that burned spend for nothing -> pulse the SLAG cell so wasted dollars are FELT, not just tallied
+      const r = p && p.reason;
+      if (r === 'max_iters' || r === 'budget' || r === 'error' || r === 'refusal') lastSlagAt = performance.now();
+    });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
     // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
     U.bus.on('agent.compact', p => {
@@ -1946,6 +1968,36 @@ const World = (() => {
     ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
+  }
+
+  /* THE FLOOR ECONOMY READOUT — the running station made legible at a glance (the Factorio dashboard).
+     Four real, folded numbers (FloorStats): YIELD (productive-run rate), SPEND (reconciled dollars this
+     session), CACHE (the prompt-cache "smelter" signal), SLAG (runs that burned spend for nothing — it
+     pulses red the instant a fresh waste run lands). Honest by construction: yield/cache show "—" until
+     they have a real sample. Stacks just above the INTAKE queue gauge; stays hidden on a quiet floor. */
+  function fmtUsd(u) { u = +u || 0; return u >= 1 ? '$' + u.toFixed(2) : '$' + u.toFixed(4); }
+  function drawFloorStats(now) {
+    if (!floor) return;
+    const fs = floor.snapshot();
+    if (fs.runs === 0 && fs.delivered === 0 && fs.spendUsd === 0) return;   // nothing has happened yet — stay dark
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 160, bh = 34;
+    let qDepth = 0; for (const d of chanQueues.values()) qDepth += d;
+    const x = W - bw - pad, y = H - bh - pad - (qDepth > 0 ? 20 : 0);        // sit above the queue gauge when it's showing
+    ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
+    ctx.strokeStyle = '#2e3a34'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+    ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const cell = (cxp, cyp, label, val, col) => {
+      ctx.fillStyle = '#6a7a72'; ctx.fillText(label, cxp, cyp);
+      ctx.fillStyle = col; ctx.fillText(val, cxp + 36, cyp);
+    };
+    const cA = x + 7, cB = x + bw / 2 + 3, r1 = y + 10, r2 = y + 24;
+    cell(cA, r1, 'YIELD', fs.yieldKnown ? fs.yieldPct + '%' : '—', fs.yieldKnown ? (fs.yieldFrac >= 0.6 ? '#62c487' : '#e8c860') : '#5a6a62');
+    cell(cB, r1, 'SPEND', fmtUsd(fs.spendUsd), '#aeb9c4');
+    cell(cA, r2, 'CACHE', fs.cacheKnown ? fs.cachePct + '%' : '—', fs.cacheKnown ? (fs.cacheFrac >= 0.4 ? '#5ad0ff' : '#7a8a82') : '#5a6a62');
+    const flash = (now - lastSlagAt) < 900 && (Math.floor((now - lastSlagAt) / 150) % 2 === 0);   // fresh-slag pulse
+    cell(cB, r2, 'SLAG', String(fs.slag), fs.slag > 0 ? (flash ? '#ff9a7a' : '#ef6a4a') : '#3f8a5a');
   }
 
   /* ---------- CONTEXT-WINDOW gauge: the agent's memory core, made physical ----------
