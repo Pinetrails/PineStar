@@ -32,6 +32,7 @@ const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext } = require('./context.js');
 const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
+const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
@@ -492,6 +493,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/runs') === 0) return serveRuns(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/memory/records') === 0) return serveMemoryRecords(req, res);
+  if (req.method === 'POST' && req.url === '/api/memory/pin') return handleMemoryPin(req, res);
+  if (req.method === 'POST' && req.url === '/api/memory/edit') return handleMemoryEdit(req, res);
+  if (req.method === 'POST' && req.url === '/api/memory/forget') return handleMemoryForget(req, res);
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
@@ -879,7 +884,19 @@ async function runOnce(o) {
     if (recall.text) {
       msgs = injectRecall(msgs, recall.text);
       emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars });
-      if (runId) for (let i = 0; i < recall.count && i < ranked.length; i++) { const r = ranked[i]; if (r && r.id) emit('memory.used', { agentId, runId, id: r.id }); }
+      // M-mem.6: surfacing a record IS a use — fold useCount++ / lastUsedAt back onto the stored record (the
+      // reduction that makes the Memory Core stats AND rank()'s recency/trust boosts REAL), then emit. One
+      // store write per run (only when something changed); the bumped recs don't affect THIS run's ranking.
+      if (runId) {
+        const usedAt = Date.now();
+        let updated = recs;
+        for (let i = 0; i < recall.count && i < ranked.length; i++) {
+          const r = ranked[i]; if (!r || !r.id) continue;
+          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id: r.id } }, { now: usedAt });
+          emit('memory.used', { agentId, runId, id: r.id });
+        }
+        if (updated !== recs) notebookStore.set('notebook:' + agentId, updated);
+      }
     }
   } catch (_) {}
 
@@ -1386,11 +1403,70 @@ async function handleMemoryTurnin(req, res) {
   const list = Array.isArray(stored) ? stored : [];
   writtenId = 'note_' + (list.length + 1);
   const rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
+  rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
   list.push(rec);
   notebookStore.set('notebook:' + agentId, list);
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
   json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
+}
+
+// GET /api/memory/records?agent=<id> — the FULL §5.2 records for the Memory Core panel (the /api/notebook
+// route deliberately projects away kind/provenance/stats). Read-only; redacted on the way out (defence in
+// depth — a hand-jotted note never went through redact at write time); empty on any error, never a 500.
+function serveMemoryRecords(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const raw = notebookStore.get('notebook:' + agent);
+    const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r))) : [];
+    json(200, { agentId: agent, records });
+  } catch (e) { json(200, { records: [] }); }
+}
+
+// the three Memory Core mutations (pin / edit / forget). The user's click IS the consent (§5.6) — this is the
+// user editing their OWN visible store, not an agent outward effect, so there is no permission prompt. Each
+// validates agentId, mutates the store through a PURE memcore op, and (forget) emits the frozen memory.forget
+// rung over the SSE bus. `op(list, body)` -> { records, found, error?, emit?, extra? }.
+async function handleMemoryMutate(req, res, op) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  if (!String(body.id || '')) return json(400, { error: 'id required' });
+  const key = 'notebook:' + agentId;
+  const stored = notebookStore.get(key);
+  const list = Array.isArray(stored) ? stored : [];
+  const r = op(list, body, agentId);
+  if (r.error) return json(400, { error: r.error });
+  if (!r.found) return json(404, { error: 'no such memory' });
+  notebookStore.set(key, r.records);
+  if (r.emit) { try { chanEmit(r.emit.name, r.emit.payload); } catch (_) {} }
+  return json(200, Object.assign({ ok: true, id: String(body.id) }, r.extra || {}));
+}
+function handleMemoryPin(req, res) {
+  return handleMemoryMutate(req, res, (list, body) => {
+    const out = memcore.applyPin(list, String(body.id), !!body.pinned);
+    out.extra = { pinned: !!body.pinned };
+    return out;
+  });
+}
+function handleMemoryEdit(req, res) {
+  return handleMemoryMutate(req, res, (list, body) => {
+    const content = redact(String(body.content == null ? '' : body.content)).trim();   // §5.6: scrub secrets before persisting
+    if (!content) return { found: false, error: 'edited memory cannot be empty' };
+    return memcore.applyEdit(list, String(body.id), content);
+  });
+}
+function handleMemoryForget(req, res) {
+  return handleMemoryMutate(req, res, (list, body, agentId) => {
+    const out = memcore.applyForget(list, String(body.id));
+    // memory.forget's FIRST producer (the rung was frozen in M-mem.1 with no emitter until now).
+    if (out.found) out.emit = { name: 'memory.forget', payload: { agentId, id: String(body.id), reason: String(body.reason || 'user') } };
+    return out;
+  });
 }
 async function serveStatic(req, res) {
   try {
