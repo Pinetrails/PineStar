@@ -23,7 +23,10 @@ function walk(dir, out) {
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return out; }
   for (const e of entries) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
+    // skip agent-generated runtime scratch (sidecar/workspaces/**) and deps — they are not backend logic.
+    // An agent can legitimately write nondeterministic code (e.g. a game using Math.random) into its own
+    // workspace; that is output, not the DI'd harness, and must not fail the determinism gate.
+    if (e.isDirectory()) { if (e.name === 'workspaces' || e.name === 'node_modules') continue; walk(p, out); }
     else if (e.name.endsWith('.js')) out.push(p);
   }
   return out;
