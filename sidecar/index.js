@@ -41,7 +41,9 @@ const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
 let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
-const WORKSPACES = path.resolve(__dirname, 'workspaces');
+// the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). Defaults to
+// sidecar/workspaces; SKYNET_WORKSPACES relocates it (isolated tests, multi-instance deploys, a data volume).
+const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : path.resolve(__dirname, 'workspaces');
 const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
