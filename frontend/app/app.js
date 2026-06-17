@@ -99,16 +99,18 @@ const App = (() => {
      Open the marketplace against the LIVE agent: DEPLOY a specialty (re-specs purpose + standing orders
      through the very same applyAgentConfig path the dossier uses) or SAVE this agent as a reusable
      specialty. Voice + spend are left untouched — deploy re-shapes the job, not the personality. */
-  function openDeployBay() {
+  function openDeployBay(startTab) {
     if (typeof Marketplace === 'undefined' || !agent) return;
     SFX.click();
     Marketplace.open({
       mode: 'deploy',
+      tab: (startTab === 'recipes') ? 'recipes' : 'agents',   // the bay opens on this tab (RECIPES = the mission library)
       agentName: agent.name,
       currentSpecialtyId: agent.specialtyId || null,   // lets the bay flag which card is already DEPLOYED
       notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
       draftFromAgent: () => (typeof Specialties !== 'undefined') ? Specialties.fromAgent(agent) : null,
-      onDeploy: deploySpecialty
+      onDeploy: deploySpecialty,
+      onLaunch: launchRecipe   // the RECIPES tab hands a filled mission back here to run
     });
   }
   function deploySpecialty(spec, opts) {
@@ -122,6 +124,24 @@ const App = (() => {
     const patch = Specialties.compose(spec);
     if (patch) applyAgentConfig(patch);   // folds purpose + manual (+ any new persona) into the live prompt, persists, syncs channels
     if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('agents');   // refresh an open dossier
+  }
+
+  // LAUNCH a recipe (from the Recipe library's RECIPES tab): mint a fresh workstream named after the mission, then
+  // Chat.send the param-filled directive so the agent picks it up. A recipe sends WORK to whatever agent is deployed
+  // — it never re-specs identity (that is what the AGENTS tab / deploy is for), so it never touches the agent's
+  // purpose or specialtyId. Chat.send classifies it as a real task AND folds its interest tag into the profile, so
+  // launching missions also sharpens future recommendations. Returns true once the run is kicked off, false on a
+  // no-op (no agent / empty directive) so the bay can report success honestly. Mirrors newWorkstream() + the send.
+  function launchRecipe(recipe, values) {
+    if (!agent || typeof Recipes === 'undefined' || !recipe) return false;
+    const text = Recipes.fillTask(recipe, values || {});
+    if (!text) return false;                                              // nothing to send → report the no-op honestly
+    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission') : null;
+    if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);   // make the new stream the compose target before sending
+    refreshUsage(); renderRail();
+    if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text);   // kicks off the run on the fresh stream
+    persist();
+    return true;
   }
 
   // push the live agent identity (the run agentId + composed system prompt) to the sidecar so any connected
@@ -453,7 +473,9 @@ const App = (() => {
       }
     }
     const bbRoster = el('bb-roster');
-    if (bbRoster) bbRoster.onclick = openDeployBay;   // the in-game Recruitment Bay
+    if (bbRoster) bbRoster.onclick = () => openDeployBay('agents');   // the in-game Recruitment Bay (AGENTS tab)
+    const bbMissions = el('bb-missions');
+    if (bbMissions) bbMissions.onclick = () => openDeployBay('recipes');   // straight to the RECIPES (mission) library tab
     if (typeof StationUI !== 'undefined') {
       StationUI.enter([agent], {
         totals: () => Harness.totals(),

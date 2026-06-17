@@ -230,7 +230,36 @@
 }
 .mkt-rec-go { align-self: flex-start; margin-top: auto; }
 
+/* ===================== recipes: the RECIPES tab — mission cards + the launch form ===================== */
+
+/* ---- tab bar (☰ AGENTS | ❒ RECIPES) ---- */
+.mkt-tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--ph-dim); }
+.mkt-tab {
+  font-family: inherit; font-size: 12.5px; letter-spacing: 1.5px; cursor: pointer;
+  color: var(--ph-dim); background: transparent; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 14px 7px; margin-bottom: -1px;
+}
+.mkt-tab:hover { color: var(--ph-bright); background: var(--ph-faint); }
+.mkt-tab.on { color: var(--ink); background: var(--ph); border-bottom-color: var(--ph); text-shadow: none; }
+.mkt-tab:focus-visible { outline: 2px solid var(--ph); outline-offset: -2px; }
+
+/* ---- LAUNCH button: shares the filled-primary look but a distinct class (recipe launch, not specialty deploy) ---- */
+.mkt-launch { color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
+.mkt-launch:hover { box-shadow: 0 0 12px var(--ph-glow); }
+.mkt-card-acts .mkt-launch { margin-left: auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- the param-fill launch form (reuses the .mkt-save shell) ---- */
+.mkt-launch-form .mkt-lbl { margin-top: 2px; }
+.mkt-launch-form textarea.mkt-in { resize: vertical; min-height: 2.6em; line-height: 1.45; font-size: 14px; }
+.mkt-req { color: var(--bad, #ff6b6b); font-weight: bold; }
+.mkt-opt { color: var(--ph-dim); font-size: 10px; letter-spacing: .5px; }
+.mkt-in.mkt-bad { border-color: var(--bad, #ff6b6b); box-shadow: 0 0 8px rgba(255,107,107,.4); }
+.mkt-launch-note { color: var(--ph-dim) !important; font-size: 11.5px; opacity: 1; }
+.mkt-launch-note b { color: var(--ph-bright); }
+.mkt-save-acts .mkt-do-launch { margin-left: auto; color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
+
 @media (max-width: 560px) {
   .mkt-grid, .mkt-rec-rail { grid-template-columns: 1fr; }
   .mkt-fam-note { display: none; }
+  .mkt-tabs { flex-wrap: wrap; }
 }
