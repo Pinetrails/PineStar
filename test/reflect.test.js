@@ -4,7 +4,7 @@
    run), and determinism. Auto-proposals are candidates only — nothing is written here. */
 'use strict';
 const A = require('./_assert.js');
-const { reflect, parse, buildPrompt } = require('../sidecar/reflect.js');
+const { reflect, parse, buildPrompt, worthReflecting, recordFromProposal, feedbackFor } = require('../sidecar/reflect.js');
 const { redact } = require('../sidecar/context.js');
 const { makeClock } = require('../shared/clock-rng.js');
 
@@ -62,6 +62,44 @@ const { makeClock } = require('../shared/clock-rng.js');
   const a = await reflect(run, { propose: stub, clock: makeClock(500), redact });
   const b = await reflect(run, { propose: stub, clock: makeClock(500), redact });
   A.eq(JSON.stringify(a.proposals), JSON.stringify(b.proposals), 'reflect is deterministic for the same inputs');
+
+  // ---- M-mem.5b turn-in helpers (pure) ----
+
+  // worthReflecting: gate one aux call to a real exchange (needs a user + agent turn AND enough substance)
+  A.eq(worthReflecting(run.messages, 10), true, 'a real user+agent exchange is worth reflecting');
+  A.eq(worthReflecting([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hey' }]), false, 'a trivial exchange is below the substance floor');
+  A.eq(worthReflecting([{ role: 'user', content: 'x'.repeat(500) }]), false, 'no agent turn -> not worth reflecting');
+  A.eq(worthReflecting([{ role: 'assistant', content: 'x'.repeat(500) }]), false, 'no user turn -> not worth reflecting');
+  A.eq(worthReflecting(null), false, 'garbage in -> not worth reflecting (never throws)');
+
+  // recordFromProposal: a Kept proposal becomes the §5.2 notebook record (content mirrors into body for the
+  // legacy title/body readers; title is the kind label; stats start at 0; provenance + clock injected).
+  const prop = { id: 'prop_2', kind: 'profile', content: 'user prefers terse answers', scope: 'global', streamId: null };
+  const rec = recordFromProposal(prop, { now: 900, runId: 'run_7', id: 'note_3' });
+  A.eq(rec.id, 'note_3', 'host-assigned store id used');
+  A.eq(rec.kind, 'profile', 'kind carried from the proposal');
+  A.eq(rec.title, 'Preference', 'profile -> "Preference" label title');
+  A.eq(rec.body, 'user prefers terse answers', 'content mirrored into body (legacy readers render it)');
+  A.eq(rec.content, 'user prefers terse answers', '§5.2 content field set (rank() reads this)');
+  A.eq(rec.sourceRunId, 'run_7', 'provenance: sourceRunId stamped');
+  A.eq(rec.createdAt, 900, 'createdAt + ts from the injected clock');
+  A.eq(rec.ts, 900, 'ts mirrors createdAt for legacy ordering');
+  A.eq(rec.trust, 0, 'trust starts at 0 — it rides the memory.feedback event log, never seeded');
+  A.eq(rec.useCount, 0, 'useCount starts at 0');
+  A.eq(rec.pinned, false, 'not pinned by default');
+  // an Edit supplies replacement content; an unknown kind falls back to a Note label
+  const edited = recordFromProposal(prop, { now: 1, id: 'note_4', content: '  fixed up text  ' });
+  A.eq(edited.content, 'fixed up text', 'edited content used + trimmed');
+  A.eq(recordFromProposal({ kind: 'fact', content: 'f' }, { now: 0 }).title, 'Fact', 'fact -> "Fact" label');
+  A.eq(recordFromProposal({ kind: 'weird', content: 'w' }, { now: 0 }).title, 'Note', 'unknown kind -> "Note" label');
+
+  // feedbackFor: Keep/Edit positive (XP + a good confidence sample), Discard negative (a bad sample), else null
+  A.eq(feedbackFor('keep').delta, 2, 'keep is the strong positive');
+  A.eq(feedbackFor('keep').reason, 'kept', 'keep reason');
+  A.eq(feedbackFor('edit').delta, 1, 'edit is the lighter positive (it needed fixing)');
+  A.ok(feedbackFor('discard').delta < 0, 'discard is negative (calibrates confidence down)');
+  A.eq(feedbackFor('discard').reason, 'discarded', 'discard reason');
+  A.eq(feedbackFor('nonsense'), null, 'an unknown verdict yields no feedback');
 
   A.report('reflect.test');
 })();

@@ -19,6 +19,7 @@ const App = (() => {
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
+  let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
 
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -140,7 +141,8 @@ const App = (() => {
     if (!agent) return;
     const stationStats = (typeof XpStore !== 'undefined') ? XpStore.stationStats() : undefined;
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
-    const doc = Save.write(Object.assign({ agent, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats }, Workstreams.serialize()));
+    const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
+    const doc = Save.write(Object.assign({ agent, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
@@ -415,6 +417,7 @@ const App = (() => {
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
+    pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
     enterGame({ awaitingPurpose: !agent.purpose, wake: false });
     persist();   // lock any v1->v2 migration to disk now (don't re-migrate every load)
   }
@@ -462,6 +465,16 @@ const App = (() => {
     // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
     if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: () => agent, station: pendingStationStats, persist: persist }); pendingStationStats = null; }
+    // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
+    // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
+    // from the agent's deployed specialty domain so day-one suggestions aren't blank.
+    if (typeof ProfileStore !== 'undefined') {
+      ProfileStore.init({ profile: pendingProfile, persist: persist }); pendingProfile = null;
+      if (agent.specialtyId && typeof Specialties !== 'undefined' && typeof Classify !== 'undefined') {
+        const sp = Specialties.get(agent.specialtyId);
+        if (sp) ProfileStore.seed(Classify.getTag((sp.purpose || '') + ' ' + (sp.tagline || '')));
+      }
+    }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity

@@ -23,7 +23,21 @@ const Marketplace = (() => {
   let root = null, ctx = null, view = 'grid';   // 'grid' | 'save'
   let opener = null;                            // the element focus came from, restored on close
   let editingId = null;                         // when set, the save form edits this custom (not a new save)
+  let glassOpen = false;                        // the "what I've learned about you" panel expanded? (per-session)
   const expanded = {};                          // specId -> preview open (persists across re-renders)
+
+  /* ---------- personalization (the recommender's read surface) ---------- */
+  const FAM_TAGS = ['code', 'research', 'general'];   // the interest vocabulary (mirrors classify.js / profile.js)
+  const TAG_LABEL = { code: 'CODE', research: 'RESEARCH', general: 'GENERAL OPS' };
+  // the deterministic "because you…" copy, keyed by the tag that actually dominated an item's score. Phrased
+  // to read true whether the signal is a real observation or the onboarding seed ("your focus", not "recent work").
+  const BECAUSE = { code: 'matches your focus on code', research: 'matches your focus on research', general: 'fits your day-to-day ops' };
+  const ACK_KEY = 'skynet.profile.ack.v1';      // one-time first-run consent acknowledgement
+
+  // ProfileStore is the live wiring; it's null until enterGame() inits it (so 'pick' mode at wake has no profile).
+  const profileApi = () => (typeof ProfileStore !== 'undefined' && ProfileStore.summary) ? ProfileStore : null;
+  function acked() { try { return typeof localStorage !== 'undefined' && !!localStorage.getItem(ACK_KEY); } catch (_) { return true; } }
+  function setAcked() { try { if (typeof localStorage !== 'undefined') localStorage.setItem(ACK_KEY, '1'); } catch (_) {} }
 
   const has = () => typeof Specialties !== 'undefined';
   const sfx = n => { try { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); } catch (_) {} };
@@ -45,6 +59,7 @@ const Marketplace = (() => {
     opener = trigger;                           // …then remember who opened us (close() cleared it)
     ctx = context || {};
     view = 'grid'; editingId = null;
+    glassOpen = !acked();                        // first run: open the glass box so the consent note is seen once
     root = el('div', 'mkt-scrim');
     root.innerHTML =
       '<div class="mkt" role="dialog" aria-modal="true" aria-labelledby="mkt-title" aria-describedby="mkt-sub" tabindex="-1">' +
@@ -119,6 +134,8 @@ const Marketplace = (() => {
     const builtins = Specialties.builtins();
     const customs = Specialties.customs();
     let html = toolbar;
+    html += glassHTML();        // "STATION FAMILIARITY" — the glass box of what the station has learned (deploy mode)
+    html += recShelfHTML();     // "RECOMMENDED FOR YOU" — the affinity-ranked shelf, pinned above the full catalog
     html += '<div class="mkt-sect-h">▮ CATALOG</div>';
     html += '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>';
     html += '<div class="mkt-sect-h">▮ YOUR SPECIALISTS</div>';
@@ -167,6 +184,92 @@ const Marketplace = (() => {
     '</div>';
   }
 
+  /* ---------- the glass box: "STATION FAMILIARITY" (what the station has learned about the Commander) ----------
+     Renders only in deploy mode (the profile is the Commander's, not an agent's) and only once ProfileStore is
+     live. Honest by construction: CALIBRATING until the sample floor, every lane shown with its real weight, a
+     plain local-first promise, and one-tap PAUSE / FORGET — the consent surface, co-located with the picks it powers. */
+  function glassHTML() {
+    if (ctx && ctx.mode === 'pick') return '';
+    const ps = profileApi(); if (!ps) return '';
+    const summ = ps.summary(); if (!summ) return '';            // ProfileStore not initialized yet → stay silent
+    const on = ps.enabled ? ps.enabled() : true;
+    const pct = Math.round((summ.familiarity || 0) * 100);
+    const meter = !on ? 'PAUSED' : (summ.calibrating ? 'CALIBRATING' : pct + '%');
+    const dom = summ.dominant ? (TAG_LABEL[summ.dominant] || summ.dominant) : '—';
+    const note = !on ? 'learning paused — nothing new is being folded in'
+      : summ.dominant ? ('leaning ' + dom.toLowerCase() + ' · ' + summ.samples + ' signal' + (summ.samples === 1 ? '' : 's') + ' so far')
+      : 'still getting to know you — set an agent to work and I’ll learn what you focus on';
+
+    const head =
+      '<button class="mkt-fam-head" aria-expanded="' + (glassOpen ? 'true' : 'false') + '">' +
+        '<span class="mkt-fam-ico" aria-hidden="true">◉</span>' +
+        '<span class="mkt-fam-ttl">STATION FAMILIARITY</span>' +
+        '<span class="mkt-fam-meter ' + (on && !summ.calibrating ? 'known' : 'cal') + '">' + meter + '</span>' +
+        '<span class="mkt-fam-note">' + esc(note) + '</span>' +
+        '<span class="mkt-fam-caret" aria-hidden="true">' + (glassOpen ? '▾' : '▸') + '</span>' +
+      '</button>';
+    if (!glassOpen) return '<div class="mkt-fam' + (on ? '' : ' paused') + '">' + head + '</div>';
+
+    const bars = FAM_TAGS.map(k => {
+      const v = Math.round((summ.affinity[k] || 0) * 100);
+      return '<div class="mkt-fam-bar">' +
+        '<span class="mkt-fam-k">' + TAG_LABEL[k] + '</span>' +
+        '<span class="mkt-fam-trk"><span class="mkt-fam-fill" style="width:' + v + '%;"></span></span>' +
+        '<span class="mkt-fam-v">' + v + '%</span></div>';
+    }).join('');
+    const consent = !acked()
+      ? '<div class="mkt-fam-consent">SKYNET learns what you work on to tailor these picks — <b>locally, on this machine, 0 bytes sent.</b> ' +
+        'Pause or wipe it anytime, right here. <button class="bb sm mkt-fam-ack">GOT IT</button></div>'
+      : '';
+    const acts =
+      '<div class="mkt-fam-acts">' +
+        '<span class="mkt-fam-priv">◇ local-first · your profile never leaves this machine</span>' +
+        '<button class="bb sm mkt-fam-pause">' + (on ? '❚❚ PAUSE LEARNING' : '▸ RESUME LEARNING') + '</button>' +
+        '<button class="bb sm danger mkt-fam-forget">⌫ FORGET</button>' +
+      '</div>';
+    return '<div class="mkt-fam open' + (on ? '' : ' paused') + '">' + head +
+      '<div class="mkt-fam-body">' + consent + '<div class="mkt-fam-bars">' + bars + '</div>' + acts + '</div></div>';
+  }
+
+  /* ---------- the recommender: rank the catalog by the Commander's affinity, top 3 above the fold ---------- */
+  function recommended() {
+    if (ctx && ctx.mode === 'pick') return null;
+    const ps = profileApi(); if (!ps) return null;
+    const summ = ps.summary(); if (!summ || !summ.dominant) return null;   // no signal (or seed) yet → no shelf
+    if (ps.enabled && !ps.enabled()) return null;                          // paused → don't push picks
+    const curId = ctx && ctx.currentSpecialtyId;
+    const ranked = Specialties.builtins()
+      .map((s, idx) => ({ s, idx, score: ps.score(s.tags || {}) }))
+      .filter(r => r.s.id !== curId && r.score > 0)                        // skip what's already deployed
+      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))             // score desc, catalog order as a stable tiebreak
+      .slice(0, 3);
+    return ranked.length ? ranked.map(r => r.s) : null;
+  }
+  // the honest because-line for an item: the tag that actually dominated its score (or '' if nothing did).
+  function becauseText(s) {
+    const ps = profileApi(); if (!ps || !ps.explain) return '';
+    const t = ps.explain(s.tags || {});
+    return t ? (BECAUSE[t] || '') : '';
+  }
+  function recShelfHTML() {
+    const items = recommended(); if (!items) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div>' +
+      '<div class="mkt-rec-rail">' + items.map(recCardHTML).join('') + '</div>';
+  }
+  function recCardHTML(s) {
+    const deploy = !ctx || ctx.mode !== 'pick';
+    const why = becauseText(s);
+    return '<div class="mkt-rec" style="--accent:' + esc(s.accent) + '">' +
+      '<div class="mkt-rec-top">' +
+        '<span class="mkt-rec-emoji" aria-hidden="true">' + esc(s.emoji) + '</span>' +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(s.name) + '</div>' +
+          '<div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div>' +
+      '</div>' +
+      (why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(why) + '</div>' : '') +
+      '<button class="bb sm mkt-primary mkt-rec-go" data-id="' + esc(s.id) + '">' + (deploy ? '▸ DEPLOY' : '▸ RECRUIT') + '</button>' +
+    '</div>';
+  }
+
   function wireGrid(body) {
     const saveas = body.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; render(); });
@@ -212,6 +315,34 @@ const Marketplace = (() => {
         close();
       }
     }));
+
+    /* ---- the glass box: expand/collapse, first-run consent, pause, forget ---- */
+    const famHead = body.querySelector('.mkt-fam-head');
+    if (famHead) famHead.addEventListener('click', () => { glassOpen = !glassOpen; sfx('click'); render(); });
+
+    const famAck = body.querySelector('.mkt-fam-ack');
+    if (famAck) famAck.addEventListener('click', e => { e.stopPropagation(); setAcked(); sfx('click'); render(); });
+
+    const famPause = body.querySelector('.mkt-fam-pause');
+    if (famPause) famPause.addEventListener('click', () => {
+      const ps = profileApi(); if (!ps || !ps.setEnabled) return;
+      const on = ps.enabled ? ps.enabled() : true;
+      ps.setEnabled(!on); sfx(on ? 'bad' : 'click');
+      if (on) note('learning paused — nothing new will be folded in');
+      else note('learning resumed', 'good');
+      render();
+    });
+
+    const famForget = body.querySelector('.mkt-fam-forget');
+    if (famForget) famForget.addEventListener('click', () => {
+      if (famForget.dataset.armed !== '1') {          // themed two-step arm/confirm (the bay's idiom)
+        famForget.dataset.armed = '1'; famForget.classList.add('armed'); famForget.textContent = 'SURE? WIPE'; sfx('bad');
+        setTimeout(() => { if (famForget.isConnected) { famForget.dataset.armed = '0'; famForget.classList.remove('armed'); famForget.textContent = '⌫ FORGET'; } }, 4000);
+        return;
+      }
+      const ps = profileApi(); if (ps && ps.forget) ps.forget();
+      sfx('close'); note('profile wiped — the station forgot what it learned', 'good'); render();
+    });
   }
 
   /* ---------- save / edit a specialty ---------- */

@@ -256,6 +256,11 @@ const Onboarding = (() => {
 
     Chat.echoUser(isSkip ? '(skip for now)' : display);
     if (!isSkip && commit) { const patch = s.build(commitText.trim()); if (patch) commit(patch); }
+    // seed the user-affinity profile from the stated PURPOSE so day-one suggestions aren't blank
+    // (the engine ignores this once real usage accrues). Cheap, explicit, no inference.
+    if (!isSkip && s.field === 'purpose' && typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') {
+      ProfileStore.seed(Classify.getTag(commitText.trim()));
+    }
 
     const p = (i + 1) / steps.length;
     sfx('truth', i);                                   // a rising bell — a truth clicks into place

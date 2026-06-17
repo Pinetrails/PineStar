@@ -152,4 +152,85 @@
 }
 .roster-row #roster-pick.chosen:hover { color: var(--gold); }
 
-@media (max-width: 560px) { .mkt-grid { grid-template-columns: 1fr; } }
+/* ===================== personalization: the glass box + the recommended shelf ===================== */
+
+/* ---- "STATION FAMILIARITY" glass box (what the station has learned about the Commander) ---- */
+.mkt-fam {
+  margin: 4px 0 14px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
+  background: linear-gradient(180deg, var(--ph-faint), transparent 60%), var(--panel2);
+}
+.mkt-fam.paused { opacity: .82; }
+.mkt-fam-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  font-family: inherit; text-align: left; cursor: pointer;
+  background: transparent; border: 0; color: var(--ph-bright); padding: 10px 12px;
+}
+.mkt-fam-head:hover { background: var(--ph-faint); }
+.mkt-fam-ico { color: var(--ph); font-size: 13px; flex: 0 0 auto; filter: drop-shadow(0 0 6px var(--ph-glow)); }
+.mkt-fam-ttl { color: var(--ph-bright); font-size: 12px; letter-spacing: 2px; flex: 0 0 auto; }
+.mkt-fam-meter {
+  font-size: 11px; letter-spacing: 1px; padding: 1px 8px; border-radius: 999px; flex: 0 0 auto;
+  border: 1px solid var(--ph-dim); color: var(--ph);
+}
+.mkt-fam-meter.known { color: var(--ink); background: var(--gold); border-color: var(--gold); text-shadow: none; }
+.mkt-fam-meter.cal { color: var(--ph-dim); border-style: dashed; }
+.mkt-fam-note {
+  color: var(--ph-dim); font-size: 11.5px; letter-spacing: .3px; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mkt-fam-caret { color: var(--ph); font-size: 12px; flex: 0 0 auto; }
+
+.mkt-fam-body { padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.mkt-fam-consent {
+  font-size: 12px; line-height: 1.5; color: var(--text, var(--ph)); opacity: .92;
+  background: var(--ph-faint); border: 1px dashed var(--ph-dim); border-radius: 6px; padding: 9px 11px;
+}
+.mkt-fam-consent b { color: var(--gold); }
+.mkt-fam-consent .bb.sm { margin-left: 4px; vertical-align: baseline; }
+
+.mkt-fam-bars { display: flex; flex-direction: column; gap: 6px; }
+.mkt-fam-bar { display: flex; align-items: center; gap: 9px; }
+.mkt-fam-k { color: var(--ph-dim); font-size: 10px; letter-spacing: 1px; width: 96px; flex: 0 0 auto; }
+.mkt-fam-trk {
+  flex: 1 1 auto; height: 8px; border-radius: 999px; overflow: hidden;
+  background: var(--ph-faint); border: 1px solid var(--ph-dim);
+}
+.mkt-fam-fill {
+  display: block; height: 100%; background: linear-gradient(90deg, var(--ph), var(--ph-bright));
+  box-shadow: 0 0 8px var(--ph-glow); transition: width .35s ease;
+}
+.mkt-fam-v { color: var(--ph); font-size: 11px; width: 34px; text-align: right; flex: 0 0 auto; }
+
+.mkt-fam-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.mkt-fam-priv { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; flex: 1 1 auto; }
+.mkt-fam-forget.armed { color: var(--ink) !important; background: var(--bad, #ff6b6b) !important; border-color: var(--bad, #ff6b6b) !important; text-shadow: none !important; }
+
+/* ---- "RECOMMENDED FOR YOU" shelf (affinity-ranked, pinned above the full catalog) ---- */
+.mkt-sect-h.mkt-rec-sect { color: var(--gold); border-bottom-color: rgba(255,200,80,.25); }
+.mkt-rec-rail {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 4px;
+}
+.mkt-rec {
+  position: relative; display: flex; flex-direction: column; gap: 7px;
+  padding: 11px; border-radius: 8px; background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-left: 3px solid var(--accent, var(--ph));
+  box-shadow: inset 0 0 0 1px rgba(255,200,80,.06);
+  transition: border-color .12s, box-shadow .12s, transform .12s;
+}
+.mkt-rec:hover { border-color: var(--ph); box-shadow: 0 0 14px var(--ph-glow2); transform: translateY(-1px); }
+.mkt-rec-top { display: flex; align-items: flex-start; gap: 9px; }
+.mkt-rec-emoji { font-size: 21px; line-height: 1; flex: 0 0 auto; filter: drop-shadow(0 0 7px var(--accent)); }
+.mkt-rec-id { min-width: 0; }
+.mkt-rec-name { color: var(--ph-bright); font-size: 14px; letter-spacing: .6px; }
+.mkt-rec-tag { color: var(--accent, var(--ph)); font-size: 11.5px; letter-spacing: .3px; margin-top: 1px; }
+.mkt-rec-why { font-size: 11.5px; line-height: 1.4; color: var(--text, var(--ph)); opacity: .85; }
+.mkt-rec-why-k {
+  color: var(--gold); font-size: 9px; letter-spacing: 1.5px; padding: 0 4px; margin-right: 4px;
+  border: 1px solid rgba(255,200,80,.4); border-radius: 3px;
+}
+.mkt-rec-go { align-self: flex-start; margin-top: auto; }
+
+@media (max-width: 560px) {
+  .mkt-grid, .mkt-rec-rail { grid-template-columns: 1fr; }
+  .mkt-fam-note { display: none; }
+}
