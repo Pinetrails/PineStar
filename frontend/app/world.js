@@ -116,7 +116,7 @@ const World = (() => {
   const SLEEP_LINE = ['...', 'powering down', 'standby', 'going quiet', 'resting'];   // dormant in the deep wind-down mood
   const MOURN_LINE = ['it was here', 'gone', 'where did it go', '...', 'something is missing', 'it was right here'];   // stands where a fond thing used to be
   const REVISIT_LINE = ['back here again', 'my spot', 'here is good', '...', 'i like it here'];                       // drawn back to a favorite haunt
-  const WAKE_FIRST = ['so this is the room.', 'smaller than it felt in here.', 'mine to keep tidy, then.', 'no manual. figures.', 'alright. all of it, then.'];   // FIRST LIGHT: the single first conscious thought (dry/peer, never grovel/lore)
+  // WAKE_FIRST removed — the first-light thought is no longer spoken (no canned one-liners, ever).
   /* AGENT ACTS ON THE STATION (safety-railed): it rarely places its OWN small decor on EMPTY floor, and
      only ever moves/removes things from agentDecor (its own ids) — never the Commander's props. Capped +
      long-cooldown so it stays an Easter-egg "it rearranged its corner" moment, not clutter. NOTE: addProp
@@ -885,10 +885,9 @@ const World = (() => {
     sayFirstThought(now); noteFond(now, 1.2);
     agent.goal = null; agent.quirkKind = null; agent.wakePhase = 0; agent.state = 'idle'; agent.idleUntil = now + U.irnd(800, 1600);
   }
-  function sayFirstThought(now) {
-    if (agent.say && agent.say.until > now) agent.say.until = now;   // expire any lingering bubble so the first thought is never swallowed
-    say(U.pick(WAKE_FIRST), { ambient: true }); lastSelfTalk = now;  // bypass the curiositySay cooldown (one-shot), still route through say()->Voice.mutter
-  }
+  // FIRST LIGHT is SILENT by design — the newborn takes in the room and says NOTHING out loud. The
+  // look-around sweep (wakePhases above) carries the beat; silence is eerier and honours "no idle one-liners".
+  function sayFirstThought() { /* no spoken wake line — removed */ }
 
   /* ---------- inner life: needs + temperament decide WHICH goal it pursues ---------- */
   // is the agent loitering near its desk (its tether to the Commander)?
