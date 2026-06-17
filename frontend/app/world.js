@@ -54,6 +54,7 @@ const World = (() => {
   // AGENT GROWTH HUD: the hero's live Xp.compute() snapshot pushed in by XpStore (drives the name-tag "Lv N"
   // chip + the gold level-up ripple). The station headline lives in the top-bar STATION chip, not the canvas.
   let xpAgent = null, levelUpAt = 0;
+  let compactBeatAt = 0, compactBeat = null;   // M-mem.4: the desk gauge's "context compacted" beat (real agent.compact)
   const CREW_COLORS = ['#5ad0ff', '#ff8a5a', '#7df08a', '#e0a0ff', '#ffd45a', '#5affd0', '#ff6a9a'];
   const crewColor = aid => CREW_COLORS[U.hash('' + aid) % CREW_COLORS.length];
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
@@ -1897,6 +1898,13 @@ const World = (() => {
     U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
+    // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
+    // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
+    U.bus.on('agent.compact', p => {
+      compactBeatAt = performance.now(); compactBeat = p || {};
+      const freed = (p && p.beforeTokens) ? Math.round((p.removed || 0) / p.beforeTokens * 100) : 0;
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('🧠 context compacted' + (freed > 0 ? ' — freed ' + freed + '%' : ''), 'good');
+    });
     // CONNECTOR PORTALS — make the external on-ramp LIVE: poll each configured server's state so a placed
     // portal glows green/amber/red, and pulse it when ITS tools fire (an mcp__<connectorId>__* tool call).
     const connIds = [];
@@ -1946,8 +1954,9 @@ const World = (() => {
      CtxGauge). Green→amber→red as it nears full; the topmost cell pulses at crit (steady under
      reduced-motion). Drawn in world-space, above the lightmap, so it lives at the desk and reads at
      a glance. Honest by construction: an unknown limit shows an empty core + "—" (calibrating),
-     never a fabricated fill. NOTE: it shows the window FILLING — there is no "compaction" beat yet
-     (context.js is unwired), so nothing animates emptying until that lands. */
+     never a fabricated fill. The core FILLS toward the ceiling on real prompt_tokens; when the loop
+     auto-compacts (agent.compact, M-mem.4) the COMPACTION beat below drains it with a downward sweep
+     + "−N%" caption, and the steady fill then settles lower on the next real reading. */
   function drawDeskGauge(now) {
     if (!desk || !agent || agent.unplaced) return;
     if (wakeDark > 0.5) return;   // stay out of the awakening cinematic until first light has mostly arrived
@@ -1986,6 +1995,24 @@ const World = (() => {
     const lx = gx + gw / 2, ly = gy - 3;
     ctx.fillStyle = 'rgba(2,4,3,0.85)'; ctx.fillText(g.pctLabel, lx, ly + 1);
     ctx.fillStyle = g.known ? col : '#5a6b62'; ctx.fillText(g.pctLabel, lx, ly);
+
+    // COMPACTION beat (M-mem.4): a brief (~1.5s) drain when a real agent.compact fired — a bright sweep down
+    // the core + a fading glow + a "−N%" caption. Reads as the memory bank folding older context away.
+    if (compactBeatAt) {
+      const bt = (now - compactBeatAt) / 1500;
+      if (bt < 0 || bt >= 1) { compactBeatAt = 0; }
+      else {
+        const a = 1 - bt;
+        fglow(gx, gy, gw, gh, '#9effc4', 0.22 * a);
+        if (!reduceMotion()) { ctx.fillStyle = 'rgba(180,255,210,' + (0.85 * a).toFixed(3) + ')'; ctx.fillRect(gx, gy + Math.min(gh, bt * gh), gw, 1); }   // the drain sweep
+        const freed = (compactBeat && compactBeat.beforeTokens) ? Math.round((compactBeat.removed || 0) / compactBeat.beforeTokens * 100) : 0;
+        const cap = freed > 0 ? '⤓−' + freed + '%' : '⤓ COMPACT';   // ⤓−N%
+        const cyy = gy - 13;
+        ctx.font = "9px 'VT323', 'Courier New', monospace"; ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(2,4,3,' + (0.85 * a).toFixed(3) + ')'; ctx.fillText(cap, lx, cyy + 1);
+        ctx.fillStyle = 'rgba(158,255,196,' + a.toFixed(3) + ')'; ctx.fillText(cap, lx, cyy);
+      }
+    }
     ctx.textAlign = 'left';
   }
 
