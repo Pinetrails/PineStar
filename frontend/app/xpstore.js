@@ -29,12 +29,22 @@ const XpStore = (() => {
     World.setXp(a && a.stats ? Xp.compute(a.stats) : null, station ? Xp.compute(station) : null);
   }
 
+  // the always-on STATION level chip in the top bar — the colony's headline number.
+  function pushTopbar() {
+    if (typeof Xp === 'undefined' || !station) return;
+    const el = document.getElementById('gt-station');
+    if (el) el.textContent = 'Lv ' + Xp.compute(station).level;
+  }
+
   function celebrateAgent(a, level) {
     if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(level);
     if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((a.name || 'Agent') + ' reached Level ' + level, 'gold');
   }
   function celebrateStation(level) {
+    pushTopbar();
+    const chip = document.getElementById('tb-station');   // gold pulse on the top-bar STATION chip
+    if (chip) { chip.classList.remove('lvup'); void chip.offsetWidth; chip.classList.add('lvup'); }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('STATION advanced to Level ' + level, 'gold');
   }
   function announceMilestone(id) {
@@ -53,6 +63,7 @@ const XpStore = (() => {
     const rs = Xp.applyEvent(station, ev); station = rs.stats;
 
     pushToWorld(a);
+    pushTopbar();
 
     if (ra.awards.levelUp) celebrateAgent(a, ra.awards.levelTo);
     for (const id of ra.awards.milestones) announceMilestone(id);   // agent-scoped milestones
@@ -73,6 +84,7 @@ const XpStore = (() => {
     const a = getAgent();
     if (a && !a.stats && typeof Xp !== 'undefined') a.stats = Xp.fresh();   // seed new OR migrated-but-empty agents
     pushToWorld(a);
+    pushTopbar();
     if (!wired && typeof U !== 'undefined' && U.bus) {
       for (const n of FEED) U.bus.on(n, p => { try { onEvent(n, p); } catch (e) { console.warn('[xp]', n, e); } });
       wired = true;

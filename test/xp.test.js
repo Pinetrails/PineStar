@@ -135,4 +135,25 @@ A.eq(Xp.levelForXp(Infinity), 1, 'levelForXp(Infinity) -> 1, never Infinity');
 A.eq(Xp.applyEvent(Xp.fresh(), { name:'memory.feedback', payload:{ agentId:'a', id:'m', delta: Infinity } }).awards.xp, 0, 'non-finite feedback delta -> 0 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), { name:'memory.feedback', payload:{ agentId:'a', id:'m', delta: 1000 } }).awards.xp, 50, 'a huge finite feedback delta is capped at +50 xp');
 
+// ---- milestone CATALOGUE (render-state for the trophy case): every badge, with earned flags + unlock hints ----
+const catFresh = Xp.milestones(Xp.fresh());
+A.eq(catFresh.length, Xp.MILESTONES.length, 'catalogue lists every milestone');
+A.eq(catFresh.filter(m => m.earned).length, 0, 'a fresh agent has earned none');
+A.ok(catFresh.every(m => m.label && m.hint), 'every badge carries a label + unlock hint');
+const fl = catFresh.find(m => m.id === 'first_light');
+A.eq(fl.label, 'FIRST LIGHT', 'first_light label surfaced for the UI');
+A.eq(fl.hint, 'ship 1 task', 'locked first_light shows its unlock hint');
+const catEarned = Xp.milestones(run([memUsed(), done()]).stats);   // memory reuse + a shipped task
+const flE = catEarned.find(m => m.id === 'first_light');
+A.eq(flE.earned, true, 'first_light reads earned once a task ships');
+A.eq(catEarned.find(m => m.id === 'pack_rat').earned, true, 'pack_rat reads earned after a reuse');
+A.eq(catEarned.find(m => m.id === 'veteran').earned, false, 'unmet milestones stay locked');
+A.eq(Xp.milestones(null).filter(m => m.earned).length, 0, 'milestones(null) is safe and all-locked');
+
+// ---- compute() exposes tasksDone + samples for the dossier ----
+const cg = Xp.compute(run([done(), done(), done()]).stats);
+A.eq(cg.tasksDone, 3, 'compute surfaces shipped-task count');
+A.eq(cg.samples, 3, 'compute surfaces the reliability sample count');
+A.eq(Xp.compute(Xp.fresh()).tasksDone, 0, 'fresh agent has 0 tasks done');
+
 A.report('xp.test');

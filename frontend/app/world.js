@@ -50,9 +50,9 @@ const World = (() => {
      hero behaves byte-for-byte as before. The crew is derived from the RoutingPlan's bays (syncCrewFromPlan). */
   let agent = null, activity = 'idle';
   let crew = [];
-  // AGENT GROWTH HUD: live, already-computed Xp.compute() snapshots pushed in by XpStore (the persisted
-  // agent + station stats live elsewhere; the world only renders them). levelUpAt fires the gold pulse.
-  let xpAgent = null, xpStation = null, levelUpAt = 0;
+  // AGENT GROWTH HUD: the hero's live Xp.compute() snapshot pushed in by XpStore (drives the name-tag "Lv N"
+  // chip + the gold level-up ripple). The station headline lives in the top-bar STATION chip, not the canvas.
+  let xpAgent = null, levelUpAt = 0;
   const CREW_COLORS = ['#5ad0ff', '#ff8a5a', '#7df08a', '#e0a0ff', '#ffd45a', '#5affd0', '#ff6a9a'];
   const crewColor = aid => CREW_COLORS[U.hash('' + aid) % CREW_COLORS.length];
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
@@ -1400,7 +1400,7 @@ const World = (() => {
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (agent && !agent.unplaced && hoverAgent) drawNameTag();
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
-    drawStationXp();    // screen-space station growth readout (Level / XP / Confidence)
+    // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
 
     if (running) raf = requestAnimationFrame(frame);
   }
@@ -1823,21 +1823,6 @@ const World = (() => {
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
   }
-  // bottom-left STATION growth readout — Level + XP fill + Confidence (screen-space overlay). The number
-  // is the colony's cumulative, honest track record; confidence reads "—" until the meters are calibrated.
-  function drawStationXp() {
-    const s = xpStation; if (!s || !s.level) return;
-    const dpr = window.devicePixelRatio || 1;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
-    const H = cv.height / dpr, pad = 8, bw = 150, bh = 16;
-    const x = pad, y = H - bh - pad;
-    ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
-    const fillW = Math.round((bw - 2) * (s.frac || 0));
-    ctx.fillStyle = 'rgba(255,212,90,0.18)'; ctx.fillRect(x + 1, y + 1, fillW, bh - 2);   // XP fill toward next level
-    ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText('STATION Lv ' + s.level + '   REL ' + (s.known ? s.confLabel : '—'), x + 6, y + bh / 2 + 0.5);
-  }
 
   /* ---------- CONTEXT-WINDOW gauge: the agent's memory core, made physical ----------
      A segmented "memory bank" standing beside the workstation that fills toward the model's REAL
@@ -1889,8 +1874,9 @@ const World = (() => {
   }
 
   return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
-    // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires the gold ring
-    setXp: (a, s) => { xpAgent = a || null; xpStation = s || null; },
+    // AGENT GROWTH: XpStore pushes the hero's pre-computed Xp.compute() snapshot here (station arg unused —
+    // the colony headline is the top-bar STATION chip); pulseLevelUp fires the gold ring.
+    setXp: (a) => { xpAgent = a || null; },
     pulseLevelUp: (level) => {
       const now = performance.now();   // one clock read so the ripple + caption share an origin
       levelUpAt = now;

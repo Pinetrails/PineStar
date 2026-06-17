@@ -87,15 +87,16 @@
   }
 
   // ---- milestones — declarative; each fires ONCE when its predicate first holds ----
+  // each carries a display label + the unlock HINT shown on its locked badge (drives the trophy case).
   const MILESTONES = [
-    { id: 'first_light', when: (c) => (c.tasksDone || 0) >= 1 },     // first task shipped
-    { id: 'pack_rat',    when: (c) => (c.memReused || 0) >= 1 },     // first memory reused
-    { id: 'archivist',   when: (c) => (c.memWrites || 0) >= 10 },    // built a real memory bank
-    { id: 'workhorse',   when: (c) => (c.tasksDone || 0) >= 25 },    // 25 tasks shipped
-    { id: 'centurion',   when: (c) => (c.tasksDone || 0) >= 100 },   // 100 tasks shipped
-    { id: 'night_shift', when: (c) => (c.delivered || 0) >= 1 },     // delivered work via an external channel
-    { id: 'trusted',     when: (c, s) => s.samples >= MIN_SAMPLES && s.confidence >= 85 },   // reliability -> TRUSTED
-    { id: 'veteran',     when: (c, s) => s.level >= 10 },            // reached level 10
+    { id: 'first_light', label: 'FIRST LIGHT', hint: 'ship 1 task',       when: (c) => (c.tasksDone || 0) >= 1 },     // first task shipped
+    { id: 'pack_rat',    label: 'PACK RAT',    hint: 'reuse a memory',    when: (c) => (c.memReused || 0) >= 1 },     // first memory reused
+    { id: 'archivist',   label: 'ARCHIVIST',   hint: '10 memories saved', when: (c) => (c.memWrites || 0) >= 10 },    // built a real memory bank
+    { id: 'workhorse',   label: 'WORKHORSE',   hint: '25 tasks',          when: (c) => (c.tasksDone || 0) >= 25 },    // 25 tasks shipped
+    { id: 'centurion',   label: 'CENTURION',   hint: '100 tasks',         when: (c) => (c.tasksDone || 0) >= 100 },   // 100 tasks shipped
+    { id: 'night_shift', label: 'NIGHT SHIFT', hint: '1 delivery',        when: (c) => (c.delivered || 0) >= 1 },     // delivered work via an external channel
+    { id: 'trusted',     label: 'TRUSTED',     hint: 'reliability 85%',   when: (c, s) => s.samples >= MIN_SAMPLES && s.confidence >= 85 },   // reliability -> TRUSTED
+    { id: 'veteran',     label: 'VETERAN',     hint: 'reach Lv 10',       when: (c, s) => s.level >= 10 },            // reached level 10
   ];
   function bump(c, k) { c[k] = (c[k] || 0) + 1; }
 
@@ -165,9 +166,18 @@
       frac, pct: Math.round(frac * 100),
       known, confidence: known ? conf : null, confLabel: known ? (conf + '%') : '—', bonus,
       band: !known ? 'calibrating' : conf >= 85 ? 'trusted' : conf >= 65 ? 'reliable' : conf >= 45 ? 'steady' : 'building',
+      tasksDone: Math.max(0, Math.floor(num(s.counters && s.counters.tasksDone, 0))),   // shipped-task count for the dossier
+      samples: Math.max(0, Math.floor(num(s.samples, 0))),                              // reliability samples behind the confidence %
       milestones: (s.milestones || []).slice(),
     };
   }
 
-  return { fresh, clone, applyEvent, compute, scoreEvent, levelForXp, xpForLevel, MILESTONES, LEVEL_K, MIN_SAMPLES };
+  // the FULL milestone catalogue as render-state: every badge with its label, unlock hint, and earned flag —
+  // earned ones lit, locked ones shown with what unlocks them. Pure → drives the trophy case in the dossier.
+  function milestones(stats) {
+    const earned = (stats && Array.isArray(stats.milestones)) ? stats.milestones : [];
+    return MILESTONES.map(m => ({ id: m.id, label: m.label, hint: m.hint, earned: earned.indexOf(m.id) !== -1 }));
+  }
+
+  return { fresh, clone, applyEvent, compute, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES };
 });

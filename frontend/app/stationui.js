@@ -194,10 +194,11 @@ const StationUI = (() => {
   function agHead(a, act, price) {
     const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
     const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
     return '<div class="ag-hero">' +
       '<div class="ag-portrait-wrap"><canvas id="ag-portrait" width="52" height="68"></canvas></div>' +
       '<div class="ag-info">' +
-      '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + '</div>' +
+      '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>' +
       '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
       '<div class="ag-tags">' +
       // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
@@ -211,15 +212,8 @@ const StationUI = (() => {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
     const fmtTok = n => { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
-    // AGENT GROWTH — Level / Confidence / progress-to-next. Confidence reads "—" until calibrated (honest cold-start).
-    const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
-    const growth = g ? ('<div class="stat-grid">' +
-      '<div class="stat-cell"><div class="stat-val">' + g.level + '</div><div class="stat-lbl">LEVEL</div></div>' +
-      '<div class="stat-cell"><div class="stat-val' + (g.known ? ' pos' : '') + '">' + g.confLabel + '</div><div class="stat-lbl">CONFIDENCE</div></div>' +
-      '<div class="stat-cell"><div class="stat-val">' + g.pct + '%</div><div class="stat-lbl">TO LV ' + (g.level + 1) + '</div></div>' +
-      '</div>' +
-      '<div class="ag-foot-row">reliability <b>' + g.band + '</b>' + (g.bonus ? ' · +' + g.bonus + '% XP' : '') + ' · ' + g.milestones.length + ' milestone' + (g.milestones.length === 1 ? '' : 's') + '</div>') : '';
-    return growth + '<div class="stat-grid">' +
+    // BRIEF is operational telemetry; the full Level/XP/Confidence/milestone readout lives in the GROWTH tab.
+    return '<div class="stat-grid">' +
       '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
       '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
       '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +
@@ -230,6 +224,77 @@ const StationUI = (() => {
         : '<div class="ag-mission-cta">No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
       '<div class="ag-foot-row">on station since <b>' + since + '</b> · all figures are real spend</div>';
+  }
+
+  // GROWTH tab — the premium agent-growth dossier: XP ladder, a physical confidence gauge (honest "—"
+  // while calibrating), the milestone trophy case, and the station-prestige rollup. All read off the pure
+  // Xp engine; the confidence marker rides the agent's own suit colour so it reads as "this unit's measure".
+  function agGrowth(a) {
+    if (typeof Xp === 'undefined' || !a.stats) return '<p class="dim">Growth metrics unavailable.</p>';
+    const g = Xp.compute(a.stats);
+    const cat = Xp.milestones(a.stats);
+    const earned = cat.filter(m => m.earned).length, locked = cat.length - earned;
+    const pad2 = n => (n < 10 ? '0' : '') + n;
+    const mark = a.color || 'var(--ph-bright)';
+
+    const progression =
+      '<div>' +
+      '<div class="gx-sec"><span class="gx-ref">A</span><span class="gx-title">Progression</span><span class="gx-tag">LV ' + g.level + '&rarr;' + (g.level + 1) + '</span></div>' +
+      '<div class="gx-row" style="margin-bottom:6px;"><span class="gx-lbl">This level</span>' +
+        '<span class="gx-val" style="font-size:15px;">' + g.inLevel + ' <span class="gx-dim">/</span> ' + g.span + ' <span class="gx-dim" style="font-size:11px;">XP</span></span></div>' +
+      '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + g.pct + '%;"></div><div class="gx-mark" style="left:' + g.pct + '%;"></div></div>' +
+      '<div class="gx-row"><span class="gx-val gx-dim" style="font-size:12px;">' + g.toNext + ' XP TO LV ' + (g.level + 1) + '</span><span class="gx-val" style="color:var(--ph);font-size:13px;">' + g.pct + '%</span></div>' +
+      '<div class="gx-well"><span class="gx-lbl">Tasks done</span><span class="v">' + g.tasksDone + '</span></div>' +
+      '</div>';
+
+    const confnum = g.known ? (g.confidence + '<span style="font-size:18px;color:var(--ph-dim);">%</span>') : '—';
+    const gauge = '<div class="gx-gauge"><div class="gx-zones"><i></i><i></i><i></i><i></i></div>' +
+      (g.known ? '<div class="gx-mark" style="left:' + g.confidence + '%;background:' + mark + ';"></div>' +
+                 '<div class="gx-marknum" style="left:' + g.confidence + '%;">' + g.confidence + '</div>' : '') +
+      '</div>';
+    const confidence =
+      '<div>' +
+      '<div class="gx-sec"><span class="gx-ref">B</span><span class="gx-title">Confidence</span><span class="gx-tag">EWMA &middot; n' + (g.known ? '&ge;' + Xp.MIN_SAMPLES : '=' + g.samples) + '</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+        '<span class="gx-confnum' + (g.known ? '' : ' cal') + '">' + confnum + '</span>' +
+        '<span class="gx-band' + (g.known ? '' : ' cal') + '">' + (g.known ? g.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
+      gauge +
+      '<div class="gx-zlabels"><span>BUILD</span><span>STEADY</span><span>RELIABLE</span><span class="hot">TRUST</span></div>' +
+      '<div class="gx-well' + (g.bonus ? ' gold' : '') + '"><span class="gx-lbl">XP trust bonus</span><span class="v">' + (g.bonus ? '+' + g.bonus + '%' : '—') + '</span></div>' +
+      '</div>';
+
+    const tros = cat.map(m =>
+      '<div class="gx-tro ' + (m.earned ? 'on' : 'off') + '">' +
+      '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (m.earned ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + m.label + '</span></div>' +
+      '<div class="sub">' + (m.earned ? 'EARNED' : '&#9656; ' + m.hint) + '</div></div>').join('');
+    const trophies =
+      '<div class="gx-trohead"><div class="gx-sec" style="flex:1;margin:0;border:0;height:auto;"><span class="gx-ref">C</span><span class="gx-title">Trophy case</span></div>' +
+      '<span class="gx-tag">' + pad2(earned) + ' earned &middot; ' + pad2(locked) + ' locked</span></div>' +
+      '<div class="gx-tros">' + tros + '</div>';
+
+    const sStats = (typeof XpStore !== 'undefined' && XpStore.stationStats) ? XpStore.stationStats() : null;
+    const s = sStats ? Xp.compute(sStats) : null;
+    const nAg = present.length || 1;
+    const station = s ? (
+      '<div class="gx-station" style="margin-top:18px;">' +
+      '<div class="hd"><span class="badge">D</span><span class="ttl">Station prestige</span><span class="agents">&Sigma; ' + nAg + ' AGENT' + (nAg === 1 ? '' : 'S') + '</span></div>' +
+      '<div class="body">' +
+        '<div class="lv"><div class="gx-lbl" style="font-size:9px;">STATION</div><div class="n">' + s.level + '</div><div class="gx-lbl" style="font-size:9px;">LEVEL</div></div>' +
+        '<div style="flex:1;">' +
+          '<div class="gx-row" style="margin-bottom:6px;"><span class="gx-val" style="font-size:13px;">' + s.xp.toLocaleString() + ' <span class="gx-dim">/</span> ' + Xp.xpForLevel(s.level + 1).toLocaleString() + ' <span class="gx-dim" style="font-size:11px;">XP</span></span><span class="gx-val" style="color:var(--gold);font-size:13px;">' + s.pct + '%</span></div>' +
+          '<div class="gx-trk"><div class="gx-gfill" style="width:' + s.pct + '%;"></div></div>' +
+          '<div class="gx-row" style="margin-top:7px;"><span class="gx-val gx-dim" style="font-size:11px;">' + s.toNext.toLocaleString() + ' XP TO LV ' + (s.level + 1) + '</span>' +
+            '<span class="gx-mono" style="font-size:10px;color:var(--ph-dim);">' + s.tasksDone + ' TASKS &middot; <span style="color:var(--ph);">' + (s.known ? s.band.toUpperCase() : 'CALIBRATING') + '</span></span></div>' +
+        '</div>' +
+      '</div></div>'
+    ) : '';
+
+    return '<div class="gx">' +
+      '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // GROWTH READOUT</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
+      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">CLEARANCE</div><span class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></span></div></div>' +
+      '<div class="gx-2">' + progression + confidence + '</div>' +
+      trophies + station +
+      '</div>';
   }
 
   function agSkills() {
@@ -332,7 +397,7 @@ const StationUI = (() => {
     const a = present[sel];
     const act = activity();
     const price = (typeof Harness === 'object' && Harness.priceOf) ? Harness.priceOf(a.model) : null;
-    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills() : agBrief(a);
+    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills() : agTab === 'growth' ? agGrowth(a) : agBrief(a);
     body.innerHTML =
       '<div class="ag-wrap"><div class="ag-list">' +
       present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '">' +
@@ -341,6 +406,7 @@ const StationUI = (() => {
       agHead(a, act, price) +
       '<div class="ag-tabs">' +
       '<button class="ag-tab ' + (agTab === 'brief' ? 'sel' : '') + '" data-tab="brief">BRIEF</button>' +
+      '<button class="ag-tab ' + (agTab === 'growth' ? 'sel' : '') + '" data-tab="growth">GROWTH</button>' +
       '<button class="ag-tab ' + (agTab === 'skills' ? 'sel' : '') + '" data-tab="skills">SKILLS</button>' +
       '<button class="ag-tab ' + (agTab === 'config' ? 'sel' : '') + '" data-tab="config">CONFIG</button>' +
       '</div>' +
