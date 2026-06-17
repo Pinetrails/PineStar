@@ -139,7 +139,8 @@ const App = (() => {
   function persist() {
     if (!agent) return;
     const stationStats = (typeof XpStore !== 'undefined') ? XpStore.stationStats() : undefined;
-    Save.write(Object.assign({ agent, usage: Harness.totals(), station: station ? station.serialize() : undefined, stationStats }, Workstreams.serialize()));
+    const doc = Save.write(Object.assign({ agent, usage: Harness.totals(), station: station ? station.serialize() : undefined, stationStats }, Workstreams.serialize()));
+    if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
@@ -558,7 +559,11 @@ const App = (() => {
       showTitle();   // re-render so RESUME surfaces the restored agent
     };
 
-    const saved = Save.load();
+    // durable restore: adopt whichever of {localStorage cache, sidecar mirror} is NEWER. This is what brings
+    // the agent back after a browser-cache wipe (local gone, the sidecar still holds it) and refreshes the
+    // cache to match. Best-effort: an unreachable sidecar just falls back to the local cache.
+    if (typeof CloudSave !== 'undefined') CloudSave.installUnloadFlush();
+    const saved = (typeof CloudSave !== 'undefined') ? await CloudSave.reconcile(Save.load()) : Save.load();
     if (saved && saved.agent) {
       // auto-resume on refresh: an OpenRouter key in hand, the desktop keychain holds one (configured),
       // OR the Codex provider (which holds its OAuth tokens server-side — a missing/expired token surfaces

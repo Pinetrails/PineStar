@@ -21,6 +21,7 @@ const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
+const { makeSaveStore } = require('./savestore.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
@@ -124,6 +125,12 @@ const notebookStore = {
     } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
   }
 };
+
+// PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
+// the sidecar's own disk (the app-data dir that survives a browser cache wipe). Same containment as the
+// notebook: a sibling of the fs jail. Holds NO secret (the key/tokens live elsewhere). The frontend keeps
+// localStorage as a fast cache and writes through here on every persist; on boot it pulls the newer of the two.
+const saveStore = makeSaveStore({ fs, pathMod: path, root: WORKSPACES, clock: { now: () => Date.now() } });
 
 /* ---- consent (P1.5): the four-tier broker's host-side state ----
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
@@ -398,6 +405,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
+  if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
@@ -1163,6 +1172,36 @@ function serveNotebook(req, res) {
       : [];
     json(200, { notes });
   } catch (e) { json(200, { notes: [] }); }   // tolerate missing/corrupt — empty memory, never a 500
+}
+
+// GET /api/save?agent=<id> — the durable agent save mirror (M-save). Returns the stored save envelope so the
+// frontend can adopt it after a localStorage wipe (or pull the newer of local/remote on a normal boot). No
+// secret is returned: the envelope never contains the API key/tokens. Missing -> { save: null }, never a 500.
+function serveSaveLoad(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const doc = saveStore.load(agent);
+    json(200, { save: doc || null });
+  } catch (e) { json(200, { save: null }); }
+}
+// POST /api/save { agent?, ...envelope } — write through the localStorage save to durable disk. The body IS the
+// save envelope (with its schema/version/updatedAt); `agent` selects the record (defaults to 'agent'). The
+// store refuses a write whose updatedAt regressed, so a stale tab can't clobber a newer save (returns stale:true).
+async function handleSaveWrite(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 8 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }   // up to 8MB (station + workstreams can be large)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'a save envelope object is required' });
+  // the record key is the agent's OWN id — body.agent is the agent OBJECT ({id,name,...}), not a selector
+  // string, so derive from body.agent.id (an explicit body.agentId wins if a future caller sends one).
+  const agentId = String(body.agentId || (body.agent && body.agent.id) || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
+  try {
+    const result = saveStore.save(agentId, body);
+    json(200, result);
+  } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
 }
 async function serveStatic(req, res) {
   try {
