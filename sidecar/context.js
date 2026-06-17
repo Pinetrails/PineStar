@@ -134,6 +134,7 @@
   function rank(records, query, rankOpts) {
     rankOpts = rankOpts || {};
     const now = typeof rankOpts.now === 'number' ? rankOpts.now : 0;
+    const streamId = rankOpts.streamId || null;   // M-mem.2b: the active workstream — same-stream working memory gets a recall boost
     const k = rankOpts.k || 8;
     const halfLife = rankOpts.halfLifeMs || 6048e5;   // 7 days
     const K1 = 1.2;
@@ -155,7 +156,10 @@
       const age = Math.max(0, now - (r.lastUsedAt || r.createdAt || r.ts || 0));
       const recency = Math.pow(0.5, age / halfLife);        // 1 at age 0 → halves each half-life
       const trust = Math.max(0, Math.min(1, Number(r.trust) || 0));
-      const score = relevance + 0.5 * recency + 0.3 * trust + (r.pinned ? 1000 : 0);   // pinned = hard top
+      // M-mem.2b: same-stream working memory floats up; global records always compete; OTHER streams stay
+      // searchable (no boost, not filtered) — "global always-on, workstream-scoped, cross-stream searchable".
+      const sameStream = (streamId && r.scope === 'stream' && r.streamId === streamId) ? 0.5 : 0;
+      const score = relevance + 0.5 * recency + 0.3 * trust + sameStream + (r.pinned ? 1000 : 0);   // pinned = hard top
       return { r: r, i: i, score: score };
     });
     scored.sort((a, b) => (b.score - a.score) || (a.i - b.i));   // deterministic: stable tiebreak by store order

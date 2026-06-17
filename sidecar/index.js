@@ -849,6 +849,7 @@ async function handleRun(req, res) {
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
+  const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   const usingCodex = (provider === 'codex' || provider === 'openai-codex');   // Codex authenticates by OAuth token, not an API key
   // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and updatable
   // via /api/key). The browser build still sends body.key, which wins.
@@ -905,6 +906,7 @@ async function handleRun(req, res) {
       key, model, system, messages, agentId, isTask, provider,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
+      streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       reflect: true   // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
     });
   } catch (e) {
@@ -927,6 +929,7 @@ async function handleRun(req, res) {
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
   const { key, model, system, messages = [], agentId = 'agent', isTask = false, emit, signal, runId } = o;
+  const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
   const trigger = o.trigger || 'directive';
@@ -978,7 +981,7 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
-  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId });
+  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId, streamId });
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -1097,7 +1100,7 @@ async function runOnce(o) {
     const recs = Array.isArray(stored) ? stored : [];
     let q = '';
     for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { q = messages[i].content; break; } }
-    const ranked = rank(recs, q, { now: Date.now() });
+    const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {
       msgs = injectRecall(msgs, recall.text);

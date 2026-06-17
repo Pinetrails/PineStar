@@ -202,6 +202,7 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .mc-rec.pinned { border-left-color: var(--gold); }
 .mc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
 .mc-rectitle { color: var(--ph-bright); font-size: 13px; font-weight: 600; }
+.mc-scope { color: var(--ph-dim); font-size: 10px; letter-spacing: 0.5px; border: 1px solid var(--ph-dim); border-radius: 2px; padding: 0 4px; opacity: 0.85; }
 .mc-pinflag { margin-left: auto; color: var(--gold); font-size: 11px; letter-spacing: 0.5px; }
 .mc-body { color: var(--ph-bright); font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
 .mc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 7px; font-size: 11px; color: var(--ph-dim); letter-spacing: 0.3px; }

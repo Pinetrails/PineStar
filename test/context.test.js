@@ -192,6 +192,15 @@ const lo = { id: 'lo', kind: 'note', title: 'a', body: 'b', createdAt: 1000, tru
 const hi = { id: 'hi', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0.9 };
 A.eq(rank([lo, hi], 'zzz', { now: 1000 })[0].id, 'hi', 'higher trust ranks higher among equals');
 
+// M-mem.2b: same-stream working memory gets a recall boost; global always competes; other streams stay searchable
+const gA = { id: 'gA', kind: 'note', title: 'a', body: 'b', createdAt: 1000, scope: 'global', streamId: null };
+const sX = { id: 'sX', kind: 'note', title: 'a', body: 'b', createdAt: 1000, scope: 'stream', streamId: 'ws_x' };
+const sY = { id: 'sY', kind: 'note', title: 'a', body: 'b', createdAt: 1000, scope: 'stream', streamId: 'ws_y' };
+A.eq(rank([gA, sX, sY], 'zzz', { now: 1000, streamId: 'ws_x' })[0].id, 'sX', 'a same-stream record floats above an equal global/other-stream one');
+A.eq(rank([gA, sX], 'zzz', { now: 1000 })[0].id, 'gA', 'no streamId passed -> no boost, store order holds (byte-identical to pre-2b)');
+A.eq(rank([gA, sY], 'zzz', { now: 1000, streamId: 'ws_x' }).length, 2, 'an other-stream record is still ranked (searchable, not filtered)');
+A.eq(rank([sX], 'totally unrelated zzz', { now: 1000, streamId: 'ws_x' }).length, 1, 'a same-stream record with no relevance is still returnable');
+
 // k limit + determinism
 A.ok(rank(corpus, 'deploy', { now: 1000, k: 2 }).length === 2, 'k caps the returned count');
 A.eq(JSON.stringify(rank(corpus, 'deploy release', { now: 1000 }).map(r => r.id)),
