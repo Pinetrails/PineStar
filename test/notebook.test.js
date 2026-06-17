@@ -84,6 +84,21 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.eq(mw.payload.kind, 'note', 'memory.write kind = note');
     A.eq(mw.payload.scope, 'global', 'memory.write scope = global');
 
+    // M-mem.6 regression guard: ids are collision-proof (max+1), NOT positional (length+1). A store with a gap
+    // — as left by a forget that removed an earlier record — must NOT reissue an id that already exists.
+    const storeGap = memStore();
+    storeGap.set('notebook:ag', [
+      { id: 'note_1', kind: 'note', title: 'a', body: 'a', scope: 'global', streamId: null, sourceRunId: null, createdAt: 1, ts: 1, lastUsedAt: null, useCount: 0, trust: 0, pinned: false },
+      { id: 'note_3', kind: 'note', title: 'c', body: 'c', scope: 'global', streamId: null, sourceRunId: null, createdAt: 1, ts: 1, lastUsedAt: null, useCount: 0, trust: 0, pinned: false }
+    ]);
+    const regGap = makeRegistry();
+    makeNotebookTools({ store: storeGap, clock: makeClock(1) }).register(regGap);
+    await regGap.dispatch(dcall('notebook.write', { title: 'd', body: 'd' }), { agentId: 'ag' });
+    const gapList = storeGap.get('notebook:ag');
+    A.eq(gapList.length, 3, 'the new note appended (no overwrite)');
+    A.eq(gapList[2].id, 'note_4', 'next id is max+1 (note_4), NOT the colliding positional length+1 (note_3)');
+    A.eq(new Set(gapList.map(n => n.id)).size, 3, 'all ids stay unique after a write into a gapped store');
+
     // best-effort telemetry: a write WITHOUT a runId still persists, just emits no memory.write
     const { seq: seq2, emit: emit2 } = setup();
     const store2 = memStore();
