@@ -22,7 +22,8 @@
 const Marketplace = (() => {
   let root = null, ctx = null, view = 'grid';   // 'grid' | 'save' | 'launch'
   let opener = null;                            // the element focus came from, restored on close
-  let editingId = null;                         // when set, the save form edits this custom (not a new save)
+  let editingId = null;                         // when set, the save form edits this custom SPECIALTY (not a new save)
+  let editingRecipeId = null;                   // when set, the recipe save form edits this custom MISSION
   let launchId = null;                          // when set (view='launch'), the recipe being configured to launch
   let tab = 'agents';                           // 'agents' (specialties) | 'recipes' (missions) — the deploy-bay tab
   let glassOpen = false;                        // the "what I've learned about you" panel expanded? (per-session)
@@ -62,7 +63,7 @@ const Marketplace = (() => {
     close();                                    // tear down any prior instance first…
     opener = trigger;                           // …then remember who opened us (close() cleared it)
     ctx = context || {};
-    view = 'grid'; editingId = null; launchId = null;
+    view = 'grid'; editingId = null; editingRecipeId = null; launchId = null;
     // start on the requested tab (deploy mode only — pick mode at wake has no recipes to launch)
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();                        // first run: open the glass box so the consent note is seen once
@@ -88,7 +89,7 @@ const Marketplace = (() => {
   function close() {
     if (!root) return;
     document.removeEventListener('keydown', onKey, true);
-    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null; launchId = null;
+    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null;
     const o = opener; opener = null;
     try { if (o && o.focus) o.focus(); } catch (_) {}   // restore focus to whatever opened the bay
   }
@@ -122,8 +123,12 @@ const Marketplace = (() => {
     if (!root) return;
     const body = root.querySelector('.mkt-body');
     const sub = root.querySelector('#mkt-sub'); if (sub) sub.textContent = subtitle();   // keep the header line tab-aware
-    body.innerHTML = view === 'save' ? saveFormHTML() : view === 'launch' ? launchFormHTML() : gridHTML();
+    body.innerHTML = view === 'save' ? saveFormHTML()
+      : view === 'recipesave' ? recipeSaveFormHTML()
+      : view === 'launch' ? launchFormHTML()
+      : gridHTML();
     if (view === 'save') wireSaveForm(body);
+    else if (view === 'recipesave') wireRecipeSaveForm(body);
     else if (view === 'launch') wireLaunchForm(body);
     else {
       wireGrid(body);
@@ -176,11 +181,19 @@ const Marketplace = (() => {
   function recipesPaneHTML() {
     if (!hasRecipes()) return '<div class="mkt-empty">the recipe library isn’t available.</div>';
     const builtins = Recipes.builtins();
-    let html = '<div class="mkt-toolbar"><span class="mkt-hint">pick a mission, fill in the blanks, and ' +
-      esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
+    const customs = Recipes.customs();
+    let html = '<div class="mkt-toolbar">' +
+      '<button class="bb sm mkt-recipe-saveas">＋ SAVE A MISSION</button>' +
+      '<span class="mkt-hint">pick a mission, fill in the blanks, and ' +
+        esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span>' +
+    '</div>';
     html += recipeRecShelfHTML();   // "RECOMMENDED FOR YOU" — recipes ranked by the same affinity engine
     html += '<div class="mkt-sect-h">▮ MISSION LIBRARY</div>';
     html += '<div class="mkt-grid">' + builtins.map(recipeCardHTML).join('') + '</div>';
+    html += '<div class="mkt-sect-h">▮ YOUR MISSIONS</div>';
+    html += customs.length
+      ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
+      : '<div class="mkt-empty">no saved missions yet — hit “＋ save a mission” above to turn a job you do often into a one-tap mission you own (and that exports with you).</div>';
     return html;
   }
 
@@ -213,6 +226,8 @@ const Marketplace = (() => {
       preview +
       '<div class="mkt-card-acts">' +
         '<button class="bb sm mkt-prev" data-id="' + esc(r.id) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + (isOpen ? '▾ HIDE' : '▸ PREVIEW') + '</button>' +
+        (r.custom ? '<button class="bb sm mkt-recipe-edit" data-id="' + esc(r.id) + '" aria-label="Edit saved mission ' + esc(r.name) + '" title="edit">✎</button>' : '') +
+        (r.custom ? '<button class="bb sm danger mkt-recipe-del" data-id="' + esc(r.id) + '" aria-label="Delete saved mission ' + esc(r.name) + '" title="delete">⌫</button>' : '') +
         '<button class="bb sm mkt-launch" data-id="' + esc(r.id) + '">' + launchLabel + '</button>' +
       '</div>' +
     '</div>';
@@ -419,7 +434,7 @@ const Marketplace = (() => {
     body.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.tab;
       if (!next || next === tab) return;
-      tab = next; view = 'grid'; editingId = null; launchId = null; sfx('click'); render();
+      tab = next; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; sfx('click'); render();
     }));
 
     // LAUNCH a recipe: if it asks for inputs, step into the param form; otherwise fire it straight off.
@@ -429,6 +444,26 @@ const Marketplace = (() => {
       sfx('click');
       if (r.params && r.params.length) { launchId = r.id; view = 'launch'; render(); }
       else launchRecipeNow(r, {});
+    }));
+
+    // AUTHOR a mission: open the recipe save form (＋ SAVE A MISSION) or edit an existing custom mission.
+    const recipeSaveas = body.querySelector('.mkt-recipe-saveas');
+    if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; render(); });
+    body.querySelectorAll('.mkt-recipe-edit').forEach(b => b.addEventListener('click', () => {
+      editingRecipeId = b.dataset.id; sfx('click'); view = 'recipesave'; render();
+    }));
+    // DELETE a saved mission — themed two-step arm/confirm (the bay's idiom), never a native dialog
+    body.querySelectorAll('.mkt-recipe-del').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.id;
+      if (b.dataset.armed !== '1') {
+        b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'SURE?'; sfx('bad');
+        setTimeout(() => { if (b.isConnected) { b.dataset.armed = '0'; b.classList.remove('armed'); b.textContent = '⌫'; } }, 4000);
+        return;
+      }
+      const r = hasRecipes() ? Recipes.get(id) : null;
+      if (hasRecipes()) Recipes.removeCustom(id);
+      delete expanded[id];
+      sfx('close'); note('removed mission: ' + ((r && r.name) || id), 'good'); render();
     }));
 
     /* ---- the glass box: expand/collapse, first-run consent, pause, forget ---- */
@@ -515,6 +550,68 @@ const Marketplace = (() => {
       launchRecipeNow(r, values);
     });
     const first = body.querySelector('.mkt-p-in'); if (first) first.focus();
+  }
+
+  /* ---------- author / edit a mission (a custom recipe) ----------
+     The Commander writes a directive TEMPLATE with {tokens}; each distinct token auto-becomes a fill-in at launch
+     (the template IS the spec — no separate param editor). This is the owned, exportable library the moat compounds
+     into: saved under skynet.recipes.v1, which backup.js already carries by prefix, so a mission travels with you. */
+  function recipeTokenHint(task) {
+    if (!hasRecipes()) return '';
+    const ps = Recipes.paramsFromTemplate(task);
+    if (!ps.length) return '<span class="mkt-r-tok-none">◷ one-tap mission — no fill-ins</span>';
+    return '<span class="mkt-r-tok-lbl">asks for</span> ' + ps.map(p => '<span class="mkt-r-tok">' + esc(p.label) + '</span>').join(' ');
+  }
+  function recipeSaveFormHTML() {
+    const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
+    const d = editing || { emoji: '✦', name: '', tagline: '', task: '' };
+    const title = editing ? 'EDIT MISSION' : 'SAVE A MISSION';
+    return '<div class="mkt-save mkt-recipe-form">' +
+      '<div class="mkt-save-h">' + esc(title) + '</div>' +
+      '<p class="mkt-hint">write the directive your agent should run. Wrap each blank in <b>{braces}</b> — “Brief me on <b>{topic}</b>” — and it becomes a fill-in at launch.</p>' +
+      '<div class="mkt-save-row">' +
+        '<label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-r-emoji" maxlength="2" value="' + esc(d.emoji || '✦') + '"></label>' +
+        '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-r-name" maxlength="28" value="' + esc(d.name || '') + '" placeholder="e.g. Morning Standup"></label>' +
+      '</div>' +
+      '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-r-tag" maxlength="48" value="' + esc(d.tagline || '') + '" placeholder="one line — what it’s for"></label>' +
+      '<label class="mkt-lbl">DIRECTIVE TEMPLATE<textarea class="mkt-in mkt-r-task" id="mkt-r-task" rows="4" placeholder="e.g. Summarize {project} progress since {since} and flag blockers.">' + esc(d.task || '') + '</textarea></label>' +
+      '<div class="mkt-r-tokens" id="mkt-r-tokens"></div>' +
+      '<div class="mkt-save-acts">' +
+        '<button class="bb sm mkt-cancel">‹ BACK</button>' +
+        '<button class="bb sm mkt-do-recipe-save">' + (editing ? '✓ SAVE CHANGES' : '✓ SAVE MISSION') + '</button>' +
+      '</div>' +
+    '</div>';
+  }
+  function wireRecipeSaveForm(body) {
+    const back = body.querySelector('.mkt-cancel');
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; render(); });
+    // live readout of the fill-ins the template will ask for (the inputs are derived from its {tokens})
+    const taskIn = body.querySelector('#mkt-r-task'), tokens = body.querySelector('#mkt-r-tokens');
+    const paint = () => { if (tokens && taskIn) tokens.innerHTML = recipeTokenHint(taskIn.value); };
+    if (taskIn) taskIn.addEventListener('input', paint);
+    paint();
+    const save = body.querySelector('.mkt-do-recipe-save');
+    if (save) save.addEventListener('click', () => {
+      const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
+      const name = (body.querySelector('#mkt-r-name').value || '').trim();
+      const task = (body.querySelector('#mkt-r-task').value || '').trim();
+      if (!name) { sfx('bad'); note('give your mission a name', 'bad'); body.querySelector('#mkt-r-name').focus(); return; }
+      if (!task) { sfx('bad'); note('write the directive your agent should run', 'bad'); body.querySelector('#mkt-r-task').focus(); return; }
+      const rec = {
+        name,
+        emoji: (body.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦',
+        tagline: (body.querySelector('#mkt-r-tag').value || '').trim(),
+        task
+      };
+      if (editing) rec.id = editing.id;   // upsert in place (saveCustom keeps the existing custom id)
+      try {
+        const saved = Recipes.saveCustom(rec);   // params auto-derive from the template's {tokens}
+        sfx('click'); note((editing ? 'updated' : 'saved') + ' mission: ' + saved.name, 'good');
+        editingRecipeId = null; view = 'grid'; render();
+      } catch (e) { sfx('bad'); note((e && e.message) || 'could not save', 'bad'); }
+    });
+    const nameIn = body.querySelector('#mkt-r-name');
+    if (nameIn) { nameIn.focus(); nameIn.setSelectionRange(nameIn.value.length, nameIn.value.length); }
   }
 
   /* ---------- save / edit a specialty ---------- */

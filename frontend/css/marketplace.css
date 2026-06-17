@@ -258,6 +258,16 @@
 .mkt-launch-note b { color: var(--ph-bright); }
 .mkt-save-acts .mkt-do-launch { margin-left: auto; color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
 
+/* ---- author-a-mission form (reuses the .mkt-save shell) + custom-mission card controls ---- */
+.mkt-recipe-form textarea.mkt-r-task { resize: vertical; min-height: 4.2em; line-height: 1.5; font-size: 14px; }
+.mkt-r-tokens { font-size: 11.5px; color: var(--ph-dim); letter-spacing: .3px; min-height: 18px; margin-top: -4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mkt-r-tok-lbl { color: var(--ph-dim); }
+.mkt-r-tok { color: var(--ink); background: var(--ph); border-radius: 2px; padding: 1px 7px; text-shadow: none; }
+.mkt-r-tok-none { color: var(--ph-dim); font-style: italic; }
+.mkt-save-acts .mkt-do-recipe-save { margin-left: auto; color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
+.mkt-card-acts .mkt-recipe-del, .mkt-card-acts .mkt-recipe-edit { flex: 0 0 auto; }
+.mkt-recipe-del.armed { color: var(--ink) !important; background: var(--bad, #ff6b6b) !important; border-color: var(--bad, #ff6b6b) !important; text-shadow: none !important; }
+
 @media (max-width: 560px) {
   .mkt-grid, .mkt-rec-rail { grid-template-columns: 1fr; }
   .mkt-fam-note { display: none; }

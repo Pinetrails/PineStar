@@ -69,6 +69,36 @@
       .map(freezeParam);
   }
 
+  // humanize a param key into a form label: snake_case / camelCase -> Title-cased words ('look_back' -> 'Look Back').
+  // (Tokens are \w+ — see the fillTask/paramsFromTemplate regex — so hyphens never reach here.)
+  function humanize(key) {
+    return String(key || '')
+      .replace(/_+/g, ' ')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')   // acronym boundary: 'HTTPStatus' -> 'HTTP Status'
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')       // camelCase boundary: 'lookBack' -> 'look Back'
+      .trim()
+      .replace(/\b\w/g, c => c.toUpperCase());       // Title-Case each word ('look_back' -> 'Look Back')
+  }
+  // derive the param form from a task TEMPLATE: each DISTINCT {token} becomes a required text input (humanized
+  // label). This is how an AUTHORED custom recipe gets its inputs — the template IS the spec, so the Commander
+  // only writes the directive and the blanks fall out of it. A template with no tokens yields a one-tap mission.
+  function paramsFromTemplate(task) {
+    const seen = {}, out = [];
+    const re = /\{(\w+)\}/g; let m;
+    while ((m = re.exec(String(task || ''))) !== null) {
+      const key = m[1];
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push({ key: key, label: humanize(key) || key, placeholder: '', required: true });   // never a blank label
+    }
+    // keep every launch-form field identifiable: if two distinct tokens humanize to the SAME label
+    // ({look_back} vs {lookBack}, {topic} vs {Topic}), append the raw key so they can be told apart.
+    const counts = {};
+    out.forEach(p => { counts[p.label] = (counts[p.label] || 0) + 1; });
+    out.forEach(p => { if (counts[p.label] > 1) p.label = p.label + ' (' + p.key + ')'; });
+    return out;
+  }
+
   // normalize + freeze one recipe so no caller can mutate the catalog (deep: outer + tags + params).
   function freezeRecipe(r) {
     return Object.freeze({
@@ -194,7 +224,10 @@
       // a saved custom carries its own ranking tags; pre-tags customs (or older saves) get them classified
       // from their own text — so the Commander's own recipes rank in the feed just like the built-ins.
       tags: normTags(r.tags && Object.keys(r.tags).length ? r.tags : deriveTags(name + ' ' + tagline + ' ' + task)),
-      params: normParams(r.params),
+      // an authored custom supplies only the task TEMPLATE — derive its inputs from the {tokens} when no usable
+      // params given. Check the NORMALIZED result (not the raw length) so a keyless/garbage params array from a
+      // hand-edited or corrupted import still falls through to template derivation instead of shipping ungated.
+      params: (function () { const np = normParams(r.params); return np.length ? np : normParams(paramsFromTemplate(task)); })(),
       task,
       custom: true
     };
@@ -276,7 +309,9 @@
     if (!recipe || !String(recipe.name || '').trim()) throw new Error('a recipe needs a name');
     const isExistingCustom = recipe.id && customs.some(c => c.id === recipe.id);
     const rec = normCustom(recipe);
-    rec.id = isExistingCustom ? recipe.id : uniqueId('custom-' + (slugify(recipe.name) || 'recipe'));
+    // mint under a custom-recipe- prefix so a mission id can never collide with a custom SPECIALTY (custom-<slug>),
+    // which share the bay's preview-state map; specialties mint custom-<slug>, missions custom-recipe-<slug>.
+    rec.id = isExistingCustom ? recipe.id : uniqueId('custom-recipe-' + (slugify(recipe.name) || 'mission'));
     const idx = customs.findIndex(c => c.id === rec.id);
     if (idx >= 0) customs[idx] = rec; else customs.push(rec);
     writeStore();
@@ -294,6 +329,6 @@
   return {
     TAGS,
     list, builtins, customs: customList, get, exists,
-    fillTask, requiredMissing, draft, saveCustom, removeCustom
+    fillTask, requiredMissing, paramsFromTemplate, draft, saveCustom, removeCustom
   };
 });
