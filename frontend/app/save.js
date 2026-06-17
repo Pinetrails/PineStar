@@ -5,7 +5,7 @@
 
 const Save = (() => {
   const KEY = 'skynet.save';
-  const CURRENT = 3;
+  const CURRENT = 4;
 
   // forward-only migrations: { fromVersion: (doc) => upgradedDoc }
   const migrations = {
@@ -25,6 +25,13 @@ const Save = (() => {
       const fresh = () => ({ xp: 0, level: 1, lifetimeXp: 0, confidence: 50, samples: 0, counters: {}, milestones: [] });
       if (doc.agent && typeof doc.agent === 'object' && (!doc.agent.stats || typeof doc.agent.stats !== 'object')) doc.agent.stats = fresh();
       if (!doc.stationStats || typeof doc.stationStats !== 'object') doc.stationStats = fresh();
+      return doc;
+    },
+    // v3 -> v4 (personalization): seed an empty, valid user-affinity profile slice. Cold-start-safe —
+    // a user who never finished the awakening still gets a learnable, all-zero profile. The literal
+    // mirrors Profile.fresh() to keep save.js decoupled from profile.js load order.
+    3: doc => {
+      if (!doc.profile || typeof doc.profile !== 'object') doc.profile = { v: 1, tags: {}, seed: null, enabled: true, total: 0 };
       return doc;
     }
   };
