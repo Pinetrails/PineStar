@@ -177,9 +177,7 @@ const WORLD = (() => {
         bar: 'at the bar', tv: 'watching the morale board', arcade: 'arcade run',
         juke: 'picking a track', window: 'staring into the void'
       }[spot.kind] || 'off duty';
-      // spot-flavored chatter — wires the authored arcade/tv banter pools
-      const pool = { arcade: 'arcade_banter', tv: 'tv_banter' }[spot.kind];
-      if (pool && DATA.C[pool] && U.chance(0.22)) SIM.crewChat(b.id, U.pick(DATA.C[pool]));
+      // (silenced) crew no longer emit autonomous spot banter — no random comments
     } else { b.state = 'idle'; b.dir = 'south'; }
   }
 
@@ -273,10 +271,7 @@ const WORLD = (() => {
             const hb = bodies.HERALD;
             if (hb) { hb.bubble = { until: nowMs + 3400 }; setGlance(hb, dirToward(hst.x, hst.y, bb.tile.x, bb.tile.y), 2600); }
             SIM.heraldHandoff(ship.id);
-            if (U.chance(0.3)) {
-              SIM.crewChat(bb.id, U.pick(DATA.C.handoff).replace(/\{thing\}/g, shortThing));
-              if (U.chance(0.6)) SIM.crewChat('HERALD', U.pick(DATA.C.handoff_reply));
-            }
+            // (silenced) no canned handoff banter — the handoff still happens (and sim.js logs the operational "shipped" line)
           } },
         { wait: 1600 },
         { do: bb => { bb.act = 'heading back to station'; } },
@@ -356,7 +351,7 @@ const WORLD = (() => {
             bb.bubble = { until: nowMs + 2200 };
             ob.bubble = { until: nowMs + 2800 };
             setGlance(ob, dirToward(ost.x, ost.y, bb.tile.x, bb.tile.y), 2600);
-            if (U.chance(0.15)) SIM.crewChat(bb.id, U.pick(DATA.C.hallway).replace(/\{o\}/g, '@' + otherId));
+            // (silenced) no canned hallway small-talk
           } },
         { wait: 2400 },
         { go: { x: MAP.stations[b.id].x, y: MAP.stations[b.id].y } }
@@ -407,7 +402,7 @@ const WORLD = (() => {
       steps.push({ wait: 2200 });
       steps.push({ do: bb => {
         bb.bubble = { until: nowMs + 1100 };
-        if (U.chance(0.05)) SIM.crewChat(bb.id, U.pick(DATA.C.pool_banter));
+        // (silenced) no canned pool banter
       } });
     }
     steps.push({ wait: 1000 });
@@ -616,10 +611,7 @@ const WORLD = (() => {
         a.act = a.act || 'hallway sync'; c.act = c.act || 'hallway sync';
         pairCd[key] = nowMs + U.rnd(120000, 300000);
         a.meetCd = nowMs + 45000; c.meetCd = nowMs + 45000;
-        if (U.chance(0.22)) {
-          const [from, other] = U.chance(0.5) ? [a.id, c.id] : [c.id, a.id];
-          SIM.crewChat(from, U.pick(DATA.C.hallway).replace(/\{o\}/g, '@' + other));
-        }
+        // (silenced) hallway encounters are wordless now — they pause and face each other, no canned chatter
         break;
       }
     }
