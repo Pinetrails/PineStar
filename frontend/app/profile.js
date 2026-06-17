@@ -22,6 +22,7 @@
   const TAGS = ['code', 'research', 'general'];   // the interest vocabulary (mirrors classify.js getTag)
   const HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;  // a tag's weight halves every ~2 weeks of silence (recency)
   const CALIBRATING_N = 5;                         // observations before the read is "known" (else: calibrating)
+  const FAMILIAR_N = 24;                           // observations at which "STATION FAMILIARITY" reads 100% (honest meter ceiling)
   const SEED_WEIGHT = 2;                           // a cold-start seed's pull, ~2 observations' worth, fades as real data accrues
 
   function fresh() { return { v: 1, tags: {}, seed: null, enabled: true, total: 0 }; }
@@ -84,6 +85,20 @@
     return s;
   }
 
+  // the single tag that contributed MOST to an item's score — the honest, deterministic source of the
+  // "because you…" line on a recommendation. Returns null when there is no positive contribution (a cold
+  // profile, or an item that doesn't intersect the user's interests) so the UI can stay silent rather than
+  // fabricate a reason.
+  function explain(profile, itemTags, now) {
+    const v = vector(profile, now);
+    let bestTag = null, best = 0;
+    for (const k of TAGS) {
+      const c = (itemTags && typeof itemTags[k] === 'number' ? itemTags[k] : 0) * v[k];
+      if (c > best) { best = c; bestTag = k; }
+    }
+    return bestTag;
+  }
+
   // the human-facing read: the vector, the dominant interest, how many samples, and whether it's earned.
   function summary(profile, now) {
     const v = vector(profile, now);
@@ -91,7 +106,13 @@
     let dominant = null, best = -1;
     for (const k of TAGS) if (v[k] > best) { best = v[k]; dominant = k; }
     const hasSignal = samples > 0 || !!(profile.seed && profile.seed.tag);
-    return { affinity: v, dominant: hasSignal && best > 0 ? dominant : null, samples, calibrating: samples < CALIBRATING_N };
+    return {
+      affinity: v,
+      dominant: hasSignal && best > 0 ? dominant : null,
+      samples,
+      calibrating: samples < CALIBRATING_N,
+      familiarity: Math.min(1, samples / FAMILIAR_N)   // 0..1 — the honest "how well I know you" meter (CALIBRATING below the floor)
+    };
   }
 
   function setEnabled(profile, on) { if (profile) profile.enabled = !!on; return profile; }
@@ -115,5 +136,5 @@
     return p;
   }
 
-  return { fresh, observe, seed, affinity, score, vector, summary, setEnabled, forget, hydrate, TAGS, CALIBRATING_N, HALF_LIFE_MS };
+  return { fresh, observe, seed, affinity, score, explain, vector, summary, setEnabled, forget, hydrate, TAGS, CALIBRATING_N, FAMILIAR_N, HALF_LIFE_MS };
 });

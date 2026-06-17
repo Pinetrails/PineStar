@@ -132,4 +132,29 @@ A.eq(sd.seed, null, 'seed is a no-op while learning is paused');
 A.eq(P.forget(P.fresh()).enabled, true, 'forget on an enabled profile keeps learning ON');
 A.eq(P.forget({}).enabled, true, 'forget defaults a flagless profile to enabled');
 
+/* ---------- familiarity: the honest "how well I know you" meter (0..1) ---------- */
+const FN = P.FAMILIAR_N;
+A.eq(P.summary(P.fresh(), 0).familiarity, 0, 'a fresh profile reads 0 familiarity');
+const famFull = P.fresh(); for (let k = 0; k < FN; k++) P.observe(famFull, { tag: 'code' }, 0);
+A.eq(P.summary(famFull, 0).familiarity, 1, 'familiarity reaches 1 at FAMILIAR_N samples');
+const famOver = P.fresh(); for (let k = 0; k < FN + 10; k++) P.observe(famOver, { tag: 'code' }, 0);
+A.eq(P.summary(famOver, 0).familiarity, 1, 'familiarity clamps at 1 past the ceiling');
+const famHalf = P.fresh(); for (let k = 0; k < Math.floor(FN / 2); k++) P.observe(famHalf, { tag: 'code' }, 0);
+const fh = P.summary(famHalf, 0).familiarity;
+A.ok(fh > 0 && fh < 1, 'familiarity rises between 0 and the ceiling as samples accrue');
+// a weighted (shipped) observation lifts the lane weight but NOT the sample count, so familiarity tracks samples honestly
+const famW = P.fresh(); P.observe(famW, { tag: 'code', weight: 3 }, 0);
+A.eq(P.summary(famW, 0).familiarity, 1 / FN, 'familiarity counts observations, not weight (one shipped item = one sample)');
+
+/* ---------- explain(): the deterministic because-tag behind a recommendation ---------- */
+A.eq(P.explain(P.fresh(), { code: 1 }, 0), null, 'a cold profile explains nothing (never fabricates a reason)');
+const exC = P.fresh(); P.observe(exC, { tag: 'code' }, 0);
+A.eq(P.explain(exC, { code: 1 }, 0), 'code', 'a code item for a code-leaning user is explained by code');
+A.eq(P.explain(exC, { research: 1 }, 0), null, 'an item the user has no affinity for yields no reason (null), not a guess');
+const exR = P.fresh(); for (let k = 0; k < 4; k++) P.observe(exR, { tag: 'research' }, 0); P.observe(exR, { tag: 'code' }, 0);
+A.eq(P.explain(exR, { code: 0.5, research: 0.5 }, 0), 'research', 'a blended item is explained by the lane that dominates the user’s interest');
+// a seed-only (cold) profile still yields a reason — day-one recommendations are honestly explainable
+const exSeed = P.fresh(); P.seed(exSeed, 'research');
+A.eq(P.explain(exSeed, { research: 1 }, 0), 'research', 'a seeded cold-start profile explains its day-one picks');
+
 A.report('profile');

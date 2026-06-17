@@ -61,6 +61,7 @@ const ProfileStore = (() => {
   // ---- read surface (Phase 1 UI + the recommender consume these) ----
   function summary() { return ready() ? Profile.summary(profile, now()) : null; }
   function score(itemTags) { return ready() ? Profile.score(profile, itemTags, now()) : 0; }
+  function explain(itemTags) { return ready() ? Profile.explain(profile, itemTags, now()) : null; }   // the tag behind a "because you…" line
   function serialize() { return profile || undefined; }   // folded into the save envelope by App.persist()
 
   // ---- glass-box controls (Phase 1 wires these to the UI) ----
@@ -68,5 +69,5 @@ const ProfileStore = (() => {
   function enabled() { return ready() ? profile.enabled !== false : true; }
   function forget() { if (typeof Profile !== 'undefined') { profile = Profile.forget(profile || Profile.fresh()); try { persistFn(); } catch (_) {} } }
 
-  return { init, observeMessage, seed, summary, score, serialize, setEnabled, enabled, forget };
+  return { init, observeMessage, seed, summary, score, explain, serialize, setEnabled, enabled, forget };
 })();

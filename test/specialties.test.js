@@ -32,6 +32,13 @@ for (const b of builtins) {
   A.ok(Array.isArray(b.starters) && b.starters.length >= 1, b.id + ' offers starter tasks');
   A.eq(b.custom, false, b.id + ' is a built-in (custom=false)');
   A.ok(PERSONA_IDS.indexOf(b.persona) >= 0, b.id + ' recommends a REAL persona: ' + b.persona);
+  // ranking tags: the recommender's fuel — at least one positive weight over the known interest lanes, frozen.
+  A.ok(b.tags && typeof b.tags === 'object', b.id + ' carries ranking tags');
+  const tagKeys = Object.keys(b.tags);
+  A.ok(tagKeys.length >= 1, b.id + ' has at least one interest lane');
+  A.ok(tagKeys.every(k => ['code', 'research', 'general'].indexOf(k) >= 0), b.id + ' tags use only the known lanes');
+  A.ok(tagKeys.every(k => b.tags[k] > 0), b.id + ' tag weights are all positive');
+  A.throws(() => { b.tags.general = 9; }, b.id + ' tags are frozen (catalog is immutable)');
 }
 
 /* built-ins are frozen — a stray mutation must not poison the shared catalog */
@@ -51,6 +58,7 @@ A.eq(S.customs().length, 0, 'no customs at first (node has no localStorage)');
 const saved = S.saveCustom({ name: 'Night Owl', emoji: '🦉', tagline: 'after-hours ops', purpose: 'Run things while the Commander sleeps.', manual: '- Be quiet.', persona: 'deadpan-bot' });
 A.ok(saved.id.indexOf('custom-') === 0, 'a saved custom gets a custom- id: ' + saved.id);
 A.eq(saved.custom, true, 'a saved custom is flagged custom=true');
+A.ok(saved.tags && Object.keys(saved.tags).length >= 1, 'a saved custom carries ranking tags (classified in-browser; general fallback under node)');
 A.ok(S.exists(saved.id), 'the custom is now in the registry');
 A.eq(S.customs().length, 1, 'exactly one custom after one save');
 A.eq(S.list().length, builtins.length + 1, 'list() = built-ins + customs');
