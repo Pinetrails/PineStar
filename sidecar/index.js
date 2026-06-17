@@ -23,6 +23,7 @@ const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
+const { makeRunStore } = require('./runstore.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
@@ -98,6 +99,27 @@ const ledgerIo = {
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
 const budget = makeBudget({ caps: { day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
+
+// run-history log (M-save P4): the OUTCOME of each finished run ({runId, agentId, reason, turns, tokens, usd,
+// title, ts}), append-only + fsync'd like the ledger and a sibling of the fs jail (the agent can't rewrite its
+// own history). The ledger answers "what did it cost"; this answers "what happened" — the durable substrate a
+// future autopsy/replay view reads. It learns nothing; the cortex does that from the live message log.
+const RUNS_FILE = path.join(WORKSPACES, 'runs.jsonl');
+const runsIo = {
+  readAll() {
+    try {
+      return fs.readFileSync(RUNS_FILE, 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+    } catch (e) { return []; }
+  },
+  append(entry) {
+    let fd = null;
+    try { fd = fs.openSync(RUNS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
+    catch (e) { console.warn('[runs] append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+  }
+};
+const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
@@ -409,6 +431,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
   if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/runs') === 0) return serveRuns(req, res);
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
@@ -818,6 +841,12 @@ async function runOnce(o) {
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
     // result.usd/tokens already INCLUDE the summarizer's spend (the loop folds it into spentUsd as it accrues).
     try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: (result && result.usd) || 0, tokens: (result && result.tokens) || 0 }); } catch (_) {}
+    // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
+    try {
+      let title = '';
+      for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title });
+    } catch (_) {}
     budget.clearLive(runId);
   }
   return result;
@@ -1223,6 +1252,18 @@ async function handleSaveWrite(req, res) {
     const result = saveStore.save(agentId, body);
     json(200, result);
   } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
+}
+// GET /api/runs?agent=<id>&limit=<n> — the agent's run history (M-save P4), newest-first. Read-only; the store
+// is append-only and a sibling of the fs jail, so the agent can neither read nor rewrite its own history.
+function serveRuns(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+    json(200, { runs: runStore.list(agent, { limit }) });
+  } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
 }
 async function serveStatic(req, res) {
   try {
