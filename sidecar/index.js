@@ -45,7 +45,8 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
-const { execFile } = require('node:child_process');       // the shadow-git runner lives ONLY in this ambient module
+const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
+const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -995,6 +996,9 @@ async function runOnce(o) {
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() } }).register(registry);
+  // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
+  // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
+  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   throttleSearch(registry);
 
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
@@ -1037,7 +1041,7 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
-  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId, streamId });
+  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -1117,15 +1121,18 @@ async function runOnce(o) {
     const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
     const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
     if (n > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical call blocked (loop guard)', summary: 'loop-break' };
-    // CHECKPOINT NET (opt-in): snapshot the workspace BEFORE a mutating tool so the turn is one rollback away.
-    // Content-deduped + fail-open in the store, so an unchanged workspace or a git hiccup costs nothing / never throws.
-    if (CHECKPOINTS_ENABLED && mutatesWorkspace(c.name)) {
+    // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
+    // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
+    // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
+    // or a git hiccup costs nothing and never throws into the run.
+    if (mutatesWorkspace(c.name) && (CHECKPOINTS_ENABLED || /^shell\./.test(c.name))) {
       try {
         const snap = await checkpointStore.snapshot(agentId, { runId, turn: cpTurn, label: c.name });
         if (snap && snap.created) { emit('checkpoint.created', { agentId, runId, turn: cpTurn, snapshotId: snap.id, files: snap.files || 0, bytes: snap.bytes || 0, label: c.name }); cpTurn++; }
       } catch (_) { /* a checkpoint failure must never break a run */ }
     }
-    let r = await registry.dispatch(c, ctx);
+    const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
+    let r = await registry.dispatch(c, dctx);
     // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
     if (r && typeof r.content === 'string' && r.content.length) {
       if (toolBytes >= CAPS.maxToolBytes) {
