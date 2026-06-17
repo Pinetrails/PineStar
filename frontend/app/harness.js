@@ -93,14 +93,15 @@ const Harness = (() => {
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
   async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal }) {
-    const key = getKey(), model = getModel();
-    // desktop: the sidecar already holds the key (from the keychain, in its env) — don't send it.
-    if (!DESKTOP && !key) throw new Error('no API key set');
+    const key = getKey(), model = getModel(), provider = getProv();
+    // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
+    // sidecar's env (keychain). Neither needs a key sent from here.
+    if (provider !== 'codex' && !DESKTOP && !key) throw new Error('no API key set');
     if (!model) throw new Error('no model selected');
 
     let res;
     try {
-      const reqBody = { model, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
+      const reqBody = { model, provider, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
       if (!DESKTOP) reqBody.key = key;
       res = await fetch('/api/run', {
         method: 'POST', signal,

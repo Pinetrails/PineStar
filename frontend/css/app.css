@@ -68,6 +68,22 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .connect-panel .lead { font-size: 16px; margin-bottom: 16px; }
 .connect-panel label { display: block; color: var(--ph); letter-spacing: 1px; margin: 12px 0 4px; font-size: 16px; }
 .provider-row { display: flex; align-items: center; gap: 10px; }
+
+/* ChatGPT-subscription (Codex OAuth) sign-in block on the connect screen */
+.codex-signin {
+  border: 2px solid var(--ph-dim); border-radius: 6px; padding: 12px;
+  background: rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 10px;
+}
+.codex-status { color: var(--ph-bright); font-size: 16px; min-height: 20px; }
+.codex-status.ok { color: var(--gold); }
+.codex-status.bad { color: var(--bad); }
+.codex-status .conn-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+.codex-code {
+  font-size: 30px; letter-spacing: 6px; text-align: center; color: var(--ink);
+  background: var(--ph); padding: 8px 6px; border-radius: 5px; user-select: all;
+  text-shadow: none; font-weight: bold;
+}
+.codex-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hint { font-size: 15px; margin-top: 4px; min-height: 18px; }
 .connect-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
 .msg { min-height: 20px; color: var(--bad); font-size: 16px; margin-top: 10px; }

@@ -18,7 +18,8 @@ function walk(dir, out) {
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return out; } // dir may not exist yet
   for (const e of entries) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
+    // skip agent-generated runtime scratch (sidecar/workspaces/**) and deps — they are not project source
+    if (e.isDirectory()) { if (e.name === 'workspaces' || e.name === 'node_modules') continue; walk(p, out); }
     else if (e.name.endsWith('.js')) out.push(p);
   }
   return out;
