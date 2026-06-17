@@ -41,6 +41,9 @@ const { makeSseHub } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
+const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
+const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
+const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -64,6 +67,19 @@ const BUDGET_CAPS = {
   global: num(process.env.SKYNET_BUDGET_GLOBAL, 100)
 };
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
+// ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
+// is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the LIVE BYOK
+// key (runtimeKey); a job with no model falls back to SKYNET_DEFAULT_MODEL; absent either, a due job
+// no-capability-skips rather than firing (cron is inert without a configured key). Cadence + the self-healing
+// lease ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
+const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CRON_ENABLED || '').trim());
+const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
+const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
+const CRON_DEFAULT_MODEL = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+const CRON_PERSONA = 'You are an autonomous SKYNET station agent running a SCHEDULED routine — no human is watching. '
+  + 'Carry out the task with your REAL tools (web search/read, files, memory); ground every factual claim in what the '
+  + 'tools actually return and cite sources; save any durable deliverable to your workspace with fs_write. Be concise. '
+  + 'If there is genuinely nothing new or noteworthy to report this run, reply with EXACTLY "[SILENT]" and nothing else.';
 // The agent's toolset is NOT a host-side constant — it is projected from the objects placed in the
 // agent's room (CAP_REGISTRY: computer/dish/cabinet/notebook). See handleRun's station + resolveTools.
 
@@ -362,6 +378,42 @@ const connectors = makeConnectorManager({
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
+/* ---- cron / scheduled routines store + tick driver (CRON Commit 4b). The job DEFINITIONS persist in a
+   PROTECTED sibling of the fs jail (WORKSPACES/cron.jobs.json, the allowlist idiom above: versioned envelope,
+   atomic temp+rename, load→corrupt→empty fail-closed) so the agent's own fs.* tools can neither read nor rewrite
+   its own schedule. The cron-math + lifecycle reducer are pure (cron.js / cron-store.js); the timer, the
+   now-source, id minting and this fs are the ambient half that lives ONLY here. The driver is constructed
+   unconditionally (cheap, no I/O), but it only ever runs when the boot block below arms the timer behind the
+   SKYNET_CRON_ENABLED gate — so with cron off this is dead weight, never a behavior change. ---- */
+const CRON_FILE = path.join(WORKSPACES, 'cron.jobs.json');
+function loadCronJobs() {
+  try { return cronStore.loadEnvelope(fs.readFileSync(CRON_FILE, 'utf8')).jobs; }
+  catch (e) { return []; }   // missing/corrupt -> nothing scheduled (fail-closed)
+}
+let cronJobs = loadCronJobs();
+function saveCronJobs() {   // throws on failure (the CRUD routes let it surface); the driver's setJobs catches+logs
+  const tmp = CRON_FILE + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cronStore.toEnvelope(cronJobs)));
+  fs.renameSync(tmp, CRON_FILE);   // atomic replace
+}
+// validated + redacted cron telemetry -> the sidecar console AND the live station HUD (the SAME SSE bridge the
+// channel/work-item events ride). No secret is ever on a cron.* payload; redact() runs as a second backstop.
+const cronBus = { emit: (name, payload) => {
+  try { console.log('[cron]', name, JSON.stringify(payload)); } catch (_) {}
+  try { sse.broadcast(name, payload); } catch (_) {}
+} };
+const cronEmitValidated = makeEmitter(cronBus, e => console.warn('[cron-event]', e.kind, e.event, (e.errors || []).join(';')));
+const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redact(payload)); } catch (_) { return false; } };
+// the autonomous tick driver — pure orchestration with every ambient dep injected here (timer/now/id/fs/key).
+const cronDriver = makeCronDriver({
+  getJobs: () => cronJobs,
+  setJobs: (jobs) => { cronJobs = jobs; try { saveCronJobs(); } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); } },
+  runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
+  emit: cronEmit, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
+  getKey: () => runtimeKey, defaultModel: CRON_DEFAULT_MODEL, persona: CRON_PERSONA, maxRunMs: CRON_MAX_RUN_MS
+});
+let cronTimer = null;
+
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
@@ -484,6 +536,12 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
@@ -527,6 +585,18 @@ server.listen(PORT, '127.0.0.1', () => {
     for (const c of connectorConfigs) { if (c && c.enabled !== false && c.url) connectors.configure(c.id, c).catch(() => {}); }
     if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
+  // cron (OPT-IN via SKYNET_CRON_ENABLED): RESUME by running ONE immediate reconcile tick — catching up any
+  // fires missed while the host was down (at-most-one within grace, else fast-forward+skip; never a backlog) —
+  // BEFORE arming the interval. Inert when off: no timer, no fire, the browser path is byte-identical.
+  try {
+    if (CRON_ENABLED) {
+      console.log('  · cron enabled — ' + cronJobs.length + ' routine(s); running boot reconcile');
+      cronDriver.applyTick(Date.now());                                  // resume reconcile BEFORE the timer arms
+      cronTimer = setInterval(() => { try { cronDriver.applyTick(Date.now()); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
+      if (cronTimer.unref) cronTimer.unref();                            // the http server keeps the process alive; the ticker alone shouldn't
+      console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
+    }
+  } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
 });
 
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
@@ -623,6 +693,154 @@ async function handleConnectorRefresh(req, res) {
   const id = String(body.id || '').trim();
   let result; try { result = await connectors.refresh(id); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
   json(200, Object.assign({ status: connectors.status(id) }, result));
+}
+
+/* ----------------------------- /api/cron: the ROUTINES CRUD + preview + run-now -----------------------------
+   The job DEFINITIONS are server-owned (the schedule + the boot-frozen secrets, never on the bus, §3.7) so the
+   panel is a thin CRUD client over these routes — render from GET, mutate via POST, re-fetch. The pure store
+   reducers (cron-store.js) own the record math; these handlers are the ambient glue (parse a schedule string,
+   mint an id, persist via the throwing saveCronJobs so a failed write surfaces as a 500). A persisted CronJob
+   never embeds the API key — a fire pulls it from runtimeKey at run time. Schedule strings are parsed with the
+   injected wall clock; v1 fires interval + once only, so a 5-field cron string is refused (not silently stored
+   as un-fireable) with an actionable message. 127.0.0.1-bound like every other route. */
+
+// parse a user-supplied schedule string into a stored schedule, or throw a 400-able Error. Rejects an
+// unparseable string AND a recognised-but-deferred 5-field cron expr (honest: v1 never fires those).
+function parseCronScheduleOr400(str, now) {
+  const sched = cron.parseSchedule(String(str == null ? '' : str), now);
+  if (!sched) { const e = new Error("couldn't read that schedule — try \"every 30m\", \"in 2h\", or an ISO timestamp like 2026-07-01T09:00"); e.code = 400; throw e; }
+  if (sched.kind === 'cron') { const e = new Error('5-field cron expressions are not fired yet — use "every 30m", "every 1h", "in 2h", or an ISO timestamp'); e.code = 400; throw e; }
+  return sched;
+}
+
+// GET /api/cron — the job snapshot the panel renders from (no secrets in a CronJob). `enabled` = is the tick
+// driver actually armed (SKYNET_CRON_ENABLED) so the panel can honestly say whether routines will fire.
+function handleCronList(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ jobs: cronJobs, enabled: CRON_ENABLED, tickMs: CRON_TICK_MS }));
+}
+
+// POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, deliver?, enabled?, repeat? }
+function handleCronCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    const id = crypto.randomUUID();
+    try {
+      cronJobs = cronStore.createJob(cronJobs, {
+        id: id, name: body.name, prompt: body.prompt, schedule: schedule,
+        agentId: body.agentId, model: body.model, deliver: body.deliver,
+        enabled: body.enabled, repeat: body.repeat
+      }, { id: id, now: Date.now() });
+      saveCronJobs();
+    } catch (e) { return json(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
+    json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/cron/update — edit fields + pause/resume (folded via an `enabled` flag in the patch). body: { id, patch }
+function handleCronUpdate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!cronStore.getJob(cronJobs, id)) return json(404, { error: 'no such routine' });
+    const patch = Object.assign({}, body.patch || {});
+    if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
+      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    }
+    // pause/resume is not an EDITABLE field on updateJob — pull it out and apply via the dedicated reducers.
+    let enabled; if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) { enabled = patch.enabled !== false; delete patch.enabled; }
+    try {
+      cronJobs = cronStore.updateJob(cronJobs, id, patch, { now: Date.now() });
+      if (enabled === true) cronJobs = cronStore.resumeJob(cronJobs, id, { now: Date.now() });
+      else if (enabled === false) cronJobs = cronStore.pauseJob(cronJobs, id);
+      saveCronJobs();
+    } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/cron/remove — delete a routine. body: { id }
+function handleCronRemove(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    try { cronJobs = cronStore.removeJob(cronJobs, id); saveCronJobs(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    json(200, { ok: true });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/cron/preview — validate a schedule string + return the next up-to-5 fire times (the injected clock,
+// never bare Date.now in the math). Net-new GUI value Hermes lacks entirely. body: { schedule:<string> }
+function handleCronPreview(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const now = Date.now();
+    let sched; try { sched = parseCronScheduleOr400(body.schedule, now); } catch (e) { return json(e.code || 400, { ok: false, error: e.message }); }
+    const next = [];
+    let t = cron.nextFireAt(sched, null, now);
+    for (let i = 0; i < 5 && t != null && !isNaN(t); i++) {
+      next.push(cron._internals.iso(t));
+      if (sched.kind === 'once') break;                                 // a one-shot has exactly one fire
+      t = cron.nextFireAt(sched, cron._internals.iso(t), t);           // advance one period from the last
+    }
+    json(200, { ok: true, kind: sched.kind, display: sched.display, next: next });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* POST /api/cron/run — run a routine NOW, streamed as NDJSON exactly like /api/run (strictly better than Hermes,
+   whose `cron run` only nudges next_run_at). The manual fire uses the SAME autonomous posture the scheduled fire
+   will (surface:'autonomous', trigger:'schedule') so "test it now" exercises the real unattended path, and it
+   records the outcome into the job's last-run record + emits cron.fire/cron.result to the HUD. body: { id } */
+async function handleCronRun(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const job = cronStore.getJob(cronJobs, String(body.id || ''));
+  if (!job) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'no such routine' })); }
+  const model = (job.model && String(job.model).trim()) || CRON_DEFAULT_MODEL;
+  const key = runtimeKey;
+  if (!model || !key) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'connect an agent first — a key + model are required to run a routine' })); }
+
+  res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  const ac = new AbortController();
+  const runId = crypto.randomUUID();
+  runs.set(runId, ac);
+  req.on('close', () => { ac.abort(); runs.delete(runId); });
+  const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
+  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
+  const state = { buf: '', errMsg: null, reason: null, transient: false };
+  const teeEmit = (name, payload) => {
+    try { emit(name, payload); } catch (_) {}
+    const p = payload || {};
+    if (name === 'agent.token') state.buf += (p.delta || '');
+    else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
+    else if (name === 'agent.run.end') state.reason = p.reason;
+  };
+  try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
+  try {
+    await runOnce({
+      key: key, model: model, system: CRON_PERSONA, messages: [{ role: 'user', content: String(job.prompt || '') }],
+      agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
+      runId: runId, surface: 'autonomous', trigger: 'schedule'
+    });
+  } catch (e) {
+    state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
+    try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
+  } finally {
+    runs.delete(runId);
+    const ok = !state.errMsg;
+    try {
+      cronJobs = cronStore.markRun(cronJobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() });
+      saveCronJobs();
+    } catch (_) {}
+    try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
+    try { res.end(); } catch (_) {}
+  }
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
