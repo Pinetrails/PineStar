@@ -22,6 +22,40 @@
   --ok: #69ff8e;              /* the "online / success" status green — tokenized so every surface themes through it */
   /* color grade applied to the station feed so the world sits inside the terminal */
   --cam-grade: saturate(0.8) sepia(0.12) hue-rotate(-5deg) contrast(1.08) brightness(0.9);
+
+  /* ============================================================
+     DESIGN SYSTEM SCALE — the one scale everything snaps to.
+     (type/letter/space/radius adopted from agent/design-system; the
+      colour roles stay at their richer trunk values on purpose.)
+       type   6 steps, floor 11px so VT323 stays crisp
+       space  4px base unit · radius one family
+     ============================================================ */
+  --fs-0: 11px;  --fs-1: 13px;  --fs-2: 15px;  --fs-3: 18px;  --fs-4: 24px;  --fs-5: 34px;
+  --ls-1: 0.5px; --ls-2: 1px;   --ls-3: 2px;   --ls-4: 4px;
+  --s-1: 4px;    --s-2: 8px;    --s-3: 12px;   --s-4: 16px;   --s-5: 24px;
+  --r-sm: 3px;   --r: 7px;      --r-lg: 11px;
+
+  /* ---- PREMIUM CRT SURFACE: the shared depth recipe (windows + panels) ----
+     A molded-bezel monitor, outside-in: outer phosphor ring → black casing
+     line → bloom → drop shadow → deep inner vignette → top edge highlight.
+     One light source (top-left) so every raised surface agrees. */
+  --bezel:
+    0 0 0 2px var(--ph),
+    0 0 0 3.5px rgba(0, 0, 0, 0.9),
+    0 0 22px var(--ph-glow2),
+    0 12px 34px rgba(0, 0, 0, 0.85),
+    inset 0 0 56px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 228, 180, 0.07);
+  /* recessed control well — values glow up out of a dark inset floor */
+  --well:
+    inset 0 2px 7px rgba(0, 0, 0, 0.92),
+    inset 0 0 0 1px var(--ph-dim),
+    inset 0 -1px 0 rgba(255, 228, 180, 0.05);
+  /* curved-glass overlay — corner vignette + top-left specular + faint glare */
+  --glass:
+    radial-gradient(ellipse 52% 32% at 25% 9%, rgba(255, 242, 214, 0.07), transparent 60%),
+    radial-gradient(ellipse 108% 96% at 50% 46%, transparent 60%, rgba(0, 0, 0, 0.52) 100%),
+    linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
 }
 body.theme-amber {
   --ph: #ffaa33; --ph-bright: #ffd9a3; --ph-dim: #b9791c; --ph-faint: #1e1404;
@@ -63,10 +97,11 @@ body {
 }
 
 /* ====== CRT GLASS: scanlines + bezel vignette + slow roll band ====== */
-body::after { /* scanlines over EVERYTHING */
+body::after { /* scanlines + aperture-grille over EVERYTHING */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 950;
   background:
-    repeating-linear-gradient(0deg, rgba(0,0,0,0.26) 0 1px, transparent 1px 3px);
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.26) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(255,80,40,0.035) 0 1px, rgba(40,180,120,0.022) 1px 2px, rgba(60,120,255,0.035) 2px 3px);
 }
 body.no-scan::after { display: none; }
 body::before { /* curved-glass vignette + corner darkening */
@@ -101,21 +136,13 @@ body:not(.no-flicker) #app { animation: flick 7s infinite; }
   background:
     radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
     var(--panel);
-  box-shadow:
-    0 0 0 2px var(--ph),
-    0 0 0 3.5px rgba(0, 0, 0, 0.9),
-    0 0 22px var(--ph-glow2),
-    0 9px 28px rgba(0, 0, 0, 0.85),
-    inset 0 0 52px rgba(0, 0, 0, 0.85),
-    inset 0 1px 0 rgba(255, 228, 180, 0.07);
+  box-shadow: var(--bezel);
 }
-/* curved-glass vignette + diagonal glare on every panel */
+/* curved-glass: top-left specular + corner vignette + faint diagonal glare */
 #topbar::before, #left::before, #right::before, #bottombar::before, #center::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
   border-radius: inherit;
-  background:
-    radial-gradient(ellipse 108% 96% at 50% 45%, transparent 60%, rgba(0, 0, 0, 0.5) 100%),
-    linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
+  background: var(--glass);
 }
 
 /* panel header: glyph + title, gradient rule, dim auxiliary readout on the right */
@@ -355,30 +382,69 @@ body.no-scan .crt-scan { display: none; }
 #save-dot { color: var(--ph-faint); font-size: 13px; transition: color 0.3s; }
 #save-dot.flash { color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
 
-/* ================= TERMINAL WINDOWS (floating) ================= */
+/* ================= TERMINAL WINDOWS (floating) =================
+   The shared window shell. Every floating window (dossier, settings,
+   kanban, prop consoles…) is built from the same molded-CRT material as
+   the panels: bezel + recessed curved-glass overlay + a CRT power-on +
+   an inverted-chip header. Prop consoles (.pw) keep their own power-on
+   and amber-on-dark title; everything else inherits this verbatim. */
 #terms { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+/* focus scrim — dims & desaturates the station so the open window owns the eye.
+   Mounted under the lowest window (z 480 < the 501+ that zTop() hands out). */
+.term-scrim {
+  position: fixed; inset: 0; pointer-events: none; z-index: 480;
+  background: radial-gradient(ellipse 72% 66% at 50% 47%, rgba(0,0,0,0.30) 0%, rgba(0,0,0,0.62) 100%);
+  -webkit-backdrop-filter: saturate(0.72); backdrop-filter: saturate(0.72);
+  animation: scrim-in 0.22s ease-out;
+}
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
 .term {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -52%);
   width: 480px; max-width: 94vw; max-height: 82vh;
-  background: rgba(4, 2, 1, 0.97);
-  border: 2px solid var(--ph);
-  border-radius: 7px;
-  outline: 1px solid rgba(0,0,0,0.9); outline-offset: 2px;
-  box-shadow: 0 0 30px rgba(0,0,0,0.9), 0 0 16px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,0.6);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
+    rgba(5, 3, 1, 0.97);
+  box-shadow: var(--bezel);
   pointer-events: auto; display: flex; flex-direction: column; overflow: hidden;
+  transform-origin: center; animation: term-power 0.42s ease-out;
+}
+/* recessed curved-glass overlay sits over the screen content (not the header) */
+.term::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 6; background: var(--glass);
+}
+@keyframes term-power {
+  0%   { transform: translate(-50%, -52%) scale(1, 0.012); filter: brightness(6); }
+  9%   { transform: translate(-50%, -52%) scale(1, 0.04); }
+  46%  { transform: translate(-50%, -52%) scale(1.004, 1.03); filter: brightness(2.2); }
+  100% { transform: translate(-50%, -52%) scale(1, 1); filter: brightness(1); }
 }
 .term-head {
-  display: flex; justify-content: space-between; align-items: center;
-  background: rgba(0,0,0,0.45); color: var(--ph); padding: 3px 10px; cursor: grab; flex-shrink: 0;
-  border-bottom: 2px solid var(--ph); text-shadow: 0 0 6px var(--ph-glow2);
+  display: flex; justify-content: space-between; align-items: center; gap: var(--s-2);
+  background: linear-gradient(180deg, var(--ph-glow2), transparent);
+  color: var(--ph); padding: 5px 7px 5px 10px; cursor: grab; flex-shrink: 0;
+  position: relative; z-index: 7;
+  border-bottom: 1px solid var(--ph-dim); text-shadow: 0 0 6px var(--ph-glow2);
 }
-.term-title { color: var(--ph); letter-spacing: 3px; font-size: 16px; }
+.term-head:active { cursor: grabbing; }
+.term-title { color: var(--ph); letter-spacing: var(--ls-3); font-size: var(--fs-2); }
+/* inverted title chip on the main windows — ties them to the panel header
+   language; prop consoles keep amber-on-dark + their per-prop accent bullet */
+.term:not(.pw) .term-title {
+  color: var(--ink); background: var(--ph); padding: 1px 10px;
+  border-radius: var(--r-sm); box-shadow: 0 0 12px var(--ph-glow2); text-shadow: none;
+}
 .term-x {
-  background: none; border: 2px solid var(--ph); color: var(--ph);
-  font-family: inherit; cursor: pointer; font-size: 13px; padding: 0 6px; text-shadow: none;
+  background: rgba(0,0,0,0.35); border: 1px solid var(--ph-dim); color: var(--ph);
+  font-family: inherit; cursor: pointer; font-size: var(--fs-1); line-height: 1;
+  padding: 2px 7px; border-radius: var(--r-sm); text-shadow: none;
 }
-.term-x:hover { background: var(--ph-faint); color: var(--ph-bright); }
-.term-body { padding: 10px 12px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--ph) transparent; }
+.term-x:hover { background: var(--ph-faint); color: var(--ph-bright); border-color: var(--ph); }
+.term-body {
+  padding: var(--s-3) var(--s-4); overflow-y: auto; position: relative; z-index: 5;
+  scrollbar-width: thin; scrollbar-color: var(--ph) transparent;
+}
 .term-body::-webkit-scrollbar { width: 6px; }
 .term-body::-webkit-scrollbar-thumb { background: var(--ph); }
 
@@ -512,7 +578,7 @@ body.no-scan .crt-scan { display: none; }
 
 /* ================= STATS ================= */
 .st-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.st-card { border: 1px solid var(--ph-dim); background: rgba(0,0,0,0.3); padding: 4px 6px; text-align: center; }
+.st-card { box-shadow: var(--well); background: linear-gradient(180deg, #0a0602, #050301); padding: var(--s-2) var(--s-2); text-align: center; border-radius: var(--r-sm); }
 .st-card i { display: block; font-style: normal; font-size: 11px; color: var(--ph-dim); letter-spacing: 1px; }
 .st-card b { font-size: 17px; }
 #st-chart { width: 100%; border: 1px solid var(--ph-dim); margin-top: 2px; }

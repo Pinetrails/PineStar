@@ -56,9 +56,8 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .panel {
   position: relative; background:
     radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%), var(--panel);
-  border: 1px solid rgba(0,0,0,.85); border-radius: 9px;
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2),
-    0 9px 28px rgba(0,0,0,.85), inset 0 0 52px rgba(0,0,0,.85);
+  border: 1px solid rgba(0,0,0,.85); border-radius: var(--r-lg);
+  box-shadow: var(--bezel);
   padding: 20px 22px;
 }
 .panel h2 { color: var(--ink); background: var(--ph); display: inline-block; padding: 2px 12px; margin-bottom: 12px; letter-spacing: 2px; }
@@ -562,10 +561,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   gap: 6px; margin: 10px 0 8px;
 }
 .stat-cell {
-  background: var(--ph-faint); border: 1px solid var(--ph-dim);
-  padding: 8px 6px; text-align: center;
+  background: linear-gradient(180deg, #0a0602, #050301); box-shadow: var(--well);
+  padding: var(--s-3) var(--s-2); text-align: center; border-radius: var(--r-sm);
 }
-.stat-val { font-size: 22px; color: var(--ph-bright); letter-spacing: 1px; line-height: 1; }
+.stat-val { font-size: var(--fs-4); color: var(--ph-bright); letter-spacing: 1px; line-height: 1; text-shadow: 0 0 12px var(--ph-glow2); }
 .stat-val.pos { color: var(--gold); }
 .stat-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-top: 4px; }
 
