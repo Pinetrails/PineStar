@@ -536,6 +536,12 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
@@ -687,6 +693,154 @@ async function handleConnectorRefresh(req, res) {
   const id = String(body.id || '').trim();
   let result; try { result = await connectors.refresh(id); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
   json(200, Object.assign({ status: connectors.status(id) }, result));
+}
+
+/* ----------------------------- /api/cron: the ROUTINES CRUD + preview + run-now -----------------------------
+   The job DEFINITIONS are server-owned (the schedule + the boot-frozen secrets, never on the bus, §3.7) so the
+   panel is a thin CRUD client over these routes — render from GET, mutate via POST, re-fetch. The pure store
+   reducers (cron-store.js) own the record math; these handlers are the ambient glue (parse a schedule string,
+   mint an id, persist via the throwing saveCronJobs so a failed write surfaces as a 500). A persisted CronJob
+   never embeds the API key — a fire pulls it from runtimeKey at run time. Schedule strings are parsed with the
+   injected wall clock; v1 fires interval + once only, so a 5-field cron string is refused (not silently stored
+   as un-fireable) with an actionable message. 127.0.0.1-bound like every other route. */
+
+// parse a user-supplied schedule string into a stored schedule, or throw a 400-able Error. Rejects an
+// unparseable string AND a recognised-but-deferred 5-field cron expr (honest: v1 never fires those).
+function parseCronScheduleOr400(str, now) {
+  const sched = cron.parseSchedule(String(str == null ? '' : str), now);
+  if (!sched) { const e = new Error("couldn't read that schedule — try \"every 30m\", \"in 2h\", or an ISO timestamp like 2026-07-01T09:00"); e.code = 400; throw e; }
+  if (sched.kind === 'cron') { const e = new Error('5-field cron expressions are not fired yet — use "every 30m", "every 1h", "in 2h", or an ISO timestamp'); e.code = 400; throw e; }
+  return sched;
+}
+
+// GET /api/cron — the job snapshot the panel renders from (no secrets in a CronJob). `enabled` = is the tick
+// driver actually armed (SKYNET_CRON_ENABLED) so the panel can honestly say whether routines will fire.
+function handleCronList(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ jobs: cronJobs, enabled: CRON_ENABLED, tickMs: CRON_TICK_MS }));
+}
+
+// POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, deliver?, enabled?, repeat? }
+function handleCronCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    const id = crypto.randomUUID();
+    try {
+      cronJobs = cronStore.createJob(cronJobs, {
+        id: id, name: body.name, prompt: body.prompt, schedule: schedule,
+        agentId: body.agentId, model: body.model, deliver: body.deliver,
+        enabled: body.enabled, repeat: body.repeat
+      }, { id: id, now: Date.now() });
+      saveCronJobs();
+    } catch (e) { return json(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
+    json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/cron/update — edit fields + pause/resume (folded via an `enabled` flag in the patch). body: { id, patch }
+function handleCronUpdate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!cronStore.getJob(cronJobs, id)) return json(404, { error: 'no such routine' });
+    const patch = Object.assign({}, body.patch || {});
+    if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
+      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    }
+    // pause/resume is not an EDITABLE field on updateJob — pull it out and apply via the dedicated reducers.
+    let enabled; if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) { enabled = patch.enabled !== false; delete patch.enabled; }
+    try {
+      cronJobs = cronStore.updateJob(cronJobs, id, patch, { now: Date.now() });
+      if (enabled === true) cronJobs = cronStore.resumeJob(cronJobs, id, { now: Date.now() });
+      else if (enabled === false) cronJobs = cronStore.pauseJob(cronJobs, id);
+      saveCronJobs();
+    } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/cron/remove — delete a routine. body: { id }
+function handleCronRemove(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    try { cronJobs = cronStore.removeJob(cronJobs, id); saveCronJobs(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    json(200, { ok: true });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/cron/preview — validate a schedule string + return the next up-to-5 fire times (the injected clock,
+// never bare Date.now in the math). Net-new GUI value Hermes lacks entirely. body: { schedule:<string> }
+function handleCronPreview(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const now = Date.now();
+    let sched; try { sched = parseCronScheduleOr400(body.schedule, now); } catch (e) { return json(e.code || 400, { ok: false, error: e.message }); }
+    const next = [];
+    let t = cron.nextFireAt(sched, null, now);
+    for (let i = 0; i < 5 && t != null && !isNaN(t); i++) {
+      next.push(cron._internals.iso(t));
+      if (sched.kind === 'once') break;                                 // a one-shot has exactly one fire
+      t = cron.nextFireAt(sched, cron._internals.iso(t), t);           // advance one period from the last
+    }
+    json(200, { ok: true, kind: sched.kind, display: sched.display, next: next });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* POST /api/cron/run — run a routine NOW, streamed as NDJSON exactly like /api/run (strictly better than Hermes,
+   whose `cron run` only nudges next_run_at). The manual fire uses the SAME autonomous posture the scheduled fire
+   will (surface:'autonomous', trigger:'schedule') so "test it now" exercises the real unattended path, and it
+   records the outcome into the job's last-run record + emits cron.fire/cron.result to the HUD. body: { id } */
+async function handleCronRun(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const job = cronStore.getJob(cronJobs, String(body.id || ''));
+  if (!job) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'no such routine' })); }
+  const model = (job.model && String(job.model).trim()) || CRON_DEFAULT_MODEL;
+  const key = runtimeKey;
+  if (!model || !key) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'connect an agent first — a key + model are required to run a routine' })); }
+
+  res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  const ac = new AbortController();
+  const runId = crypto.randomUUID();
+  runs.set(runId, ac);
+  req.on('close', () => { ac.abort(); runs.delete(runId); });
+  const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
+  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
+  const state = { buf: '', errMsg: null, reason: null, transient: false };
+  const teeEmit = (name, payload) => {
+    try { emit(name, payload); } catch (_) {}
+    const p = payload || {};
+    if (name === 'agent.token') state.buf += (p.delta || '');
+    else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
+    else if (name === 'agent.run.end') state.reason = p.reason;
+  };
+  try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
+  try {
+    await runOnce({
+      key: key, model: model, system: CRON_PERSONA, messages: [{ role: 'user', content: String(job.prompt || '') }],
+      agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
+      runId: runId, surface: 'autonomous', trigger: 'schedule'
+    });
+  } catch (e) {
+    state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
+    try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
+  } finally {
+    runs.delete(runId);
+    const ok = !state.errMsg;
+    try {
+      cronJobs = cronStore.markRun(cronJobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() });
+      saveCronJobs();
+    } catch (_) {}
+    try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
+    try { res.end(); } catch (_) {}
+  }
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
