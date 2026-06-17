@@ -142,7 +142,17 @@ const StationUI = (() => {
     x.addEventListener('click', () => closeTerm(key));
     head.appendChild(x);
     const body = el('div', 'term-body');
-    w.appendChild(head); w.appendChild(body);
+    if (opts && opts.feature) {
+      // hero "feature window": wrap the screen in a molded monitor casing
+      w.classList.add('feature');
+      const screen = el('div', 'term-screen');
+      screen.appendChild(head); screen.appendChild(body);
+      w.appendChild(screen);
+      w.appendChild(el('div', 'term-plate',
+        '<span>SKYNET DYNAMICS</span><span class="term-knobs"><i class="knob"></i><i class="knob"></i></span>'));
+    } else {
+      w.appendChild(head); w.appendChild(body);
+    }
     $('#terms').appendChild(w);
     open[key] = w;
     placeTerm(w, key);   // land in a cascaded slot (or its remembered spot) — never dead-center pile-up
@@ -584,7 +594,7 @@ const StationUI = (() => {
       pctx.fillStyle = '#f0e6c0'; pctx.fillRect(cv.width / 2 - 4, 10, 8, 9);
     }
   }
-  function openAgent(i) { sel = i; if (open.agents) rerender('agents'); else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '600px' }); }
+  function openAgent(i) { sel = i; if (open.agents) rerender('agents'); else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '600px', feature: true }); }
 
   /* ============== SKILLS — capability readout (mirrors the sidecar CAP_REGISTRY) ==============
      The agent's real tools come from the OBJECTS at its workstation (object = capability — see

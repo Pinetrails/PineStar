@@ -181,15 +181,16 @@ b { font-weight: normal; color: var(--ph-bright); }
   display: flex; align-items: center; gap: 12px; flex-shrink: 0;
 }
 .logo-mark { font-size: 27px; color: var(--bad); text-shadow: 0 0 12px rgba(255,92,77,0.7); animation: pulse 2.8s infinite; }
-#logo-ascii {
-  font-family: inherit; font-size: 10px; line-height: 1.0; letter-spacing: 0;
-  color: var(--ph);
-  text-shadow: 0 0 12px var(--ph-glow), 0 0 2px var(--ph-glow);
+/* one confident wordmark in the chrome — the big ASCII logo lives on the
+   title screen where it has room to read (salvaged from agent/design-system) */
+.logo-word {
+  font-family: inherit; font-size: var(--fs-4); line-height: 1; letter-spacing: 6px;
+  color: var(--ph); text-shadow: 0 0 12px var(--ph-glow), 0 0 2px var(--ph-glow);
 }
 .logo-sub {
-  font-size: 10px; letter-spacing: 3px; color: var(--ph-dim); text-shadow: none;
-  white-space: nowrap; align-self: flex-end; padding-bottom: 5px;
-  border-top: 1px solid var(--ph-faint); margin-top: 3px; padding-top: 2px;
+  font-size: var(--fs-0); letter-spacing: var(--ls-3); color: var(--ph-dim); text-shadow: none;
+  white-space: nowrap; align-self: center;
+  border-left: 1px solid var(--ph-faint); margin-left: var(--s-1); padding-left: var(--s-3);
 }
 .tb-stats { display: flex; align-items: center; gap: 0; height: 100%; }
 .tb-stat {
@@ -450,6 +451,52 @@ body.no-scan .crt-scan { display: none; }
 }
 .term-body::-webkit-scrollbar { width: 6px; }
 .term-body::-webkit-scrollbar-thumb { background: var(--ph); }
+
+/* ---- HERO "feature window": the full molded-monitor casing (opt-in) ----
+   Reserved for hero windows (the dossier). The casing is real plastic with
+   corner screws + a nameplate + control knobs; head+body live inside a
+   recessed glass screen. Built by toggleTerm({ feature: true }). */
+.term.feature {
+  padding: 13px 13px 24px; border-radius: 16px;
+  background:
+    radial-gradient(circle at 11px 11px, #2c1f0d 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 11px) 11px, #2c1f0d 0 2px, transparent 3px),
+    radial-gradient(circle at 11px calc(100% - 22px), #2c1f0d 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 11px) calc(100% - 22px), #2c1f0d 0 2px, transparent 3px),
+    linear-gradient(180deg, #0d0a05, #080502 62%, #050301);
+  box-shadow: var(--bezel), 0 0 70px var(--ph-glow2);
+}
+.term.feature::before { display: none; }   /* glass moves onto the inner screen */
+.term-screen {
+  position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+  border-radius: var(--r); overflow: hidden;
+  background:
+    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
+    rgba(5, 3, 1, 0.97);
+  box-shadow:
+    inset 0 0 0 1.5px var(--ph), inset 0 0 0 3px rgba(0, 0, 0, 0.92), inset 0 0 52px rgba(0, 0, 0, 0.9);
+}
+.term-screen::before {   /* recessed curved-glass over the screen */
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 6; background: var(--glass);
+}
+.term.feature .term-body { flex: 1 1 auto; min-height: 0; }
+/* nameplate strip in the bottom rim — brand + control knobs */
+.term-plate {
+  position: absolute; left: 14px; right: 14px; bottom: 5px; height: 16px;
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--fs-0); letter-spacing: var(--ls-3); color: var(--ph-dim);
+}
+.term-plate .term-knobs { margin-left: auto; display: inline-flex; gap: 9px; }
+.term-knobs .knob {
+  width: 13px; height: 13px; border-radius: 50%; position: relative;
+  background: radial-gradient(circle at 35% 30%, #1c1307, #080502 72%);
+  box-shadow: inset 0 0 0 1px rgba(255, 228, 180, 0.10), 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.term-knobs .knob::after {
+  content: ''; position: absolute; left: 50%; top: 2px; width: 2px; height: 4px;
+  transform: translateX(-50%); background: var(--ph); box-shadow: 0 0 4px var(--ph-glow2);
+}
 
 /* ================= AGENTS TERMINAL ================= */
 .ag-wrap { display: flex; gap: 10px; }
@@ -850,7 +897,7 @@ body.no-scan .crt-scan { display: none; }
 /* narrow screens */
 @media (max-width: 1480px) {
   .logo-sub { display: none; }
-  #logo-ascii { font-size: 9px; }
+  .logo-word { font-size: var(--fs-3); letter-spacing: 4px; }
 }
 @media (max-width: 1100px) {
   #app { grid-template-columns: 184px 1fr 254px; }
