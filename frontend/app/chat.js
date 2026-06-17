@@ -279,6 +279,7 @@ const Chat = (() => {
     // already computes here and otherwise discards). Captures only a derived {code|research|general}
     // count — never the message text. Gated on the user's learning flag inside the store.
     if (isTask && typeof ProfileStore !== 'undefined') ProfileStore.observeMessage(text);
+    if (isTask && typeof MintStore !== 'undefined') MintStore.observe(text);   // notice recurring jobs → propose minting them as one-tap missions
     // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
     // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
     // forth. When it's OFF, replies are silent + detailed written text.

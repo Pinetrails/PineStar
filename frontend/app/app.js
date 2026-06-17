@@ -497,6 +497,14 @@ const App = (() => {
         if (sp) ProfileStore.seed(Classify.getTag((sp.purpose || '') + ' ' + (sp.tagline || '')));
       }
     }
+    // AUTO-MINT: watch for recurring task shapes so the bay can propose saving them as one-tap missions. Self-
+    // persists to its own localStorage key (rides the backup prefix), so init just hydrates from there. One learning
+    // switch: reconcile mint to the PROFILE's enabled flag (the source of truth) so a partial restore can't leave the
+    // glass-box PAUSE and the SUGGESTED shelf disagreeing.
+    if (typeof MintStore !== 'undefined') {
+      MintStore.init();
+      if (typeof ProfileStore !== 'undefined' && ProfileStore.enabled && MintStore.setEnabled) MintStore.setEnabled(ProfileStore.enabled());
+    }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity

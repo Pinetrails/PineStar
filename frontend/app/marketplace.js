@@ -25,11 +25,15 @@ const Marketplace = (() => {
   let editingId = null;                         // when set, the save form edits this custom SPECIALTY (not a new save)
   let editingRecipeId = null;                   // when set, the recipe save form edits this custom MISSION
   let launchId = null;                          // when set (view='launch'), the recipe being configured to launch
+  let pendingMintKey = null;                    // when minting a SUGGESTED recurring job, the mint shape key (marked minted on save)
+  let pendingMintTemplate = null;               // the proposed directive template the recipe save form pre-fills with
   let tab = 'agents';                           // 'agents' (specialties) | 'recipes' (missions) — the deploy-bay tab
   let glassOpen = false;                        // the "what I've learned about you" panel expanded? (per-session)
   const expanded = {};                          // specId/recipeId -> preview open (persists across re-renders)
 
   const hasRecipes = () => typeof Recipes !== 'undefined';   // the Recipe library is optional (degrades to agents-only)
+  // MintStore is the auto-mint wiring; null until enterGame() inits it (so 'pick' mode at wake has no proposals).
+  const mintApi = () => (typeof MintStore !== 'undefined' && MintStore.candidates) ? MintStore : null;
 
   /* ---------- personalization (the recommender's read surface) ---------- */
   const FAM_TAGS = ['code', 'research', 'general'];   // the interest vocabulary (mirrors classify.js / profile.js)
@@ -63,7 +67,7 @@ const Marketplace = (() => {
     close();                                    // tear down any prior instance first…
     opener = trigger;                           // …then remember who opened us (close() cleared it)
     ctx = context || {};
-    view = 'grid'; editingId = null; editingRecipeId = null; launchId = null;
+    view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
     // start on the requested tab (deploy mode only — pick mode at wake has no recipes to launch)
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();                        // first run: open the glass box so the consent note is seen once
@@ -89,7 +93,7 @@ const Marketplace = (() => {
   function close() {
     if (!root) return;
     document.removeEventListener('keydown', onKey, true);
-    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null;
+    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
     const o = opener; opener = null;
     try { if (o && o.focus) o.focus(); } catch (_) {}   // restore focus to whatever opened the bay
   }
@@ -187,6 +191,7 @@ const Marketplace = (() => {
       '<span class="mkt-hint">pick a mission, fill in the blanks, and ' +
         esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span>' +
     '</div>';
+    html += suggestedShelfHTML();   // "✨ SUGGESTED" — auto-mint: recurring jobs the station noticed you doing
     html += recipeRecShelfHTML();   // "RECOMMENDED FOR YOU" — recipes ranked by the same affinity engine
     html += '<div class="mkt-sect-h">▮ MISSION LIBRARY</div>';
     html += '<div class="mkt-grid">' + builtins.map(recipeCardHTML).join('') + '</div>';
@@ -358,6 +363,35 @@ const Marketplace = (() => {
     return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div>' +
       '<div class="mkt-rec-rail">' + items.map(recipeRecCardHTML).join('') + '</div>';
   }
+
+  /* ---------- auto-mint: "✨ SUGGESTED" — recurring jobs the station noticed, proposed as missions ----------
+     PROPOSE-AND-CONFIRM only: each card shows the induced template + how often you've asked it; REVIEW opens the
+     authoring form pre-filled (you confirm/edit/name it), DISMISS silences it. Suppressed when learning is paused. */
+  function suggestedMissions() {
+    const mp = mintApi(); if (!mp) return [];
+    const ps = profileApi();
+    if (ps && ps.enabled && !ps.enabled()) return [];   // the glass-box PAUSE governs the shelf too — single switch
+    if (mp.enabled && !mp.enabled()) return [];          // and mint's own flag (belt-and-suspenders vs a skew)
+    return mp.candidates() || [];
+  }
+  function suggestedShelfHTML() {
+    const cands = suggestedMissions(); if (!cands.length) return '';
+    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div>' +
+      '<div class="mkt-rec-rail">' + cands.map(suggestCardHTML).join('') + '</div>';
+  }
+  function suggestCardHTML(c) {
+    return '<div class="mkt-rec mkt-suggest" data-key="' + esc(c.key) + '">' +
+      '<div class="mkt-rec-top">' +
+        '<span class="mkt-rec-emoji mkt-suggest-spark" aria-hidden="true">✨</span>' +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(c.template) + '</div>' +
+          '<div class="mkt-rec-tag">you’ve asked this ' + c.count + ' times</div></div>' +
+      '</div>' +
+      '<div class="mkt-suggest-acts">' +
+        '<button class="bb sm mkt-suggest-review" data-key="' + esc(c.key) + '">▸ REVIEW &amp; SAVE</button>' +
+        '<button class="bb sm mkt-suggest-dismiss" data-key="' + esc(c.key) + '" aria-label="dismiss this suggestion" title="not a mission">✕</button>' +
+      '</div>' +
+    '</div>';
+  }
   function recipeRecCardHTML(r) {
     const why = becauseText(r);
     return '<div class="mkt-rec" style="--accent:' + esc(r.accent) + '">' +
@@ -434,7 +468,7 @@ const Marketplace = (() => {
     body.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.tab;
       if (!next || next === tab) return;
-      tab = next; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; sfx('click'); render();
+      tab = next; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; sfx('click'); render();
     }));
 
     // LAUNCH a recipe: if it asks for inputs, step into the param form; otherwise fire it straight off.
@@ -448,9 +482,23 @@ const Marketplace = (() => {
 
     // AUTHOR a mission: open the recipe save form (＋ SAVE A MISSION) or edit an existing custom mission.
     const recipeSaveas = body.querySelector('.mkt-recipe-saveas');
-    if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; render(); });
+    if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; render(); });
     body.querySelectorAll('.mkt-recipe-edit').forEach(b => b.addEventListener('click', () => {
-      editingRecipeId = b.dataset.id; sfx('click'); view = 'recipesave'; render();
+      editingRecipeId = b.dataset.id; pendingMintKey = null; pendingMintTemplate = null; sfx('click'); view = 'recipesave'; render();
+    }));
+
+    // AUTO-MINT proposals: REVIEW opens the authoring form pre-filled with the suggested template (propose-and-
+    // confirm — saving marks the shape minted); the ✕ DISMISS silences a shape so it's never proposed again.
+    body.querySelectorAll('.mkt-suggest-review').forEach(b => b.addEventListener('click', () => {
+      const cands = suggestedMissions();
+      const c = cands.find(x => x.key === b.dataset.key);
+      if (!c) { render(); return; }
+      pendingMintKey = c.key; pendingMintTemplate = c.template; editingRecipeId = null;
+      sfx('click'); view = 'recipesave'; render();
+    }));
+    body.querySelectorAll('.mkt-suggest-dismiss').forEach(b => b.addEventListener('click', () => {
+      if (mintApi()) MintStore.markDismissed(b.dataset.key);
+      sfx('close'); render();
     }));
     // DELETE a saved mission — themed two-step arm/confirm (the bay's idiom), never a native dialog
     body.querySelectorAll('.mkt-recipe-del').forEach(b => b.addEventListener('click', () => {
@@ -477,7 +525,9 @@ const Marketplace = (() => {
     if (famPause) famPause.addEventListener('click', () => {
       const ps = profileApi(); if (!ps || !ps.setEnabled) return;
       const on = ps.enabled ? ps.enabled() : true;
-      ps.setEnabled(!on); sfx(on ? 'bad' : 'click');
+      ps.setEnabled(!on);
+      if (mintApi() && MintStore.setEnabled) MintStore.setEnabled(!on);   // one pause governs ALL learning (profile + auto-mint)
+      sfx(on ? 'bad' : 'click');
       if (on) note('learning paused — nothing new will be folded in');
       else note('learning resumed', 'good');
       render();
@@ -491,6 +541,7 @@ const Marketplace = (() => {
         return;
       }
       const ps = profileApi(); if (ps && ps.forget) ps.forget();
+      if (mintApi() && MintStore.forget) MintStore.forget();   // FORGET clears the recurring-job memory too
       sfx('close'); note('profile wiped — the station forgot what it learned', 'good'); render();
     });
   }
@@ -564,11 +615,18 @@ const Marketplace = (() => {
   }
   function recipeSaveFormHTML() {
     const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
-    const d = editing || { emoji: '✦', name: '', tagline: '', task: '' };
-    const title = editing ? 'EDIT MISSION' : 'SAVE A MISSION';
+    // minting a SUGGESTED recurring job → pre-fill the form with the proposed template + a suggested name
+    const minting = !editing && !!pendingMintTemplate;
+    const d = editing || (minting
+      ? { emoji: '✦', name: pendingMintTemplate.replace(/\{[^}]*\}/g, '').replace(/\s+/g, ' ').trim().slice(0, 28), tagline: '', task: pendingMintTemplate }
+      : { emoji: '✦', name: '', tagline: '', task: '' });
+    const title = editing ? 'EDIT MISSION' : minting ? 'SAVE THIS AS A MISSION' : 'SAVE A MISSION';
+    const intro = minting
+      ? 'you’ve done this a few times — saving it makes it a one-tap mission you own. Tweak the wording, wrap any blanks in <b>{braces}</b>, then save.'
+      : 'write the directive your agent should run. Wrap each blank in <b>{braces}</b> — “Brief me on <b>{topic}</b>” — and it becomes a fill-in at launch.';
     return '<div class="mkt-save mkt-recipe-form">' +
       '<div class="mkt-save-h">' + esc(title) + '</div>' +
-      '<p class="mkt-hint">write the directive your agent should run. Wrap each blank in <b>{braces}</b> — “Brief me on <b>{topic}</b>” — and it becomes a fill-in at launch.</p>' +
+      '<p class="mkt-hint">' + intro + '</p>' +
       '<div class="mkt-save-row">' +
         '<label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-r-emoji" maxlength="2" value="' + esc(d.emoji || '✦') + '"></label>' +
         '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-r-name" maxlength="28" value="' + esc(d.name || '') + '" placeholder="e.g. Morning Standup"></label>' +
@@ -584,7 +642,7 @@ const Marketplace = (() => {
   }
   function wireRecipeSaveForm(body) {
     const back = body.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; render(); });
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; render(); });
     // live readout of the fill-ins the template will ask for (the inputs are derived from its {tokens})
     const taskIn = body.querySelector('#mkt-r-task'), tokens = body.querySelector('#mkt-r-tokens');
     const paint = () => { if (tokens && taskIn) tokens.innerHTML = recipeTokenHint(taskIn.value); };
@@ -606,6 +664,8 @@ const Marketplace = (() => {
       if (editing) rec.id = editing.id;   // upsert in place (saveCustom keeps the existing custom id)
       try {
         const saved = Recipes.saveCustom(rec);   // params auto-derive from the template's {tokens}
+        if (pendingMintKey && mintApi()) MintStore.markMinted(pendingMintKey);   // this suggestion is now a saved mission — stop proposing it
+        pendingMintKey = null; pendingMintTemplate = null;
         sfx('click'); note((editing ? 'updated' : 'saved') + ' mission: ' + saved.name, 'good');
         editingRecipeId = null; view = 'grid'; render();
       } catch (e) { sfx('bad'); note((e && e.message) || 'could not save', 'bad'); }
