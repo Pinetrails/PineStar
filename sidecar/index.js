@@ -44,6 +44,8 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
+const { execFile } = require('node:child_process');       // the shadow-git runner lives ONLY in this ambient module
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -414,6 +416,31 @@ const cronDriver = makeCronDriver({
 });
 let cronTimer = null;
 
+/* ---- execution spine: the checkpoint rollback net (Commit 1). A per-agent shadow-git store under
+   WORKSPACES/.checkpoints/<agentId>/ — a SIBLING of the fs jail, so the agent's own fs.* and shell tools can
+   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is OPT-IN
+   via SKYNET_CHECKPOINTS (default OFF = the existing run path is byte-identical) and FAIL-OPEN (a git problem
+   never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
+   the git/fs is here, the one ambient-I/O edge. ---- */
+const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CHECKPOINTS || '').trim());
+const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^shell\./.test(name);
+function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
+  return new Promise((resolve) => {
+    try {
+      execFile('git', args, { cwd: (opts && opts.cwd) || WORKSPACES, timeout: 15000, windowsHide: true, maxBuffer: 8 << 20 },
+        (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: String(stdout || ''), stderr: String(stderr || '') }));
+    } catch (e) { resolve({ code: 1, stdout: '', stderr: String((e && e.message) || e) }); }
+  });
+}
+const checkpointStore = makeCheckpointStore({ fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 });
+// checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
+const checkpointBus = { emit: (name, payload) => {
+  try { console.log('[checkpoint]', name, JSON.stringify(payload)); } catch (_) {}
+  try { sse.broadcast(name, payload); } catch (_) {}
+} };
+const checkpointEmitValidated = makeEmitter(checkpointBus, e => console.warn('[checkpoint-event]', e.kind, e.event, (e.errors || []).join(';')));
+const checkpointEmit = (name, payload) => { try { return checkpointEmitValidated(name, redact(payload)); } catch (_) { return false; } };
+
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
@@ -542,6 +569,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
@@ -843,6 +872,33 @@ async function handleCronRun(req, res) {
   }
 }
 
+/* POST /api/checkpoint/restore { agentId, snapshotId } — the manual "rewind": hard-reset an agent's workspace to
+   a recorded snapshot (and drop files created since). Only restores a snapshotId IN that agent's index (never an
+   arbitrary git ref); 127.0.0.1-bound. The auto-snapshots that feed this come from the opt-in dispatch hook. */
+async function handleCheckpointRestore(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  const snapshotId = String(body.snapshotId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'bad agentId' });
+  if (!checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
+  let ok; try { ok = await checkpointStore.restore(agentId, snapshotId); } catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
+  if (!ok) return json(404, { error: 'no such snapshot for that agent' });
+  try { checkpointEmit('checkpoint.restored', { agentId: agentId, runId: '', toSnapshotId: snapshotId, reason: 'manual' }); } catch (_) {}
+  json(200, { ok: true });
+}
+
+// GET /api/checkpoint?agent=<id> — the read-only snapshot index a "rewind" affordance lists from.
+function handleCheckpointList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'bad agentId' });
+    json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: checkpointStore.list(agent).snapshots });
+  } catch (e) { json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: [] }); }
+}
+
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
@@ -1055,11 +1111,20 @@ async function runOnce(o) {
 
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
+  let cpTurn = 0;      // per-run checkpoint sequence (a pseudo-turn for the snapshot index/lineage)
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
     const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
     const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
     if (n > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical call blocked (loop guard)', summary: 'loop-break' };
+    // CHECKPOINT NET (opt-in): snapshot the workspace BEFORE a mutating tool so the turn is one rollback away.
+    // Content-deduped + fail-open in the store, so an unchanged workspace or a git hiccup costs nothing / never throws.
+    if (CHECKPOINTS_ENABLED && mutatesWorkspace(c.name)) {
+      try {
+        const snap = await checkpointStore.snapshot(agentId, { runId, turn: cpTurn, label: c.name });
+        if (snap && snap.created) { emit('checkpoint.created', { agentId, runId, turn: cpTurn, snapshotId: snap.id, files: snap.files || 0, bytes: snap.bytes || 0, label: c.name }); cpTurn++; }
+      } catch (_) { /* a checkpoint failure must never break a run */ }
+    }
     let r = await registry.dispatch(c, ctx);
     // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
     if (r && typeof r.content === 'string' && r.content.length) {

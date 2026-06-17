@@ -1,0 +1,86 @@
+/* node test/checkpoint-store.test.js — the AMBIENT checkpoint edge (execution-spine Commit 1), with REAL git.
+
+   Proves the shadow-git rollback net against a real temp workspace + real git + a FAKE clock: a snapshot
+   captures the pre-mutation state, content-dedup avoids redundant commits, restore reverts an edited file
+   BYTE-EXACT and removes files created after the snapshot, the index round-trips, the shadow git-dir lives
+   OUTSIDE the agent's fs jail, and every guard (bad agentId / unknown snapshot / restore of an unrecorded id)
+   fails closed. Spawns git, so it rides test:http (the subprocess bucket), not the fast unit gate. */
+'use strict';
+const A = require('./_assert.js');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execFileSync } = require('child_process');
+const { makeClock } = require('../shared/clock-rng.js');
+const { makeCheckpointStore } = require('../sidecar/checkpoint-store.js');
+
+// a real synchronous git runner (the test analogue of index.js's async execFile runner).
+function runGit(args, opts) {
+  try {
+    const stdout = execFileSync('git', args, { cwd: (opts && opts.cwd) || process.cwd(), windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return Promise.resolve({ code: 0, stdout: String(stdout || ''), stderr: '' });
+  } catch (e) {
+    return Promise.resolve({ code: (e && typeof e.status === 'number') ? e.status : 1, stdout: String((e && e.stdout) || ''), stderr: String((e && e.stderr) || '') });
+  }
+}
+
+(async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-cp-'));
+  const clock = makeClock(1700000000000);
+  const store = makeCheckpointStore({ fs, pathMod: path, root, runGit, clock, keep: 5 });
+  const aid = 'a1';
+  const wt = path.join(root, aid);
+  fs.mkdirSync(wt, { recursive: true });
+  const write = (rel, body) => fs.writeFileSync(path.join(wt, rel), body);
+  const read = (rel) => fs.readFileSync(path.join(wt, rel), 'utf8');
+
+  try {
+    // ---- 1. baseline snapshot of a non-empty workspace ----
+    write('report.md', 'line one\nline two\n');
+    const s1 = await store.snapshot(aid, { runId: 'r1', turn: 0, label: 'fs.write' });
+    A.ok(s1 && s1.created, 'baseline snapshot created');
+    A.ok(store.isValidId(s1.id), 'snapshot id is a valid git oid');
+    A.ok(s1.files >= 1, 'measured at least one file');
+
+    // ---- 2. content dedup: snapshot with NO change -> no new commit, same head ----
+    const dup = await store.snapshot(aid, { runId: 'r1', turn: 1, label: 'fs.write' });
+    A.ok(dup && dup.created === false, 'no-change snapshot is deduped (created:false)');
+    A.eq(dup.id, s1.id, 'dedup returns the existing head id');
+
+    // ---- 3. a real edit + a new file -> a fresh snapshot ----
+    write('report.md', 'line one CHANGED\nline two\n');
+    write('extra.txt', 'added after baseline\n');
+    const s2 = await store.snapshot(aid, { runId: 'r1', turn: 2, label: 'fs.edit' });
+    A.ok(s2 && s2.created, 'second snapshot created after a real change');
+    A.ok(s2.id !== s1.id, 'a changed workspace yields a new snapshot id');
+
+    // ---- 4. restore to the baseline: edited file reverts BYTE-EXACT + the new file is removed ----
+    const ok = await store.restore(aid, s1.id);
+    A.ok(ok, 'restore to baseline succeeded');
+    A.eq(read('report.md'), 'line one\nline two\n', 'edited file reverted byte-exact');
+    A.ok(!fs.existsSync(path.join(wt, 'extra.txt')), 'file created after the baseline was removed on restore');
+
+    // ---- 5. the index round-trips + records both real snapshots (lineage threaded) ----
+    const idx = store.list(aid);
+    A.ok(idx.snapshots.length >= 2, 'index records both snapshots');
+    A.ok(idx.snapshots.some(s => s.id === s1.id) && idx.snapshots.some(s => s.id === s2.id), 'both ids present in the index');
+
+    // ---- 6. jail isolation: the shadow git-dir is OUTSIDE the agent work-tree ----
+    const gitDir = path.join(root, '.checkpoints', aid, 'git');
+    A.ok(fs.existsSync(path.join(gitDir, 'HEAD')), 'shadow repo exists');
+    A.ok(gitDir.indexOf(path.join(root, aid) + path.sep) !== 0, 'git-dir is NOT inside the agent fs jail');
+
+    // ---- 7. guards fail closed ----
+    A.eq(await store.snapshot('bad id!', {}), null, 'snapshot rejects a bad agentId');
+    A.eq(await store.restore(aid, 'not-a-real-sha-but-valid-chars'), false, 'restore refuses an id not in the index');
+    A.eq(await store.restore('bad id!', s1.id), false, 'restore rejects a bad agentId');
+
+    // ---- 8. prune keeps the cap (keep:5) ----
+    for (let i = 0; i < 8; i++) { write('report.md', 'rev ' + i + '\n'); await store.snapshot(aid, { runId: 'r1', turn: 10 + i, label: 'fs.write' }); }
+    A.ok(store.list(aid).snapshots.length <= 5, 'index pruned to the keep cap');
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+  }
+
+  A.report('checkpoint-store.test');
+})().catch(e => { console.log('FAIL: checkpoint-store.test threw — ' + (e && e.stack || e)); process.exit(1); });
