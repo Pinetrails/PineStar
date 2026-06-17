@@ -86,13 +86,23 @@ const StationUI = (() => {
   });
   window.addEventListener('mouseup', () => termDrag = null);
 
+  /* focus scrim: one dim layer mounted under the lowest open window so an
+     open dossier/settings panel owns the eye. Purely visual (pointer-events
+     none); torn down once the last window closes. */
+  function syncScrim() {
+    const host = $('#terms'); if (!host) return;
+    let s = document.getElementById('term-scrim');
+    const any = Object.keys(open).length > 0;
+    if (any && !s) { s = el('div', 'term-scrim'); s.id = 'term-scrim'; host.insertBefore(s, host.firstChild); }
+    else if (!any && s) { s.remove(); }
+  }
   function closeTerm(key) {
     if (open[key]) {
       const w = open[key];
       if (w._onClose) { try { w._onClose(); } catch (_) {} }   // e.g. tear down the live arcade canvas
       w.remove(); delete open[key]; sfx('close');
     }
-    syncBB();
+    syncBB(); syncScrim();
   }
   function toggleTerm(key, title, builder, opts) {
     if (open[key]) { closeTerm(key); return; }
@@ -117,7 +127,7 @@ const StationUI = (() => {
     });
     w._render = () => builder(body);
     w._render();
-    syncBB();
+    syncBB(); syncScrim();
   }
   function rerender(key) { if (open[key]) open[key]._render(); }
   function syncBB() {
