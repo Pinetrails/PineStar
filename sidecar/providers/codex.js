@@ -27,17 +27,20 @@
   const classifyApiError = errorClass.classifyApiError;
   const BASE = 'https://chatgpt.com/backend-api/codex';
 
-  // The Codex backend has no public /models catalog, so we ship a small static one (used for the
-  // tool-capable pre-check + context display). All Codex models are tool-capable; a personal ChatGPT
-  // subscription is flat-rate, so per-token price is null (cost.js then records the real usage at $0).
+  // The ChatGPT-account Codex backend exposes its OWN model list (DIFFERENT from the public OpenAI API
+  // catalog) and the lineup drifts — slugs like gpt-5.1-codex* that the Codex CLI's public catalog still
+  // lists are 400-rejected by the OAuth backend ("model is not supported when using Codex with a ChatGPT
+  // account"). So the real list is DISCOVERED live (listModels -> GET /models, Hermes codex_models.py); this
+  // static list is only the OFFLINE FALLBACK (curated to the slugs verified accepted as of 2026-05/06). All
+  // Codex models are tool-capable; a subscription is flat-rate, so per-token price is null (cost = $0).
+  const CLIENT_VERSION = '1.0.0';   // chatgpt.com/backend-api/codex/models?client_version=…
   const STATIC_MODELS = [
-    { id: 'gpt-5.1-codex',     context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
-    { id: 'gpt-5.1-codex-mini', context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
-    { id: 'gpt-5.1',           context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
-    { id: 'gpt-5-codex',       context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
-    { id: 'gpt-5',             context_length: 272000, max_completion_tokens: 128000, supportsTools: true }
+    { id: 'gpt-5.3-codex',       context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
+    { id: 'gpt-5.5',             context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
+    { id: 'gpt-5.4',             context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
+    { id: 'gpt-5.4-mini',        context_length: 272000, max_completion_tokens: 128000, supportsTools: true }
   ];
-  const DEFAULT_MODEL = 'gpt-5.1-codex';
+  const DEFAULT_MODEL = 'gpt-5.3-codex';
 
   const RETRY_DELAYS = [400, 1200];   // up to 2 pre-stream retries (no jitter -> determinism)
   function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
@@ -307,7 +310,38 @@
     }
 
     function findModel(id) { return STATIC_MODELS.find(m => m.id === id) || null; }
-    async function listModels() { return STATIC_MODELS.map(m => Object.assign({}, m, { pricing: null })); }
+
+    // The ACCOUNT's real model list — what the Codex backend will actually accept (the whole point: a slug
+    // missing here is the one that 400s). GET /models with the bearer token; entries are { slug, visibility,
+    // priority, … }. Skip hidden ones, sort by priority (the backend's recommended order), fall back to the
+    // curated STATIC_MODELS when offline / no token. Mirrors Hermes codex_models._fetch_models_from_api.
+    async function listModels() {
+      try {
+        const res = await doFetch(baseUrl + '/models?client_version=' + CLIENT_VERSION, {
+          headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+        });
+        if (res.ok) {
+          const j = await res.json();
+          const entries = (j && Array.isArray(j.models)) ? j.models : [];
+          const out = [];
+          for (const it of entries) {
+            if (!it || typeof it.slug !== 'string' || !it.slug.trim()) continue;
+            const vis = String(it.visibility || '').toLowerCase();
+            if (vis === 'hide' || vis === 'hidden') continue;   // backend marks slugs it won't serve to this account
+            out.push({
+              id: it.slug.trim(),
+              context_length: it.context_window || it.max_context_window || 272000,
+              max_completion_tokens: it.max_output_tokens || null,
+              supportsTools: true, pricing: null,
+              _rank: (typeof it.priority === 'number') ? it.priority : 10000
+            });
+          }
+          out.sort((a, b) => (a._rank - b._rank) || a.id.localeCompare(b.id));
+          if (out.length) return out.map(({ _rank, ...m }) => m);
+        }
+      } catch (e) { /* offline / no token -> curated fallback below */ }
+      return STATIC_MODELS.map(m => Object.assign({}, m, { pricing: null }));
+    }
     function contextLimit(id) { const m = findModel(id); return (m && m.context_length) || 272000; }   // sane default for an unlisted Codex model
     function priceOf() { return null; }                  // flat-rate subscription -> no per-token price
     function supportsTools(id) { const m = findModel(id); return m ? !!m.supportsTools : true; }   // Codex models are tool-capable; never false-refuse

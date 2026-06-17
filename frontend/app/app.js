@@ -167,9 +167,10 @@ const App = (() => {
   }
 
   /* ---------- provider toggle + ChatGPT (Codex OAuth) sign-in ---------- */
-  // The five models the Codex backend exposes for a personal ChatGPT plan (mirrors the sidecar's static
-  // catalog). OpenRouter's /models datalist doesn't list these, so we swap it in when Codex is selected.
-  const CODEX_MODELS = ['gpt-5.1-codex', 'gpt-5.1-codex-mini', 'gpt-5.1', 'gpt-5-codex', 'gpt-5'];
+  // Offline FALLBACK only — the real list is fetched per-account from /api/auth/codex/models (see
+  // loadCodexModels). The ChatGPT-account Codex lineup drifts: stale slugs (e.g. gpt-5.1-codex) get
+  // 400-rejected by the backend, so we never hardcode the menu when we can discover it.
+  const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
 
   function selectProviderUI(p) {
     pickedProvider = (p === 'codex') ? 'codex' : 'openrouter';
@@ -178,16 +179,27 @@ const App = (() => {
     el('key-block').classList.toggle('hidden', isCodex);
     el('codex-block').classList.toggle('hidden', !isCodex);
     if (isCodex) {
-      const dl = el('model-list'); dl.innerHTML = '';
-      for (const id of CODEX_MODELS) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
-      el('model-count').textContent = '(ChatGPT subscription)';
-      const mi = el('in-model'); if (!/codex|gpt-5/i.test(mi.value)) mi.value = CODEX_MODELS[0];
-      updateHint();
+      loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
       refreshCodexStatus();
     } else {
       stopCodexPoll(); codexFlow = null;
       loadModels();
     }
+  }
+
+  // Populate the model datalist with EXACTLY the slugs the connected account's Codex backend accepts, so the
+  // user can't pick a 400-rejected model. Falls back to the curated list when discovery fails / not connected.
+  async function loadCodexModels() {
+    let models = CODEX_MODELS, def = CODEX_MODELS[0];
+    try {
+      const r = await fetch('/api/auth/codex/models'); const j = await r.json();
+      if (Array.isArray(j.models) && j.models.length) { models = j.models; def = j.default || j.models[0]; }
+    } catch (_) {}
+    const dl = el('model-list'); dl.innerHTML = '';
+    for (const id of models) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
+    el('model-count').textContent = '(ChatGPT subscription)';
+    const mi = el('in-model'); if (!models.includes(mi.value)) mi.value = def;
+    updateHint();
   }
 
   // GET /api/auth/codex/status -> reflect connected/not into the sign-in block (never touches the tokens).
@@ -238,7 +250,7 @@ const App = (() => {
         j = await r.json();
       } catch (e) { j = { status: 'pending' }; }   // transient network blip — keep polling
       if (!codexFlow) return;                        // bailed out (back/disconnect) while awaiting
-      if (j.status === 'connected') { codexFlow = null; el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden'); SFX.open(); refreshCodexStatus(); return; }
+      if (j.status === 'connected') { codexFlow = null; el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden'); SFX.open(); refreshCodexStatus(); loadCodexModels(); return; }
       if (j.status === 'error') { el('codex-status').textContent = 'sign-in failed: ' + (j.error || 'try again'); el('codex-status').className = 'codex-status bad'; codexFlow = null; return; }
       pollCodex(intervalS);                          // pending — schedule the next tick
     }, Math.max(2, intervalS) * 1000);

@@ -337,6 +337,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/auth/codex/start') return handleCodexStart(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
+  if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
@@ -800,6 +801,22 @@ async function handleCodexPoll(req, res) {
 function handleCodexStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '' }));
+}
+
+// GET /api/auth/codex/models — the ACCOUNT's real Codex model list (live-discovered with a fresh token), so
+// the connect screen offers exactly the slugs the backend will accept. Falls back to the provider's curated
+// list (and reports the error) when not connected / discovery fails, so the dropdown is never empty.
+async function handleCodexModels(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const token = await ensureCodexAccessToken();
+    const provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token });
+    const models = await provider.listModels();
+    const ids = models.map(m => m.id);
+    json(200, { models: ids, default: ids[0] || null });
+  } catch (e) {
+    json(200, { models: [], default: null, error: (e && e.message) || 'not connected', code: (e && e.code) || '' });
+  }
 }
 
 // POST /api/auth/codex/logout — forget the stored ChatGPT credentials.

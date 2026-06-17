@@ -141,10 +141,32 @@ async function collect(provider, req) { const out = []; for await (const e of pr
   // H. capability surface: known Codex models are tool-capable; unknown -> true (never a false refusal); price null
   {
     const p = makeCodexProvider({ fetch: async () => new Response('', { status: 200 }), token: 'acc' });
-    A.eq(p.supportsTools('gpt-5.1-codex'), true, 'known Codex model is tool-capable');
+    A.eq(p.supportsTools('gpt-5.3-codex'), true, 'known Codex model is tool-capable');
     A.eq(p.supportsTools('some-future-model'), true, 'unknown model -> true (do not false-refuse)');
-    A.eq(p.priceOf('gpt-5.1-codex'), null, 'subscription model has no per-token price');
-    A.ok(p.contextLimit('gpt-5.1-codex') > 0, 'context limit reported');
+    A.eq(p.priceOf('gpt-5.3-codex'), null, 'subscription model has no per-token price');
+    A.ok(p.contextLimit('gpt-5.3-codex') > 0, 'context limit reported');
+  }
+
+  // I. listModels discovers the account's REAL catalog live: queries /models, drops hidden, sorts by priority
+  {
+    const modelsResp = { models: [
+      { slug: 'gpt-5.4', priority: 2, visibility: 'show' },
+      { slug: 'gpt-5.3-codex', priority: 1 },
+      { slug: 'secret-internal', priority: 0, visibility: 'hidden' },
+      { slug: 'gpt-5.5', priority: 3 }
+    ] };
+    let url = '', auth = '';
+    const f = async (u, init) => { url = u; auth = (init && init.headers && init.headers['Authorization']) || ''; return new Response(JSON.stringify(modelsResp), { status: 200, headers: { 'Content-Type': 'application/json' } }); };
+    const ids = (await makeCodexProvider({ fetch: f, token: 'ACC' }).listModels()).map(m => m.id);
+    A.ok(/\/models\?client_version=/.test(url), 'queries the codex /models endpoint with a client_version');
+    A.eq(auth, 'Bearer ACC', 'discovery is authenticated with the access token');
+    A.eq(ids, ['gpt-5.3-codex', 'gpt-5.4', 'gpt-5.5'], 'priority-sorted; hidden slug dropped');
+  }
+
+  // J. discovery failure (offline / 500) falls back to the curated static list — never an empty menu
+  {
+    const ids = (await makeCodexProvider({ fetch: async () => new Response('nope', { status: 500 }), token: 'acc' }).listModels()).map(m => m.id);
+    A.ok(ids.length > 0 && ids.indexOf('gpt-5.3-codex') >= 0, 'falls back to curated models on discovery failure');
   }
 
   A.report('provider.codex.test');
