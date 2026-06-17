@@ -59,4 +59,20 @@ function planWith(objects) {
 // no posted plan -> null (routed-mode off; the office default applies everywhere)
 A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null');
 
+// a connector portal carries a per-instance binding: stationFor passes the rich object through verbatim, so the
+// connector manager can project THAT server's tools. resolveTools yields no STATIC grant for it (dynamic at run).
+{
+  const r = makeRouter();
+  r.setPlan(planWith(['computer', { objectType: 'connector', connectorId: 'github' }]));
+  const st = r.stationFor('coder');
+  const objs = st.rooms.bay.objects;
+  A.eq(objs.length, 2, 'stationFor keeps both the string cap and the connector object');
+  const conn = objs.find(o => o.objectType === 'connector');
+  A.ok(conn && conn.connectorId === 'github', 'the connector object passes through with its connectorId intact');
+  A.ok(!!conn.instanceId, 'every room object still gets an instanceId');
+  const res = resolveTools('coder', st);
+  A.ok(res.hasCompute, 'the workstation still grants compute alongside the connector');
+  A.eq(res.tools.length, 0, 'a connector adds NO static tool (its MCP tools are projected dynamically at run time)');
+}
+
 A.report('routing.b5');

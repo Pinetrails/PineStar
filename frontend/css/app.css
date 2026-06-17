@@ -591,6 +591,12 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .refit-guide-card b { color: var(--ph-bright); font-weight: normal; }
 .refit-guide-card .g-ok { color: #aaffc8; } .refit-guide-card .g-bad { color: #ffb0a8; }
 .refit-guide-card #refit-guide-go { width: 100%; }
+/* connector-portal bind editor (rides the refit-guide card) */
+.refit-conn-rows { display: flex; flex-direction: column; gap: 5px; margin: 4px 0 2px; max-height: 240px; overflow: auto; }
+.refit-conn-rows .conn-row { text-align: left; display: flex; align-items: baseline; gap: 6px; }
+.refit-conn-rows .conn-row.active { background: var(--ph-faint); border-color: var(--ph); }
+.refit-conn-rows .conn-meta { margin-left: auto; color: var(--ph-dim); font-size: 10px; }
+.refit-conn-note { color: var(--ph-dim); font-size: 12px; line-height: 1.4; padding: 4px 0; }
 
 /* ---------- CONNECTORS panel (MCP) ---------- */
 .mc-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }

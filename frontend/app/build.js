@@ -387,6 +387,42 @@ const Build = (() => {
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
   }
 
+  /* ---------- CONNECTOR PORTAL editor: bind this gateway to ONE configured MCP server. The bound connectorId
+     is what bayObjects emits for the bay, so the agent in this room gains that server's live tools. The list is
+     the live /api/connectors set; a state dot mirrors the panel. Opens on place/click, like the junction editor. */
+  function openConnectorEditor(propId, ev) {
+    if (!root || root.querySelector('.refit-connector-editor')) return;
+    const p = station.propById(propId); if (!p || p.t !== 'connector_portal') return;
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-connector-editor';
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    g.innerHTML = '<div class="refit-guide-card"><h3>▮ CONNECTOR PORTAL — bind an MCP server</h3>'
+      + '<ul><li>This gateway grants its bay\'s agent the <b>live tools</b> of ONE configured connector.</li>'
+      + '<li>Bind it below — the portal then rides that server\'s state and pulses when its tools fire.</li></ul>'
+      + '<div class="refit-conn-rows" id="c-rows">loading…</div>'
+      + '<div style="display:flex;gap:6px;margin-top:8px"><button type="button" class="btn-sm" id="c-unbind">✕ UNBIND</button><button type="button" class="btn-sm" id="c-cancel">CANCEL</button></div></div>';
+    root.appendChild(g);
+    const rowsEl = g.querySelector('#c-rows');
+    const STATE_COL = { connected: '#41ff8a', ready: '#41ff8a', up: '#41ff8a', warming: '#ffd34a', offline: '#ffd34a', down: '#ffd34a', error: '#ff4a3d' };
+    const bind = (id, label) => { const res = station.bindConnector(propId, id); if (res && res.ok) { sfx('click'); flashTip(ev, 'bound → ' + (label || id), true); closeP(); } else sfx('bad'); };
+    g.querySelector('#c-unbind').onclick = () => { station.bindConnector(propId, ''); sfx('click'); flashTip(ev, 'portal unbound', true); closeP(); };
+    g.querySelector('#c-cancel').onclick = closeP;
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+    if (typeof fetch === 'undefined') { rowsEl.innerHTML = '<div class="refit-conn-note">no sidecar — can\'t list connectors here.</div>'; return; }
+    fetch('/api/connectors').then(r => r.json()).then(j => {
+      const list = (j && j.connectors) || [];
+      if (!list.length) { rowsEl.innerHTML = '<div class="refit-conn-note">No MCP servers yet — add one in the <b>⇄ CONNECTORS</b> panel (bottom bar), then bind it here.</div>'; return; }
+      rowsEl.innerHTML = list.map(c => {
+        const sel = (c.id === p.connectorId), col = STATE_COL[c.state] || '#7a8a80';
+        const meta = c.toolCount ? (c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's')) : (c.state || 'idle');
+        return '<button type="button" class="bb sm conn-row' + (sel ? ' active' : '') + '" data-id="' + esc(c.id) + '" data-label="' + esc(c.label || c.id) + '">'
+          + '<span class="conn-dot" style="color:' + col + '">●</span> ' + esc(c.label || c.id)
+          + ' <span class="conn-meta">' + esc(meta) + '</span></button>';
+      }).join('');
+      rowsEl.querySelectorAll('.conn-row').forEach(b => b.onclick = () => bind(b.dataset.id, b.dataset.label));
+    }).catch(() => { rowsEl.innerHTML = '<div class="refit-conn-note">sidecar offline — start it to bind a connector.</div>'; });
+  }
+
   /* ---------- test run (Polish B): send work down your belts with NO bot connected, and watch it sort to the
      bays right here in REFIT — the build-time payoff + the first thing a tutorial points at. ---------- */
   function onBuildDeliver(bx) { pushFlash([{ x1: bx.x, y1: bx.y, x2: bx.x, y2: bx.y }], false); sfx('click'); }   // box finished — flash where it landed
@@ -571,8 +607,8 @@ const Build = (() => {
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
-  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1 };
+  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1 };
   function commitPropStamp(d, ev) {
     // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
     if (PROP_EDITABLE[propType] && !d.moved) {
@@ -868,6 +904,13 @@ const Build = (() => {
         if (station.bayObjects(p.agentId).indexOf('computer') >= 0) continue;
         mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'NO COMPUTE');
       }
+    }
+    // a CONNECTOR PORTAL with no bound server grants nothing — surface it (amber) so the Commander binds one.
+    for (const p of (cacheGeo.props || [])) {
+      if (p.t !== 'connector_portal') continue;
+      const live = station.propById(p.id);
+      if (live && live.connectorId) continue;
+      mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'UNBOUND');
     }
   }
 

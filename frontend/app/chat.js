@@ -255,7 +255,7 @@ const Chat = (() => {
         onRunId: id => { Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) toolLine(t); },
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) toolLine(t); if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) toolLine(t, ev.isError); },
         onDeliverable: ev => {
           if (ev.kind === 'file' && !seenDeliv[ev.title]) {

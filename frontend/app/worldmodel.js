@@ -61,7 +61,8 @@ const WorldModel = (() => {
     console: 'computer', consoleL: 'computer', desk: 'computer', desk2: 'computer', pixelrig: 'computer', bench: 'computer',  // a workstation = compute
     war_intelcab: 'cabinet', safe: 'cabinet', vault: 'cabinet', rack: 'cabinet', shelf: 'cabinet',                            // a locked cabinet = files
     comms_dish: 'dish', comms_uplink: 'dish', comms_beacon: 'dish',                                                           // a comms dish = web
-    gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook'                                             // a server/databank = memory
+    gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook',                                            // a server/databank = memory
+    connector_portal: 'connector'                                                                                            // a connector portal = an MCP server's live tools (per-instance, bound to a connectorId)
   };
 
   /* the paint palette — each is a floor BASE colour; every other floor detail
@@ -570,6 +571,7 @@ const WorldModel = (() => {
         const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
         if (p.door) lp.door = p.door;   // an AIRLOCK's seal state -> the prop sprite's status light / jam spark
+        if (p.connectorId) lp.connectorId = p.connectorId;   // a CONNECTOR PORTAL's bound server -> live state + firing pulse on the sprite
         propsLocal.push(lp);
         if (p.block === false) continue;   // flat decor (rugs / wall panels) never blocks walking
         for (let yy = ly; yy < ly + h; yy++) for (let xx = lx; xx < lx + w; xx++) blockedTiles.add(xx + ',' + yy);
@@ -655,6 +657,18 @@ const WorldModel = (() => {
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
       return { ok: true, id: propId, routes: p.routes || null, def: p.def || null, bufferSize: p.bufferSize || null };
     }
+    // bind/clear the connectorId on a CONNECTOR PORTAL — WHICH MCP server this gateway grants (per-instance).
+    // A blank id unbinds (the portal grants nothing until bound; bayObjects emits it only when bound). Mirrors
+    // assignPropAgent's shape; the live state/tools come from the sidecar connector manager keyed by this id.
+    function bindConnector(propId, connectorId) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      snapshot();
+      const id = (connectorId == null ? '' : String(connectorId)).trim();
+      if (id) p.connectorId = id; else delete p.connectorId;
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, connectorId: p.connectorId || null };
+    }
     const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
     const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
     function agentRoomId(agentId) {   // the room the agent's BAY sits in — the capability-isolation seam
@@ -670,8 +684,17 @@ const WorldModel = (() => {
       const seen = {}, out = [];
       for (const p of doc.props) {
         const cap = CAP_PROP_MAP[p.t];
-        if (!cap || seen[cap]) continue;
+        if (!cap) continue;
         if (roomAt(p.x, p.y) !== room) continue;
+        if (cap === 'connector') {
+          // per-instance, NOT deduped: each BOUND connector portal grants its OWN server's tools. The sidecar
+          // reads { objectType, connectorId } (router.stationFor passes the object through; resolveTools yields
+          // no static grant — the MCP tools are projected dynamically by the connector manager). An UNBOUND
+          // portal (no connectorId) grants nothing until the Commander binds it.
+          if (p.connectorId) out.push({ objectType: 'connector', connectorId: p.connectorId });
+          continue;
+        }
+        if (seen[cap]) continue;
         seen[cap] = true; out.push(cap);
       }
       return out;
@@ -690,7 +713,7 @@ const WorldModel = (() => {
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
-      addProp, removeProp, moveProp, assignPropAgent, configureJunction, setDoorState,
+      addProp, removeProp, moveProp, assignPropAgent, configureJunction, bindConnector, setDoorState,
       setBelt, removeBelt, placeBeltRun,
       // agent-bay binding queries
       propsByType, propsByAgent, agentRoomId, bayObjects,

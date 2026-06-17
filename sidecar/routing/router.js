@@ -34,9 +34,14 @@ function makeRouter() {
     const bay = (plan.bays || []).find(b => b.agentId === agentId);
     if (!bay) return null;
     const objs = Array.isArray(bay.objects) ? bay.objects : [];
+    // each entry is EITHER a bare objectType string (the generic caps: 'computer'/'dish'/…) OR a rich object
+    // { objectType, … } carrying per-instance data — e.g. a connector portal's { objectType:'connector',
+    // connectorId } so the manager can project THAT server's tools. Normalize both to a room object.
     return {
       agents: { [agentId]: { id: agentId, room: 'bay' } },
-      rooms: { bay: { id: 'bay', objects: objs.map((t, i) => ({ instanceId: 'o' + i, objectType: t })) } }
+      rooms: { bay: { id: 'bay', objects: objs.map((t, i) =>
+        (t && typeof t === 'object') ? Object.assign({ instanceId: 'o' + i }, t) : { instanceId: 'o' + i, objectType: t }
+      ) } }
     };
   }
 

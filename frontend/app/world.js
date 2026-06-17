@@ -1774,7 +1774,8 @@ const World = (() => {
   function postRoutingPlan(plan) {
     if (typeof fetch === 'undefined') return;
     // dedupe on topology hash + per-bay caps, so equipping a bay (a capability change with no belt change) still re-POSTs
-    const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).join(','))).join(';')) : '';
+    const objKey = o => (o && typeof o === 'object') ? (o.objectType + '#' + (o.connectorId || '')) : o;   // connector objs carry a binding; stringify it so a re-bind re-POSTs
+    const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')) : '';
     if (hash === lastPlanHash) return;
     lastPlanHash = hash;
     try { fetch('/api/routing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }).catch(() => {}); } catch (_) {}
@@ -1897,6 +1898,25 @@ const World = (() => {
     U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
+    // CONNECTOR PORTALS — make the external on-ramp LIVE: poll each configured server's state so a placed
+    // portal glows green/amber/red, and pulse it when ITS tools fire (an mcp__<connectorId>__* tool call).
+    const connIds = [];
+    function pollConnectors() {
+      if (typeof fetch === 'undefined' || typeof PropSprites === 'undefined') return;
+      fetch('/api/connectors').then(r => r.json()).then(j => {
+        const list = (j && j.connectors) || []; connIds.length = 0;
+        for (const c of list) {
+          connIds.push(c.id);
+          PropSprites.setConnectorState(c.id, c.state === 'up' ? 'connected' : (c.state === 'error' ? 'error' : 'offline'), c.toolCount);
+        }
+      }).catch(() => {});
+    }
+    pollConnectors(); setInterval(pollConnectors, 5000);
+    U.bus.on('agent.tool_call', p => {            // chat.js re-emits the hero's tool calls here; routed agents arrive via SSE
+      const n = p && p.name;
+      if (!n || n.indexOf('mcp__') !== 0 || !PropSprites.pulseConnector) return;
+      for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
+    });
     if (typeof EventSource === 'undefined') return;
     let es = null, backoff = 1000;
     const open = () => {

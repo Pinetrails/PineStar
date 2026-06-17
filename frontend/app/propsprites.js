@@ -2271,6 +2271,70 @@ const PropSprites = (() => {
     px(cx, lampY - 2, 1, 1, '#4a1410');
   }
 };
+  F.connector_portal = (x, y, w, h, f) => {
+  // CONNECTOR PORTAL (1x2) — an agent's on-ramp to an EXTERNAL MCP server. Unlike the dish (web) or the relay,
+  // this gateway is BOUND to one connector and rides its LIVE state: the crown aperture + status lamp + conduit
+  // glow go green=connected · amber=offline/warming · red=error · grey=unbound. A tool call fires a bright
+  // packet UP the conduit and out the aperture (the external reach lighting up); f.fired decays 1 -> 0.
+  const st  = (f && f.state) || (f && f.bound ? 'offline' : 'unbound');
+  const ACC = { connected: '#41ff8a', offline: '#ffd34a', error: '#ff4a3d', unbound: '#586b61' };
+  const HOT = { connected: '#c7ffe0', offline: '#ffe9a8', error: '#ff8378', unbound: '#8aa093' };
+  const acc = ACC[st] || ACC.unbound, hot = HOT[st] || HOT.unbound;
+  const live = st === 'connected', bad = st === 'error';
+  const fired = Math.max(0, Math.min(1, (f && f.fired) || 0));
+  const cx = x + Math.round(w / 2);
+  const apX = cx + 3, apY = y - 5;                                  // crown aperture = the "outside" port
+
+  sh(x + 1, y + h - 1, w - 2);                                      // contact shadow at base
+
+  // crown: a 3-dot arc climbing to the aperture; chases upward when connected
+  const arc = [[cx - 1, y - 1], [cx + 1, y - 3], [apX, apY + 1]];
+  for (let i = 0; i < arc.length; i++) {
+    const on = live ? (Math.floor(now / 160) % arc.length === i) : (i === 0);
+    px(arc[i][0], arc[i][1], 1, 1, on ? hot : U.shade(acc, -0.45));
+    if (on && live) glow(arc[i][0] - 1, arc[i][1] - 1, 3, 3, acc, 0.28);
+  }
+  // aperture ring (flickers when error; flares with a firing packet or when live)
+  ctx.strokeStyle = (bad && blink(260)) ? U.shade(acc, -0.5) : acc; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(apX + 0.5, apY + 0.5, 2, 0, 6.2832); ctx.stroke();
+  if (live || fired > 0) glow(apX - 2, apY - 2, 5, 5, acc, 0.16 + 0.5 * fired);
+
+  // main casing: charcoal/steel, top-lit
+  box(x + 1, y, w - 2, h, '#2b322f');
+  px(x + 2, y + 1, w - 4, h - 2, '#39433d');                       // mid face
+  px(x + 2, y + 1, w - 4, 1, '#4c5a52');                           // top sheen
+  px(x + 2, y + 1, 1, h - 2, '#46544c');                           // left light edge
+  px(x + w - 3, y + 1, 1, h - 3, '#222a26');                       // right shade edge
+
+  // recessed conduit channel up the center (the data path)
+  const condX = cx - 1, condTop = y + 5, condBot = y + h - 7;
+  inset(condX, condTop, 2, condBot - condTop, '#141b18');
+
+  // status lamp on the face near the crown
+  const lampOn = bad ? blink(300) : (live ? true : (st === 'offline' ? blink(1400) : false));
+  px(x + 3, y + 3, 2, 2, lampOn ? acc : U.shade(acc, -0.55));
+  if (lampOn) glow(x + 2, y + 2, 4, 4, acc, 0.3);
+
+  // socket bay near the base: two ports = the literal "connector"
+  const syb = y + h - 6;
+  for (const sx of [cx - 4, cx + 1]) {
+    inset(sx, syb, 3, 3, '#10100c');                               // socket well
+    px(sx + 1, syb + 1, 1, 1, U.shade(acc, -0.2));                 // contact pin, state-tinted
+  }
+
+  // idle: a dim packet drifts UP the conduit when connected
+  if (live && fired === 0) {
+    const t = (now % 1400) / 1400;
+    const py = condBot - 1 - Math.floor(t * (condBot - condTop - 1));
+    px(condX, py, 2, 1, U.shade(acc, 0.1));
+  }
+  // FIRING: a bright packet rises the conduit toward the aperture
+  if (fired > 0) {
+    const py = condBot - 1 - Math.floor((1 - fired) * (condBot - condTop - 1));
+    px(condX, py, 2, 2, hot);
+    glow(condX - 1, py - 1, 4, 4, acc, 0.45);
+  }
+};
   F.etsy_threadrack = (x, y, w, h, f) => {
   // wall-mounted thread/filament spool rack â€” sits flush under north wall
   sh(x + 1, y + h, w - 2);
@@ -3806,6 +3870,7 @@ const PropSprites = (() => {
     { id: "comms_inbox", label: "INBOX", cat: "comms", w: 2, h: 1, animated: true, blocks: true },
     { id: "comms_uplink", label: "UPLINK", cat: "comms", w: 2, h: 2, animated: true, blocks: true },
     { id: "comms_beacon", label: "BEACON", cat: "comms", w: 1, h: 2, animated: true, blocks: true },
+    { id: "connector_portal", label: "CONNECTOR", cat: "comms", w: 1, h: 2, animated: true, blocks: true },
     { id: "gigs_thumbwall", label: "THUMB WALL", cat: "comms", w: 2, h: 1, animated: true, blocks: false },
     { id: "gigs_servercart", label: "SERVER CART", cat: "comms", w: 1, h: 1, animated: true, blocks: true },
     { id: "gigs_amp", label: "AMP", cat: "comms", w: 1, h: 1, animated: true, blocks: true },
@@ -3843,17 +3908,38 @@ const PropSprites = (() => {
   const spec = id => BY_ID[id] || null;
   const has = id => !!F[id];
 
+  /* ---- live connector state (drives the connector_portal sprite). The world layer owns the data — it polls
+     /api/connectors for each bound server's state and calls a tool-call pulse when an mcp__ tool fires — and
+     pushes it here, so the prop draw stays a pure function of (geometry + this map). Keyed by connectorId. */
+  const connState = {};          // connectorId -> { state, toolCount, firedAt }
+  const PULSE_MS = 900;          // a firing packet decays 1 -> 0 over this window
+  function setConnectorState(id, state, toolCount) {
+    if (!id) return; const s = connState[id] || (connState[id] = {});
+    s.state = state || 'offline'; if (toolCount != null) s.toolCount = toolCount;
+  }
+  function pulseConnector(id) { if (!id) return; (connState[id] || (connState[id] = {})).firedAt = now; }
+  function connectorFired(id) { const s = id && connState[id]; return (s && s.firedAt) ? Math.max(0, 1 - (now - s.firedAt) / PULSE_MS) : 0; }
+
   /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens. */
   function draw(f, work) {
     const fn = F[f.t]; if (!fn) return;
     const X = f.x * TILE, Y = f.y * TILE, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
-    fn(X, Y, W, H, { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null });
+    const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
+    if (f.t === 'connector_portal') {                 // a bound portal rides its connector's live state
+      const cid = f.connectorId || null;
+      o.bound = !!cid;
+      o.state = cid ? ((connState[cid] && connState[cid].state) || 'offline') : 'unbound';
+      o.fired = connectorFired(cid);
+    }
+    fn(X, Y, W, H, o);
   }
 
   return {
     setCtx(c) { ctx = c; },
     setNow(t) { now = t; },
     draw, CATALOG, CATS, spec, has, TILE,
+    // live connector state (the world layer feeds these; the connector_portal sprite reads them)
+    setConnectorState, pulseConnector,
     // exposed for tests / reuse
     _F: F,
   };

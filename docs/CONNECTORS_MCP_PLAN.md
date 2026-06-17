@@ -77,10 +77,26 @@ Three facts make the bridge additive:
   server's discovered tools, live over `/api/connectors`. The token field is never re-displayed.
   Browser-verified (panel renders every state, zero console errors; live API round-trip confirmed
   separately via the boot-smoke).
-- [ ] **Slice 5b — connector-portal prop (optional).** A placeable `connector` prop sprite
-  (propsprites.js / worldmodel.js / build.js) bound to a connectorId, so per-bay placement is visual
-  in the builder — the gamified projection. Functional per-agent scope already works without it (the
-  panel + room-object resolution); this is purely the visual layer.
+- [x] **Slice 5b — connector-portal prop (the gamified projection).** A first-class, living station object:
+  a placeable `connector_portal` prop (CATALOG/`comms`, 1×2) drawn PROCEDURALLY in the phosphor pixel-art
+  style (`propsprites.js` `F.connector_portal`) — a gateway pylon whose crown aperture + status lamp + conduit
+  ride the BOUND connector's LIVE state (green=connected · amber=offline · red=error · grey=unbound), and which
+  fires a bright packet up-and-out the aperture when ITS tools are called. Wiring:
+    - **Per-instance binding (the real wrinkle vs. generic caps).** `CAP_PROP_MAP.connector_portal = 'connector'`;
+      `worldmodel.bayObjects` emits `{ objectType:'connector', connectorId }` per BOUND portal (NOT deduped),
+      `projectGeometry` carries `connectorId` to the renderer, and `world.js`'s plan hash serializes it so a
+      re-bind re-POSTs. `bindConnector(propId, id)` sets/clears the binding (new mutation, undo-snapshotted).
+    - **Sidecar contract.** `router.stationFor` now passes a rich `{ objectType, connectorId }` object through
+      verbatim (string caps still map to `{ objectType }`); `resolveTools` yields no static grant for it (the
+      MCP tools are projected dynamically by the connector manager keyed on `connectorId`).
+    - **Builder UX.** `build.js` `openConnectorEditor` (via `PROP_EDITABLE`/`openPropEditor`) lists the live
+      `/api/connectors` set to bind/unbind on place/click; the REFIT validator marks an UNBOUND portal amber
+      (like NO COMPUTE).
+    - **Live + firing.** `world.js` polls `/api/connectors` → `PropSprites.setConnectorState`; an `mcp__<id>__*`
+      tool call (hero re-emitted onto `U.bus` by `chat.js`) resolves to the bound portal → `pulseConnector`.
+  Tests: `worldmodel.test.js` (bayObjects connector emission + `bindConnector`) and `routing.b5.test.js`
+  (`stationFor` rich-object passthrough). `test:fast` green; browser-verified (palette + sprite renders every
+  state with no throw, zero console errors).
 
 ## Open decisions for andro
 

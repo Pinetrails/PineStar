@@ -353,6 +353,23 @@ cap2.assignPropAgent(b2.id, 'r');
 cap2.addProp({ t: 'plant', x: cr2.x1 + 5, y: cr2.y1 + 2, w: 1, h: 1, block: false });
 A.eq(JSON.stringify(cap2.bayObjects('r')), '[]', 'decor (a plant) grants no capabilities');
 
+/* ---- connector portal: a per-instance, BOUND capability — bayObjects emits its {objectType,connectorId} only when bound ---- */
+const cc = WM.create();
+const ccr = cc.roomById(cc.spawnRoomId()).rects[0];
+const ccx = ccr.x1 + 2, ccy = ccr.y1 + 2;
+const ccBay = cc.addProp({ t: 'bay', x: ccx, y: ccy, w: 2, h: 2, block: false });
+cc.assignPropAgent(ccBay.id, 'ops');
+const portal = cc.addProp({ t: 'connector_portal', x: ccx + 3, y: ccy, w: 1, h: 2, block: true });
+A.ok(portal.ok && portal.id, 'a connector portal places in the bay room');
+A.eq(JSON.stringify(cc.bayObjects('ops')), '[]', 'an UNBOUND connector portal grants nothing');
+A.ok(!cc.bindConnector('nope', 'x').ok, 'bindConnector on a missing prop fails');
+A.ok(cc.bindConnector(portal.id, 'github').ok && cc.propById(portal.id).connectorId === 'github', 'bindConnector sets the connectorId');
+A.eq(JSON.stringify(cc.bayObjects('ops')), JSON.stringify([{ objectType: 'connector', connectorId: 'github' }]), 'a BOUND portal emits its per-instance connector object (NOT a deduped string)');
+cc.addProp({ t: 'console', x: ccx, y: ccy + 3, w: 2, h: 1, block: true });   // also a workstation in the room
+A.ok(cc.bayObjects('ops').indexOf('computer') >= 0, 'the bound connector object coexists with the generic cap strings');
+A.ok(cc.bindConnector(portal.id, '').ok && cc.propById(portal.id).connectorId === undefined, 'bindConnector("") unbinds the portal');
+A.eq(cc.bayObjects('ops').filter(o => o && o.objectType === 'connector').length, 0, 'an unbound portal again emits no connector object');
+
 /* ---- Polish P1: a PLACED filter, configured via configureJunction, compiles DEPLOYABLE (the editor's path) ---- */
 const PL = require('../frontend/app/pipeline.js');
 const fp = WM.create();
