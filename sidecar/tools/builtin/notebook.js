@@ -32,6 +32,10 @@
       }, n);
     }
     const notesOf = aid => { const v = store.get(KEY(aid)); return Array.isArray(v) ? v.map(migrate) : []; };
+    // collision-proof id: one past the HIGHEST existing note_N. Positional ('note_'+list.length) reuses a slot
+    // freed by a forget (M-mem.6) -> a DUPLICATE id -> id-keyed ops corrupt/delete the wrong record. Mirrors
+    // memcore.nextNoteId (kept inline so this UMD tool stays dependency-free).
+    const nextId = list => { let max = 0; for (const n of list) { const m = /^note_(\d+)$/.exec(n && n.id); if (m && +m[1] > max) max = +m[1]; } return 'note_' + (max + 1); };
 
     const writeTool = {
       // NO consent gate: the notebook is the agent's OWN sandboxed private memory (no filesystem reach, no
@@ -48,7 +52,7 @@
         // §5.2 record: title/body/ts kept (back-compat + recall); sourceRunId is the moat (drill any fact ->
         // the run that earned it). useCount/lastUsedAt move with memory.used; trust with memory.feedback.
         const note = {
-          id: 'note_' + (list.length + 1), kind: 'note',
+          id: nextId(list), kind: 'note',
           title: String(args.title), body: String(args.body),
           scope: 'global', streamId: null, sourceRunId: runId,
           createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false

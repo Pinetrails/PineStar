@@ -5,7 +5,7 @@
    and mirrors content into body for the legacy readers; projectRecord surfaces the full §5.2 shape. */
 'use strict';
 const A = require('./_assert.js');
-const { nextTrust, reduceStats, applyPin, applyEdit, applyForget, projectRecord, TRUST_STEP, clamp01 } = require('../sidecar/memcore.js');
+const { nextTrust, nextNoteId, reduceStats, applyPin, applyEdit, applyForget, projectRecord, TRUST_STEP, clamp01 } = require('../sidecar/memcore.js');
 
 const base = () => [
   { id: 'note_1', kind: 'note', title: 'API base', body: 'openrouter.ai/api/v1', useCount: 0, trust: 0, lastUsedAt: null, createdAt: 1000, ts: 1000, sourceRunId: 'run_a', pinned: false },
@@ -87,5 +87,21 @@ A.eq(pv.pinned, false, 'projection exposes pinned');
 A.eq(projectRecord(base()[0]).body, 'openrouter.ai/api/v1', 'a note projects its body');
 A.eq(projectRecord({ id: 'x', trust: 5 }).trust, 1, 'projection clamps a corrupt trust into [0,1]');
 A.eq(projectRecord({ id: 'x' }).createdAt, 0, 'projection tolerates a sparse record');
+
+// ---- nextNoteId: collision-proof (one past the MAX existing N, never positional length) ----
+A.eq(nextNoteId([]), 'note_1', 'first id on an empty store');
+A.eq(nextNoteId([{ id: 'note_1' }, { id: 'note_2' }, { id: 'note_3' }]), 'note_4', 'grows past the max');
+A.eq(nextNoteId([{ id: 'note_1' }, { id: 'note_3' }]), 'note_4', 'after a forget (gap) the next id is max+1, NOT the colliding length+1 (note_3)');
+A.eq(nextNoteId([{ id: 'note_5' }]), 'note_6', 'one record at note_5 -> note_6, not note_2');
+A.eq(nextNoteId([{ id: 'note_2' }, { id: 'weird' }, null]), 'note_3', 'ignores non-note ids and garbage');
+
+// ---- hardening: a pre-existing duplicate id can never multi-mutate (first match only) ----
+const dup = () => [{ id: 'note_3', useCount: 0, trust: 0, pinned: false }, { id: 'note_3', useCount: 0, trust: 0, pinned: false }];
+const usedDup = reduceStats(dup(), { name: 'memory.used', payload: { id: 'note_3' } }, { now: 7 });
+A.eq(usedDup[0].useCount, 1, 'memory.used bumps only the FIRST of a duplicate pair');
+A.eq(usedDup[1].useCount, 0, 'the second duplicate is left untouched');
+A.eq(applyForget(dup(), 'note_3').records.length, 1, 'forget removes only ONE of a duplicate pair (never both)');
+A.eq(applyPin(dup(), 'note_3', true).records.filter(r => r.pinned).length, 1, 'pin sets only the first of a duplicate pair');
+A.eq(applyEdit(dup(), 'note_3', 'x').records.filter(r => r.content === 'x').length, 1, 'edit changes only the first of a duplicate pair');
 
 A.report('memcore.test');

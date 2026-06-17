@@ -1401,7 +1401,7 @@ async function handleMemoryTurnin(req, res) {
   if (!content) return json(400, { error: 'a kept memory cannot be empty' });
   const stored = notebookStore.get('notebook:' + agentId);
   const list = Array.isArray(stored) ? stored : [];
-  writtenId = 'note_' + (list.length + 1);
+  writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
   const rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
   rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
   list.push(rec);

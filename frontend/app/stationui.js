@@ -399,14 +399,21 @@ const StationUI = (() => {
 
     const btns = el('div', 'consent-btns mc-acts'); card.appendChild(btns);
     const reload = () => loadMemoryCore(a);
+    let busy = false;   // in-flight guard: a fast double-click must not fire two POSTs (a success reloads the card away)
     const mk = (label, cls, fn) => { const b = el('button', 'consent-btn' + (cls ? ' ' + cls : '')); b.textContent = label; b.onclick = fn; btns.appendChild(b); return b; };
-    mk(rec.pinned ? 'Unpin' : 'Pin', '', async () => { const r = await Harness.memoryPin({ agentId: a.id, id: rec.id, pinned: !rec.pinned }); if (r && r.ok) { sfx('click'); reload(); } });
+    mk(rec.pinned ? 'Unpin' : 'Pin', '', async () => {
+      if (busy) return; busy = true;
+      const r = await Harness.memoryPin({ agentId: a.id, id: rec.id, pinned: !rec.pinned });
+      if (r && r.ok) { sfx('click'); reload(); } else busy = false;
+    });
     mk('Edit', '', () => editMemCard(card, bodyEl, btns, rec, a));
     // forget is destructive → two-step inline confirm (auto-disarms after 3s)
     let armed = false;
     const fbtn = mk('Forget', 'deny', async () => {
       if (!armed) { armed = true; fbtn.textContent = 'Confirm forget'; setTimeout(() => { if (armed) { armed = false; fbtn.textContent = 'Forget'; } }, 3000); return; }
-      const r = await Harness.memoryForget({ agentId: a.id, id: rec.id }); if (r && r.ok) { sfx('click'); reload(); }
+      if (busy) return; busy = true;
+      const r = await Harness.memoryForget({ agentId: a.id, id: rec.id });
+      if (r && r.ok) { sfx('click'); reload(); } else busy = false;
     });
     return card;
   }
@@ -418,7 +425,8 @@ const StationUI = (() => {
     btns.innerHTML = '';
     const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
     const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
-    save.onclick = async () => { const v = ta.value.trim(); if (!v) { ta.focus(); return; } const r = await Harness.memoryEdit({ agentId: a.id, id: rec.id, content: v }); if (r && r.ok) { sfx('click'); loadMemoryCore(a); } };
+    let saving = false;
+    save.onclick = async () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; const r = await Harness.memoryEdit({ agentId: a.id, id: rec.id, content: v }); if (r && r.ok) { sfx('click'); loadMemoryCore(a); } else saving = false; };
     cancel.onclick = () => loadMemoryCore(a);
   }
 
@@ -839,8 +847,9 @@ const StationUI = (() => {
     const [txt, cls] = pillFor(activity());
     const p = $('#status-pill');
     if (p) { p.textContent = txt; p.className = cls; }
-    // refresh BRIEF's live telemetry only — never on CONFIG, where a rerender would wipe an open editor
-    if (open.agents && agTab !== 'config') rerender('agents');
+    // refresh BRIEF's live telemetry only — never on CONFIG or MEMORY, where a rerender would wipe an open
+    // editor (and MEMORY self-refreshes via its own debounced memory.* U.bus listener, so it never needs tick)
+    if (open.agents && agTab !== 'config' && agTab !== 'memory') rerender('agents');
   }
   function flashSave() {
     const d = $('#save-dot'); if (!d) return;

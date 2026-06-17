@@ -24,11 +24,24 @@
     return clamp01(t + d * TRUST_STEP);
   }
 
+  // collision-proof record id: one past the HIGHEST existing note_N — NOT positional ('note_'+list.length),
+  // which reuses a freed slot after a forget and produces a DUPLICATE id (then every id-keyed op corrupts or
+  // deletes the wrong record). Pure + deterministic; shared by both writers (the turn-in keep + notebook.write).
+  function nextNoteId(records) {
+    let max = 0;
+    for (const r of (Array.isArray(records) ? records : [])) {
+      const m = /^note_(\d+)$/.exec(r && r.id);
+      if (m) { const n = +m[1]; if (n > max) max = n; }
+    }
+    return 'note_' + (max + 1);
+  }
+
   // reduceStats(records, event, {now}) -> records' : fold ONE memory.* event onto the matching record.
   //   memory.used     -> useCount++ + lastUsedAt = now   (surfacing a record into a prompt IS a use)
   //   memory.feedback -> trust = nextTrust(trust, delta)
   // PURE: returns NEW record objects for what changed, and the SAME array ref when nothing changed (so the
-  // host can skip a store write). An unknown event/id is a safe no-op.
+  // host can skip a store write). An unknown event/id is a safe no-op. FIRST match only — so a pre-existing
+  // duplicate id (e.g. from an old save written under the positional scheme) can never multi-mutate.
   function reduceStats(records, event, opts) {
     const recs = Array.isArray(records) ? records : [];
     const ev = event || {}, p = ev.payload || {}, name = ev.name;
@@ -37,7 +50,7 @@
     if (!id || (name !== 'memory.used' && name !== 'memory.feedback')) return recs;
     let changed = false;
     const out = recs.map(r => {
-      if (!r || r.id !== id) return r;
+      if (changed || !r || r.id !== id) return r;   // first match only
       changed = true;
       if (name === 'memory.used') return Object.assign({}, r, { useCount: (r.useCount || 0) + 1, lastUsedAt: now });
       return Object.assign({}, r, { trust: nextTrust(r.trust, p.delta) });   // memory.feedback
@@ -50,7 +63,7 @@
   function applyPin(records, id, pinned) {
     let found = false;
     const out = (Array.isArray(records) ? records : []).map(r => {
-      if (r && r.id === id) { found = true; return Object.assign({}, r, { pinned: !!pinned }); }
+      if (!found && r && r.id === id) { found = true; return Object.assign({}, r, { pinned: !!pinned }); }
       return r;
     });
     return { records: out, found };
@@ -62,7 +75,7 @@
     const c = String(content == null ? '' : content);
     let found = false;
     const out = (Array.isArray(records) ? records : []).map(r => {
-      if (r && r.id === id) { found = true; return Object.assign({}, r, { content: c, body: c }); }
+      if (!found && r && r.id === id) { found = true; return Object.assign({}, r, { content: c, body: c }); }
       return r;
     });
     return { records: out, found };
@@ -70,7 +83,7 @@
   function applyForget(records, id) {
     let found = false;
     const out = (Array.isArray(records) ? records : []).filter(r => {
-      if (r && r.id === id) { found = true; return false; }
+      if (!found && r && r.id === id) { found = true; return false; }   // first match only — never delete a dup too
       return true;
     });
     return { records: out, found };
@@ -91,5 +104,5 @@
     };
   }
 
-  return { TRUST_STEP, clamp01, nextTrust, reduceStats, applyPin, applyEdit, applyForget, projectRecord };
+  return { TRUST_STEP, clamp01, nextTrust, nextNoteId, reduceStats, applyPin, applyEdit, applyForget, projectRecord };
 });
