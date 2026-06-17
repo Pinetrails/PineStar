@@ -20,7 +20,18 @@
     const store = deps.store;
     const clock = deps.clock || { now: () => 0 };
     const KEY = aid => 'notebook:' + (aid || 'agent');
-    const notesOf = aid => { const v = store.get(KEY(aid)); return Array.isArray(v) ? v : []; };
+    // M-mem.2: widen any legacy {id,title,body,ts} note to the §5.2 memory-record shape
+    // (kind/scope/provenance/trust/useCount/pinned), idempotently — so an existing notebook upgrades
+    // transparently on read, and the next write persists the new shape. title/body/ts are preserved.
+    function migrate(n) {
+      if (n && n.kind && n.scope) return n;
+      return Object.assign({
+        kind: 'note', scope: 'global', streamId: null, sourceRunId: null,
+        createdAt: (n && typeof n.ts === 'number') ? n.ts : 0,
+        lastUsedAt: null, useCount: 0, trust: 0, pinned: false
+      }, n);
+    }
+    const notesOf = aid => { const v = store.get(KEY(aid)); return Array.isArray(v) ? v.map(migrate) : []; };
 
     const writeTool = {
       // NO consent gate: the notebook is the agent's OWN sandboxed private memory (no filesystem reach, no
@@ -31,11 +42,23 @@
       schema: { type: 'object', required: ['title', 'body'], properties: { title: { type: 'string' }, body: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
+        const runId = ctx && ctx.runId ? String(ctx.runId) : null;   // provenance source (B1 Cortex seam)
         const list = notesOf(aid);
-        const note = { id: 'note_' + (list.length + 1), title: String(args.title), body: String(args.body), ts: clock.now() };
+        const now = clock.now();
+        // §5.2 record: title/body/ts kept (back-compat + recall); sourceRunId is the moat (drill any fact ->
+        // the run that earned it). useCount/lastUsedAt move with memory.used; trust with memory.feedback.
+        const note = {
+          id: 'note_' + (list.length + 1), kind: 'note',
+          title: String(args.title), body: String(args.body),
+          scope: 'global', streamId: null, sourceRunId: runId,
+          createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
+        };
         list.push(note);
         store.set(KEY(aid), list);
         if (ctx && typeof ctx.emit === 'function') {
+          // memory.write — the durable-memory rung (feeds useCount/trust + the dossier's archivist track). The
+          // frozen contract requires runId, so emit only on a real run (some test fixtures carry no runId).
+          if (runId) ctx.emit('memory.write', { agentId: aid, runId, id: note.id, kind: 'note', scope: 'global' });
           const d = { id: note.id, agentId: aid, kind: 'note', title: note.title };
           if (ctx.room) d.room = ctx.room;
           ctx.emit('deliverable', d);

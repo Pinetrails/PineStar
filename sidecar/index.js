@@ -27,7 +27,7 @@ const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
-const { redact, renderRecall, injectRecall, makeContext } = require('./context.js');
+const { redact, renderRecall, injectRecall, rank, makeContext } = require('./context.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
@@ -769,13 +769,23 @@ async function runOnce(o) {
     : '';
   const sys = (system || '') + toolNote;
   let msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
-  // Cortex (M-mem.1): surface the agent's OWN memory in-prompt — inject a recalled-memory fence (newest notes
-  // first, char-capped) right before the triggering user message, so the agent never has to call notebook.read
-  // to remember. Empty notebook => nothing injected (byte-identical to a memoryless run). Never fails the run.
+  // Cortex (M-mem.3): surface the agent's OWN memory in-prompt — RANK it by relevance to this message
+  // (BM25 + recency/trust/pin), inject the top few as a recalled-memory fence before the triggering user
+  // message, and emit memory.used per surfaced record (-> useCount/trust + the XP reuse path). The recency
+  // floor keeps recent notes recallable on an off-topic turn (no M-mem.1 regression). Empty notebook =>
+  // nothing injected (byte-identical to a memoryless run). Never fails the run.
   try {
     const stored = notebookStore.get('notebook:' + agentId);
-    const recall = renderRecall(Array.isArray(stored) ? stored.slice().reverse() : [], { limit: 1500 });
-    if (recall.text) { msgs = injectRecall(msgs, recall.text); emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars }); }
+    const recs = Array.isArray(stored) ? stored : [];
+    let q = '';
+    for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { q = messages[i].content; break; } }
+    const ranked = rank(recs, q, { now: Date.now() });
+    const recall = renderRecall(ranked, { limit: 1500 });
+    if (recall.text) {
+      msgs = injectRecall(msgs, recall.text);
+      emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars });
+      if (runId) for (let i = 0; i < recall.count && i < ranked.length; i++) { const r = ranked[i]; if (r && r.id) emit('memory.used', { agentId, runId, id: r.id }); }
+    }
   } catch (_) {}
 
   let result;

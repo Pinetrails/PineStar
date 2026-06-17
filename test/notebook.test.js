@@ -58,6 +58,58 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.eq(store.get('notebook:ag').length, 1, 'rejected write did not persist');
   }
 
+  // ============ A2. M-mem.2: widened §5.2 record shape + provenance + memory.write ============
+  {
+    const { seq, emit } = setup();
+    const store = memStore();
+    const reg = makeRegistry();
+    makeNotebookTools({ store, clock: makeClock(7000) }).register(reg);
+
+    await reg.dispatch(dcall('notebook.write', { title: 'fact', body: 'the sky is blue' }), { agentId: 'ag', emit, runId: 'run_42' });
+    const n = store.get('notebook:ag')[0];
+    A.eq(n.kind, 'note', 'widened: kind = note');
+    A.eq(n.scope, 'global', 'widened: scope defaults to global');
+    A.eq(n.streamId, null, 'widened: streamId null until the M-mem.2b frontend seam');
+    A.eq(n.sourceRunId, 'run_42', 'provenance (Bet 2): sourceRunId stamped from ctx.runId');
+    A.eq(n.createdAt, 7000, 'widened: createdAt from the injected clock');
+    A.eq(n.useCount, 0, 'widened: useCount starts at 0 (moves with memory.used)');
+    A.eq(n.trust, 0, 'widened: trust starts neutral (moves with memory.feedback)');
+    A.eq(n.pinned, false, 'widened: not pinned');
+    A.eq(n.title, 'fact', 'back-compat: title preserved'); A.eq(n.body, 'the sky is blue', 'back-compat: body preserved');
+
+    const mw = seq.find(e => e.name === 'memory.write');
+    A.ok(mw, 'memory.write emitted on a real (runId-bearing) write');
+    A.eq(mw.payload.id, n.id, 'memory.write carries the note id');
+    A.eq(mw.payload.runId, 'run_42', 'memory.write carries runId (contract requires it)');
+    A.eq(mw.payload.kind, 'note', 'memory.write kind = note');
+    A.eq(mw.payload.scope, 'global', 'memory.write scope = global');
+
+    // best-effort telemetry: a write WITHOUT a runId still persists, just emits no memory.write
+    const { seq: seq2, emit: emit2 } = setup();
+    const store2 = memStore();
+    const reg2 = makeRegistry();
+    makeNotebookTools({ store: store2, clock: makeClock(0) }).register(reg2);
+    await reg2.dispatch(dcall('notebook.write', { title: 't', body: 'b' }), { agentId: 'ag', emit: emit2 });
+    A.eq(store2.get('notebook:ag').length, 1, 'a runId-less write still persists');
+    A.eq(seq2.filter(e => e.name === 'memory.write').length, 0, 'no memory.write without a runId');
+    A.eq(seq2.filter(e => e.name === 'deliverable').length, 1, 'deliverable still emitted without a runId');
+
+    // migration: a legacy {id,title,body,ts} note widens transparently on read, idempotently
+    const store3 = memStore();
+    store3.set('notebook:ag', [{ id: 'note_1', title: 'old', body: 'legacy', ts: 1234 }]);
+    const reg3 = makeRegistry();
+    makeNotebookTools({ store: store3, clock: makeClock(0) }).register(reg3);
+    const r3 = await reg3.dispatch(dcall('notebook.read', {}), { agentId: 'ag' });
+    A.ok(r3.content.indexOf('old') >= 0, 'migration: a legacy note still reads back');
+    await reg3.dispatch(dcall('notebook.write', { title: 'new', body: 'fresh' }), { agentId: 'ag', emit, runId: 'r1' });
+    const migrated = store3.get('notebook:ag')[0];
+    A.eq(migrated.kind, 'note', 'migration: legacy note gains kind = note');
+    A.eq(migrated.scope, 'global', 'migration: legacy note gains scope = global');
+    A.eq(migrated.createdAt, 1234, 'migration: createdAt derived from the legacy ts');
+    A.eq(migrated.useCount, 0, 'migration: useCount defaulted');
+    A.eq(migrated.title, 'old', 'migration: original content preserved');
+  }
+
   // ============ B/C. EXIT CRITERION + determinism ============
   function exitFixture() {
     return {
