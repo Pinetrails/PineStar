@@ -48,7 +48,9 @@ const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 3000
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
 // can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.
-const num = (v, d) => { const n = parseFloat(v); return isFinite(n) && n > 0 ? n : d; };
+// num() passes a parsed value through (including 0 -> UNGOVERNED via budget.js capOf, e.g. SKYNET_BUDGET_PER_DAY=0
+// disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
+const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
 const BUDGET_CAPS = {
   perRun: num(process.env.SKYNET_BUDGET_PER_RUN, 3),
   perDay: num(process.env.SKYNET_BUDGET_PER_DAY, 40),
@@ -66,8 +68,10 @@ try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 
 /* ---- spend ledger + budget (Wave 1 cost spine) ----
    The ledger is an append-only JSONL of finished runs (sibling of the fs jail, so the agent's own fs.* tools can
-   neither read nor rewrite the spend record). appendFileSync is a crash-safe single-line append on local fs. The
-   budget governs the soft cross-run pools over it; the host injects Date.now() at this composition boundary. */
+   neither read nor rewrite the spend record). Each append is fsync'd to disk so the day/global pools survive even
+   a hard power loss (not just a clean crash) — otherwise an un-flushed tail would silently hand a capped Commander
+   unintended headroom after restart. The budget governs the soft cross-run pools; the host injects the wall clock
+   at this composition boundary. */
 const LEDGER_FILE = path.join(WORKSPACES, 'ledger.jsonl');
 const ledgerIo = {
   readAll() {
@@ -76,7 +80,17 @@ const ledgerIo = {
         .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
     } catch (e) { return []; }
   },
-  append(entry) { try { fs.appendFileSync(LEDGER_FILE, JSON.stringify(entry) + '\n'); } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); } }
+  append(entry) {
+    // open(O_APPEND) -> write -> fsync -> close, all fail-open: a persistence error must never crash the run
+    // (the in-memory ledger mirror still answers for this process's lifetime).
+    let fd = null;
+    try {
+      fd = fs.openSync(LEDGER_FILE, 'a');
+      fs.writeSync(fd, JSON.stringify(entry) + '\n');
+      fs.fsyncSync(fd);
+    } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+  }
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
 const budget = makeBudget({ caps: { day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
@@ -579,10 +593,12 @@ async function runOnce(o) {
   //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
   //      the loop keeps the full history (never a silent drop). ----
   const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model), compactAt: 0.65, keepTail: 6 });
-  // The summarizer is itself a paid model call, so its cost is RECONCILED and folded into this run's ledger
-  // entry (and surfaced as an agent.cost event), never invisible — the cost spine stays honest about the
-  // overhead of compaction itself. Tallied here; the loop adds nothing for it.
-  let compactionUsd = 0, compactionTokens = 0;
+  // The summarizer is itself a paid model call. It RETURNS its reconciled {usd,tokens} so the loop folds the
+  // spend into the run's running tally IN THE SAME TURN — so the per-run ceiling + cross-run pool guards (and the
+  // run total -> ledger) all see it, not just at run end. It also surfaces a display-only agent.cost so live
+  // spend stays visible; that event deliberately OMITS tokensIn/tokensOut so the context-occupancy gauge (which
+  // reads agent.cost.tokensIn as "current prompt size") is not transiently corrupted by the summarizer's small
+  // prompt. The loop owns the accounting; this emit is for the cost stream only.
   async function summarize(older) {
     const transcript = older.map(mm => {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
@@ -598,9 +614,8 @@ async function runOnce(o) {
       else if (ev && ev.type === 'usage') usage = ev.usage;
     }
     const c = cost.reconcile(usage, model);
-    compactionUsd += c.usd || 0; compactionTokens += (c.tokensIn || 0) + (c.tokensOut || 0);
-    emit('agent.cost', { agentId, runId, usd: c.usd || 0, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0, reasoningTokens: c.reasoningTokens || 0, cachedTokens: c.cachedTokens || 0, model, reconciled: true });
-    return out.trim();
+    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model, reconciled: true });   // display-only; no token fields (gauge-safe)
+    return { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
   }
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
   // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
@@ -672,8 +687,9 @@ async function runOnce(o) {
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
-      // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`.
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: BUDGET_CAPS.perRun },
+      // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
+      // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
+      limits: { maxIters: CAPS.maxIters, maxCostUsd: (BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity },
       budget: runBudget, context: ctxMgr, summarize,
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
@@ -684,8 +700,8 @@ async function runOnce(o) {
   } finally {
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
-    // compactionUsd/Tokens fold in the summarizer's own (reconciled) cost so the ledger total = every agent.cost.
-    try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: ((result && result.usd) || 0) + compactionUsd, tokens: ((result && result.tokens) || 0) + compactionTokens }); } catch (_) {}
+    // result.usd/tokens already INCLUDE the summarizer's spend (the loop folds it into spentUsd as it accrues).
+    try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: (result && result.usd) || 0, tokens: (result && result.tokens) || 0 }); } catch (_) {}
     budget.clearLive(runId);
   }
   return result;

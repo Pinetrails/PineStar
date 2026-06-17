@@ -60,11 +60,17 @@
 
     const overrides = { run: 0, day: 0, global: 0 };
     const live = new Map();          // runId -> $ spent so far this run (in-flight, not yet in the ledger)
-    const emitted = new Set();       // `${scope}:${level}` already announced this session (de-dup the bus)
+    const emitted = new Set();       // `${runId}:${scope}:${level}` already announced — de-dup PER RUN so each run's
+                                     // own bus sees the crossing that affects it (cleared per run in clearLive).
 
     function sumLive() { let t = 0; for (const v of live.values()) t += num(v); return t; }
     function noteLive(runId, usd) { if (runId != null) live.set(String(runId), num(usd)); }
-    function clearLive(runId) { if (runId != null) live.delete(String(runId)); }
+    function clearLive(runId) {
+      if (runId == null) return;
+      const rk = String(runId);
+      live.delete(rk);
+      for (const k of emitted) if (k.indexOf(rk + ':') === 0) emitted.delete(k);   // forget this run's announced crossings
+    }
 
     // cross-run $ for each governed scope. liveTotal already includes the calling run (noteLive ran first),
     // and the ledger holds only FINISHED runs, so completed + all-live double-counts nothing.
@@ -89,7 +95,7 @@
           if (!s) continue;
           const level = s.frac >= 1 ? 'cap' : (s.frac >= warnFrac ? 'warn' : null);
           if (!level) continue;
-          const key = scope + ':' + level;
+          const key = (runId == null ? '' : String(runId)) + ':' + scope + ':' + level;   // per-run de-dup
           if (emitted.has(key)) continue;
           emitted.add(key);
           try { emit('budget.threshold', { scope, usd: s.usd, cap: s.cap }); } catch (_) {}
@@ -106,7 +112,7 @@
       const base = capOf(baseCaps, scope);
       if (base == null) return null;
       overrides[scope] += (typeof amount === 'number' && isFinite(amount) && amount > 0) ? amount : base;
-      emitted.delete(scope + ':warn'); emitted.delete(scope + ':cap');
+      for (const k of emitted) if (k.endsWith(':' + scope + ':warn') || k.endsWith(':' + scope + ':cap')) emitted.delete(k);   // let every run re-warn
       return base + overrides[scope];
     }
 

@@ -241,6 +241,46 @@ function chatFixture() {
     A.ok(messages[0].content.indexOf('<conversation_summary>') === 0 && messages[0].content.indexOf('SUMMARY') >= 0, 'the summary was folded into the leading note');
   }
 
+  // ---- compaction summarizer that REPORTS its own {usd,tokens} -> the spend folds into the run total (so the
+  //      per-run + budget guards and the ledger see the summarizer's cost, not just at run end) ----
+  {
+    const { seq, emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const fixture = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'final' }, { type: 'usage', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const provider = makeReplayProvider(fixture);
+    const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
+    const summarize = async () => ({ summary: 'SUMMARY', usd: 0.01, tokens: 50 });   // reports its own reconciled cost
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'do it' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize });
+    A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'compaction happened');
+    A.ok(res.usd > 0.009, "the summarizer's $0.01 folded into the run total (would be ~0 without the fold; got $" + res.usd + ')');
+    A.eq(res.tokens, 62, "the summarizer's 50 tokens folded in on top of the 12 main-turn tokens");
+  }
+
+  // ---- a summarizer that returns EMPTY does not compact (never a silent context drop) and the run still finishes ----
+  {
+    const { seq, emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const fixture = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'final' }, { type: 'usage', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const provider = makeReplayProvider(fixture);
+    const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
+    let called = 0;
+    const summarize = async () => { called++; return ''; };   // degraded model
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'do it' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize });
+    A.eq(seq.filter(e => e.name === 'agent.compact').length, 0, 'empty summary -> no compaction');
+    A.ok(called >= 1, 'the summarizer was attempted');
+    A.eq(res.reason, 'done', 'the run still completes with the full (uncompacted) history');
+  }
+
   // ---- no context manager -> compaction is a no-op (existing callers byte-identical) ----
   {
     const { seq, emit } = setup();

@@ -83,6 +83,21 @@ function collector() { const evs = []; return { emit: (name, payload) => evs.pus
   A.eq(blk && blk.scope, 'global', 'prior recorded spend (8) + this run (3) breaches the pool');
 }
 
+// ---- per-run threshold VISIBILITY: two runs that each sit in the SHARED pool's warn band each get their own
+//      budget.threshold on their own bus (de-dup is keyed per run, not once-per-session) ----
+{
+  const cA = collector(), cB = collector();
+  const b = makeBudget({ caps: { day: 40 }, ledger: fakeLedger(0, 0), clock: { now: () => 0 } });
+  b.check('r1', 'a', 33, 0, cA.emit);            // r1 live $33 -> day 33/40 = warn on r1's bus
+  b.check('r2', 'b', 0, 0, cB.emit);             // r1 still live $33 -> day still 33 -> r2 is ALSO in the warn band
+  A.eq(cA.evs.filter(e => e.name === 'budget.threshold').length, 1, 'run1 got its own warn');
+  A.eq(cB.evs.filter(e => e.name === 'budget.threshold').length, 1, 'run2 ALSO got a warn for the shared-pool crossing (per-run de-dup)');
+  b.clearLive('r1');                              // forgets r1's announced crossings AND its live spend
+  const cA2 = collector();
+  b.check('r1', 'a', 33, 0, cA2.emit);
+  A.eq(cA2.evs.filter(e => e.name === 'budget.threshold').length, 1, 'after clearLive, a fresh r1 warns again');
+}
+
 // ---- resume(): one-click headroom unblocks the scope and lets it warn again ----
 {
   const c = collector();

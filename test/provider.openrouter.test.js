@@ -156,7 +156,10 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'ok', 'after the 408 retry it streams normally');
   }
 
-  // L. prompt caching: applyCacheControl marks the system prefix cacheable for Anthropic-style models ONLY
+  // L. prompt caching: applyCacheControl marks the system prefix cacheable for Anthropic-style models ONLY.
+  //    NOTE: this asserts the wire SHAPE, not a real cache HIT — Anthropic only caches a prefix above a per-model
+  //    minimum (~1024–4096 tokens), so the tiny 'SYS PREFIX' here would run uncached live. A real hit is proven by
+  //    test/live.smoke.js (which pads the system prompt past the floor and checks cached_tokens > 0).
   {
     const { applyCacheControl } = require('../sidecar/providers/openrouter.js');
     const msgs = [{ role: 'system', content: 'SYS PREFIX' }, { role: 'user', content: 'hi' }];

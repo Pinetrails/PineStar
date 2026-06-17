@@ -131,22 +131,32 @@
 
     // Fold older history into a summary when the live prompt is past the context manager's threshold, so a long
     // run shrinks instead of overflowing. Tool-pairing-safe (planCompaction snaps the boundary); only compacts
-    // when a REAL summary comes back (a failed/empty summarizer skips this turn — never a silent context drop).
+    // when a REAL summary comes back (a failed/empty summarizer skips — never a silent context drop). The
+    // summarizer is itself a PAID sub-call: when summarize() returns {summary,usd,tokens} its reconciled cost is
+    // folded into spentUsd/spentTokens HERE, so the per-run ceiling + cross-run pool guards on the NEXT turn (and
+    // the run total) see it — not just at run end. After 2 consecutive failed/empty summaries, compaction gives
+    // up for the rest of the run, bounding wasted paid calls against a degraded model.
+    let compactionFails = 0, compactionOff = false;
     async function maybeCompact() {
-      if (!context || !lastUsage || !context.shouldCompact(lastUsage)) return;
+      if (compactionOff || !context || !lastUsage || !context.shouldCompact(lastUsage)) return;
       let i = 0;
       while (i < messages.length && messages[i].role === 'system') i++;   // leading system prefix kept verbatim
       const prefix = messages.slice(0, i);
       const plan = context.planCompaction(messages.slice(i));
-      if (!plan.older.length) return;                                     // nothing safely foldable yet
+      if (!plan.older.length) return;                                     // nothing safely foldable yet (no paid call)
       const beforeTokens = lastUsage.prompt_tokens || lastUsage.promptTokens || 0;
-      let summary = '';
-      try { summary = summarize ? await summarize(plan.older) : ''; } catch (e) { return; }
-      if (signal.aborted || !summary) return;
+      let r;
+      try { r = summarize ? await summarize(plan.older) : ''; }
+      catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return; }   // summarizer threw -> skip
+      if (signal.aborted) return;
+      const summary = (typeof r === 'string') ? r : ((r && r.summary) || '');
+      if (!summary) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return; }   // empty -> don't drop history
+      compactionFails = 0;
       const note = { role: 'system', content: '<conversation_summary>\n' + summary + '\n</conversation_summary>' };
       const rebuilt = prefix.concat([note], plan.tail);
       const afterTokens = context.estimateMessages(rebuilt);
       messages.length = 0; for (const mm of rebuilt) messages.push(mm);
+      if (r && typeof r === 'object') { spentUsd += r.usd || 0; spentTokens += r.tokens || 0; }   // count the summarizer's own spend
       lastUsage = null;   // the next turn re-measures against the compacted prompt before considering another fold
       emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'context' });
     }

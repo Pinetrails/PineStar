@@ -49,6 +49,11 @@
   //      byte-identical to before and other providers are unaffected. Returns a new array; never mutates the
   //      loop's messages. (Caching the growing conversation prefix + the tool list is a planned follow-up; this
   //      ships the single system breakpoint — the largest stable chunk — as the safe first win.)
+  //      NOTE (verified vs the OpenRouter + Anthropic docs, 2026): this is the exact accepted wire shape and never
+  //      errors, but Anthropic only caches a prefix at/above a per-model MINIMUM (~1024 tokens for Opus 4.8 /
+  //      Sonnet 4.6; up to 4096 for Opus 4.6/4.5 + Haiku 4.5) — below that it runs UNCACHED with no error. So a
+  //      real cache HIT (cached_tokens > 0) requires the actual system prefix to clear that floor; billing stays
+  //      honest either way (cost.js reads the provider's real usage.cost + cached_tokens).
   function supportsExplicitCache(model) {
     return /anthropic\/|claude/i.test(String(model || ''));
   }
