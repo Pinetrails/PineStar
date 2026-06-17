@@ -26,7 +26,7 @@ const XpStore = (() => {
 
   function pushToWorld(a) {
     if (typeof World === 'undefined' || !World.setXp || typeof Xp === 'undefined') return;
-    World.setXp(a && a.stats ? Xp.compute(a.stats) : null, station ? Xp.compute(station) : null);
+    World.setXp(a && a.stats ? Xp.compute(a.stats) : null);   // station headline now rides the top-bar chip (pushTopbar)
   }
 
   // the always-on STATION level chip in the top bar — the colony's headline number.
