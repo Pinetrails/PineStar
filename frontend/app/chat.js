@@ -35,6 +35,9 @@ const Chat = (() => {
   // one thing that can't live in the pure model is the live AbortController (not serializable), so it stays here.
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
   let activeLiveRow = null;     // streaming DOM row for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
+  let pinnedReplyEl = null;     // THE PINNED REPLY: while a reply streams, its DOM row is held as the LAST log child so the
+                                // actual message sits at the bottom of COMMS; work lines (tool ▶/◀, deliverables, consent) slot
+                                // in ABOVE it instead of pushing it up out of view. Cleared the moment the reply finishes.
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const el = id => document.getElementById(id);
@@ -74,13 +77,18 @@ const Chat = (() => {
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
   function status(s) { if (statusEl) statusEl.textContent = s; }
 
-  function row(role) {
+  // opts.live === true marks the streaming reply row, which always pins to the BOTTOM. Every other row (tool
+  // ▶/◀ lines, deliverables, consent, turn-in) inserts ABOVE the pinned reply while one is live — so the work
+  // log stacks above and the message the agent is actually saying stays at the bottom, never scrolled away.
+  function row(role, opts) {
     const d = document.createElement('div'); d.className = 'cmsg ' + role;
     const who = document.createElement('span'); who.className = 'who';
     who.textContent = role === 'user' ? 'COMMANDER' : name;
     const body = document.createElement('span'); body.className = 'body';
     d.appendChild(who); d.appendChild(body);
-    log.appendChild(d); log.scrollTop = log.scrollHeight;
+    if (!(opts && opts.live) && pinnedReplyEl && pinnedReplyEl.parentNode === log) log.insertBefore(d, pinnedReplyEl);
+    else log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
     return { d, body };
   }
   function addUser(t) { row('user').body.textContent = t; log.scrollTop = log.scrollHeight; }
@@ -237,7 +245,7 @@ const Chat = (() => {
   // the snapshot is empty and this is a no-op. (Live token re-binding for a stream switched-to MID-run lands
   // with the frontend-hud change that lifts the "can't switch while busy" guard — see the GATE handoff note.)
   function replayChannel() {
-    activeLiveRow = null;
+    activeLiveRow = null; pinnedReplyEl = null;   // log was just cleared by load(); drop any stale pin before re-rendering
     if (!activeWs || typeof Channels === 'undefined') return;
     const s = Channels.snapshot(activeWs.id);
     if (!s) return;
@@ -250,13 +258,16 @@ const Chat = (() => {
   }
 
   function streamingAgent() {
-    const r = row('agent');
+    const r = row('agent', { live: true });   // the reply row pins to the bottom; work lines stack above it
+    r.d.classList.add('reply');               // the agent's actual message — styled as the headline, not dim tool noise
+    pinnedReplyEl = r.d;
     const caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
     r.d.appendChild(caret);
+    const unpin = () => { if (pinnedReplyEl === r.d) pinnedReplyEl = null; };   // reply finished — later rows append at the very bottom again
     return {
       append(t) { r.body.textContent += t; log.scrollTop = log.scrollHeight; },
-      done() { caret.remove(); },
-      error(m) { r.d.classList.add('err'); r.body.textContent = '⚠ ' + m; caret.remove(); }
+      done() { caret.remove(); unpin(); },
+      error(m) { r.d.classList.add('err'); r.body.textContent = '⚠ ' + m; caret.remove(); unpin(); }
     };
   }
 

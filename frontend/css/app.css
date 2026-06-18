@@ -146,6 +146,14 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .cmsg .caret { color: var(--ph); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* THE REPLY: the agent's actual message. It is pinned to the BOTTOM of COMMS (see chat.js row/streamingAgent)
+   and styled as the headline — a framed block — so the thing the agent is saying reads clearly and is never
+   buried above the dim step-by-step tool log. */
+.cmsg.agent.reply { padding: 9px 11px; border-radius: 4px; background: var(--ph-faint); border-left: 2px solid var(--ph); }
+.cmsg.agent.reply .who { color: var(--ph-bright); }
+.cmsg.agent.reply .body { color: var(--ph-bright); }
+.cmsg.agent.reply.err { border-left-color: var(--bad); }
+
 /* tool-activity lines: the agent's real work, shown step by step */
 .cmsg.tool { font-size: 14px; }
 .cmsg.tool .who { display: none; }
