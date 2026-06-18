@@ -1201,9 +1201,104 @@ const StationUI = (() => {
     refresh();
   }
 
+  /* ============== COMMANDER DOSSIER — the station-wide model of the USER (the glass box) ==============
+     Phase A of docs/COMMANDER_DOSSIER_PLAN.md. ONE dossier, shared by every agent, that folds into each
+     agent's system prompt (DossierStore.composeBlock) so a new agent knows the Commander on day one. This
+     panel is the glass box: every belief the station holds about the Commander, grouped by dimension, with
+     provenance — add / edit / pin / forget, all local-first. It reads + mutates DossierStore (which
+     recomposes the live prompt + persists on each edit); the panel re-renders after a mutation. Belief text
+     is rendered as textContent (never interpreted), mirroring the Memory Core's injection-safe discipline. */
+  const CD_SOURCE = { onboarding: 'from your awakening', commander: 'you told the station', interview: 'from the intake interview', curiosity: 'you answered a question' };
+  const CDS = () => (typeof DossierStore !== 'undefined') ? DossierStore : null;
+
+  function buildCommander(body) {
+    const ds = CDS();
+    const sum = ds ? ds.summary() : null;
+    if (!ds || !sum) { body.innerHTML = '<p class="dim">The Commander Dossier warms up once your agent is awake.</p>'; return; }
+    const dims = ds.dims();
+    body.innerHTML = '';
+
+    // header: the honest familiarity meter + the observed work-mix + the local-first promise
+    const pct = Math.round((sum.familiarity || 0) * 100);
+    const obs = sum.observed;
+    const obsLine = (obs && obs.dominant && !obs.calibrating)
+      ? 'Observed: you work mostly on <b>' + esc(obs.dominant) + '</b> tasks.'
+      : 'Observed work-mix: <span class="dim">calibrating…</span>';
+    const head = el('div', 'gx',
+      '<div class="gx-head"><div><div class="gx-kicker">STATION // COMMANDER DOSSIER</div>' +
+      '<div class="gx-name">What the station knows about you</div></div>' +
+      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">FAMILIARITY</div>' +
+      '<span class="cd-fam"><span class="cd-fk"><span class="cd-ff" style="width:' + pct + '%;"></span></span>' +
+      '<span class="cd-fpct">' + (sum.known.length ? pct + '%' : 'calibrating') + '</span></span></div></div>' +
+      '<div class="cd-sub">' + sum.known.length + ' of ' + dims.length + ' dimensions known &middot; ' + obsLine + '</div>' +
+      '<div class="mc-note">This dossier is <b>shared by every agent on your station</b> and folds into each one\'s briefing, so a freshly-deployed agent already knows you. It is <b>local-first</b> — it never leaves this machine. Add, edit, pin, or forget anything below; you own it.</div>');
+    body.appendChild(head);
+
+    // one section per dimension
+    for (const d of dims) {
+      const bs = ds.beliefs(d.key);
+      const sec = el('div', 'cd-sec');
+      sec.appendChild(el('div', 'cd-sech', '<span class="cd-dim">' + esc(d.label) + '</span><span class="cd-dn">' + (bs.length || '—') + '</span>'));
+      if (!bs.length) { const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e); }
+      else for (const b of bs) sec.appendChild(cdCard(d.key, b));
+      sec.appendChild(cdAddRow(d.key));
+      body.appendChild(sec);
+    }
+  }
+
+  function cdCard(dim, b) {
+    const card = el('div', 'cd-rec' + (b.pinned ? ' pinned' : ''));
+    const txt = el('div', 'cd-body'); txt.textContent = b.text; card.appendChild(txt);   // textContent — belief text is never interpreted
+    const meta = el('span', 'cd-src');
+    meta.textContent = (b.pinned ? '★ pinned · ' : '') + (CD_SOURCE[b.source] || 'you told the station') + (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleDateString() : '');
+    card.appendChild(el('div', 'cd-meta')).appendChild(meta);
+
+    const btns = el('div', 'consent-btns cd-acts'); card.appendChild(btns);
+    let busy = false;
+    const mk = (label, cls, fn) => { const x = el('button', 'consent-btn' + (cls ? ' ' + cls : '')); x.textContent = label; x.onclick = fn; btns.appendChild(x); return x; };
+    mk(b.pinned ? 'Unpin' : 'Pin', '', () => { if (busy) return; busy = true; CDS().setPinned(dim, b.id, !b.pinned); sfx('click'); rerender('commander'); });
+    mk('Edit', '', () => cdEdit(card, txt, btns, dim, b));
+    let armed = false;
+    const fb = mk('Forget', 'deny', () => {
+      if (!armed) { armed = true; fb.textContent = 'Confirm forget'; setTimeout(() => { if (armed) { armed = false; fb.textContent = 'Forget'; } }, 3000); return; }
+      if (busy) return; busy = true; CDS().forget(dim, b.id); sfx('click'); rerender('commander');
+    });
+    return card;
+  }
+
+  // inline edit (mirrors the Memory Core editor): swap the body for a textarea + Save/Cancel.
+  function cdEdit(card, txt, btns, dim, b) {
+    const ta = el('textarea', 'cd-edit'); ta.value = b.text; ta.spellcheck = false;
+    card.replaceChild(ta, txt); ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
+    btns.innerHTML = '';
+    const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+    const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+    let saving = false;
+    save.onclick = () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; CDS().upsert(dim, { id: b.id, text: v }); sfx('click'); rerender('commander'); };
+    cancel.onclick = () => rerender('commander');
+  }
+
+  // a "+ add" affordance per dimension: expands to a textarea so the Commander can teach the station directly.
+  function cdAddRow(dim) {
+    const row = el('div', 'cd-add');
+    const btn = el('button', 'cd-addbtn'); btn.textContent = '+ add'; row.appendChild(btn);
+    btn.onclick = () => {
+      row.innerHTML = '';
+      const ta = el('textarea', 'cd-edit'); ta.placeholder = 'Tell the station something about yourself…'; ta.spellcheck = false; row.appendChild(ta); ta.focus();
+      const btns = el('div', 'consent-btns cd-acts'); row.appendChild(btns);
+      const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+      const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+      let saving = false;
+      save.onclick = () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; CDS().upsert(dim, { text: v, source: 'commander' }); sfx('click'); rerender('commander'); };
+      cancel.onclick = () => rerender('commander');
+    };
+    return row;
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
+    commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
     skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '520px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
