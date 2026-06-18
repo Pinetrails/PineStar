@@ -6,7 +6,9 @@ const App = (() => {
   const el = id => document.getElementById(id);
   const SUITS = ['#5ad0ff', '#3dff70', '#ff8f3d', '#c08bff', '#ff5c9d', '#ffd34a'];
 
-  let agent = null;           // {id,name,color,model,purpose,systemPrompt,createdAt}
+  let agent = null;           // the FOCUSED agent — COMMS + camera target. Every existing `agent.` reference still
+                              //   reads "the agent in front of you"; summon adds more, focus repoints this pointer.
+  const agents = new Map();   // agentId -> agent object (hero + summoned crew) — the live multi-agent roster
   let resumingSaved = null;   // a save awaiting a re-entered key
   let pickedColor = SUITS[0];
   let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'worker-homie';
@@ -95,6 +97,42 @@ const App = (() => {
     persist();
   }
 
+  /* ---------- the live agent registry (multi-agent) ----------
+     `agent` is the FOCUSED agent; `agents` holds the whole crew. liveAgents() is what the world / bay /
+     builder / dossier read. focusAgent(id) repoints COMMS + the run identity at one crew member — the
+     focus follows whichever workstream is active (switchWorkstream calls it with the stream's agentId). */
+  function liveAgents() { return [...agents.values()]; }
+  function registerHero(a) { agents.clear(); agents.set(a.id, a); }   // wake/resume: the hero founds the registry
+  function focusAgent(id) {
+    const a = agents.get(id) || agents.get('agent');
+    if (!a) return;
+    agent = a;
+    if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);   // runs carry the FOCUSED agent's identity
+    const gtA = el('gt-agent'); if (gtA) gtA.textContent = a.name;
+    const gtM = el('gt-model'); if (gtM) gtM.textContent = a.model;
+    if (typeof World !== 'undefined' && World.focusBody) World.focusBody(a.id);   // Phase C: reframe the camera onto this body
+  }
+  // the persisted shape of a crew member (systemPrompt is derived, recomposed on rehydrate).
+  function serializeAgentLite(a) {
+    return { id: a.id, name: a.name, color: a.color, model: a.model, personaId: a.personaId,
+             purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
+  }
+  // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
+  // DATA only — world bodies are spawned in enterGame once World.init has run.
+  function rehydrateRoster(savedAgents) {
+    if (!Array.isArray(savedAgents)) return;
+    for (const s of savedAgents) {
+      if (!s || !s.id || s.id === 'agent' || agents.has(s.id)) continue;   // hero already registered; skip dups
+      const a = { id: s.id, name: s.name, color: s.color, model: s.model || (agent && agent.model),
+                  personaId: s.personaId, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  docs: s.docs, createdAt: s.createdAt || Date.now() };
+      agentDocs(a);
+      a.systemPrompt = composeSystemPrompt(a);
+      agents.set(a.id, a);
+      registerAgent(a.id, a.color);   // sprite tint shim
+    }
+  }
+
   /* ---------- THE RECRUITMENT BAY (in-game) ----------
      Open the marketplace against the LIVE agent: DEPLOY a specialty (re-specs purpose + standing orders
      through the very same applyAgentConfig path the dossier uses) or SAVE this agent as a reusable
@@ -124,6 +162,59 @@ const App = (() => {
     const patch = Specialties.compose(spec);
     if (patch) applyAgentConfig(patch);   // folds purpose + manual (+ any new persona) into the live prompt, persists, syncs channels
     if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('agents');   // refresh an open dossier
+  }
+
+  /* ---------- SUMMON: wake a NEW live agent onto the crew ----------
+     The backend already runs any agentId concurrently and isolates its notebook / fs / cost / caps; the
+     missing piece was a frontend that mints more than one. summonAgent does exactly that: a conforming
+     agentId, a composed identity (reusing the hero's model/provider in Stage 1), its own workstream, and
+     focus — so the Commander can task it immediately and it fires a REAL independent run. */
+  // fold a specialty's preset purpose + standing orders into an agent's docs — the ONE composer shared by
+  // both the wake path and summon, so a recruited identity is assembled identically everywhere.
+  function applySpecialty(a, spec) {
+    if (!spec || typeof Specialties === 'undefined') return;
+    const patch = Specialties.compose(spec);
+    if (!patch) return;
+    agentDocs(a);
+    a.docs.purpose = patch.purpose; a.docs.manual = patch.manual;
+    a.purpose = (patch.purpose || '').trim();
+    a.specialtyId = spec.id;
+  }
+  // a backend-valid, collision-free agentId for a summon (never the hero's reserved 'agent').
+  function allocAgentId(spec) {
+    const seed = (spec && (spec.id || spec.name)) || 'agent';
+    return (typeof AgentId !== 'undefined') ? AgentId.alloc(seed, agents) : ('summon-' + (agents.size + 1));
+  }
+  function summonAgent(spec) {
+    if (!agent) return null;                                   // need a base context (model/provider): a woken hero
+    const id = allocAgentId(spec);
+    const a = {
+      id, name: ((spec && spec.name) || 'AGENT').toUpperCase().slice(0, 18),
+      color: SUITS[agents.size % SUITS.length], model: agent.model,
+      personaId: (spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) ? spec.persona : agent.personaId,
+      purpose: null, createdAt: Date.now()
+    };
+    agentDocs(a);
+    applySpecialty(a, spec);
+    a.systemPrompt = composeSystemPrompt(a);
+    agents.set(id, a);
+    registerAgent(id, a.color);                                // sprite tint shim
+    if (typeof World !== 'undefined' && World.spawnAgent) World.spawnAgent(a);   // Phase C: a real floor body
+    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+    // a fresh workstream BOUND to the new agent; focusing it routes COMMS + the next run to this identity
+    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name) : null;
+    if (ws && typeof Workstreams.setAgent === 'function') Workstreams.setAgent(ws.id, id);
+    focusAgent(id);
+    if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
+    refreshUsage(); renderRail(); persist();
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' summoned — give it a task', 'good');
+    return a;
+  }
+  // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
+  function openSummonBay() {
+    if (typeof Marketplace === 'undefined' || !agent) return;
+    SFX.click();
+    Marketplace.open({ mode: 'pick', summon: true, notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null, onPick: summonAgent });
   }
 
   // LAUNCH a recipe (from the Recipe library's RECIPES tab): mint a fresh workstream named after the mission, then
@@ -159,10 +250,14 @@ const App = (() => {
 
   function persist() {
     if (!agent) return;
+    // the save ROOT is ALWAYS the hero ('agent'), never the transiently-FOCUSED crew member — otherwise a
+    // persist while a summoned agent is focused would overwrite the hero identity and corrupt resume.
+    const hero = agents.get('agent') || agent;
     const stationStats = (typeof XpStore !== 'undefined') ? XpStore.stationStats() : undefined;
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
-    const doc = Save.write(Object.assign({ agent, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
+    const roster = liveAgents();
+    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
@@ -409,15 +504,9 @@ const App = (() => {
     agentDocs(agent);                              // seed identity.md / purpose.md / operating-manual.md
     // if the Commander recruited a specialty from the Roster, the agent wakes already specced: fold the
     // preset purpose + standing orders in BEFORE composing the prompt (the awakening then skips re-asking).
-    if (pickedSpecialty && typeof Specialties !== 'undefined') {
-      const patch = Specialties.compose(pickedSpecialty);
-      if (patch) {
-        agent.docs.purpose = patch.purpose; agent.docs.manual = patch.manual;
-        agent.purpose = (patch.purpose || '').trim();
-        agent.specialtyId = pickedSpecialty.id;
-      }
-    }
+    if (pickedSpecialty) applySpecialty(agent, pickedSpecialty);   // a roster-recruited wake is specced before the prompt composes
     agent.systemPrompt = composeSystemPrompt(agent);
+    registerHero(agent);   // found the multi-agent registry with the hero
     Harness.resetTotals();
     Workstreams.reset();   // a fresh General stream for the new agent
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
@@ -431,6 +520,8 @@ const App = (() => {
     agent = saved.agent;
     agentDocs(agent);                              // seed config docs for older saves that predate them
     agent.systemPrompt = composeSystemPrompt(agent);
+    registerHero(agent);                           // found the registry with the hero…
+    rehydrateRoster(saved.agents);                 // …then restore any summoned crew (older saves: no-op)
     if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);   // keep the provider with the agent (codex vs openrouter)
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
@@ -460,11 +551,13 @@ const App = (() => {
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
+    // give resumed summoned crew their real floor bodies now that the station/geo is loaded (no-op for a
+    // single-agent save; summon-during-game spawns its own body directly).
+    for (const a of liveAgents()) if (a.id !== agent.id && typeof World.spawnAgent === 'function') World.spawnAgent(a);
     if (typeof Build !== 'undefined') {
-      // agents: the roster the BAY agent-picker offers (Phase B4d). Today the app runs one agent; this is the
-      // seam a multi-agent roster flows through. The bay->agent binding itself persists via station.serialize
-      // (prop.agentId round-trips), so a single-agent app already saves its routing floor.
-      Build.init({ getStation: () => station, persist: persist, world: World, agents: () => (agent ? [{ id: agent.id, name: agent.name, color: agent.color }] : []) });
+      // agents: the live multi-agent roster the BAY agent-picker / builder offer. The bay->agent binding
+      // persists via station.serialize (prop.agentId round-trips), so the routing floor is saved per agent.
+      Build.init({ getStation: () => station, persist: persist, world: World, agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color })) });
       const bbBuild = el('bb-build');
       if (bbBuild) {
         let seenBuild = false; try { seenBuild = !!localStorage.getItem('skynet.refit.seen'); } catch (e) {}
@@ -474,10 +567,13 @@ const App = (() => {
     }
     const bbRoster = el('bb-roster');
     if (bbRoster) bbRoster.onclick = () => openDeployBay('agents');   // the in-game Recruitment Bay (AGENTS tab)
+    const bbSummon = el('bb-summon');
+    if (bbSummon) bbSummon.onclick = openSummonBay;   // SUMMON a NEW agent onto the crew
+
     const bbMissions = el('bb-missions');
     if (bbMissions) bbMissions.onclick = () => openDeployBay('recipes');   // straight to the RECIPES (mission) library tab
     if (typeof StationUI !== 'undefined') {
-      StationUI.enter([agent], {
+      StationUI.enter(liveAgents(), {
         totals: () => Harness.totals(),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
         config: { apply: applyAgentConfig }   // dossier edits to identity/purpose/manual .md re-shape the live prompt
@@ -551,7 +647,9 @@ const App = (() => {
   function switchWorkstream(id) {
     if (id === Workstreams.activeId()) return;
     const ws = Workstreams.switch(id); if (!ws) return;
-    SFX.click(); Chat.load(ws); refreshUsage(); renderRail(); persist();
+    SFX.click();
+    focusAgent(ws.agentId || 'agent');   // the focused agent follows the stream's binding (multi-agent COMMS)
+    Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
   function newWorkstream() {
     const ws = Workstreams.create(null);

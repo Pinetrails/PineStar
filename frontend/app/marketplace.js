@@ -115,7 +115,7 @@ const Marketplace = (() => {
     }
   }
   function subtitle() {
-    if (ctx && ctx.mode === 'pick') return 'choose a specialist to wake your agent as';
+    if (ctx && ctx.mode === 'pick') return ctx.summon ? 'summon a new agent onto your crew — it gets its own workstream' : 'choose a specialist to wake your agent as';
     const who = (ctx && ctx.agentName) || 'your agent';
     return tab === 'recipes'
       ? 'launch a ready-made mission — ' + who + ' picks it up in a fresh workstream'

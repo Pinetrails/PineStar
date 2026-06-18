@@ -109,12 +109,20 @@
   // start a new (untitled) workstream and make it active; it auto-titles on its first message.
   function create(title, opts) {
     opts = opts || {};
-    const w = make({ title: title || null, lane: 'todo' });
+    const w = make({ title: title || null, lane: 'todo', agentId: opts.agentId });   // summon binds a stream to its NEW agent
     ws.push(w);
     if (opts.activate !== false) activeId = w.id;   // board "add" passes {activate:false} so it won't hijack the active chat
     return w;
   }
   function rename(id, title) { const w = find(id); if (!w) return false; w.title = title ? clamp(title, 80) : null; return true; }
+  // bind this stream to an agent (the multi-agent summon seam). The id must match the backend's agentId
+  // grammar (^[A-Za-z0-9_-]{1,40}$) — an invalid id is rejected so a stream can never route to a bad path.
+  function setAgent(id, agentId) {
+    const w = find(id); if (!w) return false;
+    agentId = String(agentId == null ? '' : agentId);
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return false;
+    w.agentId = agentId; return true;
+  }
   function setLane(id, lane) { const w = find(id); if (!w || LANES.indexOf(lane) < 0) return false; w.lane = lane; return true; }
   function pin(id, val) { const w = find(id); if (!w) return false; w.pinned = val !== false; return true; }
   function touch(id) { const w = find(id); if (w) w.lastActiveAt = now(); return !!w; }
@@ -230,7 +238,7 @@
   return {
     init, reset, serialize, all, list, search,
     create, get, active, activeId: getActiveId, generalId: getGeneralId,
-    switch: switchTo, rename, setLane, pin, archive, del, touch,
+    switch: switchTo, rename, setAgent, setLane, pin, archive, del, touch,
     autoTitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
