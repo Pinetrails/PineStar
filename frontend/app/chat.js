@@ -490,6 +490,9 @@ const Chat = (() => {
       if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
     } finally {
       aborters.delete(ws.id);
+      // tell the crew HUD this agent's run is over — agent.run.end can be LOST when the stream is aborted
+      // (E-STOP / cancel / disconnect), so clear it here too or the crew panel sticks at WORKING.
+      if (typeof StationUI !== 'undefined' && StationUI.clearRunning) StationUI.clearRunning(ws.agentId || 'agent');
       Channels.end(ws.id);
       if (isActiveWs(ws)) { syncStatus(); activeLiveRow = null; }
       // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off

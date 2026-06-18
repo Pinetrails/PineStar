@@ -154,6 +154,9 @@ const StationUI = (() => {
   // talk/task text flavor still comes from the global activity (right for the common single-agent station).
   function crewTick() {
     if (!present.length) return;
+    // self-heal: drop any tracked id no longer on the roster (a left agent, or a stale id left behind when an
+    // aborted/dropped run's agent.run.end never reached the bus) so the panel can't get stuck showing it WORKING.
+    for (const id of Array.from(runningAgents)) { if (!present.some(a => a.id === id)) runningAgents.delete(id); }
     const act = activity();
     let working = 0;
     present.forEach(a => {
@@ -173,6 +176,11 @@ const StationUI = (() => {
     crewLiveWired = true;
     U.bus.on('agent.run.start', p => { if (p && p.agentId) { runningAgents.add(p.agentId); crewTick(); } });
     U.bus.on('agent.run.end', p => { if (p && p.agentId) { runningAgents.delete(p.agentId); crewTick(); } });
+  }
+  // The run owner clears its agentId on teardown — agent.run.end can be LOST when a stream is aborted (E-STOP /
+  // cancel / disconnect / network drop), so chat.js's run-finally calls this to stop a stuck-WORKING leak.
+  function clearRunning(agentId) {
+    if (agentId && runningAgents.delete(agentId)) crewTick();
   }
 
   /* ============== AGENTS — DOSSIER ==============
@@ -1378,6 +1386,7 @@ const StationUI = (() => {
   function enter(agents, accessors) {
     present = Array.isArray(agents) ? agents : (agents ? [agents] : []);
     access = accessors || {};
+    runningAgents.clear();   // fresh station view — never inherit stale run-state across a (re)connect
     sel = 0;
     importLegacyTasks();
     crewRender();
@@ -1410,7 +1419,8 @@ const StationUI = (() => {
   // called on disconnect — tear down floating windows, keep persisted state
   function leave() {
     Object.keys(open).forEach(k => closeTerm(k));
+    runningAgents.clear();   // a disconnect abandons in-flight streams (their run.end won't arrive) — reset
   }
 
-  return { init, enter, setRoster, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
+  return { init, enter, setRoster, leave, clearRunning, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
 })();

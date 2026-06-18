@@ -1112,7 +1112,7 @@ async function runOnce(o) {
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
-  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() } }).register(registry);
+  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact }).register(registry);   // §5.6: scrub secrets at the write boundary
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
@@ -1317,7 +1317,7 @@ async function runOnce(o) {
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {
-      msgs = injectRecall(msgs, recall.text);
+      msgs = injectRecall(msgs, redact(recall.text));   // §5.6 belt-and-suspenders: a legacy plaintext note can't reach the provider verbatim
       emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars });
       // M-mem.6: surfacing a record IS a use — fold useCount++ / lastUsedAt back onto the stored record (the
       // reduction that makes the Memory Core stats AND rank()'s recency/trust boosts REAL), then emit. One
