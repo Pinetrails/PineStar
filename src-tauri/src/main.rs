@@ -108,11 +108,27 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
+/// The Node runtime to run the sidecar with. A packaged build ships one via Tauri `externalBin`, which
+/// places it next to the app exe as `node[.exe]` (the target-triple suffix is stripped at bundle time) — so
+/// a clean machine needs NO system Node. Dev builds have no bundled binary, so fall back to `node` on PATH.
+fn node_binary() -> PathBuf {
+    let name = if cfg!(windows) { "node.exe" } else { "node" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let cand = dir.join(name);
+            if cand.exists() {
+                return cand;
+            }
+        }
+    }
+    PathBuf::from("node")
+}
+
 /// Spawn the sidecar ONCE, injecting the keychain key (if any) as SKYNET_OPENROUTER_KEY
 /// and the per-launch IPC token. Returns true once it's listening.
 fn spawn_sidecar(state: &AppState) -> bool {
     let entry = state.root.join("sidecar").join("index.js");
-    let mut cmd = Command::new("node");
+    let mut cmd = Command::new(node_binary());
     cmd.arg(&entry)
         .env("SKYNET_PORT", state.port.to_string())
         .env("SKYNET_IPC_TOKEN", &state.ipc_token)

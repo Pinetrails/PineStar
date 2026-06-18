@@ -21,3 +21,5 @@ workspaces/
 # rust / tauri desktop shell build output
 src-tauri/target/
 src-tauri/gen/
+# bundled Node runtime (download-blocker A) — a build input fetched by scripts/prepare-node.mjs, never committed (~80MB)
+src-tauri/binaries/

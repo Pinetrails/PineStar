@@ -15,8 +15,9 @@
     "serve": "node scripts/serve-ui-only.js",
     "serve:ui-only": "node scripts/serve-ui-only.js",
     "tauri": "tauri",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
+    "desktop:prepare": "node scripts/prepare-node.mjs",
+    "desktop:dev": "node scripts/prepare-node.mjs && tauri dev",
+    "desktop:build": "node scripts/prepare-node.mjs && tauri build",
     "desktop:icon": "tauri icon src-tauri/icon-source.png"
   },
   "devDependencies": {
