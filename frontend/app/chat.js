@@ -41,6 +41,10 @@ const Chat = (() => {
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const el = id => document.getElementById(id);
+  let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
+                      // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
+  function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
+  function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; }
 
   const KIND_TAG = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
 
@@ -48,6 +52,7 @@ const Chat = (() => {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
+    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
     input.value = '';
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     load(opts.ws);
@@ -66,9 +71,11 @@ const Chat = (() => {
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
     if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
     if (log) log.innerHTML = '';
+    stick = true;   // a freshly-loaded / switched-to stream starts pinned to its latest line
     renderHistory();
     replayChannel();   // re-render an in-flight stream we left running: tool lines / partial reply / pending approval
-    status(interview ? 'waking…' : (isBusy() ? 'working…' : 'online'));
+    syncStatus();
+    maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
   }
 
   function setSystem(s) { system = s; }
@@ -76,11 +83,31 @@ const Chat = (() => {
   function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
   function status(s) { if (statusEl) statusEl.textContent = s; }
+  // derive the DISPLAYED stream's status from real state, so a low-priority write (a finishing turn) can't
+  // clobber the high-priority 'awaiting your approval…' after a switch-back. One source of truth.
+  function syncStatus() {
+    if (interview) { status('waking…'); return; }
+    const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
+    status(p ? 'awaiting your approval…' : (isBusy() ? 'working…' : 'online'));
+  }
+  function clearEmptyState() { const e = log && log.querySelector('.cmsg-empty'); if (e) e.remove(); }
+  // first-run state: an empty + idle + non-interview stream shows a single dim hint instead of a black void.
+  function maybeEmptyState() {
+    if (!log || interview) return;
+    if (activeWs && activeWs.history && activeWs.history.length) return;
+    if (isBusy() || log.querySelector('.cmsg')) return;
+    const s = (typeof Channels !== 'undefined' && activeWs) ? Channels.snapshot(activeWs.id) : null;
+    if (s && (s.tools.length || s.acc || s.pending)) return;
+    const d = document.createElement('div'); d.className = 'cmsg-empty';
+    d.textContent = 'COMMS online. Type a task or a question to ' + name + '.';
+    log.appendChild(d);
+  }
 
   // opts.live === true marks the streaming reply row, which always pins to the BOTTOM. Every other row (tool
   // ▶/◀ lines, deliverables, consent, turn-in) inserts ABOVE the pinned reply while one is live — so the work
   // log stacks above and the message the agent is actually saying stays at the bottom, never scrolled away.
   function row(role, opts) {
+    clearEmptyState();   // any real row supersedes the first-run hint
     const d = document.createElement('div'); d.className = 'cmsg ' + role;
     const who = document.createElement('span'); who.className = 'who';
     who.textContent = role === 'user' ? 'COMMANDER' : name;
@@ -88,26 +115,30 @@ const Chat = (() => {
     d.appendChild(who); d.appendChild(body);
     if (!(opts && opts.live) && pinnedReplyEl && pinnedReplyEl.parentNode === log) log.insertBefore(d, pinnedReplyEl);
     else log.appendChild(d);
-    log.scrollTop = log.scrollHeight;
+    autoscroll();
     return { d, body };
   }
-  function addUser(t) { row('user').body.textContent = t; log.scrollTop = log.scrollHeight; }
-  function localLine(t) { row('agent').body.textContent = t; log.scrollTop = log.scrollHeight; }
+  function addUser(t) { row('user').body.textContent = t; autoscroll(); }
+  function localLine(t) { row('agent').body.textContent = t; autoscroll(); }
   // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible
   function toolLine(text, isErr) {
     const r = row('agent'); r.d.classList.add('tool'); if (isErr) r.d.classList.add('err');
-    r.body.textContent = text; log.scrollTop = log.scrollHeight;
+    r.body.textContent = text; autoscroll();
   }
   function brief(s) { s = String(s || ''); return s.length > 56 ? s.slice(0, 53) + '…' : s; }
+  function fmtMs(ms) { return ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's'; }   // 8423 → '8.4s'
   // a clickable COMMS row for a file the agent produced — opens it via the sidecar's jailed /api/file route
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
     const a = document.createElement('a');
     a.href = '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
-    a.target = '_blank'; a.rel = 'noopener'; a.textContent = title; a.className = 'deliverable-link';
+    a.target = '_blank'; a.rel = 'noopener';
+    a.textContent = String(title).split(/[\\/]/).pop() || title;   // show the filename, not the whole path
+    a.title = title;                                               // full path on hover
+    a.className = 'deliverable-link';
     r.body.appendChild(a);
-    log.scrollTop = log.scrollHeight;
+    autoscroll();
   }
   // a live consent prompt: the agent wants to do something that needs approval (a file write today). The run is
   // PAUSED on the sidecar until the Commander answers — once / always (this kind) / full access (everything this
@@ -136,23 +167,27 @@ const Chat = (() => {
       tag.className = 'consent-result' + (isDeny ? ' err' : '');
       tag.textContent = doneLabel;
       r.body.appendChild(tag);
-      status(isBusy() ? 'working…' : 'online');
+      syncStatus();
     }
     const mk = (text, decision, cls, doneLabel, isDeny) => {
       const b = document.createElement('button');
       b.className = 'consent-btn' + (cls ? ' ' + cls : '');
       b.textContent = text;
       b.onclick = () => decide(decision, doneLabel, isDeny);
-      btns.appendChild(b);
+      btns.appendChild(b); return b;
     };
-    mk('Approve once', 'once', '', '✓ approved once', false);
+    const approveBtn = mk('Approve once', 'once', '', '✓ approved once', false);
     mk('Always', 'always', '', '✓ always allowed', false);
     mk('Full access', 'full', 'danger', '✓ full access', false);
     mk('Deny', 'deny', 'deny', '✕ denied', true);
     r.body.appendChild(btns);
+    // a blocking, run-pausing prompt: make it keyboard-operable (Esc = Deny; the focused Approve takes Enter/Space)
+    r.d.tabIndex = -1;
+    r.d.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); decide('deny', '✕ denied', true); } });
     status('awaiting your approval…');
     if (typeof StationUI !== 'undefined') StationUI.notify(name + ' needs approval to ' + actionPhrase(p), 'warn');
-    log.scrollTop = log.scrollHeight;
+    log.scrollTop = log.scrollHeight;   // force into view: the run is paused until this is answered
+    try { approveBtn.focus(); } catch (_) {}
   }
 
   // Cortex (M-mem.5b) — THE TURN-IN BEAT. After a run, reflection proposes durable memories; the Commander
@@ -208,7 +243,7 @@ const Chat = (() => {
       renderChoices();
     }
     if (typeof StationUI !== 'undefined') StationUI.notify(name + ' has ' + n + (n > 1 ? ' memories' : ' memory') + ' to review', 'gold');
-    log.scrollTop = log.scrollHeight;
+    autoscroll();
   }
 
   // register ONCE: reflection announces proposals via the memory.proposed SSE event (re-emitted on U.bus). It
@@ -225,8 +260,12 @@ const Chat = (() => {
         const proposals = await Harness.memoryProposals(runId, agentId);
         if (!proposals.length) return;
         const batch = { runId, agentId, proposals };
-        const onActiveAgent = activeWs && (activeWs.agentId || 'agent') === agentId;
-        if (onActiveAgent) proposalCard(batch, activeWs);
+        // route to the ORIGIN stream (the one whose run proposed these) — many streams share agentId 'agent',
+        // so gating on agentId can drop the card into the wrong COMMS after a mid-window switch.
+        let originWs = null;
+        if (typeof Workstreams !== 'undefined' && Workstreams.all) { try { originWs = Workstreams.all().find(w => (w.runIds || []).indexOf(runId) >= 0) || null; } catch (_) {} }
+        const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
+        if (onActive) proposalCard(batch, activeWs);
         else if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
       }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
     });
@@ -235,8 +274,11 @@ const Chat = (() => {
   function renderHistory() {
     const h = activeWs ? activeWs.history : [];
     for (const m of h) {
-      if (m.role === 'user') addUser(m.content);
-      else row('agent').body.textContent = m.content;
+      if (m.role === 'user') { addUser(m.content); continue; }
+      if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
+      const r = row('agent'); r.d.classList.add('reply');   // past agent turns get the same framed-headline look as live ones
+      if (m.error) r.d.classList.add('err');
+      r.body.textContent = m.content;
     }
   }
 
@@ -259,15 +301,17 @@ const Chat = (() => {
 
   function streamingAgent() {
     const r = row('agent', { live: true });   // the reply row pins to the bottom; work lines stack above it
-    r.d.classList.add('reply');               // the agent's actual message — styled as the headline, not dim tool noise
     pinnedReplyEl = r.d;
+    // bare name + blinking caret = "agent is composing"; the framed .reply headline is added on the FIRST real
+    // token, so a tool-only turn never leaves an empty framed box at the bottom of COMMS.
     const caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
     r.d.appendChild(caret);
     const unpin = () => { if (pinnedReplyEl === r.d) pinnedReplyEl = null; };   // reply finished — later rows append at the very bottom again
     return {
-      append(t) { r.body.textContent += t; log.scrollTop = log.scrollHeight; },
-      done() { caret.remove(); unpin(); },
-      error(m) { r.d.classList.add('err'); r.body.textContent = '⚠ ' + m; caret.remove(); unpin(); }
+      el: r.d,
+      append(t) { r.body.textContent += t; if (r.body.textContent && !r.d.classList.contains('reply')) r.d.classList.add('reply'); autoscroll(); },
+      done() { caret.remove(); unpin(); if (!r.body.textContent.trim()) r.d.remove(); },   // collapse a no-prose stub
+      error(m) { r.d.classList.add('reply', 'err'); r.body.textContent = '⚠ ' + m; caret.remove(); unpin(); }
     };
   }
 
@@ -279,6 +323,7 @@ const Chat = (() => {
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
     Channels.begin(ws.id);
+    stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
     addUser(text); ws.history.push({ role: 'user', content: text });
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
@@ -357,7 +402,7 @@ const Chat = (() => {
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) toolLine(t); if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
-        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) toolLine(t, ev.isError); },
+        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) toolLine(t, ev.isError); },
         onDeliverable: ev => {
           if (ev.kind === 'file' && !seenDeliv[ev.title]) {
             seenDeliv[ev.title] = true; if (isActiveWs(ws)) deliverableLine(ev.title, ev.agentId);
@@ -370,16 +415,14 @@ const Chat = (() => {
       });
       if (error) {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }
+        ws.history.push({ role: 'assistant', content: '⚠ ' + error, error: true });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
       } else {
-        ws.history.push({ role: 'assistant', content: reply || acc });
-        if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
-        finalReply = reply || acc;
-        // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
-        // it arrives (onToken → pushSpeech) and flushed in the finally — so the agent starts talking while
-        // the rest is still generating, instead of after the whole reply + a full TTS round-trip.
-        if (!isTask && isActiveWs(ws)) World.say(reply || acc);
-        // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
+        const replyText = reply || acc;
+        finalReply = replyText;
+        if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText });   // never persist an empty turn
+        // the stop-reason is part of the WORK log → render it ABOVE the message (while the reply is still
+        // pinned), THEN unpin via done(). done() also collapses the reply row if the turn produced no prose.
         if (endReason && endReason !== 'done') {
           if (isActiveWs(ws)) toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? 'reached this run\'s cost limit'
@@ -387,14 +430,19 @@ const Chat = (() => {
             : 'stopped (' + endReason + ')'));
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         }
+        if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
+        // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
+        // it arrives (onToken → pushSpeech) and flushed in the finally.
+        if (!isTask && isActiveWs(ws)) World.say(replyText);
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
       if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
+      if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
     } finally {
       aborters.delete(ws.id);
       Channels.end(ws.id);
-      if (isActiveWs(ws)) { status('online'); activeLiveRow = null; }
+      if (isActiveWs(ws)) { syncStatus(); activeLiveRow = null; }
       // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
       // stream is the one on screen — a background stream finishing must not move the view.
@@ -445,6 +493,7 @@ const Chat = (() => {
   // a row of tappable suggestion pills in COMMS; picking one (or typing) is an answer. onPick gets the item.
   function choices(items, onPick) {
     if (!log) return;
+    clearEmptyState();
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
     let done = false;
     (items || []).forEach(it => {
@@ -452,7 +501,7 @@ const Chat = (() => {
       b.onclick = () => { if (done) return; done = true; rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
       rowEl.appendChild(b);
     });
-    log.appendChild(rowEl); log.scrollTop = log.scrollHeight;
+    log.appendChild(rowEl); autoscroll();
   }
 
   // THE AWAKENING typewriter: reveals fixed text char-by-char (with per-segment speed + holds) through the
