@@ -368,6 +368,19 @@ const App = (() => {
     }
   }
 
+  function openExternalUrl(url) {
+    try {
+      const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+      if (invoke) {
+        invoke('open_external_url', { url }).catch(() => {
+          try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+        });
+        return;
+      }
+    } catch (_) {}
+    try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+  }
+
   // Kick off the device-code flow: request a code, show it + open the verification page, then poll until done.
   async function startCodexSignIn() {
     SFX.click();
@@ -380,9 +393,9 @@ const App = (() => {
     codexFlow = { device_auth_id: d.device_auth_id, user_code: d.user_code, verification_uri: d.verification_uri, deadline: Date.now() + ((d.expires_in || 900) * 1000) };
     codeEl.textContent = d.user_code; codeEl.classList.remove('hidden');
     openBtn.classList.remove('hidden');
-    openBtn.onclick = () => { try { window.open(d.verification_uri, '_blank', 'noopener'); } catch (_) {} };
+    openBtn.onclick = () => openExternalUrl(d.verification_uri);
     statusEl.innerHTML = 'enter this code at <b>' + d.verification_uri + '</b> (opening it now)…';
-    try { window.open(d.verification_uri, '_blank', 'noopener'); } catch (_) {}
+    openExternalUrl(d.verification_uri);
     pollCodex(d.interval || 5);
   }
 

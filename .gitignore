@@ -21,3 +21,6 @@ workspaces/
 # rust / tauri desktop shell build output
 src-tauri/target/
 src-tauri/gen/
+
+# bundled Node runtime fetched by scripts/prepare-node.mjs (large build input, never committed)
+src-tauri/binaries/
