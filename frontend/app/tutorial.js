@@ -1,4 +1,4 @@
-/* SKYNET — tutorial.js : THE FIRST COMMAND (diegetic onboarding — P0 scaffold + P1).
+/* SKYNET — tutorial.js : THE FIRST COMMAND + coachmarks + Field Manual (diegetic onboarding, P0–P3).
 
    The mind that just woke up (onboarding.js) keeps talking — and teaches the Commander the ONE
    real loop by walking them through a single real command. There is NO tooltip chrome: every word
@@ -9,11 +9,14 @@
 
    Honest by mandate (this serves the polish-audit through-line "make the one real loop visible +
    shrink what lies"): it names the crew as echoes, never fakes a number, and the very first task is
-   a real, near-free shell command (echo) — so the Commander sees the true consent→execute→prove loop.
+   a real, near-free file write+read (fs.write + fs.read — the `cabinet`/files capability the default
+   browser office grants, and fs.write requires consent) — so the Commander sees the true
+   consent→execute→prove loop. NOT shell.exec: that needs a `workbench` object no prop grants yet, so
+   it would never dispatch in the default station (it'd be answered in plain text, which would lie).
 
    Lifecycle: fires once, right after the awakening lands (app.js passes Onboarding.start({ taught })).
-   Fully skippable; a self-owned localStorage flag (skynet.tutorial.v1) means it never repeats. The
-   seen()/markSeen() helpers are the hook for P2 just-in-time coachmarks (not wired yet). */
+   Fully skippable; a self-owned localStorage flag (skynet.tutorial.v1) means it never repeats.
+   P2 = just-in-time coachmarks (seen()/markSeen()); P3 = the Field Manual codex + Station Briefing. */
 'use strict';
 
 const Tutorial = (() => {
@@ -226,7 +229,9 @@ const Tutorial = (() => {
   function showCoach(key, anchorSel, text, opts) {
     opts = opts || {};
     if (active || seen(key)) return;     // never during the First Command; once ever
-    if (document.querySelector('#terms .term')) return;   // don't paint over an open panel (e.g. the Field Manual) — defer (not marked seen) until it's closed
+    // don't paint over an open panel (e.g. the Field Manual) — defer (not marked seen) until it's closed.
+    // EXCEPT a one-shot whose trigger never re-fires (level-up): show it over the panel rather than lose it forever.
+    if (!opts.overTerms && document.querySelector('#terms .term')) return;
     markSeen(key);                       // mark on SHOW so an ignored hint still never repeats
     clearCoach();
     const anchor = anchorSel ? (typeof anchorSel === 'string' ? document.querySelector(anchorSel) : anchorSel) : null;
@@ -271,7 +276,8 @@ const Tutorial = (() => {
   function onLevelUp() {
     tickBrief('level');
     showCoach('levelup', '#tb-station',
-      'i leveled — that’s real work shipped, not flattery. open my dossier → GROWTH to see how reliable i’ve actually been. it stays honest: “—” until it’s earned enough runs to judge.');
+      'i leveled — that’s real work shipped, not flattery. open my dossier → GROWTH to see how reliable i’ve actually been. it stays honest: “—” until it’s earned enough runs to judge.',
+      { overTerms: true });   // a level transition fires exactly once — show it even over an open panel rather than drop it
   }
 
   /* ================= P3 — STATION BRIEFING (first-steps checklist) =================
@@ -296,8 +302,14 @@ const Tutorial = (() => {
   function placeBrief() {
     if (!briefEl) return;
     const rail = document.getElementById('left');
-    const right = rail && rail.getBoundingClientRect ? rail.getBoundingClientRect().right : 0;
-    briefEl.style.left = (right > 0 ? right + 12 : 14) + 'px';
+    const railRight = rail && rail.getBoundingClientRect ? rail.getBoundingClientRect().right : 0;
+    const comms = document.getElementById('chat-panel');
+    const vw = window.innerWidth || 1280;
+    const commsLeft = comms && comms.getBoundingClientRect ? comms.getBoundingClientRect().left : vw;
+    const bw = briefEl.offsetWidth || 246;
+    let left = railRight > 0 ? railRight + 12 : 14;
+    left = Math.min(left, commsLeft - bw - 12, vw - bw - 12);   // never overlap COMMS or run off the right edge (narrow windows)
+    briefEl.style.left = Math.max(8, left) + 'px';
   }
   function renderBrief() {
     if (!briefEl) return;
@@ -323,11 +335,12 @@ const Tutorial = (() => {
     briefEl.setAttribute('role', 'status'); briefEl.setAttribute('aria-live', 'polite');
     const head = document.createElement('div'); head.className = 'tut-brief-head';
     const title = document.createElement('span'); title.className = 'tut-brief-title'; title.textContent = '▸ FIRST STEPS';
-    const count = document.createElement('span'); count.className = 'tut-brief-count';
+    // scope the live-region to the count so each tick announces "3/6", not a re-read of all six rows
+    const count = document.createElement('span'); count.className = 'tut-brief-count'; count.setAttribute('aria-live', 'polite'); count.setAttribute('aria-atomic', 'true');
     const x = document.createElement('button'); x.className = 'tut-brief-x'; x.title = 'dismiss'; x.textContent = '✕';
     x.onclick = dismissBrief;
     head.appendChild(title); head.appendChild(count); head.appendChild(x);
-    const list = document.createElement('ul'); list.className = 'tut-brief-list';
+    const list = document.createElement('ul'); list.className = 'tut-brief-list'; list.setAttribute('aria-live', 'off');   // suppress full-list re-read on each tick (the count carries the delta)
     const foot = document.createElement('div'); foot.className = 'tut-brief-foot'; foot.textContent = 'reopen any time in 📖 MANUAL';
     briefEl.appendChild(head); briefEl.appendChild(list); briefEl.appendChild(foot);
     document.body.appendChild(briefEl);

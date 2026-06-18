@@ -127,12 +127,12 @@
 
 /* ---- P3 Field Manual: the codex, rendered inside a floating term-body (.fm-body) ---- */
 .fm-body .fm-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
-.fm-tab { font-family: VT323, monospace; font-size: 14px; letter-spacing: .05em; color: #bcd; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 170, 51, 0.3); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.fm-tab { font-family: VT323, monospace; font-size: 14px; letter-spacing: .05em; color: #bcd; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--ph-dim, rgba(255, 170, 51, 0.3)); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
 .fm-tab:hover { border-color: var(--ph, #ffaa33); }
 .fm-tab.on { color: #0a0f0b; background: var(--ph, #ffaa33); border-color: var(--ph, #ffaa33); }
 .fm-lead { font-size: 16px; color: #cfe0d4; margin: 0 0 9px; line-height: 1.3; }
-.fm-note { font-size: 15px; color: #9fb0a4; margin: 10px 0 0; border-top: 1px dashed rgba(255, 170, 51, 0.25); padding-top: 7px; line-height: 1.3; }
-.fm-entry { border-left: 2px solid rgba(255, 170, 51, 0.4); padding: 2px 0 5px 9px; margin: 7px 0; }
+.fm-note { font-size: 15px; color: #9fb0a4; margin: 10px 0 0; border-top: 1px dashed var(--ph-glow2, rgba(255, 170, 51, 0.25)); padding-top: 7px; line-height: 1.3; }
+.fm-entry { border-left: 2px solid var(--ph-dim, rgba(255, 170, 51, 0.4)); padding: 2px 0 5px 9px; margin: 7px 0; }
 .fm-entry-h { font-size: 16px; color: var(--ph, #ffaa33); letter-spacing: .04em; }
 .fm-entry-b { font-size: 15px; color: #cfe0d4; line-height: 1.28; }
 .fm-tag { display: inline-block; font-size: 12px; letter-spacing: .08em; padding: 0 5px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
