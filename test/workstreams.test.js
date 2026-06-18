@@ -140,4 +140,16 @@ const reactiveId = W.init(JSON.parse(JSON.stringify(dumped))).id;
 A.eq(reactiveId, dumped.activeId, 'init(serialize()) preserves the active stream');
 A.eq(W.list().length, 2, 'round-trip preserves both streams');
 
+/* ---------- multi-agent: create({agentId}) binds, setAgent re-binds, both reject a bad id ---------- */
+W.reset();
+const def = W.create('hero stream');
+A.eq(def.agentId, 'agent', 'a stream defaults to the hero agentId');
+const sum = W.create('researcher stream', { agentId: 'researcher-2' });
+A.eq(sum.agentId, 'researcher-2', 'create({agentId}) binds the stream to a summoned agent');
+A.ok(W.setAgent(def.id, 'analyst_7') === true, 'setAgent re-binds a stream to another agent');
+A.eq(W.get(def.id).agentId, 'analyst_7', 'the new binding is stored');
+A.ok(W.setAgent(def.id, '../evil') === false, 'setAgent rejects a non-conforming agentId (path-safety)');
+A.eq(W.get(def.id).agentId, 'analyst_7', 'a rejected setAgent leaves the prior binding intact');
+A.ok(W.setAgent('nope', 'researcher-2') === false, 'setAgent on an unknown stream -> false');
+
 A.report('workstreams.test');

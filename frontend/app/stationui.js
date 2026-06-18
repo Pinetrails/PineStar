@@ -1249,6 +1249,15 @@ const StationUI = (() => {
     if (!started) { started = true; tickTimer = setInterval(tick, 1000); }
   }
 
+  // update the live roster WITHOUT re-running enter's one-time setup (legacy-task import, timer) — used
+  // after a SUMMON adds a crew member so the crew panel + an open dossier reflect the new agent immediately.
+  function setRoster(agents) {
+    present = Array.isArray(agents) ? agents : (agents ? [agents] : []);
+    if (sel >= present.length) sel = 0;
+    crewRender();
+    if (open.agents) rerender('agents');
+  }
+
   /* ============== ARCADE CABINET ==============
      Clicking an arcade cabinet in the world opens BREACH PROTOCOL — the playable
      Space-Invaders descendant ported verbatim from v7 (js/arcade.js). It mounts a
@@ -1267,5 +1276,5 @@ const StationUI = (() => {
     Object.keys(open).forEach(k => closeTerm(k));
   }
 
-  return { init, enter, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
+  return { init, enter, setRoster, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
 })();
