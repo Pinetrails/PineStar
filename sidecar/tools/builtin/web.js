@@ -7,13 +7,16 @@
      deps.openrouter : { apiKey, model } | null           // enables the OpenRouter search/fetch FALLBACK
      deps.userAgent  : override UA string
 
-   DESIGN (validated live, June 2026):
-     web_search PRIMARY  = DuckDuckGo HTML endpoint (POST https://html.duckduckgo.com/html/), parsed to
-                           [{title,url,snippet}]. Keyless. RISK: trips an "anomaly" 202 block after a few
-                           rapid requests from one IP and stays blocked for minutes — so we (a) detect the
-                           202/anomaly shell and treat it as a soft failure, (b) self-throttle, (c) fall back.
-                  FALLBACK1 = DuckDuckGo lite endpoint (different markup, sometimes survives when html/ is blocked).
-                  FALLBACK2 = OpenRouter web search server tool (needs the user's existing OpenRouter key; ~$0.005/call).
+   DESIGN (re-validated live, June 2026):
+     web_search PRIMARY  = Mojeek (GET https://www.mojeek.com/search?q=…), an independent keyless engine,
+                           parsed to [{title,url,snippet}]. Chosen because DuckDuckGo's keyless HTML/lite
+                           endpoints now return a 202 "anomaly" anti-bot shell on essentially EVERY request
+                           (not just under rapid load), so the old DDG-only chain failed for every user — and
+                           for ChatGPT/Codex users (no OpenRouter key) there was no fallback at all.
+                  FALLBACK1 = DuckDuckGo HTML endpoint (POST https://html.duckduckgo.com/html/). Kept in case
+                              DDG un-blocks; the 202/anomaly shell is detected and treated as a soft failure.
+                  FALLBACK2 = DuckDuckGo lite endpoint (different markup, sometimes survives when html/ is blocked).
+                  FALLBACK3 = OpenRouter web plugin (needs the user's existing OpenRouter key; ~$0.005/call).
      web_fetch  PRIMARY  = Jina Reader (https://r.jina.ai/<url>) -> clean markdown/text. Keyless = 20 RPM.
                            Surfaces upstream errors INSIDE a 200 body ("Warning: Target URL returned error 404"),
                            so we scan the body, not just the status.
@@ -184,6 +187,24 @@
     return out;
   }
 
+  // Mojeek: each result is <li> ... <a class="title" href="<real-url>">Title</a> ... <p class="s">snippet</p>.
+  // Unlike DDG the href is the REAL destination (no /l/?uddg= redirect wrapper), so no unwrap is needed.
+  function parseMojeek(html) {
+    const out = [];
+    const re = /<a[^>]*class="title"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let m;
+    while ((m = re.exec(html)) && out.length < 12) {
+      const url = decodeEntities(m[1]);
+      const title = stripTags(m[2]);
+      if (!url || !/^https?:\/\//i.test(url) || !title) continue;
+      // snippet lives in the <p class="s"> just after the title link
+      const tail = html.slice(m.index, m.index + 3000);
+      const sm = tail.match(/<p[^>]*class="s"[^>]*>([\s\S]*?)<\/p>/i);
+      out.push({ title, url, snippet: sm ? clamp(stripTags(sm[1]), SNIPPET_MAX_CHARS) : '' });
+    }
+    return out;
+  }
+
   function makeWebTools(deps) {
     deps = deps || {};
     const doFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
@@ -212,14 +233,26 @@
       return parser(html.body);
     }
 
-    // FALLBACK2: OpenRouter web search server tool. Hides the search as one model turn, but very robust.
+    // PRIMARY: Mojeek — keyless GET, independent index, no aggressive bot-shell. Treat a non-200 (e.g. a
+    // 403/429 throttle) as a soft failure so the chain falls through to DDG/OpenRouter.
+    async function mojeekSearch(query) {
+      const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + encodeURIComponent(query), {
+        method: 'GET', headers: searchHeaders(), signal
+      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS);
+      if (res.status !== 200) throw new Error('mojeek http ' + res.status);
+      return parseMojeek(res.body);
+    }
+
+    // FALLBACK3: OpenRouter web plugin. Hides the search as one model turn, but very robust. Enabled via the
+    // `plugins:[{id:'web'}]` request field (NOT a tools entry) — results come back as message.annotations of
+    // type 'url_citation', which we read below.
     async function openrouterSearch(query) {
       if (!or || !or.apiKey) throw new Error('no OpenRouter key for search fallback');
       const body = {
         model: or.model || 'openai/gpt-4o-mini',
         messages: [{ role: 'user', content:
           'Search the web for: ' + query + '\nReturn the top results as a numbered list, each line "Title — URL — one-sentence snippet".' }],
-        tools: [{ type: 'openrouter:web_search', parameters: { engine: 'auto', max_results: 8 } }]
+        plugins: [{ id: 'web', max_results: 8 }]
       };
       const data = await withTimeout(signal => doFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -247,6 +280,7 @@
       if (!query) throw new Error('empty query');
       const errors = [];
       const chain = [
+        ['mojeek',          () => mojeekSearch(query)],
         ['duckduckgo-html', () => ddgSearch('https://html.duckduckgo.com/html/', parseDDGHtml, query)],
         ['duckduckgo-lite', () => ddgSearch('https://lite.duckduckgo.com/lite/', parseDDGLite, query)]
       ];
@@ -351,7 +385,7 @@
     return {
       searchTool, fetchTool, webSearch, webFetch,
       // exported for unit tests
-      _internals: { parseDDGHtml, parseDDGLite, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6 },
+      _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6 },
       register(reg) { reg.register(searchTool); reg.register(fetchTool); return reg; }
     };
   }
