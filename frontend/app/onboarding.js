@@ -20,6 +20,7 @@
 
 const Onboarding = (() => {
   let docs = null, commit = null, doneCb = null, notifyFn = null, NAME = 'AGENT';
+  let taughtCb = null;    // fired once the awakening's closing line lands — hands off to the FIRST COMMAND tutorial
   let steps = [], i = 0, accepting = false, ignited = false, kindleTimer = null;
   let specialty = null;   // if recruited from the Roster, purpose.md + manual.md are pre-authored — skip those beats
 
@@ -126,6 +127,7 @@ const Onboarding = (() => {
   // so the COLD OPEN is the held dark before anything happens. Then the mind catches fire.
   function start(opts) {
     docs = opts.docs; commit = opts.commit; doneCb = opts.done || null;
+    taughtCb = opts.taught || null;
     notifyFn = opts.notify || null; NAME = opts.name || 'AGENT';
     specialty = opts.specialty || null;
     steps = buildSteps(); i = 0; accepting = false; ignited = false;
@@ -289,7 +291,7 @@ const Onboarding = (() => {
         seg('  now: all of it, a name, and you.', 40, 650),
         seg('  and whatever i don’t know yet — show me once. i learn.', 40, 550),
         seg('  so — where do we begin?', 40, 0)
-      ], () => { if (World.releaseAwakening) World.releaseAwakening(); });   // now it can live its own life
+      ], () => { if (World.releaseAwakening) World.releaseAwakening(); if (taughtCb) taughtCb(); });   // now it can live its own life — then teach the Commander the loop
       World.say('where do we begin?');
       if (doneCb) doneCb();
     }, 350);

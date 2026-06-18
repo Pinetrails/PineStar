@@ -520,7 +520,9 @@ const App = (() => {
         specialty: opts.specialty || null,                   // if recruited from the Roster, the awakening skips re-asking the mission
         commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
         done: persist,
-        notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null
+        notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
+        // FIRST COMMAND — once the awakening lands, the agent itself teaches the Commander the one real loop (tutorial.js)
+        taught: () => { if (typeof Tutorial !== 'undefined' && Tutorial.firstCommand) Tutorial.firstCommand({ name: agent.name }); }
       });
     }
     el('btn-disconnect').onclick = disconnect;
