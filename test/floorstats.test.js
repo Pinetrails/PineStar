@@ -69,11 +69,45 @@ A.ok(isFinite(s.spendUsd) && s.spendUsd === 0, 'garbage usd -> 0, not NaN');
 A.ok(isFinite(s.cachePct) && s.cachePct === 0, 'no tokens -> cache% 0, not NaN');
 A.ok(s.cacheKnown === false, 'still unknown after junk');
 
+// ---- THROUGHPUT + DWELL: real wall-clock event timestamps fold into items/min + time-on-line ----
+const k = FloorStats.create();
+let ss = k.snapshot(10000);
+A.eq(ss.thruOutPerMin, 0, 'fresh: no throughput');
+A.ok(ss.dwellKnown === false, 'fresh: dwell unknown');
+// place w1 @ t=1000, deliver @ t=4000 -> dwell 3s; place w2 @ t=2000, deliver @ t=2500 -> dwell 0.5s
+k.onEvent('workitem.placed', { workitemId: 'w1' }, 1000);
+k.onEvent('workitem.placed', { workitemId: 'w2' }, 2000);
+k.onEvent('workitem.delivered', { workitemId: 'w1' }, 4000);
+k.onEvent('workitem.delivered', { workitemId: 'w2' }, 2500);
+ss = k.snapshot(5000);
+A.eq(ss.thruInPerMin, 2, 'two placements inside the 60s window');
+A.eq(ss.thruOutPerMin, 2, 'two deliveries inside the window');
+A.ok(ss.dwellKnown === true, 'dwell known after a paired delivery');
+A.ok(Math.abs(ss.avgDwellSec - 1.75) < 1e-9, 'avg dwell = (3.0s + 0.5s)/2 = 1.75s');
+// the window slides: anchored far past the events, the rate decays to 0 (no fabricated steady rate)
+A.eq(k.snapshot(100000).thruOutPerMin, 0, 'throughput decays to 0 once events age out of the window');
+// a delivery with no matching placement still counts for throughput but contributes no dwell
+const m = FloorStats.create();
+m.onEvent('workitem.delivered', { workitemId: 'orphan' }, 1000);
+ss = m.snapshot(1000);
+A.eq(ss.thruOutPerMin, 1, 'unpaired delivery still counts toward throughput');
+A.ok(ss.dwellKnown === false, 'unpaired delivery contributes no dwell');
+// untimed events (no nowMs, no ts) fold into totals but never corrupt the time window
+const u = FloorStats.create();
+u.onEvent('workitem.delivered', { workitemId: 'x' });
+ss = u.snapshot();
+A.eq(ss.delivered, 1, 'untimed delivery still tallied');
+A.ok(isFinite(ss.thruOutPerMin), 'untimed -> throughput is a finite number');
+
 // ---- reset wipes back to the fresh, knows-nothing state ----
 f.reset();
 s = f.snapshot();
 A.eq(s.spendUsd, 0, 'reset clears spend');
 A.eq(s.runs, 0, 'reset clears runs');
 A.ok(s.yieldKnown === false && s.cacheKnown === false, 'reset returns to honest-unknown');
+k.reset();
+ss = k.snapshot(5000);
+A.eq(ss.thruOutPerMin, 0, 'reset clears throughput');
+A.ok(ss.dwellKnown === false, 'reset clears dwell');
 
 A.report('floorstats.test');

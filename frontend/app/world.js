@@ -1922,13 +1922,16 @@ const World = (() => {
     if (!floor && typeof FloorStats !== 'undefined') floor = FloorStats.create();
     if (!slaglog && typeof SlagLog !== 'undefined') slaglog = SlagLog.create();
     U.bus.on('agent.cost', p => {
-      if (floor) floor.onEvent('agent.cost', p);
+      if (floor) floor.onEvent('agent.cost', p, Date.now());
       // remember the most recent RECONCILED cache ratio — the smelter temperature a slag diagnosis reads
       if (p && (p.tokensIn | 0) > 0) lastCacheFrac = Math.max(0, Math.min(1, (p.cachedTokens || 0) / p.tokensIn));
     });
-    U.bus.on('workitem.delivered', p => { if (floor) floor.onEvent('workitem.delivered', p); });
+    // THROUGHPUT + DWELL: pair each work-item's placement with its delivery (a reliable Date.now() clock,
+    // since the box's belt-ride spans real wall-clock seconds) to fold items/min + time-on-line.
+    U.bus.on('workitem.placed', p => { if (floor) floor.onEvent('workitem.placed', p, Date.now()); });
+    U.bus.on('workitem.delivered', p => { if (floor) floor.onEvent('workitem.delivered', p, Date.now()); });
     U.bus.on('agent.run.end', p => {
-      if (floor) floor.onEvent('agent.run.end', p);
+      if (floor) floor.onEvent('agent.run.end', p, Date.now());
       const r = p && p.reason;
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
       // WASTED SPEND: pulse the SLAG cell, then turn the loss into a lesson — a real post-mortem in the
@@ -1998,11 +2001,11 @@ const World = (() => {
   function fmtUsd(u) { u = +u || 0; return u >= 1 ? '$' + u.toFixed(2) : '$' + u.toFixed(4); }
   function drawFloorStats(now) {
     if (!floor) return;
-    const fs = floor.snapshot();
+    const fs = floor.snapshot(Date.now());   // live wall-clock anchor so throughput decays honestly when deliveries stop
     if (fs.runs === 0 && fs.delivered === 0 && fs.spendUsd === 0) return;   // nothing has happened yet — stay dark
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
-    const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 160, bh = 34;
+    const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 160, bh = 46;
     let qDepth = 0; for (const d of chanQueues.values()) qDepth += d;
     const x = W - bw - pad, y = H - bh - pad - (qDepth > 0 ? 20 : 0);        // sit above the queue gauge when it's showing
     ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
@@ -2012,12 +2015,14 @@ const World = (() => {
       ctx.fillStyle = '#6a7a72'; ctx.fillText(label, cxp, cyp);
       ctx.fillStyle = col; ctx.fillText(val, cxp + 36, cyp);
     };
-    const cA = x + 7, cB = x + bw / 2 + 3, r1 = y + 10, r2 = y + 24;
+    const cA = x + 7, cB = x + bw / 2 + 3, r1 = y + 10, r2 = y + 23, r3 = y + 36;
     cell(cA, r1, 'YIELD', fs.yieldKnown ? fs.yieldPct + '%' : '—', fs.yieldKnown ? (fs.yieldFrac >= 0.6 ? '#62c487' : '#e8c860') : '#5a6a62');
     cell(cB, r1, 'SPEND', fmtUsd(fs.spendUsd), '#aeb9c4');
     cell(cA, r2, 'CACHE', fs.cacheKnown ? fs.cachePct + '%' : '—', fs.cacheKnown ? (fs.cacheFrac >= 0.4 ? '#5ad0ff' : '#7a8a82') : '#5a6a62');
     const flash = (now - lastSlagAt) < 900 && (Math.floor((now - lastSlagAt) / 150) % 2 === 0);   // fresh-slag pulse
     cell(cB, r2, 'SLAG', String(fs.slag), fs.slag > 0 ? (flash ? '#ff9a7a' : '#ef6a4a') : '#3f8a5a');
+    cell(cA, r3, 'THRU', fs.thruOutPerMin + '/m', fs.thruOutPerMin > 0 ? '#aeb9c4' : '#5a6a62');
+    cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
   /* ---------- CONTEXT-WINDOW gauge: the agent's memory core, made physical ----------

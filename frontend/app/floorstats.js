@@ -11,6 +11,9 @@
      - CACHE : cachedTokens / promptTokens — the prompt-cache "smelter" signal. A stable
                system-prompt + memory fence runs the cache hot (~10× cheaper input);
                thrash it and this craters. An invisible win, made visible.
+     - THRU  : work-items delivered per minute (a 60s window over real delivery events).
+     - DWELL : average time a work-item spent riding the line (placed -> delivered), paired
+               by workitemId — the latency of the whole INTAKE->bay->OUTBOX round trip.
 
    Truthful by construction (the workstreams.js telemetry rule): every number is a fold
    of REAL events — agent.cost (RECONCILED usd + cachedTokens), agent.run.end (the
@@ -34,20 +37,42 @@
 
   function num(n) { n = Number(n); return isFinite(n) ? n : 0; }
 
+  const WINDOW = 60000;   // 60s throughput window — a count inside it IS an items/MINUTE rate
+
   function create() {
     let s = blank();
+    let placedAt = new Map();   // workitemId -> placement clock (ms) — paired on delivery to get dwell (time on the line)
+    let inRing = [];            // placement timestamps (inbound items/min)
+    let outRing = [];           // delivery timestamps (outbound items/min)
+    let lastTms = 0;            // newest event clock seen — the default window anchor when snapshot() gets no nowMs
     function blank() {
       return {
         spendUsd: 0, tokensIn: 0, tokensOut: 0, cachedTokens: 0,
-        products: 0, slag: 0, slagUsd: 0, delivered: 0
+        products: 0, slag: 0, slagUsd: 0, delivered: 0, dwellSum: 0, dwellN: 0
       };
     }
-    function reset() { s = blank(); }
+    function reset() { s = blank(); placedAt = new Map(); inRing = []; outRing = []; lastTms = 0; }
 
-    // Fold ONE bus event into the running totals. Unknown names are ignored, so the caller can
-    // point the whole event firehose at it without filtering. Defensive coercion → never a NaN.
-    function onEvent(name, p) {
+    // a reliable event clock: the caller's injected nowMs (wall-clock, e.g. Date.now()) wins; else the
+    // event's own ts; else 0 (untimed — folded into totals but not into the time-windowed rate/dwell).
+    function tms(p, nowMs) {
+      const n = Number(nowMs); if (isFinite(n) && n > 0) return n;
+      const t = p && Number(p.ts); return isFinite(t) && t > 0 ? t : 0;
+    }
+    // drop entries older than the window so memory stays bounded (hard cap as a backstop).
+    function prune(ring, now) {
+      let i = 0; while (i < ring.length && now - ring[i] > WINDOW) i++;
+      if (i > 0) ring.splice(0, i);
+      if (ring.length > 512) ring.splice(0, ring.length - 512);
+    }
+    function countWithin(ring, now) { let c = 0; for (let i = 0; i < ring.length; i++) if (now - ring[i] <= WINDOW) c++; return c; }
+
+    // Fold ONE bus event into the running totals. nowMs (optional) is a reliable wall-clock for the
+    // time-windowed metrics. Unknown names are ignored, so the caller can point the whole firehose at
+    // it without filtering. Defensive coercion → never a NaN.
+    function onEvent(name, p, nowMs) {
       p = p || {};
+      const t = tms(p, nowMs); if (t > lastTms) lastTms = t;
       if (name === 'agent.cost') {
         s.spendUsd += num(p.usd);
         s.tokensIn += num(p.tokensIn);
@@ -56,25 +81,41 @@
       } else if (name === 'agent.run.end') {
         if (p.reason === 'done') s.products++;
         else if (SLAG_REASONS[p.reason]) { s.slag++; s.slagUsd += num(p.usd); }
+      } else if (name === 'workitem.placed') {
+        if (p.workitemId && t) placedAt.set(p.workitemId, t);
+        if (t) { inRing.push(t); prune(inRing, t); }
       } else if (name === 'workitem.delivered') {
         s.delivered++;
+        if (t) { outRing.push(t); prune(outRing, t); }
+        // DWELL: time this work-item spent riding the line, paired by workitemId to its placement.
+        if (p.workitemId && placedAt.has(p.workitemId)) {
+          const d = t - placedAt.get(p.workitemId);
+          if (d >= 0) { s.dwellSum += d; s.dwellN++; }
+          placedAt.delete(p.workitemId);
+        }
       }
     }
 
-    // Render-agnostic snapshot. Honest unknowns: yield/cache report known:false until they have a
-    // real sample (≥1 decisive run / ≥1 prompt token), so the HUD shows "—" not a made-up %.
-    function snapshot() {
+    // Render-agnostic snapshot. Honest unknowns: yield/cache/dwell report known:false until they have a
+    // real sample, so the HUD shows "—" not a made-up number. nowMs (optional) is the window anchor for
+    // throughput — pass a live wall-clock so the rate decays toward 0 when deliveries stop.
+    function snapshot(nowMs) {
+      const now = (isFinite(Number(nowMs)) && Number(nowMs) > 0) ? Number(nowMs) : lastTms;
       const decided = s.products + s.slag;
       const yieldKnown = decided > 0;
       const cacheKnown = s.tokensIn > 0;
+      const dwellKnown = s.dwellN > 0;
       const yieldFrac = yieldKnown ? s.products / decided : 0;
       const cacheFrac = cacheKnown ? s.cachedTokens / s.tokensIn : 0;
+      const avgDwellMs = dwellKnown ? s.dwellSum / s.dwellN : 0;
       return {
         spendUsd: s.spendUsd, slagUsd: s.slagUsd,
         runs: decided, products: s.products, slag: s.slag, delivered: s.delivered,
         tokensIn: s.tokensIn, tokensOut: s.tokensOut, cachedTokens: s.cachedTokens,
         yieldKnown, yieldFrac, yieldPct: Math.round(yieldFrac * 100),
         cacheKnown, cacheFrac, cachePct: Math.round(cacheFrac * 100),
+        thruInPerMin: countWithin(inRing, now), thruOutPerMin: countWithin(outRing, now),
+        dwellKnown, avgDwellMs, avgDwellSec: avgDwellMs / 1000,
         clean: s.slag === 0
       };
     }
