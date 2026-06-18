@@ -46,6 +46,7 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
@@ -196,6 +197,27 @@ const notebookStore = {
     } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
   }
 };
+
+// PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
+// browser (POST /api/dossier) and folded into server-composed autonomous personas (cron) so an unattended
+// run still knows who it works for. Persisted as a sibling of the notebooks (outside every agent's fs jail,
+// so the agent's own fs.* tools can't read/corrupt it) → it survives a restart for a headless cron fire.
+const DOSSIER_FILE = path.join(WORKSPACES, '_commander.dossier.json');
+const commanderDossier = {
+  _block: '',
+  get() { return this._block; },
+  set(block) {
+    this._block = String(block == null ? '' : block).slice(0, 4096);   // the frontend caps it ~800; this is a hard safety ceiling
+    try {
+      fs.mkdirSync(WORKSPACES, { recursive: true });
+      const tmp = DOSSIER_FILE + '.' + process.pid + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify({ block: this._block }));
+      fs.renameSync(tmp, DOSSIER_FILE);   // atomic replace
+    } catch (e) { console.warn('[dossier] persist failed:', (e && e.message) || e); }
+  },
+  load() { try { const o = JSON.parse(fs.readFileSync(DOSSIER_FILE, 'utf8')); this._block = String((o && o.block) || ''); } catch (_) {} }
+};
+commanderDossier.load();
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
 // the sidecar's own disk (the app-data dir that survives a browser cache wipe). Same containment as the
@@ -440,7 +462,10 @@ const cronDriver = makeCronDriver({
   setJobs: (jobs) => { cronJobs = jobs; try { saveCronJobs(); } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); } },
   runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
   emit: cronEmit, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
-  getKey: () => runtimeKey, defaultModel: CRON_DEFAULT_MODEL, persona: CRON_PERSONA, maxRunMs: CRON_MAX_RUN_MS
+  getKey: () => runtimeKey, defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
+  // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
+  // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
+  persona: () => withDossier(CRON_PERSONA, commanderDossier.get())
 });
 let cronTimer = null;
 
@@ -577,6 +602,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
+  if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/events') return handleChannelEvents(req, res);
@@ -889,7 +915,7 @@ async function handleCronRun(req, res) {
   try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
   try {
     await runOnce({
-      key: key, model: model, system: CRON_PERSONA, messages: [{ role: 'user', content: String(job.prompt || '') }],
+      key: key, model: model, system: withDossier(CRON_PERSONA, commanderDossier.get()), messages: [{ role: 'user', content: String(job.prompt || '') }],
       agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
       runId: runId, surface: 'autonomous', trigger: 'schedule'
     });
@@ -956,6 +982,18 @@ async function handleRoster(req, res) {
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, count: agentRoster.size }));
+}
+
+// POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,
+// so server-composed autonomous runs (cron) can fold in who they work for. Contract-free: plain HTTP, no bus
+// event. An empty block clears it (the user turned the dossier off / forgot everything).
+async function handleDossier(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16)); }
+  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  commanderDossier.set(body && body.block);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true, chars: commanderDossier.get().length }));
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */

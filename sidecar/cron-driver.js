@@ -23,7 +23,9 @@
                                                  //   after applyTick's nowMs is stale) — Date.now in index.js
      deps.getKey()         -> string             // the LIVE BYOK key (index.js runtimeKey; '' => no-capability)
      deps.defaultModel     -> string             // boot-frozen SKYNET_DEFAULT_MODEL fallback when job.model is null
-     deps.persona          -> string             // the autonomous system prompt (carries the [SILENT] hint)
+     deps.persona          -> string | ()=>string // the autonomous system prompt (carries the [SILENT] hint);
+                                                 //   a getter is re-read each fire so it can fold in the live
+                                                 //   Commander dossier (Phase C). Both forms stay determinism-clean.
      deps.maxRunMs         -> int                // self-healing lease ceiling: a run older than this is reclaimed */
 'use strict';
 (function (root, factory) {
@@ -46,7 +48,10 @@
     const newId = d.newId, newAbort = d.newAbort, now = d.now;
     const getKey = typeof d.getKey === 'function' ? d.getKey : function () { return ''; };
     const defaultModel = d.defaultModel || '';
-    const persona = d.persona || '';
+    // persona may be a STRING (the autonomous system prompt) or a GETTER that returns it fresh each fire
+    // (Phase C: index.js passes a getter so each run folds in the live Commander dossier). Both stay
+    // determinism-clean — a getter is just an injected dep, exactly like getKey/getJobs.
+    const personaOf = typeof d.persona === 'function' ? d.persona : function () { return d.persona || ''; };
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
@@ -109,7 +114,7 @@
       let p;
       try {
         p = runOnce({
-          key: key, model: model, system: persona, messages: messages,
+          key: key, model: model, system: personaOf(), messages: messages,
           agentId: job.agentId, isTask: true, emit: sink, signal: ac.signal,
           runId: runId, surface: 'autonomous', trigger: 'schedule'
         });
