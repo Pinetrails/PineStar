@@ -955,6 +955,10 @@ async function handleRun(req, res) {
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
+  // a placed WORKBENCH grants this run the terminal capability (shell.exec + verify.run), additively on top of
+  // the default office. The browser sends it off the floor (World.heroWorkbench); shell still walks the full
+  // consent ladder (interactive prompts; autonomous exec-lockout) + auto-checkpoints before every command.
+  const extraObjects = (body && body.workbench) ? [{ instanceId: 'wb_placed', objectType: 'workbench' }] : [];
   const usingCodex = (provider === 'codex' || provider === 'openai-codex');   // Codex authenticates by OAuth token, not an API key
   // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and updatable
   // via /api/key). The browser build still sends body.key, which wins.
@@ -1012,6 +1016,7 @@ async function handleRun(req, res) {
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
+      extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
                       // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
@@ -1092,6 +1097,9 @@ async function runOnce(o) {
   // Stage 2: the LEAD (browser-commanded run) alone gets the orchestrator object -> the team.dispatch tool. A
   // delegated worker runs with o.lead falsy and no o.station -> no orchestrator object -> cannot re-delegate.
   if (o.lead) defaultObjects.push({ instanceId: 'orch1', objectType: 'orchestrator' });
+  // ADDITIVE placement: extra objects the caller says are placed for this agent (e.g. a WORKBENCH → shell.exec +
+  // verify.run) join the default office, so the hero gains a placed capability WITHOUT losing its baseline office.
+  if (Array.isArray(o.extraObjects)) for (const e of o.extraObjects) if (e && e.objectType) defaultObjects.push({ instanceId: String(e.instanceId || ('extra_' + e.objectType)), objectType: String(e.objectType) });
   const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   const resolved = resolveTools(agentId, station);
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
