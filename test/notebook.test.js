@@ -14,6 +14,7 @@ const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { canAgentUse, makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
+const { redact } = require('../sidecar/context.js');
 
 function memStore() { const m = {}; return { get: k => m[k], set: (k, v) => { m[k] = v; } }; }
 function station(objs) {
@@ -97,6 +98,23 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     const mws = seqS.find(e => e.name === 'memory.write');
     A.eq(mws.payload.scope, 'stream', 'memory.write scope = stream when in a workstream');
     A.eq(mws.payload.streamId, 'ws_abc', 'memory.write carries the streamId');
+
+    // §5.6 secret-scrub: a jotted note carrying a key/token must NOT persist in cleartext (the redact contract
+    // is always-on; reflection/edits already honor it — notebook.write must too). The host injects redact.
+    const storeR = memStore();
+    const regR = makeRegistry();
+    makeNotebookTools({ store: storeR, clock: makeClock(1), redact }).register(regR);
+    await regR.dispatch(dcall('notebook.write', { title: 'creds', body: 'the key is sk-or-v1-0123456789abcdef0123456789abcdef and the rest' }), { agentId: 'ag', runId: 'r' });
+    const nr = storeR.get('notebook:ag')[0];
+    A.ok(nr.body.indexOf('sk-or-v1-0123456789') < 0, 'a key-shaped secret in the body is scrubbed before it persists');
+    A.ok(nr.body.indexOf('[redacted-key]') >= 0, 'the redaction marker is present in the stored note');
+    A.ok(nr.body.indexOf('and the rest') >= 0, 'non-secret text around it is preserved');
+    // identity fallback: no injected redact -> stored verbatim (the tool stays usable standalone, e.g. tests)
+    const storeN = memStore();
+    const regN = makeRegistry();
+    makeNotebookTools({ store: storeN, clock: makeClock(1) }).register(regN);
+    await regN.dispatch(dcall('notebook.write', { title: 't', body: 'plain note' }), { agentId: 'ag' });
+    A.eq(storeN.get('notebook:ag')[0].body, 'plain note', 'no-redact fallback stores text verbatim');
 
     // M-mem.6 regression guard: ids are collision-proof (max+1), NOT positional (length+1). A store with a gap
     // — as left by a forget that removed an earlier record — must NOT reissue an id that already exists.

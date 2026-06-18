@@ -19,6 +19,10 @@
     deps = deps || {};
     const store = deps.store;
     const clock = deps.clock || { now: () => 0 };
+    // §5.6 always-on secret scrub: a jotted note can carry a key/token the agent saw this run, and it must
+    // never persist to disk (or get re-injected into a future prompt by recall) in cleartext. The host injects
+    // redact (the same one reflection + edits + SSE use); identity fallback keeps the tool usable standalone.
+    const redact = typeof deps.redact === 'function' ? deps.redact : (x => x);
     const KEY = aid => 'notebook:' + (aid || 'agent');
     // M-mem.2: widen any legacy {id,title,body,ts} note to the §5.2 memory-record shape
     // (kind/scope/provenance/trust/useCount/pinned), idempotently — so an existing notebook upgrades
@@ -55,7 +59,7 @@
         // the run that earned it). useCount/lastUsedAt move with memory.used; trust with memory.feedback.
         const note = {
           id: nextId(list), kind: 'note',
-          title: String(args.title), body: String(args.body),
+          title: redact(String(args.title)), body: redact(String(args.body)),   // §5.6: scrub secrets before they persist
           scope: scope, streamId: streamId, sourceRunId: runId,
           createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
         };
