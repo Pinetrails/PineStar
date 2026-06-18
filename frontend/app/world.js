@@ -2142,5 +2142,15 @@ const World = (() => {
       if (agent && level != null && !(agent.say && agent.say.text && agent.say.until > now)) agent.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length },
+    // does this agent have a WORKBENCH placed (-> shell.exec + verify.run)? An equipped BAY governs; with no bay
+    // (simple single-agent floor) any placed workbench grants it. The run client sends this so the hero's run
+    // gains shell ADDITIVELY on top of its default office (the room layout is the permission system, for the hero too).
+    heroWorkbench: (agentId) => {
+      if (!station) return false;
+      const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
+      if (viaBay && viaBay.length) return viaBay.indexOf('workbench') >= 0;
+      return !!(station.propsByType && station.propsByType('workbench').length);
+    }
+  };
 })();
