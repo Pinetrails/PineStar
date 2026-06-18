@@ -165,6 +165,24 @@ fn node_binary(root: &Path) -> PathBuf {
     PathBuf::from("node")
 }
 
+fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
+    let mut cmd = Command::new(node);
+    cmd.arg(entry)
+        .env("SKYNET_PORT", state.port.to_string())
+        .env("SKYNET_IPC_TOKEN", &state.ipc_token)
+        .current_dir(&state.root);
+    if let Some(key) = read_key() {
+        cmd.env("SKYNET_OPENROUTER_KEY", key);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// Spawn the sidecar ONCE, injecting the keychain key (if any) as SKYNET_OPENROUTER_KEY
 /// and the per-launch IPC token. Returns true once it's listening.
 fn spawn_sidecar(state: &AppState) -> bool {
@@ -181,39 +199,44 @@ fn spawn_sidecar(state: &AppState) -> bool {
             node.exists()
         ),
     );
-    let mut cmd = Command::new(node);
-    cmd.arg(&entry)
-        .env("SKYNET_PORT", state.port.to_string())
-        .env("SKYNET_IPC_TOKEN", &state.ipc_token)
-        .current_dir(&state.root);
-    if let Some(key) = read_key() {
-        cmd.env("SKYNET_OPENROUTER_KEY", key);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    match cmd.spawn() {
-        Ok(child) => {
-            let pid = child.id();
-            if let Ok(mut guard) = state.sidecar.lock() {
-                *guard = Some(child);
+
+    let mut last_error = None;
+    for attempt in 0..=20 {
+        match sidecar_command(state, &entry, &node).spawn() {
+            Ok(child) => {
+                let pid = child.id();
+                if let Ok(mut guard) = state.sidecar.lock() {
+                    *guard = Some(child);
+                }
+                let listening = wait_for_port(state.port, Duration::from_secs(25));
+                log_startup(
+                    &state.startup_log,
+                    format!(
+                        "spawn_sidecar pid={pid} port={} listening={listening}",
+                        state.port
+                    ),
+                );
+                return listening;
             }
-            let listening = wait_for_port(state.port, Duration::from_secs(25));
-            log_startup(
-                &state.startup_log,
-                format!("spawn_sidecar pid={pid} port={} listening={listening}", state.port),
-            );
-            listening
-        }
-        Err(e) => {
-            log_startup(&state.startup_log, format!("spawn_sidecar failed: {e}"));
-            eprintln!("[skynet] failed to spawn node sidecar: {e}");
-            false
+            Err(e) if cfg!(windows) && e.raw_os_error() == Some(32) && attempt < 20 => {
+                last_error = Some(e.to_string());
+                std::thread::sleep(Duration::from_millis(500));
+            }
+            Err(e) => {
+                log_startup(&state.startup_log, format!("spawn_sidecar failed: {e}"));
+                eprintln!("[skynet] failed to spawn node sidecar: {e}");
+                return false;
+            }
         }
     }
+    log_startup(
+        &state.startup_log,
+        format!(
+            "spawn_sidecar failed after retrying locked node.exe: {}",
+            last_error.unwrap_or_else(|| "unknown error".to_string())
+        ),
+    );
+    false
 }
 
 /// Push the live BYOK key to the already-running sidecar (no restart). The raw key is
