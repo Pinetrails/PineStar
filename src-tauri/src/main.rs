@@ -108,11 +108,26 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
+/// Resolve the Node runtime. Packaged builds ship one via Tauri externalBin next
+/// to the app executable; dev builds fall back to the system PATH.
+fn node_binary() -> PathBuf {
+    let name = if cfg!(windows) { "node.exe" } else { "node" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    PathBuf::from("node")
+}
+
 /// Spawn the sidecar ONCE, injecting the keychain key (if any) as SKYNET_OPENROUTER_KEY
 /// and the per-launch IPC token. Returns true once it's listening.
 fn spawn_sidecar(state: &AppState) -> bool {
     let entry = state.root.join("sidecar").join("index.js");
-    let mut cmd = Command::new("node");
+    let mut cmd = Command::new(node_binary());
     cmd.arg(&entry)
         .env("SKYNET_PORT", state.port.to_string())
         .env("SKYNET_IPC_TOKEN", &state.ipc_token)
@@ -194,6 +209,41 @@ fn harness_clear_key(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Open an OAuth/device-auth URL in the user's default system browser.
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        return Err("Only http(s) URLs can be opened externally".to_string());
+    }
+
+    #[cfg(windows)]
+    {
+        Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", trimmed])
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {e}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(trimmed)
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {e}"))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(trimmed)
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {e}"))?;
+    }
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         // A second launch should focus the running window, not spin up a 2nd sidecar.
@@ -206,7 +256,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             harness_store_key,
             harness_has_key,
-            harness_clear_key
+            harness_clear_key,
+            open_external_url
         ])
         .setup(|app| {
             let root = project_root(app.handle());
