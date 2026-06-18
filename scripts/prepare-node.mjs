@@ -26,7 +26,7 @@ const out = join(outDir, `node-${TRIPLE}.exe`);
 function fetchTo(url, dest, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) return reject(new Error('too many redirects'));
-    get(url, res => {
+    const req = get(url, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         return resolve(fetchTo(res.headers.location, dest, redirects + 1));
@@ -37,6 +37,9 @@ function fetchTo(url, dest, redirects = 0) {
       f.on('finish', () => f.close(() => resolve()));
       f.on('error', reject);
     }).on('error', reject);
+    // a stalled mid-body connection would otherwise hang `npm run desktop:build` forever with no diagnostic;
+    // destroy() surfaces as a request 'error' → the existing reject → loud process.exit(1).
+    req.setTimeout(60000, () => req.destroy(new Error('download timed out (no data for 60s)')));
   });
 }
 
