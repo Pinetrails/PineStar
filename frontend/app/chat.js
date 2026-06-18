@@ -488,11 +488,12 @@ const Chat = (() => {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
       if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
       if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
+      // a THROWN teardown (abort/cancel/disconnect/network drop) means agent.run.end was LOST on the bus, so the
+      // crew HUD would stick at WORKING — clear this run's count here. Normal + in-band-error completions deliver
+      // run.end (decremented by the bus listener), so we must NOT clear there or a concurrent sibling under-counts.
+      if (typeof StationUI !== 'undefined' && StationUI.clearRunning) StationUI.clearRunning(ws.agentId || 'agent');
     } finally {
       aborters.delete(ws.id);
-      // tell the crew HUD this agent's run is over — agent.run.end can be LOST when the stream is aborted
-      // (E-STOP / cancel / disconnect), so clear it here too or the crew panel sticks at WORKING.
-      if (typeof StationUI !== 'undefined' && StationUI.clearRunning) StationUI.clearRunning(ws.agentId || 'agent');
       Channels.end(ws.id);
       if (isActiveWs(ws)) { syncStatus(); activeLiveRow = null; }
       // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off
