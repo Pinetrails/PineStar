@@ -70,6 +70,26 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(health.status, 200, 'GET /api/health -> 200');
     A.eq(health.body, 'ok', 'health body is ok');
 
+    // ---- localhost API hardening: no wildcard CORS, hostile web origins rejected ----
+    const sameOrigin = await fetch(B + '/api/budget/status', { headers: { Origin: B } });
+    A.eq(sameOrigin.status, 200, 'same-origin API request with Origin -> 200');
+    A.eq(sameOrigin.headers.get('access-control-allow-origin'), B, 'same-origin CORS mirrors the exact loopback origin');
+
+    const tauriOrigin = 'http://tauri.localhost';
+    const tauri = await fetch(B + '/api/budget/status', { headers: { Origin: tauriOrigin } });
+    A.eq(tauri.status, 200, 'Tauri app origin API request -> 200');
+    A.eq(tauri.headers.get('access-control-allow-origin'), tauriOrigin, 'Tauri CORS mirrors the trusted app origin');
+
+    const badOrigin = await fetch(B + '/api/budget/status', { headers: { Origin: 'https://evil.example' } });
+    A.eq(badOrigin.status, 403, 'foreign web origin API request -> 403');
+    A.eq(badOrigin.headers.get('access-control-allow-origin'), null, 'foreign origin gets no CORS read access');
+
+    const preflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: B, 'Access-Control-Request-Method': 'POST' } });
+    A.eq(preflight.status, 204, 'trusted API preflight -> 204');
+    A.eq(preflight.headers.get('access-control-allow-origin'), B, 'trusted preflight mirrors loopback origin');
+    const badPreflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' } });
+    A.eq(badPreflight.status, 403, 'foreign API preflight -> 403');
+
     // ---- budget status reflects the PRE-SEEDED ledger (persisted spend survived a fresh boot) ----
     const st = await j('GET', '/api/budget/status');
     A.eq(st.status, 200, 'GET /api/budget/status -> 200');

@@ -59,6 +59,33 @@ const { execFile, spawn: childSpawn } = require('node:child_process');   // shad
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
+const LOOPBACK_ORIGINS = new Set(['http://127.0.0.1:' + PORT, 'http://localhost:' + PORT]);
+const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
+function isAllowedApiOrigin(origin) {
+  if (!origin) return true;                         // same-origin fetches and non-browser clients usually omit it
+  if (origin === 'null') return false;              // file:/sandboxed origins are not the app
+  return LOOPBACK_ORIGINS.has(origin) || TAURI_ORIGINS.has(origin);
+}
+function isAllowedHost(host) {
+  const h = String(host || '').toLowerCase()
+    .replace(/^\[/, '').replace(/\](:\d+)?$/, '').replace(/:\d+$/, '');
+  return h === '127.0.0.1' || h === 'localhost' || h === '::1';
+}
+function applyApiCors(req, res) {
+  const origin = String(req.headers.origin || '');
+  if (origin && isAllowedApiOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-Skynet-Token');
+  res.setHeader('Access-Control-Max-Age', '600');
+}
+function rejectApi(req, res) {
+  if (!isAllowedHost(req.headers.host)) { res.writeHead(403); res.end('forbidden host'); return true; }
+  if (!isAllowedApiOrigin(String(req.headers.origin || ''))) { res.writeHead(403); res.end('forbidden origin'); return true; }
+  return false;
+}
 // Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
 let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
@@ -602,11 +629,15 @@ function stopTelegram() {
 }
 
 const server = http.createServer((req, res) => {
-  // Desktop build serves the frontend from the Tauri origin, so its /api/* calls are cross-origin.
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const isApi = String(req.url || '').indexOf('/api/') === 0 || req.url === '/api';
+  if (isApi) {
+    // Desktop serves the frontend from a Tauri app origin, while browser mode is same-origin loopback.
+    // Mirror only trusted origins and reject browser-driven localhost calls from arbitrary sites.
+    applyApiCors(req, res);
+    if (rejectApi(req, res)) return;
+  }
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Methods', '*');
-    res.setHeader('Access-Control-Allow-Headers', '*');
+    if (!isApi) { res.writeHead(404); return res.end('not found'); }
     res.writeHead(204); return res.end();
   }
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
