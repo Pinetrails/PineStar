@@ -16,6 +16,7 @@ const { runAgentLoop } = require('./loop.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
+const { makeConcurrencyGate } = require('./concurrency.js');
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
@@ -67,9 +68,14 @@ const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 3000
 const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
 const BUDGET_CAPS = {
   perRun: num(process.env.SKYNET_BUDGET_PER_RUN, 3),
+  perAgent: num(process.env.SKYNET_BUDGET_PER_AGENT, 5),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned)
   perDay: num(process.env.SKYNET_BUDGET_PER_DAY, 40),
   global: num(process.env.SKYNET_BUDGET_GLOBAL, 100)
 };
+// Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
+// (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
+// parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
+const MAX_CONCURRENT_AGENTS = num(process.env.SKYNET_MAX_CONCURRENT_AGENTS, 3);
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the LIVE BYOK
@@ -120,7 +126,9 @@ const ledgerIo = {
   }
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
-const budget = makeBudget({ caps: { day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
+const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
+// admission gate: bounds how many distinct agents run paid loops concurrently (multi-agent fan-out guard).
+const concurrencyGate = makeConcurrencyGate({ max: MAX_CONCURRENT_AGENTS });
 
 // run-history log (M-save P4): the OUTCOME of each finished run ({runId, agentId, reason, turns, tokens, usd,
 // title, ts}), append-only + fsync'd like the ledger and a sibling of the fs jail (the agent can't rewrite its
@@ -999,6 +1007,20 @@ async function runOnce(o) {
   const prompt = o.prompt;
   const trigger = o.trigger || 'directive';
 
+  // ---- concurrency admission (multi-agent fan-out guard) ----
+  // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
+  // admitted agent always passes (no new slot). On refusal emit the same start→error→end shape every other
+  // up-front refusal uses (Codex sign-in / non-tool model), reason 'error', transient (a slot may free up).
+  if (!concurrencyGate.tryEnter(agentId)) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise SKYNET_MAX_CONCURRENT_AGENTS.' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;
+  }
+  // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
+  // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
+  try {
+
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
@@ -1242,6 +1264,10 @@ async function runOnce(o) {
     runReflection({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
   }
   return result;
+
+  } finally {
+    concurrencyGate.leave(agentId);   // release the admission slot on EVERY exit (normal, early-return, or throw)
+  }
 }
 
 // POST /api/consent { runId, promptId, decision } — the browser's answer to a live permission.prompt. Resolves the

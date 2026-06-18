@@ -113,4 +113,45 @@ function collector() { const evs = []; return { emit: (name, payload) => evs.pus
   A.ok(Math.abs(st.overrides.day - 40) < 1e-9, 'status exposes the override headroom');
 }
 
+// fuller fake ledger that also answers per-agent (the 'agent' scope) — { day, total, byAgent:{id:usd} }
+function fakeLedgerFull(o) {
+  o = o || {}; const byAgent = o.byAgent || {};
+  return { usdForDay: () => o.day || 0, totalUsd: () => o.total || 0, usdForAgent: (a) => byAgent[a] || 0 };
+}
+
+// ---- per-agent scope: one agent's cap blocks only THAT agent (multi-agent fairness rail) ----
+{
+  const b = makeBudget({ caps: { agent: 5, day: 40, global: 100 }, ledger: fakeLedgerFull({}), clock: { now: () => 0 } });
+  const blkA = b.check('r1', 'a', 5, 0, null);            // agent a live $5 -> hits its own $5 cap
+  A.eq(blkA && blkA.scope, 'agent', 'agent a at its per-agent cap -> blocked on the agent scope');
+  // a different agent b is unaffected by a's overage (its own per-agent total is $1); a's $5 still sits in the day pool
+  A.eq(b.check('r2', 'b', 1, 0, null), null, 'agent b under its own per-agent cap proceeds while a is capped');
+}
+
+// ---- priority: when an agent AND the shared day pool are both over, the NARROWER agent scope is reported ----
+{
+  const b = makeBudget({ caps: { agent: 5, day: 40 }, ledger: fakeLedgerFull({ day: 38, byAgent: { a: 4 } }), clock: { now: () => 0 } });
+  // r1(a) live $3: agent = 4(disk)+3 = 7 > 5 AND day = 38(disk)+3 = 41 > 40 — both breached
+  const blk = b.check('r1', 'a', 3, 0, null);
+  A.eq(blk && blk.scope, 'agent', 'agent precedes day in priority -> the run names its own per-agent overage');
+}
+
+// ---- per-agent isolation + shared pooling: each agent sees only its own spend, but the day pool aggregates all ----
+{
+  const b = makeBudget({ caps: { agent: 5, day: 8 }, ledger: fakeLedgerFull({}), clock: { now: () => 0 } });
+  A.eq(b.check('r1', 'a', 3, 0, null), null, 'a $3: under its agent cap and the day pool');
+  A.eq(b.check('r2', 'b', 3, 0, null), null, 'b sees only its OWN $3 (not a\'s) -> under its $5 cap; day a3+b3=6 still fits');
+  A.eq((b.check('r2', 'b', 5, 0, null) || {}).scope, 'agent', 'b crossing its OWN per-agent cap blocks b on the agent scope');
+  A.eq((b.check('r1', 'a', 3, 0, null) || {}).scope, 'day', 'a is under its own agent cap but the SHARED day pool (a3+b5=8) is exhausted');
+}
+
+// ---- the per-agent cap BLOCKS but emits NO budget.threshold ('agent' is absent from the frozen event enum) ----
+{
+  const c = collector();
+  const b = makeBudget({ caps: { agent: 5 }, ledger: fakeLedgerFull({}), clock: { now: () => 0 } });
+  const blk = b.check('r1', 'a', 5, 0, c.emit);
+  A.eq(blk && blk.scope, 'agent', 'per-agent cap still blocks the run');
+  A.eq(c.evs.filter(e => e.name === 'budget.threshold').length, 0, 'no budget.threshold for the agent scope (stays in-contract)');
+}
+
 A.report('budget.test');
