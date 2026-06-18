@@ -241,6 +241,29 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 }
 .mc-edit:focus { outline: none; border-color: var(--ph); }
 
+/* COMMANDER DOSSIER (Phase A): the station-wide glass box — one model of the user, every belief editable */
+.cd-fam { display: inline-flex; align-items: center; gap: 7px; }
+.cd-fk { display: inline-block; width: 84px; height: 6px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-dim); overflow: hidden; vertical-align: middle; }
+.cd-ff { display: block; height: 100%; background: var(--gold); }
+.cd-fpct { color: var(--ph-bright); font-size: 12px; letter-spacing: 0.5px; }
+.cd-sub { font-size: 12px; color: var(--ph-dim); margin: 8px 0 6px; letter-spacing: 0.3px; }
+.cd-sub b { color: var(--ph); font-weight: 600; }
+.cd-sec { margin-top: 14px; }
+.cd-sech { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--ph-faint); padding-bottom: 3px; }
+.cd-dim { color: var(--ph-bright); font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+.cd-dn { color: var(--ph-dim); font-size: 11px; }
+.cd-empty { color: var(--ph-dim); font-size: 12px; font-style: italic; padding: 4px 2px 6px; }
+.cd-rec { padding: 7px 10px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim); margin-bottom: 7px; }
+.cd-rec.pinned { border-left-color: var(--gold); }
+.cd-body { color: var(--ph-bright); font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.cd-meta { margin-top: 6px; font-size: 11px; color: var(--ph-dim); letter-spacing: 0.3px; }
+.cd-acts { margin-top: 8px; }
+.cd-add { margin: 2px 0 4px; }
+.cd-addbtn { font: inherit; font-size: 12px; color: var(--ph-dim); background: transparent; border: 1px dashed var(--ph-dim); border-radius: 3px; padding: 3px 10px; cursor: pointer; letter-spacing: 0.5px; }
+.cd-addbtn:hover { color: var(--ph); border-color: var(--ph); }
+.cd-edit { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--ph-bright); background: var(--ink); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 6px; min-height: 44px; resize: vertical; }
+.cd-edit:focus { outline: none; border-color: var(--ph); }
+
 /* THE AWAKENING — tappable suggestion chips in COMMS (the gamified first-meeting onboarding) */
 .choice-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 1px 0 3px; }
 .choice {

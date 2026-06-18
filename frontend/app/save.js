@@ -5,7 +5,7 @@
 
 const Save = (() => {
   const KEY = 'skynet.save';
-  const CURRENT = 4;
+  const CURRENT = 5;
 
   // forward-only migrations: { fromVersion: (doc) => upgradedDoc }
   const migrations = {
@@ -32,6 +32,14 @@ const Save = (() => {
     // mirrors Profile.fresh() to keep save.js decoupled from profile.js load order.
     3: doc => {
       if (!doc.profile || typeof doc.profile !== 'object') doc.profile = { v: 1, tags: {}, seed: null, enabled: true, total: 0 };
+      return doc;
+    },
+    // v4 -> v5 (Commander Dossier): seed an empty, valid station-wide dossier slice. Cold-start-safe — an
+    // older save (or one whose owner never finished the awakening) gets a learnable, all-empty dossier; it
+    // then seeds from the agent's onboarding docs at DossierStore.init. The literal mirrors Dossier.fresh()
+    // to keep save.js decoupled from dossier.js load order.
+    4: doc => {
+      if (!doc.dossier || typeof doc.dossier !== 'object') doc.dossier = { v: 1, dims: { identity: [], stack: [], goals: [], style: [], standing_orders: [] }, seededFrom: {}, updatedAt: 0 };
       return doc;
     }
   };

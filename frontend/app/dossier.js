@@ -1,0 +1,199 @@
+/* SKYNET — dossier.js : the PURE Commander Dossier engine — what the STATION knows about its Commander.
+
+   Phase A of the Commander Dossier (docs/COMMANDER_DOSSIER_PLAN.md): one station-wide, dimensioned,
+   local-first model of the human, unifying signals that today are thin + scattered. This is the durable
+   BELIEF layer — a small set of named dimensions (identity / stack / goals / style / standing_orders),
+   each holding human-readable beliefs with provenance — that compose into every agent's system prompt so
+   the whole station knows the Commander. (The live affinity vector in profile.js is the SEPARATE "what
+   you work on" signal; this engine never rewrites it — the store reads it for the panel only.)
+
+   PURE + testable, mirroring profile.js / xp.js: a `Dossier` global in the browser, module.exports under
+   node. The clock is ALWAYS injected (`now`) — no Date.now / Math.random here — so ids/timestamps are
+   deterministic and node tests can fast-forward time. The browser wiring (dossierstore.js) supplies
+   Date.now() at the edge. composeBlock() is built ONLY from durable beliefs (never a volatile signal) so
+   the cached system-prompt prefix it produces is byte-identical across runs while the dossier is unchanged. */
+'use strict';
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else { root.Dossier = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  // the dimensions the station models — this array's order IS the render + compose order.
+  const DIMS = [
+    { key: 'identity',        label: 'Identity',        lead: 'Identity' },
+    { key: 'stack',           label: 'Stack & tools',   lead: 'Stack & tools' },
+    { key: 'goals',           label: 'Goals',           lead: 'Goals' },
+    { key: 'style',           label: 'Working style',   lead: 'Working style' },
+    { key: 'standing_orders', label: 'Standing orders', lead: 'Standing orders' }
+  ];
+  const DIM_KEYS = DIMS.map(d => d.key);
+  // which onboarding doc seeds which dimension (the Commander already authored these at the awakening).
+  const DOC_SEEDS = [
+    { doc: 'context', dim: 'identity' },         // context.md = about the Commander & their world
+    { doc: 'purpose', dim: 'goals' },            // purpose.md = the mission
+    { doc: 'manual',  dim: 'standing_orders' }   // operating-manual.md = standing rules
+  ];
+
+  const BLOCK_CHARS = 800;   // default cap on the composed system-prompt block (keeps the prefix lean)
+  const TEXT_CHARS = 280;    // a single belief is capped (mirrors the §5.2 memory-record content cap)
+
+  function isKey(k) { return DIM_KEYS.indexOf(k) >= 0; }
+  function clip(s) { s = String(s == null ? '' : s).trim(); return s.length > TEXT_CHARS ? s.slice(0, TEXT_CHARS) : s; }
+
+  function fresh() {
+    const dims = {};
+    for (const k of DIM_KEYS) dims[k] = [];
+    return { v: 1, dims, seededFrom: {}, updatedAt: 0 };
+  }
+
+  // a collision-proof belief id: a monotonic counter over the WHOLE dossier (never reuses a freed slot —
+  // mirrors memcore.nextNoteId), so forgetting then adding can never alias a still-referenced id.
+  function nextId(dossier) {
+    let max = 0;
+    for (const k of DIM_KEYS) for (const b of (dossier.dims[k] || [])) {
+      const m = /^cd_(\d+)$/.exec(b && b.id); if (m) max = Math.max(max, +m[1]);
+    }
+    return 'cd_' + (max + 1);
+  }
+
+  // add a new belief (no id) or update an existing one (id present) in a dimension. Empty text is a no-op
+  // (never store a blank belief). source / sourceRunId carry provenance. Returns the dossier.
+  function upsert(dossier, dim, belief, now) {
+    if (!dossier || !isKey(dim) || !belief) return dossier;
+    const text = clip(belief.text);
+    if (!text) return dossier;
+    const arr = dossier.dims[dim] || (dossier.dims[dim] = []);
+    if (belief.id) {
+      const cur = arr.find(b => b.id === belief.id);
+      if (cur) { cur.text = text; cur.updatedAt = now; dossier.updatedAt = now; return dossier; }
+    }
+    arr.push({
+      id: nextId(dossier), text,
+      source: (belief.source && typeof belief.source === 'string') ? belief.source : 'commander',
+      sourceRunId: (typeof belief.sourceRunId === 'string') ? belief.sourceRunId : null,
+      createdAt: now, updatedAt: now, pinned: false
+    });
+    dossier.updatedAt = now;
+    return dossier;
+  }
+
+  // remove the FIRST belief matching id from a dimension (first-match-only, like memcore.applyForget).
+  function forget(dossier, dim, id, now) {
+    if (!dossier || !isKey(dim)) return dossier;
+    const arr = dossier.dims[dim]; if (!arr) return dossier;
+    const i = arr.findIndex(b => b.id === id);
+    if (i >= 0) { arr.splice(i, 1); dossier.updatedAt = now; }
+    return dossier;
+  }
+
+  function setPinned(dossier, dim, id, pinned, now) {
+    if (!dossier || !isKey(dim)) return dossier;
+    const arr = dossier.dims[dim]; if (!arr) return dossier;
+    const b = arr.find(x => x.id === id);
+    if (b) { b.pinned = !!pinned; dossier.updatedAt = now; }
+    return dossier;
+  }
+
+  // deterministic read order: pinned first, then oldest-first (createdAt, then id) — so the order, and thus
+  // the composed prompt block, is byte-stable regardless of when individual beliefs were edited.
+  function beliefs(dossier, dim) {
+    const arr = (dossier && dossier.dims[dim]) ? dossier.dims[dim].slice() : [];
+    arr.sort((a, b) => (Number(!!b.pinned) - Number(!!a.pinned)) || ((a.createdAt || 0) - (b.createdAt || 0)) || String(a.id).localeCompare(String(b.id)));
+    return arr;
+  }
+
+  // seed dimensions from the onboarding docs the Commander already authored — ONCE PER DOC (tracked in
+  // seededFrom). First-seed-wins, so a doc that is empty at first init seeds later when the awakening fills
+  // it, a forgotten seed never reappears on reload, and re-entering the game never duplicates a belief.
+  function seedFromDocs(dossier, docs, now) {
+    if (!dossier) return dossier;
+    docs = docs || {};
+    if (!dossier.seededFrom || typeof dossier.seededFrom !== 'object') dossier.seededFrom = {};
+    for (const s of DOC_SEEDS) {
+      if (dossier.seededFrom[s.doc]) continue;
+      const text = String(docs[s.doc] == null ? '' : docs[s.doc]).trim();
+      if (!text) continue;
+      upsert(dossier, s.dim, { text, source: 'onboarding' }, now);
+      dossier.seededFrom[s.doc] = true;
+    }
+    return dossier;
+  }
+
+  // the compact COMMANDER block folded into every agent's system prompt. DURABLE BELIEFS ONLY (no volatile
+  // affinity signal) so it is byte-identical for identical state — the cached prefix stays warm. Returns ''
+  // when nothing is known (a cold station adds nothing to the prompt). Empty dimensions are omitted, never
+  // guessed. Capped at maxChars (whole-word backoff so the cap never splits a word mid-token).
+  function composeBlock(dossier, opts) {
+    opts = opts || {};
+    const cap = Number.isFinite(opts.maxChars) ? opts.maxChars : BLOCK_CHARS;
+    const lines = [];
+    for (const d of DIMS) {
+      const bs = beliefs(dossier, d.key);
+      if (!bs.length) continue;
+      lines.push('- ' + d.lead + ': ' + bs.map(b => b.text).join('; '));
+    }
+    if (!lines.length) return '';
+    let body = 'WHAT YOU KNOW ABOUT YOUR COMMANDER (the station has learned this — honor it; if anything here is wrong, the Commander will correct it):\n' + lines.join('\n');
+    if (body.length > cap) body = body.slice(0, cap - 1).replace(/\s+\S*$/, '') + '…';
+    return body;
+  }
+
+  // the panel read: per-dimension counts, which dimensions are known vs still blank, and an HONEST
+  // familiarity meter = the fraction of dimensions with at least one belief (the legible, recommended
+  // math). `observed` (optional, the affinity summary from profile.js) is passed straight through for the
+  // panel; it deliberately does NOT affect familiarity (that meter is about the dossier, not work-mix).
+  function summary(dossier, opts) {
+    opts = opts || {};
+    const counts = {}, known = [], blank = [];
+    let total = 0;
+    for (const d of DIMS) {
+      const n = (dossier && Array.isArray(dossier.dims[d.key])) ? dossier.dims[d.key].length : 0;
+      counts[d.key] = n; total += n;
+      (n > 0 ? known : blank).push(d.key);
+    }
+    return {
+      counts, known, blank, total,
+      familiarity: DIMS.length ? known.length / DIMS.length : 0,
+      observed: opts.observed || null
+    };
+  }
+
+  // defensively rebuild a valid dossier from a (possibly malformed / old) persisted blob. Re-ids any belief
+  // with a missing / malformed / duplicate id so nextId() stays collision-proof.
+  function hydrate(raw) {
+    const d = fresh();
+    if (!raw || typeof raw !== 'object') return d;
+    if (raw.seededFrom && typeof raw.seededFrom === 'object') {
+      for (const s of DOC_SEEDS) if (raw.seededFrom[s.doc]) d.seededFrom[s.doc] = true;
+    }
+    if (Number.isFinite(raw.updatedAt) && raw.updatedAt >= 0) d.updatedAt = raw.updatedAt;
+    if (raw.dims && typeof raw.dims === 'object') {
+      for (const k of DIM_KEYS) {
+        const arr = raw.dims[k]; if (!Array.isArray(arr)) continue;
+        for (const b of arr) {
+          if (!b || typeof b.text !== 'string') continue;
+          const text = clip(b.text); if (!text) continue;
+          d.dims[k].push({
+            id: (typeof b.id === 'string') ? b.id : null,
+            text,
+            source: (typeof b.source === 'string') ? b.source : 'commander',
+            sourceRunId: (typeof b.sourceRunId === 'string') ? b.sourceRunId : null,
+            createdAt: Number.isFinite(b.createdAt) ? b.createdAt : 0,
+            updatedAt: Number.isFinite(b.updatedAt) ? b.updatedAt : 0,
+            pinned: !!b.pinned
+          });
+        }
+      }
+    }
+    const seen = {};
+    for (const k of DIM_KEYS) for (const b of d.dims[k]) {
+      if (!b.id || seen[b.id] || !/^cd_\d+$/.test(b.id)) b.id = nextId(d);
+      seen[b.id] = true;
+    }
+    return d;
+  }
+
+  return { fresh, hydrate, upsert, forget, setPinned, beliefs, seedFromDocs, composeBlock, summary, DIMS, DIM_KEYS, BLOCK_CHARS, TEXT_CHARS };
+});

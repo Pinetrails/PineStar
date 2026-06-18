@@ -22,6 +22,7 @@ const App = (() => {
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
   let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
+  let pendingDossier = null;      // a saved Commander-dossier slice awaiting DossierStore.init() in enterGame()
 
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -78,6 +79,13 @@ const App = (() => {
     if (context) p += '\n\nABOUT YOUR COMMANDER & THEIR WORLD (context.md):\n' + context;
     const manual = (d.manual || '').trim();
     if (manual) p += '\n\nSTANDING ORDERS (operating-manual.md) — always follow these:\n' + manual;
+    // THE COMMANDER DOSSIER: the station-wide model of the user, folded in so every agent knows the
+    // Commander (durable beliefs only → the prefix stays byte-stable for the cache). '' until something
+    // is known, so a cold station adds nothing here.
+    if (typeof DossierStore !== 'undefined') {
+      const cd = DossierStore.composeBlock();
+      if (cd) p += '\n\n' + cd;
+    }
     return p;
   }
   // the dossier calls this when the Commander edits & saves a config file: fold the patch into the
@@ -91,6 +99,7 @@ const App = (() => {
       if (typeof patch.manual === 'string') d.manual = patch.manual;
       if (typeof patch.context === 'string') d.context = patch.context;
     }
+    if (typeof DossierStore !== 'undefined') DossierStore.syncDocs(d);   // seed the dossier from any newly-authored onboarding doc (first-seed-wins per doc) BEFORE the recompose
     agent.systemPrompt = composeSystemPrompt(agent);
     if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
     syncChannels();   // keep a connected Telegram bot on the SAME (updated) identity — no reconnect needed
@@ -275,7 +284,8 @@ const App = (() => {
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
     const roster = liveAgents();
-    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
+    const dossier = (typeof DossierStore !== 'undefined') ? DossierStore.serialize() : undefined;   // the station-wide Commander model
+    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile, dossier }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
@@ -547,6 +557,7 @@ const App = (() => {
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
+    pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
     enterGame({ awaitingPurpose: !agent.purpose, wake: false });
     persist();   // lock any v1->v2 migration to disk now (don't re-migrate every load)
   }
@@ -618,6 +629,17 @@ const App = (() => {
     if (typeof MintStore !== 'undefined') {
       MintStore.init();
       if (typeof ProfileStore !== 'undefined' && ProfileStore.enabled && MintStore.setEnabled) MintStore.setEnabled(ProfileStore.enabled());
+    }
+    // COMMANDER DOSSIER: the one station-wide model of the user (dossier.js engine). Resume the saved slice,
+    // seed it once from the onboarding docs the Commander authored, and fold it into EVERY agent's system
+    // prompt so a freshly-deployed agent already knows the Commander. A panel edit recomposes the live prompt.
+    if (typeof DossierStore !== 'undefined') {
+      DossierStore.init({
+        dossier: pendingDossier, docs: agentDocs(agent), persist: persist,
+        onMutate: () => { if (!agent) return; agent.systemPrompt = composeSystemPrompt(agent); if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt); persist(); }
+      });
+      pendingDossier = null;
+      agent.systemPrompt = composeSystemPrompt(agent);   // include the dossier block before Chat.init reads it below
     }
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
