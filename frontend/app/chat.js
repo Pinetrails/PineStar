@@ -280,17 +280,18 @@ const Chat = (() => {
     // count — never the message text. Gated on the user's learning flag inside the store.
     if (isTask && typeof ProfileStore !== 'undefined') ProfileStore.observeMessage(text);
     if (isTask && typeof MintStore !== 'undefined') MintStore.observe(text);   // notice recurring jobs → propose minting them as one-tap missions
-    // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
-    // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
-    // forth. When it's OFF, replies are silent + detailed written text.
+    // VOICE: the speaker toggle (🔊) controls whether the agent SPEAKS its reply (and in the short,
+    // spoken style — voiceModeRules appended below). It does NOT control the desk trip: a real TASK is
+    // real work, so it ALWAYS walks to the workstation and works there until done (the signature visible
+    // loop), speaker on or off. When voice is on, a task's result is also spoken — it's just no longer
+    // answered "on the spot" in place of the desk trip.
     const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
-    // In a voice conversation the agent stays ONE-ON-ONE: he faces the Commander and answers on the
-    // spot instead of walking to the workstation — even for "task"-classified messages (the work still
-    // runs, just not as a visible desk trip). Only a SILENT task (speaker off) walks over to work.
-    const stance = (isTask && !willSpeak) ? 'task' : 'talk';
+    // A TASK -> walk to the workstation + work there until the run completes (visible desk trip), whatever
+    // the speaker setting. A CHAT (no task) -> face the Commander one-on-one (framed below when voice is on).
+    const stance = isTask ? 'task' : 'talk';
     World.setActivity(stance);
-    // in a spoken conversation, gently frame the agent so you can actually see who you're talking to
-    // (no-op if he's already comfortably on-screen; self-cancels the moment you pan/zoom).
+    // a spoken CHAT gently frames the agent one-on-one so you can see who you're talking to; a TASK is at
+    // the desk instead (no-op if already comfortably on-screen; self-cancels the moment you pan/zoom).
     if (stance === 'talk' && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
     status(stance === 'task' ? 'working…' : 'thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
