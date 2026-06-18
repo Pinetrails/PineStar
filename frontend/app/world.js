@@ -1426,6 +1426,7 @@ const World = (() => {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
+    drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
@@ -1915,7 +1916,7 @@ const World = (() => {
     U.bus.on('workitem.placed', p => intakeMessage(p));
     U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
-    U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
+    U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); if (floor) floor.onEvent('queue.status', p); });
     // THE FLOOR ECONOMY — fold the harness's real cost/outcome events into the at-a-glance floor HUD
     // (drawFloorStats). harness.js re-emits every sidecar event onto U.bus, and routed/crew runs arrive
     // the same way over the SSE bridge, so these tally the WHOLE station's spend->yield, not just the hero.
@@ -1979,9 +1980,15 @@ const World = (() => {
     };
     open();
   }
+  // the live backlog total — FloorStats owns it (tested), with the chanQueues sum as a fallback if
+  // FloorStats isn't loaded. Both the numeric gauge and the physical jam read this one source.
+  function queueDepthNow() {
+    if (floor) return floor.snapshot().queueDepth | 0;
+    let d = 0; for (const v of chanQueues.values()) d += v; return d;
+  }
   // bottom-right INTAKE queue-depth gauge — backpressure made visible (screen-space overlay)
   function drawQueueDepth() {
-    let depth = 0; for (const d of chanQueues.values()) depth += d;
+    const depth = queueDepthNow();
     if (depth <= 0) return;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
@@ -1991,6 +1998,32 @@ const World = (() => {
     ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
+  }
+
+  /* THE JAM — the live backlog made PHYSICAL: park N amber "waiting" crates climbing off the INTAKE so
+     the jam's LENGTH is the real queue depth (straight from queue.status). World-space, lit with the floor
+     like the riding crates. Honest: it shows the backend's pending-work count, never a guessed frontend hold. */
+  function drawQueueJam(now) {
+    const depth = queueDepthNow();
+    if (depth <= 0 || !geo || !geo.props) return;
+    const intake = geo.props.find(p => p.t === 'intake');
+    if (!intake) return;
+    const MAXVIS = 6, shown = Math.min(depth, MAXVIS);
+    const cx = (intake.x + (intake.w || 1) / 2) * T;       // centered on the intake footprint
+    const top = intake.y * T - 3;                          // crates climb upward off the intake's top edge
+    for (let i = 0; i < shown; i++) drawWaitCrate(cx, top - i * 6 + Math.sin(now / 360 + i * 0.7) * 0.6);   // gentle idle bob
+    if (depth > MAXVIS) {
+      ctx.fillStyle = '#e8c860'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('+' + (depth - MAXVIS), cx, top - shown * 6 - 3);
+    }
+  }
+  // one parked amber crate (waiting ore) — matches the riding-box silhouette/palette
+  function drawWaitCrate(cx, cy) {
+    const x = Math.round(cx - 4), y = Math.round(cy - 4);
+    ctx.fillStyle = '#161210'; ctx.fillRect(x - 1, y - 1, 11, 8);   // dark outline
+    ctx.fillStyle = '#8a7330'; ctx.fillRect(x, y + 3, 9, 3);        // shaded front face
+    ctx.fillStyle = '#caa84a'; ctx.fillRect(x, y, 9, 3);           // lit amber top
+    ctx.fillStyle = '#e8c860'; ctx.fillRect(x, y, 9, 1);           // top sheen
   }
 
   /* THE FLOOR ECONOMY READOUT — the running station made legible at a glance (the Factorio dashboard).

@@ -14,6 +14,8 @@
      - THRU  : work-items delivered per minute (a 60s window over real delivery events).
      - DWELL : average time a work-item spent riding the line (placed -> delivered), paired
                by workitemId — the latency of the whole INTAKE->bay->OUTBOX round trip.
+     - QUEUE : the live backlog (sum of queue.status depths) — rendered as a physical JAM of
+               waiting crates at the bay, so a bottleneck's LENGTH is the real pending work.
 
    Truthful by construction (the workstreams.js telemetry rule): every number is a fold
    of REAL events — agent.cost (RECONCILED usd + cachedTokens), agent.run.end (the
@@ -42,6 +44,7 @@
   function create() {
     let s = blank();
     let placedAt = new Map();   // workitemId -> placement clock (ms) — paired on delivery to get dwell (time on the line)
+    let queues = new Map();     // queueId -> current depth (from queue.status) — the live per-agent backlog
     let inRing = [];            // placement timestamps (inbound items/min)
     let outRing = [];           // delivery timestamps (outbound items/min)
     let lastTms = 0;            // newest event clock seen — the default window anchor when snapshot() gets no nowMs
@@ -51,7 +54,7 @@
         products: 0, slag: 0, slagUsd: 0, delivered: 0, dwellSum: 0, dwellN: 0
       };
     }
-    function reset() { s = blank(); placedAt = new Map(); inRing = []; outRing = []; lastTms = 0; }
+    function reset() { s = blank(); placedAt = new Map(); queues = new Map(); inRing = []; outRing = []; lastTms = 0; }
 
     // a reliable event clock: the caller's injected nowMs (wall-clock, e.g. Date.now()) wins; else the
     // event's own ts; else 0 (untimed — folded into totals but not into the time-windowed rate/dwell).
@@ -93,6 +96,9 @@
           if (d >= 0) { s.dwellSum += d; s.dwellN++; }
           placedAt.delete(p.workitemId);
         }
+      } else if (name === 'queue.status') {
+        // the live per-agent backlog — the source for the physical "jam" of waiting crates at the bay
+        if (p.queueId != null) queues.set(p.queueId, Math.max(0, p.depth | 0));
       }
     }
 
@@ -108,8 +114,9 @@
       const yieldFrac = yieldKnown ? s.products / decided : 0;
       const cacheFrac = cacheKnown ? s.cachedTokens / s.tokensIn : 0;
       const avgDwellMs = dwellKnown ? s.dwellSum / s.dwellN : 0;
+      let queueDepth = 0; for (const d of queues.values()) queueDepth += d;
       return {
-        spendUsd: s.spendUsd, slagUsd: s.slagUsd,
+        spendUsd: s.spendUsd, slagUsd: s.slagUsd, queueDepth,
         runs: decided, products: s.products, slag: s.slag, delivered: s.delivered,
         tokensIn: s.tokensIn, tokensOut: s.tokensOut, cachedTokens: s.cachedTokens,
         yieldKnown, yieldFrac, yieldPct: Math.round(yieldFrac * 100),

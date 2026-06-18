@@ -99,6 +99,20 @@ ss = u.snapshot();
 A.eq(ss.delivered, 1, 'untimed delivery still tallied');
 A.ok(isFinite(ss.thruOutPerMin), 'untimed -> throughput is a finite number');
 
+// ---- QUEUE backlog: queue.status folds into a live total across queues; drains and clamps ----
+const q = FloorStats.create();
+A.eq(q.snapshot().queueDepth, 0, 'fresh: no backlog');
+q.onEvent('queue.status', { queueId: 'a', depth: 2 });
+q.onEvent('queue.status', { queueId: 'b', depth: 1 });
+A.eq(q.snapshot().queueDepth, 3, 'backlog = sum across queues');
+q.onEvent('queue.status', { queueId: 'a', depth: 0 });   // queue a drained
+A.eq(q.snapshot().queueDepth, 1, 'a drained -> backlog drops to just b');
+q.onEvent('queue.status', { queueId: 'a', depth: -5 });  // garbage depth clamps to 0, never negative
+A.eq(q.snapshot().queueDepth, 1, 'negative depth clamps to 0');
+A.notThrows(() => q.onEvent('queue.status', {}), 'queue.status with no queueId is ignored, no throw');
+q.reset();
+A.eq(q.snapshot().queueDepth, 0, 'reset clears the backlog');
+
 // ---- reset wipes back to the fresh, knows-nothing state ----
 f.reset();
 s = f.snapshot();
