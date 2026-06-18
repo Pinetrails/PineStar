@@ -1743,6 +1743,7 @@ const World = (() => {
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
   let bridged = false, lastOutboxFlash = -1e9;
   let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
+  let slaglog = null, lastCacheFrac = null;   // SlagLog: wasted-spend post-mortems + the last reconciled cache ratio (for the diagnosis)
 
   // a belt tile on/adjacent to a footprint (its tiles + a 1-tile ring), used as a box spawn point (local frame)
   function beltTileNear(tx, ty, tw, th) {
@@ -1828,6 +1829,13 @@ const World = (() => {
     // so this box is a banked PRODUCT (green). Failed/superseded runs emit no delivered box at all.
     if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', workitemId: (payload && payload.workitemId) || '' });
   }
+  // a wasteful run produced no deliverable — ride a red-hot SLAG crate off the desk (carrying its
+  // post-mortem one-liner) so spend that yielded nothing is VISIBLE leaving the line, not just a number.
+  function enqueueSlag(diag) {
+    if (!convey || !desk) return;
+    const t = beltTileNear(desk.tx, desk.ty, desk.w, desk.h);
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'slag', postmortem: (diag && (diag.title + ' — ' + diag.fix)) || 'wasted spend' });
+  }
   /* ---------- crew bodies (the OTHER agents, standing at their bays) ---------- */
   // a LIGHT body: the full agent field-shape (so SPRITES.drawBody/drawFallback never choke) but STATIC —
   // it never ticks/paths. It only receives work (a say bubble + a wake ripple + a bay work-glow).
@@ -1885,8 +1893,9 @@ const World = (() => {
   function onWorkitemDeliver(bx) {
     const p = (bx && bx.payload) || {};
     if (p.outbound) {
-      lastOutboxFlash = fnow;   // reply reached the OUTBOX -> flash the chute
-      if (agent && !agent.unplaced && activity === 'idle') {   // EXHALE: watch the reply leave, satisfied, then relax (downtime clock resets)
+      lastOutboxFlash = fnow;   // box reached the OUTBOX -> flash the chute
+      // slag is NOT a satisfying delivery — skip the relaxed exhale; the post-mortem already fired at run.end
+      if (p.box !== 'slag' && agent && !agent.unplaced && activity === 'idle') {   // EXHALE: watch the reply leave, satisfied, then relax (downtime clock resets)
         const ob = geo && geo.props && geo.props.find(q => q.t === 'outbox');
         if (ob) setGlance(dirToward(agent.px, agent.py, (ob.x + 0.5) * T, (ob.y + 0.5) * T), 1100, fnow);
         curiositySay(SELF_DISPATCH, 0.7, fnow); agent.lastTaskAt = fnow;
@@ -1911,14 +1920,25 @@ const World = (() => {
     // (drawFloorStats). harness.js re-emits every sidecar event onto U.bus, and routed/crew runs arrive
     // the same way over the SSE bridge, so these tally the WHOLE station's spend->yield, not just the hero.
     if (!floor && typeof FloorStats !== 'undefined') floor = FloorStats.create();
-    U.bus.on('agent.cost', p => { if (floor) floor.onEvent('agent.cost', p); });
+    if (!slaglog && typeof SlagLog !== 'undefined') slaglog = SlagLog.create();
+    U.bus.on('agent.cost', p => {
+      if (floor) floor.onEvent('agent.cost', p);
+      // remember the most recent RECONCILED cache ratio — the smelter temperature a slag diagnosis reads
+      if (p && (p.tokensIn | 0) > 0) lastCacheFrac = Math.max(0, Math.min(1, (p.cachedTokens || 0) / p.tokensIn));
+    });
     U.bus.on('workitem.delivered', p => { if (floor) floor.onEvent('workitem.delivered', p); });
     U.bus.on('agent.run.end', p => {
-      if (!floor) return;
-      floor.onEvent('agent.run.end', p);
-      // a run that burned spend for nothing -> pulse the SLAG cell so wasted dollars are FELT, not just tallied
+      if (floor) floor.onEvent('agent.run.end', p);
       const r = p && p.reason;
-      if (r === 'max_iters' || r === 'budget' || r === 'error' || r === 'refusal') lastSlagAt = performance.now();
+      if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
+      // WASTED SPEND: pulse the SLAG cell, then turn the loss into a lesson — a real post-mortem in the
+      // notifications panel + a red-hot slag crate that rides off the line (if a desk belt exists). The
+      // lesson lands regardless of belts (the run wasted spend either way; the belt only SHOWS it).
+      lastSlagAt = performance.now();
+      if (!slaglog) return;
+      const diag = slaglog.record(r, { cacheFrac: lastCacheFrac, turns: p && p.turns, usd: p && p.usd });
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('⚠ SLAG · ' + SlagLog.line(diag), 'warn');
+      enqueueSlag(diag);
     });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
     // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
