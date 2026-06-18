@@ -124,10 +124,14 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
-/// Resolve the Node runtime. Packaged builds ship one via Tauri externalBin next
-/// to the app executable; dev builds fall back to the system PATH.
-fn node_binary() -> PathBuf {
+/// Resolve the Node runtime. Packaged builds ship one via Tauri externalBin;
+/// dev builds fall back to the system PATH.
+fn node_binary(root: &Path) -> PathBuf {
     let name = if cfg!(windows) { "node.exe" } else { "node" };
+    let root_candidate = root.join(name);
+    if root_candidate.exists() {
+        return root_candidate;
+    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let candidate = dir.join(name);
@@ -143,7 +147,7 @@ fn node_binary() -> PathBuf {
 /// and the per-launch IPC token. Returns true once it's listening.
 fn spawn_sidecar(state: &AppState) -> bool {
     let entry = state.root.join("sidecar").join("index.js");
-    let mut cmd = Command::new(node_binary());
+    let mut cmd = Command::new(node_binary(&state.root));
     cmd.arg(&entry)
         .env("SKYNET_PORT", state.port.to_string())
         .env("SKYNET_IPC_TOKEN", &state.ipc_token)
