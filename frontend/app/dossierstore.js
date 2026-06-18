@@ -27,6 +27,18 @@ const DossierStore = (() => {
       ? Dossier.hydrate(opts.dossier)         // resume the saved slice (or a fresh one) — defensively sanitized
       : (opts.dossier || null);
     if (ready() && opts.docs) Dossier.seedFromDocs(dossier, opts.docs, now());   // first-seed-wins per doc
+    pushToSidecar();   // Phase C: hand the composed block to the sidecar so server-composed (cron) runs know the Commander
+  }
+
+  // Phase C: mirror the composed Commander block to the sidecar so AUTONOMOUS server-composed runs (cron) —
+  // which build their own persona and never see the frontend's system prompt — still know who they serve.
+  // Fire-and-forget (a no-op if the sidecar isn't reachable), exactly like syncChannels. The browser-direct
+  // runs already carry the block in their prompt, so the sidecar only uses this for the runs that compose it.
+  function pushToSidecar() {
+    if (!ready()) return;
+    try {
+      fetch('/api/dossier', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block: composeBlock() }) }).catch(() => {});
+    } catch (_) {}
   }
 
   // re-seed from freshly-authored onboarding docs (called from applyAgentConfig when the Commander edits a
@@ -35,6 +47,7 @@ const DossierStore = (() => {
     if (!ready() || !docs) return;
     Dossier.seedFromDocs(dossier, docs, now());
     try { persistFn(); } catch (_) {}
+    pushToSidecar();   // newly-seeded beliefs reach the sidecar for cron runs too
   }
 
   // the durable COMMANDER block for the system prompt (durable beliefs only → cache-stable). '' when cold.
@@ -51,7 +64,7 @@ const DossierStore = (() => {
   function serialize() { return dossier || undefined; }   // folded into the save envelope by App.persist()
 
   // ---- mutations from the glass box — each recomposes the live prompt (onMutate) AND persists ----
-  function commit() { try { onMutateFn(); } catch (_) {} try { persistFn(); } catch (_) {} }
+  function commit() { try { onMutateFn(); } catch (_) {} try { persistFn(); } catch (_) {} pushToSidecar(); }
   function upsert(dim, belief) { if (ready()) { Dossier.upsert(dossier, dim, belief, now()); commit(); } }
   function forget(dim, id) { if (ready()) { Dossier.forget(dossier, dim, id, now()); commit(); } }
   function setPinned(dim, id, pinned) { if (ready()) { Dossier.setPinned(dossier, dim, id, pinned, now()); commit(); } }
