@@ -85,15 +85,31 @@ fn strip_verbatim(p: &Path) -> PathBuf {
 /// Directory holding `sidecar/index.js` (+ `frontend/`, `shared/`). Dev = live
 /// worktree one level up; release = bundled resource dir.
 fn project_root(app: &tauri::AppHandle) -> PathBuf {
-    let raw = if cfg!(debug_assertions) {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."))
+    let candidates = if cfg!(debug_assertions) {
+        vec![
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(".")),
+        ]
     } else {
-        app.path().resource_dir().unwrap_or_else(|_| PathBuf::from("."))
+        let mut paths = Vec::new();
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                paths.push(dir.to_path_buf());
+            }
+        }
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            paths.push(resource_dir);
+        }
+        paths.push(PathBuf::from("."));
+        paths
     };
-    strip_verbatim(&raw)
+    candidates
+        .into_iter()
+        .map(|p| strip_verbatim(&p))
+        .find(|p| p.join("sidecar").join("index.js").exists())
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Block (briefly) until the sidecar is accepting connections, or give up.
