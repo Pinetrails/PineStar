@@ -59,6 +59,7 @@ const { execFile, spawn: childSpawn } = require('node:child_process');   // shad
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
+const API_TOKEN = String(process.env.SKYNET_API_TOKEN || crypto.randomBytes(32).toString('hex'));
 const LOOPBACK_ORIGINS = new Set(['http://127.0.0.1:' + PORT, 'http://localhost:' + PORT]);
 const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
 function isAllowedApiOrigin(origin) {
@@ -85,6 +86,21 @@ function rejectApi(req, res) {
   if (!isAllowedHost(req.headers.host)) { res.writeHead(403); res.end('forbidden host'); return true; }
   if (!isAllowedApiOrigin(String(req.headers.origin || ''))) { res.writeHead(403); res.end('forbidden origin'); return true; }
   return false;
+}
+function apiTokenOk(req) {
+  const got = String(req.headers['x-skynet-token'] || '');
+  if (!got || got.length !== API_TOKEN.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(API_TOKEN)); } catch (_) { return false; }
+}
+function requiresApiToken(req) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return false;
+  if (req.url === '/api/session' || req.url === '/api/key' || req.url === '/api/save') return false;
+  return String(req.url || '').indexOf('/api/') === 0;
+}
+function rejectBadApiToken(req, res) {
+  if (!requiresApiToken(req)) return false;
+  if (apiTokenOk(req)) return false;
+  res.writeHead(403); res.end('forbidden token'); return true;
 }
 // Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
@@ -640,6 +656,8 @@ const server = http.createServer((req, res) => {
     if (!isApi) { res.writeHead(404); return res.end('not found'); }
     res.writeHead(204); return res.end();
   }
+  if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
+  if (isApi && rejectBadApiToken(req, res)) return;
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
@@ -777,6 +795,10 @@ function handleRouting(req, res) {
 function handleBudgetStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(Object.assign({ perRun: BUDGET_CAPS.perRun, totalUsd: ledger.totalUsd(), runs: ledger.count() }, budget.status(Date.now()))));
+}
+function handleApiSession(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ token: API_TOKEN }));
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
    base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */
@@ -2072,7 +2094,11 @@ async function serveStatic(req, res) {
     const rel = (url === '/' ? 'index.html' : url.replace(/^\/+/, ''));
     const abs = path.resolve(FRONTEND, rel);
     if (abs !== FRONTEND && abs.indexOf(FRONTEND + path.sep) !== 0) { res.writeHead(403); return res.end('forbidden'); }
-    const data = await fsp.readFile(abs);
+    let data = await fsp.readFile(abs);
+    if (abs.toLowerCase() === path.resolve(FRONTEND, 'index.html').toLowerCase()) {
+      const boot = '<script>window.__SKYNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';</script>';
+      data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
+    }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     res.end(data);
   } catch (e) { res.writeHead(404); res.end('not found'); }

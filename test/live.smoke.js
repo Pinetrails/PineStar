@@ -54,8 +54,8 @@ function boot(port, ws, attemptsLeft) {
 }
 
 // POST /api/run and fold the NDJSON event stream into a compact summary.
-async function run(B, body) {
-  const res = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+async function run(B, body, apiToken) {
+  const res = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': apiToken }, body: JSON.stringify(body) });
   const text = await res.text();
   const evs = text.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
   const names = evs.map(e => e.name);
@@ -74,13 +74,14 @@ async function run(B, body) {
   const { child, port } = await boot(8890 + (process.pid % 40), ws, 20);
   const B = 'http://' + HOST + ':' + port;
   const get = async p => { const r = await fetch(B + p); return r.json(); };
+  const apiToken = String((await (await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } })).json()).token || '');
   const body = { key: KEY, model: MODEL, system: BIG_SYSTEM, messages: [{ role: 'user', content: 'Reply with exactly one word: ACK' }], isTask: false };
 
   try {
     const before = await get('/api/budget/status');
 
     console.log('RUN 1 (cold — writes the cache):');
-    const r1 = await run(B, body);
+    const r1 = await run(B, body, apiToken);
     if (r1.errs.length) console.log('  run1 error(s): ' + r1.errs.join(' | '));
     ok(r1.names.includes('agent.run.start'), 'run1 emitted agent.run.start');
     ok(r1.names.includes('agent.cost'), 'run1 emitted a reconciled agent.cost');
@@ -92,7 +93,7 @@ async function run(B, body) {
 
     await sleep(800);
     console.log('RUN 2 (warm — should HIT the cache):');
-    const r2 = await run(B, body);
+    const r2 = await run(B, body, apiToken);
     if (r2.errs.length) console.log('  run2 error(s): ' + r2.errs.join(' | '));
     ok(r2.end.reason === 'done', 'run2 ended with reason "done"');
     const c2 = r2.cost[r2.cost.length - 1] || {};
