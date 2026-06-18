@@ -39,6 +39,7 @@ const Chat = (() => {
                                 // actual message sits at the bottom of COMMS; work lines (tool ▶/◀, deliverables, consent) slot
                                 // in ABOVE it instead of pushing it up out of view. Cleared the moment the reply finishes.
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
+  let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const el = id => document.getElementById(id);
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
@@ -55,6 +56,7 @@ const Chat = (() => {
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
     input.value = '';
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
+    wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     load(opts.ws);
     input.onkeydown = e => {
       if (e.key === 'Enter' && !e.isComposing) {
@@ -268,6 +270,50 @@ const Chat = (() => {
         if (onActive) proposalCard(batch, activeWs);
         else if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
       }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
+    });
+  }
+
+  /* JUST-IN-TIME CURIOSITY (Commander Dossier, Phase B slice 2): after a clean run, the station may ask
+     about ONE thing it still doesn't know about its Commander — gentle, budgeted (curiosity.js caps it at
+     one per session), never after a stop/error. Mirrors the wireProposals turn-in beat. A "sure" launches a
+     one-question intake interview for just that dimension; "not now" dismisses it for good. */
+  function dimLabel(dim) {
+    if (typeof Dossier !== 'undefined' && Dossier.DIMS) { const d = Dossier.DIMS.find(x => x.key === dim); if (d) return d.label; }
+    return String(dim);
+  }
+  function curiosityNudge(dim) {
+    if (!log) return;
+    const r = row('agent'); r.d.classList.add('reply');
+    r.body.textContent = '✦ one curious thing — i still don’t know your ' + dimLabel(dim).toLowerCase() + '. want to tell me? it sharpens how every agent here works for you.';
+    autoscroll();
+    choices([{ label: 'sure — ask me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }], item => {
+      if (item.value === 'yes' && typeof Intake !== 'undefined' && typeof Dossier !== 'undefined') {
+        const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
+        Intake.start({
+          skip: skip,
+          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity' }); },
+          onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); }
+        });
+      } else if (typeof CuriosityStore !== 'undefined') {
+        CuriosityStore.markDismissed(dim);   // waved off → never raise this dimension again
+      }
+    });
+  }
+  function wireCuriosity() {
+    if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
+    curiosityWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
+      setTimeout(() => {
+        if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
+        if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return;
+        if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return;
+        if (typeof CuriosityStore === 'undefined') return;
+        const dim = CuriosityStore.consider();
+        if (!dim) return;
+        CuriosityStore.markShown();            // spend this session's single nudge whether or not they answer
+        curiosityNudge(dim);
+      }, 650);   // let the reply finish rendering before the nudge slots in below it
     });
   }
 
