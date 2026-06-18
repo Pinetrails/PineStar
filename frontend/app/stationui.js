@@ -531,7 +531,7 @@ const StationUI = (() => {
     { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        on: true },
     { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', on: true, consent: true },
     { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    on: true },
-    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec',               on: false }
+    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec · verify.run',  on: true, consent: true }
   ];
   function buildSkills(body) {
     const on = SKILLS.filter(s => s.on).length;
@@ -546,10 +546,12 @@ const StationUI = (() => {
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
       '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
-      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory), ' +
-      'so the room layout IS the permission system. Read-only skills run freely, and the agent\'s own private ' +
-      '<b>notebook memory</b> saves without asking; only <b>writing to your files</b> pauses for a one-click ' +
-      'approval in COMMS before it runs. TERMINAL (sandboxed shell) is the next capability coming online.</p>';
+      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory · ' +
+      '<b>workbench</b> → terminal), so the room layout IS the permission system. Read-only skills run freely, and ' +
+      'the agent\'s own private <b>notebook memory</b> saves without asking; <b>writing to your files</b> and ' +
+      '<b>running commands</b> pause for a one-click approval in COMMS before they run. Place a <b>WORKBENCH</b> ' +
+      '(BUILD → WORK) to grant TERMINAL — run tests/builds/scripts &amp; verify the result; every command auto-saves ' +
+      'a restore point first, and unattended (scheduled) runs can never run commands on their own.</p>';
   }
 
   /* ============== TASKS — the project-board view of WORKSTREAMS (card ≡ workstream) ==============
@@ -1153,6 +1155,52 @@ const StationUI = (() => {
     refresh();
   }
 
+  /* ============== REWIND — restore points (the execution-spine checkpoint net) ==============
+     Every command an agent runs auto-saves a workspace snapshot FIRST; this lists them per agent and
+     restores one with a two-step confirm. Server-owned (GET/POST /api/checkpoint); honest — only real
+     snapshots show, and it says plainly when there are none yet. */
+  function buildRewind(body) {
+    const agentId = (present[sel] && present[sel].id) || 'agent';
+    body.innerHTML =
+      '<h4 class="ms-h">RESTORE POINTS — ' + esc(agentId) + '</h4>' +
+      '<p class="set-about">A snapshot of this agent\'s workspace is auto-saved <b>before every command it runs</b> ' +
+      '(and before file edits when checkpoints are on). Restoring rolls the workspace back and removes anything ' +
+      'created since. <span class="dim">Use it to undo a bad change.</span></p>' +
+      '<div id="rw-list" class="mc-list">loading…</div>' +
+      '<div id="rw-msg" class="msg"></div>';
+    const listEl = body.querySelector('#rw-list'), msgEl = body.querySelector('#rw-msg');
+    const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    function row(s) {
+      const when = s.ts ? esc(fmtRel(new Date(s.ts).toISOString())) : '';
+      return '<div class="mc-row" data-id="' + esc(s.id) + '">' +
+        '<div class="mc-top"><b>' + esc(s.label || 'snapshot') + '</b> <span class="dim">' + when + '</span></div>' +
+        '<div class="mc-url dim">' + esc(String(s.id).slice(0, 12)) + ' · turn ' + (s.turn || 0) + (s.files ? (' · ' + s.files + ' file' + (s.files === 1 ? '' : 's')) : '') + '</div>' +
+        '<div class="mc-acts"><button class="bb xs danger" data-act="restore">↶ RESTORE</button></div>' +
+        '</div>';
+    }
+    async function refresh() {
+      try {
+        const j = await (await fetch('/api/checkpoint?agent=' + encodeURIComponent(agentId))).json();
+        const snaps = ((j && j.snapshots) || []).slice().reverse();   // newest first
+        listEl.innerHTML = snaps.length ? snaps.map(row).join('')
+          : '<div class="fb-empty">NO RESTORE POINTS YET.<br><span>They appear once this agent runs a command or edits a file at a WORKBENCH.</span></div>';
+      } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage restore points.</div>'; }
+    }
+    listEl.addEventListener('click', async ev => {
+      const btn = ev.target.closest('button[data-act="restore"]'); if (!btn) return;
+      const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '↶ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '↶ RESTORE'; } }, 5000); return; }
+      sfx('bad'); btn.disabled = true;
+      try {
+        const r = await (await post('/api/checkpoint/restore', { agentId: agentId, snapshotId: id })).json();
+        if (r && r.ok) { notify('rewound ' + agentId + ' to an earlier restore point', 'warn'); msgEl.textContent = '✓ restored.'; }
+        else { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((r && r.error) || 'restore failed') + '</span>'; sfx('bad'); }
+      } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'restore failed') + '</span>'; sfx('bad'); }
+      btn.disabled = false; refresh();
+    });
+    refresh();
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
@@ -1162,6 +1210,7 @@ const StationUI = (() => {
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
     connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
     routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
+    rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
   };
 
