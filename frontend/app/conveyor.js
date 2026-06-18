@@ -134,6 +134,43 @@ const Conveyor = (() => {
     px(x + sw, y + 1, 1, 2, '#fff4cc');
     if (bloomOK()) { _ctx.globalAlpha *= 0.4; px(x + 2, y + 1, 5, 4, '#ffe88c'); _ctx.globalAlpha /= 0.4; }
   }
+  /* ---- ECONOMIC cargo: a work-item box whose ART speaks its place in the spend->yield economy.
+     Driven entirely by payload fields (set by world.js from REAL cost/outcome events), so the
+     crate on the belt tells the cost truth — the Factorio "read the line at a glance" instinct,
+     pointed at operating agents cheaply. A payload WITHOUT a `box` role falls back to the cyan
+     data cassette, so nothing about existing boxes changes. */
+  function cargoOre(cx, py, h32, dir, weight) {     // amber ORE — inbound work; visible MASS = token weight
+    const w = weight < 0 ? 0 : weight > 1 ? 1 : weight;
+    const f = cargoChassis(cx, py, h32, '#5a4a24', dir), x = f.tx, y = f.ty;
+    px(x + 1, y + 1, 6, 3, '#caa84a'); px(x + 1, y + 1, 6, 1, '#e8c860');     // amber ore body + lit cap
+    const glints = 1 + Math.round(w * 3);                                     // heavier ore = more embedded glints
+    for (let i = 0; i < glints; i++) px(x + 1 + ((h32 >> (i * 2)) % 6), y + 1 + (i % 3), 1, 1, '#ffe88c');
+    if (w > 0.05 && bloomOK()) {                                              // mass-scaled heat bloom: pebble -> glowing boulder
+      const r = 1 + Math.round(w * 3), k = 0.22 + 0.42 * w;
+      _ctx.globalAlpha *= k; px(x + 3 - r, y + 2 - r, 3 + r * 2, 3 + r * 2, '#e8c860'); _ctx.globalAlpha /= k;
+    }
+  }
+  function cargoProduct(cx, py, h32, dir, weight) {  // green PRODUCT — a banked result; MASS = the run's real reconciled cost
+    const w = weight < 0 ? 0 : weight > 1 ? 1 : (weight || 0);   // default 0 = today's look (back-compat)
+    const f = cargoChassis(cx, py, h32, '#2c4a36', dir), x = f.tx, y = f.ty;
+    px(x + 1, y + 1, 6, 3, '#3f8a5a'); px(x + 1, y + 1, 6, 1, '#62c487');     // green face + lit top
+    px(x + 2, y + 2, 1, 1, '#d8f4e0'); px(x + 4, y + 1, 2, 2, '#9fe6bf');     // seal glint
+    for (let i = 0; i < Math.round(w * 2); i++) px(x + 2 + ((h32 >> (i * 2)) % 5), y + 1 + (i % 2), 1, 1, '#d8f4e0');  // pricier run = more seal pips
+    if (bloomOK()) {                                                          // mass-scaled banked glow
+      const k = 0.4 + 0.4 * w, r = Math.round(w * 2);
+      _ctx.globalAlpha *= k; px(x + 2 - r, y - r, 4 + r * 2, 4 + r * 2, '#62c487'); _ctx.globalAlpha /= k;
+    }
+  }
+  function cargoSlag(cx, py, h32, dir) {             // red-hot SLAG — spend that yielded nothing (the thing to drive DOWN)
+    const f = cargoChassis(cx, py, h32, '#2a1714', dir), x = f.tx, y = f.ty;
+    px(x + 1, y + 1, 6, 3, '#3a1d18');                                        // charred body (no tidy crate face)
+    const hot = ((_now / 300 + (h32 & 7) * 0.12) % 1) < 0.55;                 // molten cracks strobe = hot waste
+    px(x + 2, y + 2, 1, 1, hot ? '#ff6a3d' : '#7a2a18');
+    px(x + 4, y + 1, 1, 2, hot ? '#ff8a4a' : '#6a2414');
+    px(x + 5, y + 3, 1, 1, hot ? '#ffb070' : '#5a2010');
+    if (hot && bloomOK()) { _ctx.globalAlpha *= 0.45; px(x + 2, y, 4, 4, '#ff5a2d'); _ctx.globalAlpha /= 0.45; }
+  }
+
   // pure, replayable id -> type. weights keep the meaningful colours rare.
   function cargoType(id) {
     const r = U.hash('' + id) % 100;
@@ -145,9 +182,12 @@ const Conveyor = (() => {
   }
   const CARGO_FN = [cargoUtility, cargoProduction, cargoData, cargoCommand, cargoMoney];
 
-  /* a floating tag marking a box that carries a REAL work-item — amber = inbound, green = outbound reply */
-  function payloadTag(cx, py, outbound) {
-    const yy = py - 11, face = outbound ? '#5ad1b3' : '#e8c860', sheen = outbound ? '#c8f4e6' : '#fff0b0';
+  /* a floating tag marking a box that carries a REAL work-item. Colour reads its economic ROLE:
+     amber = inbound ore, green = banked product, red = wasted slag (legacy: outbound -> green). */
+  const TAG_FACE = { ore: ['#e8c860', '#fff0b0'], product: ['#5ad1b3', '#c8f4e6'], slag: ['#ef6a4a', '#ffc8b0'] };
+  function payloadTag(cx, py, role) {
+    const fs = TAG_FACE[role] || TAG_FACE.ore, face = fs[0], sheen = fs[1];
+    const yy = py - 11;
     px(cx, yy + 4, 1, 3, '#2a2418');                    // stem down to the crate
     px(cx - 3, yy, 7, 5, '#161210');                    // dark outline
     px(cx - 2, yy + 1, 5, 3, face);                     // tag face
@@ -396,8 +436,14 @@ const Conveyor = (() => {
         const sa = (0.30 - 0.12 * m.lift) * m.shadowMul;
         if (sa > 0) { ctx.globalAlpha = sa * m.alpha; const sw = 9 + Math.round(m.lift * 2); px(cx - (sw >> 1), Math.round(base.py) + 3, sw, 2, '#05080a'); }
         ctx.globalAlpha = m.alpha;
-        CARGO_FN[bx.payload ? 2 : cargoType(bx.id)](cx, py, h32, bx.dir);    // work-items ride as cyan data cassettes
-        if (bx.payload) payloadTag(cx, py, bx.payload.outbound);
+        // ECONOMIC role (set by world.js from real cost/outcome events) picks the art; an untyped
+        // payload still rides as the cyan data cassette, so nothing about existing boxes changes.
+        const role = bx.payload && bx.payload.box;
+        if (role === 'ore') cargoOre(cx, py, h32, bx.dir, +bx.payload.weight || 0);
+        else if (role === 'product') cargoProduct(cx, py, h32, bx.dir, +bx.payload.weight || 0);
+        else if (role === 'slag') cargoSlag(cx, py, h32, bx.dir);
+        else CARGO_FN[bx.payload ? 2 : cargoType(bx.id)](cx, py, h32, bx.dir);   // work-items default to cyan data cassettes
+        if (bx.payload) payloadTag(cx, py, role || (bx.payload.outbound ? 'product' : 'ore'));
         ctx.globalAlpha = 1;
       }
     }
