@@ -7,8 +7,10 @@ const SPRITES = (() => {
   const tinted = {};   // key "FORGE|minion.walk.south" -> [canvas]
   let meta = { minion: { fw: 0, fh: 0 }, ultron: { fw: 0, fh: 0 } };
 
-  /* base suit color of the generated minion is bright yellow (~hue 50).
-     each agent gets a css-filter recolor toward their accent color. */
+  /* the CRT-head crew base is matte-black metal with a glowing RED screen-face
+     (~hue 6). the black chassis is ~desaturated so hue-rotate barely shifts it;
+     the saturated red screen is what recolors — so each agent's accent color
+     lands on the CRT face/eyes, the body stays a premium neutral. */
   function hexToHsl(hex) {
     const n = parseInt(hex.slice(1), 16);
     let r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
@@ -23,7 +25,7 @@ const SPRITES = (() => {
     }
     return { h, s, l };
   }
-  const BASE_HUE = 50, BASE_SAT = 0.85;
+  const BASE_HUE = 6, BASE_SAT = 0.90;
   function filterFor(agentId) {
     const a = DATA.AGENT[agentId];
     if (!a || a.id === 'ULTRON') return '';
@@ -34,10 +36,10 @@ const SPRITES = (() => {
     return 'hue-rotate(' + rot + 'deg) saturate(' + sat.toFixed(2) + ') brightness(' + bri.toFixed(2) + ')';
   }
 
-  /* sprites are generated at 24px on a ~40px canvas — too large for 12px tiles.
+  /* CRT crew sprites render on a 92px canvas — too large for 12px tiles.
      downscale once at recolor time (cached), nearest-neighbor for crispness.
-     ultron keeps more of his source size so he towers over the crew (~2x). */
-  const SCALE = { minion: 2 / 3, ultron: 0.85 };
+     ultron keeps more of his source size so he towers over the crew. */
+  const SCALE = { minion: 0.34, ultron: 0.58 };
   function tintFrames(agentId, key) {
     const ck = agentId + '|' + key;
     if (tinted[ck]) return tinted[ck];

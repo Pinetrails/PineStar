@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SKYNET — CRT Crew Sprite Lab</title>
+<style>
+  html,body{margin:0;background:#0a0c10;color:#cfe;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace}
+  h1{font-size:15px;letter-spacing:.12em;color:#ff5a47;margin:14px 16px 2px}
+  .sub{margin:0 16px 10px;color:#7c8a99}
+  #wrap{padding:8px 12px 40px}
+  canvas#lab{image-rendering:pixelated;background:
+    repeating-conic-gradient(#11151b 0% 25%, #0c1014 0% 50%) 50% / 22px 22px;
+    border:1px solid #1c2530;border-radius:8px;display:block;margin:8px}
+  .legend{margin:6px 16px;color:#9fb}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>SKYNET — CRT CREW SPRITE LAB</h1>
+  <p class="sub">Real pipeline: <code>SPRITES.init → drawBody → per-agent tint → SCALE</code>. Drawn at game scale, ×3 nearest-neighbour zoom. Checkerboard = transparency.</p>
+  <canvas id="lab" width="1280" height="900"></canvas>
+  <div class="legend" id="status">booting…</div>
+</div>
+
+<!-- the REAL render module under test -->
+<script>
+  // mock agents so filterFor()/tintFrames() have colors to recolor toward.
+  // ULTRON is intentionally untinted by assets.js (keeps his red).
+  window.DATA = { AGENT: {
+    FORGE:  { id:'FORGE',  color:'#22d3ee' },   // cyan
+    NOVA:   { id:'NOVA',   color:'#a855f7' },   // violet
+    VOLT:   { id:'VOLT',   color:'#34d399' },   // green
+    EMBER:  { id:'EMBER',  color:'#f59e0b' },   // amber
+    ROSE:   { id:'ROSE',   color:'#fb7185' },   // rose
+    BASE:   { id:'BASE',   color:'#ff3a2f' },   // ~native red (near-untinted)
+    ULTRON: { id:'ULTRON', color:'#ff4a3d' }
+  }};
+</script>
+<script src="js/assets.js"></script>
+<script>
+const cv = document.getElementById('lab');
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const status = document.getElementById('status');
+const ZOOM = 3, CW = 60, CH = 66;            // per-cell source canvas
+const tmp = document.createElement('canvas'); tmp.width = CW; tmp.height = CH;
+const tctx = tmp.getContext('2d'); tctx.imageSmoothingEnabled = false;
+
+function body(id, opts){ return Object.assign({ id, px:CW/2, py:CH-7, dir:'south', phase:0 }, opts); }
+
+// rows of cells: each cell = {label, b}
+const rows = [
+  { title:'CREW · idle rotations (FORGE / cyan)', cells:[
+    {label:'south', b:body('FORGE',{dir:'south'})},
+    {label:'north', b:body('FORGE',{dir:'north'})},
+    {label:'east',  b:body('FORGE',{dir:'east'})},
+    {label:'west',  b:body('FORGE',{dir:'west'})},
+  ]},
+  { title:'CREW · states', cells:[
+    {label:'walk S',  b:body('FORGE',{state:'walk',dir:'south'})},
+    {label:'walk E',  b:body('FORGE',{state:'walk',dir:'east'})},
+    {label:'working / type', b:body('FORGE',{working:true})},
+    {label:'sit S',   b:body('FORGE',{sitting:true,dir:'south'})},
+    {label:'sit N',   b:body('FORGE',{sitting:true,dir:'north'})},
+    {label:'drink',   b:body('FORGE',{state:'social',sitting:true,hasCan:true})},
+  ]},
+  { title:'TINT · identity reads in the screen-face (idle south)', cells:[
+    {label:'BASE red', b:body('BASE',{dir:'south'})},
+    {label:'FORGE cyan', b:body('FORGE',{dir:'south'})},
+    {label:'NOVA violet', b:body('NOVA',{dir:'south'})},
+    {label:'VOLT green', b:body('VOLT',{dir:'south'})},
+    {label:'EMBER amber', b:body('EMBER',{dir:'south'})},
+    {label:'ROSE', b:body('ROSE',{dir:'south'})},
+  ]},
+  { title:'ULTRON · apex leader (untinted red)', cells:[
+    {label:'south', b:body('ULTRON',{dir:'south'})},
+    {label:'north', b:body('ULTRON',{dir:'north'})},
+    {label:'east',  b:body('ULTRON',{dir:'east'})},
+    {label:'west',  b:body('ULTRON',{dir:'west'})},
+    {label:'walk S', b:body('ULTRON',{state:'walk',dir:'south'})},
+  ]},
+];
+
+function drawAll(t){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  let y = 14;
+  const cellW = CW*ZOOM + 16, cellH = CH*ZOOM + 8;
+  for(const row of rows){
+    ctx.fillStyle = '#ff5a47'; ctx.font = '12px ui-monospace,monospace';
+    ctx.fillText(row.title.toUpperCase(), 12, y+12);
+    y += 24;
+    let x = 12;
+    for(const cell of row.cells){
+      // render the sprite through the real pipeline into the temp canvas
+      tctx.clearRect(0,0,CW,CH);
+      try { SPRITES.drawBody(tctx, cell.b, t); } catch(e){ /* ignore per-cell */ }
+      ctx.drawImage(tmp, 0,0,CW,CH, x, y, CW*ZOOM, CH*ZOOM);
+      ctx.fillStyle = '#8aa'; ctx.font = '11px ui-monospace,monospace';
+      ctx.fillText(cell.label, x+2, y+CH*ZOOM+12);
+      x += cellW;
+    }
+    y += cellH + 18;
+  }
+  cv.height = Math.max(900, y);   // grow if needed (re-applies on next frame)
+}
+
+let started = false;
+async function boot(){
+  await SPRITES.init();
+  if(!SPRITES.ready){ status.textContent = '✗ SPRITES.ready=false — manifest/frames failed to load'; return; }
+  status.innerHTML = '✓ sprites loaded — '+Object.keys(DATA.AGENT).length+' mock agents. Animations live (walk/type/drink).';
+  started = true;
+  const t0 = performance.now();
+  function loop(){ drawAll(performance.now()-t0); requestAnimationFrame(loop); }
+  loop();
+}
+boot();
+window.__labReady = () => started && SPRITES.ready;
+</script>
+</body>
+</html>
