@@ -641,6 +641,9 @@ const App = (() => {
       pendingDossier = null;
       agent.systemPrompt = composeSystemPrompt(agent);   // include the dossier block before Chat.init reads it below
     }
+    // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
+    // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
+    if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
