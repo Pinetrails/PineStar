@@ -46,7 +46,8 @@
     // The host auto-checkpoints the workspace before every shell call (execution-spine Commit 1), so a command
     // is one rollback away. (Container/job-object OS sandboxing is a deferred backend behind the same tool seam.)
     workbench: [
-      { capId: 'workbench', tool: 'shell.exec', scope: 'execute', requiresConsent: true, network: true }
+      { capId: 'workbench', tool: 'shell.exec', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true }
     ]
   };
 

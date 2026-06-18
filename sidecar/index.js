@@ -46,6 +46,7 @@ const cronStore = require('./cron-store.js');              // pure CronJob lifec
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
+const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
@@ -424,7 +425,7 @@ let cronTimer = null;
    never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
    the git/fs is here, the one ambient-I/O edge. ---- */
 const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CHECKPOINTS || '').trim());
-const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^shell\./.test(name);
+const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(shell|verify)\./.test(name);
 function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
   return new Promise((resolve) => {
     try {
@@ -999,6 +1000,8 @@ async function runOnce(o) {
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
+  makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   throttleSearch(registry);
 
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
@@ -1125,7 +1128,7 @@ async function runOnce(o) {
     // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
-    if (mutatesWorkspace(c.name) && (CHECKPOINTS_ENABLED || /^shell\./.test(c.name))) {
+    if (mutatesWorkspace(c.name) && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
       try {
         const snap = await checkpointStore.snapshot(agentId, { runId, turn: cpTurn, label: c.name });
         if (snap && snap.created) { emit('checkpoint.created', { agentId, runId, turn: cpTurn, snapshotId: snap.id, files: snap.files || 0, bytes: snap.bytes || 0, label: c.name }); cpTurn++; }
