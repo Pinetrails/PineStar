@@ -17,7 +17,7 @@ const StationUI = (() => {
   const THEMES = [['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['white', '#e8f0e8']];
 
   let present = [];          // agent objects currently on the station
-  const runningAgents = new Set();   // agentIds with a live run (from the real agent.run.start/end bus events)
+  const runningAgents = new Map();   // agentId -> live-run COUNT (concurrent streams can share an agentId, e.g. 'agent')
   let crewLiveWired = false;         // the crew-status live listener is registered exactly once
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
@@ -156,7 +156,7 @@ const StationUI = (() => {
     if (!present.length) return;
     // self-heal: drop any tracked id no longer on the roster (a left agent, or a stale id left behind when an
     // aborted/dropped run's agent.run.end never reached the bus) so the panel can't get stuck showing it WORKING.
-    for (const id of Array.from(runningAgents)) { if (!present.some(a => a.id === id)) runningAgents.delete(id); }
+    for (const id of Array.from(runningAgents.keys())) { if (!present.some(a => a.id === id)) runningAgents.delete(id); }
     const act = activity();
     let working = 0;
     present.forEach(a => {
@@ -170,17 +170,24 @@ const StationUI = (() => {
       '<span class="pos">▮ ' + working + ' WORKING</span>' +
       '<span class="dim">▯ ' + (present.length - working) + ' IDLE</span>';
   }
+  // ref-counted so two concurrent runs sharing an agentId (e.g. two hero streams as 'agent') both count, and
+  // one finishing doesn't prematurely flip the pill to IDLE while the other is still live. Deleted at 0 so
+  // crewTick's runningAgents.has(id) stays a clean "is this agent working?" test.
+  function incRun(id) { runningAgents.set(id, (runningAgents.get(id) || 0) + 1); }
+  function decRun(id) { const n = (runningAgents.get(id) || 0) - 1; if (n > 0) runningAgents.set(id, n); else runningAgents.delete(id); }
   // register ONCE: track which agents actually have a live run so the crew panel reflects per-agent truth.
   function wireCrewLive() {
     if (crewLiveWired || typeof U === 'undefined' || !U.bus) return;
     crewLiveWired = true;
-    U.bus.on('agent.run.start', p => { if (p && p.agentId) { runningAgents.add(p.agentId); crewTick(); } });
-    U.bus.on('agent.run.end', p => { if (p && p.agentId) { runningAgents.delete(p.agentId); crewTick(); } });
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) { incRun(p.agentId); crewTick(); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId) { decRun(p.agentId); crewTick(); } });
   }
-  // The run owner clears its agentId on teardown — agent.run.end can be LOST when a stream is aborted (E-STOP /
-  // cancel / disconnect / network drop), so chat.js's run-finally calls this to stop a stuck-WORKING leak.
+  // Called from chat.js's run-teardown ONLY on the abort/throw path, where agent.run.end is LOST (E-STOP /
+  // cancel / disconnect / network drop) and would otherwise leave the count stuck >0. Normal completions
+  // decrement via the agent.run.end listener above — this must NOT also fire for them (double-decrement).
   function clearRunning(agentId) {
-    if (agentId && runningAgents.delete(agentId)) crewTick();
+    if (!agentId) return;
+    decRun(agentId); crewTick();
   }
 
   /* ============== AGENTS — DOSSIER ==============
