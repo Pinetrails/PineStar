@@ -1162,7 +1162,9 @@ const StationUI = (() => {
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
     connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
     routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
-    notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
+    notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
+    // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
+    manual:   ['▮ FIELD MANUAL',         body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }]
   };
 
   function init() {

@@ -525,6 +525,8 @@ const App = (() => {
         taught: () => { if (typeof Tutorial !== 'undefined' && Tutorial.firstCommand) Tutorial.firstCommand({ name: agent.name }); }
       });
     }
+    // P3: arm the first-steps briefing's bus ticks; re-offer the checklist to a returning user mid-progress
+    if (typeof Tutorial !== 'undefined' && Tutorial.onEnterGame) Tutorial.onEnterGame();
     el('btn-disconnect').onclick = disconnect;
   }
 

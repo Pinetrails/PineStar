@@ -25,8 +25,15 @@ const Tutorial = (() => {
   let sawStart = false, sawPermission = false, sawEnd = false;
 
   function load() {
-    try { const r = JSON.parse(localStorage.getItem(KEY)); if (r && r.v === 1) return r; } catch (_) {}
-    return { v: 1, firstCommandDone: false, seen: {} };
+    let r = null;
+    try { r = JSON.parse(localStorage.getItem(KEY)); } catch (_) {}
+    if (!r || r.v !== 1) r = { v: 1 };
+    if (typeof r.firstCommandDone !== 'boolean') r.firstCommandDone = false;
+    if (!r.seen || typeof r.seen !== 'object') r.seen = {};
+    if (!r.brief || typeof r.brief !== 'object') r.brief = {};          // P3 first-steps progress
+    if (typeof r.briefDismissed !== 'boolean') r.briefDismissed = false;
+    if (typeof r.briefComplete !== 'boolean') r.briefComplete = false;
+    return r;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
 
@@ -112,8 +119,8 @@ const Tutorial = (() => {
     if (wired || typeof U === 'undefined' || !U.bus) return;
     wired = true;
     U.bus.on('agent.run.start', () => { if (active && !sawStart) { sawStart = true; onRunStart(); } });
-    U.bus.on('permission.prompt', () => { if (active && !sawPermission) { sawPermission = true; onPermission(); } });
-    U.bus.on('agent.run.end', () => { if (active && !sawEnd) { sawEnd = true; onRunEnd(); } });
+    U.bus.on('permission.prompt', () => { tickBrief('approve'); if (active && !sawPermission) { sawPermission = true; onPermission(); } });
+    U.bus.on('agent.run.end', () => { tickBrief('command'); if (active && !sawEnd) { sawEnd = true; onRunEnd(); } });
   }
 
   // the agent is now walking to the desk (chat.js set World.setActivity('task') the instant the chip fired)
@@ -156,6 +163,7 @@ const Tutorial = (() => {
     state.firstCommandDone = true; save();
     if (skipped) { if (hasChat()) Chat.localLine('right. i’m here when you need me — just type.'); }
     else sfx('level');
+    if (!state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 600);   // hand them the first-steps map
   }
 
   function seen(key) { return !!state.seen[key]; }
@@ -231,24 +239,167 @@ const Tutorial = (() => {
       'this is REFIT — the floor isn’t decoration. where you put things changes what i can do. keys 1–7 up top: 6 places gear, 7 lays belts.');
   }
   function onPropPlaced() {
+    tickBrief('build');
     showCoach('prop', '#refit-palette',
       'nice. every piece you place is a permission — a desk lets me run, a dish reaches the web, a cabinet opens files. drop them in my room to hand me the key.');
   }
   function onBeltPlaced() {
+    tickBrief('belt');
     showCoach('belt', '#refit-test',
       'belts show real work moving between us. want to see it without waiting for a message? hit ▸ TEST — i’ll send dummy crates down the line so you can watch them sort.');
   }
   function onConnectorPlaced() {
+    tickBrief('build'); tickBrief('connector');
     showCoach('connector', '#refit-palette',
       'that’s a portal — it wires me to a live tool server. the panel here lists them; bind one and its powers show up in my hands. the lamp says it’s alive: green good, red broken.');
   }
   function onLevelUp() {
+    tickBrief('level');
     showCoach('levelup', '#tb-station',
       'i leveled — that’s real work shipped, not flattery. open my dossier → GROWTH to see how reliable i’ve actually been. it stays honest: “—” until it’s earned enough runs to judge.');
   }
 
+  /* ================= P3 — STATION BRIEFING (first-steps checklist) =================
+     A small, dismissible in-game checklist that ticks off REAL first actions. NOT a gate — a soft map,
+     skippable, sandbox-friendly. Auto-completes and bows out; reopenable from the Field Manual. */
+
+  const STEPS = [
+    { k: 'command',   label: 'Give your agent a command' },
+    { k: 'approve',   label: 'Approve a tool request' },
+    { k: 'build',     label: 'Place a piece of gear in REFIT' },
+    { k: 'belt',      label: 'Lay a conveyor belt' },
+    { k: 'connector', label: 'Bind a connector portal' },
+    { k: 'level',     label: 'Reach Level 2' }
+  ];
+  const briefDone = k => !!state.brief[k];
+  const briefCount = () => STEPS.reduce((n, s) => n + (briefDone(s.k) ? 1 : 0), 0);
+  const briefAll = () => briefCount() === STEPS.length;
+
+  let briefEl = null, briefDoneTimer = 0;
+  function renderBrief() {
+    if (!briefEl) return;
+    briefEl.querySelector('.tut-brief-count').textContent = briefCount() + '/' + STEPS.length;
+    const list = briefEl.querySelector('.tut-brief-list');
+    list.innerHTML = '';
+    for (const s of STEPS) {
+      const li = document.createElement('li');
+      li.className = 'tut-brief-item' + (briefDone(s.k) ? ' done' : '');
+      const box = document.createElement('span'); box.className = 'tut-brief-box'; box.textContent = briefDone(s.k) ? '✓' : '▫';
+      const lbl = document.createElement('span'); lbl.textContent = s.label;
+      li.appendChild(box); li.appendChild(lbl); list.appendChild(li);
+    }
+  }
+  function showBrief() {
+    if (state.briefDismissed || state.briefComplete) return;
+    if (briefEl) { renderBrief(); return; }
+    const game = document.getElementById('screen-game');
+    if (!game || !game.classList.contains('active')) return;   // game room only
+    briefEl = document.createElement('div'); briefEl.className = 'tut-brief' + (reduceMotion() ? ' no-anim' : '');
+    const head = document.createElement('div'); head.className = 'tut-brief-head';
+    const title = document.createElement('span'); title.className = 'tut-brief-title'; title.textContent = '▸ FIRST STEPS';
+    const count = document.createElement('span'); count.className = 'tut-brief-count';
+    const x = document.createElement('button'); x.className = 'tut-brief-x'; x.title = 'dismiss'; x.textContent = '✕';
+    x.onclick = () => { state.briefDismissed = true; save(); sfx('click'); hideBrief(); };
+    head.appendChild(title); head.appendChild(count); head.appendChild(x);
+    const list = document.createElement('ul'); list.className = 'tut-brief-list';
+    const foot = document.createElement('div'); foot.className = 'tut-brief-foot'; foot.textContent = 'reopen any time in 📖 MANUAL';
+    briefEl.appendChild(head); briefEl.appendChild(list); briefEl.appendChild(foot);
+    document.body.appendChild(briefEl);
+    renderBrief();
+  }
+  function hideBrief() { if (briefDoneTimer) { clearTimeout(briefDoneTimer); briefDoneTimer = 0; } if (briefEl) { briefEl.remove(); briefEl = null; } }
+  function tickBrief(k) {
+    if (!state.brief[k]) {
+      state.brief[k] = true; save();
+      if (briefEl) {
+        renderBrief();
+        const item = briefEl.querySelectorAll('.tut-brief-item')[STEPS.findIndex(s => s.k === k)];
+        if (item && !reduceMotion()) item.classList.add('flash');
+        sfx('truth');
+      }
+    }
+    if (briefAll() && !state.briefComplete) {
+      state.briefComplete = true; save();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('first steps complete — you’ve got the controls', 'gold');
+      if (briefEl) {
+        briefEl.classList.add('complete');
+        const t = briefEl.querySelector('.tut-brief-title'); if (t) t.textContent = '✓ FIRST STEPS COMPLETE';
+        briefDoneTimer = setTimeout(hideBrief, 4200);
+      }
+    }
+  }
+
+  /* ================= P3 — FIELD MANUAL (the reopenable codex) =================
+     Opened from the bottom-bar 📖 MANUAL term (stationui BUILDERS delegates here). Every entry is tagged
+     REAL or FOR SHOW, sourced from the live CAP_PROP_MAP + conveyor contract — the honesty mandate, on a page. */
+
+  function fmEntry(tag, title, body) {
+    const t = tag ? '<span class="fm-tag ' + (tag === 'REAL' ? 'real">REAL' : 'show">FOR SHOW') + '</span>' : '';
+    return '<div class="fm-entry">' + t + '<div class="fm-entry-h">' + title + '</div><div class="fm-entry-b">' + body + '</div></div>';
+  }
+  const FM_TABS = ['FIRST STEPS', 'THE LOOP', 'GEAR', 'WIRING', 'GROWTH'];
+  function fmContent(tab) {
+    if (tab === 'FIRST STEPS') {
+      let h = '<p class="fm-lead">a soft checklist — not a gate. any order, or skip them. each ticks when you actually do it.</p><ul class="fm-steps">';
+      for (const s of STEPS) h += '<li class="' + (briefDone(s.k) ? 'done' : '') + '"><span>' + (briefDone(s.k) ? '✓' : '▫') + '</span> ' + s.label + '</li>';
+      return h + '</ul>';
+    }
+    if (tab === 'THE LOOP') {
+      return '<p class="fm-lead">one loop runs everything here, and it’s all real:</p>'
+        + fmEntry('REAL', '1 · ASK', 'type a job in COMMS. small talk i answer in place; a real task and i get up.')
+        + fmEntry('REAL', '2 · WALK', 'i cross to my workstation. that desk is where i actually run code, on your machine.')
+        + fmEntry('REAL', '3 · CONSENT', 'before i touch a file or run a command i stop and ask — approve once, always, or kill it.')
+        + fmEntry('REAL', '4 · RUN', 'i execute the real tools — shell, web, files — and stream the result to COMMS.')
+        + fmEntry('REAL', '5 · PROVE', 'i verify the work and show the outcome instead of just claiming it.')
+        + '<p class="fm-note">the crew in the left rail are echoes for now — placeholders until you recruit more minds. today it’s one of me, running the whole loop.</p>';
+    }
+    if (tab === 'GEAR') {
+      return '<p class="fm-lead">a prop in my room is a PERMISSION. drop these in a bay’s room to grant a power; most other furniture is set dressing.</p>'
+        + fmEntry('REAL', 'WORKSTATION → compute', 'desk · console · bench · pixel rig. no workstation in my room and i literally can’t run (cost-safe).')
+        + fmEntry('REAL', 'CABINET → files', 'intel cab · safe · vault · rack · shelf. read &amp; write files in my workspace.')
+        + fmEntry('REAL', 'DISH → web', 'comms dish · uplink · beacon. reach the live web.')
+        + fmEntry('REAL', 'SERVER → memory', 'server cart · relay stack · core. a notebook that survives restarts.')
+        + fmEntry('REAL', 'CONNECTOR PORTAL → live tools', 'binds one MCP server; its tools land in my hands. lamp = health: green live, amber warming, red broken.')
+        + fmEntry('SHOW', 'everything else', 'plants, rugs, screens, lounge gear — flavour. they grant nothing; place them because the place is yours.');
+    }
+    if (tab === 'WIRING') {
+      return '<p class="fm-lead">belts let you SEE work move between stations — and route it. heads up: real work runs server-side whether or not you’ve laid a belt. the belt only ever shows it.</p>'
+        + fmEntry('REAL', 'BELT (key 7)', 'lay a line; boxes ride it. a box is a real work-item, not decoration.')
+        + fmEntry('REAL', 'INTAKE / OUTBOX', 'work enters at an intake; the reply leaves at an outbox.')
+        + fmEntry('REAL', 'BAY', 'binds a spot to an agent — work reaching it runs as that agent, with that room’s gear.')
+        + fmEntry('REAL', 'FILTER / MERGER / SPLITTER', 'route by tag, gather many into one, or fan out across agents — real branching of the pipeline.')
+        + fmEntry('REAL', 'AIRLOCK', 'seal a room and the agent can’t path out — an unmerged worktree, made physical.')
+        + fmEntry('REAL', '▸ TEST', 'no message handy? hit TEST in REFIT — dummy crates ride your belts so you can watch them sort.')
+        + fmEntry('SHOW', 'box bob · chevrons · cargo colours', 'pure juice — they make the flow legible, they don’t change what runs.');
+    }
+    return '<p class="fm-lead">your agent grows off real outcomes — no fake bars.</p>'
+      + fmEntry('REAL', 'LEVEL / XP', 'climbs only on real shipped work; never drops. the top-bar STATION chip is every agent’s level, rolled up.')
+      + fmEntry('REAL', 'CONFIDENCE', 'a reliability read that moves both ways. shows “—” until it has enough real runs to be honest.')
+      + fmEntry(null, 'where to look', 'open a dossier → GROWTH for the bars, the confidence gauge, and the milestone case.');
+  }
+  function fillFieldManual(body) {
+    if (!body) return;
+    let curTab = 'FIRST STEPS';
+    body.classList.add('fm-body');
+    const render = () => {
+      body.innerHTML =
+        '<div class="fm-tabs">' + FM_TABS.map(t => '<button class="fm-tab' + (t === curTab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') +
+        '</div><div class="fm-content">' + fmContent(curTab) + '</div>';
+      body.querySelectorAll('.fm-tab').forEach(b => { b.onclick = () => { curTab = b.dataset.t; sfx('click'); render(); }; });
+    };
+    render();
+  }
+
+  /* lifecycle entry from app.js enterGame: arm the bus ticks (even for skippers/returners) and, for a
+     returning user mid-progress, re-offer the first-steps map. Fresh users get it from finishUp instead. */
+  function onEnterGame() {
+    wireBus();
+    if (state.firstCommandDone && !state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 900);
+  }
+
   return {
     firstCommand, spotlight, seen, markSeen, _state: () => state,
-    onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach
+    onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach,
+    onEnterGame, fillFieldManual, showBrief, tickBrief
   };
 })();
