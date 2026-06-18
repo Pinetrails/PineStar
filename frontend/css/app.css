@@ -658,17 +658,46 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   font-size: 14px; letter-spacing: 1.5px; padding: 5px 8px;
 }
 .refit-kind { font-size: 12px; padding-inline: 9px; }
-/* prop palette: a row of category tabs above the props in the active category */
-.refit-propcats, .refit-props {
+/* prop palette: horizontally-scrollable category tabs above a GALLERY of live animated prop previews */
+.refit-propcats {
   display: flex; flex-wrap: nowrap; gap: 5px; justify-content: flex-start; width: 100%;
   min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent;
 }
-.refit-propcats::-webkit-scrollbar, .refit-props::-webkit-scrollbar { height: 4px; }
-.refit-propcats::-webkit-scrollbar-thumb, .refit-props::-webkit-scrollbar-thumb { background: var(--ph-dim); }
-.refit-props { margin-top: 5px; padding-bottom: 2px; }
-.refit-propcats .bb, .refit-props .bb { flex: 0 0 auto; }
+.refit-propcats::-webkit-scrollbar { height: 4px; }
+.refit-propcats::-webkit-scrollbar-thumb { background: var(--ph-dim); }
+.refit-propcats .bb { flex: 0 0 auto; }
 .refit-propcat { font-size: 11px; letter-spacing: 1px; opacity: 0.7; }
 .refit-propcat.active { opacity: 1; }
+
+.refit-propgrid {
+  display: grid; grid-template-columns: repeat(auto-fill, 84px); gap: 6px;
+  justify-content: center; width: 100%; max-width: 90vw; max-height: 226px;
+  margin-top: 6px; padding: 3px 4px 2px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent;
+}
+.refit-propgrid::-webkit-scrollbar { width: 8px; }
+.refit-propgrid::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 4px; }
+.refit-propgrid::-webkit-scrollbar-track { background: transparent; }
+.refit-proptile {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: 84px; padding: 5px 2px 4px; cursor: pointer; border-radius: 5px;
+  background: rgba(0,0,0,.34); border: 1.5px solid var(--ph-faint); color: var(--ph-dim);
+  font-family: inherit; transition: none;
+}
+.refit-proptile:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); }
+.refit-proptile.active {
+  border-color: var(--ph-bright); color: var(--ph-bright);
+  box-shadow: 0 0 10px var(--ph-glow), inset 0 0 14px rgba(0,0,0,.55);
+}
+.refit-proptile-cv {
+  width: 76px; height: 50px; image-rendering: pixelated; pointer-events: none;
+  background: radial-gradient(ellipse 78% 78% at 50% 62%, rgba(130,170,150,.08), transparent 75%);
+}
+.refit-proptile-lbl {
+  font-size: 9px; letter-spacing: .5px; line-height: 1; text-align: center;
+  max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.refit-proptile-tag { position: absolute; top: 3px; right: 5px; font-size: 9px; color: var(--ph); opacity: .6; pointer-events: none; }
 .refit-hint {
   border-top: 1px solid var(--ph-faint); padding: 5px 10px 7px;
   font-size: 12px; color: var(--ph-dim); letter-spacing: 1px; min-height: 25px; text-align: center;
