@@ -43,7 +43,12 @@ const Voice = (() => {
   const canSpeak = () => !!synth;
 
   // ---- prefs --------------------------------------------------------------
-  let speakReplies = loadPref(LS_SPEAK, true);   // do agents speak their replies aloud? (persisted)
+  // do agents speak their replies aloud? (persisted). DEFAULT OFF — and keep it off: when the speaker is
+  // on, chat.js routes even a real TASK to the one-on-one 'talk' stance (the agent faces you and answers on
+  // the spot) INSTEAD of walking to its workstation. Defaulting this ON silently suppressed the signature
+  // desk trip for every task on an untouched agent ("gave it a task, it just stood there"). Voice is opt-in;
+  // a user who turns it on (or enters hands-free mode, which force-enables it) gets the spoken one-on-one.
+  let speakReplies = loadPref(LS_SPEAK, false);
   let convoMode = false;     // hands-free loop — a per-session mode (each game starts in push-to-talk)
   function loadPref(k, dflt) { try { const v = localStorage.getItem(k); return v == null ? dflt : v === '1'; } catch (_) { return dflt; } }
   function savePref(k, on) { try { localStorage.setItem(k, on ? '1' : '0'); } catch (_) {} }
