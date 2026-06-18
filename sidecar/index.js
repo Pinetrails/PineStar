@@ -11,6 +11,7 @@ const fsp = require('node:fs/promises');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 
 const { runAgentLoop } = require('./loop.js');
 const { makeCostEngine } = require('./cost.js');
@@ -57,9 +58,18 @@ const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
 let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
-// the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). Defaults to
-// sidecar/workspaces; SKYNET_WORKSPACES relocates it (isolated tests, multi-instance deploys, a data volume).
-const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : path.resolve(__dirname, 'workspaces');
+// the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). SKYNET_WORKSPACES
+// wins (the desktop shell + isolated tests set it); otherwise resolve a PER-USER, writable OS app-data dir.
+// CRITICAL for a packaged install: NEVER default under __dirname — a shipped app lives in read-only Program
+// Files, so writing beside the .js source EACCES-fails on first boot and silently kills ALL persistence
+// (ledger/memory/secrets/cron) and degrades every permission grant to a deny. App-data is always writable.
+function defaultWorkspaces() {
+  const base = process.env.LOCALAPPDATA || process.env.APPDATA            // Windows: %LOCALAPPDATA% (machine-local app data)
+    || process.env.XDG_DATA_HOME                                          // Linux XDG
+    || path.join(os.homedir() || '.', '.local', 'share');                 // POSIX fallback
+  return path.join(base, 'Skynet', 'workspaces');
+}
+const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : defaultWorkspaces();
 const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
