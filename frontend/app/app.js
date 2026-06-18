@@ -250,11 +250,14 @@ const App = (() => {
 
   function persist() {
     if (!agent) return;
+    // the save ROOT is ALWAYS the hero ('agent'), never the transiently-FOCUSED crew member — otherwise a
+    // persist while a summoned agent is focused would overwrite the hero identity and corrupt resume.
+    const hero = agents.get('agent') || agent;
     const stationStats = (typeof XpStore !== 'undefined') ? XpStore.stationStats() : undefined;
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
     const roster = liveAgents();
-    const doc = Save.write(Object.assign({ agent, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
+    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
