@@ -40,6 +40,7 @@ const XpStore = (() => {
     if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(level);
     if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((a.name || 'Agent') + ' reached Level ' + level, 'gold');
+    if (typeof Tutorial !== 'undefined' && Tutorial.onLevelUp) Tutorial.onLevelUp(level);   // first-touch coachmark: what leveling means
   }
   function celebrateStation(level) {
     pushTopbar();

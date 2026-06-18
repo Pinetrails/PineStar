@@ -32,3 +32,62 @@
   transition: opacity .15s ease;
 }
 .tut-skip:hover { opacity: 1; }
+
+/* ---- P2 just-in-time coachmarks: a non-blocking agent-voiced hint glued to a surface + a soft ring.
+   High z so it floats above the REFIT overlay and topbar; only the small panel itself is interactive,
+   so you keep building behind it. ---- */
+.tut-coach {
+  position: fixed;
+  z-index: 99000;
+  max-width: 320px;
+  font-family: VT323, monospace;
+  color: #dceee0;
+  background: linear-gradient(180deg, rgba(12, 18, 14, 0.97), rgba(8, 12, 9, 0.97));
+  border: 1px solid var(--ph, #ffaa33);
+  border-left: 3px solid var(--ph, #ffaa33);
+  border-radius: 8px;
+  padding: 9px 11px 10px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55), 0 0 14px rgba(255, 170, 51, 0.12);
+  animation: tutCoachIn .22s ease both;
+}
+.tut-coach.no-anim { animation: none; }
+.tut-coach-who {
+  font-size: 13px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ph, #ffaa33);
+  opacity: .85;
+  margin-bottom: 3px;
+}
+.tut-coach-who::before { content: '▸ '; }
+.tut-coach-body { font-size: 18px; line-height: 1.18; }
+.tut-coach-ok {
+  margin-top: 9px;
+  font-family: VT323, monospace;
+  font-size: 15px;
+  letter-spacing: .03em;
+  color: #0a0f0b;
+  background: var(--ph, #ffaa33);
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.tut-coach-ok:hover { filter: brightness(1.12); }
+
+.tut-ring {
+  position: fixed;
+  z-index: 98999;
+  pointer-events: none;
+  border: 2px solid var(--ph, #ffaa33);
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(255, 170, 51, 0.5);
+  animation: tutRingPulse 1.5s ease-in-out infinite;
+}
+.tut-ring.no-anim { animation: none; }
+
+@keyframes tutCoachIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes tutRingPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 170, 51, 0.35); }
+  50% { box-shadow: 0 0 16px rgba(255, 170, 51, 0.7); }
+}

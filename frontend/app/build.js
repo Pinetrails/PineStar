@@ -622,13 +622,21 @@ const Build = (() => {
     const res = station.addProp(placement);
     if (res && res.ok) {
       pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
+      // first-touch coachmark (tutorial.js): a portal teaches "live tools", any other gear teaches "props are permissions"
+      if (typeof Tutorial !== 'undefined') {
+        if (propType === 'connector_portal') { if (Tutorial.onConnectorPlaced) Tutorial.onConnectorPlaced(); }
+        else if (!PROP_EDITABLE[propType] && Tutorial.onPropPlaced) Tutorial.onPropPlaced();
+      }
       if (PROP_EDITABLE[propType] && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
     }
     feedback(res, ev, 'placed ' + propType);
   }
   function commitBeltRun(d, ev) {
     const res = station.placeBeltRun(d.start, d.cur);
-    if (res && res.ok && res.count) pushFlash([beltRunBox(d.start, d.cur)], false);
+    if (res && res.ok && res.count) {
+      pushFlash([beltRunBox(d.start, d.cur)], false);
+      if (typeof Tutorial !== 'undefined' && Tutorial.onBeltPlaced) Tutorial.onBeltPlaced();   // first-touch coachmark: belts + ▸ TEST
+    }
     feedback(res, ev, res && res.dir ? ('belt → ' + res.dir) : 'belt');
   }
   function commitPropMove(d, ev) {

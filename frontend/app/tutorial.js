@@ -158,9 +158,97 @@ const Tutorial = (() => {
     else sfx('level');
   }
 
-  /* ---- P2 hook (defined now, wired later): one-shot contextual coachmarks keyed by surface ---- */
   function seen(key) { return !!state.seen[key]; }
   function markSeen(key) { state.seen[key] = true; save(); }
 
-  return { firstCommand, seen, markSeen, spotlight, _state: () => state };
+  /* ================= P2 — JUST-IN-TIME COACHMARKS =================
+     One short, agent-voiced hint the first time the Commander touches a surface. Unlike the First
+     Command's focused scrim, these DON'T block — a small panel glued to the surface + a soft ring, so
+     you keep building while you read. Fired by DIRECT calls (build.js / app.js / xpstore.js), never a
+     bus emit, so the owned shared/events.js contract + the lint-emits gate stay untouched. Each fires
+     once ever (persisted on show), is suppressed during the First Command, and respects reduced-motion. */
+
+  function reduceMotion() { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; } }
+  function agentLabel() {                 // the live agent name from the topbar, so a coach reads in-voice
+    const e = document.getElementById('gt-agent');
+    const n = e && e.textContent && e.textContent.trim();
+    return (n && n !== '—') ? n : (agentName !== 'AGENT' ? agentName : 'your agent');
+  }
+
+  let coach = null;   // { bubble, ring, anchor, raf, onKey }
+  function clearCoach() {
+    if (!coach) return;
+    if (coach.raf) cancelAnimationFrame(coach.raf);
+    if (coach.onKey) window.removeEventListener('keydown', coach.onKey);
+    if (coach.ring) coach.ring.remove();
+    if (coach.bubble) coach.bubble.remove();
+    coach = null;
+  }
+  // glue the bubble (and ring) to the anchor every frame — survives camera/layout shifts and self-clears
+  // the moment the surface is gone (e.g. REFIT closed out from under a REFIT coach).
+  function placeCoach() {
+    if (!coach) return;
+    const a = coach.anchor, b = coach.bubble;
+    if (a && !document.contains(a)) { clearCoach(); return; }
+    if (a) {
+      const r = a.getBoundingClientRect();
+      if (coach.ring) { const p = 5; coach.ring.style.left = (r.left - p) + 'px'; coach.ring.style.top = (r.top - p) + 'px'; coach.ring.style.width = (r.width + p * 2) + 'px'; coach.ring.style.height = (r.height + p * 2) + 'px'; }
+      const bw = b.offsetWidth || 300, bh = b.offsetHeight || 90, gap = 12;
+      const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;   // fallback so a 0×0 report can't fling it off-screen
+      const left = Math.max(8, Math.min(r.left, vw - bw - 8));               // clamp-min last: never below 8, even in a narrow window
+      let top = r.bottom + gap;
+      if (top + bh > vh - 8) top = Math.max(8, r.top - bh - gap);            // flip above if it would clip the bottom
+      b.style.left = left + 'px'; b.style.top = top + 'px';
+    }
+    coach.raf = requestAnimationFrame(placeCoach);
+  }
+  function showCoach(key, anchorSel, text, opts) {
+    opts = opts || {};
+    if (active || seen(key)) return;     // never during the First Command; once ever
+    markSeen(key);                       // mark on SHOW so an ignored hint still never repeats
+    clearCoach();
+    const anchor = anchorSel ? (typeof anchorSel === 'string' ? document.querySelector(anchorSel) : anchorSel) : null;
+    const bubble = document.createElement('div');
+    bubble.className = 'tut-coach' + (reduceMotion() ? ' no-anim' : '');
+    const who = document.createElement('div'); who.className = 'tut-coach-who'; who.textContent = agentLabel();
+    const body = document.createElement('div'); body.className = 'tut-coach-body'; body.textContent = text;
+    const ok = document.createElement('button'); ok.className = 'tut-coach-ok'; ok.textContent = opts.ok || '✓ got it';
+    ok.onclick = () => { sfx('click'); clearCoach(); };
+    bubble.appendChild(who); bubble.appendChild(body); bubble.appendChild(ok);
+    document.body.appendChild(bubble);
+    let ring = null;
+    if (anchor) { ring = document.createElement('div'); ring.className = 'tut-ring' + (reduceMotion() ? ' no-anim' : ''); document.body.appendChild(ring); }
+    const onKey = e => { if (e.key === 'Escape') clearCoach(); };
+    window.addEventListener('keydown', onKey);
+    coach = { bubble, ring, anchor, raf: 0, onKey };
+    placeCoach();
+    sfx('open');
+  }
+
+  /* ---- the catalog: one direct hook per surface (callers guard with typeof Tutorial) ---- */
+  function onBuildOpen() {
+    showCoach('build', '#refit-tools',
+      'this is REFIT — the floor isn’t decoration. where you put things changes what i can do. keys 1–7 up top: 6 places gear, 7 lays belts.');
+  }
+  function onPropPlaced() {
+    showCoach('prop', '#refit-palette',
+      'nice. every piece you place is a permission — a desk lets me run, a dish reaches the web, a cabinet opens files. drop them in my room to hand me the key.');
+  }
+  function onBeltPlaced() {
+    showCoach('belt', '#refit-test',
+      'belts show real work moving between us. want to see it without waiting for a message? hit ▸ TEST — i’ll send dummy crates down the line so you can watch them sort.');
+  }
+  function onConnectorPlaced() {
+    showCoach('connector', '#refit-palette',
+      'that’s a portal — it wires me to a live tool server. the panel here lists them; bind one and its powers show up in my hands. the lamp says it’s alive: green good, red broken.');
+  }
+  function onLevelUp() {
+    showCoach('levelup', '#tb-station',
+      'i leveled — that’s real work shipped, not flattery. open my dossier → GROWTH to see how reliable i’ve actually been. it stays honest: “—” until it’s earned enough runs to judge.');
+  }
+
+  return {
+    firstCommand, spotlight, seen, markSeen, _state: () => state,
+    onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach
+  };
 })();
