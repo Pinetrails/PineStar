@@ -131,7 +131,10 @@ const Harness = (() => {
         const name = ev.name, payload = ev.payload || {};
         if (typeof U !== 'undefined' && U.bus) { try { U.bus.emit(name, payload); } catch (_) {} }
         switch (name) {
-          case 'agent.run.start': runId = payload.runId; onRunId && onRunId(runId); break;
+          // latch the LEAD's runId on the FIRST run.start only. Stage 2: a delegated worker's run.start/end/error
+          // are forwarded onto THIS (the lead's) stream for the floor animation — they still reach U.bus above, but
+          // must NOT hijack the lead's runId / endReason / errMsg (keyed below to the lead's runId).
+          case 'agent.run.start': if (!runId) { runId = payload.runId; onRunId && onRunId(runId); } break;
           case 'agent.token': full += payload.delta; onToken && onToken(payload.delta); break;
           case 'agent.tool_call': onToolCall && onToolCall(payload); break;
           case 'agent.tool_result': onToolResult && onToolResult(payload); break;
@@ -147,8 +150,8 @@ const Harness = (() => {
             lastUsage = { total_tokens: (payload.tokensIn || 0) + (payload.tokensOut || 0), cost: payload.usd };
             onUsage && onUsage(lastUsage); break;
           case 'capdenied': errMsg = errMsg || ('no ' + (payload.need || 'capability') + ' — ' + (payload.reason || '')); break;
-          case 'agent.run.error': errMsg = payload.message; break;
-          case 'agent.run.end': endReason = payload.reason; break;
+          case 'agent.run.error': if (!payload.runId || payload.runId === runId) errMsg = payload.message; break;   // the lead's own error (a worker's rides the tool result)
+          case 'agent.run.end': if (!payload.runId || payload.runId === runId) endReason = payload.reason; break;   // the lead's own end, not a forwarded worker's
         }
       }
     }

@@ -51,6 +51,11 @@ const World = (() => {
      hero behaves byte-for-byte as before. The crew is derived from the RoutingPlan's bays (syncCrewFromPlan). */
   let agent = null, activity = 'idle';
   let crew = [];
+  // Stage 2 (orchestration): a lead→worker handoff is WATCHABLE — boxes that fly from the lead body to a worker
+  // body when the lead delegates. delegateLead/delegateCall track the open team.dispatch window (tool_call→result)
+  // so a worker run that starts inside it animates; both are driven purely by existing agent.* bus events.
+  const handoffBoxes = [];
+  let delegateLead = null, delegateCall = null;
   // AGENT GROWTH HUD: the hero's live Xp.compute() snapshot pushed in by XpStore (drives the name-tag "Lv N"
   // chip + the gold level-up ripple). The station headline lives in the top-bar STATION chip, not the canvas.
   let xpAgent = null, levelUpAt = 0;
@@ -1440,6 +1445,7 @@ const World = (() => {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
+    drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
@@ -1925,6 +1931,39 @@ const World = (() => {
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
   }
+
+  // the WATCHABLE HANDOFF: the lead delegated to worker `toId`. 'spawned' lights the worker (chat.js does NOT
+  // drive a DELEGATED worker — its run rides the lead's stream) and flies a box from the lead body to it; 'done'
+  // dims it. A direct lerp (no belts needed) so the handoff always reads. No-op for the hero / an unknown body.
+  function handoff(fromId, toId, phase) {
+    const to = bodyForAgent(toId);
+    if (!to || to === agent) return;
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    if (phase === 'done') { to.working = false; to.workUntil = 0; to.dir = 'south'; return; }
+    to.working = true; to.sitting = false; to.dir = 'north';
+    to.workUntil = now + 3600000; if (!to.wakeAt || now - to.wakeAt > 1500) to.wakeAt = now;
+    sayAt(to, 'on it…');
+    const from = bodyForAgent(fromId) || agent;
+    if (from && from !== to) handoffBoxes.push({ fromX: from.px, fromY: from.py - 6, toX: to.px, toY: to.py - 6, t0: now, color: to.color || '#5ad0ff' });
+  }
+  // draw the in-flight handoff boxes (world space, over the entities). A small arced lerp that self-expires.
+  function drawHandoffBoxes(now) {
+    if (!handoffBoxes.length) return;
+    const DUR = 720;
+    for (let i = handoffBoxes.length - 1; i >= 0; i--) {
+      const b = handoffBoxes[i];
+      const t = (now - b.t0) / DUR;
+      if (t >= 1) { handoffBoxes.splice(i, 1); continue; }
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;   // easeInOutQuad
+      const x = Math.round(b.fromX + (b.toX - b.fromX) * e);
+      const y = Math.round(b.fromY + (b.toY - b.fromY) * e - Math.sin(t * Math.PI) * 7);   // a little arc
+      ctx.save();
+      ctx.globalAlpha = 0.28; ctx.fillStyle = '#000'; ctx.fillRect(x - 2, Math.round(b.toY), 4, 1);   // ground shadow at the destination
+      ctx.globalAlpha = 0.92; ctx.fillStyle = b.color; ctx.fillRect(x - 2, y - 2, 4, 4);
+      ctx.fillStyle = U.shade(b.color, 0.45); ctx.fillRect(x - 2, y - 2, 4, 1);
+      ctx.restore();
+    }
+  }
   function sayAt(body, text) {
     if (!body) return;
     const t = String(text || '').replace(/\s+/g, ' ').trim();
@@ -1963,6 +2002,13 @@ const World = (() => {
     U.bus.on('workitem.placed', p => intakeMessage(p));
     U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
+    // Stage 2: WATCH the lead delegate. A team.dispatch tool call opens a delegation window (until its tool_result);
+    // any WORKER run that starts inside it flies a box lead→worker + lights the worker. Contract-free — rides the
+    // existing agent.tool_call / agent.run.* events (the delegated child's lifecycle is forwarded onto the lead's stream).
+    U.bus.on('agent.tool_call', p => { if (p && /^team[._]dispatch$/.test(p.name || '')) { delegateLead = p.agentId; delegateCall = p.callId; } });
+    U.bus.on('agent.tool_result', p => { if (p && p.callId && p.callId === delegateCall) { delegateLead = null; delegateCall = null; } });
+    U.bus.on('agent.run.start', p => { if (p && delegateLead) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(delegateLead, p.agentId, 'spawned'); } });
+    U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(null, p.agentId, 'done'); } });
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
     // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.

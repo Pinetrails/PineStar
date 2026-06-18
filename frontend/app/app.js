@@ -94,6 +94,7 @@ const App = (() => {
     agent.systemPrompt = composeSystemPrompt(agent);
     if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
     syncChannels();   // keep a connected Telegram bot on the SAME (updated) identity — no reconnect needed
+    pushRoster();     // a re-specced agent's new identity must reach the sidecar roster (for delegation)
     persist();
   }
 
@@ -207,6 +208,7 @@ const App = (() => {
     focusAgent(id);
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
     refreshUsage(); renderRail(); persist();
+    pushRoster();   // the new worker is now delegatable by the lead
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' summoned — give it a task', 'good');
     return a;
   }
@@ -245,6 +247,22 @@ const App = (() => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: (ws && ws.agentId) || 'agent', system: agent.systemPrompt || '', agentName: agent.name || '' })
       }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Stage 2: push the LIVE crew identities to the sidecar so a lead's team.dispatch can run a worker AS itself
+  // (its composed system prompt + model) and the lead's prompt can list the crew. Fire-and-forget; called at the
+  // few roster-change points (summon / wake / resume / config edit). Base prompts only — the lead's [YOUR CREW]
+  // block is injected server-side, so workers never carry a delegate instruction.
+  function rosterRole(a) {
+    const spec = (a.specialtyId && typeof Specialties !== 'undefined' && Specialties.get) ? Specialties.get(a.specialtyId) : null;
+    if (spec) return String(spec.tagline || spec.name || '').slice(0, 120);
+    return String(a.purpose || 'general specialist').slice(0, 120);
+  }
+  function pushRoster() {
+    try {
+      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', role: rosterRole(a) }));
+      fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
     } catch (_) {}
   }
 
@@ -604,6 +622,7 @@ const App = (() => {
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
+    pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
     el('ws-new').onclick = newWorkstream;
     if (opts.awaitingPurpose && typeof Onboarding !== 'undefined') {
