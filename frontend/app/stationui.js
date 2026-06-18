@@ -17,6 +17,8 @@ const StationUI = (() => {
   const THEMES = [['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['white', '#e8f0e8']];
 
   let present = [];          // agent objects currently on the station
+  const runningAgents = new Set();   // agentIds with a live run (from the real agent.run.start/end bus events)
+  let crewLiveWired = false;         // the crew-status live listener is registered exactly once
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
   let tickTimer = 0;
@@ -126,6 +128,7 @@ const StationUI = (() => {
 
   /* ============== CREW MANIFEST (left panel) ============== */
   function crewRender() {
+    wireCrewLive();   // ensure the per-agent run-state listener is live
     const ul = $('#crew'); if (!ul) return;
     if (!present.length) {
       ul.innerHTML = '<li class="crew-empty">No agents on station.</li>';
@@ -146,15 +149,30 @@ const StationUI = (() => {
       li.addEventListener('click', () => { sfx('click'); openAgent(+li.dataset.i); }));
     crewTick();
   }
+  // a crew member is WORKING iff IT has a live run — read from the real agent.run.start/end events, NOT the
+  // single global hero activity (which used to mark the whole crew WORKING in lockstep with the hero). The
+  // talk/task text flavor still comes from the global activity (right for the common single-agent station).
   function crewTick() {
     if (!present.length) return;
     const act = activity();
-    present.forEach(a => { const e = $('#cs-' + a.id); if (e) e.textContent = crewStatus(act); });
-    const working = act === 'task' ? present.length : 0;
+    let working = 0;
+    present.forEach(a => {
+      const live = runningAgents.has(a.id);
+      if (live) working++;
+      const e = $('#cs-' + a.id);
+      if (e) e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
+    });
     const sum = $('#crew-sum');
     if (sum) sum.innerHTML =
       '<span class="pos">▮ ' + working + ' WORKING</span>' +
       '<span class="dim">▯ ' + (present.length - working) + ' IDLE</span>';
+  }
+  // register ONCE: track which agents actually have a live run so the crew panel reflects per-agent truth.
+  function wireCrewLive() {
+    if (crewLiveWired || typeof U === 'undefined' || !U.bus) return;
+    crewLiveWired = true;
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) { runningAgents.add(p.agentId); crewTick(); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId) { runningAgents.delete(p.agentId); crewTick(); } });
   }
 
   /* ============== AGENTS — DOSSIER ==============
