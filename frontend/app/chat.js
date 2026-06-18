@@ -288,7 +288,9 @@ const Chat = (() => {
     const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
     // A TASK -> walk to the workstation + work there until the run completes (visible desk trip), whatever
     // the speaker setting. A CHAT (no task) -> face the Commander one-on-one (framed below when voice is on).
-    const stance = isTask ? 'task' : 'talk';
+    // The decision lives in Classify.stanceFor, which takes ONLY isTask BY DESIGN: voice/speaker/UI state
+    // can NEVER suppress a task's desk trip (the exact regression we fixed). Locked by classify.test.js.
+    const stance = Classify.stanceFor(isTask);
     World.setActivity(stance);
     // a spoken CHAT gently frames the agent one-on-one so you can see who you're talking to; a TASK is at
     // the desk instead (no-op if already comfortably on-screen; self-cancels the moment you pan/zoom).
