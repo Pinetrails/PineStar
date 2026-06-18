@@ -19,7 +19,7 @@
 const Tutorial = (() => {
   const KEY = 'skynet.tutorial.v1';
   let state = load();
-  let active = false, wired = false;
+  let active = false, wired = false, finished = false;
   let agentName = 'AGENT';
   // one-shot latches so a repeated bus event can never double-narrate a beat
   let sawStart = false, sawPermission = false, sawEnd = false;
@@ -80,9 +80,12 @@ const Tutorial = (() => {
   function hideSkip() { if (skipBtn) { skipBtn.remove(); skipBtn = null; } }
 
   /* ================= THE FIRST COMMAND ================= */
-  // a real, near-free, unambiguously tool-requiring task: the Commander sees the genuine
-  // walk → consent → shell.exec → result loop for a fraction of a cent.
-  const TASK = 'run this in your shell and show me the output: echo "skynet online"';
+  // a real, near-free task wired in the DEFAULT station: fs.write + fs.read (the `cabinet`/files
+  // capability the browser office grants). fs.write requires consent, so the Commander sees the
+  // genuine walk → consent → execute → prove loop for a fraction of a cent. NOT shell.exec — that
+  // needs a `workbench` object no prop grants yet, so it would never dispatch here (it'd be answered
+  // in plain text, breaking the "i prove it, not claim it" promise). Keep the demo to what's real.
+  const TASK = 'write the line "skynet online" to a file called hello.txt, then read it back and show me';
 
   function firstCommand(opts) {
     if (state.firstCommandDone) return;       // learned once, never again
@@ -106,7 +109,7 @@ const Tutorial = (() => {
     say([
       seg('this box is COMMS — you talk to me here. small talk, and i answer from this chair.', 46, 420),
       seg('  but hand me a real job and i get up and go to work. watch what that looks like — tap this:', 46, 0)
-    ], () => Chat.choices([{ label: '▸ run: echo "skynet online"', value: 'run' }], () => {
+    ], () => Chat.choices([{ label: '▸ write & read a file', value: 'run' }], () => {
       clearSpot();
       say([seg('watch the floor — i’m heading to my station, and i’ll stop to ask before i touch anything.', 44, 0)],
         () => { if (typeof Chat.send === 'function') Chat.send(TASK); });   // hand off to the REAL loop
@@ -125,26 +128,33 @@ const Tutorial = (() => {
 
   // the agent is now walking to the desk (chat.js set World.setActivity('task') the instant the chip fired)
   function onRunStart() {
-    say([seg('there i go. that desk is where i actually run code — for real, on your machine. this isn’t a cutscene.', 44, 0)]);
+    if (!active) return;
+    say([seg('there i go. that desk is where i actually go to work — for real, on your machine. this isn’t a cutscene.', 44, 0)]);
   }
-  // the real consent prompt has just been rendered below this line (harness emits on the bus BEFORE chat.js draws the row)
+  // the real consent prompt has just appeared in COMMS (harness emits on the bus around when chat.js draws the row).
+  // Copy avoids spatial words ("below") so it stays correct under trunk's pinned-reply COMMS ordering after a sync.
   function onPermission() {
+    if (!active) return;
     say([
-      seg('stop — see that, just below? before i touch anything that matters it surfaces right here and waits for you.', 44, 360),
+      seg('stop — see that prompt? before i touch anything that matters, it surfaces right here and waits for you.', 44, 360),
       seg('  approve once, always, or kill it. that pause is your hand on the switch. go ahead — approve it.', 44, 0)
     ]);
   }
   // wrap-up: honest whether the run passed, failed, or stopped; the consent line bends to what actually happened
   function onRunEnd() {
+    if (!active) return;
     const did = sawPermission
       ? 'i walked over, asked your permission first, ran it, and showed you the result instead of just claiming it.'
       : 'i walked over, ran it right here on your machine, and showed you the result instead of just claiming it.';
-    setTimeout(() => say([seg('and… done. that was the whole loop, for real: ' + did, 42, 600)], beatGauge), 500);
+    setTimeout(() => { if (active) say([seg('and… done. that was the whole loop, for real: ' + did, 42, 600)], beatGauge); }, 500);
   }
+  // every post-run beat early-outs on !active, so a "skip intro" mid-run halts the chain cleanly
   function beatGauge() {
+    if (!active) return;
     say([seg('that little bank by my desk is my memory filling up — green’s fine, red means i’m near full and start losing the early stuff. you’ll learn to read it.', 42, 0)], beatCrew);
   }
   function beatCrew() {
+    if (!active) return;
     spotlight('#left');
     say([
       seg('one honest thing, because i won’t lie to you: right now it’s just me.', 42, 360),
@@ -152,6 +162,7 @@ const Tutorial = (() => {
     ], () => { clearSpot(); beatHandoff(); });
   }
   function beatHandoff() {
+    if (!active) return;
     say([
       seg('that’s the shape of it: ask, i work, i prove it, you stay in control.', 44, 420),
       seg('  the belts, the gear, watching me level up — i’ll show you when you get there. go on. i’m yours to point.', 44, 0)
@@ -159,11 +170,13 @@ const Tutorial = (() => {
   }
 
   function finishUp(skipped) {
+    if (finished) return; finished = true;        // idempotent: a late START-COMMANDING click after a skip can't re-run this
     active = false; clearSpot(); hideSkip();
-    state.firstCommandDone = true; save();
-    if (skipped) { if (hasChat()) Chat.localLine('right. i’m here when you need me — just type.'); }
-    else sfx('level');
-    if (!state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 600);   // hand them the first-steps map
+    state.firstCommandDone = true;
+    if (skipped) state.briefDismissed = true;     // opting out of the tour opts out of the nag — reopen in 📖 MANUAL
+    save();
+    if (skipped) { if (hasChat()) Chat.localLine('right. i’m here when you need me — just type. the field manual’s in the bottom bar when you want it.'); }
+    else { sfx('level'); if (!state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 600); }   // hand them the first-steps map
   }
 
   function seen(key) { return !!state.seen[key]; }
@@ -213,11 +226,13 @@ const Tutorial = (() => {
   function showCoach(key, anchorSel, text, opts) {
     opts = opts || {};
     if (active || seen(key)) return;     // never during the First Command; once ever
+    if (document.querySelector('#terms .term')) return;   // don't paint over an open panel (e.g. the Field Manual) — defer (not marked seen) until it's closed
     markSeen(key);                       // mark on SHOW so an ignored hint still never repeats
     clearCoach();
     const anchor = anchorSel ? (typeof anchorSel === 'string' ? document.querySelector(anchorSel) : anchorSel) : null;
     const bubble = document.createElement('div');
     bubble.className = 'tut-coach' + (reduceMotion() ? ' no-anim' : '');
+    bubble.setAttribute('role', 'status'); bubble.setAttribute('aria-live', 'polite');   // announce the hint to assistive tech
     const who = document.createElement('div'); who.className = 'tut-coach-who'; who.textContent = agentLabel();
     const body = document.createElement('div'); body.className = 'tut-coach-body'; body.textContent = text;
     const ok = document.createElement('button'); ok.className = 'tut-coach-ok'; ok.textContent = opts.ok || '✓ got it';
@@ -241,7 +256,7 @@ const Tutorial = (() => {
   function onPropPlaced() {
     tickBrief('build');
     showCoach('prop', '#refit-palette',
-      'nice. every piece you place is a permission — a desk lets me run, a dish reaches the web, a cabinet opens files. drop them in my room to hand me the key.');
+      'nice. every piece you place is a permission — a desk powers me up to work, a dish reaches the web, a cabinet opens files. drop them in my room to hand me the key.');
   }
   function onBeltPlaced() {
     tickBrief('belt');
@@ -275,7 +290,15 @@ const Tutorial = (() => {
   const briefCount = () => STEPS.reduce((n, s) => n + (briefDone(s.k) ? 1 : 0), 0);
   const briefAll = () => briefCount() === STEPS.length;
 
-  let briefEl = null, briefDoneTimer = 0;
+  let briefEl = null, briefDoneTimer = 0, briefResize = null, briefKey = null;
+  // sit just RIGHT of the interactive left rail (crew + workstreams), over the stage gutter — never
+  // covering the rail's controls. Recomputed on resize. Falls back to a fixed inset if the rail is absent.
+  function placeBrief() {
+    if (!briefEl) return;
+    const rail = document.getElementById('left');
+    const right = rail && rail.getBoundingClientRect ? rail.getBoundingClientRect().right : 0;
+    briefEl.style.left = (right > 0 ? right + 12 : 14) + 'px';
+  }
   function renderBrief() {
     if (!briefEl) return;
     briefEl.querySelector('.tut-brief-count').textContent = briefCount() + '/' + STEPS.length;
@@ -289,25 +312,38 @@ const Tutorial = (() => {
       li.appendChild(box); li.appendChild(lbl); list.appendChild(li);
     }
   }
+  function dismissBrief() { state.briefDismissed = true; save(); sfx('click'); hideBrief(); }
   function showBrief() {
     if (state.briefDismissed || state.briefComplete) return;
+    if (document.querySelector('#terms .term')) return;   // don't cover an open panel — onEnterGame re-offers later
     if (briefEl) { renderBrief(); return; }
     const game = document.getElementById('screen-game');
     if (!game || !game.classList.contains('active')) return;   // game room only
     briefEl = document.createElement('div'); briefEl.className = 'tut-brief' + (reduceMotion() ? ' no-anim' : '');
+    briefEl.setAttribute('role', 'status'); briefEl.setAttribute('aria-live', 'polite');
     const head = document.createElement('div'); head.className = 'tut-brief-head';
     const title = document.createElement('span'); title.className = 'tut-brief-title'; title.textContent = '▸ FIRST STEPS';
     const count = document.createElement('span'); count.className = 'tut-brief-count';
     const x = document.createElement('button'); x.className = 'tut-brief-x'; x.title = 'dismiss'; x.textContent = '✕';
-    x.onclick = () => { state.briefDismissed = true; save(); sfx('click'); hideBrief(); };
+    x.onclick = dismissBrief;
     head.appendChild(title); head.appendChild(count); head.appendChild(x);
     const list = document.createElement('ul'); list.className = 'tut-brief-list';
     const foot = document.createElement('div'); foot.className = 'tut-brief-foot'; foot.textContent = 'reopen any time in 📖 MANUAL';
     briefEl.appendChild(head); briefEl.appendChild(list); briefEl.appendChild(foot);
     document.body.appendChild(briefEl);
+    placeBrief();
+    briefResize = () => placeBrief(); window.addEventListener('resize', briefResize);
+    // Esc dismisses (matching the coachmark) — but not while REFIT or another panel owns Esc
+    briefKey = e => { if (e.key === 'Escape' && !document.querySelector('.refit-overlay') && !document.querySelector('#terms .term')) dismissBrief(); };
+    window.addEventListener('keydown', briefKey);
     renderBrief();
   }
-  function hideBrief() { if (briefDoneTimer) { clearTimeout(briefDoneTimer); briefDoneTimer = 0; } if (briefEl) { briefEl.remove(); briefEl = null; } }
+  function hideBrief() {
+    if (briefDoneTimer) { clearTimeout(briefDoneTimer); briefDoneTimer = 0; }
+    if (briefResize) { window.removeEventListener('resize', briefResize); briefResize = null; }
+    if (briefKey) { window.removeEventListener('keydown', briefKey); briefKey = null; }
+    if (briefEl) { briefEl.remove(); briefEl = null; }
+  }
   function tickBrief(k) {
     if (!state.brief[k]) {
       state.brief[k] = true; save();
@@ -347,9 +383,9 @@ const Tutorial = (() => {
     if (tab === 'THE LOOP') {
       return '<p class="fm-lead">one loop runs everything here, and it’s all real:</p>'
         + fmEntry('REAL', '1 · ASK', 'type a job in COMMS. small talk i answer in place; a real task and i get up.')
-        + fmEntry('REAL', '2 · WALK', 'i cross to my workstation. that desk is where i actually run code, on your machine.')
-        + fmEntry('REAL', '3 · CONSENT', 'before i touch a file or run a command i stop and ask — approve once, always, or kill it.')
-        + fmEntry('REAL', '4 · RUN', 'i execute the real tools — shell, web, files — and stream the result to COMMS.')
+        + fmEntry('REAL', '2 · WALK', 'i cross to my workstation. that desk is where i actually go to work, on your machine.')
+        + fmEntry('REAL', '3 · CONSENT', 'before i touch a file or reach out i stop and ask — approve once, always, or kill it.')
+        + fmEntry('REAL', '4 · RUN', 'i execute the real tools you’ve granted me — web search, file read/write — and stream the result to COMMS.')
         + fmEntry('REAL', '5 · PROVE', 'i verify the work and show the outcome instead of just claiming it.')
         + '<p class="fm-note">the crew in the left rail are echoes for now — placeholders until you recruit more minds. today it’s one of me, running the whole loop.</p>';
     }
@@ -360,6 +396,7 @@ const Tutorial = (() => {
         + fmEntry('REAL', 'DISH → web', 'comms dish · uplink · beacon. reach the live web.')
         + fmEntry('REAL', 'SERVER → memory', 'server cart · relay stack · core. a notebook that survives restarts.')
         + fmEntry('REAL', 'CONNECTOR PORTAL → live tools', 'binds one MCP server; its tools land in my hands. lamp = health: green live, amber warming, red broken.')
+        + fmEntry('SHOW', 'TERMINAL → run commands', 'real in the engine, but locked — no gear grants it yet. it arrives when a workbench prop ships.')
         + fmEntry('SHOW', 'everything else', 'plants, rugs, screens, lounge gear — flavour. they grant nothing; place them because the place is yours.');
     }
     if (tab === 'WIRING') {
@@ -397,9 +434,16 @@ const Tutorial = (() => {
     if (state.firstCommandDone && !state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 900);
   }
 
+  // full teardown for DISCONNECT (app.js): drop every body-appended overlay + its loop/listeners so none
+  // leak onto the title screen (a live coachmark otherwise keeps a self-rescheduling rAF + a keydown bound).
+  function teardown() {
+    active = false;
+    clearCoach(); clearSpot(); hideSkip(); hideBrief();
+  }
+
   return {
     firstCommand, spotlight, seen, markSeen, _state: () => state,
     onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach,
-    onEnterGame, fillFieldManual, showBrief, tickBrief
+    onEnterGame, fillFieldManual, showBrief, tickBrief, teardown
   };
 })();
