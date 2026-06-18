@@ -697,7 +697,7 @@ const App = (() => {
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
 
-  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop) Onboarding.stop(); SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
+  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop) Onboarding.stop(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
 
   /* ---------- title ---------- */
   function showTitle() {

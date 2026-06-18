@@ -1252,6 +1252,29 @@ const StationUI = (() => {
       '<div class="mc-note">This dossier is <b>shared by every agent on your station</b> and folds into each one\'s briefing, so a freshly-deployed agent already knows you. It is <b>local-first</b> — it never leaves this machine. Add, edit, pin, or forget anything below; you own it.</div>');
     body.appendChild(head);
 
+    // the active "get to know you" trigger — runs the intake interview in COMMS, folding answers into the
+    // dossier through the same upsert path the cards use. Gated on a free agent + not-already-running.
+    const actRow = el('div', 'cd-actions-row');
+    const goBtn = el('button', 'cd-interview');
+    goBtn.textContent = sum.blank.length ? '▸ LET THE STATION GET TO KNOW YOU' : '▸ REFINE WHAT THE STATION KNOWS';
+    goBtn.onclick = () => {
+      if (typeof Intake === 'undefined') return;
+      if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) { notify('let your agent finish waking up first', ''); return; }
+      if (typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy()) { sfx('bad'); notify('finish the current run first, then run the interview', 'bad'); return; }
+      if (Intake.isRunning && Intake.isRunning()) { notify('the interview is already running — answer in COMMS', ''); return; }
+      const s = ds.summary();
+      const skip = s.blank.length ? s.known : [];   // ask blank dimensions; if the station knows them all, re-ask everything (refine)
+      const began = Intake.start({
+        skip: skip,
+        onCommit: belief => ds.upsert(belief.dim, { text: belief.text, source: belief.source }),
+        onDone: () => rerender('commander'),
+        onEmpty: () => notify('the station already knows you — edit any belief below to refine', 'good')
+      });
+      if (began) { sfx('click'); notify('the station is interviewing you — answer in COMMS →', 'good'); }
+    };
+    actRow.appendChild(goBtn);
+    body.appendChild(actRow);
+
     // one section per dimension
     for (const d of dims) {
       const bs = ds.beliefs(d.key);

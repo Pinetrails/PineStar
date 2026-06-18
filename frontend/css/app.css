@@ -263,6 +263,9 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .cd-addbtn:hover { color: var(--ph); border-color: var(--ph); }
 .cd-edit { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--ph-bright); background: var(--ink); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 6px; min-height: 44px; resize: vertical; }
 .cd-edit:focus { outline: none; border-color: var(--ph); }
+.cd-actions-row { margin: 10px 0 2px; }
+.cd-interview { width: 100%; font: inherit; font-size: 13px; letter-spacing: 0.6px; font-weight: 600; cursor: pointer; color: var(--ink); background: var(--ph); border: 1px solid var(--ph); border-radius: 3px; padding: 8px 12px; }
+.cd-interview:hover { background: var(--ph-bright); border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow2); }
 
 /* THE AWAKENING — tappable suggestion chips in COMMS (the gamified first-meeting onboarding) */
 .choice-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 1px 0 3px; }

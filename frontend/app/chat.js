@@ -485,10 +485,11 @@ const Chat = (() => {
   /* ---------- THE AWAKENING (onboarding) interview ----------
      While an interview handler is set, the COMMS input feeds the onboarding script (Onboarding) instead
      of the model: typed answers AND tappable suggestion chips both author config docs — no model call. */
-  function beginInterview(onAnswer) {
+  function beginInterview(onAnswer, opts) {
     interview = onAnswer || null;
-    if (input) input.placeholder = 'answer to wake your agent…';
-    status('waking…');
+    opts = opts || {};
+    if (input) input.placeholder = opts.placeholder || 'answer to wake your agent…';
+    status(opts.status || 'waking…');
   }
   function endInterview() {
     interview = null;

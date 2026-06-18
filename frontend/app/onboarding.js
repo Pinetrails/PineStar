@@ -21,6 +21,7 @@
 const Onboarding = (() => {
   let docs = null, commit = null, doneCb = null, notifyFn = null, NAME = 'AGENT';
   let steps = [], i = 0, accepting = false, ignited = false, kindleTimer = null;
+  let running = false;   // true between start() and finish()/stop() — lets other COMMS flows (the intake interview) avoid hijacking the awakening's input handler
   let specialty = null;   // if recruited from the Roster, purpose.md + manual.md are pre-authored — skip those beats
 
   /* ---- audio arc: a heartbeat that finds its rhythm + a warming pad ----
@@ -128,7 +129,7 @@ const Onboarding = (() => {
     docs = opts.docs; commit = opts.commit; doneCb = opts.done || null;
     notifyFn = opts.notify || null; NAME = opts.name || 'AGENT';
     specialty = opts.specialty || null;
-    steps = buildSteps(); i = 0; accepting = false; ignited = false;
+    steps = buildSteps(); i = 0; accepting = false; ignited = false; running = true;
     Chat.beginInterview((text) => answer(text, text));   // typed answers route here (gated by `accepting`)
     if (opts.wake && World.armKindle) {
       // THE KINDLING — the user HOLDS to bring the dormant mind to life; ignition fires when the spark catches.
@@ -275,6 +276,7 @@ const Onboarding = (() => {
 
   // DAWN — the pull-back reveals its whole world, the light blooms, and it speaks its first WHOLE sentence.
   function finish() {
+    running = false;
     if (World.endAwakening) World.endAwakening();      // light floods + the sonar ripple fires (agent holds your gaze)
     if (World.camPullBack) World.camPullBack();
     sfx('dawn');
@@ -298,11 +300,13 @@ const Onboarding = (() => {
   // safety teardown if the awakening is abandoned (e.g. DISCONNECT mid-ceremony) — never leak audio or a freeze.
   function stop() {
     AU.stop();
-    accepting = false;
+    accepting = false; running = false;
     if (kindleTimer) { clearTimeout(kindleTimer); kindleTimer = null; }
     if (World.releaseAwakening) World.releaseAwakening();
     if (typeof Chat !== 'undefined' && Chat.endInterview) Chat.endInterview();
   }
 
-  return { start, stop };
+  function isRunning() { return running; }
+
+  return { start, stop, isRunning };
 })();
