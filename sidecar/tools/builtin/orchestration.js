@@ -53,7 +53,11 @@
     const maxWorkers = (typeof deps.maxWorkers === 'number' && deps.maxWorkers > 0) ? deps.maxWorkers : 4;
 
     const dispatchTool = {
-      name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: true,
+      // NO consent gate: delegating to your OWN summoned crew is internal orchestration, not an outward mutation
+      // (cf. notebook). The real safety is the LEAD-ONLY gate (only the watched browser run gets this tool) + the
+      // per-worker/day/global budget caps + the concurrency ceiling + workers running autonomous (default-deny
+      // their own mutations). Prompting on every delegation would be pure consent-fatigue.
+      name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
       description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once.',
       schema: {
         type: 'object', required: ['workers'], properties: {

@@ -50,12 +50,12 @@
       { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true }
     ],
     // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,
-    // each of which runs its OWN real agent loop. scope 'execute' so the consent broker's exec-lockout binds it
-    // (an autonomous, unwatched agent can never delegate off a cached grant — only a watched human lead). The host
-    // confers this object ONLY on the browser-commanded run, so a delegated worker (autonomous) never receives the
-    // tool and cannot re-delegate — delegation depth is capped at one.
+    // each of which runs its OWN real agent loop. NO consent gate (internal orchestration of the user's own crew,
+    // not an outward mutation): the safety is the LEAD-ONLY conferral (the host adds this object ONLY to the
+    // watched browser-commanded run, so a delegated worker — autonomous — never receives the tool and cannot
+    // re-delegate, capping depth at one), plus the per-worker/day/global budget caps and the concurrency ceiling.
     orchestrator: [
-      { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: true, network: true }
+      { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: false, network: true }
     ]
   };
 
