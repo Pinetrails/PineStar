@@ -28,6 +28,7 @@ struct AppState {
     port: u16,
     ipc_token: String,
     root: PathBuf,
+    startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
 }
 
@@ -45,6 +46,27 @@ impl AppState {
 impl Drop for AppState {
     fn drop(&mut self) {
         self.kill_sidecar();
+    }
+}
+
+fn startup_log_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|dir| {
+        let _ = std::fs::create_dir_all(&dir);
+        dir.join("startup.log")
+    })
+}
+
+fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
+    let Some(path) = path else {
+        return;
+    };
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        use std::io::Write;
+        let _ = writeln!(file, "{}", message.as_ref());
     }
 }
 
@@ -147,7 +169,19 @@ fn node_binary(root: &Path) -> PathBuf {
 /// and the per-launch IPC token. Returns true once it's listening.
 fn spawn_sidecar(state: &AppState) -> bool {
     let entry = state.root.join("sidecar").join("index.js");
-    let mut cmd = Command::new(node_binary(&state.root));
+    let node = node_binary(&state.root);
+    log_startup(
+        &state.startup_log,
+        format!(
+            "spawn_sidecar root={} entry={} entry_exists={} node={} node_exists={}",
+            state.root.display(),
+            entry.display(),
+            entry.exists(),
+            node.display(),
+            node.exists()
+        ),
+    );
+    let mut cmd = Command::new(node);
     cmd.arg(&entry)
         .env("SKYNET_PORT", state.port.to_string())
         .env("SKYNET_IPC_TOKEN", &state.ipc_token)
@@ -163,12 +197,19 @@ fn spawn_sidecar(state: &AppState) -> bool {
     }
     match cmd.spawn() {
         Ok(child) => {
+            let pid = child.id();
             if let Ok(mut guard) = state.sidecar.lock() {
                 *guard = Some(child);
             }
-            wait_for_port(state.port, Duration::from_secs(25))
+            let listening = wait_for_port(state.port, Duration::from_secs(25));
+            log_startup(
+                &state.startup_log,
+                format!("spawn_sidecar pid={pid} port={} listening={listening}", state.port),
+            );
+            listening
         }
         Err(e) => {
+            log_startup(&state.startup_log, format!("spawn_sidecar failed: {e}"));
             eprintln!("[skynet] failed to spawn node sidecar: {e}");
             false
         }
@@ -283,10 +324,22 @@ fn main() {
             let root = project_root(app.handle());
             let port = free_port();
             let ipc_token = uuid::Uuid::new_v4().to_string();
+            let startup_log = startup_log_path(app.handle());
+            log_startup(
+                &startup_log,
+                format!(
+                    "startup exe={:?} resource_dir={:?} root={} port={}",
+                    std::env::current_exe(),
+                    app.path().resource_dir(),
+                    root.display(),
+                    port
+                ),
+            );
             let state = AppState {
                 port,
                 ipc_token,
                 root,
+                startup_log,
                 sidecar: Mutex::new(None),
             };
             let _ = spawn_sidecar(&state);
