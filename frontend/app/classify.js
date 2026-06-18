@@ -51,5 +51,16 @@
     return 'general';                               // ambiguous -> the filter's default lane, never dropped
   }
 
-  return { isTaskDirective, getTag };
+  /* THE AGENT'S STANCE for a turn, from whether the message is a task. This is a HARD INVARIANT, not a
+     preference: a real TASK is real work, so it ALWAYS commands the visible desk trip — the agent walks to
+     its workstation and STAYS seated there working until the task finishes ('task'). Only non-task chatter
+     faces the Commander one-on-one ('talk').
+
+     The speaker/voice setting (or any other UI state) MUST NEVER enter this decision. It once did — voice
+     defaulting on forced every task to 'talk', so the agent never walked to the desk — and that exact
+     regression is what this signature forbids: stanceFor takes ONLY isTask, so nothing else can suppress
+     the desk trip. Do NOT add parameters or branches here. Locked by classify.test.js. */
+  function stanceFor(isTask) { return isTask ? 'task' : 'talk'; }
+
+  return { isTaskDirective, getTag, stanceFor };
 });

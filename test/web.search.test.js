@@ -1,0 +1,78 @@
+/* node test/web.search.test.js — the web_search source chain + Mojeek parser. Offline + deterministic
+   (fetch injected, DNS disabled). Guards the fix for the DuckDuckGo "anomaly/202" outage: Mojeek is the
+   keyless PRIMARY, DDG html/lite are fallbacks, and a fully-blocked chain fails loudly. Pairs with
+   sidecar/tools/builtin/web.js. */
+'use strict';
+const A = require('./_assert.js');
+const { makeWebTools } = require('../sidecar/tools/builtin/web.js');
+
+// A real-shape Mojeek result page (two results). Note the &#8217; / &#8211; entities — they MUST decode.
+const MOJEEK_HTML =
+  '<ul class="results-standard">' +
+  '<li class="r1"><a title="https://www.anthropic.com/news" href="https://www.anthropic.com/news" class="ob">' +
+  '<p class="i"><span class="url">https://www.anthropic.com<span> &rsaquo; news</span></span></p></a>' +
+  '<h2><a class="title" title="https://www.anthropic.com/news" href="https://www.anthropic.com/news">' +
+  'What&#8217;s new &#8211; Anthropic</a></h2>' +
+  '<p class="s">The latest <strong>Claude</strong> announcements and research.</p></li>' +
+  '<li class="r2"><a title="https://example.org/a" href="https://example.org/a" class="ob"><p class="i">x</p></a>' +
+  '<h2><a class="title" title="https://example.org/a" href="https://example.org/a">Second Result</a></h2>' +
+  '<p class="s">A second snippet.</p></li>' +
+  '</ul>';
+
+// DDG's anti-bot shell: 202 + "anomaly", no result anchors.
+const DDG_ANOMALY = { status: 202, body: '<html><body>If this error persists... anomaly detected</body></html>' };
+const DDG_HTML_OK =
+  '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fddg.example%2Fhit">DDG Hit</a>' +
+  '<div class="result__snippet">From DuckDuckGo.</div>';
+
+// build a fetch stub from a routing table keyed by URL substring -> {status, body}
+function stubFetch(routes) {
+  return async (url) => {
+    const u = String(url);
+    for (const [needle, resp] of routes) {
+      if (u.indexOf(needle) >= 0) return { status: resp.status, text: async () => resp.body };
+    }
+    return { status: 404, text: async () => '' };
+  };
+}
+
+(async () => {
+  // ---- A. parseMojeek extracts title/url/snippet and decodes HTML entities ----
+  const W0 = makeWebTools({ fetchImpl: async () => ({ status: 200, text: async () => '' }), lookup: null });
+  const parsed = W0._internals.parseMojeek(MOJEEK_HTML);
+  A.eq(parsed.length, 2, 'parseMojeek finds both results');
+  A.eq(parsed[0].url, 'https://www.anthropic.com/news', 'parseMojeek takes the real href (no redirect unwrap)');
+  A.ok(parsed[0].title.indexOf('&#') < 0 && /^What’s new – Anthropic$/.test(parsed[0].title),
+    'parseMojeek decodes numeric entities in the title (&#8217;->’, &#8211;->–)');
+  A.ok(/latest Claude announcements/.test(parsed[0].snippet), 'parseMojeek pulls the <p class="s"> snippet, tags stripped');
+  A.ok(parsed[0].snippet.indexOf('<strong>') < 0, 'parseMojeek strips tags from the snippet');
+
+  // ---- B. Mojeek is PRIMARY: a 200 Mojeek page wins even though DDG would also answer ----
+  const wMojeek = makeWebTools({ fetchImpl: stubFetch([
+    ['mojeek.com', { status: 200, body: MOJEEK_HTML }],
+    ['duckduckgo', { status: 200, body: DDG_HTML_OK }]
+  ]), lookup: null });
+  const r1 = await wMojeek.webSearch('anthropic', {});
+  A.eq(r1.source, 'mojeek', 'web_search uses Mojeek as the primary source');
+  A.eq(r1.results.length, 2, 'web_search returns the Mojeek results');
+
+  // ---- C. Mojeek down (403) -> falls through to DuckDuckGo html ----
+  const wFallback = makeWebTools({ fetchImpl: stubFetch([
+    ['mojeek.com', { status: 403, body: 'forbidden' }],
+    ['html.duckduckgo.com', { status: 200, body: DDG_HTML_OK }]
+  ]), lookup: null });
+  const r2 = await wFallback.webSearch('anthropic', {});
+  A.eq(r2.source, 'duckduckgo-html', 'web_search falls through to DDG html when Mojeek is down');
+
+  // ---- D. Mojeek down + DDG html/lite both 202-blocked + no OpenRouter key -> fails loudly ----
+  const wAllDown = makeWebTools({ fetchImpl: stubFetch([
+    ['mojeek.com', { status: 500, body: 'err' }],
+    ['html.duckduckgo.com', DDG_ANOMALY],
+    ['lite.duckduckgo.com', DDG_ANOMALY]
+  ]), lookup: null });
+  let threw = false;
+  try { await wAllDown.webSearch('anthropic', {}); } catch (e) { threw = !!e.__allFailed; }
+  A.ok(threw, 'web_search throws __allFailed when every keyless source is down and there is no OpenRouter key');
+
+  A.report('web.search.test');
+})();

@@ -157,9 +157,9 @@ const fixture = {
     A.eq(withMem.length, 3, 'recall adds exactly one system note');
     A.eq(withMem[2], convo[1], 'fence sits immediately before the newest user message');
     A.ok(withMem[1].role === 'system' && /recalled-memory/.test(withMem[1].content), 'fence is a system note');
-    // index.js emits memory.used for the first `count` ranked records — mirror that id set (relevance-ordered)
-    A.eq(JSON.stringify(ranked.slice(0, r.count).map(x => x.id)), JSON.stringify(['note_1', 'note_2']),
-      'memory.used fires for each surfaced record');
+    // index.js emits memory.used for the ids renderRecall actually SURFACED (excludes blocked/skipped) — mirror it
+    A.eq(JSON.stringify(r.usedIds), JSON.stringify(['note_1', 'note_2']),
+      'memory.used fires for each surfaced record (driven by renderRecall.usedIds, not positional ranked[i])');
     const empty = injectRecall(convo, renderRecall(rank([], 'q', { now: 0 }), {}).text);
     A.eq(JSON.stringify(empty), JSON.stringify(convo), 'empty notebook -> byte-identical messages (memoryless run unchanged)');
   }

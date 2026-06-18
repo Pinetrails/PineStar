@@ -2335,6 +2335,33 @@ const PropSprites = (() => {
     glow(condX - 1, py - 1, 4, 4, acc, 0.45);
   }
 };
+  F.workbench = (x, y, w, h, f) => {
+  // WORKBENCH (2x1) — the agent's POWERED BENCH: placing it grants shell.exec + verify.run. A steel tool surface
+  // with a vise + scattered tools and a small status monitor that PULSES green when a command runs (f.fired 1->0)
+  // and flashes RED when a verify FAILS (f.bad). Idle = a calm amber standby heartbeat.
+  const fired = Math.max(0, Math.min(1, (f && f.fired) || 0));
+  const bad = !!(f && f.bad) && fired > 0;
+  const acc = bad ? '#ff4a3d' : '#41ff8a', hot = bad ? '#ff8378' : '#c7ffe0';
+  sh(x + 1, y + h - 1, w - 2);                                      // contact shadow
+  // steel benchtop + apron
+  box(x, y + 2, w, h - 2, '#2c352f');
+  px(x + 1, y + 2, w - 2, 1, '#46544c');                           // top sheen
+  px(x + 1, y + 3, w - 2, h - 5, '#39433d');                       // apron face
+  px(x + 1, y + h - 2, w - 2, 1, '#1f2723');                       // base shade
+  px(x + 1, y + h - 1, 1, 1, '#222a26'); px(x + w - 2, y + h - 1, 1, 1, '#222a26');   // legs
+  // a vise clamped at the left edge
+  inset(x + 2, y + 1, 3, 2, '#10100c'); px(x + 3, y, 1, 1, U.shade('#9aa39c', -0.1));
+  // scattered tools on the surface (wrench + driver) — tiny pixel marks
+  px(x + 7, y + 1, 3, 1, U.shade('#9aa39c', -0.2)); px(x + 7, y + 2, 1, 1, U.shade('#9aa39c', -0.35));
+  px(x + 12, y + 1, 1, 2, U.shade('#c9a14a', -0.1));               // a screwdriver shaft
+  // status MONITOR on the right: idle amber standby; green pulse on a run; red on a verify-fail
+  const mx = x + w - 5, my = y + 1;
+  inset(mx, my, 4, 3, '#0c120f');
+  if (fired > 0) { px(mx + 1, my + 1, 2, 1, hot); glow(mx, my, 4, 4, acc, 0.25 + 0.5 * fired); }
+  else { const standby = blink(1600); px(mx + 1, my + 1, 1, 1, standby ? '#ffd34a' : U.shade('#ffd34a', -0.5)); }
+  // a small bar-graph "work" readout under the monitor when the bench is active
+  if (f && f.work) for (let i = 0; i < 3; i++) px(mx + i, my + 3, 1, 1, (Math.floor(now / 180) % 3 === i) ? acc : U.shade(acc, -0.5));
+};
   F.etsy_threadrack = (x, y, w, h, f) => {
   // wall-mounted thread/filament spool rack â€” sits flush under north wall
   sh(x + 1, y + h, w - 2);
@@ -3814,6 +3841,7 @@ const PropSprites = (() => {
     { id: "desk2", label: "DESK ×2", cat: "work", w: 2, h: 1, animated: true, blocks: true },
     { id: "pixelrig", label: "PIXEL RIG", cat: "work", w: 2, h: 1, animated: true, blocks: true },
     { id: "console", label: "CONSOLE", cat: "work", w: 2, h: 1, animated: true, blocks: true },
+    { id: "workbench", label: "WORKBENCH", cat: "work", w: 2, h: 1, animated: true, blocks: true },
     { id: "stool", label: "STOOL", cat: "work", w: 1, h: 1, animated: true, blocks: true },
     { id: "chair", label: "CHAIR", cat: "work", w: 1, h: 1, animated: true, blocks: true },
     { id: "bigscreen", label: "BIG SCREEN", cat: "ops", w: 8, h: 1, animated: true, blocks: false },
@@ -3920,6 +3948,13 @@ const PropSprites = (() => {
   function pulseConnector(id) { if (!id) return; (connState[id] || (connState[id] = {})).firedAt = now; }
   function connectorFired(id) { const s = id && connState[id]; return (s && s.firedAt) ? Math.max(0, 1 - (now - s.firedAt) / PULSE_MS) : 0; }
 
+  /* live WORKBENCH pulse (drives the workbench sprite). The world layer calls pulseWorkbench(ok) when a
+     shell.exec / verify.result fires (ok=false => a verify FAILED, the bench flashes red). One global pulse —
+     every placed workbench glows, signalling "the agent is running code right now." */
+  let wbFiredAt = 0, wbBad = false;
+  function pulseWorkbench(ok) { wbFiredAt = now; wbBad = (ok === false); }
+  function workbenchFired() { return wbFiredAt ? Math.max(0, 1 - (now - wbFiredAt) / PULSE_MS) : 0; }
+
   /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens. */
   function draw(f, work) {
     const fn = F[f.t]; if (!fn) return;
@@ -3931,6 +3966,7 @@ const PropSprites = (() => {
       o.state = cid ? ((connState[cid] && connState[cid].state) || 'offline') : 'unbound';
       o.fired = connectorFired(cid);
     }
+    if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
     fn(X, Y, W, H, o);
   }
 
@@ -3940,6 +3976,8 @@ const PropSprites = (() => {
     draw, CATALOG, CATS, spec, has, TILE,
     // live connector state (the world layer feeds these; the connector_portal sprite reads them)
     setConnectorState, pulseConnector,
+    // workbench pulse (the world layer feeds this off shell.exec / verify.result)
+    pulseWorkbench,
     // exposed for tests / reuse
     _F: F,
   };

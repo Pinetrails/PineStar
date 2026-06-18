@@ -39,8 +39,24 @@
     // (sidecar/mcp/manager.js) unions those live tool names into the agent's resolved set per run; the placed
     // instance's binding ({ connectorId }) selects WHICH server. This empty marker just declares 'connector' a
     // known, placeable capability object so the builder/world can treat it like any other room object.
-    connector: []
-    // M5 next: terminal (shell.exec, jailed under Windows AppContainer/Job-Object)
+    connector: [],
+    // WORKBENCH: real code execution (shell.exec). Opt-in per agent by PLACING this object — no object, no shell,
+    // exactly like cabinet=files. scope 'execute' so the consent broker's exec-lockout binds it: an autonomous
+    // run can NEVER execute off a cached grant (only an interactive human, or frozen FULL_ACCESS, may approve).
+    // The host auto-checkpoints the workspace before every shell call (execution-spine Commit 1), so a command
+    // is one rollback away. (Container/job-object OS sandboxing is a deferred backend behind the same tool seam.)
+    workbench: [
+      { capId: 'workbench', tool: 'shell.exec', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true }
+    ],
+    // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,
+    // each of which runs its OWN real agent loop. NO consent gate (internal orchestration of the user's own crew,
+    // not an outward mutation): the safety is the LEAD-ONLY conferral (the host adds this object ONLY to the
+    // watched browser-commanded run, so a delegated worker — autonomous — never receives the tool and cannot
+    // re-delegate, capping depth at one), plus the per-worker/day/global budget caps and the concurrency ceiling.
+    orchestrator: [
+      { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: false, network: true }
+    ]
   };
 
   function deepFreeze(o) {

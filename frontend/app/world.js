@@ -51,6 +51,11 @@ const World = (() => {
      hero behaves byte-for-byte as before. The crew is derived from the RoutingPlan's bays (syncCrewFromPlan). */
   let agent = null, activity = 'idle';
   let crew = [];
+  // Stage 2 (orchestration): a lead→worker handoff is WATCHABLE — boxes that fly from the lead body to a worker
+  // body when the lead delegates. delegateLead/delegateCall track the open team.dispatch window (tool_call→result)
+  // so a worker run that starts inside it animates; both are driven purely by existing agent.* bus events.
+  const handoffBoxes = [];
+  let delegateLead = null, delegateCall = null;
   // AGENT GROWTH HUD: the hero's live Xp.compute() snapshot pushed in by XpStore (drives the name-tag "Lv N"
   // chip + the gold level-up ripple). The station headline lives in the top-bar STATION chip, not the canvas.
   let xpAgent = null, levelUpAt = 0;
@@ -202,7 +207,7 @@ const World = (() => {
     propFoot = new Map(); pendingMourn = null;          // forget where things stood (no cross-station grief)
     agentDecor.length = 0; ownPlaced.clear(); placeCd = 0;   // forget which decor it placed (the new floor is a clean slate)
     if (agent && agent.fond) agent.fond.clear();        // forget the old floor's haunts — the new floor earns its own
-    crew = [];                                          // no cross-station crew bodies (rebuilt from the new floor's bays)
+    crew = crew.filter(b => b.summoned);                // drop plan-derived crew (rebuilt from the new floor's bays); KEEP summoned crew (app-level, not floor-bound)
     if (station && station.onChange) unsub = station.onChange(() => { geoDirty = true; });
     rederive();
   }
@@ -477,6 +482,14 @@ const World = (() => {
     if (onScreen && !small && !opts.force) return;
     const target = clampz(Math.max(scale, 3), MINZ, MAXZ);
     camLerp = { scale: target, panX: cv.width / 2 - agent.px * target, panY: cv.height * 0.56 - agent.py * target };
+  }
+  // frame the camera on ANY body (hero or a summoned crew member) — used when COMMS focus switches agents.
+  function focusBody(id) {
+    const b = bodyForAgent(id) || agent;
+    if (!b || b.unplaced || !cache) return;
+    const bx = (b.seated ? b.seatPx : b.px), by = (b.seated ? b.seatPy : b.py);
+    const target = clampz(Math.max(scale, 3), MINZ, MAXZ);
+    camLerp = { scale: target, panX: cv.width / 2 - bx * target, panY: cv.height * 0.56 - by * target };
   }
   function fitCamera() {
     if (!cache) return;
@@ -1300,6 +1313,12 @@ const World = (() => {
     if (agent.state === 'walk' && !agent.target && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) {
       agent.state = 'idle'; agent.idleUntil = 0;
     }
+    // THE DESK-TRIP INVARIANT (chat.js sets activity='task' for the WHOLE duration of a task run): a task
+    // ALWAYS seizes the agent here — this block runs ABOVE every idle/leisure branch in the tick ladder, and
+    // all of those branches are gated on activity==='idle', so while a task runs the agent walks to the
+    // workstation and STAYS seated working there until the run ends (then the activity!=='task' branch below
+    // stands it up). Never add a branch that moves the body while activity==='task'. Stance is locked in
+    // classify.js (stanceFor) + classify.test.js; this is the world half of the same promise.
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
       if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
@@ -1426,6 +1445,7 @@ const World = (() => {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
+    drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
 
     ctx.drawImage(cache.lightCv, 0, 0);
@@ -1635,6 +1655,14 @@ const World = (() => {
           ctx.beginPath(); ctx.ellipse(who.px, who.py, 4 + tk * 22, 2 + tk * 9, 0, 0, Math.PI * 2); ctx.stroke();
         }
         ctx.restore();
+      }
+      // SUMMONED-WORKER "working" glow — a soft sustained pulse at the feet of a crew body while ITS real run
+      // is in flight (workUntil set by setActivityFor). The honest "this agent is actually working" cue for a
+      // deskless summoned worker; hero-exempt (the hero shows work at its desk).
+      if (who !== agent && who.workUntil && now < who.workUntil) {
+        const wp = 0.35 + 0.25 * Math.sin(now / 360);
+        ctx.save(); ctx.globalAlpha = wp * 0.7; ctx.strokeStyle = who.color; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(who.px, who.py, 7 + 1.5 * Math.sin(now / 360), 3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
       // the LEVEL-UP pulse — the same sonar ring as waking, but GOLD, fired by XpStore on a level gain (hero only)
       if (who === agent && levelUpAt && now - levelUpAt < 1500) {
@@ -1867,11 +1895,17 @@ const World = (() => {
       const fy = (p.y + (p.h || 1) - 1) * T + T - 1;
       want.set(bay.agentId, { x: fx, y: fy });
     }
-    crew = crew.filter(b => want.has(b.agentId));                      // drop bodies whose bay is gone
+    crew = crew.filter(b => b.summoned || want.has(b.agentId));        // drop plan bodies whose bay is gone; KEEP summoned crew
     for (const [aid, pos] of want) {
-      const b = crew.find(x => x.agentId === aid);
+      const b = crew.find(x => x.agentId === aid && !x.summoned);
       if (b) { b.px = pos.x; b.py = pos.y; }
-      else crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
+      else if (!crew.some(x => x.agentId === aid)) crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
+    }
+    // a refit may have moved the floor under a summoned body — re-foot any that no longer stand on a walkable tile.
+    for (const b of crew) {
+      if (!b.summoned) continue;
+      const t = tileOf(b.px, b.py);
+      if (!geo.walkable(t.x, t.y, blocked)) { const f = workerFoot(); b.px = f.x; b.py = f.y; }
     }
   }
   // the body that runs a given agentId: the hero, a crew body, or null (caller falls back to the hero)
@@ -1879,6 +1913,77 @@ const World = (() => {
     if (!aid) return null;
     if (agent && aid === agent.id) return agent;
     return crew.find(b => b.agentId === aid) || null;
+  }
+
+  /* ---------- summoned workers (real, independent crew bodies) ----------
+     A SUMMONED agent (App.summonAgent) has no routing-plan bay, so it isn't a plan-derived crew body — it's
+     an app-level worker that stands at its own spot in the spawn room and visibly WORKS (lit + typing pose)
+     while its REAL run is in flight. It reuses the crew render path entirely; the hero is never touched. */
+  // a distinct walkable standing spot, fanned out from the spawn-room centre so summoned crew don't stack.
+  function workerFoot() {
+    const t = spawnTileLocal();
+    const ring = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [3, 1], [-3, 1], [1, 3], [-1, -3], [3, -2]];
+    const seen = new Set(crew.filter(b => b.summoned).map(b => { const tt = tileOf(b.px, b.py); return tt.x + ',' + tt.y; }));
+    for (let i = 0; i < ring.length; i++) {
+      const tx = t.x + ring[i][0], ty = t.y + ring[i][1];
+      if (geo && geo.walkable(tx, ty, blocked) && !seen.has(tx + ',' + ty)) return footOf(tx, ty);
+    }
+    return footOf(t.x, t.y);
+  }
+  // give a summoned agent a real floor body (idempotent). Static like crew, but flagged `summoned` so the
+  // floor-reset paths (loadStation / syncCrewFromPlan) preserve it, and lit by setActivityFor on a real run.
+  function spawnAgent(a) {
+    if (!a || !a.id || (agent && a.id === agent.id)) return;
+    if (crew.some(b => b.agentId === a.id)) return;                       // already present
+    const f = geo ? workerFoot() : { x: 0, y: 0 };                        // pre-geo: parked at origin, re-footed on first syncCrewFromPlan
+    const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y);
+    b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
+    crew.push(b);
+  }
+  // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
+  // body lights + takes the working pose while its run is live, and extinguishes when it ends.
+  function setActivityFor(agentId, kind) {
+    if (!agentId || (agent && agentId === agent.id)) { setActivity(kind); return; }
+    const b = crew.find(x => x.agentId === agentId);
+    if (!b) return;                                                       // not yet spawned (e.g. summon mid-flight) — nothing to animate
+    const working = (kind === 'task' || kind === 'thinking');
+    b.working = working; b.sitting = false; b.dir = working ? 'north' : 'south';   // stand (no desk/chair); face away = "at work"
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
+    else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
+  }
+
+  // the WATCHABLE HANDOFF: the lead delegated to worker `toId`. 'spawned' lights the worker (chat.js does NOT
+  // drive a DELEGATED worker — its run rides the lead's stream) and flies a box from the lead body to it; 'done'
+  // dims it. A direct lerp (no belts needed) so the handoff always reads. No-op for the hero / an unknown body.
+  function handoff(fromId, toId, phase) {
+    const to = bodyForAgent(toId);
+    if (!to || to === agent) return;
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    if (phase === 'done') { to.working = false; to.workUntil = 0; to.dir = 'south'; return; }
+    to.working = true; to.sitting = false; to.dir = 'north';
+    to.workUntil = now + 3600000; if (!to.wakeAt || now - to.wakeAt > 1500) to.wakeAt = now;
+    sayAt(to, 'on it…');
+    const from = bodyForAgent(fromId) || agent;
+    if (from && from !== to) handoffBoxes.push({ fromX: from.px, fromY: from.py - 6, toX: to.px, toY: to.py - 6, t0: now, color: to.color || '#5ad0ff' });
+  }
+  // draw the in-flight handoff boxes (world space, over the entities). A small arced lerp that self-expires.
+  function drawHandoffBoxes(now) {
+    if (!handoffBoxes.length) return;
+    const DUR = 720;
+    for (let i = handoffBoxes.length - 1; i >= 0; i--) {
+      const b = handoffBoxes[i];
+      const t = (now - b.t0) / DUR;
+      if (t >= 1) { handoffBoxes.splice(i, 1); continue; }
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;   // easeInOutQuad
+      const x = Math.round(b.fromX + (b.toX - b.fromX) * e);
+      const y = Math.round(b.fromY + (b.toY - b.fromY) * e - Math.sin(t * Math.PI) * 7);   // a little arc
+      ctx.save();
+      ctx.globalAlpha = 0.28; ctx.fillStyle = '#000'; ctx.fillRect(x - 2, Math.round(b.toY), 4, 1);   // ground shadow at the destination
+      ctx.globalAlpha = 0.92; ctx.fillStyle = b.color; ctx.fillRect(x - 2, y - 2, 4, 4);
+      ctx.fillStyle = U.shade(b.color, 0.45); ctx.fillRect(x - 2, y - 2, 4, 1);
+      ctx.restore();
+    }
   }
   function sayAt(body, text) {
     if (!body) return;
@@ -1919,6 +2024,7 @@ const World = (() => {
     U.bus.on('workitem.placed', p => intakeMessage(p));
     U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
+    // queue.status drives BOTH the numeric backpressure gauge (chanQueues) and the FloorStats backlog fold.
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); if (floor) floor.onEvent('queue.status', p); });
     // THE FLOOR ECONOMY — fold the harness's real cost/outcome events into the at-a-glance floor HUD
     // (drawFloorStats). harness.js re-emits every sidecar event onto U.bus, and routed/crew runs arrive
@@ -1948,6 +2054,13 @@ const World = (() => {
       if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('⚠ SLAG · ' + SlagLog.line(diag), 'warn');
       enqueueSlag(diag);
     });
+    // Stage 2: WATCH the lead delegate. A team.dispatch tool call opens a delegation window (until its tool_result);
+    // any WORKER run that starts inside it flies a box lead→worker + lights the worker. Contract-free — rides the
+    // existing agent.tool_call / agent.run.* events (the delegated child's lifecycle is forwarded onto the lead's stream).
+    U.bus.on('agent.tool_call', p => { if (p && /^team[._]dispatch$/.test(p.name || '')) { delegateLead = p.agentId; delegateCall = p.callId; } });
+    U.bus.on('agent.tool_result', p => { if (p && p.callId && p.callId === delegateCall) { delegateLead = null; delegateCall = null; } });
+    U.bus.on('agent.run.start', p => { if (p && delegateLead) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(delegateLead, p.agentId, 'spawned'); } });
+    U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(null, p.agentId, 'done'); } });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
     // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
     U.bus.on('agent.compact', p => {
@@ -1974,6 +2087,9 @@ const World = (() => {
       if (!n || n.indexOf('mcp__') !== 0 || !PropSprites.pulseConnector) return;
       for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
     });
+    // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
+    U.bus.on('shell.exec', () => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
+    U.bus.on('verify.result', p => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
     if (typeof EventSource === 'undefined') return;
     let es = null, backoff = 1000;
     const open = () => {
@@ -2130,7 +2246,7 @@ const World = (() => {
     ctx.textAlign = 'left';
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
+  return { init, loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
     // AGENT GROWTH: XpStore pushes the hero's pre-computed Xp.compute() snapshot here (station arg unused —
     // the colony headline is the top-bar STATION chip); pulseLevelUp fires the gold ring.
     setXp: (a) => { xpAgent = a || null; },
@@ -2141,5 +2257,15 @@ const World = (() => {
       if (agent && level != null && !(agent.say && agent.say.text && agent.say.until > now)) agent.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length } };
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length },
+    // does this agent have a WORKBENCH placed (-> shell.exec + verify.run)? An equipped BAY governs; with no bay
+    // (simple single-agent floor) any placed workbench grants it. The run client sends this so the hero's run
+    // gains shell ADDITIVELY on top of its default office (the room layout is the permission system, for the hero too).
+    heroWorkbench: (agentId) => {
+      if (!station) return false;
+      const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
+      if (viaBay && viaBay.length) return viaBay.indexOf('workbench') >= 0;
+      return !!(station.propsByType && station.propsByType('workbench').length);
+    }
+  };
 })();

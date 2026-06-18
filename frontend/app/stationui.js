@@ -17,6 +17,8 @@ const StationUI = (() => {
   const THEMES = [['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['white', '#e8f0e8']];
 
   let present = [];          // agent objects currently on the station
+  const runningAgents = new Set();   // agentIds with a live run (from the real agent.run.start/end bus events)
+  let crewLiveWired = false;         // the crew-status live listener is registered exactly once
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
   let tickTimer = 0;
@@ -126,6 +128,7 @@ const StationUI = (() => {
 
   /* ============== CREW MANIFEST (left panel) ============== */
   function crewRender() {
+    wireCrewLive();   // ensure the per-agent run-state listener is live
     const ul = $('#crew'); if (!ul) return;
     if (!present.length) {
       ul.innerHTML = '<li class="crew-empty">No agents on station.</li>';
@@ -146,15 +149,30 @@ const StationUI = (() => {
       li.addEventListener('click', () => { sfx('click'); openAgent(+li.dataset.i); }));
     crewTick();
   }
+  // a crew member is WORKING iff IT has a live run — read from the real agent.run.start/end events, NOT the
+  // single global hero activity (which used to mark the whole crew WORKING in lockstep with the hero). The
+  // talk/task text flavor still comes from the global activity (right for the common single-agent station).
   function crewTick() {
     if (!present.length) return;
     const act = activity();
-    present.forEach(a => { const e = $('#cs-' + a.id); if (e) e.textContent = crewStatus(act); });
-    const working = act === 'task' ? present.length : 0;
+    let working = 0;
+    present.forEach(a => {
+      const live = runningAgents.has(a.id);
+      if (live) working++;
+      const e = $('#cs-' + a.id);
+      if (e) e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
+    });
     const sum = $('#crew-sum');
     if (sum) sum.innerHTML =
       '<span class="pos">▮ ' + working + ' WORKING</span>' +
       '<span class="dim">▯ ' + (present.length - working) + ' IDLE</span>';
+  }
+  // register ONCE: track which agents actually have a live run so the crew panel reflects per-agent truth.
+  function wireCrewLive() {
+    if (crewLiveWired || typeof U === 'undefined' || !U.bus) return;
+    crewLiveWired = true;
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) { runningAgents.add(p.agentId); crewTick(); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId) { runningAgents.delete(p.agentId); crewTick(); } });
   }
 
   /* ============== AGENTS — DOSSIER ==============
@@ -378,6 +396,10 @@ const StationUI = (() => {
     const head = el('div', 'mc-head');
     const tag = el('span', 'turnin-kind'); tag.textContent = MEM_KIND[rec.kind] || 'NOTE'; head.appendChild(tag);
     if (rec.kind === 'note' && rec.title) { const t = el('span', 'mc-rectitle'); t.textContent = rec.title; head.appendChild(t); }
+    if (rec.scope === 'stream' && rec.streamId) {   // M-mem.2b: working memory scoped to a workstream
+      const wsT = (typeof Workstreams !== 'undefined' && Workstreams.get) ? ((Workstreams.get(rec.streamId) || {}).title || null) : null;
+      const sc = el('span', 'mc-scope'); sc.textContent = '⊂ ' + (wsT || 'workstream'); sc.title = 'working memory — scoped to this workstream (still cross-stream searchable)'; head.appendChild(sc);
+    }
     if (rec.pinned) { const p = el('span', 'mc-pinflag'); p.textContent = '★ pinned'; head.appendChild(p); }
     card.appendChild(head);
 
@@ -527,7 +549,7 @@ const StationUI = (() => {
     { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        on: true },
     { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', on: true, consent: true },
     { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    on: true },
-    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec',               on: false }
+    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec · verify.run',  on: true, consent: true }
   ];
   function buildSkills(body) {
     const on = SKILLS.filter(s => s.on).length;
@@ -542,10 +564,12 @@ const StationUI = (() => {
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
       '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
-      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory), ' +
-      'so the room layout IS the permission system. Read-only skills run freely, and the agent\'s own private ' +
-      '<b>notebook memory</b> saves without asking; only <b>writing to your files</b> pauses for a one-click ' +
-      'approval in COMMS before it runs. TERMINAL (sandboxed shell) is the next capability coming online.</p>';
+      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory · ' +
+      '<b>workbench</b> → terminal), so the room layout IS the permission system. Read-only skills run freely, and ' +
+      'the agent\'s own private <b>notebook memory</b> saves without asking; <b>writing to your files</b> and ' +
+      '<b>running commands</b> pause for a one-click approval in COMMS before they run. Place a <b>WORKBENCH</b> ' +
+      '(BUILD → WORK) to grant TERMINAL — run tests/builds/scripts &amp; verify the result; every command auto-saves ' +
+      'a restore point first, and unattended (scheduled) runs can never run commands on their own.</p>';
   }
 
   /* ============== TASKS — the project-board view of WORKSTREAMS (card ≡ workstream) ==============
@@ -1149,15 +1173,180 @@ const StationUI = (() => {
     refresh();
   }
 
+  /* ============== REWIND — restore points (the execution-spine checkpoint net) ==============
+     Every command an agent runs auto-saves a workspace snapshot FIRST; this lists them per agent and
+     restores one with a two-step confirm. Server-owned (GET/POST /api/checkpoint); honest — only real
+     snapshots show, and it says plainly when there are none yet. */
+  function buildRewind(body) {
+    const agentId = (present[sel] && present[sel].id) || 'agent';
+    body.innerHTML =
+      '<h4 class="ms-h">RESTORE POINTS — ' + esc(agentId) + '</h4>' +
+      '<p class="set-about">A snapshot of this agent\'s workspace is auto-saved <b>before every command it runs</b> ' +
+      '(and before file edits when checkpoints are on). Restoring rolls the workspace back and removes anything ' +
+      'created since. <span class="dim">Use it to undo a bad change.</span></p>' +
+      '<div id="rw-list" class="mc-list">loading…</div>' +
+      '<div id="rw-msg" class="msg"></div>';
+    const listEl = body.querySelector('#rw-list'), msgEl = body.querySelector('#rw-msg');
+    const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    function row(s) {
+      const when = s.ts ? esc(fmtRel(new Date(s.ts).toISOString())) : '';
+      return '<div class="mc-row" data-id="' + esc(s.id) + '">' +
+        '<div class="mc-top"><b>' + esc(s.label || 'snapshot') + '</b> <span class="dim">' + when + '</span></div>' +
+        '<div class="mc-url dim">' + esc(String(s.id).slice(0, 12)) + ' · turn ' + (s.turn || 0) + (s.files ? (' · ' + s.files + ' file' + (s.files === 1 ? '' : 's')) : '') + '</div>' +
+        '<div class="mc-acts"><button class="bb xs danger" data-act="restore">↶ RESTORE</button></div>' +
+        '</div>';
+    }
+    async function refresh() {
+      try {
+        const j = await (await fetch('/api/checkpoint?agent=' + encodeURIComponent(agentId))).json();
+        const snaps = ((j && j.snapshots) || []).slice().reverse();   // newest first
+        listEl.innerHTML = snaps.length ? snaps.map(row).join('')
+          : '<div class="fb-empty">NO RESTORE POINTS YET.<br><span>They appear once this agent runs a command or edits a file at a WORKBENCH.</span></div>';
+      } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage restore points.</div>'; }
+    }
+    listEl.addEventListener('click', async ev => {
+      const btn = ev.target.closest('button[data-act="restore"]'); if (!btn) return;
+      const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '↶ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '↶ RESTORE'; } }, 5000); return; }
+      sfx('bad'); btn.disabled = true;
+      try {
+        const r = await (await post('/api/checkpoint/restore', { agentId: agentId, snapshotId: id })).json();
+        if (r && r.ok) { notify('rewound ' + agentId + ' to an earlier restore point', 'warn'); msgEl.textContent = '✓ restored.'; }
+        else { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((r && r.error) || 'restore failed') + '</span>'; sfx('bad'); }
+      } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'restore failed') + '</span>'; sfx('bad'); }
+      btn.disabled = false; refresh();
+    });
+    refresh();
+  }
+
+  /* ============== COMMANDER DOSSIER — the station-wide model of the USER (the glass box) ==============
+     Phase A of docs/COMMANDER_DOSSIER_PLAN.md. ONE dossier, shared by every agent, that folds into each
+     agent's system prompt (DossierStore.composeBlock) so a new agent knows the Commander on day one. This
+     panel is the glass box: every belief the station holds about the Commander, grouped by dimension, with
+     provenance — add / edit / pin / forget, all local-first. It reads + mutates DossierStore (which
+     recomposes the live prompt + persists on each edit); the panel re-renders after a mutation. Belief text
+     is rendered as textContent (never interpreted), mirroring the Memory Core's injection-safe discipline. */
+  const CD_SOURCE = { onboarding: 'from your awakening', commander: 'you told the station', interview: 'from the intake interview', curiosity: 'you answered a question' };
+  const CDS = () => (typeof DossierStore !== 'undefined') ? DossierStore : null;
+
+  function buildCommander(body) {
+    const ds = CDS();
+    const sum = ds ? ds.summary() : null;
+    if (!ds || !sum) { body.innerHTML = '<p class="dim">The Commander Dossier warms up once your agent is awake.</p>'; return; }
+    const dims = ds.dims();
+    body.innerHTML = '';
+
+    // header: the honest familiarity meter + the observed work-mix + the local-first promise
+    const pct = Math.round((sum.familiarity || 0) * 100);
+    const obs = sum.observed;
+    const obsLine = (obs && obs.dominant && !obs.calibrating)
+      ? 'Observed: you work mostly on <b>' + esc(obs.dominant) + '</b> tasks.'
+      : 'Observed work-mix: <span class="dim">calibrating…</span>';
+    const head = el('div', 'gx',
+      '<div class="gx-head"><div><div class="gx-kicker">STATION // COMMANDER DOSSIER</div>' +
+      '<div class="gx-name">What the station knows about you</div></div>' +
+      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">FAMILIARITY</div>' +
+      '<span class="cd-fam"><span class="cd-fk"><span class="cd-ff" style="width:' + pct + '%;"></span></span>' +
+      '<span class="cd-fpct">' + (sum.known.length ? pct + '%' : 'calibrating') + '</span></span></div></div>' +
+      '<div class="cd-sub">' + sum.known.length + ' of ' + dims.length + ' dimensions known &middot; ' + obsLine + '</div>' +
+      '<div class="mc-note">This dossier is <b>shared by every agent on your station</b> and folds into each one\'s briefing, so a freshly-deployed agent already knows you. It is <b>local-first</b> — it never leaves this machine. Add, edit, pin, or forget anything below; you own it.</div>');
+    body.appendChild(head);
+
+    // the active "get to know you" trigger — runs the intake interview in COMMS, folding answers into the
+    // dossier through the same upsert path the cards use. Gated on a free agent + not-already-running.
+    const actRow = el('div', 'cd-actions-row');
+    const goBtn = el('button', 'cd-interview');
+    goBtn.textContent = sum.blank.length ? '▸ LET THE STATION GET TO KNOW YOU' : '▸ REFINE WHAT THE STATION KNOWS';
+    goBtn.onclick = () => {
+      if (typeof Intake === 'undefined') return;
+      if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) { notify('let your agent finish waking up first', ''); return; }
+      if (typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy()) { sfx('bad'); notify('finish the current run first, then run the interview', 'bad'); return; }
+      if (Intake.isRunning && Intake.isRunning()) { notify('the interview is already running — answer in COMMS', ''); return; }
+      const s = ds.summary();
+      const skip = s.blank.length ? s.known : [];   // ask blank dimensions; if the station knows them all, re-ask everything (refine)
+      const began = Intake.start({
+        skip: skip,
+        onCommit: belief => ds.upsert(belief.dim, { text: belief.text, source: belief.source }),
+        onDone: () => rerender('commander'),
+        onEmpty: () => notify('the station already knows you — edit any belief below to refine', 'good')
+      });
+      if (began) { sfx('click'); notify('the station is interviewing you — answer in COMMS →', 'good'); }
+    };
+    actRow.appendChild(goBtn);
+    body.appendChild(actRow);
+
+    // one section per dimension
+    for (const d of dims) {
+      const bs = ds.beliefs(d.key);
+      const sec = el('div', 'cd-sec');
+      sec.appendChild(el('div', 'cd-sech', '<span class="cd-dim">' + esc(d.label) + '</span><span class="cd-dn">' + (bs.length || '—') + '</span>'));
+      if (!bs.length) { const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e); }
+      else for (const b of bs) sec.appendChild(cdCard(d.key, b));
+      sec.appendChild(cdAddRow(d.key));
+      body.appendChild(sec);
+    }
+  }
+
+  function cdCard(dim, b) {
+    const card = el('div', 'cd-rec' + (b.pinned ? ' pinned' : ''));
+    const txt = el('div', 'cd-body'); txt.textContent = b.text; card.appendChild(txt);   // textContent — belief text is never interpreted
+    const meta = el('span', 'cd-src');
+    meta.textContent = (b.pinned ? '★ pinned · ' : '') + (CD_SOURCE[b.source] || 'you told the station') + (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleDateString() : '');
+    card.appendChild(el('div', 'cd-meta')).appendChild(meta);
+
+    const btns = el('div', 'consent-btns cd-acts'); card.appendChild(btns);
+    let busy = false;
+    const mk = (label, cls, fn) => { const x = el('button', 'consent-btn' + (cls ? ' ' + cls : '')); x.textContent = label; x.onclick = fn; btns.appendChild(x); return x; };
+    mk(b.pinned ? 'Unpin' : 'Pin', '', () => { if (busy) return; busy = true; CDS().setPinned(dim, b.id, !b.pinned); sfx('click'); rerender('commander'); });
+    mk('Edit', '', () => cdEdit(card, txt, btns, dim, b));
+    let armed = false;
+    const fb = mk('Forget', 'deny', () => {
+      if (!armed) { armed = true; fb.textContent = 'Confirm forget'; setTimeout(() => { if (armed) { armed = false; fb.textContent = 'Forget'; } }, 3000); return; }
+      if (busy) return; busy = true; CDS().forget(dim, b.id); sfx('click'); rerender('commander');
+    });
+    return card;
+  }
+
+  // inline edit (mirrors the Memory Core editor): swap the body for a textarea + Save/Cancel.
+  function cdEdit(card, txt, btns, dim, b) {
+    const ta = el('textarea', 'cd-edit'); ta.value = b.text; ta.spellcheck = false;
+    card.replaceChild(ta, txt); ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
+    btns.innerHTML = '';
+    const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+    const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+    let saving = false;
+    save.onclick = () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; CDS().upsert(dim, { id: b.id, text: v }); sfx('click'); rerender('commander'); };
+    cancel.onclick = () => rerender('commander');
+  }
+
+  // a "+ add" affordance per dimension: expands to a textarea so the Commander can teach the station directly.
+  function cdAddRow(dim) {
+    const row = el('div', 'cd-add');
+    const btn = el('button', 'cd-addbtn'); btn.textContent = '+ add'; row.appendChild(btn);
+    btn.onclick = () => {
+      row.innerHTML = '';
+      const ta = el('textarea', 'cd-edit'); ta.placeholder = 'Tell the station something about yourself…'; ta.spellcheck = false; row.appendChild(ta); ta.focus();
+      const btns = el('div', 'consent-btns cd-acts'); row.appendChild(btns);
+      const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+      const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+      let saving = false;
+      save.onclick = () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; CDS().upsert(dim, { text: v, source: 'commander' }); sfx('click'); rerender('commander'); };
+      cancel.onclick = () => rerender('commander');
+    };
+    return row;
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
+    commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
     skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '520px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
     connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
     routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
+    rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
   };
 
@@ -1196,6 +1385,15 @@ const StationUI = (() => {
     if (!started) { started = true; tickTimer = setInterval(tick, 1000); }
   }
 
+  // update the live roster WITHOUT re-running enter's one-time setup (legacy-task import, timer) — used
+  // after a SUMMON adds a crew member so the crew panel + an open dossier reflect the new agent immediately.
+  function setRoster(agents) {
+    present = Array.isArray(agents) ? agents : (agents ? [agents] : []);
+    if (sel >= present.length) sel = 0;
+    crewRender();
+    if (open.agents) rerender('agents');
+  }
+
   /* ============== ARCADE CABINET ==============
      Clicking an arcade cabinet in the world opens BREACH PROTOCOL — the playable
      Space-Invaders descendant ported verbatim from v7 (js/arcade.js). It mounts a
@@ -1214,5 +1412,5 @@ const StationUI = (() => {
     Object.keys(open).forEach(k => closeTerm(k));
   }
 
-  return { init, enter, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
+  return { init, enter, setRoster, leave, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
 })();

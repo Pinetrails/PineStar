@@ -11,11 +11,13 @@ const fsp = require('node:fs/promises');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 
 const { runAgentLoop } = require('./loop.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
+const { makeConcurrencyGate } = require('./concurrency.js');
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
@@ -44,6 +46,11 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
+const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
+const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
+const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
+const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
@@ -51,9 +58,18 @@ const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
 let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
-// the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). Defaults to
-// sidecar/workspaces; SKYNET_WORKSPACES relocates it (isolated tests, multi-instance deploys, a data volume).
-const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : path.resolve(__dirname, 'workspaces');
+// the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). SKYNET_WORKSPACES
+// wins (the desktop shell + isolated tests set it); otherwise resolve a PER-USER, writable OS app-data dir.
+// CRITICAL for a packaged install: NEVER default under __dirname — a shipped app lives in read-only Program
+// Files, so writing beside the .js source EACCES-fails on first boot and silently kills ALL persistence
+// (ledger/memory/secrets/cron) and degrades every permission grant to a deny. App-data is always writable.
+function defaultWorkspaces() {
+  const base = process.env.LOCALAPPDATA || process.env.APPDATA            // Windows: %LOCALAPPDATA% (machine-local app data)
+    || process.env.XDG_DATA_HOME                                          // Linux XDG
+    || path.join(os.homedir() || '.', '.local', 'share');                 // POSIX fallback
+  return path.join(base, 'Skynet', 'workspaces');
+}
+const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : defaultWorkspaces();
 const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
@@ -63,9 +79,17 @@ const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 3000
 const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
 const BUDGET_CAPS = {
   perRun: num(process.env.SKYNET_BUDGET_PER_RUN, 3),
+  perAgent: num(process.env.SKYNET_BUDGET_PER_AGENT, 5),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned)
   perDay: num(process.env.SKYNET_BUDGET_PER_DAY, 40),
   global: num(process.env.SKYNET_BUDGET_GLOBAL, 100)
 };
+// Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
+// (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
+// parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
+const MAX_CONCURRENT_AGENTS = num(process.env.SKYNET_MAX_CONCURRENT_AGENTS, 3);
+// Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
+// runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
+const ORCH_PER_WORKER = num(process.env.SKYNET_BUDGET_PER_WORKER, 1);
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the LIVE BYOK
@@ -116,7 +140,9 @@ const ledgerIo = {
   }
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
-const budget = makeBudget({ caps: { day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
+const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
+// admission gate: bounds how many distinct agents run paid loops concurrently (multi-agent fan-out guard).
+const concurrencyGate = makeConcurrencyGate({ max: MAX_CONCURRENT_AGENTS });
 
 // run-history log (M-save P4): the OUTCOME of each finished run ({runId, agentId, reason, turns, tokens, usd,
 // title, ts}), append-only + fsync'd like the ledger and a sibling of the fs jail (the agent can't rewrite its
@@ -141,6 +167,10 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
+// Stage 2: the live crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
+// own identity (its composed system prompt + model). agentId -> { system, name, model }. In-memory: the browser
+// re-pushes on every summon/focus, so a sidecar restart just waits for the next push. Not an event (contract-free).
+const agentRoster = new Map();
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
@@ -414,6 +444,31 @@ const cronDriver = makeCronDriver({
 });
 let cronTimer = null;
 
+/* ---- execution spine: the checkpoint rollback net (Commit 1). A per-agent shadow-git store under
+   WORKSPACES/.checkpoints/<agentId>/ — a SIBLING of the fs jail, so the agent's own fs.* and shell tools can
+   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is OPT-IN
+   via SKYNET_CHECKPOINTS (default OFF = the existing run path is byte-identical) and FAIL-OPEN (a git problem
+   never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
+   the git/fs is here, the one ambient-I/O edge. ---- */
+const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CHECKPOINTS || '').trim());
+const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(shell|verify)\./.test(name);
+function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
+  return new Promise((resolve) => {
+    try {
+      execFile('git', args, { cwd: (opts && opts.cwd) || WORKSPACES, timeout: 15000, windowsHide: true, maxBuffer: 8 << 20 },
+        (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: String(stdout || ''), stderr: String(stderr || '') }));
+    } catch (e) { resolve({ code: 1, stdout: '', stderr: String((e && e.message) || e) }); }
+  });
+}
+const checkpointStore = makeCheckpointStore({ fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 });
+// checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
+const checkpointBus = { emit: (name, payload) => {
+  try { console.log('[checkpoint]', name, JSON.stringify(payload)); } catch (_) {}
+  try { sse.broadcast(name, payload); } catch (_) {}
+} };
+const checkpointEmitValidated = makeEmitter(checkpointBus, e => console.warn('[checkpoint-event]', e.kind, e.event, (e.errors || []).join(';')));
+const checkpointEmit = (name, payload) => { try { return checkpointEmitValidated(name, redact(payload)); } catch (_) { return false; } };
+
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
@@ -521,6 +576,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
+  if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/events') return handleChannelEvents(req, res);
@@ -542,6 +598,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
@@ -564,7 +622,14 @@ server.on('error', (e) => {
   process.exit(1);
 });
 server.listen(PORT, '127.0.0.1', () => {
-  console.log('▲ SKYNET sidecar → http://127.0.0.1:' + PORT + '   (serving frontend + agent runtime)');
+  const url = 'http://127.0.0.1:' + PORT;
+  const bar = '═'.repeat(58);
+  console.log('\n' + bar);
+  console.log('  ▲ SKYNET — THE FULL APP IS RUNNING (UI + agent engine).');
+  console.log('     Open in your browser:  ' + url);
+  console.log('     This one process IS the complete product — the UI you see and');
+  console.log('     the agents/web-search/tools behind it are all served from here.');
+  console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
   makeOpenRouterProvider({ fetch: globalThis.fetch }).listModels().then(
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
@@ -843,12 +908,67 @@ async function handleCronRun(req, res) {
   }
 }
 
+/* POST /api/checkpoint/restore { agentId, snapshotId } — the manual "rewind": hard-reset an agent's workspace to
+   a recorded snapshot (and drop files created since). Only restores a snapshotId IN that agent's index (never an
+   arbitrary git ref); 127.0.0.1-bound. The auto-snapshots that feed this come from the opt-in dispatch hook. */
+async function handleCheckpointRestore(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || '');
+  const snapshotId = String(body.snapshotId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'bad agentId' });
+  if (!checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
+  let ok; try { ok = await checkpointStore.restore(agentId, snapshotId); } catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
+  if (!ok) return json(404, { error: 'no such snapshot for that agent' });
+  try { checkpointEmit('checkpoint.restored', { agentId: agentId, runId: '', toSnapshotId: snapshotId, reason: 'manual' }); } catch (_) {}
+  json(200, { ok: true });
+}
+
+// GET /api/checkpoint?agent=<id> — the read-only snapshot index a "rewind" affordance lists from.
+function handleCheckpointList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'bad agentId' });
+    json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: checkpointStore.list(agent).snapshots });
+  } catch (e) { json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: [] }); }
+}
+
+// POST /api/roster { agents:[{ agentId, system, name, model }] } — the browser pushes the live crew identities
+// so team.dispatch can run a WORKER as itself (its composed system prompt + model). Replaces the whole roster
+// each push (the browser sends the full live set on summon/focus). Contract-free: plain HTTP, no bus event.
+async function handleRoster(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 2 << 20)); }
+  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const list = (body && Array.isArray(body.agents)) ? body.agents : [];
+  agentRoster.clear();
+  for (const a of list) {
+    const id = a && String(a.agentId || '');
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
+    agentRoster.set(id, {
+      system: String((a && a.system) || ''),
+      name: String((a && a.name) || id).slice(0, 40),
+      model: (a && a.model) ? String(a.model) : null,
+      role: String((a && a.role) || '').slice(0, 120)   // a short specialty/role line for the lead's [YOUR CREW] block
+    });
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true, count: agentRoster.size }));
+}
+
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
+  const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
+  // a placed WORKBENCH grants this run the terminal capability (shell.exec + verify.run), additively on top of
+  // the default office. The browser sends it off the floor (World.heroWorkbench); shell still walks the full
+  // consent ladder (interactive prompts; autonomous exec-lockout) + auto-checkpoints before every command.
+  const extraObjects = (body && body.workbench) ? [{ instanceId: 'wb_placed', objectType: 'workbench' }] : [];
   const usingCodex = (provider === 'codex' || provider === 'openai-codex');   // Codex authenticates by OAuth token, not an API key
   // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and updatable
   // via /api/key). The browser build still sends body.key, which wins.
@@ -905,7 +1025,11 @@ async function handleRun(req, res) {
       key, model, system, messages, agentId, isTask, provider,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
-      reflect: true   // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
+      streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
+      extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
+      reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
+      lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
+                      // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
     });
   } catch (e) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
@@ -927,15 +1051,42 @@ async function handleRun(req, res) {
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
   const { key, model, system, messages = [], agentId = 'agent', isTask = false, emit, signal, runId } = o;
+  const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
   const trigger = o.trigger || 'directive';
+
+  // ---- concurrency admission (multi-agent fan-out guard) ----
+  // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
+  // admitted agent always passes (no new slot). On refusal emit the same start→error→end shape every other
+  // up-front refusal uses (Codex sign-in / non-tool model), reason 'error', transient (a slot may free up).
+  if (!concurrencyGate.tryEnter(agentId)) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise SKYNET_MAX_CONCURRENT_AGENTS.' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;
+  }
+  // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
+  // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
+  try {
 
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() } }).register(registry);
+  // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
+  // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
+  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
+  makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
+  // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
+  // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
+  makeOrchestrationTools({
+    runOnce, roster: () => agentRoster, key, model, provider: o.provider,
+    perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID()
+  }).register(registry);
   throttleSearch(registry);
 
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
@@ -953,6 +1104,12 @@ async function runOnce(o) {
   // here, so this IS per-agent; routed multi-agent bays instead pass their OWN room objects (o.station) so each
   // bay only reaches the connectors physically placed in it.
   for (const cid of connectors.ids()) defaultObjects.push({ instanceId: 'conn_' + cid, objectType: 'connector', connectorId: cid });
+  // Stage 2: the LEAD (browser-commanded run) alone gets the orchestrator object -> the team.dispatch tool. A
+  // delegated worker runs with o.lead falsy and no o.station -> no orchestrator object -> cannot re-delegate.
+  if (o.lead) defaultObjects.push({ instanceId: 'orch1', objectType: 'orchestrator' });
+  // ADDITIVE placement: extra objects the caller says are placed for this agent (e.g. a WORKBENCH → shell.exec +
+  // verify.run) join the default office, so the hero gains a placed capability WITHOUT losing its baseline office.
+  if (Array.isArray(o.extraObjects)) for (const e of o.extraObjects) if (e && e.objectType) defaultObjects.push({ instanceId: String(e.instanceId || ('extra_' + e.objectType)), objectType: String(e.objectType) });
   const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   const resolved = resolveTools(agentId, station);
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
@@ -978,7 +1135,7 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
-  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId });
+  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -1052,12 +1209,24 @@ async function runOnce(o) {
 
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
+  let cpTurn = 0;      // per-run checkpoint sequence (a pseudo-turn for the snapshot index/lineage)
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
     const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
     const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
     if (n > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical call blocked (loop guard)', summary: 'loop-break' };
-    let r = await registry.dispatch(c, ctx);
+    // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
+    // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
+    // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
+    // or a git hiccup costs nothing and never throws into the run.
+    if (mutatesWorkspace(c.name) && (CHECKPOINTS_ENABLED || /^(shell|verify)\./.test(c.name))) {
+      try {
+        const snap = await checkpointStore.snapshot(agentId, { runId, turn: cpTurn, label: c.name });
+        if (snap && snap.created) { emit('checkpoint.created', { agentId, runId, turn: cpTurn, snapshotId: snap.id, files: snap.files || 0, bytes: snap.bytes || 0, label: c.name }); cpTurn++; }
+      } catch (_) { /* a checkpoint failure must never break a run */ }
+    }
+    const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
+    let r = await registry.dispatch(c, dctx);
     // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
     if (r && typeof r.content === 'string' && r.content.length) {
       if (toolBytes >= CAPS.maxToolBytes) {
@@ -1085,7 +1254,17 @@ async function runOnce(o) {
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
       + 'final report of what you found/did and which files you saved.'
     : '';
-  const sys = (system || '') + toolNote;
+  // Stage 2: a LEAD run is told who its WORKER crew is (agentId + role) so it can address them via team.dispatch.
+  // Built FRESH from the roster the browser pushed (/api/roster); empty for a non-lead run or a solo station, so
+  // a single-agent run is byte-identical. Only the lead receives this (and the orchestrator tool above).
+  let teamNote = '';
+  if (o.lead && agentRoster.size >= 2) {
+    const lines = [];
+    for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
+    if (lines.length) teamNote = '\n\n[YOUR CREW] You can delegate subtasks to these specialist agents with the team.dispatch tool — '
+      + 'call it with workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+  }
+  const sys = (system || '') + toolNote + teamNote;
   let msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
   // Cortex (M-mem.3): surface the agent's OWN memory in-prompt — RANK it by relevance to this message
   // (BM25 + recency/trust/pin), inject the top few as a recalled-memory fence before the triggering user
@@ -1097,7 +1276,7 @@ async function runOnce(o) {
     const recs = Array.isArray(stored) ? stored : [];
     let q = '';
     for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { q = messages[i].content; break; } }
-    const ranked = rank(recs, q, { now: Date.now() });
+    const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {
       msgs = injectRecall(msgs, recall.text);
@@ -1105,13 +1284,16 @@ async function runOnce(o) {
       // M-mem.6: surfacing a record IS a use — fold useCount++ / lastUsedAt back onto the stored record (the
       // reduction that makes the Memory Core stats AND rank()'s recency/trust boosts REAL), then emit. One
       // store write per run (only when something changed); the bumped recs don't affect THIS run's ranking.
-      if (runId) {
+      // Credit memory.used ONLY for the records whose real content actually surfaced — renderRecall returns
+      // those ids (it EXCLUDES the [blocked] poisoned records + any skipped/char-capped ones), so a withheld
+      // record never gains useCount/recency (which would otherwise make it a sticky slot-squatter), and the
+      // old positional ranked[i] aliasing is gone.
+      if (runId && recall.usedIds && recall.usedIds.length) {
         const usedAt = Date.now();
         let updated = recs;
-        for (let i = 0; i < recall.count && i < ranked.length; i++) {
-          const r = ranked[i]; if (!r || !r.id) continue;
-          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id: r.id } }, { now: usedAt });
-          emit('memory.used', { agentId, runId, id: r.id });
+        for (const id of recall.usedIds) {
+          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
+          emit('memory.used', { agentId, runId, id });
         }
         if (updated !== recs) notebookStore.set('notebook:' + agentId, updated);
       }
@@ -1124,7 +1306,8 @@ async function runOnce(o) {
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: (BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity },
+      // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
+      limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
       budget: runBudget, context: ctxMgr, summarize,
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
@@ -1154,6 +1337,10 @@ async function runOnce(o) {
     runReflection({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
   }
   return result;
+
+  } finally {
+    concurrencyGate.leave(agentId);   // release the admission slot on EVERY exit (normal, early-return, or throw)
+  }
 }
 
 // POST /api/consent { runId, promptId, decision } — the browser's answer to a live permission.prompt. Resolves the

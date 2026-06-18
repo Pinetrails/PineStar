@@ -35,9 +35,17 @@ const Chat = (() => {
   // one thing that can't live in the pure model is the live AbortController (not serializable), so it stays here.
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
   let activeLiveRow = null;     // streaming DOM row for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
+  let pinnedReplyEl = null;     // THE PINNED REPLY: while a reply streams, its DOM row is held as the LAST log child so the
+                                // actual message sits at the bottom of COMMS; work lines (tool ▶/◀, deliverables, consent) slot
+                                // in ABOVE it instead of pushing it up out of view. Cleared the moment the reply finishes.
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
+  let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const el = id => document.getElementById(id);
+  let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
+                      // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
+  function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
+  function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; }
 
   const KIND_TAG = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
 
@@ -45,8 +53,10 @@ const Chat = (() => {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
+    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
     input.value = '';
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
+    wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     load(opts.ws);
     input.onkeydown = e => {
       if (e.key === 'Enter' && !e.isComposing) {
@@ -63,9 +73,11 @@ const Chat = (() => {
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
     if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
     if (log) log.innerHTML = '';
+    stick = true;   // a freshly-loaded / switched-to stream starts pinned to its latest line
     renderHistory();
     replayChannel();   // re-render an in-flight stream we left running: tool lines / partial reply / pending approval
-    status(interview ? 'waking…' : (isBusy() ? 'working…' : 'online'));
+    syncStatus();
+    maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
   }
 
   function setSystem(s) { system = s; }
@@ -73,33 +85,62 @@ const Chat = (() => {
   function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
   function status(s) { if (statusEl) statusEl.textContent = s; }
+  // derive the DISPLAYED stream's status from real state, so a low-priority write (a finishing turn) can't
+  // clobber the high-priority 'awaiting your approval…' after a switch-back. One source of truth.
+  function syncStatus() {
+    if (interview) { status('waking…'); return; }
+    const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
+    status(p ? 'awaiting your approval…' : (isBusy() ? 'working…' : 'online'));
+  }
+  function clearEmptyState() { const e = log && log.querySelector('.cmsg-empty'); if (e) e.remove(); }
+  // first-run state: an empty + idle + non-interview stream shows a single dim hint instead of a black void.
+  function maybeEmptyState() {
+    if (!log || interview) return;
+    if (activeWs && activeWs.history && activeWs.history.length) return;
+    if (isBusy() || log.querySelector('.cmsg')) return;
+    const s = (typeof Channels !== 'undefined' && activeWs) ? Channels.snapshot(activeWs.id) : null;
+    if (s && (s.tools.length || s.acc || s.pending)) return;
+    const d = document.createElement('div'); d.className = 'cmsg-empty';
+    d.textContent = 'COMMS online. Type a task or a question to ' + name + '.';
+    log.appendChild(d);
+  }
 
-  function row(role) {
+  // opts.live === true marks the streaming reply row, which always pins to the BOTTOM. Every other row (tool
+  // ▶/◀ lines, deliverables, consent, turn-in) inserts ABOVE the pinned reply while one is live — so the work
+  // log stacks above and the message the agent is actually saying stays at the bottom, never scrolled away.
+  function row(role, opts) {
+    clearEmptyState();   // any real row supersedes the first-run hint
     const d = document.createElement('div'); d.className = 'cmsg ' + role;
     const who = document.createElement('span'); who.className = 'who';
     who.textContent = role === 'user' ? 'COMMANDER' : name;
     const body = document.createElement('span'); body.className = 'body';
     d.appendChild(who); d.appendChild(body);
-    log.appendChild(d); log.scrollTop = log.scrollHeight;
+    if (!(opts && opts.live) && pinnedReplyEl && pinnedReplyEl.parentNode === log) log.insertBefore(d, pinnedReplyEl);
+    else log.appendChild(d);
+    autoscroll();
     return { d, body };
   }
-  function addUser(t) { row('user').body.textContent = t; log.scrollTop = log.scrollHeight; }
-  function localLine(t) { row('agent').body.textContent = t; log.scrollTop = log.scrollHeight; }
+  function addUser(t) { row('user').body.textContent = t; autoscroll(); }
+  function localLine(t) { row('agent').body.textContent = t; autoscroll(); }
   // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible
   function toolLine(text, isErr) {
     const r = row('agent'); r.d.classList.add('tool'); if (isErr) r.d.classList.add('err');
-    r.body.textContent = text; log.scrollTop = log.scrollHeight;
+    r.body.textContent = text; autoscroll();
   }
   function brief(s) { s = String(s || ''); return s.length > 56 ? s.slice(0, 53) + '…' : s; }
+  function fmtMs(ms) { return ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's'; }   // 8423 → '8.4s'
   // a clickable COMMS row for a file the agent produced — opens it via the sidecar's jailed /api/file route
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
     const a = document.createElement('a');
     a.href = '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
-    a.target = '_blank'; a.rel = 'noopener'; a.textContent = title; a.className = 'deliverable-link';
+    a.target = '_blank'; a.rel = 'noopener';
+    a.textContent = String(title).split(/[\\/]/).pop() || title;   // show the filename, not the whole path
+    a.title = title;                                               // full path on hover
+    a.className = 'deliverable-link';
     r.body.appendChild(a);
-    log.scrollTop = log.scrollHeight;
+    autoscroll();
   }
   // a live consent prompt: the agent wants to do something that needs approval (a file write today). The run is
   // PAUSED on the sidecar until the Commander answers — once / always (this kind) / full access (everything this
@@ -128,23 +169,27 @@ const Chat = (() => {
       tag.className = 'consent-result' + (isDeny ? ' err' : '');
       tag.textContent = doneLabel;
       r.body.appendChild(tag);
-      status(isBusy() ? 'working…' : 'online');
+      syncStatus();
     }
     const mk = (text, decision, cls, doneLabel, isDeny) => {
       const b = document.createElement('button');
       b.className = 'consent-btn' + (cls ? ' ' + cls : '');
       b.textContent = text;
       b.onclick = () => decide(decision, doneLabel, isDeny);
-      btns.appendChild(b);
+      btns.appendChild(b); return b;
     };
-    mk('Approve once', 'once', '', '✓ approved once', false);
+    const approveBtn = mk('Approve once', 'once', '', '✓ approved once', false);
     mk('Always', 'always', '', '✓ always allowed', false);
     mk('Full access', 'full', 'danger', '✓ full access', false);
     mk('Deny', 'deny', 'deny', '✕ denied', true);
     r.body.appendChild(btns);
+    // a blocking, run-pausing prompt: make it keyboard-operable (Esc = Deny; the focused Approve takes Enter/Space)
+    r.d.tabIndex = -1;
+    r.d.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); decide('deny', '✕ denied', true); } });
     status('awaiting your approval…');
     if (typeof StationUI !== 'undefined') StationUI.notify(name + ' needs approval to ' + actionPhrase(p), 'warn');
-    log.scrollTop = log.scrollHeight;
+    log.scrollTop = log.scrollHeight;   // force into view: the run is paused until this is answered
+    try { approveBtn.focus(); } catch (_) {}
   }
 
   // Cortex (M-mem.5b) — THE TURN-IN BEAT. After a run, reflection proposes durable memories; the Commander
@@ -200,7 +245,7 @@ const Chat = (() => {
       renderChoices();
     }
     if (typeof StationUI !== 'undefined') StationUI.notify(name + ' has ' + n + (n > 1 ? ' memories' : ' memory') + ' to review', 'gold');
-    log.scrollTop = log.scrollHeight;
+    autoscroll();
   }
 
   // register ONCE: reflection announces proposals via the memory.proposed SSE event (re-emitted on U.bus). It
@@ -217,18 +262,69 @@ const Chat = (() => {
         const proposals = await Harness.memoryProposals(runId, agentId);
         if (!proposals.length) return;
         const batch = { runId, agentId, proposals };
-        const onActiveAgent = activeWs && (activeWs.agentId || 'agent') === agentId;
-        if (onActiveAgent) proposalCard(batch, activeWs);
+        // route to the ORIGIN stream (the one whose run proposed these) — many streams share agentId 'agent',
+        // so gating on agentId can drop the card into the wrong COMMS after a mid-window switch.
+        let originWs = null;
+        if (typeof Workstreams !== 'undefined' && Workstreams.all) { try { originWs = Workstreams.all().find(w => (w.runIds || []).indexOf(runId) >= 0) || null; } catch (_) {} }
+        const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
+        if (onActive) proposalCard(batch, activeWs);
         else if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
       }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
+    });
+  }
+
+  /* JUST-IN-TIME CURIOSITY (Commander Dossier, Phase B slice 2): after a clean run, the station may ask
+     about ONE thing it still doesn't know about its Commander — gentle, budgeted (curiosity.js caps it at
+     one per session), never after a stop/error. Mirrors the wireProposals turn-in beat. A "sure" launches a
+     one-question intake interview for just that dimension; "not now" dismisses it for good. */
+  function dimLabel(dim) {
+    if (typeof Dossier !== 'undefined' && Dossier.DIMS) { const d = Dossier.DIMS.find(x => x.key === dim); if (d) return d.label; }
+    return String(dim);
+  }
+  function curiosityNudge(dim) {
+    if (!log) return;
+    const r = row('agent'); r.d.classList.add('reply');
+    r.body.textContent = '✦ one curious thing — i still don’t know your ' + dimLabel(dim).toLowerCase() + '. want to tell me? it sharpens how every agent here works for you.';
+    autoscroll();
+    choices([{ label: 'sure — ask me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }], item => {
+      if (item.value === 'yes' && typeof Intake !== 'undefined' && typeof Dossier !== 'undefined') {
+        const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
+        Intake.start({
+          skip: skip,
+          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity' }); },
+          onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); }
+        });
+      } else if (typeof CuriosityStore !== 'undefined') {
+        CuriosityStore.markDismissed(dim);   // waved off → never raise this dimension again
+      }
+    });
+  }
+  function wireCuriosity() {
+    if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
+    curiosityWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
+      setTimeout(() => {
+        if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
+        if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return;
+        if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return;
+        if (typeof CuriosityStore === 'undefined') return;
+        const dim = CuriosityStore.consider();
+        if (!dim) return;
+        CuriosityStore.markShown();            // spend this session's single nudge whether or not they answer
+        curiosityNudge(dim);
+      }, 650);   // let the reply finish rendering before the nudge slots in below it
     });
   }
 
   function renderHistory() {
     const h = activeWs ? activeWs.history : [];
     for (const m of h) {
-      if (m.role === 'user') addUser(m.content);
-      else row('agent').body.textContent = m.content;
+      if (m.role === 'user') { addUser(m.content); continue; }
+      if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
+      const r = row('agent'); r.d.classList.add('reply');   // past agent turns get the same framed-headline look as live ones
+      if (m.error) r.d.classList.add('err');
+      r.body.textContent = m.content;
     }
   }
 
@@ -237,7 +333,7 @@ const Chat = (() => {
   // the snapshot is empty and this is a no-op. (Live token re-binding for a stream switched-to MID-run lands
   // with the frontend-hud change that lifts the "can't switch while busy" guard — see the GATE handoff note.)
   function replayChannel() {
-    activeLiveRow = null;
+    activeLiveRow = null; pinnedReplyEl = null;   // log was just cleared by load(); drop any stale pin before re-rendering
     if (!activeWs || typeof Channels === 'undefined') return;
     const s = Channels.snapshot(activeWs.id);
     if (!s) return;
@@ -250,13 +346,18 @@ const Chat = (() => {
   }
 
   function streamingAgent() {
-    const r = row('agent');
+    const r = row('agent', { live: true });   // the reply row pins to the bottom; work lines stack above it
+    pinnedReplyEl = r.d;
+    // bare name + blinking caret = "agent is composing"; the framed .reply headline is added on the FIRST real
+    // token, so a tool-only turn never leaves an empty framed box at the bottom of COMMS.
     const caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
     r.d.appendChild(caret);
+    const unpin = () => { if (pinnedReplyEl === r.d) pinnedReplyEl = null; };   // reply finished — later rows append at the very bottom again
     return {
-      append(t) { r.body.textContent += t; log.scrollTop = log.scrollHeight; },
-      done() { caret.remove(); },
-      error(m) { r.d.classList.add('err'); r.body.textContent = '⚠ ' + m; caret.remove(); }
+      el: r.d,
+      append(t) { r.body.textContent += t; if (r.body.textContent && !r.d.classList.contains('reply')) r.d.classList.add('reply'); autoscroll(); },
+      done() { caret.remove(); unpin(); if (!r.body.textContent.trim()) r.d.remove(); },   // collapse a no-prose stub
+      error(m) { r.d.classList.add('reply', 'err'); r.body.textContent = '⚠ ' + m; caret.remove(); unpin(); }
     };
   }
 
@@ -268,6 +369,7 @@ const Chat = (() => {
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
     Channels.begin(ws.id);
+    stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
     addUser(text); ws.history.push({ role: 'user', content: text });
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
@@ -280,17 +382,22 @@ const Chat = (() => {
     // count — never the message text. Gated on the user's learning flag inside the store.
     if (isTask && typeof ProfileStore !== 'undefined') ProfileStore.observeMessage(text);
     if (isTask && typeof MintStore !== 'undefined') MintStore.observe(text);   // notice recurring jobs → propose minting them as one-tap missions
-    // VOICE CONVERSATION: the speaker toggle (🔊) is the switch. When it's ON the agent VOICES every
-    // reply, so we append the short/spoken-style rule (talk OR task) — that's the laid-back back-and-
-    // forth. When it's OFF, replies are silent + detailed written text.
+    // VOICE: the speaker toggle (🔊) controls whether the agent SPEAKS its reply (and in the short,
+    // spoken style — voiceModeRules appended below). It does NOT control the desk trip: a real TASK is
+    // real work, so it ALWAYS walks to the workstation and works there until done (the signature visible
+    // loop), speaker on or off. When voice is on, a task's result is also spoken — it's just no longer
+    // answered "on the spot" in place of the desk trip.
     const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
-    // In a voice conversation the agent stays ONE-ON-ONE: he faces the Commander and answers on the
-    // spot instead of walking to the workstation — even for "task"-classified messages (the work still
-    // runs, just not as a visible desk trip). Only a SILENT task (speaker off) walks over to work.
-    const stance = (isTask && !willSpeak) ? 'task' : 'talk';
-    World.setActivity(stance);
-    // in a spoken conversation, gently frame the agent so you can actually see who you're talking to
-    // (no-op if he's already comfortably on-screen; self-cancels the moment you pan/zoom).
+    // A TASK -> walk to the workstation + work there until the run completes (visible desk trip), whatever
+    // the speaker setting. A CHAT (no task) -> face the Commander one-on-one (framed below when voice is on).
+    // The decision lives in Classify.stanceFor, which takes ONLY isTask BY DESIGN: voice/speaker/UI state
+    // can NEVER suppress a task's desk trip (the exact regression we fixed). Locked by classify.test.js.
+    const stance = Classify.stanceFor(isTask);
+    // per-agent: the HERO routes to setActivity (single-agent path unchanged); a summoned crew agent lights
+    // ITS own body at ITS station, so tasking a summoned agent never moves the hero.
+    if (World.setActivityFor) World.setActivityFor(ws.agentId || 'agent', stance); else World.setActivity(stance);
+    // a spoken CHAT gently frames the agent one-on-one so you can see who you're talking to; a TASK is at
+    // the desk instead (no-op if already comfortably on-screen; self-cancels the moment you pan/zoom).
     if (stance === 'talk' && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
     status(stance === 'task' ? 'working…' : 'thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
@@ -338,12 +445,13 @@ const Chat = (() => {
     };
     try {
       const { text: reply, error, endReason } = await Harness.chat({
-        system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal,
+        system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal, streamId: ws.id,
+        workbench: (typeof World !== 'undefined' && World.heroWorkbench) ? World.heroWorkbench(ws.agentId || 'agent') : false,   // placed WORKBENCH -> this run gains shell.exec + verify.run
         onRunId: id => { Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) toolLine(t); if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
-        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '◁ ' : '◀ ') + nm + ' · ' + (ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.ms ? ' (' + ev.ms + 'ms)' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) toolLine(t, ev.isError); },
+        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) toolLine(t, ev.isError); },
         onDeliverable: ev => {
           if (ev.kind === 'file' && !seenDeliv[ev.title]) {
             seenDeliv[ev.title] = true; if (isActiveWs(ws)) deliverableLine(ev.title, ev.agentId);
@@ -356,16 +464,14 @@ const Chat = (() => {
       });
       if (error) {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }
+        ws.history.push({ role: 'assistant', content: '⚠ ' + error, error: true });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
       } else {
-        ws.history.push({ role: 'assistant', content: reply || acc });
-        if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
-        finalReply = reply || acc;
-        // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
-        // it arrives (onToken → pushSpeech) and flushed in the finally — so the agent starts talking while
-        // the rest is still generating, instead of after the whole reply + a full TTS round-trip.
-        if (!isTask && isActiveWs(ws)) World.say(reply || acc);
-        // the run stopped before a natural finish — tell the Commander why (not a silent dead-end)
+        const replyText = reply || acc;
+        finalReply = replyText;
+        if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText });   // never persist an empty turn
+        // the stop-reason is part of the WORK log → render it ABOVE the message (while the reply is still
+        // pinned), THEN unpin via done(). done() also collapses the reply row if the turn produced no prose.
         if (endReason && endReason !== 'done') {
           if (isActiveWs(ws)) toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? 'reached this run\'s cost limit'
@@ -373,19 +479,27 @@ const Chat = (() => {
             : 'stopped (' + endReason + ')'));
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         }
+        if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
+        // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
+        // it arrives (onToken → pushSpeech) and flushed in the finally.
+        if (!isTask && isActiveWs(ws)) World.say(replyText);
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
       if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
+      if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
     } finally {
       aborters.delete(ws.id);
       Channels.end(ws.id);
-      if (isActiveWs(ws)) { status('online'); activeLiveRow = null; }
+      if (isActiveWs(ws)) { syncStatus(); activeLiveRow = null; }
       // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
       // stream is the one on screen — a background stream finishing must not move the view.
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
-      if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
+      // a summoned crew body extinguishes the moment ITS run ends — even if it finished off-screen (a
+      // background crew run must stop "working"). The hero keeps its original active-stream-gated stance.
+      if ((ws.agentId || 'agent') !== 'agent') { if (World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
+      else if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
       if (typeof Workstreams !== 'undefined') {
@@ -417,10 +531,11 @@ const Chat = (() => {
   /* ---------- THE AWAKENING (onboarding) interview ----------
      While an interview handler is set, the COMMS input feeds the onboarding script (Onboarding) instead
      of the model: typed answers AND tappable suggestion chips both author config docs — no model call. */
-  function beginInterview(onAnswer) {
+  function beginInterview(onAnswer, opts) {
     interview = onAnswer || null;
-    if (input) input.placeholder = 'answer to wake your agent…';
-    status('waking…');
+    opts = opts || {};
+    if (input) input.placeholder = opts.placeholder || 'answer to wake your agent…';
+    status(opts.status || 'waking…');
   }
   function endInterview() {
     interview = null;
@@ -431,6 +546,7 @@ const Chat = (() => {
   // a row of tappable suggestion pills in COMMS; picking one (or typing) is an answer. onPick gets the item.
   function choices(items, onPick) {
     if (!log) return;
+    clearEmptyState();
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
     let done = false;
     (items || []).forEach(it => {
@@ -438,7 +554,7 @@ const Chat = (() => {
       b.onclick = () => { if (done) return; done = true; rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
       rowEl.appendChild(b);
     });
-    log.appendChild(rowEl); log.scrollTop = log.scrollHeight;
+    log.appendChild(rowEl); autoscroll();
   }
 
   // THE AWAKENING typewriter: reveals fixed text char-by-char (with per-segment speed + holds) through the

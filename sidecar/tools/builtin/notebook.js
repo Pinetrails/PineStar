@@ -47,6 +47,8 @@
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const runId = ctx && ctx.runId ? String(ctx.runId) : null;   // provenance source (B1 Cortex seam)
+        const streamId = ctx && ctx.streamId ? String(ctx.streamId) : null;   // M-mem.2b: the run's workstream
+        const scope = streamId ? 'stream' : 'global';                         // a note jotted in a stream is its working memory
         const list = notesOf(aid);
         const now = clock.now();
         // §5.2 record: title/body/ts kept (back-compat + recall); sourceRunId is the moat (drill any fact ->
@@ -54,7 +56,7 @@
         const note = {
           id: nextId(list), kind: 'note',
           title: String(args.title), body: String(args.body),
-          scope: 'global', streamId: null, sourceRunId: runId,
+          scope: scope, streamId: streamId, sourceRunId: runId,
           createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
         };
         list.push(note);
@@ -62,7 +64,8 @@
         if (ctx && typeof ctx.emit === 'function') {
           // memory.write — the durable-memory rung (feeds useCount/trust + the dossier's archivist track). The
           // frozen contract requires runId, so emit only on a real run (some test fixtures carry no runId).
-          if (runId) ctx.emit('memory.write', { agentId: aid, runId, id: note.id, kind: 'note', scope: 'global' });
+          // streamId is included only when present (the optional field is typed string — never emit a null).
+          if (runId) { const w = { agentId: aid, runId, id: note.id, kind: 'note', scope: scope }; if (streamId) w.streamId = streamId; ctx.emit('memory.write', w); }
           const d = { id: note.id, agentId: aid, kind: 'note', title: note.title };
           if (ctx.room) d.room = ctx.room;
           ctx.emit('deliverable', d);

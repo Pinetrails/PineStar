@@ -155,7 +155,9 @@
 
   <footer id="bottombar">
     <button class="bb" data-term="agents">☻ AGENTS</button>
+    <button class="bb" data-term="commander" title="COMMANDER DOSSIER — what the station has learned about you (local-first; you own it)">◈ COMMANDER</button>
     <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist presets and deploy one to your agent">☰ ROSTER</button>
+    <button class="bb" id="bb-summon" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
     <button class="bb" id="bb-missions" title="RECIPE LIBRARY — launch a ready-made mission into a fresh workstream">❒ RECIPES</button>
     <button class="bb" data-term="skills">✦ SKILLS</button>
     <button class="bb" data-term="tasks">▤ TASKS</button>
@@ -164,6 +166,7 @@
     <button class="bb" data-term="messaging">✉ MESSAGING</button>
     <button class="bb" data-term="connectors">⇄ CONNECTORS</button>
     <button class="bb" data-term="routines">⏱ ROUTINES</button>
+    <button class="bb" data-term="rewind">↶ REWIND</button>
     <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
     <div class="bb-right">
       <span id="sig" title="local sidecar uplink">UPLINK <b>▂▄▆█</b></span>
@@ -190,9 +193,13 @@
 <script src="app/slaglog.js"></script>
 <script src="app/xp.js"></script>
 <script src="app/profile.js"></script>
+<script src="app/dossier.js"></script>
+<script src="app/interview.js"></script>
+<script src="app/curiosity.js"></script>
 <script src="app/mint.js"></script>
 <script src="app/world.js"></script>
 <script src="app/classify.js"></script>
+<script src="app/agentid.js"></script>
 <script src="app/workstreams.js"></script>
 <script src="app/channels.js"></script>
 <script src="app/personas.js"></script>
@@ -208,9 +215,12 @@
 <script src="app/cloudsave.js"></script>
 <script src="app/backup.js"></script>
 <script src="app/onboarding.js"></script>
+<script src="app/intake.js"></script>
 <script src="app/marketplace.js"></script>
 <script src="app/xpstore.js"></script>
 <script src="app/profilestore.js"></script>
+<script src="app/dossierstore.js"></script>
+<script src="app/curiositystore.js"></script>
 <script src="app/mintstore.js"></script>
 <script src="app/app.js"></script>
 <script src="app/safety.js"></script>

@@ -79,6 +79,19 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     A.ok(tree.content.indexOf('sub/') >= 0 && tree.content.indexOf('sub/b.txt') >= 0, 'recursive list shows the nested tree');
   }
 
+  // ---- two concurrent agents writing the SAME relative path do NOT collide (per-agent jail roots) ----
+  {
+    const a = { agentId: 'alpha' }, b = { agentId: 'beta' };
+    await writeTool.run({ path: 'note.md', content: 'A-content' }, a);
+    await writeTool.run({ path: 'note.md', content: 'B-content' }, b);
+    A.eq((await readTool.run({ path: 'note.md' }, a)).content, 'A-content', 'alpha reads its own note.md');
+    A.eq((await readTool.run({ path: 'note.md' }, b)).content, 'B-content', 'beta reads its own note.md (no clobber by alpha)');
+    const ra = await _internals.resolveInside('alpha', 'note.md');
+    const rb = await _internals.resolveInside('beta', 'note.md');
+    A.ok(ra.base !== rb.base, 'each agent resolves under a DISTINCT per-agent jail base');
+    A.ok(ra.abs !== rb.abs, 'the same relative path lands at different absolute paths per agent');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('fs.jail.test');
 })();

@@ -143,5 +143,27 @@ const hardline = (call) => (call && call.args && /(^|\/)(\.env|permissions\.allo
   const ar = makeConsentBroker({ surface: 'autonomous', prompt: () => { asked = true; return Promise.resolve('once'); } })(writeCall, WRITE);
   A.ok(!ar.allow && ar.reason === SILENCE && asked === false, 'autonomous default-denies and never consults the prompt');
 
+  // 12. EXEC LOCKOUT: an autonomous run can NEVER execute a command — not even off a pre-blessed `always` grant.
+  // Only an interactive (watched) run may approve shell; frozen FULL_ACCESS stays the one deliberate exception.
+  {
+    const EXEC = { name: 'shell.exec', capability: 'workbench', scope: 'execute', requiresConsent: true };
+    const execCall = { name: 'shell.exec', args: { cmd: 'npm test' } };
+    const blessed = () => new Set(['workbench:execute']);   // shell pre-blessed once by a human ('always')
+
+    const auto = makeConsentBroker({ surface: 'autonomous', grantsPermanent: blessed() });
+    const r = auto(execCall, EXEC);
+    A.ok(!r.allow && r.reason === SILENCE, 'autonomous shell DENIES despite a permanent grant (exec lockout)');
+
+    const inter = makeConsentBroker({ surface: 'interactive', grantsPermanent: blessed() });
+    A.ok(inter(execCall, EXEC).allow === true, 'interactive shell HONORS the pre-bless (a human approved it)');
+
+    const yolo = makeConsentBroker({ surface: 'autonomous', bypass: true });
+    A.ok(yolo(execCall, EXEC).allow === true, 'frozen FULL_ACCESS still allows autonomous shell (deliberate operator override)');
+
+    // the lockout is EXEC-ONLY: a pre-blessed WRITE still works autonomously (cron's file deliverables depend on it).
+    const w = makeConsentBroker({ surface: 'autonomous', grantsPermanent: new Set(['files:write']) });
+    A.ok(w(writeCall, WRITE).allow === true, 'a pre-blessed WRITE is unaffected — the lockout never touches non-exec classes');
+  }
+
   A.report('permissions.test');
 })();

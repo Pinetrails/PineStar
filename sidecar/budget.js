@@ -24,7 +24,14 @@
 
   const DAY_MS = 24 * 60 * 60 * 1000;
   const WARN_FRAC = 0.8;
-  const SCOPES = ['run', 'day', 'global'];
+  // evaluate() priority order, NARROWEST first: a run's own per-agent overage is reported before the
+  // shared day/global pools (so a blocked run names the most specific reason it stopped). 'run' stays
+  // vestigial here (the per-run ceiling is the loop's own maxCostUsd hard stop; totals never carry it).
+  const SCOPES = ['run', 'agent', 'day', 'global'];
+  // the scopes the `budget.threshold` bus event may carry — its payload enum is FROZEN to these three in
+  // shared/events.js (owned, additive-only). 'agent' is deliberately ABSENT: the per-agent cap BLOCKS the
+  // run (→ reason 'budget', like any pool) but emits no threshold, so we never push an out-of-contract event.
+  const THRESHOLD_SCOPES = ['run', 'day', 'global'];
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function capOf(caps, scope) {
     const c = caps && caps[scope];
@@ -58,28 +65,45 @@
     const dayMs = opts.dayMs || DAY_MS;
     const warnFrac = (typeof opts.warnFrac === 'number') ? opts.warnFrac : WARN_FRAC;
 
-    const overrides = { run: 0, day: 0, global: 0 };
+    const overrides = { run: 0, agent: 0, day: 0, global: 0 };
     const live = new Map();          // runId -> $ spent so far this run (in-flight, not yet in the ledger)
+    const liveAgentOf = new Map();   // runId -> agentId, so per-agent live spend can be summed (the 'agent' scope)
     const emitted = new Set();       // `${runId}:${scope}:${level}` already announced — de-dup PER RUN so each run's
                                      // own bus sees the crossing that affects it (cleared per run in clearLive).
 
     function sumLive() { let t = 0; for (const v of live.values()) t += num(v); return t; }
+    // live $ for ONE agent: sum the in-flight runs whose runId maps to that agentId (the calling run included).
+    function sumLiveForAgent(agentId) {
+      let t = 0;
+      for (const [rid, usd] of live) if (liveAgentOf.get(rid) === agentId) t += num(usd);
+      return t;
+    }
     function noteLive(runId, usd) { if (runId != null) live.set(String(runId), num(usd)); }
     function clearLive(runId) {
       if (runId == null) return;
       const rk = String(runId);
       live.delete(rk);
+      liveAgentOf.delete(rk);
       for (const k of emitted) if (k.indexOf(rk + ':') === 0) emitted.delete(k);   // forget this run's announced crossings
     }
 
     // cross-run $ for each governed scope. liveTotal already includes the calling run (noteLive ran first),
-    // and the ledger holds only FINISHED runs, so completed + all-live double-counts nothing.
-    function totals(now) {
+    // and the ledger holds only FINISHED runs, so completed + all-live double-counts nothing. When agentId is
+    // given, also report the per-agent total (this agent's finished ledger spend + its own in-flight runs).
+    function totals(now, agentId) {
       const liveTotal = sumLive();
-      return {
+      const t = {
         day: (ledger ? ledger.usdForDay(now) : 0) + liveTotal,
         global: (ledger ? ledger.totalUsd() : 0) + liveTotal
       };
+      // per-agent total ONLY when that scope is governed — avoids per-agent work (and a usdForAgent dependency)
+      // for every run when no per-agent cap is set; fail-open if the ledger predates usdForAgent.
+      if (capOf(baseCaps, 'agent') != null && agentId != null && String(agentId) !== '') {
+        const aid = String(agentId);
+        const recorded = (ledger && typeof ledger.usdForAgent === 'function') ? ledger.usdForAgent(aid) : 0;
+        t.agent = recorded + sumLiveForAgent(aid);
+      }
+      return t;
     }
 
     // Consulted by the loop's guards each turn BEFORE any paid call. Records this run's live spend, emits any
@@ -87,10 +111,11 @@
     function check(runId, agentId, spentThisRun, now, emit) {
       now = num(now) || clock.now();
       noteLive(runId, spentThisRun);
-      const t = totals(now);
+      if (runId != null && agentId != null && String(agentId) !== '') liveAgentOf.set(String(runId), String(agentId));
+      const t = totals(now, agentId);
       const ev = evaluate(baseCaps, t, overrides);
       if (emit) {
-        for (const scope of SCOPES) {
+        for (const scope of THRESHOLD_SCOPES) {   // never emit the 'agent' scope — not in the frozen budget.threshold enum
           const s = ev.scopes[scope];
           if (!s) continue;
           const level = s.frac >= 1 ? 'cap' : (s.frac >= warnFrac ? 'warn' : null);
