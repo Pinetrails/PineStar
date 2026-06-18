@@ -1930,6 +1930,9 @@ const World = (() => {
       if (!n || n.indexOf('mcp__') !== 0 || !PropSprites.pulseConnector) return;
       for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
     });
+    // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
+    U.bus.on('shell.exec', () => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
+    U.bus.on('verify.result', p => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
     if (typeof EventSource === 'undefined') return;
     let es = null, backoff = 1000;
     const open = () => {

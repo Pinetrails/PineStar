@@ -62,7 +62,8 @@ const WorldModel = (() => {
     war_intelcab: 'cabinet', safe: 'cabinet', vault: 'cabinet', rack: 'cabinet', shelf: 'cabinet',                            // a locked cabinet = files
     comms_dish: 'dish', comms_uplink: 'dish', comms_beacon: 'dish',                                                           // a comms dish = web
     gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook',                                            // a server/databank = memory
-    connector_portal: 'connector'                                                                                            // a connector portal = an MCP server's live tools (per-instance, bound to a connectorId)
+    connector_portal: 'connector',                                                                                           // a connector portal = an MCP server's live tools (per-instance, bound to a connectorId)
+    workbench: 'workbench'                                                                                                    // a workbench = shell.exec + verify.run (real code execution, consent-gated)
   };
 
   /* the paint palette — each is a floor BASE colour; every other floor detail
