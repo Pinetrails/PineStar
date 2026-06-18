@@ -48,6 +48,7 @@ const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tic
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
+const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
@@ -76,6 +77,9 @@ const BUDGET_CAPS = {
 // (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
 // parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
 const MAX_CONCURRENT_AGENTS = num(process.env.SKYNET_MAX_CONCURRENT_AGENTS, 3);
+// Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
+// runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
+const ORCH_PER_WORKER = num(process.env.SKYNET_BUDGET_PER_WORKER, 1);
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the LIVE BYOK
@@ -153,6 +157,10 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
+// Stage 2: the live crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
+// own identity (its composed system prompt + model). agentId -> { system, name, model }. In-memory: the browser
+// re-pushes on every summon/focus, so a sidecar restart just waits for the next push. Not an event (contract-free).
+const agentRoster = new Map();
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
@@ -558,6 +566,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
+  if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/events') return handleChannelEvents(req, res);
@@ -916,6 +925,29 @@ function handleCheckpointList(req, res) {
   } catch (e) { json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: [] }); }
 }
 
+// POST /api/roster { agents:[{ agentId, system, name, model }] } — the browser pushes the live crew identities
+// so team.dispatch can run a WORKER as itself (its composed system prompt + model). Replaces the whole roster
+// each push (the browser sends the full live set on summon/focus). Contract-free: plain HTTP, no bus event.
+async function handleRoster(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 2 << 20)); }
+  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const list = (body && Array.isArray(body.agents)) ? body.agents : [];
+  agentRoster.clear();
+  for (const a of list) {
+    const id = a && String(a.agentId || '');
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
+    agentRoster.set(id, {
+      system: String((a && a.system) || ''),
+      name: String((a && a.name) || id).slice(0, 40),
+      model: (a && a.model) ? String(a.model) : null,
+      role: String((a && a.role) || '').slice(0, 120)   // a short specialty/role line for the lead's [YOUR CREW] block
+    });
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true, count: agentRoster.size }));
+}
+
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
@@ -980,7 +1012,9 @@ async function handleRun(req, res) {
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
-      reflect: true   // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
+      reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
+      lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
+                      // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
     });
   } catch (e) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
@@ -1031,6 +1065,13 @@ async function runOnce(o) {
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
+  // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
+  // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
+  makeOrchestrationTools({
+    runOnce, roster: () => agentRoster, key, model, provider: o.provider,
+    perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID()
+  }).register(registry);
   throttleSearch(registry);
 
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
@@ -1048,6 +1089,9 @@ async function runOnce(o) {
   // here, so this IS per-agent; routed multi-agent bays instead pass their OWN room objects (o.station) so each
   // bay only reaches the connectors physically placed in it.
   for (const cid of connectors.ids()) defaultObjects.push({ instanceId: 'conn_' + cid, objectType: 'connector', connectorId: cid });
+  // Stage 2: the LEAD (browser-commanded run) alone gets the orchestrator object -> the team.dispatch tool. A
+  // delegated worker runs with o.lead falsy and no o.station -> no orchestrator object -> cannot re-delegate.
+  if (o.lead) defaultObjects.push({ instanceId: 'orch1', objectType: 'orchestrator' });
   const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   const resolved = resolveTools(agentId, station);
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
@@ -1192,7 +1236,17 @@ async function runOnce(o) {
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
       + 'final report of what you found/did and which files you saved.'
     : '';
-  const sys = (system || '') + toolNote;
+  // Stage 2: a LEAD run is told who its WORKER crew is (agentId + role) so it can address them via team.dispatch.
+  // Built FRESH from the roster the browser pushed (/api/roster); empty for a non-lead run or a solo station, so
+  // a single-agent run is byte-identical. Only the lead receives this (and the orchestrator tool above).
+  let teamNote = '';
+  if (o.lead && agentRoster.size >= 2) {
+    const lines = [];
+    for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
+    if (lines.length) teamNote = '\n\n[YOUR CREW] You can delegate subtasks to these specialist agents with the team.dispatch tool — '
+      + 'call it with workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+  }
+  const sys = (system || '') + toolNote + teamNote;
   let msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
   // Cortex (M-mem.3): surface the agent's OWN memory in-prompt — RANK it by relevance to this message
   // (BM25 + recency/trust/pin), inject the top few as a recalled-memory fence before the triggering user
@@ -1234,7 +1288,8 @@ async function runOnce(o) {
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: (BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity },
+      // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
+      limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
       budget: runBudget, context: ctxMgr, summarize,
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
