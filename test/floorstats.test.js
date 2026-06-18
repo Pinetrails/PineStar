@@ -113,6 +113,18 @@ A.notThrows(() => q.onEvent('queue.status', {}), 'queue.status with no queueId i
 q.reset();
 A.eq(q.snapshot().queueDepth, 0, 'reset clears the backlog');
 
+// ---- costWeight: a run's REAL reconciled $ -> a clamped 0..1 product-crate mass + a coarse band ----
+A.eq(FloorStats.costWeight(0).band, 'light', 'zero cost -> light pebble');
+A.ok(FloorStats.costWeight(0).weight === 0.12, 'zero cost -> the floor weight');
+A.ok(FloorStats.costWeight(-1).weight === 0.12, 'negative -> floor, not NaN');
+A.ok(FloorStats.costWeight(NaN).band === 'light', 'NaN -> light, no throw');
+A.eq(FloorStats.costWeight(0.005).band, 'light', '$0.005 -> light');
+A.eq(FloorStats.costWeight(0.05).band, 'mid', '$0.05 -> mid');
+A.eq(FloorStats.costWeight(0.4).band, 'heavy', '$0.40 -> heavy');
+A.ok(FloorStats.costWeight(0.5).weight === 1, '$0.50 caps at full mass');
+A.ok(FloorStats.costWeight(5).weight === 1, 'beyond the cap clamps to 1');
+A.ok(FloorStats.costWeight(0.1).weight > FloorStats.costWeight(0.01).weight, 'monotonic: pricier run -> heavier crate');
+
 // ---- reset wipes back to the fresh, knows-nothing state ----
 f.reset();
 s = f.snapshot();

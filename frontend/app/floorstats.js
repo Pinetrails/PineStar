@@ -130,5 +130,19 @@
     return { onEvent, snapshot, reset };
   }
 
-  return { create };
+  // a run's REAL reconciled dollar cost -> a 0..1 visual MASS + a coarse band, for sizing the banked
+  // PRODUCT crate (expensive runs bank visibly heavier crates). Log-scaled across the typical
+  // ~$0.001..$0.50 run range so a cheap haiku ping stays a pebble and a reasoning-heavy opus run reads
+  // as a boulder. Pure + clamped (garbage -> the light floor, never NaN).
+  const COST_LO = 0.001, COST_HI = 0.5;
+  function costWeight(usd) {
+    usd = Number(usd);
+    if (!isFinite(usd) || usd <= 0) return { weight: 0.12, band: 'light' };
+    let w = (Math.log10(usd) - Math.log10(COST_LO)) / (Math.log10(COST_HI) - Math.log10(COST_LO));
+    if (w < 0.12) w = 0.12; if (w > 1) w = 1;
+    const band = usd < 0.02 ? 'light' : usd < 0.2 ? 'mid' : 'heavy';
+    return { weight: w, band };
+  }
+
+  return { create, costWeight };
 });

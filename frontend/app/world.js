@@ -1745,6 +1745,7 @@ const World = (() => {
   let bridged = false, lastOutboxFlash = -1e9;
   let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
   let slaglog = null, lastCacheFrac = null;   // SlagLog: wasted-spend post-mortems + the last reconciled cache ratio (for the diagnosis)
+  let lastRunDoneUsd = 0;   // the most recent 'done' run's REAL reconciled cost — sizes the banked PRODUCT crate
 
   // a belt tile on/adjacent to a footprint (its tiles + a 1-tile ring), used as a box spawn point (local frame)
   function beltTileNear(tx, ty, tw, th) {
@@ -1827,8 +1828,10 @@ const World = (() => {
     if (!convey || !desk) return;
     const t = beltTileNear(desk.tx, desk.ty, desk.w, desk.h);
     // the reply rode out and was actually sent (workitem.delivered fires only after a successful send),
-    // so this box is a banked PRODUCT (green). Failed/superseded runs emit no delivered box at all.
-    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', workitemId: (payload && payload.workitemId) || '' });
+    // so this box is a banked PRODUCT (green). Its MASS = the just-finished run's REAL reconciled cost
+    // (lastRunDoneUsd), so an expensive run banks a visibly heavier crate. Failed/superseded runs emit none.
+    const w = (typeof FloorStats !== 'undefined' && FloorStats.costWeight) ? FloorStats.costWeight(lastRunDoneUsd).weight : 0;
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: w, workitemId: (payload && payload.workitemId) || '' });
   }
   // a wasteful run produced no deliverable — ride a red-hot SLAG crate off the desk (carrying its
   // post-mortem one-liner) so spend that yielded nothing is VISIBLE leaving the line, not just a number.
@@ -1934,6 +1937,7 @@ const World = (() => {
     U.bus.on('agent.run.end', p => {
       if (floor) floor.onEvent('agent.run.end', p, Date.now());
       const r = p && p.reason;
+      if (r === 'done') lastRunDoneUsd = Math.max(0, +(p && p.usd) || 0);   // remember this run's real cost for its product crate's mass
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
       // WASTED SPEND: pulse the SLAG cell, then turn the loss into a lesson — a real post-mortem in the
       // notifications panel + a red-hot slag crate that rides off the line (if a desk belt exists). The

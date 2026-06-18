@@ -150,11 +150,16 @@ const Conveyor = (() => {
       _ctx.globalAlpha *= k; px(x + 3 - r, y + 2 - r, 3 + r * 2, 3 + r * 2, '#e8c860'); _ctx.globalAlpha /= k;
     }
   }
-  function cargoProduct(cx, py, h32, dir) {          // green PRODUCT — a delivered, banked result (yield)
+  function cargoProduct(cx, py, h32, dir, weight) {  // green PRODUCT — a banked result; MASS = the run's real reconciled cost
+    const w = weight < 0 ? 0 : weight > 1 ? 1 : (weight || 0);   // default 0 = today's look (back-compat)
     const f = cargoChassis(cx, py, h32, '#2c4a36', dir), x = f.tx, y = f.ty;
     px(x + 1, y + 1, 6, 3, '#3f8a5a'); px(x + 1, y + 1, 6, 1, '#62c487');     // green face + lit top
     px(x + 2, y + 2, 1, 1, '#d8f4e0'); px(x + 4, y + 1, 2, 2, '#9fe6bf');     // seal glint
-    if (bloomOK()) { _ctx.globalAlpha *= 0.4; px(x + 2, y, 4, 4, '#62c487'); _ctx.globalAlpha /= 0.4; }
+    for (let i = 0; i < Math.round(w * 2); i++) px(x + 2 + ((h32 >> (i * 2)) % 5), y + 1 + (i % 2), 1, 1, '#d8f4e0');  // pricier run = more seal pips
+    if (bloomOK()) {                                                          // mass-scaled banked glow
+      const k = 0.4 + 0.4 * w, r = Math.round(w * 2);
+      _ctx.globalAlpha *= k; px(x + 2 - r, y - r, 4 + r * 2, 4 + r * 2, '#62c487'); _ctx.globalAlpha /= k;
+    }
   }
   function cargoSlag(cx, py, h32, dir) {             // red-hot SLAG — spend that yielded nothing (the thing to drive DOWN)
     const f = cargoChassis(cx, py, h32, '#2a1714', dir), x = f.tx, y = f.ty;
@@ -435,7 +440,7 @@ const Conveyor = (() => {
         // payload still rides as the cyan data cassette, so nothing about existing boxes changes.
         const role = bx.payload && bx.payload.box;
         if (role === 'ore') cargoOre(cx, py, h32, bx.dir, +bx.payload.weight || 0);
-        else if (role === 'product') cargoProduct(cx, py, h32, bx.dir);
+        else if (role === 'product') cargoProduct(cx, py, h32, bx.dir, +bx.payload.weight || 0);
         else if (role === 'slag') cargoSlag(cx, py, h32, bx.dir);
         else CARGO_FN[bx.payload ? 2 : cargoType(bx.id)](cx, py, h32, bx.dir);   // work-items default to cyan data cassettes
         if (bx.payload) payloadTag(cx, py, role || (bx.payload.outbound ? 'product' : 'ore'));
