@@ -202,7 +202,7 @@ const World = (() => {
     propFoot = new Map(); pendingMourn = null;          // forget where things stood (no cross-station grief)
     agentDecor.length = 0; ownPlaced.clear(); placeCd = 0;   // forget which decor it placed (the new floor is a clean slate)
     if (agent && agent.fond) agent.fond.clear();        // forget the old floor's haunts — the new floor earns its own
-    crew = [];                                          // no cross-station crew bodies (rebuilt from the new floor's bays)
+    crew = crew.filter(b => b.summoned);                // drop plan-derived crew (rebuilt from the new floor's bays); KEEP summoned crew (app-level, not floor-bound)
     if (station && station.onChange) unsub = station.onChange(() => { geoDirty = true; });
     rederive();
   }
@@ -477,6 +477,14 @@ const World = (() => {
     if (onScreen && !small && !opts.force) return;
     const target = clampz(Math.max(scale, 3), MINZ, MAXZ);
     camLerp = { scale: target, panX: cv.width / 2 - agent.px * target, panY: cv.height * 0.56 - agent.py * target };
+  }
+  // frame the camera on ANY body (hero or a summoned crew member) — used when COMMS focus switches agents.
+  function focusBody(id) {
+    const b = bodyForAgent(id) || agent;
+    if (!b || b.unplaced || !cache) return;
+    const bx = (b.seated ? b.seatPx : b.px), by = (b.seated ? b.seatPy : b.py);
+    const target = clampz(Math.max(scale, 3), MINZ, MAXZ);
+    camLerp = { scale: target, panX: cv.width / 2 - bx * target, panY: cv.height * 0.56 - by * target };
   }
   function fitCamera() {
     if (!cache) return;
@@ -1640,6 +1648,14 @@ const World = (() => {
         }
         ctx.restore();
       }
+      // SUMMONED-WORKER "working" glow — a soft sustained pulse at the feet of a crew body while ITS real run
+      // is in flight (workUntil set by setActivityFor). The honest "this agent is actually working" cue for a
+      // deskless summoned worker; hero-exempt (the hero shows work at its desk).
+      if (who !== agent && who.workUntil && now < who.workUntil) {
+        const wp = 0.35 + 0.25 * Math.sin(now / 360);
+        ctx.save(); ctx.globalAlpha = wp * 0.7; ctx.strokeStyle = who.color; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(who.px, who.py, 7 + 1.5 * Math.sin(now / 360), 3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
       // the LEVEL-UP pulse — the same sonar ring as waking, but GOLD, fired by XpStore on a level gain (hero only)
       if (who === agent && levelUpAt && now - levelUpAt < 1500) {
         ctx.save(); ctx.strokeStyle = '#ffd45a';
@@ -1852,11 +1868,17 @@ const World = (() => {
       const fy = (p.y + (p.h || 1) - 1) * T + T - 1;
       want.set(bay.agentId, { x: fx, y: fy });
     }
-    crew = crew.filter(b => want.has(b.agentId));                      // drop bodies whose bay is gone
+    crew = crew.filter(b => b.summoned || want.has(b.agentId));        // drop plan bodies whose bay is gone; KEEP summoned crew
     for (const [aid, pos] of want) {
-      const b = crew.find(x => x.agentId === aid);
+      const b = crew.find(x => x.agentId === aid && !x.summoned);
       if (b) { b.px = pos.x; b.py = pos.y; }
-      else crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
+      else if (!crew.some(x => x.agentId === aid)) crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
+    }
+    // a refit may have moved the floor under a summoned body — re-foot any that no longer stand on a walkable tile.
+    for (const b of crew) {
+      if (!b.summoned) continue;
+      const t = tileOf(b.px, b.py);
+      if (!geo.walkable(t.x, t.y, blocked)) { const f = workerFoot(); b.px = f.x; b.py = f.y; }
     }
   }
   // the body that runs a given agentId: the hero, a crew body, or null (caller falls back to the hero)
@@ -1864,6 +1886,44 @@ const World = (() => {
     if (!aid) return null;
     if (agent && aid === agent.id) return agent;
     return crew.find(b => b.agentId === aid) || null;
+  }
+
+  /* ---------- summoned workers (real, independent crew bodies) ----------
+     A SUMMONED agent (App.summonAgent) has no routing-plan bay, so it isn't a plan-derived crew body — it's
+     an app-level worker that stands at its own spot in the spawn room and visibly WORKS (lit + typing pose)
+     while its REAL run is in flight. It reuses the crew render path entirely; the hero is never touched. */
+  // a distinct walkable standing spot, fanned out from the spawn-room centre so summoned crew don't stack.
+  function workerFoot() {
+    const t = spawnTileLocal();
+    const ring = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [3, 1], [-3, 1], [1, 3], [-1, -3], [3, -2]];
+    const seen = new Set(crew.filter(b => b.summoned).map(b => { const tt = tileOf(b.px, b.py); return tt.x + ',' + tt.y; }));
+    for (let i = 0; i < ring.length; i++) {
+      const tx = t.x + ring[i][0], ty = t.y + ring[i][1];
+      if (geo && geo.walkable(tx, ty, blocked) && !seen.has(tx + ',' + ty)) return footOf(tx, ty);
+    }
+    return footOf(t.x, t.y);
+  }
+  // give a summoned agent a real floor body (idempotent). Static like crew, but flagged `summoned` so the
+  // floor-reset paths (loadStation / syncCrewFromPlan) preserve it, and lit by setActivityFor on a real run.
+  function spawnAgent(a) {
+    if (!a || !a.id || (agent && a.id === agent.id)) return;
+    if (crew.some(b => b.agentId === a.id)) return;                       // already present
+    const f = geo ? workerFoot() : { x: 0, y: 0 };                        // pre-geo: parked at origin, re-footed on first syncCrewFromPlan
+    const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y);
+    b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
+    crew.push(b);
+  }
+  // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
+  // body lights + takes the working pose while its run is live, and extinguishes when it ends.
+  function setActivityFor(agentId, kind) {
+    if (!agentId || (agent && agentId === agent.id)) { setActivity(kind); return; }
+    const b = crew.find(x => x.agentId === agentId);
+    if (!b) return;                                                       // not yet spawned (e.g. summon mid-flight) — nothing to animate
+    const working = (kind === 'task' || kind === 'thinking');
+    b.working = working; b.sitting = false; b.dir = working ? 'north' : 'south';   // stand (no desk/chair); face away = "at work"
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
+    else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
   }
   function sayAt(body, text) {
     if (!body) return;
@@ -2025,7 +2085,7 @@ const World = (() => {
     ctx.textAlign = 'left';
   }
 
-  return { init, loadStation, spawn, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
+  return { init, loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
     // AGENT GROWTH: XpStore pushes the hero's pre-computed Xp.compute() snapshot here (station arg unused —
     // the colony headline is the top-bar STATION chip); pulseLevelUp fires the gold ring.
     setXp: (a) => { xpAgent = a || null; },

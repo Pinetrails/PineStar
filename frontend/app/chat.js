@@ -347,7 +347,9 @@ const Chat = (() => {
     // The decision lives in Classify.stanceFor, which takes ONLY isTask BY DESIGN: voice/speaker/UI state
     // can NEVER suppress a task's desk trip (the exact regression we fixed). Locked by classify.test.js.
     const stance = Classify.stanceFor(isTask);
-    World.setActivity(stance);
+    // per-agent: the HERO routes to setActivity (single-agent path unchanged); a summoned crew agent lights
+    // ITS own body at ITS station, so tasking a summoned agent never moves the hero.
+    if (World.setActivityFor) World.setActivityFor(ws.agentId || 'agent', stance); else World.setActivity(stance);
     // a spoken CHAT gently frames the agent one-on-one so you can see who you're talking to; a TASK is at
     // the desk instead (no-op if already comfortably on-screen; self-cancels the moment you pan/zoom).
     if (stance === 'talk' && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
@@ -447,7 +449,10 @@ const Chat = (() => {
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
       // stream is the one on screen — a background stream finishing must not move the view.
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
-      if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
+      // a summoned crew body extinguishes the moment ITS run ends — even if it finished off-screen (a
+      // background crew run must stop "working"). The hero keeps its original active-stream-gated stance.
+      if ((ws.agentId || 'agent') !== 'agent') { if (World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
+      else if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
       if (typeof Workstreams !== 'undefined') {

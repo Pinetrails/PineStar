@@ -539,9 +539,6 @@ const App = (() => {
     SPRITES.init();
     World.init(el('stage'));
     World.spawn(agent);
-    // resumed crew get their real floor bodies now that World.init has run (Phase C: World.spawnAgent;
-    // until then this is a guarded no-op and the summoned agents still run/dispatch headlessly).
-    for (const a of liveAgents()) if (a.id !== agent.id && typeof World.spawnAgent === 'function') World.spawnAgent(a);
     World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
@@ -551,6 +548,9 @@ const App = (() => {
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
+    // give resumed summoned crew their real floor bodies now that the station/geo is loaded (no-op for a
+    // single-agent save; summon-during-game spawns its own body directly).
+    for (const a of liveAgents()) if (a.id !== agent.id && typeof World.spawnAgent === 'function') World.spawnAgent(a);
     if (typeof Build !== 'undefined') {
       // agents: the live multi-agent roster the BAY agent-picker / builder offer. The bay->agent binding
       // persists via station.serialize (prop.agentId round-trips), so the routing floor is saved per agent.
