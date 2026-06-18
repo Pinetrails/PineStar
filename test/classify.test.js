@@ -3,7 +3,7 @@
    courtesy-wrapped missions MUST classify as tasks. This table is the guardrail for that promise. */
 'use strict';
 const A = require('./_assert.js');
-const { isTaskDirective, getTag } = require('../frontend/app/classify.js');
+const { isTaskDirective, getTag, stanceFor } = require('../frontend/app/classify.js');
 
 // every one of these is a real mission -> MUST be a task (so the agent is handed tools)
 const TASKS = [
@@ -79,5 +79,20 @@ A.eq(getTag('research how to refactor this typescript module'), 'code', 'code in
 A.eq(getTag(null), 'general', 'null -> general (default lane, never throws)');
 A.eq(getTag('   '), 'general', 'whitespace -> general');
 A.eq(getTag('Build the API'), getTag('build the api'), 'case-insensitive + deterministic (replay-stable)');
+
+/* ---------- stanceFor — THE HARD INVARIANT: a task ALWAYS commands the desk trip ----------
+   The bug we shipped a fix for: the speaker/voice toggle leaked into the stance, so an on-speaker task was
+   answered one-on-one in place and the agent never walked to its workstation. These assertions make that
+   regression impossible to reintroduce silently — a task is a task is a desk trip, no matter what. */
+A.eq(stanceFor(true), 'task', 'a TASK always -> task stance (walk to the workstation + stay seated until done)');
+A.eq(stanceFor(false), 'talk', 'a non-task -> talk stance (face the Commander one-on-one)');
+// structural guarantee: stanceFor reads NOTHING but isTask, so no voice/speaker/mic/UI state can ever turn a
+// task into a one-on-one chat. Any extra argument is ignored — the desk trip cannot be suppressed.
+A.eq(stanceFor(true, { voiceOn: true }), 'task', 'voice ON must NOT change a task (extra args ignored)');
+A.eq(stanceFor(true, true, 'anything'), 'task', 'no other input can suppress a task’s desk trip');
+A.eq(stanceFor(false, { voiceOn: true }), 'talk', 'voice ON must NOT promote a chat into a desk trip');
+// every real mission classifies as a task AND therefore takes the desk trip (end-to-end through the classifier)
+for (const t of TASKS) A.eq(stanceFor(isTaskDirective(t)), 'task', 'mission -> desk trip: ' + JSON.stringify(t));
+for (const c of CHATS) A.eq(stanceFor(isTaskDirective(c)), 'talk', 'small talk -> one-on-one: ' + JSON.stringify(c));
 
 A.report('classify.test');
