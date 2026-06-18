@@ -595,7 +595,14 @@ server.on('error', (e) => {
   process.exit(1);
 });
 server.listen(PORT, '127.0.0.1', () => {
-  console.log('▲ SKYNET sidecar → http://127.0.0.1:' + PORT + '   (serving frontend + agent runtime)');
+  const url = 'http://127.0.0.1:' + PORT;
+  const bar = '═'.repeat(58);
+  console.log('\n' + bar);
+  console.log('  ▲ SKYNET — THE FULL APP IS RUNNING (UI + agent engine).');
+  console.log('     Open in your browser:  ' + url);
+  console.log('     This one process IS the complete product — the UI you see and');
+  console.log('     the agents/web-search/tools behind it are all served from here.');
+  console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
   makeOpenRouterProvider({ fetch: globalThis.fetch }).listModels().then(
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
