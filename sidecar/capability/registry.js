@@ -39,8 +39,16 @@
     // (sidecar/mcp/manager.js) unions those live tool names into the agent's resolved set per run; the placed
     // instance's binding ({ connectorId }) selects WHICH server. This empty marker just declares 'connector' a
     // known, placeable capability object so the builder/world can treat it like any other room object.
-    connector: []
-    // M5 next: terminal (shell.exec, jailed under Windows AppContainer/Job-Object)
+    connector: [],
+    // WORKBENCH: real code execution (shell.exec). Opt-in per agent by PLACING this object — no object, no shell,
+    // exactly like cabinet=files. scope 'execute' so the consent broker's exec-lockout binds it: an autonomous
+    // run can NEVER execute off a cached grant (only an interactive human, or frozen FULL_ACCESS, may approve).
+    // The host auto-checkpoints the workspace before every shell call (execution-spine Commit 1), so a command
+    // is one rollback away. (Container/job-object OS sandboxing is a deferred backend behind the same tool seam.)
+    workbench: [
+      { capId: 'workbench', tool: 'shell.exec', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true }
+    ]
   };
 
   function deepFreeze(o) {

@@ -85,6 +85,11 @@
       if (hr) return { allow: false, scope: scope, hardline: true, reason: String(hr) + ANTI_RETRY };
       // 2. BYPASS — Full Access.
       if (bypass) return { allow: true, scope: scope, reason: 'full-access' };
+      // 2.5 EXEC LOCKOUT — an UNATTENDED run may NEVER execute a command off a cached/pre-blessed grant: only a
+      // live human (interactive surface) can approve shell. This makes "no autonomous shell" un-pre-blessable —
+      // a permanent `always` grant a human gave once does NOT silently enable cron/headless command execution.
+      // Frozen FULL_ACCESS (tier 2 above) remains the sole, deliberate machine-wide exception.
+      if (surface === 'autonomous' && scope === 'execute') return { allow: false, scope: scope, reason: SILENCE };
       // 3. CACHE — a prior session/permanent grant for this danger class.
       if (granted(dangerKey(tool))) return { allow: true, scope: scope, reason: 'previously granted' };
       // 4. RESOLVE.
