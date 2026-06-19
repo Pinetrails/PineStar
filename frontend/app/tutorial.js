@@ -11,8 +11,8 @@
    shrink what lies"): it names the crew as echoes, never fakes a number, and the very first task is
    a real, near-free file write+read (fs.write + fs.read — the `cabinet`/files capability the default
    browser office grants, and fs.write requires consent) — so the Commander sees the true
-   consent→execute→prove loop. NOT shell.exec: that needs a `workbench` object no prop grants yet, so
-   it would never dispatch in the default station (it'd be answered in plain text, which would lie).
+   consent→execute→prove loop. NOT shell.exec: that needs a `workbench` prop the fresh station hasn't
+   placed yet (placing one is its own lesson) — so files, granted out-of-the-box, are what runs turn one.
 
    Lifecycle: fires once, right after the awakening lands (app.js passes Onboarding.start({ taught })).
    Fully skippable; a self-owned localStorage flag (skynet.tutorial.v1) means it never repeats.
@@ -86,8 +86,8 @@ const Tutorial = (() => {
   // a real, near-free task wired in the DEFAULT station: fs.write + fs.read (the `cabinet`/files
   // capability the browser office grants). fs.write requires consent, so the Commander sees the
   // genuine walk → consent → execute → prove loop for a fraction of a cent. NOT shell.exec — that
-  // needs a `workbench` object no prop grants yet, so it would never dispatch here (it'd be answered
-  // in plain text, breaking the "i prove it, not claim it" promise). Keep the demo to what's real.
+  // needs a `workbench` prop the fresh station hasn't placed yet (placing one is its own lesson), so
+  // files, granted out-of-the-box, are what dispatches for real here. Keep the demo to what's real.
   const TASK = 'write the line "skynet online" to a file called hello.txt, then read it back and show me';
 
   function firstCommand(opts) {
@@ -409,7 +409,7 @@ const Tutorial = (() => {
         + fmEntry('REAL', 'DISH → web', 'comms dish · uplink · beacon. reach the live web.')
         + fmEntry('REAL', 'SERVER → memory', 'server cart · relay stack · core. a notebook that survives restarts.')
         + fmEntry('REAL', 'CONNECTOR PORTAL → live tools', 'binds one MCP server; its tools land in my hands. lamp = health: green live, amber warming, red broken.')
-        + fmEntry('SHOW', 'TERMINAL → run commands', 'real in the engine, but locked — no gear grants it yet. it arrives when a workbench prop ships.')
+        + fmEntry('REAL', 'WORKBENCH → terminal', 'the powered bench. place it in my room and i can run real shell commands and verify what they did — consent-gated, like every tool. it glows while i’m running code.')
         + fmEntry('SHOW', 'everything else', 'plants, rugs, screens, lounge gear — flavour. they grant nothing; place them because the place is yours.');
     }
     if (tab === 'WIRING') {
