@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skynet Station Visuals"
+  short_description: "Upgrade the station simulation visuals"
+  default_prompt: "Use $skynet-station-visuals to improve the Skynet station agent simulation and verify the canvas visuals."
