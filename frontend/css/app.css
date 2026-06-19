@@ -624,25 +624,60 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 .refit-dock {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2;
-  display: flex; flex-direction: column; align-items: center; gap: 7px; max-width: 94vw;
-  padding: 9px 12px 7px; border-radius: 9px;
+  display: flex; flex-direction: column; align-items: stretch; width: min(1060px, calc(100vw - 44px));
+  max-height: min(34vh, 260px); padding: 0; border-radius: 9px; overflow: hidden;
   background: var(--panel);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
 }
-.refit-tools, .refit-palette { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.refit-dock-section {
+  display: grid; grid-template-columns: 78px minmax(0, 1fr); align-items: stretch; gap: 10px;
+  padding: 8px 10px;
+}
+.refit-mode-section { border-bottom: 1px solid var(--ph-faint); }
+.refit-option-section.is-empty { display: none; }
+.refit-section-label {
+  align-self: center; color: var(--ph-dim); font-size: 11px; letter-spacing: 2px;
+  text-shadow: none; white-space: nowrap;
+}
+.refit-tools {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(98px, 1fr));
+  align-items: stretch; gap: 5px; min-width: 0;
+}
+.refit-palette {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-start;
+  min-width: 0; width: 100%; overflow: hidden;
+}
 .refit-palette:empty { display: none; }
-.refit-tool { font-size: 15px; }
-.refit-kind { font-size: 12px; }
+.refit-dock .bb {
+  border: 1px solid var(--ph-faint); min-height: 28px; line-height: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.refit-dock .bb:hover { border-color: var(--ph-dim); background: var(--ph-faint); }
+.refit-tool {
+  display: flex; align-items: center; justify-content: space-between; gap: 7px;
+  font-size: 14px; letter-spacing: 1.5px; padding: 5px 8px;
+}
+.refit-kind { font-size: 12px; padding-inline: 9px; }
 /* prop palette: a row of category tabs above the props in the active category */
-.refit-propcats, .refit-props { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; width: 100%; }
-.refit-props { margin-top: 5px; max-width: 88vw; max-height: 96px; overflow-y: auto; }
+.refit-propcats, .refit-props {
+  display: flex; flex-wrap: nowrap; gap: 5px; justify-content: flex-start; width: 100%;
+  min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent;
+}
+.refit-propcats::-webkit-scrollbar, .refit-props::-webkit-scrollbar { height: 4px; }
+.refit-propcats::-webkit-scrollbar-thumb, .refit-props::-webkit-scrollbar-thumb { background: var(--ph-dim); }
+.refit-props { margin-top: 5px; padding-bottom: 2px; }
+.refit-propcats .bb, .refit-props .bb { flex: 0 0 auto; }
 .refit-propcat { font-size: 11px; letter-spacing: 1px; opacity: 0.7; }
 .refit-propcat.active { opacity: 1; }
-.refit-hint { font-size: 12px; color: var(--ph-dim); letter-spacing: 1px; min-height: 14px; text-align: center; }
+.refit-hint {
+  border-top: 1px solid var(--ph-faint); padding: 5px 10px 7px;
+  font-size: 12px; color: var(--ph-dim); letter-spacing: 1px; min-height: 25px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .refit-swatch {
   width: 26px; height: 22px; cursor: pointer; border: 2px solid var(--ph-dim);
-  image-rendering: pixelated; padding: 0;
+  image-rendering: pixelated; padding: 0; flex: 0 0 auto;
 }
 .refit-swatch:hover { border-color: var(--ph); }
 .refit-swatch.active { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
@@ -662,9 +697,18 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .refit-primary:hover { background: var(--ph-bright) !important; }
 
 /* per-tool keyboard-shortcut hint chip on each tool button */
-.refit-key { font-size: 10px; opacity: .5; border: 1px solid currentColor; border-radius: 2px; padding: 0 3px; margin-left: 4px; }
+.refit-key { flex: 0 0 auto; font-size: 10px; opacity: .5; border: 1px solid currentColor; border-radius: 2px; padding: 0 3px; margin-left: 4px; }
 .refit-tool.active { box-shadow: inset 0 0 0 2px var(--ph), 0 0 10px var(--ph-glow2); }
 .refit-tool.active .refit-key { opacity: .8; }
+
+@media (max-width: 760px) {
+  .refit-dock { width: calc(100vw - 20px); bottom: 10px; max-height: min(48vh, 340px); }
+  .refit-dock-section { grid-template-columns: 1fr; gap: 5px; padding: 7px 8px; }
+  .refit-section-label { font-size: 10px; }
+  .refit-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .refit-tool { min-width: 0; font-size: 13px; }
+  .refit-hint { text-align: left; white-space: normal; line-height: 1.2; min-height: 40px; }
+}
 
 /* disabled undo/redo (and any .bb) */
 .bb:disabled { opacity: .32; cursor: default; pointer-events: none; }

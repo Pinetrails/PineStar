@@ -111,9 +111,15 @@ const Build = (() => {
         <button class="bb sm" id="refit-test" title="send test work down your belts — watch it sort to the bays (no bot needed)">▸ TEST</button>
         <button class="bb sm refit-primary" id="refit-done" title="finish + save (Esc)">✓ DONE</button>
       </div>
-      <div class="refit-dock">
-        <div class="refit-tools" id="refit-tools"></div>
-        <div class="refit-palette" id="refit-palette"></div>
+      <div class="refit-dock" role="toolbar" aria-label="Refit mode controls">
+        <div class="refit-dock-section refit-mode-section">
+          <div class="refit-section-label">MODE</div>
+          <div class="refit-tools" id="refit-tools"></div>
+        </div>
+        <div class="refit-dock-section refit-option-section" id="refit-option-section">
+          <div class="refit-section-label" id="refit-palette-label">OPTIONS</div>
+          <div class="refit-palette" id="refit-palette"></div>
+        </div>
         <div class="refit-hint" id="refit-hint"></div>
       </div>
       <div class="refit-tip" id="refit-tip"></div>`;
@@ -129,6 +135,8 @@ const Build = (() => {
     TOOLS.forEach(t => {
       const btn = document.createElement('button');
       btn.className = 'bb refit-tool' + (t.id === tool ? ' active' : '');
+      btn.type = 'button';
+      btn.setAttribute('aria-pressed', t.id === tool ? 'true' : 'false');
       btn.dataset.tool = t.id; btn.innerHTML = t.label + ' <span class="refit-key">' + t.key + '</span>';
       btn.title = t.hint + '  (' + t.key + ')';
       btn.onclick = () => selectTool(t.id);
@@ -162,32 +170,45 @@ const Build = (() => {
   function renderPalette() {
     const pal = root.querySelector('#refit-palette');
     if (!pal) return;
+    const section = root.querySelector('#refit-option-section');
+    const label = root.querySelector('#refit-palette-label');
+    let paletteLabel = '';
     pal.innerHTML = '';
     if (tool === 'room') {
+      paletteLabel = 'ROOM TYPE';
       station.KIND_ORDER.forEach(k => {
         const b = document.createElement('button');
+        b.type = 'button';
         b.className = 'bb sm refit-kind' + (k === kind ? ' active' : '');
+        b.setAttribute('aria-pressed', k === kind ? 'true' : 'false');
         b.textContent = station.ROOM_KINDS[k].label;
         b.onclick = () => { kind = k; renderPalette(); setHint(); sfx('click'); };
         pal.appendChild(b);
       });
     } else if (tool === 'hall') {
+      paletteLabel = 'HALL WIDTH';
       [1, 2, 3].forEach(w => {
         const b = document.createElement('button');
+        b.type = 'button';
         b.className = 'bb sm refit-kind' + (w === hallWidth ? ' active' : '');
+        b.setAttribute('aria-pressed', w === hallWidth ? 'true' : 'false');
         b.textContent = 'W' + w;
         b.onclick = () => { hallWidth = w; renderPalette(); sfx('click'); };
         pal.appendChild(b);
       });
     } else if (tool === 'prop') {
+      paletteLabel = 'PROP CATALOG';
       const CATS = (typeof PropSprites !== 'undefined') ? PropSprites.CATS : {};
       const groups = Object.keys(CATS);
       if (!CATS[propCat]) propCat = groups[0] || 'work';
       // row 1 — category tabs
       const catRow = document.createElement('div'); catRow.className = 'refit-propcats';
+      catRow.setAttribute('aria-label', 'Prop categories');
       groups.forEach(g => {
         const b = document.createElement('button');
+        b.type = 'button';
         b.className = 'bb sm refit-propcat' + (g === propCat ? ' active' : '');
+        b.setAttribute('aria-pressed', g === propCat ? 'true' : 'false');
         b.textContent = g.toUpperCase();
         b.onclick = () => { propCat = g; if (CATS[g][0]) propType = CATS[g][0].id; renderPalette(); setHint(); sfx('click'); };
         catRow.appendChild(b);
@@ -195,9 +216,12 @@ const Build = (() => {
       pal.appendChild(catRow);
       // row 2 — props in the active category
       const propRow = document.createElement('div'); propRow.className = 'refit-props';
+      propRow.setAttribute('aria-label', 'Props');
       (CATS[propCat] || []).forEach(c => {
         const b = document.createElement('button');
+        b.type = 'button';
         b.className = 'bb sm refit-kind' + (c.id === propType ? ' active' : '');
+        b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
         b.textContent = c.label;
         b.title = c.label + ' · ' + c.w + '×' + c.h + (c.blocks === false ? ' · decor (walkable)' : '');
         b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
@@ -205,15 +229,20 @@ const Build = (() => {
       });
       pal.appendChild(propRow);
     } else if (tool === 'paint') {
+      paletteLabel = 'DECK PAINT';
       Object.keys(station.FLOOR_STYLES).forEach(sid => {
         const b = document.createElement('button');
+        b.type = 'button';
         b.className = 'refit-swatch' + (sid === style ? ' active' : '');
+        b.setAttribute('aria-pressed', sid === style ? 'true' : 'false');
         b.appendChild(swatchCanvas(station.FLOOR_STYLES[sid].base));
         b.title = station.FLOOR_STYLES[sid].label;
         b.onclick = () => { style = sid; renderPalette(); sfx('click'); };
         pal.appendChild(b);
       });
     }
+    if (label) label.textContent = paletteLabel || 'OPTIONS';
+    if (section) section.classList.toggle('is-empty', !pal.children.length);
   }
 
   // a tiny textured deck sample (so the swatch reads like the baked floor, not a flat chip)
@@ -230,7 +259,11 @@ const Build = (() => {
 
   function selectTool(id) {
     tool = id; drag = null; hideTip();
-    root.querySelectorAll('.refit-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === id));
+    root.querySelectorAll('.refit-tool').forEach(b => {
+      const active = b.dataset.tool === id;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
     renderPalette(); setHint(); setCursor(); sfx('click');
   }
 
