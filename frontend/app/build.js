@@ -348,6 +348,48 @@ const Build = (() => {
     try { input.focus(); input.select(); } catch (_) {}
   }
 
+  /* ---------- WORKSTATION agent-picker: bind a placed PC (console/desk/…) DIRECTLY to an agent. That
+     workstation becomes the agent's OWN desk (it walks here to work) and grants it compute — no separate
+     BAY+room needed. The Recruitment Bay auto-equips a console this way; this is the manual override to
+     re-assign or move it. Mirrors openBayPicker; calls station.assignPropAgent on the PC prop. */
+  const WORKSTATION_TYPES = { console: 1, consoleL: 1, desk: 1, desk2: 1, pixelrig: 1, bench: 1 };
+  function openWorkstationPicker(propId, ev) {
+    if (!root || root.querySelector('.refit-bay-picker')) return;
+    const p = station.propById(propId); if (!p || !WORKSTATION_TYPES[p.t]) return;
+    const cur = p.agentId || '';
+    const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
+    const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-bay-picker';
+    g.innerHTML = `
+      <div class="refit-guide-card">
+        <h3>▮ ASSIGN THIS PC TO AN AGENT</h3>
+        <ul><li>This workstation becomes the chosen agent's <b>own desk</b> — it walks here to work.</li>
+        <li>Grants that agent <b>compute</b> — no separate BAY needed.</li></ul>
+        ${agents.length ? '<div class="refit-bay-agents" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">' + rows + '</div>' : ''}
+        <input id="bay-aid" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}"
+          style="width:100%;box-sizing:border-box;margin:6px 0;padding:5px 7px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;border-radius:3px" />
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="btn-sm refit-primary" id="bay-ok">▸ ASSIGN</button>
+          <button type="button" class="btn-sm" id="bay-clear">UNBIND</button>
+          <button type="button" class="btn-sm" id="bay-cancel">CANCEL</button>
+        </div>
+      </div>`;
+    root.appendChild(g);
+    const input = g.querySelector('#bay-aid');
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
+    g.querySelector('#bay-ok').onclick = () => {
+      const res = station.assignPropAgent(propId, input.value.trim());
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('PC → ' + res.agentId) : 'PC unbound', true); closeP(); }
+      else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
+    };
+    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(propId, ''); sfx('click'); flashTip(ev, 'PC unbound', true); closeP(); };
+    g.querySelector('#bay-cancel').onclick = closeP;
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+    try { input.focus(); input.select(); } catch (_) {}
+  }
+
   /* ---------- FILTER/MERGER junction editor (Polish P1): make content-routing reachable from the UI.
      A FILTER needs routes (tag -> out-lane) + a default lane or it's non-deployable (FILTER_NO_DEFAULT);
      a MERGER just needs its buffer size K. Both call station.configureJunction. Opens on place/click. */
@@ -640,8 +682,8 @@ const Build = (() => {
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
-  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1 };
+  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (WORKSTATION_TYPES[t]) openWorkstationPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
+  const PROP_EDITABLE = Object.assign({ bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1 }, WORKSTATION_TYPES);
   function commitPropStamp(d, ev) {
     // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
     if (PROP_EDITABLE[propType] && !d.moved) {

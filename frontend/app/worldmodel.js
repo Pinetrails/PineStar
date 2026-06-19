@@ -672,15 +672,24 @@ const WorldModel = (() => {
     }
     const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
     const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
-    function agentRoomId(agentId) {   // the room the agent's BAY sits in — the capability-isolation seam
-      const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
-      return bay ? roomAt(bay.x, bay.y) : null;
+    // a workstation (computer-cap) prop bound DIRECTLY to the agent (prop.agentId). This is the
+    // "this PC is yours" seam: the Recruitment Bay auto-equips a recruit by stamping its agentId onto a
+    // placed console, so an agent can be operable without the manual BAY+room dance. A bay still wins.
+    function assignedWorkstation(agentId) {
+      return doc.props.find(p => p.agentId === agentId && CAP_PROP_MAP[p.t] === 'computer') || null;
     }
-    // Phase B5: the capability objectTypes (CAP_REGISTRY) granted by the cap-props sharing the agent's BAY room —
-    // exactly what the sidecar feeds resolveTools, so each bay's tools are what you placed in its room. Deduped.
+    // the prop that anchors the agent's capability room: its bound BAY, else a directly-bound workstation.
+    function workstationAnchor(agentId) {
+      return doc.props.find(p => p.t === 'bay' && p.agentId === agentId) || assignedWorkstation(agentId) || null;
+    }
+    function agentRoomId(agentId) {   // the room the agent's anchor (BAY or assigned workstation) sits in — the capability-isolation seam
+      const a = workstationAnchor(agentId);
+      return a ? roomAt(a.x, a.y) : null;
+    }
+    // Phase B5: the capability objectTypes (CAP_REGISTRY) granted by the cap-props sharing the agent's anchor room —
+    // exactly what the sidecar feeds resolveTools, so each workstation's tools are what you placed in its room. Deduped.
     function bayObjects(agentId) {
-      const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
-      const room = bay ? roomAt(bay.x, bay.y) : null;
+      const room = agentRoomId(agentId);
       if (!room) return [];
       const seen = {}, out = [];
       for (const p of doc.props) {
@@ -717,7 +726,7 @@ const WorldModel = (() => {
       addProp, removeProp, moveProp, assignPropAgent, configureJunction, bindConnector, setDoorState,
       setBelt, removeBelt, placeBeltRun,
       // agent-bay binding queries
-      propsByType, propsByAgent, agentRoomId, bayObjects,
+      propsByType, propsByAgent, agentRoomId, bayObjects, assignedWorkstation, workstationAnchor,
       undo, redo, canUndo, canRedo,
       // projection + io
       projectGeometry, serialize, onChange,

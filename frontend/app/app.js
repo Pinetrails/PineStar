@@ -238,6 +238,10 @@ const App = (() => {
     agents.set(id, a);
     registerAgent(id, a.color);                                // sprite tint shim
     if (typeof World !== 'undefined' && World.spawnAgent) World.spawnAgent(a);   // Phase C: a real floor body
+    ensureWorkstation(id);                                     // auto-equip: its own console so it's operable on arrival
+    // briefly frame the NEW body so the Commander SEES it arrive as its own distinct unit (camera only — the
+    // active/COMMS identity is unchanged unless opts.focus, which reframes via focusAgent below).
+    if (opts.focus !== true && typeof World !== 'undefined' && World.focusBody) World.focusBody(id);
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     // a fresh workstream BOUND to the new agent; focusing it routes COMMS + the next run to this identity
     const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name, { agentId: id, activate: opts.focus === true }) : null;
@@ -260,14 +264,51 @@ const App = (() => {
     if (!station || typeof station.propsByAgent !== 'function' || typeof station.bayObjects !== 'function') {
       return { ok: agentId === 'agent', state: 'unknown', label: 'station not ready', detail: '' };
     }
+    // EQUIPPED when the agent's anchor room has compute — true for both a bound BAY+computer and a
+    // workstation (console/desk) bound DIRECTLY to the agent (the Recruitment Bay's auto-equip). bayObjects
+    // resolves either anchor, so 'computer' present === operable.
+    const objs = station.bayObjects(agentId) || [];
+    if (objs.indexOf('computer') >= 0) return { ok: true, state: 'equipped', label: 'station workstation online', detail: 'This agent has its own workstation with compute.' };
     const bays = station.propsByAgent(agentId).filter(p => p && p.t === 'bay');
-    if (bays.length) {
-      const objs = station.bayObjects(agentId) || [];
-      if (objs.indexOf('computer') >= 0) return { ok: true, state: 'equipped', label: 'station workstation online', detail: 'This agent has an assigned bay with compute.' };
-      return { ok: false, state: 'needs-computer', label: 'needs computer', detail: 'Open BUILD, place a computer/console/desk in this agent bay room, then routed work can visibly land there.' };
-    }
+    if (bays.length) return { ok: false, state: 'needs-computer', label: 'needs computer', detail: 'Open BUILD, place a computer/console/desk in this agent’s bay room, then routed work can visibly land there.' };
     if (agentId === 'agent') return { ok: true, state: 'main-office', label: 'main workstation online', detail: 'The main agent can use the default office.' };
-    return { ok: false, state: 'needs-bay', label: 'needs bay + computer', detail: 'Open BUILD, place a BAY, bind it to this agent, then place a computer/console/desk in that room.' };
+    return { ok: false, state: 'needs-bay', label: 'needs a workstation', detail: 'Deploying auto-equips one — or use EQUIP / open BUILD to assign a console to this agent.' };
+  }
+
+  // find a free spot on the built floor for a small prop (scans every room's interior for an unobstructed
+  // footprint). Deterministic order so repeated equips fan out instead of stacking. Returns {x,y} or null.
+  function findFreeWorkstationSpot(w, h) {
+    if (!station || typeof station.rooms !== 'function' || typeof station.canPlaceProp !== 'function') return null;
+    w = w || 1; h = h || 1;
+    for (const rm of station.rooms()) {
+      if (!rm || rm.kind === 'corridor' || !Array.isArray(rm.rects)) continue;
+      for (const r of rm.rects) {
+        for (let y = r.y1; y + h - 1 <= r.y2; y++) {
+          for (let x = r.x1; x + w - 1 <= r.x2; x++) {
+            const v = station.canPlaceProp('console', x, y, w, h);
+            if (v && v.ok) return { x, y };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  // AUTO-EQUIP: give a recruit its own workstation so it's operable on arrival, with no manual BUILD step.
+  // Idempotent — a no-op if the agent already has compute (a bound bay+computer OR a directly-bound console).
+  // Stamps the agent's id onto a freshly-placed console (the "this PC is yours" direct bind); the live world
+  // re-bakes via station.onChange and persist() saves it. Returns true if it placed one.
+  function ensureWorkstation(agentId) {
+    agentId = String(agentId || '');
+    if (!agentId || agentId === 'agent') return false;
+    if (!station || typeof station.addProp !== 'function' || typeof station.bayObjects !== 'function') return false;
+    if ((station.bayObjects(agentId) || []).indexOf('computer') >= 0) return false;   // already equipped
+    const spot = findFreeWorkstationSpot(2, 1);
+    if (!spot) return false;
+    const res = station.addProp({ t: 'console', x: spot.x, y: spot.y, w: 2, h: 1, agentId });
+    if (!res || !res.ok) return false;
+    persist();
+    return true;
   }
 
   function openBuildForAgent(agentId) {
@@ -864,5 +905,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail, switchWorkstream, talkToAgent, workstationStatus, openBuildForAgent };
+  return { show, refreshUsage, persist, refreshRail: renderRail, switchWorkstream, talkToAgent, workstationStatus, ensureWorkstation, openBuildForAgent };
 })();

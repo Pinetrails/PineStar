@@ -1397,6 +1397,7 @@ const World = (() => {
     if (geoDirty) rederive();
     if (bakeDirty || !cache) rebake();
     tick(dt, now);
+    for (let i = 0; i < crew.length; i++) tickCrew(crew[i], dt, now);   // light crew life: recruited agents walk to their desks + idle-stroll
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -1923,10 +1924,19 @@ const World = (() => {
   // a distinct walkable standing spot, fanned out from the spawn-room centre so summoned crew don't stack.
   function workerFoot() {
     const t = spawnTileLocal();
-    const ring = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [3, 1], [-3, 1], [1, 3], [-1, -3], [3, -2]];
+    const ring = [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [3, 1], [-3, 1], [1, 3], [-1, -3], [3, -2], [-3, 2]];
     const seen = new Set(crew.filter(b => b.summoned).map(b => { const tt = tileOf(b.px, b.py); return tt.x + ',' + tt.y; }));
+    // NEVER spawn on top of the hero (or another crew body) — a new agent must read as its OWN distinct body,
+    // not a duplicate stacked on the first one. The spawn-room CENTRE is the hero's tile, so it's dropped from
+    // the ring (which now starts one step out) and explicitly excluded here.
+    if (agent && !agent.unplaced) { const ht = tileOf(agent.px, agent.py); seen.add(ht.x + ',' + ht.y); }
     for (let i = 0; i < ring.length; i++) {
       const tx = t.x + ring[i][0], ty = t.y + ring[i][1];
+      if (geo && geo.walkable(tx, ty, blocked) && !seen.has(tx + ',' + ty)) return footOf(tx, ty);
+    }
+    // last resort: spiral out until a free, non-hero, non-crew walkable tile is found
+    for (let r = 1; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const tx = t.x + dx, ty = t.y + dy;
       if (geo && geo.walkable(tx, ty, blocked) && !seen.has(tx + ',' + ty)) return footOf(tx, ty);
     }
     return footOf(t.x, t.y);
@@ -1952,6 +1962,91 @@ const World = (() => {
     const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
+  }
+
+  /* ---------- light crew life (Stage 2) ----------
+     Recruited / summoned crew are no longer purely static: they WALK to their own workstation to work and
+     take short, local idle strolls between runs. Deliberately LIGHT — no needs / quirks / awareness (that
+     is the hero's full engine, generalized in a later pass). It reuses geo.path + the hero's per-tick step
+     math so a crew body moves at the same cadence, on its OWN fields. The hero (`agent`) is never touched. */
+  const CREW_WS_TYPES = { bay: 1, console: 1, consoleL: 1, desk: 1, desk2: 1, pixelrig: 1, bench: 1, workbench: 1 };
+  const CREW_NB = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+  // the walkable foot tile of a crew body's OWN workstation (its bound bay/console in the live geometry),
+  // or null if none is placed. Props block their own footprint, so pick a free tile just in front of it.
+  function crewStationFoot(b) {
+    if (!geo || !geo.props || !b) return null;
+    const p = geo.props.find(pp => pp.agentId === b.agentId && CREW_WS_TYPES[pp.t]);
+    if (!p) return null;
+    const w = p.w || 1, h = p.h || 1;
+    for (let x = p.x; x < p.x + w; x++) if (geo.walkable(x, p.y + h, blocked)) return { tx: x, ty: p.y + h };   // front (south) row first
+    for (const [dx, dy] of CREW_NB) {
+      const tx = p.x + (dx > 0 ? w : dx < 0 ? -1 : 0), ty = p.y + (dy > 0 ? h : dy < 0 ? -1 : 0);
+      if (geo.walkable(tx, ty, blocked)) return { tx, ty };
+    }
+    return null;
+  }
+  function crewNextWaypoint(b) {
+    if (!b.pathPts || b.pathIdx >= b.pathPts.length) { b.target = null; return; }
+    const wp = b.pathPts[b.pathIdx++];
+    b.target = footOf(wp.x, wp.y);
+  }
+  function crewSetPath(b, dest) {
+    b.pathPts = null; b.target = null;
+    if (!dest || !geo) return false;
+    const cur = tileOf(b.px, b.py);
+    const p = geo.path(cur.x, cur.y, dest.tx, dest.ty, blocked);
+    if (!p || !p.length) return false;
+    b.pathPts = p; b.pathIdx = 0; b.state = 'walk';
+    crewNextWaypoint(b);
+    return true;
+  }
+  // a short, local stroll target: a walkable, belt-free tile within a few steps, else null
+  function crewWanderDest(b) {
+    if (!geo || !geo.allRects || !geo.allRects.length) return null;
+    const cur = tileOf(b.px, b.py);
+    for (let i = 0; i < 16; i++) {
+      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
+      const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
+      if (!geo.walkable(tx, ty, blocked)) continue;
+      if (Math.abs(tx - cur.x) + Math.abs(ty - cur.y) > 9) continue;   // keep strolls short + local
+      return { tx, ty };
+    }
+    return null;
+  }
+  // advance ONE crew body a frame: follow an in-flight path, walk to its desk while a run is live, else
+  // a gentle idle stroll. Mirrors the hero step math (SPEED px/s, 1.1px arrival) on the body's own fields.
+  function tickCrew(b, dt, now) {
+    if (!b || b.unplaced || !geo || awakeFrozen) return;
+    const SPEED = 30;
+    if (b.target) {
+      const dx = b.target.x - b.px, dy = b.target.y - b.py, d = Math.hypot(dx, dy);
+      if (d < 1.1) {
+        b.px = b.target.x; b.py = b.target.y;
+        if (b.pathPts && b.pathIdx < b.pathPts.length) crewNextWaypoint(b);
+        else { b.target = null; b.pathPts = null; b.state = 'idle'; b.idleUntil = now + U.irnd(1200, 3200); }
+      } else {
+        const s = Math.min(d, SPEED * dt / 1000);
+        b.px += dx / d * s; b.py += dy / d * s; b.state = 'walk';
+        b.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+      }
+      return;
+    }
+    if (b.working) {   // a live run: be AT the desk facing the screens — walk there if not already
+      const foot = crewStationFoot(b);
+      if (foot) {
+        const cur = tileOf(b.px, b.py);
+        if ((cur.x !== foot.tx || cur.y !== foot.ty) && crewSetPath(b, foot)) return;
+        b.dir = 'north'; b.state = 'idle';
+      }
+      return;
+    }
+    if (b.state === 'walk') { b.state = 'idle'; b.idleUntil = 0; }   // self-heal a stuck walker (a re-bake cleared the path)
+    if (now < (b.idleUntil || 0)) return;
+    if (U.chance(0.5)) {
+      const dest = (U.chance(0.4) ? crewStationFoot(b) : null) || crewWanderDest(b);   // drift home now and then, else a short stroll
+      if (dest && crewSetPath(b, dest)) return;
+    }
+    b.idleUntil = now + U.irnd(1800, 4200);   // stand a beat, re-decide later
   }
 
   // the WATCHABLE HANDOFF: the lead delegated to worker `toId`. 'spawned' lights the worker (chat.js does NOT

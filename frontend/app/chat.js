@@ -122,11 +122,6 @@ const Chat = (() => {
   }
   function addUser(t) { row('user').body.textContent = t; autoscroll(); }
   function localLine(t) { row('agent').body.textContent = t; autoscroll(); }
-  function workstationLine(st) {
-    st = st || {};
-    return 'I need a station workstation before I can take tasks: ' + (st.label || 'needs bay + computer') + '. '
-      + (st.detail || 'Use EQUIP in the Crew Manifest or open BUILD to assign a bay and place a computer.');
-  }
   // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible
   function toolLine(text, isErr) {
     const r = row('agent'); r.d.classList.add('tool'); if (isErr) r.d.classList.add('err');
@@ -382,19 +377,13 @@ const Chat = (() => {
 
     const isTask = Classify.isTaskDirective(text);
     const targetAgentId = ws.agentId || 'agent';
-    const stationGate = (isTask && targetAgentId !== 'agent' && typeof App !== 'undefined' && App.workstationStatus)
-      ? App.workstationStatus(targetAgentId)
-      : null;
-    if (stationGate && !stationGate.ok) {
-      const reply = workstationLine(stationGate);
-      localLine(reply);
-      ws.history.push({ role: 'assistant', content: reply });
-      if (typeof StationUI !== 'undefined') StationUI.notify((stationGate.label || 'workstation needed') + ' - use EQUIP', 'warn');
-      if (typeof Workstreams !== 'undefined') Workstreams.touch(ws.id);
-      if (typeof App !== 'undefined') { if (App.refreshRail) App.refreshRail(); if (App.persist) App.persist(); }
-      status('online');
-      if (onTurn) onTurn();
-      return;
+    // a recruited/summoned (non-hero) agent should have its OWN workstation so its work visibly lands on the
+    // floor. If it somehow doesn't (a pre-fix save, or a full station), best-effort auto-equip one — then run
+    // REGARDLESS. The run is never hard-blocked: the sidecar grants default compute, so a task always proceeds.
+    if (isTask && targetAgentId !== 'agent' && typeof App !== 'undefined') {
+      let st = App.workstationStatus ? App.workstationStatus(targetAgentId) : null;
+      if (st && !st.ok && App.ensureWorkstation) { App.ensureWorkstation(targetAgentId); st = App.workstationStatus(targetAgentId); }
+      if (st && !st.ok && typeof StationUI !== 'undefined') StationUI.notify('no station workstation yet — place one in BUILD to watch this agent work on the floor', 'warn');
     }
     Channels.begin(ws.id);
     // fold the interest tag of a real task into the local user-affinity profile (the signal classify.js
