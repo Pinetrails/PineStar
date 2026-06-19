@@ -93,10 +93,11 @@ const MAX_CONCURRENT_AGENTS = num(process.env.SKYNET_MAX_CONCURRENT_AGENTS, 3);
 const ORCH_PER_WORKER = num(process.env.SKYNET_BUDGET_PER_WORKER, 1);
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
-// is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the LIVE BYOK
-// key (runtimeKey); a job with no model falls back to SKYNET_DEFAULT_MODEL; absent either, a due job
-// no-capability-skips rather than firing (cron is inert without a configured key). Cadence + the self-healing
-// lease ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
+// is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the same
+// provider seam as /api/run: OpenRouter needs the live BYOK key (runtimeKey), while Codex uses the protected
+// ChatGPT OAuth token. A job with no model falls back to the selected agent model or SKYNET_DEFAULT_MODEL;
+// absent model/credentials, a due job no-capability-skips rather than firing. Cadence + the self-healing lease
+// ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
 const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CRON_ENABLED || '').trim());
 const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
 const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
@@ -172,9 +173,9 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
 // Stage 2: the crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
-// own identity (its composed system prompt + model). agentId -> { system, name, model }. The browser replaces
-// it on every push; a protected on-disk mirror lets headless cron fires still run as the selected agent after
-// a sidecar restart. Not an event (contract-free).
+// own identity (its composed system prompt + model/provider). agentId -> { system, name, model, provider }.
+// The browser replaces it on every push; a protected on-disk mirror lets headless cron fires still run as the
+// selected agent after a sidecar restart. Not an event (contract-free).
 const agentRoster = new Map();
 const AGENT_ROSTER_FILE = path.join(WORKSPACES, 'agent.roster.json');
 function replaceAgentRoster(list) {
@@ -186,6 +187,7 @@ function replaceAgentRoster(list) {
       system: String((a && a.system) || ''),
       name: String((a && a.name) || id).slice(0, 40),
       model: (a && a.model) ? String(a.model) : null,
+      provider: normalizeProviderId((a && a.provider) || ''),
       role: String((a && a.role) || '').slice(0, 120)
     });
   }
@@ -199,7 +201,7 @@ function loadAgentRoster() {
 function saveAgentRoster() {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
-    const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, role: a.role || '' }));
+    const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '' }));
     const tmp = AGENT_ROSTER_FILE + '.' + process.pid + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({ version: 1, agents }));
     fs.renameSync(tmp, AGENT_ROSTER_FILE);
@@ -260,6 +262,7 @@ function cronIdentityFor(agentId) {
   const system = String(ident.system || '').trim();
   return {
     model: ident.model || null,
+    provider: ident.provider || null,
     system: system ? withDossier(system + CRON_ROUTINE_NOTE, commanderDossier.get()) : null,
     name: ident.name || id
   };
@@ -272,6 +275,34 @@ function cronModelFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
   const rosterModel = ident && ident.model ? String(ident.model).trim() : '';
   return ((job && job.model) ? String(job.model).trim() : '') || rosterModel || CRON_DEFAULT_MODEL;
+}
+function normalizeProviderId(value) {
+  const p = String(value || '').trim().toLowerCase();
+  if (p === 'codex' || p === 'openai-codex') return 'codex';
+  if (p === 'openrouter') return 'openrouter';
+  return '';
+}
+function cronProviderFor(job) {
+  const ident = cronIdentityFor(job && job.agentId);
+  const explicit = normalizeProviderId((job && job.provider) || (ident && ident.provider) || '');
+  if (explicit) return explicit;
+  // Back-compat for already-persisted rosters/jobs from before provider was mirrored: if there is no
+  // OpenRouter key but a ChatGPT OAuth token exists, inherit the only runnable provider.
+  if (!runtimeKey && codexTokens && codexTokens.access_token) return 'codex';
+  return 'openrouter';
+}
+function cronKeyFor(provider) {
+  return normalizeProviderId(provider) === 'codex' ? '' : runtimeKey;
+}
+function cronHasCredential(provider, key) {
+  return normalizeProviderId(provider) === 'codex'
+    ? !!(codexTokens && codexTokens.access_token)
+    : !!key;
+}
+function cronCredentialError(provider) {
+  return normalizeProviderId(provider) === 'codex'
+    ? 'connect ChatGPT first — a signed-in ChatGPT account + model are required to run this routine'
+    : 'connect OpenRouter first — an API key + model are required to run this routine';
 }
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
@@ -511,13 +542,17 @@ const cronBus = { emit: (name, payload) => {
 } };
 const cronEmitValidated = makeEmitter(cronBus, e => console.warn('[cron-event]', e.kind, e.event, (e.errors || []).join(';')));
 const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redact(payload)); } catch (_) { return false; } };
-// the autonomous tick driver — pure orchestration with every ambient dep injected here (timer/now/id/fs/key).
+// the autonomous tick driver — pure orchestration with every ambient dep injected here
+// (timer/now/id/fs/provider credentials).
 const cronDriver = makeCronDriver({
   getJobs: () => cronJobs,
   setJobs: (jobs) => { cronJobs = jobs; try { saveCronJobs(); } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); } },
   runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
   emit: cronEmit, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
-  getKey: () => runtimeKey, defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
+  getKey: (provider) => cronKeyFor(provider),
+  providerForJob: (job) => cronProviderFor(job),
+  hasCredential: (provider, key) => cronHasCredential(provider, key),
+  defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
   identityForAgent: (agentId) => cronIdentityFor(agentId),
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
@@ -863,6 +898,12 @@ function parseCronAgentIdOr400(value) {
   if (!cronStore.isValidId(id)) { const e = new Error('agent must be one of your station agents'); e.code = 400; throw e; }
   return id;
 }
+function parseCronProviderOr400(value) {
+  if (value == null || value === '') return null;
+  const p = normalizeProviderId(value);
+  if (!p) { const e = new Error('provider must be openrouter or codex'); e.code = 400; throw e; }
+  return p;
+}
 
 // GET /api/cron — the job snapshot the panel renders from (no secrets in a CronJob). `enabled` = is the tick
 // driver actually armed (SKYNET_CRON_ENABLED) so the panel can honestly say whether routines will fire.
@@ -871,18 +912,19 @@ function handleCronList(req, res) {
   res.end(JSON.stringify({ jobs: cronJobs, enabled: CRON_ENABLED, tickMs: CRON_TICK_MS }));
 }
 
-// POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, deliver?, enabled?, repeat? }
+// POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, provider?, deliver?, enabled?, repeat? }
 function handleCronCreate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   readBody(req, 1 << 16).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
     let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
     const id = crypto.randomUUID();
     try {
       cronJobs = cronStore.createJob(cronJobs, {
         id: id, name: body.name, prompt: body.prompt, schedule: schedule,
-        agentId: agentId, model: body.model, deliver: body.deliver,
+        agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
         enabled: body.enabled, repeat: body.repeat
       }, { id: id, now: Date.now() });
       saveCronJobs();
@@ -904,6 +946,9 @@ function handleCronUpdate(req, res) {
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
       try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'provider')) {
+      try { patch.provider = parseCronProviderOr400(patch.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
     // pause/resume is not an EDITABLE field on updateJob — pull it out and apply via the dedicated reducers.
     let enabled; if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) { enabled = patch.enabled !== false; delete patch.enabled; }
@@ -957,8 +1002,12 @@ async function handleCronRun(req, res) {
   const job = cronStore.getJob(cronJobs, String(body.id || ''));
   if (!job) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'no such routine' })); }
   const model = cronModelFor(job);
-  const key = runtimeKey;
-  if (!model || !key) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'connect an agent first — a key + model are required to run a routine' })); }
+  const provider = cronProviderFor(job);
+  const key = cronKeyFor(provider);
+  if (!model || !cronHasCredential(provider, key)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: (!model ? 'choose a model for this routine agent first' : cronCredentialError(provider)) }));
+  }
 
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
   const ac = new AbortController();
@@ -981,7 +1030,7 @@ async function handleCronRun(req, res) {
     await runOnce({
       key: key, model: model, system: cronSystemFor(job.agentId), messages: [{ role: 'user', content: String(job.prompt || '') }],
       agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
-      runId: runId, surface: 'autonomous', trigger: 'schedule'
+      runId: runId, surface: 'autonomous', trigger: 'schedule', provider: provider
     });
   } catch (e) {
     state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
@@ -1025,8 +1074,8 @@ function handleCheckpointList(req, res) {
   } catch (e) { json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: [] }); }
 }
 
-// POST /api/roster { agents:[{ agentId, system, name, model }] } — the browser pushes the live crew identities
-// so team.dispatch can run a WORKER as itself (its composed system prompt + model). Replaces the whole roster
+// POST /api/roster { agents:[{ agentId, system, name, model, provider }] } — the browser pushes the live crew identities
+// so team.dispatch can run a WORKER as itself (its composed system prompt + model/provider). Replaces the whole roster
 // each push (the browser sends the full live set on summon/focus). Contract-free: plain HTTP, no bus event.
 async function handleRoster(req, res) {
   let body;

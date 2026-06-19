@@ -11,7 +11,7 @@
      · BOOT RESUME: a recurring job whose nextRunAt elapsed while down fires ONE catch-up within grace, else
        fast-forwards+skips (caught-up) — never a backlog burst
      · a throwing run records lastStatus:'error' and does not stop the next job from firing
-     · no key/model -> cron.skipped{no-capability} (cron is inert without a configured key)
+     · no provider credentials/model -> cron.skipped{no-capability}; OAuth-backed providers do not need a BYOK key
      · the [SILENT] no-spam check is strict-equals-after-trim (an embedded [SILENT] does NOT suppress) */
 'use strict';
 const A = require('./_assert.js');
@@ -41,6 +41,8 @@ function setup(jobs, runOnceFake, opts) {
     newAbort: () => new AbortController(),
     now: () => clock.now(),
     getKey: () => (opts.key !== undefined ? opts.key : 'sk-test'),
+    providerForJob: opts.providerForJob,
+    hasCredential: opts.hasCredential,
     defaultModel: opts.defaultModel !== undefined ? opts.defaultModel : 'test/model',
     identityForAgent: opts.identityForAgent,
     persona: 'PERSONA',
@@ -200,6 +202,22 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(summary.fired, 0, 'nothing fires without a key');
     A.eq(s.runs.length, 0, 'runOnce not called');
     A.eq(firstOf(s.events, 'cron.skipped').reason, 'no-capability', 'skip reason no-capability');
+  }
+
+  // ---- 8b. OAuth-backed providers launch without a BYOK key ----
+  {
+    const j = intervalJob('j1', 'every 1m');
+    const s = setup([j], okRun(), {
+      key: '',
+      defaultModel: 'gpt-5.3-codex',
+      providerForJob: () => 'codex',
+      hasCredential: (provider) => provider === 'codex'
+    });
+    s.clock.set(T0 + 60000);
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary, { fired: 1, skipped: 0, planned: 1 }, 'codex oauth cron fires without an OpenRouter key');
+    A.eq(s.runs[0].provider, 'codex', 'cron passes the inherited provider to runOnce');
+    A.eq(s.runs[0].key, '', 'codex cron does not fabricate a BYOK key');
   }
 
   // ---- 9. the [SILENT] no-spam check is strict-equals-after-trim ----

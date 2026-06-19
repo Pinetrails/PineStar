@@ -24,7 +24,7 @@
      isValidId(id)                              -> boolean
 
    A CronJob (see cron.js for schedule shapes):
-     { id, name, prompt, schedule, scheduleDisplay, agentId, model, deliver, enabled,
+     { id, name, prompt, schedule, scheduleDisplay, agentId, model, provider, deliver, enabled,
        state:'scheduled'|'paused'|'completed'|'error', repeat:{times,completed},
        createdAt, nextRunAt, lastRunAt, lastRunId, lastStatus, lastError, lastReason, retryCount,
        skills, script, workdir, contextFrom }                         // last row = record-the-field, defer-the-consumer */
@@ -41,7 +41,7 @@
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
   // fields a user may edit via updateJob. `id`, timestamps, run-state and counters are NOT editable here.
-  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'deliver', 'skills', 'script', 'workdir', 'contextFrom'];
+  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'workdir', 'contextFrom'];
 
   function isValidId(id) { return typeof id === 'string' && ID_RE.test(id); }
 
@@ -85,6 +85,7 @@
       scheduleDisplay: schedule && schedule.display ? schedule.display : '',
       agentId: String(spec.agentId || 'agent'),
       model: spec.model != null ? String(spec.model) : null,        // null -> host's boot-frozen default
+      provider: spec.provider != null ? String(spec.provider) : null, // null -> selected agent/global provider
       deliver: String(spec.deliver || 'local'),
       enabled: enabled,
       state: enabled ? 'scheduled' : 'paused',
