@@ -615,6 +615,7 @@ const StationUI = (() => {
   function openStream(id) {
     const w = WS(); if (!w) return;
     const s = w.get(id); if (!s) return;
+    if (typeof App !== 'undefined' && App.switchWorkstream) { App.switchWorkstream(id); return; }
     w.switch(id);
     if (typeof Chat === 'object' && Chat.load) Chat.load(s);
     persistWS(); sync();
@@ -631,9 +632,12 @@ const StationUI = (() => {
   function assignTask(id) {
     const w = WS(); if (!w) return;
     const s = w.get(id); if (!s) return;
-    w.switch(id);
-    if (typeof Chat === 'object' && Chat.load) Chat.load(s);
-    sync();
+    if (typeof App !== 'undefined' && App.switchWorkstream) App.switchWorkstream(id);
+    else {
+      w.switch(id);
+      if (typeof Chat === 'object' && Chat.load) Chat.load(s);
+      sync();
+    }
     const started = s.history.some(m => m.role === 'user');
     if (!started && s.title && typeof Chat === 'object' && Chat.send) Chat.send(s.title);
     notify('assigned to ' + (present[0] ? present[0].name : 'agent') + ': ' + (s.title || 'workstream'), 'gold');

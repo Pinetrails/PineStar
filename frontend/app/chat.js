@@ -80,7 +80,7 @@ const Chat = (() => {
     maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
   }
 
-  function setSystem(s) { system = s; }
+  function setSystem(s, agentName) { system = s; if (agentName) name = agentName; }
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
   function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?

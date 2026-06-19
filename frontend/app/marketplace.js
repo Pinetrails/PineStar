@@ -4,10 +4,9 @@
    Self-contained: it builds its own full-screen overlay (scrim + panel), owns all its DOM + events,
    and themes purely off the existing CSS vars (marketplace.css) so it never touches a shared stylesheet.
 
-   Two modes, both opened by the app:
-     • 'deploy'  (in-game)  — DEPLOY a specialty onto the CURRENT agent (re-specs its purpose + standing
-                              orders via the app's real applyAgentConfig path; optionally adopts its voice),
-                              SAVE the current agent as a reusable custom specialty, and EDIT/DELETE customs.
+    Two modes, both opened by the app:
+      • 'deploy'  (in-game)  — DEPLOY a specialty as a NEW permanent station agent (name + model chosen
+                               in the bay), SAVE the focused agent as a reusable custom specialty, and EDIT/DELETE customs.
      • 'pick'    (at wake)  — choose a specialist to wake a NEW agent as; hands the chosen spec back so the
                               connect screen can pre-fill persona / suit / name and seed the dossier.
 
@@ -20,9 +19,10 @@
    UMD-light: a `Marketplace` global. */
 'use strict';
 const Marketplace = (() => {
-  let root = null, ctx = null, view = 'grid';   // 'grid' | 'save' | 'launch'
+  let root = null, ctx = null, view = 'grid';   // 'grid' | 'deploy' | 'save' | 'launch'
   let opener = null;                            // the element focus came from, restored on close
   let editingId = null;                         // when set, the save form edits this custom SPECIALTY (not a new save)
+  let deployId = null;                          // when set, the specialty being named/model-selected for deployment
   let editingRecipeId = null;                   // when set, the recipe save form edits this custom MISSION
   let launchId = null;                          // when set (view='launch'), the recipe being configured to launch
   let pendingMintKey = null;                    // when minting a SUGGESTED recurring job, the mint shape key (marked minted on save)
@@ -67,7 +67,7 @@ const Marketplace = (() => {
     close();                                    // tear down any prior instance first…
     opener = trigger;                           // …then remember who opened us (close() cleared it)
     ctx = context || {};
-    view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
+    view = 'grid'; editingId = null; deployId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
     // start on the requested tab (deploy mode only — pick mode at wake has no recipes to launch)
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();                        // first run: open the glass box so the consent note is seen once
@@ -93,7 +93,7 @@ const Marketplace = (() => {
   function close() {
     if (!root) return;
     document.removeEventListener('keydown', onKey, true);
-    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
+    root.remove(); root = null; ctx = null; view = 'grid'; editingId = null; deployId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
     const o = opener; opener = null;
     try { if (o && o.focus) o.focus(); } catch (_) {}   // restore focus to whatever opened the bay
   }
@@ -119,7 +119,7 @@ const Marketplace = (() => {
     const who = (ctx && ctx.agentName) || 'your agent';
     return tab === 'recipes'
       ? 'launch a ready-made mission — ' + who + ' picks it up in a fresh workstream'
-      : 'deploy a specialty onto ' + who + ' — or save this one as a template';
+      : 'deploy a new station agent from the catalog — name it, pick its model, keep it forever';
   }
 
   /* ---------- render ---------- */
@@ -127,11 +127,13 @@ const Marketplace = (() => {
     if (!root) return;
     const body = root.querySelector('.mkt-body');
     const sub = root.querySelector('#mkt-sub'); if (sub) sub.textContent = subtitle();   // keep the header line tab-aware
-    body.innerHTML = view === 'save' ? saveFormHTML()
+    body.innerHTML = view === 'deploy' ? deployFormHTML()
+      : view === 'save' ? saveFormHTML()
       : view === 'recipesave' ? recipeSaveFormHTML()
       : view === 'launch' ? launchFormHTML()
       : gridHTML();
-    if (view === 'save') wireSaveForm(body);
+    if (view === 'deploy') wireDeployForm(body);
+    else if (view === 'save') wireSaveForm(body);
     else if (view === 'recipesave') wireRecipeSaveForm(body);
     else if (view === 'launch') wireLaunchForm(body);
     else {
@@ -164,8 +166,7 @@ const Marketplace = (() => {
     const toolbar = deploy
       ? '<div class="mkt-toolbar">' +
           '<button class="bb sm mkt-saveas">＋ SAVE THIS AGENT AS A SPECIALTY</button>' +
-          '<label class="mkt-adopt"><input type="checkbox" class="mkt-adopt-cb"> adopt its voice too</label>' +
-          '<span class="mkt-hint">deploy re-specs ' + esc((ctx && ctx.agentName) || 'your agent') + '’s purpose &amp; standing orders</span>' +
+          '<span class="mkt-hint">deploy creates a new permanent station agent; choose its name and model on the next step</span>' +
         '</div>'
       : '<div class="mkt-toolbar"><span class="mkt-hint">picking one pre-fills the wake screen — name, voice &amp; mission, ready to tweak</span></div>';
     const builtins = Specialties.builtins();
@@ -240,8 +241,9 @@ const Marketplace = (() => {
 
   function cardHTML(s) {
     const deploy = !ctx || ctx.mode !== 'pick';
-    const here = deploy && ctx && ctx.currentSpecialtyId && ctx.currentSpecialtyId === s.id;   // already deployed on this agent
-    const primaryLabel = deploy ? ('▸ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : '▸ RECRUIT';
+    const deployedIds = (ctx && Array.isArray(ctx.deployedSpecialtyIds)) ? ctx.deployedSpecialtyIds : [];
+    const here = deploy && (deployedIds.indexOf(s.id) >= 0 || (ctx && ctx.currentSpecialtyId && ctx.currentSpecialtyId === s.id));   // already serving somewhere on the station
+    const primaryLabel = deploy ? '▸ DEPLOY NEW AGENT' : '▸ RECRUIT';
     const isOpen = !!expanded[s.id];
     const chips =
       '<span class="mkt-chip" title="recommended voice">◈ ' + esc(voiceName(s.persona)) + '</span>' +
@@ -257,10 +259,10 @@ const Marketplace = (() => {
       '</div>';
     return '<div class="mkt-card' + (isOpen ? ' open' : '') + '" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
       '<div class="mkt-card-top">' +
-        '<span class="mkt-emoji" aria-hidden="true">' + esc(s.emoji) + '</span>' +
+          '<span class="mkt-emoji" aria-hidden="true">' + esc(s.emoji) + '</span>' +
         '<div class="mkt-card-id">' +
           '<div class="mkt-name">' + esc(s.name) +
-            (here ? ' <span class="mkt-badge mkt-here">DEPLOYED</span>' : '') +
+            (here ? ' <span class="mkt-badge mkt-here">SERVING</span>' : '') +
             (s.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-tag">' + esc(s.tagline) + '</div>' +
         '</div>' +
@@ -341,7 +343,7 @@ const Marketplace = (() => {
   }
   function recommended() {
     if (ctx && ctx.mode === 'pick') return null;
-    return rankItems(Specialties.builtins(), ctx && ctx.currentSpecialtyId);   // skip what's already deployed
+    return rankItems(Specialties.builtins(), null);
   }
   function recommendedRecipes() {
     if (!hasRecipes()) return null;
@@ -414,7 +416,7 @@ const Marketplace = (() => {
           '<div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div>' +
       '</div>' +
       (why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(why) + '</div>' : '') +
-      '<button class="bb sm mkt-primary mkt-rec-go" data-id="' + esc(s.id) + '">' + (deploy ? '▸ DEPLOY' : '▸ RECRUIT') + '</button>' +
+      '<button class="bb sm mkt-primary mkt-rec-go" data-id="' + esc(s.id) + '">' + (deploy ? '▸ DEPLOY NEW' : '▸ RECRUIT') + '</button>' +
     '</div>';
   }
 
@@ -455,20 +457,14 @@ const Marketplace = (() => {
       if (!s) return;
       sfx('click');
       if (ctx && ctx.mode === 'pick') { if (ctx.onPick) ctx.onPick(s); close(); }
-      else {
-        const cb = root && root.querySelector('.mkt-adopt-cb');
-        const adoptVoice = !!(cb && cb.checked);
-        if (ctx && ctx.onDeploy) ctx.onDeploy(s, { adoptVoice });
-        note(s.name + ' deployed to ' + ((ctx && ctx.agentName) || 'your agent') + (adoptVoice ? ' (+ voice)' : ''), 'good');
-        close();
-      }
+      else { deployId = s.id; view = 'deploy'; render(); }
     }));
 
     // TAB switch: AGENTS ⇄ RECIPES (deploy mode). Drop any open sub-view; the glass box state carries over.
     body.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.tab;
       if (!next || next === tab) return;
-      tab = next; view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; sfx('click'); render();
+      tab = next; view = 'grid'; editingId = null; deployId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; sfx('click'); render();
     }));
 
     // LAUNCH a recipe: if it asks for inputs, step into the param form; otherwise fire it straight off.
@@ -544,6 +540,74 @@ const Marketplace = (() => {
       if (mintApi() && MintStore.forget) MintStore.forget();   // FORGET clears the recurring-job memory too
       sfx('close'); note('profile wiped — the station forgot what it learned', 'good'); render();
     });
+  }
+
+  /* ---------- deploy a catalog specialty as a NEW station agent ---------- */
+  function modelOptionsHTML(selected) {
+    const seen = {}, models = [];
+    const add = v => {
+      v = String(v || '').trim();
+      if (!v || seen[v]) return;
+      seen[v] = true; models.push(v);
+    };
+    add(selected);
+    if (ctx && Array.isArray(ctx.modelOptions)) ctx.modelOptions.forEach(add);
+    return models.map(id => '<option value="' + esc(id) + '"></option>').join('');
+  }
+  function deployModelHint(model, spec) {
+    const tier = spec && typeof Specialties !== 'undefined' && Specialties.tierNote ? Specialties.tierNote(spec) : '';
+    const live = (ctx && ctx.modelHint) ? ctx.modelHint(model) : (model ? 'custom model slug' : 'choose or type a model slug');
+    return (tier ? ('tier hint: ' + tier + '. ') : '') + live;
+  }
+  function deployFormHTML() {
+    const s = deployId ? Specialties.get(deployId) : null;
+    if (!s) return gridHTML();   // spec vanished mid-flight -> back to the catalog
+    const defName = String(s.name || 'Agent').toUpperCase().slice(0, 18);
+    const defModel = (ctx && ctx.defaultModel) || '';
+    return '<div class="mkt-save mkt-deploy-form" style="--accent:' + esc(s.accent) + '">' +
+      '<div class="mkt-deploy-picked">' +
+        '<span class="mkt-deploy-emoji" aria-hidden="true">' + esc(s.emoji) + '</span>' +
+        '<div><div class="mkt-save-h">DEPLOY ' + esc(String(s.name || '').toUpperCase()) + '</div>' +
+          '<div class="mkt-deploy-tag">' + esc(s.tagline) + '</div></div>' +
+      '</div>' +
+      '<p class="mkt-hint">This creates a new permanent agent on the station with its own workstream, prompt, model, memories, and floor body.</p>' +
+      '<label class="mkt-lbl">AGENT NAME<input class="mkt-in" id="mkt-d-name" maxlength="18" value="' + esc(defName) + '" placeholder="name this agent" autocomplete="off" spellcheck="false"></label>' +
+      '<label class="mkt-lbl">MODEL<input class="mkt-in" id="mkt-d-model" list="mkt-d-models" value="' + esc(defModel) + '" placeholder="choose or type a model slug" autocomplete="off" spellcheck="false"></label>' +
+      '<datalist id="mkt-d-models">' + modelOptionsHTML(defModel) + '</datalist>' +
+      '<div class="mkt-model-hint" id="mkt-d-model-hint">' + esc(deployModelHint(defModel, s)) + '</div>' +
+      '<label class="mkt-adopt mkt-deploy-voice"><input type="checkbox" id="mkt-d-voice" checked> use recommended voice: ' + esc(voiceName(s.persona)) + '</label>' +
+      '<div class="mkt-save-acts">' +
+        '<button class="bb sm mkt-cancel">‹ BACK</button>' +
+        '<button class="bb sm mkt-do-deploy">▸ DEPLOY AGENT</button>' +
+      '</div>' +
+    '</div>';
+  }
+  function wireDeployForm(body) {
+    const s = deployId ? Specialties.get(deployId) : null;
+    if (!s) { view = 'grid'; deployId = null; render(); return; }
+    const back = body.querySelector('.mkt-cancel');
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; deployId = null; render(); });
+    const nameIn = body.querySelector('#mkt-d-name');
+    const modelIn = body.querySelector('#mkt-d-model');
+    const hint = body.querySelector('#mkt-d-model-hint');
+    const paintHint = () => { if (hint && modelIn) hint.textContent = deployModelHint(modelIn.value, s); };
+    if (modelIn) modelIn.addEventListener('input', paintHint);
+    const submit = () => {
+      const name = (nameIn && nameIn.value || '').trim();
+      const model = (modelIn && modelIn.value || '').trim();
+      if (!name) { sfx('bad'); note('name this agent', 'bad'); if (nameIn) nameIn.focus(); return; }
+      if (!model) { sfx('bad'); note('choose a model for ' + name, 'bad'); if (modelIn) modelIn.focus(); return; }
+      const voice = body.querySelector('#mkt-d-voice');
+      const res = (ctx && ctx.onDeploy) ? ctx.onDeploy(s, { name, model, adoptVoice: !!(voice && voice.checked) }) : true;
+      if (res === false) { sfx('bad'); note('could not deploy ' + name, 'bad'); return; }
+      const deployedName = (res && res.name) || name.toUpperCase().slice(0, 18);
+      note(deployedName + ' deployed to the station', 'good');
+      close();
+    };
+    const go = body.querySelector('.mkt-do-deploy');
+    if (go) go.addEventListener('click', submit);
+    [nameIn, modelIn].forEach(inp => { if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }); });
+    if (nameIn) { nameIn.focus(); nameIn.select(); }
   }
 
   /* ---------- launch a recipe (fill its params, then hand it to the app) ----------

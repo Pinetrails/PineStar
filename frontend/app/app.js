@@ -101,7 +101,7 @@ const App = (() => {
     }
     if (typeof DossierStore !== 'undefined') DossierStore.syncDocs(d);   // seed the dossier from any newly-authored onboarding doc (first-seed-wins per doc) BEFORE the recompose
     agent.systemPrompt = composeSystemPrompt(agent);
-    if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
+    if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt, agent.name);
     syncChannels();   // keep a connected Telegram bot on the SAME (updated) identity — no reconnect needed
     pushRoster();     // a re-specced agent's new identity must reach the sidecar roster (for delegation)
     persist();
@@ -117,7 +117,8 @@ const App = (() => {
     const a = agents.get(id) || agents.get('agent');
     if (!a) return;
     agent = a;
-    if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);   // runs carry the FOCUSED agent's identity
+    if (typeof Harness !== 'undefined' && Harness.setModel && a.model) Harness.setModel(a.model);   // runs carry the FOCUSED agent's model
+    if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt, a.name);   // runs carry the FOCUSED agent's identity
     const gtA = el('gt-agent'); if (gtA) gtA.textContent = a.name;
     const gtM = el('gt-model'); if (gtM) gtM.textContent = a.model;
     if (typeof World !== 'undefined' && World.focusBody) World.focusBody(a.id);   // Phase C: reframe the camera onto this body
@@ -144,9 +145,8 @@ const App = (() => {
   }
 
   /* ---------- THE RECRUITMENT BAY (in-game) ----------
-     Open the marketplace against the LIVE agent: DEPLOY a specialty (re-specs purpose + standing orders
-     through the very same applyAgentConfig path the dossier uses) or SAVE this agent as a reusable
-     specialty. Voice + spend are left untouched — deploy re-shapes the job, not the personality. */
+     Open the marketplace against the LIVE station: DEPLOY a catalog specialty as a NEW permanent
+     crew member (name + model chosen in-bay), or SAVE the focused agent as a reusable specialty. */
   function openDeployBay(startTab) {
     if (typeof Marketplace === 'undefined' || !agent) return;
     SFX.click();
@@ -154,7 +154,10 @@ const App = (() => {
       mode: 'deploy',
       tab: (startTab === 'recipes') ? 'recipes' : 'agents',   // the bay opens on this tab (RECIPES = the mission library)
       agentName: agent.name,
-      currentSpecialtyId: agent.specialtyId || null,   // lets the bay flag which card is already DEPLOYED
+      deployedSpecialtyIds: liveAgents().map(a => a.specialtyId).filter(Boolean),
+      defaultModel: (agent && agent.model) || (typeof Harness !== 'undefined' && Harness.getModel ? Harness.getModel() : ''),
+      modelOptions: currentModelOptions(),
+      modelHint: modelHintFor,
       notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
       draftFromAgent: () => (typeof Specialties !== 'undefined') ? Specialties.fromAgent(agent) : null,
       onDeploy: deploySpecialty,
@@ -162,16 +165,11 @@ const App = (() => {
     });
   }
   function deploySpecialty(spec, opts) {
-    if (!agent || typeof Specialties === 'undefined') return;
-    opts = opts || {};
-    // opt-in: also adopt the specialty's recommended VOICE. Set personaId BEFORE the recompose so the new
-    // voice folds into the live prompt; we deliberately don't re-init Voice (that would drop hands-free mode) —
-    // the spoken TTS timbre catches up on the next load, the text voice changes immediately.
-    if (opts.adoptVoice && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) agent.personaId = spec.persona;
-    agent.specialtyId = spec.id;
-    const patch = Specialties.compose(spec);
-    if (patch) applyAgentConfig(patch);   // folds purpose + manual (+ any new persona) into the live prompt, persists, syncs channels
+    if (!agent || typeof Specialties === 'undefined') return false;
+    const a = summonAgent(spec, Object.assign({}, opts || {}, { verb: 'deployed', notify: false }));
+    if (!a) return false;
     if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('agents');   // refresh an open dossier
+    return a;
   }
 
   /* ---------- SUMMON: wake a NEW live agent onto the crew ----------
@@ -195,13 +193,22 @@ const App = (() => {
     const seed = (spec && (spec.id || spec.name)) || 'agent';
     return (typeof AgentId !== 'undefined') ? AgentId.alloc(seed, agents) : ('summon-' + (agents.size + 1));
   }
-  function summonAgent(spec) {
+  function normalizeAgentName(name, fallback) {
+    const raw = String(name || fallback || 'AGENT').trim() || 'AGENT';
+    return raw.toUpperCase().slice(0, 18);
+  }
+  function summonAgent(spec, opts) {
     if (!agent) return null;                                   // need a base context (model/provider): a woken hero
-    const id = allocAgentId(spec);
+    opts = opts || {};
+    const recruitName = normalizeAgentName(opts.name, spec && spec.name);
+    const recruitModel = String(opts.model || agent.model || (typeof Harness !== 'undefined' && Harness.getModel ? Harness.getModel() : '') || '').trim();
+    if (!recruitModel) return null;
+    const id = allocAgentId({ id: opts.idSeed || recruitName || (spec && spec.id), name: recruitName });
+    const specPersona = spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona) ? spec.persona : null;
     const a = {
-      id, name: ((spec && spec.name) || 'AGENT').toUpperCase().slice(0, 18),
-      color: SUITS[agents.size % SUITS.length], model: agent.model,
-      personaId: (spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) ? spec.persona : agent.personaId,
+      id, name: recruitName,
+      color: (spec && spec.accent) || SUITS[agents.size % SUITS.length], model: recruitModel,
+      personaId: (opts.adoptVoice === false || !specPersona) ? agent.personaId : specPersona,
       purpose: null, createdAt: Date.now()
     };
     agentDocs(a);
@@ -212,20 +219,17 @@ const App = (() => {
     if (typeof World !== 'undefined' && World.spawnAgent) World.spawnAgent(a);   // Phase C: a real floor body
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     // a fresh workstream BOUND to the new agent; focusing it routes COMMS + the next run to this identity
-    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name) : null;
-    if (ws && typeof Workstreams.setAgent === 'function') Workstreams.setAgent(ws.id, id);
+    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name, { agentId: id }) : null;
     focusAgent(id);
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' summoned — give it a task', 'good');
+    if (opts.notify !== false && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' ' + (opts.verb || 'summoned') + ' - give it a task', 'good');
     return a;
   }
-  // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
+  // open the Recruitment Bay on the agent catalog; the deploy form names the recruit and picks its model.
   function openSummonBay() {
-    if (typeof Marketplace === 'undefined' || !agent) return;
-    SFX.click();
-    Marketplace.open({ mode: 'pick', summon: true, notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null, onPick: summonAgent });
+    openDeployBay('agents');
   }
 
   // LAUNCH a recipe (from the Recipe library's RECIPES tab): mint a fresh workstream named after the mission, then
@@ -238,7 +242,7 @@ const App = (() => {
     if (!agent || typeof Recipes === 'undefined' || !recipe) return false;
     const text = Recipes.fillTask(recipe, values || {});
     if (!text) return false;                                              // nothing to send → report the no-op honestly
-    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission') : null;
+    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission', { agentId: agent.id }) : null;
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);   // make the new stream the compose target before sending
     refreshUsage(); renderRail();
     if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text);   // kicks off the run on the fresh stream
@@ -303,6 +307,28 @@ const App = (() => {
       inp.placeholder = 'e.g. ' + pref.id;
     }
     updateHint();
+  }
+
+  function currentModelOptions() {
+    const out = [], seen = {};
+    const add = v => {
+      v = String(v || '').trim();
+      if (!v || seen[v]) return;
+      seen[v] = true; out.push(v);
+    };
+    if (agent && agent.model) add(agent.model);
+    if (typeof Harness !== 'undefined' && Harness.getModel) add(Harness.getModel());
+    const dl = el('model-list');
+    if (dl && dl.options) Array.from(dl.options).forEach(o => add(o.value));
+    return out;
+  }
+
+  function modelHintFor(id) {
+    id = String(id || '').trim();
+    if (typeof Harness !== 'undefined' && Harness.getProv && Harness.getProv() === 'codex') return 'included in your ChatGPT subscription';
+    const p = (typeof Harness !== 'undefined' && Harness.priceOf) ? Harness.priceOf(id) : null;
+    if (p) return 'pricing: $' + p.in.toFixed(2) + ' /1M in, $' + p.out.toFixed(2) + ' /1M out';
+    return id ? 'custom slug - live cost shown as it spends' : 'choose or type a model slug';
   }
 
   function updateHint() {
@@ -649,7 +675,7 @@ const App = (() => {
     if (typeof DossierStore !== 'undefined') {
       DossierStore.init({
         dossier: pendingDossier, docs: agentDocs(agent), persist: persist,
-        onMutate: () => { if (!agent) return; agent.systemPrompt = composeSystemPrompt(agent); if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt); persist(); }
+        onMutate: () => { if (!agent) return; agent.systemPrompt = composeSystemPrompt(agent); if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt, agent.name); persist(); }
       });
       pendingDossier = null;
       agent.systemPrompt = composeSystemPrompt(agent);   // include the dossier block before Chat.init reads it below
@@ -710,6 +736,7 @@ const App = (() => {
   }
   function newWorkstream() {
     const ws = Workstreams.create(null);
+    focusAgent(ws.agentId || 'agent');
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
 
@@ -784,5 +811,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail };
+  return { show, refreshUsage, persist, refreshRail: renderRail, switchWorkstream };
 })();
