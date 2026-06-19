@@ -322,7 +322,7 @@ function hardlineFloor(call) {
 }
 
 /* ---- messaging channels (C5): a Telegram bot the Commander connects from the in-app Messaging tab.
-   The bot token + the OpenRouter key/model persist in a PROTECTED sibling file (outside the fs jail, never on
+   The bot token + provider credentials persist in a PROTECTED sibling file (outside the fs jail, never on
    the bus, never returned by /status) so polling survives a restart with no browser open. The adapter is the
    lone ambient-I/O edge (injected globalThis.fetch); the hub drives the SAME runOnce host with
    surface:'autonomous' (a headless chat has no browser to answer a consent prompt — ungranted writes
@@ -497,14 +497,20 @@ const checkpointEmit = (name, payload) => { try { return checkpointEmitValidated
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
 
+function normalizeProvider(provider) {
+  return (provider === 'codex' || provider === 'openai-codex') ? 'codex' : 'openrouter';
+}
+function providerUsesCodex(provider) { return normalizeProvider(provider) === 'codex'; }
+
 function startTelegram(token, key, model, agentCfg) {
   stopTelegram();
   const cfg = agentCfg || {};
+  const provider = normalizeProvider(cfg.provider);
   // Persist the SAME agentId + composed system prompt the app uses, so a Telegram run IS the same agent
   // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
   // LIVE by the hub each message, so /sync can refresh them (dossier edits) without a reconnect.
   channelSecrets = Object.assign({}, channelSecrets, { telegram: {
-    token: token, key: key, model: model, enabled: true,
+    token: token, key: key, model: model, provider: provider, enabled: true,
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined
   } });
   saveChannelSecrets(channelSecrets);
@@ -512,7 +518,12 @@ function startTelegram(token, key, model, agentCfg) {
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
-    secrets: () => { const t = (channelSecrets && channelSecrets.telegram) || {}; return { key: t.key, model: t.model, agentId: t.agentId, system: t.system }; },
+    secrets: () => {
+      const t = (channelSecrets && channelSecrets.telegram) || {};
+      const provider = normalizeProvider(t.provider);
+      const key = provider === 'openrouter' ? (t.key || runtimeKey) : '';
+      return { key, model: t.model, provider, agentId: t.agentId, system: t.system };
+    },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
@@ -667,7 +678,7 @@ server.listen(PORT, '127.0.0.1', () => {
     const envTok = String(process.env.SKYNET_TELEGRAM_TOKEN || '').trim();
     const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
     const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
-    if (t.enabled && t.token && t.key && t.model) { startTelegram(t.token, t.key, t.model, { agentId: t.agentId, system: t.system, name: t.name }); console.log('  · telegram auto-started from saved config'); }
+    if (t.enabled && t.token && t.model && (providerUsesCodex(t.provider) || t.key || runtimeKey)) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider }); console.log('  · telegram auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
@@ -1414,28 +1425,31 @@ function handleHalt(req, res) {
   res.end(JSON.stringify({ halted }));
 }
 
-// POST /api/channels/telegram/connect { token, key, model } — the Messaging tab hands over the BotFather token
-// plus the app's current OpenRouter key+model; the sidecar persists them (protected sibling file) and starts the
-// bot. Headless polling then works even with no browser open. The secrets are NEVER echoed back.
+// POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
+// BotFather token plus the app's current provider config; OpenRouter uses a key, Codex uses server-side OAuth.
+// The sidecar persists the channel config (protected sibling file) and starts the bot. Headless polling then
+// works even with no browser open. The secrets are NEVER echoed back.
 async function handleChannelConnect(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }   // room for the composed system prompt
   // reuse the saved values when the request omits them, so RECONNECT is one click (no re-pasting the token).
   const saved = (channelSecrets && channelSecrets.telegram) || {};
+  const provider = normalizeProvider(body.provider || saved.provider);
   const token = String(body.token || '').trim() || String(saved.token || '');
-  const key = String(body.key || '').trim() || String(saved.key || '');
+  const key = String(body.key || '').trim() || String(saved.key || '') || (provider === 'openrouter' ? runtimeKey : '');
   const model = String(body.model || '').trim() || String(saved.model || '');
   // the app's REAL agent identity, so Telegram runs as the same agent (shared memory) with the same voice.
   const agentId = String(body.agentId || '').trim() || String(saved.agentId || '');
   const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');
   const name = String(body.agentName || '').trim() || String(saved.name || '');
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
-  if (!key || !model) return json(400, { error: 'connect your agent first (an OpenRouter key + model are required)' });
-  try { startTelegram(token, key, model, { agentId, system, name }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
+  if (!providerUsesCodex(provider) && !key) return json(400, { error: 'connect your agent first (OpenRouter key + model are required)' });
+  try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   json(200, { connected: true, state: telegramStatus.state });
 }
 
-// POST /api/channels/telegram/sync { agentId?, system?, model?, key?, agentName? } — refresh the agent identity
+// POST /api/channels/telegram/sync { agentId?, system?, model?, key?, provider?, agentName? } — refresh the agent identity
 // the bot runs as (e.g. after the Commander edits identity/purpose/manual in the dossier) WITHOUT a reconnect.
 // The hub reads channelSecrets.telegram live, so the next inbound uses the updated prompt. No-op if unconfigured.
 async function handleChannelSync(req, res) {
@@ -1447,6 +1461,7 @@ async function handleChannelSync(req, res) {
   if (typeof body.agentId === 'string' && body.agentId.trim()) patch.agentId = body.agentId.trim();
   if (typeof body.system === 'string') patch.system = body.system;
   if (typeof body.model === 'string' && body.model.trim()) patch.model = body.model.trim();
+  if (typeof body.provider === 'string' && body.provider.trim()) patch.provider = normalizeProvider(body.provider.trim());
   if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, t, patch) });
