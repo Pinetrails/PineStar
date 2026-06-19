@@ -1896,9 +1896,10 @@ const World = (() => {
       want.set(bay.agentId, { x: fx, y: fy });
     }
     crew = crew.filter(b => b.summoned || want.has(b.agentId));        // drop plan bodies whose bay is gone; KEEP summoned crew
+    for (const b of crew) if (b.summoned && !want.has(b.agentId)) b.atBay = false;
     for (const [aid, pos] of want) {
-      const b = crew.find(x => x.agentId === aid && !x.summoned);
-      if (b) { b.px = pos.x; b.py = pos.y; }
+      const b = crew.find(x => x.agentId === aid);
+      if (b) { b.px = pos.x; b.py = pos.y; b.atBay = true; }
       else if (!crew.some(x => x.agentId === aid)) crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
     }
     // a refit may have moved the floor under a summoned body — re-foot any that no longer stand on a walkable tile.

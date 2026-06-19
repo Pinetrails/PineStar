@@ -601,7 +601,7 @@ const Marketplace = (() => {
       const res = (ctx && ctx.onDeploy) ? ctx.onDeploy(s, { name, model, adoptVoice: !!(voice && voice.checked) }) : true;
       if (res === false) { sfx('bad'); note('could not deploy ' + name, 'bad'); return; }
       const deployedName = (res && res.name) || name.toUpperCase().slice(0, 18);
-      note(deployedName + ' deployed to the station', 'good');
+      note(deployedName + ' deployed - use TALK in the Crew Manifest to brief it', 'good');
       close();
     };
     const go = body.querySelector('.mkt-do-deploy');

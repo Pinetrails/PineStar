@@ -136,17 +136,28 @@ const StationUI = (() => {
       $('#crew-sum').innerHTML = '';
       return;
     }
-    ul.innerHTML = present.map((a, i) =>
-      '<li class="crew-row" data-i="' + i + '">' +
-      '<span class="dot on"></span>' +
+    const focusId = focusedAgentId();
+    ul.innerHTML = present.map((a, i) => {
+      const ws = workstationStatus(a);
+      const focused = a.id === focusId;
+      return '<li class="crew-row' + (focused ? ' comms' : '') + (!ws.ok ? ' needs' : '') + '" data-i="' + i + '">' +
+      '<span class="dot ' + (ws.ok ? 'on' : 'alert') + '"></span>' +
       '<div class="crew-main">' +
       '<div class="crew-name" style="color:' + a.color + '">' + esc(a.name) +
-      '<span class="crew-room">HAB-01' + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
+      '<span class="crew-room">' + (focused ? 'COMMS' : 'HAB-01') + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
       '<div class="crew-status" id="cs-' + a.id + '">…</div>' +
-      '</div></li>').join('');
+      '</div><div class="crew-actions">' +
+      '<button type="button" class="crew-act crew-talk" data-aid="' + esc(a.id) + '">' + (focused ? 'ON' : 'TALK') + '</button>' +
+      (!ws.ok ? '<button type="button" class="crew-act crew-equip" data-aid="' + esc(a.id) + '">EQUIP</button>' : '') +
+      '</div></li>';
+    }).join('');
     $('#crew-n').textContent = present.length + (present.length === 1 ? ' UNIT' : ' UNITS');
     ul.querySelectorAll('.crew-row').forEach(li =>
       li.addEventListener('click', () => { sfx('click'); openAgent(+li.dataset.i); }));
+    ul.querySelectorAll('.crew-talk').forEach(b =>
+      b.addEventListener('click', e => { e.stopPropagation(); const a = present.find(x => x.id === b.dataset.aid); if (a) { sfx('click'); talkTo(a); } }));
+    ul.querySelectorAll('.crew-equip').forEach(b =>
+      b.addEventListener('click', e => { e.stopPropagation(); const a = present.find(x => x.id === b.dataset.aid); if (a) { sfx('click'); equipAgent(a); } }));
     crewTick();
   }
   // a crew member is WORKING iff IT has a live run — read from the real agent.run.start/end events, NOT the
@@ -161,9 +172,13 @@ const StationUI = (() => {
     let working = 0;
     present.forEach(a => {
       const live = runningAgents.has(a.id);
+      const ws = workstationStatus(a);
       if (live) working++;
       const e = $('#cs-' + a.id);
-      if (e) e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
+      if (e) {
+        e.classList.toggle('warn', !ws.ok && !live);
+        e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : (!ws.ok ? (ws.label + ' - hit EQUIP') : 'idle - awaiting orders');
+      }
     });
     const sum = $('#crew-sum');
     if (sum) sum.innerHTML =
@@ -224,21 +239,49 @@ const StationUI = (() => {
   function agSlug(a) {
     return ((a && a.name) || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
   }
+  function focusedAgentId() {
+    return access && typeof access.focusedAgentId === 'function' ? access.focusedAgentId() : ((present[0] && present[0].id) || 'agent');
+  }
+  function workstationStatus(a) {
+    const fallback = a && a.id === 'agent'
+      ? { ok: true, state: 'main-office', label: 'main workstation online', detail: 'The main agent can use the default office.' }
+      : { ok: false, state: 'needs-bay', label: 'needs bay + computer', detail: 'Open BUILD, place a BAY, bind it to this agent, then place a computer/console/desk in that room.' };
+    if (!a || !access || typeof access.workstationStatus !== 'function') return fallback;
+    return access.workstationStatus(a.id) || fallback;
+  }
+  function talkTo(a) {
+    if (!a) return false;
+    const ok = access && typeof access.talkToAgent === 'function' ? access.talkToAgent(a.id) : false;
+    if (ok) notify('COMMS target: ' + (a.name || a.id), 'good');
+    return ok;
+  }
+  function equipAgent(a) {
+    if (!a) return false;
+    if (access && typeof access.openBuildForAgent === 'function') return access.openBuildForAgent(a.id);
+    notify('Open BUILD to place a BAY and computer for ' + (a.name || 'this agent'), 'warn');
+    return false;
+  }
 
   function agHead(a, act, price) {
     const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
     const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
+    const focus = focusedAgentId() === a.id;
+    const ws = workstationStatus(a);
     return '<div class="ag-hero">' +
       '<div class="ag-portrait-wrap"><canvas id="ag-portrait" width="52" height="68"></canvas></div>' +
       '<div class="ag-info">' +
       '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>' +
-      '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
+      '<div class="ag-role-line"><span class="ag-sdot ' + (ws.ok ? dotCls : 'warn') + '"></span>' + (focus ? 'COMMS TARGET' : statusText) + ' · ' + esc(ws.label || 'HAB-01') + '</div>' +
       '<div class="ag-tags">' +
       // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
       ((typeof Specialties !== 'undefined' && a.specialtyId) ? (function () { var s = Specialties.get(a.specialtyId); return s ? '<span class="tag">' + esc(s.emoji + ' ' + s.name) + '</span>' : ''; })() : '') +
       '<span class="tag model">' + esc(a.model || '—') + '</span>' +
       (price ? '<span class="tag dim">$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
+      (focus ? '<span class="tag comms">COMMS</span>' : '') +
+      '</div><div class="ag-actions">' +
+      '<button type="button" class="bb sm ag-talk" data-aid="' + esc(a.id) + '">' + (focus ? 'TALKING NOW' : 'TALK') + '</button>' +
+      (!ws.ok ? '<button type="button" class="bb sm ag-equip" data-aid="' + esc(a.id) + '">EQUIP</button>' : '') +
       '</div></div></div>';
   }
 
@@ -246,11 +289,17 @@ const StationUI = (() => {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
     const fmtTok = n => { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
+    const ws = workstationStatus(a);
     // BRIEF is operational telemetry; the full Level/XP/Confidence/milestone readout lives in the GROWTH tab.
     return '<div class="stat-grid">' +
       '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
       '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
       '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +
+      '</div>' +
+      '<div class="ag-workstation ' + (ws.ok ? 'ok' : 'warn') + '">' +
+      '<div><div class="ag-task-label">WORKSTATION</div><div class="ag-task-title">' + esc(ws.label || '') + '</div>' +
+      '<div class="ag-task-pct">' + esc(ws.detail || '') + '</div></div>' +
+      (!ws.ok ? '<button type="button" class="bb sm ag-equip" data-aid="' + esc(a.id) + '">OPEN BUILD</button>' : '') +
       '</div>' +
       '<div class="ag-mission"><div class="ag-mission-lbl">MISSION</div>' +
       (a.purpose
@@ -534,6 +583,10 @@ const StationUI = (() => {
       it.addEventListener('click', () => { sel = +it.dataset.i; sfx('click'); rerender('agents'); }));
     body.querySelectorAll('.ag-tab').forEach(tb =>
       tb.addEventListener('click', () => { agTab = tb.dataset.tab; sfx('click'); rerender('agents'); }));
+    body.querySelectorAll('.ag-talk').forEach(b =>
+      b.addEventListener('click', () => { const a = present.find(x => x.id === b.dataset.aid); if (a) { sfx('click'); talkTo(a); rerender('agents'); } }));
+    body.querySelectorAll('.ag-equip').forEach(b =>
+      b.addEventListener('click', () => { const a = present.find(x => x.id === b.dataset.aid); if (a) { sfx('click'); equipAgent(a); } }));
     if (agTab === 'config') wireConfig(body);
     if (agTab === 'memory') { wireMemoryLive(); loadMemoryCore(a); }
     drawPortrait(body.querySelector('#ag-portrait'), a);

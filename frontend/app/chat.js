@@ -122,6 +122,11 @@ const Chat = (() => {
   }
   function addUser(t) { row('user').body.textContent = t; autoscroll(); }
   function localLine(t) { row('agent').body.textContent = t; autoscroll(); }
+  function workstationLine(st) {
+    st = st || {};
+    return 'I need a station workstation before I can take tasks: ' + (st.label || 'needs bay + computer') + '. '
+      + (st.detail || 'Use EQUIP in the Crew Manifest or open BUILD to assign a bay and place a computer.');
+  }
   // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible
   function toolLine(text, isErr) {
     const r = row('agent'); r.d.classList.add('tool'); if (isErr) r.d.classList.add('err');
@@ -368,7 +373,6 @@ const Chat = (() => {
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
-    Channels.begin(ws.id);
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
     addUser(text); ws.history.push({ role: 'user', content: text });
     // name an untitled stream from its first real message (no-op on General / already-titled)
@@ -377,6 +381,22 @@ const Chat = (() => {
     }
 
     const isTask = Classify.isTaskDirective(text);
+    const targetAgentId = ws.agentId || 'agent';
+    const stationGate = (isTask && targetAgentId !== 'agent' && typeof App !== 'undefined' && App.workstationStatus)
+      ? App.workstationStatus(targetAgentId)
+      : null;
+    if (stationGate && !stationGate.ok) {
+      const reply = workstationLine(stationGate);
+      localLine(reply);
+      ws.history.push({ role: 'assistant', content: reply });
+      if (typeof StationUI !== 'undefined') StationUI.notify((stationGate.label || 'workstation needed') + ' - use EQUIP', 'warn');
+      if (typeof Workstreams !== 'undefined') Workstreams.touch(ws.id);
+      if (typeof App !== 'undefined') { if (App.refreshRail) App.refreshRail(); if (App.persist) App.persist(); }
+      status('online');
+      if (onTurn) onTurn();
+      return;
+    }
+    Channels.begin(ws.id);
     // fold the interest tag of a real task into the local user-affinity profile (the signal classify.js
     // already computes here and otherwise discards). Captures only a derived {code|research|general}
     // count — never the message text. Gated on the user's learning flag inside the store.

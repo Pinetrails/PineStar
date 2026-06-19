@@ -122,6 +122,27 @@ const App = (() => {
     const gtA = el('gt-agent'); if (gtA) gtA.textContent = a.name;
     const gtM = el('gt-model'); if (gtM) gtM.textContent = a.model;
     if (typeof World !== 'undefined' && World.focusBody) World.focusBody(a.id);   // Phase C: reframe the camera onto this body
+    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());   // active COMMS badge follows focus
+  }
+  function workstreamForAgent(id, opts) {
+    opts = opts || {};
+    const a = agents.get(id) || agents.get('agent');
+    if (!a || typeof Workstreams === 'undefined') return null;
+    if (a.id === 'agent') return Workstreams.get(Workstreams.generalId()) || Workstreams.active();
+    const list = (Workstreams.all ? Workstreams.all() : Workstreams.list({ includeArchived: true }))
+      .filter(w => w && w.agentId === a.id && !w.archived)
+      .sort((x, y) => (y.lastActiveAt || 0) - (x.lastActiveAt || 0));
+    return list[0] || (opts.create === false ? null : Workstreams.create(a.name, { agentId: a.id, activate: false }));
+  }
+  function talkToAgent(id) {
+    const a = agents.get(id) || agents.get('agent');
+    const ws = a && workstreamForAgent(a.id);
+    if (!a || !ws || typeof Workstreams === 'undefined') return false;
+    if (Workstreams.activeId() !== ws.id) Workstreams.switch(ws.id);
+    focusAgent(a.id);
+    if (typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
+    refreshUsage(); renderRail(); persist();
+    return true;
   }
   // the persisted shape of a crew member (systemPrompt is derived, recomposed on rehydrate).
   function serializeAgentLite(a) {
@@ -166,7 +187,7 @@ const App = (() => {
   }
   function deploySpecialty(spec, opts) {
     if (!agent || typeof Specialties === 'undefined') return false;
-    const a = summonAgent(spec, Object.assign({}, opts || {}, { verb: 'deployed', notify: false }));
+    const a = summonAgent(spec, Object.assign({}, opts || {}, { verb: 'deployed', notify: false, focus: false }));
     if (!a) return false;
     if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('agents');   // refresh an open dossier
     return a;
@@ -219,9 +240,11 @@ const App = (() => {
     if (typeof World !== 'undefined' && World.spawnAgent) World.spawnAgent(a);   // Phase C: a real floor body
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     // a fresh workstream BOUND to the new agent; focusing it routes COMMS + the next run to this identity
-    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name, { agentId: id }) : null;
-    focusAgent(id);
-    if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
+    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name, { agentId: id, activate: opts.focus === true }) : null;
+    if (opts.focus === true) {
+      focusAgent(id);
+      if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
+    }
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
     if (opts.notify !== false && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' ' + (opts.verb || 'summoned') + ' - give it a task', 'good');
@@ -230,6 +253,32 @@ const App = (() => {
   // open the Recruitment Bay on the agent catalog; the deploy form names the recruit and picks its model.
   function openSummonBay() {
     openDeployBay('agents');
+  }
+
+  function workstationStatus(agentId) {
+    agentId = String(agentId || 'agent');
+    if (!station || typeof station.propsByAgent !== 'function' || typeof station.bayObjects !== 'function') {
+      return { ok: agentId === 'agent', state: 'unknown', label: 'station not ready', detail: '' };
+    }
+    const bays = station.propsByAgent(agentId).filter(p => p && p.t === 'bay');
+    if (bays.length) {
+      const objs = station.bayObjects(agentId) || [];
+      if (objs.indexOf('computer') >= 0) return { ok: true, state: 'equipped', label: 'station workstation online', detail: 'This agent has an assigned bay with compute.' };
+      return { ok: false, state: 'needs-computer', label: 'needs computer', detail: 'Open BUILD, place a computer/console/desk in this agent bay room, then routed work can visibly land there.' };
+    }
+    if (agentId === 'agent') return { ok: true, state: 'main-office', label: 'main workstation online', detail: 'The main agent can use the default office.' };
+    return { ok: false, state: 'needs-bay', label: 'needs bay + computer', detail: 'Open BUILD, place a BAY, bind it to this agent, then place a computer/console/desk in that room.' };
+  }
+
+  function openBuildForAgent(agentId) {
+    const st = workstationStatus(agentId);
+    if (typeof Build !== 'undefined' && Build.toggle) {
+      const bbBuild = el('bb-build');
+      if (bbBuild) bbBuild.classList.remove('refit-nudge');
+      Build.toggle();
+    }
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((st && st.detail) || 'Open BUILD to equip this agent.', st && st.ok ? 'good' : 'warn');
+    return true;
   }
 
   // LAUNCH a recipe (from the Recipe library's RECIPES tab): mint a fresh workstream named after the mission, then
@@ -644,6 +693,10 @@ const App = (() => {
       StationUI.enter(liveAgents(), {
         totals: () => Harness.totals(),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
+        focusedAgentId: () => (agent && agent.id) || 'agent',
+        talkToAgent,
+        workstationStatus,
+        openBuildForAgent,
         config: { apply: applyAgentConfig }   // dossier edits to identity/purpose/manual .md re-shape the live prompt
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
@@ -811,5 +864,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail, switchWorkstream };
+  return { show, refreshUsage, persist, refreshRail: renderRail, switchWorkstream, talkToAgent, workstationStatus, openBuildForAgent };
 })();
