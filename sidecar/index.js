@@ -848,15 +848,14 @@ async function handleConnectorRefresh(req, res) {
    reducers (cron-store.js) own the record math; these handlers are the ambient glue (parse a schedule string,
    mint an id, persist via the throwing saveCronJobs so a failed write surfaces as a 500). A persisted CronJob
    never embeds the API key — a fire pulls it from runtimeKey at run time. Schedule strings are parsed with the
-   injected wall clock; v1 fires interval + once only, so a 5-field cron string is refused (not silently stored
-   as un-fireable) with an actionable message. 127.0.0.1-bound like every other route. */
+   injected wall clock; interval, once, ISO, and deterministic 5-field cron schedules are accepted only when
+   the pure scheduler can compute their next fire. 127.0.0.1-bound like every other route. */
 
 // parse a user-supplied schedule string into a stored schedule, or throw a 400-able Error. Rejects an
-// unparseable string AND a recognised-but-deferred 5-field cron expr (honest: v1 never fires those).
+// unparseable string (including impossible cron dates) before it can be persisted.
 function parseCronScheduleOr400(str, now) {
   const sched = cron.parseSchedule(String(str == null ? '' : str), now);
-  if (!sched) { const e = new Error("couldn't read that schedule — try \"every 30m\", \"in 2h\", or an ISO timestamp like 2026-07-01T09:00"); e.code = 400; throw e; }
-  if (sched.kind === 'cron') { const e = new Error('5-field cron expressions are not fired yet — use "every 30m", "every 1h", "in 2h", or an ISO timestamp'); e.code = 400; throw e; }
+  if (!sched) { const e = new Error("couldn't read that schedule — try \"every 30m\", \"in 2h\", \"0 9 * * *\", or an ISO timestamp like 2026-07-01T09:00"); e.code = 400; throw e; }
   return sched;
 }
 function parseCronAgentIdOr400(value) {

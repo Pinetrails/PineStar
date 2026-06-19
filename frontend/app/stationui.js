@@ -1084,14 +1084,14 @@ const StationUI = (() => {
       '<h4 class="ms-h">SCHEDULED ROUTINES</h4>' +
       '<p class="set-about">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
         'With no one watching, ungranted file writes are denied silently unless you have pre-approved them. ' +
-        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
+        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
       '<div id="rt-gate" class="set-about"></div>' +
       '<div id="rt-list" class="mc-list">loading…</div>' +
       '<h4 class="ms-h">ADD A ROUTINE</h4>' +
       '<div class="mc-form">' +
         '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
         '<textarea id="rt-prompt" class="key-input" rows="2" placeholder="what should it do each run? e.g. search for new AI-policy news and summarize the top 3" style="resize:vertical"></textarea>' +
-        '<input id="rt-sched" class="key-input" placeholder="schedule — every 30m · in 2h · 2026-07-01T09:00" autocomplete="off">' +
+        '<input id="rt-sched" class="key-input" placeholder="schedule — every 30m · 0 9 * * * · in 2h" autocomplete="off">' +
         '<div id="rt-preview" class="dim" style="min-height:1em;font-size:.9em"></div>' +
         '<div class="rt-agent-pick" role="group" aria-label="Routine agent">' + roster.map(agentButton).join('') + '</div>' +
         '<input id="rt-agent" type="hidden" value="' + esc(routineAgentId) + '">' +

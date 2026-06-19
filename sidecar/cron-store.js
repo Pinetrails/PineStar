@@ -23,7 +23,7 @@
      toEnvelope(jobs)                           -> { version, jobs } // for persistence
      isValidId(id)                              -> boolean
 
-   A CronJob (v1 — interval+once only; see cron.js for schedule shapes):
+   A CronJob (see cron.js for schedule shapes):
      { id, name, prompt, schedule, scheduleDisplay, agentId, model, deliver, enabled,
        state:'scheduled'|'paused'|'completed'|'error', repeat:{times,completed},
        createdAt, nextRunAt, lastRunAt, lastRunId, lastStatus, lastError, lastReason, retryCount,
@@ -70,9 +70,9 @@
     const schedule = spec.schedule || null;
     const enabled = spec.enabled !== false;                          // default true
     const isOnce = !!(schedule && schedule.kind === 'once');
-    const fireable = !!(schedule && (schedule.kind === 'once' || schedule.kind === 'interval'));
+    const fireable = !!(schedule && (schedule.kind === 'once' || schedule.kind === 'interval' || schedule.kind === 'cron'));
 
-    // repeat: a one-shot is exactly once; an interval is forever (null) unless a finite times is given.
+    // repeat: a one-shot is exactly once; recurring schedules are forever (null) unless a finite times is given.
     let times = null;
     if (isOnce) times = 1;
     else if (spec.repeat && spec.repeat.times != null) times = Math.max(1, parseInt(spec.repeat.times, 10) || 1);
