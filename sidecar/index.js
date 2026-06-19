@@ -105,6 +105,9 @@ const CRON_PERSONA = 'You are an autonomous SKYNET station agent running a SCHED
   + 'Carry out the task with your REAL tools (web search/read, files, memory); ground every factual claim in what the '
   + 'tools actually return and cite sources; save any durable deliverable to your workspace with fs_write. Be concise. '
   + 'If there is genuinely nothing new or noteworthy to report this run, reply with EXACTLY "[SILENT]" and nothing else.';
+const CRON_ROUTINE_NOTE = '\n\n[ROUTINE] This is an unattended scheduled routine. Use your normal agent identity, '
+  + 'carry out the saved prompt without waiting for the Commander, and keep the result concise. If there is genuinely '
+  + 'nothing new or noteworthy to report this run, reply with EXACTLY "[SILENT]" and nothing else.';
 // The agent's toolset is NOT a host-side constant — it is projected from the objects placed in the
 // agent's room (CAP_REGISTRY: computer/dish/cabinet/notebook). See handleRun's station + resolveTools.
 
@@ -168,10 +171,41 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
-// Stage 2: the live crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
-// own identity (its composed system prompt + model). agentId -> { system, name, model }. In-memory: the browser
-// re-pushes on every summon/focus, so a sidecar restart just waits for the next push. Not an event (contract-free).
+// Stage 2: the crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
+// own identity (its composed system prompt + model). agentId -> { system, name, model }. The browser replaces
+// it on every push; a protected on-disk mirror lets headless cron fires still run as the selected agent after
+// a sidecar restart. Not an event (contract-free).
 const agentRoster = new Map();
+const AGENT_ROSTER_FILE = path.join(WORKSPACES, 'agent.roster.json');
+function replaceAgentRoster(list) {
+  agentRoster.clear();
+  for (const a of (Array.isArray(list) ? list : [])) {
+    const id = a && String(a.agentId || '');
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
+    agentRoster.set(id, {
+      system: String((a && a.system) || ''),
+      name: String((a && a.name) || id).slice(0, 40),
+      model: (a && a.model) ? String(a.model) : null,
+      role: String((a && a.role) || '').slice(0, 120)
+    });
+  }
+}
+function loadAgentRoster() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(AGENT_ROSTER_FILE, 'utf8'));
+    replaceAgentRoster(raw && raw.agents);
+  } catch (_) {}
+}
+function saveAgentRoster() {
+  try {
+    fs.mkdirSync(WORKSPACES, { recursive: true });
+    const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, role: a.role || '' }));
+    const tmp = AGENT_ROSTER_FILE + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, agents }));
+    fs.renameSync(tmp, AGENT_ROSTER_FILE);
+  } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
+}
+loadAgentRoster();
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
@@ -218,6 +252,27 @@ const commanderDossier = {
   load() { try { const o = JSON.parse(fs.readFileSync(DOSSIER_FILE, 'utf8')); this._block = String((o && o.block) || ''); } catch (_) {} }
 };
 commanderDossier.load();
+
+function cronIdentityFor(agentId) {
+  const id = String(agentId || 'agent');
+  const ident = agentRoster.get(id);
+  if (!ident) return null;
+  const system = String(ident.system || '').trim();
+  return {
+    model: ident.model || null,
+    system: system ? withDossier(system + CRON_ROUTINE_NOTE, commanderDossier.get()) : null,
+    name: ident.name || id
+  };
+}
+function cronSystemFor(agentId) {
+  const ident = cronIdentityFor(agentId);
+  return (ident && ident.system) || withDossier(CRON_PERSONA, commanderDossier.get());
+}
+function cronModelFor(job) {
+  const ident = cronIdentityFor(job && job.agentId);
+  const rosterModel = ident && ident.model ? String(ident.model).trim() : '';
+  return ((job && job.model) ? String(job.model).trim() : '') || rosterModel || CRON_DEFAULT_MODEL;
+}
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
 // the sidecar's own disk (the app-data dir that survives a browser cache wipe). Same containment as the
@@ -463,9 +518,10 @@ const cronDriver = makeCronDriver({
   runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
   emit: cronEmit, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
   getKey: () => runtimeKey, defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
+  identityForAgent: (agentId) => cronIdentityFor(agentId),
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
-  persona: () => withDossier(CRON_PERSONA, commanderDossier.get())
+  persona: (agentId) => cronSystemFor(agentId)
 });
 let cronTimer = null;
 
@@ -803,6 +859,11 @@ function parseCronScheduleOr400(str, now) {
   if (sched.kind === 'cron') { const e = new Error('5-field cron expressions are not fired yet — use "every 30m", "every 1h", "in 2h", or an ISO timestamp'); e.code = 400; throw e; }
   return sched;
 }
+function parseCronAgentIdOr400(value) {
+  const id = String(value == null || value === '' ? 'agent' : value).trim();
+  if (!cronStore.isValidId(id)) { const e = new Error('agent must be one of your station agents'); e.code = 400; throw e; }
+  return id;
+}
 
 // GET /api/cron — the job snapshot the panel renders from (no secrets in a CronJob). `enabled` = is the tick
 // driver actually armed (SKYNET_CRON_ENABLED) so the panel can honestly say whether routines will fire.
@@ -817,11 +878,12 @@ function handleCronCreate(req, res) {
   readBody(req, 1 << 16).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     const id = crypto.randomUUID();
     try {
       cronJobs = cronStore.createJob(cronJobs, {
         id: id, name: body.name, prompt: body.prompt, schedule: schedule,
-        agentId: body.agentId, model: body.model, deliver: body.deliver,
+        agentId: agentId, model: body.model, deliver: body.deliver,
         enabled: body.enabled, repeat: body.repeat
       }, { id: id, now: Date.now() });
       saveCronJobs();
@@ -840,6 +902,9 @@ function handleCronUpdate(req, res) {
     const patch = Object.assign({}, body.patch || {});
     if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
       try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
+      try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
     // pause/resume is not an EDITABLE field on updateJob — pull it out and apply via the dedicated reducers.
     let enabled; if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) { enabled = patch.enabled !== false; delete patch.enabled; }
@@ -892,7 +957,7 @@ async function handleCronRun(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const job = cronStore.getJob(cronJobs, String(body.id || ''));
   if (!job) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'no such routine' })); }
-  const model = (job.model && String(job.model).trim()) || CRON_DEFAULT_MODEL;
+  const model = cronModelFor(job);
   const key = runtimeKey;
   if (!model || !key) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'connect an agent first — a key + model are required to run a routine' })); }
 
@@ -915,7 +980,7 @@ async function handleCronRun(req, res) {
   try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
   try {
     await runOnce({
-      key: key, model: model, system: withDossier(CRON_PERSONA, commanderDossier.get()), messages: [{ role: 'user', content: String(job.prompt || '') }],
+      key: key, model: model, system: cronSystemFor(job.agentId), messages: [{ role: 'user', content: String(job.prompt || '') }],
       agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
       runId: runId, surface: 'autonomous', trigger: 'schedule'
     });
@@ -969,17 +1034,8 @@ async function handleRoster(req, res) {
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const list = (body && Array.isArray(body.agents)) ? body.agents : [];
-  agentRoster.clear();
-  for (const a of list) {
-    const id = a && String(a.agentId || '');
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
-    agentRoster.set(id, {
-      system: String((a && a.system) || ''),
-      name: String((a && a.name) || id).slice(0, 40),
-      model: (a && a.model) ? String(a.model) : null,
-      role: String((a && a.role) || '').slice(0, 120)   // a short specialty/role line for the lead's [YOUR CREW] block
-    });
-  }
+  replaceAgentRoster(list);
+  saveAgentRoster();
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, count: agentRoster.size }));
 }

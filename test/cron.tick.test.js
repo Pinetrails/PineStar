@@ -42,6 +42,7 @@ function setup(jobs, runOnceFake, opts) {
     now: () => clock.now(),
     getKey: () => (opts.key !== undefined ? opts.key : 'sk-test'),
     defaultModel: opts.defaultModel !== undefined ? opts.defaultModel : 'test/model',
+    identityForAgent: opts.identityForAgent,
     persona: 'PERSONA',
     maxRunMs: opts.maxRunMs || 480000
   });
@@ -234,6 +235,19 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const tick = firstOf(s.events, 'cron.tick');
     A.ok(tick != null, 'cron.tick emitted on an active tick');
     A.eq(tick, { fired: 1, skipped: 0, planned: 1 }, 'cron.tick carries the real counts');
+  }
+
+  // ---- 13. selected-agent identity: roster system/model are used when the job has no explicit model ----
+  {
+    const j = intervalJob('j1', 'every 1m');
+    const s = setup([j], okRun(), {
+      defaultModel: 'fallback/model',
+      identityForAgent: (agentId) => agentId === 'cron_j1' ? { system: 'ROSTER SYSTEM', model: 'roster/model' } : null
+    });
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    A.eq(s.runs[0].model, 'roster/model', 'cron fire uses the selected agent roster model');
+    A.eq(s.runs[0].system, 'ROSTER SYSTEM', 'cron fire uses the selected agent roster system prompt');
   }
 
   A.report('cron.tick');

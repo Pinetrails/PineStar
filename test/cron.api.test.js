@@ -62,12 +62,21 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(create.body.job.schedule.kind, 'interval', 'schedule parsed to an interval');
     A.eq(create.body.job.agentId, 'cron_brief', 'agentId stored');
     A.ok(create.body.job.nextRunAt, 'an enabled interval job is armed with a nextRunAt');
+    const roster = await j('POST', '/api/roster', { agents: [{ agentId: 'cron_brief', system: 'ROSTER SYSTEM', name: 'Briefing Agent', model: 'roster/model', role: 'news briefings' }] });
+    A.eq(roster.status, 200, 'POST /api/roster -> 200');
+    A.eq(roster.body.count, 1, 'roster stores the selected cron agent identity');
+    const rosterPath = path.join(ws, 'agent.roster.json');
+    A.ok(fs.existsSync(rosterPath), 'agent roster mirror persisted for headless cron');
+    const rosterDisk = JSON.parse(fs.readFileSync(rosterPath, 'utf8'));
+    A.eq(rosterDisk.agents[0].agentId, 'cron_brief', 'persisted roster carries the agentId');
 
     // ---- create: bad inputs are refused (not silently stored as un-fireable) ----
     const badSched = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: 'whenever i feel like it' });
     A.eq(badSched.status, 400, 'unparseable schedule -> 400');
     const cronExpr = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: '* * * * *' });
     A.eq(cronExpr.status, 400, '5-field cron expr -> 400 (deferred, not stored as un-fireable)');
+    const badAgent = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: 'every 1h', agentId: '../escape' });
+    A.eq(badAgent.status, 400, 'malformed routine agentId -> 400');
 
     // ---- list: the snapshot the panel renders; enabled:false because SKYNET_CRON_ENABLED is unset ----
     const list = await j('GET', '/api/cron');
@@ -101,6 +110,8 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(res.body.job.nextRunAt, 're-armed nextRunAt on resume');
     const updMissing = await j('POST', '/api/cron/update', { id: 'nope', patch: { name: 'z' } });
     A.eq(updMissing.status, 404, 'update of an unknown id -> 404');
+    const updBadAgent = await j('POST', '/api/cron/update', { id, patch: { agentId: 'bad agent!' } });
+    A.eq(updBadAgent.status, 400, 'update rejects a malformed agentId');
 
     // ---- run-now: guarded (no key -> 400; unknown id -> 404) — zero spend ----
     const runNoKey = await j('POST', '/api/cron/run', { id });

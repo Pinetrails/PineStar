@@ -23,6 +23,8 @@
                                                  //   after applyTick's nowMs is stale) — Date.now in index.js
      deps.getKey()         -> string             // the LIVE BYOK key (index.js runtimeKey; '' => no-capability)
      deps.defaultModel     -> string             // boot-frozen SKYNET_DEFAULT_MODEL fallback when job.model is null
+     deps.identityForAgent -> (agentId, job) -> { system?, model? } | null
+                                                 // optional selected-agent identity (browser roster / persisted mirror)
      deps.persona          -> string | ()=>string // the autonomous system prompt (carries the [SILENT] hint);
                                                  //   a getter is re-read each fire so it can fold in the live
                                                  //   Commander dossier (Phase C). Both forms stay determinism-clean.
@@ -48,6 +50,7 @@
     const newId = d.newId, newAbort = d.newAbort, now = d.now;
     const getKey = typeof d.getKey === 'function' ? d.getKey : function () { return ''; };
     const defaultModel = d.defaultModel || '';
+    const identityForAgent = typeof d.identityForAgent === 'function' ? d.identityForAgent : function () { return null; };
     // persona may be a STRING (the autonomous system prompt) or a GETTER that returns it fresh each fire
     // (Phase C: index.js passes a getter so each run folds in the live Commander dossier). Both stay
     // determinism-clean — a getter is just an injected dep, exactly like getKey/getJobs.
@@ -86,7 +89,8 @@
        no-capability skip). The run settles asynchronously; its lease is released in finishFire on EVERY terminal
        path (resolve or reject), so a throwing/zombie run never permanently wedges the job. */
     function fireJob(job, scheduledFor, nowMs) {
-      const model = (job.model && String(job.model).trim()) || defaultModel;
+      const ident = identityForAgent(job.agentId, job) || {};
+      const model = (job.model && String(job.model).trim()) || (ident.model && String(ident.model).trim()) || defaultModel;
       const key = getKey();
       if (!model || !key) { try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {} return false; }
 
@@ -114,7 +118,7 @@
       let p;
       try {
         p = runOnce({
-          key: key, model: model, system: personaOf(), messages: messages,
+          key: key, model: model, system: (ident.system && String(ident.system)) || personaOf(job.agentId, job), messages: messages,
           agentId: job.agentId, isTask: true, emit: sink, signal: ac.signal,
           runId: runId, surface: 'autonomous', trigger: 'schedule'
         });
