@@ -40,6 +40,7 @@ const Build = (() => {
   let drag = null, hoverRoomId = null, hoverPropId = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let stars = [];
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
+  let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
 
   const T = () => (station ? station.TILE : 12);
 
@@ -75,6 +76,7 @@ const Build = (() => {
     if (raf) cancelAnimationFrame(raf), raf = 0;
     clearTimeout(tipTimer); tipTimer = 0;
     if (convey) convey.reset(), convey = null;
+    propThumbs.length = 0; lastThumbTs = 0;   // free the preview tiles' canvases
     if (unsub) unsub(), unsub = null;
     if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
     document.body.classList.remove('refit-on');
@@ -176,6 +178,7 @@ const Build = (() => {
     const label = root.querySelector('#refit-palette-label');
     let paletteLabel = '';
     pal.innerHTML = '';
+    propThumbs.length = 0;   // drop any preview tiles from a prior render (they're rebuilt below for the prop tool)
     if (tool === 'room') {
       paletteLabel = 'ROOM TYPE';
       station.KIND_ORDER.forEach(k => {
@@ -216,20 +219,12 @@ const Build = (() => {
         catRow.appendChild(b);
       });
       pal.appendChild(catRow);
-      // row 2 — props in the active category
-      const propRow = document.createElement('div'); propRow.className = 'refit-props';
-      propRow.setAttribute('aria-label', 'Props');
-      (CATS[propCat] || []).forEach(c => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'bb sm refit-kind' + (c.id === propType ? ' active' : '');
-        b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
-        b.textContent = c.label;
-        b.title = c.label + ' · ' + c.w + '×' + c.h + (c.blocks === false ? ' · decor (walkable)' : '');
-        b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
-        propRow.appendChild(b);
-      });
-      pal.appendChild(propRow);
+      // row 2 — a scrollable gallery of LIVE previews: each tile draws the real animated sprite, not just its name
+      const grid = document.createElement('div'); grid.className = 'refit-propgrid';
+      grid.setAttribute('aria-label', 'Props');
+      (CATS[propCat] || []).forEach(c => grid.appendChild(propTile(c)));
+      pal.appendChild(grid);
+      try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
     } else if (tool === 'paint') {
       paletteLabel = 'DECK PAINT';
       Object.keys(station.FLOOR_STYLES).forEach(sid => {
@@ -256,6 +251,57 @@ const Build = (() => {
     const gap = 12;
     const clearance = Math.ceil(r.height + Math.max(0, window.innerHeight - r.bottom) + gap);
     document.body.style.setProperty('--refit-dock-clearance', Math.max(58, clearance) + 'px');
+  }
+
+  /* ---------- visual prop palette: a scrollable gallery of LIVE animated previews ----------
+     Each tile carries its own mini-canvas; paintThumbs() blits the real PropSprites art into it every
+     few frames (driven by the main loop) so the screens/LEDs animate exactly like the placed prop. */
+  const THUMB_PAD = 7;   // native-px halo so art that overflows the footprint (monitors, masts, shadows) isn't clipped
+  function propTile(c) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'refit-proptile' + (c.id === propType ? ' active' : '');
+    b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
+    b.title = c.label + ' · ' + c.w + '×' + c.h + (c.blocks === false ? ' · decor (walkable)' : '');
+    b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
+
+    const DW = 76, DH = 50, SS = Math.max(2, Math.min(3, window.devicePixelRatio || 1));  // supersample so even wide props stay crisp
+    const cvEl = document.createElement('canvas');
+    cvEl.className = 'refit-proptile-cv';
+    cvEl.style.width = DW + 'px'; cvEl.style.height = DH + 'px';
+    cvEl.width = Math.round(DW * SS); cvEl.height = Math.round(DH * SS);
+
+    const tile = (typeof PropSprites !== 'undefined') ? PropSprites.TILE : 12;
+    const nativeW = c.w * tile + THUMB_PAD * 2, nativeH = c.h * tile + THUMB_PAD * 2;
+    const off = document.createElement('canvas'); off.width = nativeW; off.height = nativeH;
+
+    const lbl = document.createElement('span'); lbl.className = 'refit-proptile-lbl'; lbl.textContent = c.label;
+    b.appendChild(cvEl); b.appendChild(lbl);
+    if (c.blocks === false) {   // walkable decor marker (agents path THROUGH it) — matches the title hint
+      const tag = document.createElement('span'); tag.className = 'refit-proptile-tag'; tag.textContent = '○'; b.appendChild(tag);
+    }
+    propThumbs.push({ id: c.id, w: c.w, h: c.h, off, octx: off.getContext('2d'), dctx: cvEl.getContext('2d'),
+                      nativeW, nativeH, bw: cvEl.width, bh: cvEl.height });
+    return b;
+  }
+  // draw every visible preview tile for time `now` (animated). Renders native → fit-blits with nearest-neighbour.
+  function paintThumbs(now) {
+    if (typeof PropSprites === 'undefined' || !propThumbs.length) return;
+    for (const th of propThumbs) {
+      const o = th.octx;
+      o.setTransform(1, 0, 0, 1, 0, 0);
+      o.clearRect(0, 0, th.nativeW, th.nativeH);
+      o.imageSmoothingEnabled = false;
+      o.translate(THUMB_PAD, THUMB_PAD);
+      PropSprites.setCtx(o); PropSprites.setNow(now);
+      PropSprites.draw({ t: th.id, x: 0, y: 0, w: th.w, h: th.h }, true);   // work=true → screens read alive in the preview
+      const d = th.dctx, s = Math.min(th.bw / th.nativeW, th.bh / th.nativeH);
+      const dw = Math.round(th.nativeW * s), dh = Math.round(th.nativeH * s);
+      d.setTransform(1, 0, 0, 1, 0, 0);
+      d.clearRect(0, 0, th.bw, th.bh);
+      d.imageSmoothingEnabled = false;
+      d.drawImage(th.off, Math.round((th.bw - dw) / 2), Math.round((th.bh - dh) / 2), dw, dh);
+    }
   }
 
   // a tiny textured deck sample (so the swatch reads like the baked floor, not a flat chip)
@@ -843,6 +889,9 @@ const Build = (() => {
     drawRoutingValidation(t, now);   // red/amber markers on any unroutable junction/bay (cost-safety)
     drawHover(t);
     drawGhost(t, now);
+    // animate the prop-palette preview gallery (~25fps is plenty + cheap). Runs LAST: it hijacks PropSprites'
+    // ctx for the offscreen tiles, and the next frame re-points it at the main canvas in drawProps().
+    if (tool === 'prop' && propThumbs.length && now - lastThumbTs >= 40) { paintThumbs(now); lastThumbTs = now; }
 
     raf = requestAnimationFrame(frame);
   }
