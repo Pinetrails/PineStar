@@ -332,6 +332,7 @@ const StationUI = (() => {
   }
 
   function agSkills() {
+    const SKILLS = liveSkills();
     const on = SKILLS.filter(s => s.on).length;
     return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
       '<div class="perk-grid">' +
@@ -557,16 +558,30 @@ const StationUI = (() => {
      ids, and which actions pause for a one-click approval in COMMS (the P1.5 consent broker —
      writes to the user's files ask the Commander before they run; the private notebook does not).
      Kept in sync with the registry by hand; TERMINAL (shell.exec) is the registry's own "M5 next". */
-  const SKILLS = [
-    { icon: '▣', name: 'COMPUTE',     tools: 'model.chat',               on: true },
-    { icon: '⌕', name: 'WEB SEARCH',  tools: 'web_search',               on: true },
-    { icon: '⇩', name: 'WEB FETCH',   tools: 'web_fetch',                on: true },
-    { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        on: true },
-    { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', on: true, consent: true },
-    { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    on: true },
-    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec · verify.run',  on: true, consent: true }
+  /* DERIVED from the live floor, NOT a hand-kept literal. The solo hero's default office grants
+     compute/web/files/memory out of the box (honest to leave them on); TERMINAL is the ONE capability
+     gated on a placed WORKBENCH (World.heroWorkbench). Honest in BOTH directions — never claims TERMINAL
+     is live before a bench is down, never locks the caps the hero genuinely has. */
+  const SKILL_DEFS = [
+    { icon: '▣', name: 'COMPUTE',     tools: 'model.chat',               base: true },
+    { icon: '⌕', name: 'WEB SEARCH',  tools: 'web_search',               base: true },
+    { icon: '⇩', name: 'WEB FETCH',   tools: 'web_fetch',                base: true },
+    { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        base: true },
+    { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', base: true, consent: true },
+    { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    base: true },
+    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec · verify.run',  base: false, consent: true }   // gated on a placed WORKBENCH
   ];
+  // a placed WORKBENCH flips TERMINAL on (World.heroWorkbench -> chat.js sends it -> sidecar grants shell.exec + verify.run)
+  function terminalLive() {
+    try { return !!(typeof World !== 'undefined' && World.heroWorkbench && World.heroWorkbench('agent')); }
+    catch (_) { return false; }
+  }
+  function liveSkills() {
+    const term = terminalLive();
+    return SKILL_DEFS.map(s => Object.assign({}, s, { on: s.base ? true : term }));
+  }
   function buildSkills(body) {
+    const SKILLS = liveSkills();
     const on = SKILLS.filter(s => s.on).length;
     body.innerHTML =
       '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
@@ -579,7 +594,7 @@ const StationUI = (() => {
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
       '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
-      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory · ' +
+      '(<b>computer</b> → compute · <b>dish</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory · ' +
       '<b>workbench</b> → terminal), so the room layout IS the permission system. Read-only skills run freely, and ' +
       'the agent\'s own private <b>notebook memory</b> saves without asking; <b>writing to your files</b> and ' +
       '<b>running commands</b> pause for a one-click approval in COMMS before they run. Place a <b>WORKBENCH</b> ' +

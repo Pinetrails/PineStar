@@ -258,10 +258,18 @@ const Tutorial = (() => {
     showCoach('build', '#refit-tools',
       'this is REFIT — the floor isn’t decoration. where you put things changes what i can do. keys 1–7 up top: 6 places gear, 7 lays belts.');
   }
-  function onPropPlaced() {
+  function onPropPlaced(propType) {
     tickBrief('build');
-    showCoach('prop', '#refit-palette',
-      'nice. every piece you place is a permission — a desk powers me up to work, a dish reaches the web, a cabinet opens files. drop them in my room to hand me the key.');
+    const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(propType) : null;
+    let msg;
+    if (grant === 'TERMINAL') {                 // the ONE prop that flips a real capability on the solo station — the honest hero beat
+      msg = 'there it is — that workbench just handed me a real TERMINAL. now i can run shell commands and verify what they did, and you approve each one. place a power, gain a power — that’s the whole game.';
+    } else if (grant) {                          // dish/cabinet/notebook/computer: real grants, but the solo office already came with them
+      msg = 'that’s a ' + grant + ' grant. on my solo station i already came with it — so this is how you hand ' + grant + ' to a CREW agent you recruit: drop it in their room and it’s their key.';
+    } else {                                     // inert decor
+      msg = 'nice. the gear that grants a power wears its name — a workbench gives me a TERMINAL, a dish reaches the WEB, a cabinet opens FILES. the rest is yours to decorate.';
+    }
+    showCoach('prop', '#refit-palette', msg);
   }
   function onBeltPlaced() {
     tickBrief('belt');
