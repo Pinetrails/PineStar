@@ -107,12 +107,19 @@
     const dots = document.querySelectorAll('#crew .dot'); if (!dots.length) return;
     let cls = 'wr-idle';
     if (currentPending()) cls = 'wr-await';
-    else {
+    else if (running() > 0) {
+      // a REAL agent run is live (hero, summoned worker, or routed) — not merely the hero's status TEXT, which
+      // used to light every dot in lockstep with the hero even when no run existed. refine work-vs-think from
+      // the hero status line only while something is actually running.
       const st = (($('#chat-status') || {}).textContent || '').toLowerCase();
-      if (st.indexOf('work') >= 0) cls = 'wr-work';
-      else if (st.indexOf('think') >= 0) cls = 'wr-think';
+      cls = st.indexOf('think') >= 0 ? 'wr-think' : 'wr-work';
     }
     for (const d of dots) d.className = 'dot on ' + cls;
+  }
+  // authoritative per-agent run state — the SAME self-healing map the crew LIST reads (StationUI's runningAgents,
+  // fed by real agent.run.start/end), never the global hero status string.
+  function running() {
+    try { return (typeof StationUI !== 'undefined' && StationUI.runningCount) ? StationUI.runningCount() : 0; } catch (_) { return 0; }
   }
 
   /* ---------------- CINEMA mode ---------------- */
