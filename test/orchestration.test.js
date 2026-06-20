@@ -122,6 +122,21 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   A.eq(ro.calls.length, 1, 'a granted dispatch reaches runOnce');
 }
 
+// ---- dispatch carries its OWN long timeout, never the 30s fast-tool default (regression: a real worker loop
+//      runs for minutes; inheriting ctx.timeoutMs=30000 made team.dispatch always time out before returning) ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['researcher', { system: 'R' }]]);
+  // default: no dispatchTimeoutMs passed -> a generous built-in (minutes), far above the 30s fast-tool cap
+  const def = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter() }).dispatchTool;
+  A.ok(typeof def.timeoutMs === 'number' && def.timeoutMs > 60000, 'team.dispatch carries its own multi-minute timeout, not the 30s fast-tool default');
+  // the registry honors tool.timeoutMs OVER ctx.timeoutMs, so a 30s ctx can never clamp a dispatch
+  A.ok(def.timeoutMs > 30000, 'dispatch timeout outlasts CAPS.toolTimeoutMs (30s) so a worker loop is never cut short');
+  // an explicit override is honored (the host wires this from CRON_MAX_RUN_MS)
+  const over = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 123456 }).dispatchTool;
+  A.eq(over.timeoutMs, 123456, 'deps.dispatchTimeoutMs overrides the dispatch wall-clock');
+}
+
 A.report('orchestration.test');
 
 })();
