@@ -92,7 +92,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal, streamId, workbench }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal, streamId, workbench, routed }) {
     const key = getKey(), model = getModel(), provider = getProv();
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -104,6 +104,7 @@ const Harness = (() => {
       const reqBody = { model, provider, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
       if (workbench) reqBody.workbench = true;     // a placed WORKBENCH grants this run shell.exec + verify.run
+      if (routed) reqBody.routed = true;           // ROUTED-VIA-LINE: isolate this run's tools to the bound bay room (router.stationFor)
       if (!DESKTOP) reqBody.key = key;
       res = await fetch('/api/run', {
         method: 'POST', signal,

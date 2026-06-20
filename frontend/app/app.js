@@ -609,6 +609,15 @@ const App = (() => {
     World.spawn(agent);
     World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
+    World.setOnIntake(() => {
+      // click an INTAKE dock → arm the next COMMS message to run through the line it heads. Resolve WHO the floor
+      // routes to first (for the chip preview + the "no line yet" nudge); the real run re-resolves off the task text.
+      const tgt = World.resolveLineTarget ? World.resolveLineTarget('general') : null;
+      if (!tgt) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('No line yet — open REFIT (B), draw a BELT from this INTAKE to a BAY, then assign an agent.', 'warn'); return; }
+      let nm = tgt.agentId;
+      try { const a = (typeof liveAgents === 'function') ? liveAgents().find(x => x.id === tgt.agentId) : null; if (a && a.name) nm = a.name; } catch (_) {}
+      if (typeof Chat !== 'undefined' && Chat.armLine) Chat.armLine({ agentId: tgt.agentId, tag: tgt.tag, name: nm, caps: tgt.caps });
+    });
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
     else if (opts.wake) { World.wakeIn(); SFX.level(); }
     World.start();

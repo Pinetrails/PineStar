@@ -1151,19 +1151,31 @@ async function handleRun(req, res) {
     });
   }
 
+  // ROUTED-VIA-LINE (floor routing): the browser resolved this run's agent from the placed RoutingPlan (it fed a
+  // task into a LINE), so isolate its tools to exactly that bay room's objects (router.stationFor) — the floor
+  // decides WHAT, just as it decided WHO. null (plan not posted / agent unbound) → the default office below, so
+  // a mis-wired floor never stalls real work. An UNDER-equipped bay (no computer) grants no compute → cost-safe.
+  const routedStation = (body && body.routed) ? router.stationFor(agentId) : null;
+  // …and run it in the bay agent's OWN voice: a LINE-routed run targets a bound bay agent, so prefer that agent's
+  // composed identity from the pushed roster (/api/roster) over the browser's active-agent system prompt. Absent
+  // from the roster (not a summoned/live agent) → keep the passed system prompt (still runs; just the lead's voice).
+  const routedRoster = (body && body.routed) ? agentRoster.get(agentId) : null;
+  const runSystem = (routedRoster && routedRoster.system) || system;
+
   // all setup + the run live inside ONE try, so any failure becomes a clean agent.run.error + closed stream
   try {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask, provider,
+      key, model, system: runSystem, messages, agentId, isTask, provider,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
+      station: routedStation || undefined,   // ROUTED-VIA-LINE: the bound bay room's isolated tools; absent → default office
       reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
-      lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
-                      // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
+      lead: !routedStation   // a LINE-routed bay run is an isolated worker (no orchestrator / team.dispatch); a normal
+                             // browser directive is the lead. A delegated worker runs via team.dispatch (lead falsy) too.
     });
   } catch (e) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}

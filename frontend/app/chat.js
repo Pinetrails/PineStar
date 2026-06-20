@@ -38,6 +38,7 @@ const Chat = (() => {
   let pinnedReplyEl = null;     // THE PINNED REPLY: while a reply streams, its DOM row is held as the LAST log child so the
                                 // actual message sits at the bottom of COMMS; work lines (tool ▶/◀, deliverables, consent) slot
                                 // in ABOVE it instead of pushing it up out of view. Cleared the moment the reply finishes.
+  let pendingLine = null;       // ROUTED-VIA-LINE: a target armed by clicking an INTAKE dock; the NEXT message runs through that line
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
@@ -61,7 +62,7 @@ const Chat = (() => {
     input.onkeydown = e => {
       if (e.key === 'Enter' && !e.isComposing) {
         const t = input.value.trim();
-        if (t) { input.value = ''; send(t); }
+        if (t) { input.value = ''; const pl = pendingLine; clearLineArm(); send(t, pl ? { viaLine: true, lineName: pl.name } : null); }
       }
     };
   }
@@ -373,22 +374,35 @@ const Chat = (() => {
   function wiBump(aid, d) { const n = Math.max(0, (wiQDepth.get(aid) || 0) + d); wiQDepth.set(aid, n); return n; }
   function wiEmit(name, payload) { try { if (typeof U !== 'undefined' && U.bus) U.bus.emit(name, payload); } catch (_) {} }
 
-  async function send(text) {
+  async function send(text, opts) {
     if (interview) { interview(text); return; }   // THE AWAKENING owns the input: route the answer to onboarding, no model call
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
     Channels.begin(ws.id);
-    // P1: drop this directive's INTAKE ore box on the belt + start its DWELL clock (mirrors the Telegram
-    // admit shape). queueId === agentId so the box routes to the hero / bound desk in world.js.
-    const wiAid = ws.agentId || 'agent';
+    // ROUTED-VIA-LINE: when the Commander fed this task into a floor LINE (clicked an INTAKE), the bound-bay agent
+    // the placed RoutingPlan resolves to RUNS it — with that bay room's isolated tools — and the ore box rides to
+    // THAT bay. Resolve at SEND time off the real text tag so a FILTER sorts by content exactly as dispatch does;
+    // a floor that no longer routes falls back to the lead (the message is never blocked).
+    let viaLine = false, lineTag = undefined, lineName = '';
+    let targetAid = ws.agentId || 'agent';
+    if (opts && opts.viaLine && typeof World !== 'undefined' && World.resolveLineTarget) {
+      lineTag = (typeof Classify !== 'undefined' && Classify.getTag) ? Classify.getTag(text) : 'general';
+      const tgt = World.resolveLineTarget(lineTag);
+      if (tgt && tgt.agentId) { viaLine = true; targetAid = tgt.agentId; lineName = opts.lineName || tgt.agentId; }
+      else { lineTag = undefined; if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('That line no longer reaches a bound bay — running your lead instead.', 'warn'); }
+    }
+    // P1: drop this directive's INTAKE ore box on the belt + start its DWELL clock (mirrors the Telegram admit
+    // shape). queueId === agentId so the box rides to the resolved bay (or the hero / bound desk) in world.js.
+    const wiAid = targetAid;
     const wiId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
     const wiPlacedTs = Date.now();
     { const depth = wiBump(wiAid, 1);
-      wiEmit('workitem.placed', { workitemId: wiId, queueId: wiAid, agentId: wiAid, kind: 'directive', preview: String(text || '').replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: wiPlacedTs });
+      wiEmit('workitem.placed', { workitemId: wiId, queueId: wiAid, agentId: wiAid, kind: viaLine ? 'line' : 'directive', preview: String(text || '').replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: wiPlacedTs });
       wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
     addUser(text); ws.history.push({ role: 'user', content: text });
+    if (viaLine && isActiveWs(ws)) toolLine('▶ routed via LINE → ' + lineName + (lineTag ? ' · ' + lineTag : ''));
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
@@ -413,7 +427,7 @@ const Chat = (() => {
     const stance = Classify.stanceFor(isTask);
     // per-agent: the HERO routes to setActivity (single-agent path unchanged); a summoned crew agent lights
     // ITS own body at ITS station, so tasking a summoned agent never moves the hero.
-    if (World.setActivityFor) World.setActivityFor(ws.agentId || 'agent', stance); else World.setActivity(stance);
+    if (World.setActivityFor) World.setActivityFor(targetAid, stance); else World.setActivity(stance);
     // a spoken CHAT gently frames the agent one-on-one so you can see who you're talking to; a TASK is at
     // the desk instead (no-op if already comfortably on-screen; self-cancels the moment you pan/zoom).
     if (stance === 'talk' && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
@@ -463,8 +477,8 @@ const Chat = (() => {
     };
     try {
       const { text: reply, error, endReason } = await Harness.chat({
-        system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal, streamId: ws.id,
-        workbench: (typeof World !== 'undefined' && World.heroWorkbench) ? World.heroWorkbench(ws.agentId || 'agent') : false,   // placed WORKBENCH -> this run gains shell.exec + verify.run
+        system: sys, messages: (viaLine ? [{ role: 'user', content: text }] : ws.history), agentId: targetAid, routed: viaLine, isTask, signal: ac.signal, streamId: ws.id,
+        workbench: (typeof World !== 'undefined' && World.heroWorkbench) ? World.heroWorkbench(targetAid) : false,   // placed WORKBENCH -> this run gains shell.exec + verify.run
         onRunId: id => { Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
@@ -514,7 +528,7 @@ const Chat = (() => {
       // a THROWN teardown (abort/cancel/disconnect/network drop) means agent.run.end was LOST on the bus, so the
       // crew HUD would stick at WORKING — clear this run's count here. Normal + in-band-error completions deliver
       // run.end (decremented by the bus listener), so we must NOT clear there or a concurrent sibling under-counts.
-      if (typeof StationUI !== 'undefined' && StationUI.clearRunning) StationUI.clearRunning(ws.agentId || 'agent');
+      if (typeof StationUI !== 'undefined' && StationUI.clearRunning) StationUI.clearRunning(targetAid);
     } finally {
       aborters.delete(ws.id);
       Channels.end(ws.id);
@@ -528,7 +542,7 @@ const Chat = (() => {
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
       // a summoned crew body extinguishes the moment ITS run ends — even if it finished off-screen (a
       // background crew run must stop "working"). The hero keeps its original active-stream-gated stance.
-      if ((ws.agentId || 'agent') !== 'agent') { if (World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
+      if (targetAid !== 'agent') { if (World.setActivityFor) World.setActivityFor(targetAid, 'idle'); }
       else if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
@@ -616,5 +630,38 @@ const Chat = (() => {
     return () => { killed = true; };
   }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, choices, typeLine };
+  // ── ROUTED-VIA-LINE arming: clicking an INTAKE dock on the floor "arms" the next COMMS message to run through
+  //    that line — the bound-bay agent the floor routes to runs it, with that bay's tools. A dismissible chip above
+  //    the input makes it explicit; the chat box is otherwise untouched (one explicit, opt-in routed message).
+  function armLine(target) {
+    if (!target || !target.agentId) return;
+    pendingLine = { agentId: target.agentId, tag: target.tag || 'general', name: target.name || target.agentId, caps: target.caps || [] };
+    showLineChip(pendingLine);
+    if (input) { input.placeholder = 'type the task to run through this line…'; input.focus(); }
+  }
+  function clearLineArm() {
+    pendingLine = null;
+    const c = el('line-arm-chip'); if (c) c.remove();
+    if (input) input.placeholder = 'speak to your agent…';
+  }
+  function showLineChip(pl) {
+    if (!input || !input.parentNode) return;
+    let c = el('line-arm-chip');
+    if (!c) {
+      c = document.createElement('div'); c.id = 'line-arm-chip';
+      c.style.cssText = 'display:flex;align-items:center;gap:6px;margin:0 0 4px;padding:3px 8px;border:1px solid #2c6;border-radius:5px;background:rgba(40,200,120,0.10);color:#9fe9c4;font:11px/1.4 ui-monospace,monospace';
+      input.parentNode.insertBefore(c, input);
+    }
+    const caps = (pl.caps || []).map(o => (o && o.objectType) || o).filter(Boolean);
+    c.innerHTML = '';
+    const label = document.createElement('span');
+    label.textContent = '▶ RUN LINE → ' + pl.name + (pl.tag ? ' · ' + pl.tag : '') + (caps.length ? ' · ' + caps.join('/') : '');
+    const x = document.createElement('button');
+    x.type = 'button'; x.textContent = '✕'; x.title = 'cancel';
+    x.style.cssText = 'margin-left:auto;background:none;border:none;color:#9fe9c4;cursor:pointer;font:11px monospace';
+    x.onclick = () => clearLineArm();
+    c.appendChild(label); c.appendChild(x);
+  }
+
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, choices, typeLine, armLine };
 })();

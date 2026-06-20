@@ -28,7 +28,7 @@ const World = (() => {
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = false, onClick = null, onArcade = null, wakeAt = 0;
+  let drag = null, hoverAgent = false, onClick = null, onArcade = null, onIntake = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -349,7 +349,7 @@ const World = (() => {
       // rising edge: it notices the Commander's cursor land on it and turns to meet you
       if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
       if (hit !== hoverAgent) hoverAgent = hit;
-      cv.style.cursor = (hit || arcadeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets are clickable too
+      cv.style.cursor = (hit || arcadeAt(wp) || intakeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + INTAKE docks are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -360,6 +360,8 @@ const World = (() => {
         if (agent && activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
         if (onClick) onClick(); return;
       }
+      const ink = intakeAt(wp);
+      if (ink && onIntake) { onIntake(ink); return; }   // click an INTAKE dock → feed a task into the line it heads (floor routing)
       const arc = arcadeAt(wp);
       if (arc && onArcade) onArcade(arc);
     });
@@ -1764,6 +1766,31 @@ const World = (() => {
     }
     return null;
   }
+  function setOnIntake(fn) { onIntake = fn; }
+  // hit-test: the INTAKE logistics prop under a world-space point (null if none). Clicking it feeds a task into
+  // the line that intake heads — routed by the SAME compiled RoutingPlan the conveyor + sidecar dispatch share.
+  function intakeAt(wp) {
+    if (!geo || !geo.props) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'intake') continue;
+      const s = specOf(p.t) || {};
+      const x0 = p.x * T, y0 = p.y * T - 2;
+      const x1 = (p.x + (p.w || s.w || 1)) * T, y1 = (p.y + (p.h || s.h || 1)) * T + 6;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
+  }
+  // resolve which bound-bay agent a task with this content TAG routes to on the current floor, plus that bay's
+  // capability objects (for a "what can this line do" label). null when no deployable INTAKE→BAY path exists.
+  // Uses the EXACT compiled RoutingPlan (Pipeline.resolveTarget) the sidecar dispatches on — visual == dispatch.
+  function resolveLineTarget(tag) {
+    if (!routingPlan || typeof Pipeline === 'undefined' || !Pipeline.resolveTarget) return null;
+    const t = tag || 'general';
+    const aid = Pipeline.resolveTarget(routingPlan, { tag: t });
+    if (!aid) return null;
+    const bay = (routingPlan.bays || []).find(b => b.agentId === aid);
+    return { agentId: aid, tag: t, caps: (bay && Array.isArray(bay.objects)) ? bay.objects.slice() : [] };
+  }
 
   /* ---------- work-item pipeline: the conveyor carries REAL inbound work to the agent ----------
      A real admitted message (Telegram) arrives over the SSE bridge as `workitem.placed`; we drop a
@@ -2270,7 +2297,7 @@ const World = (() => {
     ctx.textAlign = 'left';
   }
 
-  return { init, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
+  return { init, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnIntake, resolveLineTarget, refit,
     // AGENT GROWTH: XpStore pushes the hero's pre-computed Xp.compute() snapshot here (station arg unused —
     // the colony headline is the top-bar STATION chip); pulseLevelUp fires the gold ring.
     setXp: (a) => { xpAgent = a || null; },
