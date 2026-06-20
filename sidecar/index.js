@@ -23,6 +23,10 @@ const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
+const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
+const { makeSpotifyTools } = require('./tools/builtin/spotify.js');       // JUKEBOX: control/query the user's Spotify
+const { makeSpotifyStore } = require('./spotify/store.js');               // Spotify OAuth (PKCE) token store + auto-refresh
+const spotifyPkce = require('./spotify/pkce.js');                          // pure PKCE helpers (verifier/challenge/urls)
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
@@ -179,6 +183,14 @@ const agentRoster = new Map();
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
+
+// SPOTIFY (the JUKEBOX skill): ONE durable OAuth session for the station, persisted OUTSIDE any agent jail
+// (WORKSPACES/.secrets/spotify.json — not reachable via /api/file). PKCE flow → client_id only, never a secret.
+// The redirect URI is fixed + must be registered verbatim in the user's Spotify app (loopback IP, not localhost).
+const SPOTIFY_REDIRECT = 'http://127.0.0.1:' + PORT + '/api/spotify/callback';
+const spotifyStore = makeSpotifyStore({ fsp, pathMod: path, dir: path.join(WORKSPACES, '.secrets'), fetchImpl: globalThis.fetch, now: () => Date.now() });
+// in-flight PKCE verifiers keyed by the OAuth `state` (a round-trip completes in seconds). Pruned on each start.
+const spotifyPending = new Map();
 
 // PERSISTENT notebook (memory) — JSON file per agent, atomic write, survives sidecar restarts. Stored as a
 // SIBLING of the agent's workspace dir (WORKSPACES/<aid>.notebook.json), OUTSIDE the fs-jailed
@@ -622,6 +634,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'POST' && req.url === '/api/spotify/auth/start') return handleSpotifyStart(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/spotify/callback') === 0) return handleSpotifyCallback(req, res);
+  if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
+  if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
   if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
@@ -792,6 +808,78 @@ async function handleConnectorRefresh(req, res) {
   const id = String(body.id || '').trim();
   let result; try { result = await connectors.refresh(id); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
   json(200, Object.assign({ status: connectors.status(id) }, result));
+}
+
+/* ---- /api/spotify: OAuth 2.0 Authorization-Code-with-PKCE for the JUKEBOX skill. NO client secret is ever
+   stored (that's the point of PKCE). The user creates a Spotify app at developer.spotify.com, whitelists the
+   redirect URI (SPOTIFY_REDIRECT) verbatim, and provides its Client ID once; /start opens the consent page,
+   the browser returns to /callback, we exchange the code for tokens and persist the refresh token. The callback
+   is intentionally UNGUARDED — Spotify's redirect (the browser) hits it, not the app. 127.0.0.1-bound. ---- */
+function spotifyJson(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); }
+function spotifyEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function spotifyHtml(res, code, title, body) {
+  res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end('<!doctype html><meta charset=utf-8><title>' + spotifyEsc(title) + '</title>' +
+    '<body style="font:16px/1.5 system-ui,sans-serif;background:#0b0f14;color:#bfe8d4;display:grid;place-items:center;height:90vh;text-align:center">' +
+    '<div><h2 style="margin:.2em 0">' + spotifyEsc(title) + '</h2><p>' + spotifyEsc(body) + '</p>' +
+    '<p style="opacity:.55;font-size:.9em">You can close this window and return to Skynet.</p></div>');
+}
+
+async function handleSpotifyStart(req, res) {
+  let body = {}; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) {}
+  let clientId = String(body.clientId || '').trim();
+  if (clientId) { try { await spotifyStore.setClientId(clientId); } catch (_) {} }
+  else { try { clientId = (await spotifyStore.getClientId()) || ''; } catch (_) {} }
+  if (!clientId) clientId = String(process.env.SKYNET_SPOTIFY_CLIENT_ID || '').trim();
+  if (!clientId) return spotifyJson(res, 400, { error: 'A Spotify Client ID is required. Create an app at https://developer.spotify.com/dashboard, add the redirect URI ' + SPOTIFY_REDIRECT + ' to it, then send its Client ID.', redirectUri: SPOTIFY_REDIRECT });
+  // prune stale pending states (> 10 min) so the map can't grow unbounded
+  const cutoff = Date.now() - 600000;
+  for (const [k, v] of spotifyPending) if (!v || v.at < cutoff) spotifyPending.delete(k);
+  const verifier = spotifyPkce.makeVerifier(crypto.randomBytes(48));
+  const challenge = spotifyPkce.challengeOf(verifier);
+  const state = crypto.randomBytes(16).toString('hex');
+  spotifyPending.set(state, { verifier, clientId, redirectUri: SPOTIFY_REDIRECT, at: Date.now() });
+  const scope = Array.isArray(body.scope) ? body.scope : (body.scope ? String(body.scope).split(/\s+/) : undefined);
+  const url = spotifyPkce.authorizeUrl({ clientId, redirectUri: SPOTIFY_REDIRECT, challenge, state, scope });
+  spotifyJson(res, 200, { url, redirectUri: SPOTIFY_REDIRECT });
+}
+
+async function handleSpotifyCallback(req, res) {
+  const u = new URL(req.url, 'http://127.0.0.1');
+  const err = u.searchParams.get('error');
+  if (err) return spotifyHtml(res, 400, 'Spotify connection cancelled', err);
+  const code = u.searchParams.get('code') || '';
+  const state = u.searchParams.get('state') || '';
+  const pending = spotifyPending.get(state);
+  spotifyPending.delete(state);
+  if (!code || !pending) return spotifyHtml(res, 400, 'Link expired', 'That sign-in link is no longer valid — start again from Skynet Settings.');
+  try {
+    const r = await globalThis.fetch(spotifyPkce.TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: spotifyPkce.tokenExchangeBody({ code, redirectUri: pending.redirectUri, clientId: pending.clientId, verifier: pending.verifier })
+    });
+    const json = await r.json().catch(() => null);
+    if (!r.ok || !json || !json.access_token) {
+      const m = (json && (json.error_description || json.error)) || ('HTTP ' + r.status);
+      return spotifyHtml(res, 502, 'Spotify connection failed', typeof m === 'string' ? m : JSON.stringify(m));
+    }
+    await spotifyStore.setClientId(pending.clientId);
+    await spotifyStore.setTokens(spotifyPkce.tokensFromResponse(json, Date.now(), ''));
+    spotifyHtml(res, 200, '✓ Spotify connected', 'Your agents can now search and control your Spotify.');
+  } catch (e) {
+    spotifyHtml(res, 502, 'Spotify connection failed', (e && e.message) || 'unknown error');
+  }
+}
+
+async function handleSpotifyStatus(req, res) {
+  let st; try { st = await spotifyStore.status(); } catch (_) { st = { connected: false, hasClientId: false, scope: '', expiresAt: 0 }; }
+  spotifyJson(res, 200, Object.assign({}, st, { redirectUri: SPOTIFY_REDIRECT }));
+}
+
+async function handleSpotifyDisconnect(req, res) {
+  let st; try { st = await spotifyStore.clear(); } catch (_) { st = { connected: false }; }
+  spotifyJson(res, 200, Object.assign({ ok: true }, st));
 }
 
 /* ----------------------------- /api/cron: the ROUTINES CRUD + preview + run-now -----------------------------
@@ -1136,6 +1224,12 @@ async function runOnce(o) {
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact }).register(registry);   // §5.6: scrub secrets at the write boundary
+  // STUDIO (media skills): image_generate / image_analyze ride the SAME BYOK OpenRouter key + key the run uses.
+  // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
+  makeImageTools({ openrouter: { apiKey: key, model }, fsp, pathMod: path, root: WORKSPACES }).register(registry);
+  // JUKEBOX (Spotify): registered every run, EXPOSED via a 'jukebox' object; no-op (clear error) until the user
+  // connects Spotify in Settings. The OAuth session + auto-refresh live in the station-wide spotifyStore above.
+  makeSpotifyTools({ store: spotifyStore }).register(registry);
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
@@ -1160,7 +1254,9 @@ async function runOnce(o) {
     { instanceId: 'pc1', objectType: 'computer' },
     { instanceId: 'dish1', objectType: 'dish' },
     { instanceId: 'cab1', objectType: 'cabinet' },
-    { instanceId: 'nb1', objectType: 'notebook' }
+    { instanceId: 'nb1', objectType: 'notebook' },
+    { instanceId: 'studio1', objectType: 'studio' },      // STUDIO: image generation + vision analysis (OpenRouter)
+    { instanceId: 'jukebox1', objectType: 'jukebox' }     // JUKEBOX: Spotify (inert until connected in Settings)
   ];
   // the single-agent browser office also gets every configured connector portal — there is exactly ONE agent
   // here, so this IS per-agent; routed multi-agent bays instead pass their OWN room objects (o.station) so each

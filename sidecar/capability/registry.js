@@ -56,6 +56,26 @@
     // re-delegate, capping depth at one), plus the per-worker/day/global budget caps and the concurrency ceiling.
     orchestrator: [
       { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: false, network: true }
+    ],
+    // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
+    // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so
+    // it is consent-gated like fs.write; image_analyze only READS an image and returns text (consent-free).
+    studio: [
+      { capId: 'studio', tool: 'image_generate', scope: 'write', requiresConsent: true, network: true },
+      { capId: 'studio', tool: 'image_analyze', scope: 'read', requiresConsent: false, network: true }
+    ],
+    // JUKEBOX (Spotify): querying playback/library is consent-free (read); CONTROLLING playback is an outward
+    // action on the user's account/device, so it is execute + consent-gated. The OAuth session (PKCE, no secret)
+    // lives in sidecar/spotify/store.js; an unconnected Spotify makes each tool fail with a "connect it" message.
+    jukebox: [
+      { capId: 'jukebox', tool: 'spotify_search', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'jukebox', tool: 'spotify_now_playing', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'jukebox', tool: 'spotify_playlists', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'jukebox', tool: 'spotify_play', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'jukebox', tool: 'spotify_pause', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'jukebox', tool: 'spotify_next', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'jukebox', tool: 'spotify_previous', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'jukebox', tool: 'spotify_queue', scope: 'execute', requiresConsent: true, network: true }
     ]
   };
 
