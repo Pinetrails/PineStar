@@ -199,8 +199,9 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 /* first-run / empty stream: a single dim hint instead of a blank void */
 .cmsg-empty { color: var(--ph-dim); font-size: 14px; line-height: 1.5; text-align: center; padding: 18px 10px; opacity: .85; }
 
-/* tool-activity lines: the agent's real work, dim micro-lines under the same left rail, no header */
-.cmsg.tool { font-size: 13.5px; }
+/* tool-activity lines: the agent's actions, interleaved with its prose (classic harness flow).
+   Dim subordinate micro-lines that read as "what it's doing" between what it's saying. */
+.cmsg.tool { font-size: 13.5px; padding-left: 11px; }
 .cmsg.tool .who { display: none; }
 .cmsg.tool .body { color: var(--ph-dim); letter-spacing: 0.3px; }
 .cmsg.tool.err .body { color: var(--bad); }
@@ -208,7 +209,9 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .deliverable-link { color: var(--gold); text-decoration: underline; cursor: pointer; }
 .deliverable-link:hover { color: var(--ph-bright); }
 
-/* live consent prompt: the agent is paused waiting for the Commander to approve an action */
+/* live consent prompt — the agent paused for approval, INLINE in the flow where it happened (this
+   replaced the always-on top APPROVALS panel). A clear gold frame so it reads as "act on me now". */
+.cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(255,211,74,.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }
 .cmsg.consent .body { color: var(--ph-bright); }
 .consent-btns { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .consent-btn {
