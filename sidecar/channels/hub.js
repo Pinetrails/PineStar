@@ -168,6 +168,7 @@
         await runOnce({
           key: sec.key, model: sec.model, system, messages, agentId, isTask,
           emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous',
+          broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
           station: bayStation || undefined
         });
       } catch (e) {

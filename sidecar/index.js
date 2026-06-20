@@ -1092,11 +1092,26 @@ async function handleRun(req, res) {
    reply-assembler for the hub), the run lifecycle/cleanup, AND the consent SURFACE — 'interactive' + a live
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
-  const { key, model, system, messages = [], agentId = 'agent', isTask = false, emit, signal, runId } = o;
+  const { key, model, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
   const trigger = o.trigger || 'directive';
+  // P1 (WIRING_AUDIT slice 2): a server-initiated run (telegram/routed) has NO browser-local copy of its
+  // lifecycle, so the station floor never lights for it. When a caller opts in via o.broadcast, ALSO mirror the
+  // run-lifecycle events to the floor over SSE. Gated on the explicit flag — NOT on trigger — so the hero's
+  // directive run and manual/scheduled cron (which already reach a browser by other means) can never double-
+  // count. Restricted to run.start/cost/end so agent.token/tool noise never floods the SSE bus. Re-using the
+  // name `emit` means every existing emit(...) call site below tees automatically, with no per-site change.
+  const rawEmit = o.emit;
+  const emit = o.broadcast
+    ? (name, payload) => {
+        try { rawEmit(name, payload); } catch (_) {}
+        if (name === 'agent.run.start' || name === 'agent.cost' || name === 'agent.run.end') {
+          try { sse.broadcast(name, redact(payload)); } catch (_) {}
+        }
+      }
+    : rawEmit;
 
   // ---- concurrency admission (multi-agent fan-out guard) ----
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
