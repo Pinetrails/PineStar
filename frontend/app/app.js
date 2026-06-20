@@ -476,11 +476,29 @@ const App = (() => {
     el('btn-back').onclick = () => { SFX.click(); stopCodexPoll(); codexFlow = null; showTitle(); };
     el('btn-wake').onclick = onWake;
     el('in-name').onkeydown = e => { if (e.key === 'Enter') onWake(); };
+    wireAdvancedToggle();
     // provider toggle + ChatGPT sign-in wiring; selectProviderUI() also loads the right model catalog.
     document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
     el('btn-codex-signin').onclick = startCodexSignIn;
     el('btn-codex-logout').onclick = codexLogout;
     selectProviderUI(Harness.getProv());
+  }
+
+  // The "PERSONALIZE (optional)" reveal on the create screen: collapses avatar/personality/specialty so
+  // the form leads with just the essentials. Every input stays in the DOM, so onWake() reads them whether
+  // the section is open or shut — this is pure progressive disclosure, no behaviour change.
+  function setAdvanced(open) {
+    const body = el('adv-body'), tog = el('adv-toggle');
+    if (!body || !tog) return;
+    body.hidden = !open;
+    tog.setAttribute('aria-expanded', String(open));
+    tog.classList.toggle('open', open);
+    const caret = tog.querySelector('.adv-caret'); if (caret) caret.textContent = open ? '▾' : '▸';
+  }
+  function wireAdvancedToggle() {
+    const tog = el('adv-toggle'); if (!tog) return;
+    setAdvanced(false);   // a fresh connect screen starts collapsed
+    tog.onclick = () => { SFX.click(); setAdvanced(el('adv-body').hidden); };
   }
 
   // THE ROSTER at create-time: open the Recruitment Bay in PICK mode; the chosen specialty pre-fills the
