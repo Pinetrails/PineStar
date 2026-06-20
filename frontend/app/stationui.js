@@ -1336,6 +1336,57 @@ const StationUI = (() => {
     refresh();
   }
 
+  /* ============== LOGBOOK — the reviewable run-history + SLAG post-mortems (the durable record) ==============
+     Two read-only surfaces the audit found were written-but-never-read: RUNS folds the append-only run-history
+     logbook (GET /api/runs — every finished run's outcome/cost/reason), and SLAG renders World.slagLog() — the
+     wasted-spend post-mortems (cause + fix) that used to live only as a fading toast. (WIRING_AUDIT P7.) */
+  const LB_REASON = { done: '✓ done', max_iters: '⟳ looped out', budget: '$ over budget', cancelled: '⏹ cancelled', error: '✕ error', refusal: '⊘ refused' };
+  function buildLogbook(body) {
+    const agentId = (present[sel] && present[sel].id) || 'agent';
+    body.innerHTML =
+      '<h4 class="ms-h">LOGBOOK — ' + esc(agentId) + '</h4>' +
+      '<div class="set-save"><button class="bb sm lb-tab active" data-tab="runs">▦ RUNS</button> ' +
+      '<button class="bb sm lb-tab" data-tab="slag">⚠ SLAG</button></div>' +
+      '<p class="set-about" id="lb-about"></p>' +
+      '<div id="lb-list" class="mc-list">loading…</div>';
+    const listEl = body.querySelector('#lb-list'), aboutEl = body.querySelector('#lb-about');
+    let tab = 'runs';
+    function runRow(r) {
+      const when = r.ts ? esc(fmtRel(new Date(r.ts).toISOString())) : '';
+      const rl = LB_REASON[r.reason] || esc(r.reason || 'done');
+      const title = r.title ? esc(r.title) : esc(String(r.runId || 'run').slice(0, 12));
+      return '<div class="mc-row"><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + '</span></div>' +
+        '<div class="mc-url dim">' + rl + ' · $' + (Number(r.usd) || 0).toFixed(4) + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + (r.tokens ? (' · ' + r.tokens + ' tok') : '') + '</div></div>';
+    }
+    function slagRow(d) {
+      return '<div class="mc-row"><div class="mc-top"><b style="color:var(--bad)">⚠ ' + esc(d.title || 'wasted spend') + '</b></div>' +
+        '<div class="mc-url dim">' + esc(d.cause || '') + '</div>' +
+        (d.fix ? '<div class="mc-detail">→ ' + esc(d.fix) + '</div>' : '') + '</div>';
+    }
+    async function refresh() {
+      if (tab === 'runs') {
+        aboutEl.innerHTML = 'Every finished run, newest first — what it produced, what it cost, and why it ended. The durable record behind the spend.';
+        try {
+          const j = await (await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100')).json();
+          const runs = (j && j.runs) || [];
+          listEl.innerHTML = runs.length ? runs.map(runRow).join('') : '<div class="fb-empty">NO RUNS YET.<br><span>Finished runs appear here once this agent does real work.</span></div>';
+        } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see run history.</div>'; }
+      } else {
+        aboutEl.innerHTML = 'Wasted-spend post-mortems: every run that burned dollars without a deliverable, diagnosed into a real, fixable cause. Optimise these down.';
+        let slag = [];
+        try { if (typeof World !== 'undefined' && World.slagLog) slag = World.slagLog().slice().reverse(); } catch (_) {}
+        listEl.innerHTML = slag.length ? slag.map(slagRow).join('') : '<div class="fb-empty">NO SLAG — clean line.<br><span>A post-mortem appears here when a run burns spend without producing a result.</span></div>';
+      }
+    }
+    body.querySelectorAll('.lb-tab').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.tab === tab) return;
+      tab = b.dataset.tab; sfx('click');
+      body.querySelectorAll('.lb-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
+      refresh();
+    }));
+    refresh();
+  }
+
   /* ============== COMMANDER DOSSIER — the station-wide model of the USER (the glass box) ==============
      Phase A of docs/COMMANDER_DOSSIER_PLAN.md. ONE dossier, shared by every agent, that folds into each
      agent's system prompt (DossierStore.composeBlock) so a new agent knows the Commander on day one. This
@@ -1464,6 +1515,7 @@ const StationUI = (() => {
     connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
     routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
+    logbook:  ['LOGBOOK',                buildLogbook,   { w: '600px' }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
   };
 
