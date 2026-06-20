@@ -41,12 +41,13 @@ const WorldModel = (() => {
     return dst;
   }
 
-  /* Airlock door state — the worktree-isolation mechanic, carried on an 'airlock' prop exactly like a
-     BAY carries agentId. A room containing a SEALING airlock (closed|jammed) is cut off: projectGeometry
-     drops its boundary doors so canStep — and thus every agent path — can't cross in or out. That mirrors
-     an unmerged worktree: the agent's room is private until "merged".
-       open   = merged / connected to trunk (DEFAULT — stored as an absent field, so old docs are unchanged)
-       closed = private, unmerged (sealed)
+  /* Airlock door state — a SPATIAL room-seal mechanic, carried on an 'airlock' prop exactly like a BAY
+     carries agentId. A room containing a SEALING airlock (closed|jammed) is cut off ON THE FLOOR:
+     projectGeometry drops its boundary doors so canStep — and thus every agent BODY path — can't cross in
+     or out. It's a staging seal (an unmerged-branch metaphor); it does NOT change the agent's run, tools, or
+     capabilities (the BAY governs those). The room is visually private until "merged".
+       open   = connected to trunk (DEFAULT — stored as an absent field, so old docs are unchanged)
+       closed = private, sealed
        jammed = a merge conflict (sealed + a red spark on the prop) */
   const DOOR_STATES = { open: 1, closed: 1, jammed: 1 };
   const cleanDoor = s => (DOOR_STATES[s] ? s : null);
@@ -496,8 +497,9 @@ const WorldModel = (() => {
 
       const isCorridor = z => corridor[z] === true;
 
-      /* worktree isolation: a room holding a SEALING airlock (closed|jammed) gets NO boundary doors
-         below, so canStep can't cross its edge — the agent is sealed in, like an unmerged branch. The
+      /* spatial room-seal: a room holding a SEALING airlock (closed|jammed) gets NO boundary doors
+         below, so canStep can't cross its edge — the agent's BODY is sealed in, like an unmerged branch
+         (floor containment only, not capability isolation). The
          trunk room (the integration hub) never seals, so the station can't be severed from its core. */
       const sealed = new Set();
       for (const p of doc.props) {
@@ -635,7 +637,7 @@ const WorldModel = (() => {
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
       return { ok: true, id: propId, agentId: aid || null };
     }
-    // cycle an AIRLOCK's door state (open|closed|jammed) — the worktree merge/isolation handle. Mirrors
+    // cycle an AIRLOCK's door state (open|closed|jammed) — the room-seal (merge/staging) handle. Mirrors
     // assignPropAgent. 'open' clears the field (= default) so docs stay clean. A full re-bake (emit []) is
     // used because sealing flips the room's whole wall/threshold boundary, not just the prop's footprint.
     function setDoorState(propId, state) {

@@ -538,8 +538,10 @@ const Build = (() => {
     flashTip(ev, 'test work riding — watch it sort', true); sfx('click');
   }
 
-  /* ---------- AIRLOCK door-state picker (doors / worktree isolation): cycle a room's seal.
-     closed/jammed SEAL the room — its agent can't path in or out (an unmerged worktree); open = merged. */
+  /* ---------- AIRLOCK door-state picker: cycle a room's SPATIAL seal (floor containment, NOT capability
+     isolation). closed/jammed SEAL the room — its agent's BODY can't path in or out (a staging seal, the
+     unmerged-branch metaphor); open = connected to trunk. Sealing does NOT change the agent's run/tools/caps
+     — the BAY governs capability. */
   function openDoorPicker(propId, ev) {
     if (!root || root.querySelector('.refit-door-picker')) return;
     const p = station.propById(propId); if (!p || p.t !== 'airlock') return;
@@ -556,9 +558,10 @@ const Build = (() => {
     g.className = 'refit-guide refit-door-picker';
     g.innerHTML = `
       <div class="refit-guide-card">
-        <h3>▮ AIRLOCK — WORKTREE ISOLATION</h3>
-        <ul><li>A <b>SEALED</b> room is private — its agent can’t path in or out (an unmerged branch).</li>
-        <li><b>OPEN</b> = merged to the trunk hub · <b>JAMMED</b> = a merge conflict (sealed).</li>
+        <h3>▮ AIRLOCK — ROOM SEAL</h3>
+        <ul><li>A <b>SEALED</b> room is contained on the floor — its agent’s body can’t path in or out (a staging seal, the unmerged-branch look).</li>
+        <li><b>OPEN</b> = connected to the trunk hub · <b>JAMMED</b> = a merge conflict (sealed).</li>
+        <li>A spatial seal — it doesn’t change what the agent’s run can do; its tools &amp; permissions come from its BAY.</li>
         ${isTrunk ? '<li><b>This is the trunk room</b> — it never seals (the integration hub).</li>' : ''}</ul>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${rows}</div>
         <div style="display:flex;gap:6px;margin-top:6px">
