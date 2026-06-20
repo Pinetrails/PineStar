@@ -9,7 +9,8 @@
 #screen-game.active {
   display: grid;
   grid-template-rows: 64px 1fr 44px;
-  grid-template-columns: 232px 1fr 360px;
+  /* COMMS width is a live var so the user can drag the stage/COMMS divider (chatresize.js) */
+  grid-template-columns: 232px 1fr var(--chat-w, 360px);
   grid-template-areas: "top top top" "left center chat" "bot bot bot";
   padding: 11px; gap: 9px;
 }
@@ -353,8 +354,28 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 #topbar { grid-area: top; }
 #left { grid-area: left; }
 #stage-wrap { grid-area: center; }
-#chat-panel { grid-area: chat; }
+#chat-panel { grid-area: chat; position: relative; }
 #bottombar { grid-area: bot; }
+
+/* ---------- COMMS / stage divider: drag left to widen COMMS (chatresize.js) ----------
+   A thin handle living in the 9px grid gap on the COMMS panel's left edge. Invisible until
+   hovered/dragged, then a phosphor grip lights up so it reads as a real control. */
+.col-resizer {
+  position: absolute; top: 0; bottom: 0; left: -10px; width: 12px; z-index: 25;
+  cursor: col-resize; display: flex; align-items: center; justify-content: center;
+  touch-action: none;
+}
+.col-resizer-grip {
+  width: 2px; height: 46px; border-radius: 2px; background: var(--ph-dim); opacity: 0;
+  transition: opacity .12s, background .12s, box-shadow .12s;
+}
+.col-resizer:hover .col-resizer-grip,
+body.col-resizing .col-resizer-grip {
+  opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
+}
+/* while dragging: column-resize cursor everywhere + no text selection + canvas ignores the pointer */
+body.col-resizing { cursor: col-resize; user-select: none; }
+body.col-resizing #stage { pointer-events: none; }
 
 /* the v7 screen-flicker animation targets #app (which this app doesn't
    have) — re-point it at the live station so the SETTINGS toggle works */
@@ -672,7 +693,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* responsive: keep the three columns usable on smaller windows */
 @media (max-width: 1120px) {
-  #screen-game.active { grid-template-columns: 200px 1fr 300px; }
+  #screen-game.active { grid-template-columns: 200px 1fr var(--chat-w, 300px); }
 }
 
 /* ============================================================
