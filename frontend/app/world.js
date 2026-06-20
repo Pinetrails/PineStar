@@ -1853,21 +1853,31 @@ const World = (() => {
       if (agent.goal == null) agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 200);
     }
   }
-  // the agent's reply heads out — enqueue an OUTBOUND box at a desk-adjacent belt tile, riding to the OUTBOX
+  // a belt tile to ship an outbound box from — beside the PRODUCING agent's own bay, not always the hero's.
+  // The hero ships from its desk (byte-identical); a crew/summoned agent ships from a belt tile beside ITS
+  // body; an unknown agent falls back to the hero desk. (WIRING_AUDIT P3: kill the single-hero-desk assumption.)
+  function outboundBeltTile(aid) {
+    if (aid && agent && aid !== agent.id) {
+      const b = bodyForAgent(aid);
+      if (b && b !== agent) { const tt = tileOf(b.px, b.py); return beltTileNear(tt.x, tt.y, 1, 1); }
+    }
+    return desk ? beltTileNear(desk.tx, desk.ty, desk.w, desk.h) : null;
+  }
+  // the agent's reply heads out — enqueue an OUTBOUND box at a belt tile beside the PRODUCING agent's bay
   function outboundMessage(payload) {
-    if (!convey || !desk) return;
-    const t = beltTileNear(desk.tx, desk.ty, desk.w, desk.h);
+    if (!convey) return;
+    const t = outboundBeltTile(payload && payload.agentId);
     // the reply rode out and was actually sent (workitem.delivered fires only after a successful send),
     // so this box is a banked PRODUCT (green). Its MASS = the just-finished run's REAL reconciled cost
     // (lastRunDoneUsd), so an expensive run banks a visibly heavier crate. Failed/superseded runs emit none.
     const w = (typeof FloorStats !== 'undefined' && FloorStats.costWeight) ? FloorStats.costWeight(lastRunDoneUsd).weight : 0;
     if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: w, workitemId: (payload && payload.workitemId) || '' });
   }
-  // a wasteful run produced no deliverable — ride a red-hot SLAG crate off the desk (carrying its
-  // post-mortem one-liner) so spend that yielded nothing is VISIBLE leaving the line, not just a number.
-  function enqueueSlag(diag) {
-    if (!convey || !desk) return;
-    const t = beltTileNear(desk.tx, desk.ty, desk.w, desk.h);
+  // a wasteful run produced no deliverable — ride a red-hot SLAG crate off the PRODUCING agent's bay (carrying
+  // its post-mortem one-liner) so spend that yielded nothing is VISIBLE leaving the line, not just a number.
+  function enqueueSlag(diag, aid) {
+    if (!convey) return;
+    const t = outboundBeltTile(aid);
     if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'slag', postmortem: (diag && (diag.title + ' — ' + diag.fix)) || 'wasted spend' });
   }
   /* ---------- crew bodies (the OTHER agents, standing at their bays) ---------- */
@@ -2054,7 +2064,7 @@ const World = (() => {
       if (!slaglog) return;
       const diag = slaglog.record(r, { cacheFrac: lastCacheFrac, turns: p && p.turns, usd: p && p.usd });
       if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('⚠ SLAG · ' + SlagLog.line(diag), 'warn');
-      enqueueSlag(diag);
+      enqueueSlag(diag, p && p.agentId);
     });
     // Stage 2: WATCH the lead delegate. A team.dispatch tool call opens a delegation window (until its tool_result);
     // any WORKER run that starts inside it flies a box lead→worker + lights the worker. Contract-free — rides the
