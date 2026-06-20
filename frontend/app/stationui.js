@@ -928,6 +928,15 @@ const StationUI = (() => {
       try { const r = await fetch('/api/channels/telegram/status'); paint(await r.json()); }
       catch (_) { configured = false; statusEl.style.color = '#999'; statusEl.textContent = '○ sidecar offline'; }
     }
+    buildMessaging._refresh = refresh;
+    // live transport health: channel.connect (poll up / network down / fatal token error) is emitted + SSE-broadcast
+    // by the hub. Subscribe ONCE so the status line updates the moment health changes — not only on panel reopen.
+    if (!buildMessaging._wired && typeof U !== 'undefined' && U.bus) {
+      buildMessaging._wired = true;
+      U.bus.on('channel.connect', p => {
+        if (p && p.channel === 'telegram' && buildMessaging._refresh && document.querySelector('#tg-status')) buildMessaging._refresh();
+      });
+    }
     body.querySelector('#tg-connect').addEventListener('click', async () => {
       const token = (body.querySelector('#tg-token').value || '').trim();
       // a saved token can be reused (reconnect) — only require a fresh token on first-time setup.
@@ -1215,8 +1224,12 @@ const StationUI = (() => {
       try {
         const j = await (await fetch('/api/checkpoint?agent=' + encodeURIComponent(agentId))).json();
         const snaps = ((j && j.snapshots) || []).slice().reverse();   // newest first
-        listEl.innerHTML = snaps.length ? snaps.map(row).join('')
-          : '<div class="fb-empty">NO RESTORE POINTS YET.<br><span>They appear once this agent runs a command or edits a file at a WORKBENCH.</span></div>';
+        // honest empty-state: file-edit snapshots are opt-in (SKYNET_CHECKPOINTS); shell commands ALWAYS snapshot.
+        // Tell the user what actually triggers a restore point under their current config, not an aspirational promise.
+        const empty = (j && j.enabled)
+          ? 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a command or edits a file at a WORKBENCH.</span>'
+          : 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a <b>shell command</b>. File-edit snapshots are off — enable them with <code>SKYNET_CHECKPOINTS=1</code>.</span>';
+        listEl.innerHTML = snaps.length ? snaps.map(row).join('') : '<div class="fb-empty">' + empty + '</div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage restore points.</div>'; }
     }
     listEl.addEventListener('click', async ev => {
@@ -1429,5 +1442,5 @@ const StationUI = (() => {
     runningAgents.clear();   // a disconnect abandons in-flight streams (their run.end won't arrive) — reset
   }
 
-  return { init, enter, setRoster, leave, clearRunning, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
 })();

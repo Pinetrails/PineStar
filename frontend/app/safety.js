@@ -24,6 +24,19 @@
   const budgetEl = wrap.querySelector('#estop-budget');
   let flashT = 0;
 
+  // one-click RESUME after a SOFT pool cap blocks new runs: POST /api/budget/resume grants another cap of
+  // headroom for that scope so the Commander isn't dead-ended. Delegated (the readout HTML is rebuilt each poll).
+  budgetEl.addEventListener('click', async ev => {
+    const b = ev.target.closest('.bresume'); if (!b) return;
+    const scope = b.dataset.scope; if (scope !== 'day' && scope !== 'global') return;
+    b.disabled = true; b.textContent = '…';
+    try {
+      const r = await fetch('/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }) });
+      if (r.ok) { try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('budget resumed — ' + scope + ' cap raised; agents can run again', 'good'); } catch (_) {} }
+    } catch (_) {}
+    refreshBudget();
+  });
+
   async function halt() {
     // local first — abort the open browser fetches immediately — then the authoritative server-side kill-all
     // (which also reaches background / Telegram runs the browser has no handle to).
@@ -56,15 +69,20 @@
       s = await r.json();
     } catch (_) { budgetEl.hidden = true; return; }   // not served by the sidecar → hide rather than show a fake number
     const parts = [];
-    const seg = (label, pool) => {
+    const over = [];   // governed scopes (day/global) past their cap — offer a one-click RESUME
+    const seg = (label, scope, pool) => {
       if (!pool || !(pool.cap > 0)) return;
       const frac = pool.usd / pool.cap;
-      const cls = frac >= 1 ? ' over' : (frac >= 0.8 ? ' warn' : '');
+      const isOver = frac >= 1;
+      const cls = isOver ? ' over' : (frac >= 0.8 ? ' warn' : '');
+      if (isOver && (scope === 'day' || scope === 'global')) over.push(scope);
       parts.push('<span class="bseg' + cls + '">' + label + ' ' + fmt(pool.usd) + '/' + fmt(pool.cap) + '</span>');
     };
-    seg('today', s.day); seg('all', s.global);
+    seg('today', 'day', s.day); seg('all', 'global', s.global);
     if (s.perRun) parts.push('<span class="bseg dim">run≤' + fmt(s.perRun) + '</span>');
     if (!parts.length) { budgetEl.hidden = true; return; }
+    // a soft cap is blocking new runs — surface the resume control instead of dead-ending the Commander.
+    if (over.length) parts.push('<button type="button" class="bseg over bresume" data-scope="' + over[0] + '" style="cursor:pointer" title="grant another ' + over[0] + ' cap of headroom and keep going">↻ RESUME</button>');
     budgetEl.innerHTML = parts.join('');
     budgetEl.hidden = false;
   }
