@@ -1000,6 +1000,20 @@ const StationUI = (() => {
      optional bearer token are stored by the sidecar (never displayed) via /api/connectors. */
   function buildConnectors(body) {
     body.innerHTML =
+      '<h4 class="ms-h">SPOTIFY</h4>' +
+      '<p class="set-about">Let your agents <b>search & control your Spotify</b> — play, pause, queue, “what’s playing”. ' +
+        'One-time setup: make a free app at <span class="dim">developer.spotify.com/dashboard</span>, add the redirect URI below to it, paste the Client ID, then connect. ' +
+        '<span class="dim">(OAuth PKCE — no client secret is ever stored.)</span></p>' +
+      '<div id="sp-status" class="mc-url dim">checking…</div>' +
+      '<div class="mc-form">' +
+        '<input id="sp-client" class="key-input" placeholder="Spotify Client ID" autocomplete="off" spellcheck="false" maxlength="64">' +
+        '<div class="mc-url dim">Redirect URI to whitelist: <code id="sp-redir">…</code></div>' +
+        '<div class="mc-acts">' +
+          '<button class="bb sm" id="sp-connect">▶ CONNECT SPOTIFY</button>' +
+          '<button class="bb xs danger" id="sp-disconnect" style="display:none">✕ DISCONNECT</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="sp-msg" class="msg"></div>' +
       '<h4 class="ms-h">MCP CONNECTORS</h4>' +
       '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
         'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
@@ -1080,6 +1094,56 @@ const StationUI = (() => {
       refresh();
     });
     refresh();
+    setupSpotify(body);
+  }
+
+  /* ---- SPOTIFY connect (OAuth PKCE): open the consent window, then poll /api/spotify/status until the
+     callback lands. The Client ID + tokens live in the sidecar; the browser only triggers the flow. ---- */
+  function setupSpotify(body) {
+    const statusEl = body.querySelector('#sp-status');
+    const msgEl = body.querySelector('#sp-msg');
+    const redirEl = body.querySelector('#sp-redir');
+    const connectBtn = body.querySelector('#sp-connect');
+    const disconnectBtn = body.querySelector('#sp-disconnect');
+    const clientInput = body.querySelector('#sp-client');
+    let pollTimer = null;
+    async function refreshStatus() {
+      try {
+        const j = await (await fetch('/api/spotify/status')).json();
+        if (redirEl && j.redirectUri) redirEl.textContent = j.redirectUri;
+        if (j.connected) {
+          statusEl.innerHTML = '<span style="color:#8f8">● connected</span>' + (j.scope ? ' <span class="dim">· ' + esc(j.scope) + '</span>' : '');
+          connectBtn.textContent = '↻ RECONNECT';
+          disconnectBtn.style.display = '';
+        } else {
+          statusEl.innerHTML = j.hasClientId ? '<span class="dim">○ not connected (Client ID saved)</span>' : '<span class="dim">○ not connected</span>';
+          disconnectBtn.style.display = 'none';
+          connectBtn.textContent = '▶ CONNECT SPOTIFY';
+        }
+        return j;
+      } catch (_) { statusEl.textContent = 'sidecar offline — start the full app to connect Spotify.'; return null; }
+    }
+    connectBtn.addEventListener('click', async () => {
+      const clientId = (clientInput.value || '').trim();
+      msgEl.textContent = 'opening Spotify…';
+      try {
+        const j = await (await fetch('/api/spotify/auth/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clientId ? { clientId } : {}) })).json();
+        if (j.error) { msgEl.textContent = '✕ ' + j.error; sfx('bad'); return; }
+        window.open(j.url, '_blank', 'noopener');
+        msgEl.textContent = 'Approve access in the window that opened, then return here — this updates automatically.';
+        sfx('click');
+        let n = 0; clearInterval(pollTimer);
+        pollTimer = setInterval(async () => {
+          n++; const s = await refreshStatus();
+          if ((s && s.connected) || n > 60) { clearInterval(pollTimer); if (s && s.connected) { msgEl.textContent = '✓ Spotify connected'; notify('Spotify connected', 'good'); sfx('click'); } }
+        }, 2000);
+      } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
+    });
+    disconnectBtn.addEventListener('click', async () => {
+      try { await fetch('/api/spotify/disconnect', { method: 'POST' }); } catch (_) {}
+      clearInterval(pollTimer); msgEl.textContent = 'disconnected'; notify('Spotify disconnected'); sfx('click'); refreshStatus();
+    });
+    refreshStatus();
   }
 
   /* ============== ROUTINES — scheduled autonomous runs (server-owned cron) ==============
