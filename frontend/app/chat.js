@@ -322,7 +322,7 @@ const Chat = (() => {
     for (const m of h) {
       if (m.role === 'user') { addUser(m.content); continue; }
       if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
-      const r = row('agent'); r.d.classList.add('reply');   // past agent turns get the same framed-headline look as live ones
+      const r = row('agent');   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       r.body.textContent = m.content;
     }
