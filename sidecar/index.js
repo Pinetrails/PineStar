@@ -1201,6 +1201,10 @@ async function runOnce(o) {
         try { rawEmit(name, payload); } catch (_) {}
         if (name === 'agent.run.start' || name === 'agent.cost' || name === 'agent.run.end') {
           try { sse.broadcast(name, redact(payload)); } catch (_) {}
+        } else if (name === 'agent.tool_call' && payload && typeof payload.name === 'string' && payload.name.indexOf('mcp__') === 0) {
+          // P3: a routed run's MCP tool call pulses its connector portal on the floor. Only mcp__ calls are
+          // teed (not fs/shell), so the SSE bus stays quiet while the on-ramp still lights when it really fires.
+          try { sse.broadcast(name, redact(payload)); } catch (_) {}
         }
       }
     : rawEmit;
