@@ -1837,11 +1837,13 @@ const World = (() => {
     // tag the box with its content kind (the same getTag the sidecar routes by) so a FILTER sorts it visibly
     const p = payload || {};
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
-    // ride inbound work as ORE: its visible MASS scales with how much there is to chew on. This is a
-    // message-size proxy (an honest visual heuristic) until a per-box cost.estimate->reconcile recolor
-    // lands; the REWARDED signal (product vs slag) is bound to real reconciled outcomes, never to this.
+    // ride inbound work as ORE — a UNIFORM raw chunk: every incoming request is one identical piece of raw
+    // material on the line. We deliberately DON'T size it (the old message-length mass faked a cost the box
+    // can't carry — the inbound box is consumed at run START, before any cost exists). The only mass that means
+    // real money is the green PRODUCT crate (sized by reconciled cost in outboundMessage); product-vs-slag is
+    // the rewarded signal, bound to real outcomes — never to this. (WIRING_AUDIT P4: lie #5.)
     p.box = 'ore';
-    if (p.weight == null) { const n = String(p.preview || p.text || '').length; p.weight = Math.max(0.08, Math.min(1, n / 280)); }
+    if (p.weight == null) p.weight = 0.3;
     if (t) convey.enqueueAt(t.x, t.y, p);
     // ANTICIPATE: an idle agent senses work on the line and perks up toward the dock before any summon lands
     if (agent && !agent.unplaced && activity === 'idle' && !agent.working) {
