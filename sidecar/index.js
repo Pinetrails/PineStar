@@ -631,6 +631,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
+  // honest concurrency surface: how many distinct agents can RUN at once (the gate that silently 'refuses'
+  // excess parallel workers). The summon bay reads this so the ceiling is visible BEFORE a fan-out, not only
+  // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
+  if (req.method === 'GET' && req.url === '/api/limits') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); }
   if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);

@@ -139,7 +139,7 @@ const Conveyor = (() => {
      crate on the belt tells the cost truth — the Factorio "read the line at a glance" instinct,
      pointed at operating agents cheaply. A payload WITHOUT a `box` role falls back to the cyan
      data cassette, so nothing about existing boxes changes. */
-  function cargoOre(cx, py, h32, dir, weight) {     // amber ORE — inbound work; visible MASS = token weight
+  function cargoOre(cx, py, h32, dir, weight) {     // amber ORE — inbound work, a UNIFORM raw chunk (size carries no cost signal; only the green PRODUCT crate's mass means real spend)
     const w = weight < 0 ? 0 : weight > 1 ? 1 : weight;
     const f = cargoChassis(cx, py, h32, '#5a4a24', dir), x = f.tx, y = f.ty;
     px(x + 1, y + 1, 6, 3, '#caa84a'); px(x + 1, y + 1, 6, 1, '#e8c860');     // amber ore body + lit cap

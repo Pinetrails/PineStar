@@ -222,10 +222,15 @@ const App = (() => {
     return a;
   }
   // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
+  let concurrentCap = null;   // server MAX_CONCURRENT_AGENTS (how many agents RUN at once) — fetched once, kept honest
   function openSummonBay() {
     if (typeof Marketplace === 'undefined' || !agent) return;
     SFX.click();
-    Marketplace.open({ mode: 'pick', summon: true, notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null, onPick: summonAgent });
+    const go = () => Marketplace.open({ mode: 'pick', summon: true, concurrentCap: concurrentCap, notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null, onPick: summonAgent });
+    // surface the REAL concurrency ceiling in the bay so "summon as many as you like" doesn't imply they all
+    // run at once (the gate refuses excess parallel workers). Fetch once; open immediately thereafter.
+    if (concurrentCap != null) return go();
+    fetch('/api/limits').then(r => r.json()).then(j => { concurrentCap = (j && +j.maxConcurrentAgents) || null; }).catch(() => {}).then(go);
   }
 
   // LAUNCH a recipe (from the Recipe library's RECIPES tab): mint a fresh workstream named after the mission, then
