@@ -99,9 +99,15 @@ hands-free loop, in-world speak/listen) · The Kindling + Awakening onboarding.
 
   **🎉 ALL 8 of the biggest lies are now CLOSED** (#1,#2,#4 via P1; #6,#8 via quick-wins; #5,#7 via P4; #3 via
   P6). P2 + P5 effectively complete (subsumed). **The "shrink what lies" through-line is DONE.** Remaining
-  pieces are value-add, not lies: **P3** (multi-agent floor polish), **P7** (reviewable SLAG log + run-history
-  panel), **P8/P9** (stranded branches: cron picker, tutorial), **P10** (durability + contract cleanup), plus
-  the **P6 real-isolation follow-up**. All session work is on LOCAL trunk — **not pushed to origin.**
+  pieces are value-add, not lies: **P7** (reviewable SLAG log + run-history panel), **P8/P9** (stranded
+  branches: cron picker, tutorial), **P10** (durability + contract cleanup), plus follow-ups (P6 real
+  isolation, P3 delegated/cron portal pulse). Pushed to origin at the all-lies-closed milestone (`f5caf16`).
+- **2026-06-20 — P3 ✅ MERGED to trunk** (`agent/wire-multiagent-floor`, no-ff; gate green; verified live).
+  Multi-agent floor: outbound PRODUCT/SLAG crates now ride off the PRODUCING agent's own bay (new
+  `outboundBeltTile`; the hero path stays byte-identical), and the P1 broadcast tee also mirrors a routed
+  run's `mcp__` tool call so a routed worker's MCP call pulses its connector portal. Delegated-worker + cron
+  portal pulse left as follow-ups (COMMS-clutter / double-count tradeoffs). **P3 not yet pushed** (trunk also
+  carries another agent's `media-skills` merge).
 
 ## Quick wins (S-effort, no contract change, high honesty payoff) — ✅ DONE (merged 2026-06-20)
 
