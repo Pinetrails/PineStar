@@ -363,12 +363,30 @@ const Chat = (() => {
 
   // task-vs-chat classification lives in app/classify.js (pure + unit-tested); see Classify.isTaskDirective.
 
+  // ── in-app WORK-ITEM lifecycle (WIRING_AUDIT P1, slice 1): make the directive the Commander sends RIDE A
+  //    BELT the same way an admitted Telegram message does. workitem.placed / queue.status / workitem.delivered
+  //    have NO NDJSON twin (harness.js streams only agent.* / token / tool / deliverable), so emitting them
+  //    locally on U.bus animates the inbound box + the outbound product crate and folds INTAKE/THRU/DWELL/QUEUE
+  //    — with zero double-render (U.bus is the only consumer surface; nothing re-broadcasts these back).
+  const wiQDepth = new Map();   // agentId -> directive runs in flight (the honest QUEUE gauge for the in-app loop)
+  let wiSeq = 0;
+  function wiBump(aid, d) { const n = Math.max(0, (wiQDepth.get(aid) || 0) + d); wiQDepth.set(aid, n); return n; }
+  function wiEmit(name, payload) { try { if (typeof U !== 'undefined' && U.bus) U.bus.emit(name, payload); } catch (_) {} }
+
   async function send(text) {
     if (interview) { interview(text); return; }   // THE AWAKENING owns the input: route the answer to onboarding, no model call
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
     Channels.begin(ws.id);
+    // P1: drop this directive's INTAKE ore box on the belt + start its DWELL clock (mirrors the Telegram
+    // admit shape). queueId === agentId so the box routes to the hero / bound desk in world.js.
+    const wiAid = ws.agentId || 'agent';
+    const wiId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
+    const wiPlacedTs = Date.now();
+    { const depth = wiBump(wiAid, 1);
+      wiEmit('workitem.placed', { workitemId: wiId, queueId: wiAid, agentId: wiAid, kind: 'directive', preview: String(text || '').replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: wiPlacedTs });
+      wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
     addUser(text); ws.history.push({ role: 'user', content: text });
     // name an untitled stream from its first real message (no-op on General / already-titled)
@@ -483,6 +501,11 @@ const Chat = (() => {
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.
         if (!isTask && isActiveWs(ws)) World.say(replyText);
+        // SHIPPED (P1): a clean finish delivers the work-item → the ONE outbound product crate + the weight-3
+        // profile/XP ship-signal + the "tasks shipped" milestone. Only on done/undefined — a max_iters/budget/
+        // error/refusal stop is wasted spend (the agent.run.end SLAG path owns that); abort/hard-error never
+        // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
+        if (!endReason || endReason === 'done') wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
@@ -495,6 +518,9 @@ const Chat = (() => {
     } finally {
       aborters.delete(ws.id);
       Channels.end(ws.id);
+      // P1: drain this directive from the QUEUE gauge on ANY teardown (shipped, in-band error, or abort) —
+      // the backlog is "runs in flight", independent of whether the work shipped.
+      { const depth = wiBump(wiAid, -1); wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
       if (isActiveWs(ws)) { syncStatus(); activeLiveRow = null; }
       // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
