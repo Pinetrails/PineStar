@@ -78,18 +78,26 @@
     <label>AGENT NAME</label>
     <input id="in-name" maxlength="18" placeholder="name your agent" autocomplete="off" spellcheck="false">
 
-    <label>AVATAR SUIT</label>
-    <div id="swatches" class="swatches"></div>
+    <!-- Everything below is optional flavour — tucked behind a reveal so the create screen
+         leads with just the essentials (provider · model · name). All inputs stay in the DOM
+         so onWake() reads them unchanged whether the section is open or closed. -->
+    <button type="button" id="adv-toggle" class="adv-toggle" aria-expanded="false" aria-controls="adv-body">
+      <span class="adv-caret">▸</span> PERSONALIZE <span class="dim">— avatar · personality · specialty (optional)</span>
+    </button>
+    <div id="adv-body" class="adv-body" hidden>
+      <label>AVATAR SUIT</label>
+      <div id="swatches" class="swatches"></div>
 
-    <label>PERSONALITY <span class="dim">— how your agent talks (you can change it later)</span></label>
-    <div id="persona-picker" class="persona-picker"></div>
-    <div id="persona-hint" class="dim hint">—</div>
+      <label>PERSONALITY <span class="dim">— how your agent talks (you can change it later)</span></label>
+      <div id="persona-picker" class="persona-picker"></div>
+      <div id="persona-hint" class="dim hint">—</div>
 
-    <label>SPECIALTY <span class="dim">— what your agent is FOR (optional)</span></label>
-    <div class="roster-row">
-      <button type="button" id="btn-roster" class="btn">☰ BROWSE THE ROSTER ▸</button>
-      <span id="roster-pick" class="dim hint">none chosen — you'll set its mission at wake</span>
-      <button type="button" id="btn-roster-clear" class="btn hidden" title="clear the chosen specialty">✕ CLEAR</button>
+      <label>SPECIALTY <span class="dim">— what your agent is FOR (optional)</span></label>
+      <div class="roster-row">
+        <button type="button" id="btn-roster" class="btn">☰ BROWSE THE ROSTER ▸</button>
+        <span id="roster-pick" class="dim hint">none chosen — you'll set its mission at wake</span>
+        <button type="button" id="btn-roster-clear" class="btn hidden" title="clear the chosen specialty">✕ CLEAR</button>
+      </div>
     </div>
 
     <div id="connect-msg" class="msg"></div>
@@ -154,26 +162,55 @@
   </aside>
 
   <footer id="bottombar">
-    <button class="bb" data-term="agents">☻ AGENTS</button>
-    <button class="bb" data-term="commander" title="COMMANDER DOSSIER — what the station has learned about you (local-first; you own it)">◈ COMMANDER</button>
-    <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist presets and deploy one to your agent">☰ ROSTER</button>
-    <button class="bb" id="bb-summon" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
-    <button class="bb" id="bb-missions" title="RECIPE LIBRARY — launch a ready-made mission into a fresh workstream">❒ RECIPES</button>
-    <button class="bb" data-term="skills">✦ SKILLS</button>
-    <button class="bb" data-term="tasks">▤ TASKS</button>
-    <button class="bb" id="bb-build" title="BUILD — lay out your station: place rooms, run corridors, paint decks">⚒ BUILD</button>
-    <button class="bb" data-term="settings">⚙ SETTINGS</button>
-    <button class="bb" data-term="messaging">✉ MESSAGING</button>
-    <button class="bb" data-term="connectors">⇄ CONNECTORS</button>
-    <button class="bb" data-term="routines">⏱ ROUTINES</button>
-    <button class="bb" data-term="rewind">↶ REWIND</button>
-    <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
+    <!-- 13 panels regrouped into 4 labelled docks; each .bb-grp opens a popover of its items.
+         Every item button keeps its original id / data-term so all existing handlers survive. -->
+    <div class="bb-group" data-group="crew">
+      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">☻ CREW<span class="bb-grp-dot"></span></button>
+      <div class="bb-menu" role="menu">
+        <button class="bb" data-term="agents">☻ AGENTS</button>
+        <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist presets and deploy one to your agent">☰ ROSTER</button>
+        <button class="bb" id="bb-summon" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
+        <button class="bb" data-term="commander" title="COMMANDER DOSSIER — what the station has learned about you (local-first; you own it)">◈ COMMANDER</button>
+      </div>
+    </div>
+    <div class="bb-group" data-group="work">
+      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">▤ WORK<span class="bb-grp-dot"></span></button>
+      <div class="bb-menu" role="menu">
+        <button class="bb" data-term="tasks">▤ TASKS</button>
+        <button class="bb" id="bb-missions" title="RECIPE LIBRARY — launch a ready-made mission into a fresh workstream">❒ RECIPES</button>
+        <button class="bb" data-term="routines">⏱ ROUTINES</button>
+      </div>
+    </div>
+    <div class="bb-group" data-group="build">
+      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">⚒ BUILD<span class="bb-grp-dot"></span></button>
+      <div class="bb-menu" role="menu">
+        <button class="bb" id="bb-build" title="BUILD — lay out your station: place rooms, run corridors, paint decks">⚒ BUILD STATION</button>
+        <button class="bb" data-term="skills">✦ SKILLS</button>
+        <button class="bb" data-term="connectors">⇄ CONNECTORS</button>
+      </div>
+    </div>
+    <div class="bb-group" data-group="system">
+      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">⚙ SYSTEM<span class="bb-grp-dot"></span></button>
+      <div class="bb-menu" role="menu">
+        <button class="bb" data-term="settings">⚙ SETTINGS</button>
+        <button class="bb" data-term="messaging">✉ MESSAGING</button>
+        <button class="bb" data-term="rewind">↶ REWIND</button>
+        <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
+      </div>
+    </div>
     <div class="bb-right">
       <span id="sig" title="local sidecar uplink">UPLINK <b>▂▄▆█</b></span>
       <span id="save-dot" title="autosave">●</span>
       <span id="status-pill">ONLINE</span>
     </div>
   </footer>
+
+  <!-- one-time coach teaching the new grouped-dock model; dismissed on first dock open / ✕ (navdock.js) -->
+  <div id="nav-coach" class="nav-coach" hidden>
+    <span>Your panels now live in <b>4 docks</b> down here — click one to open it. Talk to your agent up in <b>COMMS ▸</b></span>
+    <button id="nav-coach-x" class="nav-coach-x" aria-label="dismiss hint">GOT IT ✕</button>
+    <span class="nav-coach-arrow">▾</span>
+  </div>
 
   <div id="terms"></div>
 </section>
@@ -208,6 +245,7 @@
 <script src="app/chat.js"></script>
 <script src="app/voice.js"></script>
 <script src="app/stationui.js"></script>
+<script src="app/navdock.js"></script>
 <script src="app/worldmodel.js"></script>
 <script src="app/stationbake.js"></script>
 <script src="app/build.js"></script>

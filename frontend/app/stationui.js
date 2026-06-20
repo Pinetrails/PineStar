@@ -79,6 +79,7 @@ const StationUI = (() => {
 
   /* ============== FLOATING TERMINAL WINDOWS (ported v7 ui.js) ============== */
   let termDrag = null;
+  const termPos = {};   // key -> {left,top} remembered drag position — kills the dead-center pile-up
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
       termDrag.w.style.left = (ev.clientX - termDrag.dx) + 'px';
@@ -86,7 +87,30 @@ const StationUI = (() => {
       termDrag.w.style.transform = 'none';
     }
   });
-  window.addEventListener('mouseup', () => termDrag = null);
+  window.addEventListener('mouseup', () => {
+    // remember where the Commander parked this panel so it re-opens there, not back at dead-center
+    if (termDrag) {
+      const w = termDrag.w, k = Object.keys(open).find(key => open[key] === w);
+      if (k) termPos[k] = { left: w.offsetLeft, top: w.offsetTop };
+    }
+    termDrag = null;
+  });
+
+  // Land a freshly-opened window in a tidy left-anchored column, CASCADING each so stacked panels
+  // never bury each other (the old default was every .term at left:50%/top:50% — instant pile-up).
+  // A remembered drag position always wins. Clamped to the viewport so nothing opens off-screen.
+  function placeTerm(w, key) {
+    const p = termPos[key];
+    if (p) { w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none'; return; }
+    const prior = Math.max(0, Object.keys(open).length - 1);   // how many were already open
+    const baseL = 92, baseT = 80, step = 30, span = 6;
+    const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
+    let left = baseL + (prior % span) * step;
+    let top  = baseT + (prior % span) * step;
+    left = Math.max(8, Math.min(left, window.innerWidth  - wpx - 8));
+    top  = Math.max(8, Math.min(top,  window.innerHeight - hpx - 8));
+    w.style.left = left + 'px'; w.style.top = top + 'px'; w.style.transform = 'none';
+  }
 
   function closeTerm(key) {
     if (open[key]) {
@@ -111,6 +135,7 @@ const StationUI = (() => {
     w.appendChild(head); w.appendChild(body);
     $('#terms').appendChild(w);
     open[key] = w;
+    placeTerm(w, key);   // land in a cascaded slot (or its remembered spot) — never dead-center pile-up
     w.addEventListener('mousedown', () => { w.style.zIndex = U.zTop(); });
     head.addEventListener('mousedown', ev => {
       if (ev.target === x) return;
