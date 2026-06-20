@@ -3796,7 +3796,7 @@ const PropSprites = (() => {
 };
 
   F.airlock = (x, y, w, h, f) => {
-    // AIRLOCK — the worktree-isolation handle. A blast-door panel whose status lamp + shutter reflect the
+    // AIRLOCK — the room-seal handle (spatial floor containment, not capability isolation). A blast-door panel whose status lamp + shutter reflect the
     // room's merge state: open = green / retracted (a lit central gap) · closed = amber / sealed seam ·
     // jammed = red / a sparking seam. Drawn per-frame so f.door drives it live (set via setDoorState).
     const st = (f && f.door) || 'open';
