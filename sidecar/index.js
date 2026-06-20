@@ -100,6 +100,10 @@ const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered
 const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CRON_ENABLED || '').trim());
 const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
 const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
+// Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
+// fast-tool timeout (CAPS.toolTimeoutMs) or it always times out before a real worker returns. Give it the same
+// ≈8-min single-run worst-case bound; env-tunable. Per-worker spend is still capped by ORCH_PER_WORKER.
+const ORCH_DISPATCH_TIMEOUT_MS = num(process.env.SKYNET_DISPATCH_TIMEOUT_MS, CRON_MAX_RUN_MS);
 const CRON_DEFAULT_MODEL = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
 const CRON_PERSONA = 'You are an autonomous SKYNET station agent running a SCHEDULED routine — no human is watching. '
   + 'Carry out the task with your REAL tools (web search/read, files, memory); ground every factual claim in what the '
@@ -1123,7 +1127,8 @@ async function runOnce(o) {
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
   makeOrchestrationTools({
     runOnce, roster: () => agentRoster, key, model, provider: o.provider,
-    perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID()
+    perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
+    dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
   }).register(registry);
   throttleSearch(registry);
 

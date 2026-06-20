@@ -51,8 +51,17 @@
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
     const maxWorkers = (typeof deps.maxWorkers === 'number' && deps.maxWorkers > 0) ? deps.maxWorkers : 4;
+    // A dispatch AWAITS one or more full worker agent-loops (each web-searching + multi-turn), which routinely
+    // run for minutes. The host wraps every tool call in CAPS.toolTimeoutMs (30s — sized for fast web/file
+    // tools), so WITHOUT this override team.dispatch is guaranteed to time out before any real worker returns:
+    // the lead then abandons delegation and does the job solo while the orphaned worker keeps spending. So the
+    // dispatch tool carries its OWN generous wall-clock backstop. Real runaway is already bounded per-worker by
+    // the cost cap (perWorker) + the worker's own maxIters/per-tool timeouts; this is just the outer ceiling.
+    const dispatchTimeoutMs = (typeof deps.dispatchTimeoutMs === 'number' && deps.dispatchTimeoutMs > 0) ? deps.dispatchTimeoutMs : 600000;
 
     const dispatchTool = {
+      // own wall-clock (minutes, not the 30s fast-tool default) — see dispatchTimeoutMs above.
+      timeoutMs: dispatchTimeoutMs,
       // NO consent gate: delegating to your OWN summoned crew is internal orchestration, not an outward mutation
       // (cf. notebook). The real safety is the LEAD-ONLY gate (only the watched browser run gets this tool) + the
       // per-worker/day/global budget caps + the concurrency ceiling + workers running autonomous (default-deny
