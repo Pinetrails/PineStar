@@ -1,0 +1,125 @@
+/* sidecar/spotify/store.js — durable Spotify token store + auto-refreshing access-token provider.
+
+   Persists { clientId, accessToken, refreshToken, expiresAt, scope } to <dir>/spotify.json (atomic write:
+   tmp + rename), so a connected Spotify survives a sidecar restart. getAccessToken() transparently refreshes
+   an expired token via the PKCE refresh grant (client_id only — no secret) and re-persists. A dead refresh
+   token (invalid_grant) clears the session and asks the user to reconnect.
+
+   All ambient edges are injected so the store is unit-testable offline:
+     makeSpotifyStore({ fsp, pathMod, dir, fetchImpl, now, redact? })
+   See test/spotify.store.test.js. */
+'use strict';
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./pkce.js'));
+  else { root.SK = root.SK || {}; (root.SK.spotify = root.SK.spotify || {}).store = factory(root.SK.spotify.pkce); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (pkce) {
+  'use strict';
+
+  const EMPTY = { clientId: '', accessToken: '', refreshToken: '', expiresAt: 0, scope: '' };
+
+  function makeSpotifyStore(deps) {
+    deps = deps || {};
+    const fsp = deps.fsp, P = deps.pathMod, DIR = deps.dir;
+    if (!fsp || !P || !DIR) throw new Error('spotify store requires { fsp, pathMod, dir }');
+    const doFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+    const now = deps.now || (() => { throw new Error('spotify store requires an injected now()'); });
+    const file = P.join(DIR, 'spotify.json');
+    let state = null;          // lazily loaded cache
+    let refreshing = null;     // single in-flight refresh promise (coalesce concurrent callers)
+
+    async function load() {
+      if (state) return state;
+      try {
+        const raw = await fsp.readFile(file, 'utf8');
+        const parsed = JSON.parse(raw);
+        state = Object.assign({}, EMPTY, parsed);
+      } catch (e) { state = Object.assign({}, EMPTY); }
+      return state;
+    }
+
+    async function persist() {
+      await fsp.mkdir(DIR, { recursive: true });
+      const tmp = file + '.tmp';
+      await fsp.writeFile(tmp, JSON.stringify(state), 'utf8');
+      await fsp.rename(tmp, file);
+    }
+
+    async function setClientId(id) {
+      await load();
+      state.clientId = String(id || '').trim();
+      await persist();
+      return state.clientId;
+    }
+
+    async function setTokens(t) {
+      await load();
+      t = t || {};
+      state.accessToken = t.accessToken || '';
+      state.refreshToken = t.refreshToken || state.refreshToken || '';   // keep prior refresh if omitted
+      state.expiresAt = t.expiresAt || 0;
+      if (t.scope) state.scope = t.scope;
+      await persist();
+      return status();
+    }
+
+    async function clear() {
+      await load();
+      const clientId = state.clientId;   // keep the app's clientId for an easy reconnect
+      state = Object.assign({}, EMPTY, { clientId });
+      await persist();
+      return status();
+    }
+
+    function status() {
+      const s = state || EMPTY;
+      return {
+        connected: !!s.refreshToken,
+        hasClientId: !!s.clientId,
+        scope: s.scope || '',
+        expiresAt: s.expiresAt || 0
+      };
+    }
+    async function statusAsync() { await load(); return status(); }
+    async function getClientId() { await load(); return state.clientId; }
+
+    // Refresh the access token using the stored refresh token. Coalesces concurrent calls.
+    async function refresh() {
+      if (refreshing) return refreshing;
+      refreshing = (async () => {
+        await load();
+        if (!state.refreshToken) throw new Error('Spotify is not connected — connect it in Settings first.');
+        if (!doFetch) throw new Error('spotify store requires fetch');
+        const fetchedAt = now();
+        const res = await doFetch(pkce.TOKEN_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: pkce.refreshBody({ refreshToken: state.refreshToken, clientId: state.clientId })
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json || !json.access_token) {
+          const code = json && (json.error || (json.error && json.error.message));
+          if (res.status === 400 || code === 'invalid_grant') { await clear(); throw new Error('Spotify session expired — please reconnect in Settings.'); }
+          throw new Error('Spotify token refresh failed (' + res.status + (code ? ': ' + code : '') + ')');
+        }
+        await setTokens(pkce.tokensFromResponse(json, fetchedAt, state.refreshToken));
+        return state.accessToken;
+      })().finally(() => { refreshing = null; });
+      return refreshing;
+    }
+
+    // The one method the tools call: always returns a currently-valid access token (refreshing if needed).
+    async function getAccessToken() {
+      await load();
+      if (!state.refreshToken && !state.accessToken) throw new Error('Spotify is not connected — connect it in Settings first.');
+      if (state.accessToken && !pkce.needsRefresh(state.expiresAt, now())) return state.accessToken;
+      return refresh();
+    }
+
+    return {
+      load, status: statusAsync, getClientId, setClientId, setTokens, clear, refresh, getAccessToken,
+      _internals: { file, raw: () => state }
+    };
+  }
+
+  return { makeSpotifyStore };
+});
