@@ -922,14 +922,14 @@ const StationUI = (() => {
 
   /* ============== MESSAGING — connect a Telegram bot so the Commander can DM the agent ==============
      The bot token comes from Telegram's @BotFather; the agent answers DMs using this app's current
-     OpenRouter key + model (handed to the sidecar on connect and persisted there for headless polling). */
+     provider + model (OpenRouter key or ChatGPT sign-in, persisted there for headless polling). */
   function buildMessaging(body) {
     body.innerHTML =
       '<h4 class="ms-h">TELEGRAM</h4>' +
       '<div id="tg-status" class="set-row">checking…</div>' +
       '<p class="set-about">DM your agent from Telegram. ' +
         '<b>1.</b> In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → copy the token it gives you. ' +
-        '<b>2.</b> Paste it below and connect. Your agent answers DMs using this app\'s current OpenRouter key + model, ' +
+        '<b>2.</b> Paste it below and connect. Your agent answers DMs using this app\'s current provider + model, ' +
         'with its own memory + workspace per chat. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span></p>' +
       '<label class="ms-h" for="tg-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
       '<input id="tg-token" type="password" class="key-input" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">' +
@@ -966,9 +966,12 @@ const StationUI = (() => {
       const token = (body.querySelector('#tg-token').value || '').trim();
       // a saved token can be reused (reconnect) — only require a fresh token on first-time setup.
       if (!token && !configured) { sfx('bad'); msgEl.textContent = 'paste your @BotFather token first'; return; }
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const usingCodex = provider === 'codex' || provider === 'openai-codex';
       const key = (typeof Harness !== 'undefined' && Harness.getKey()) || '';
+      const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
       const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
-      if (!key || !model) { sfx('bad'); msgEl.textContent = 'connect your agent (API key + model) on the title screen first'; return; }
+      if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); msgEl.textContent = 'connect your agent (provider + model) on the title screen first'; return; }
       // hand the sidecar the REAL agent identity so Telegram is the SAME agent: the agentId the app uses for runs
       // (shared notebook/memory/workspace) + the composed system prompt (identity.md/purpose.md/manual.md).
       const ag = present[0] || {};
@@ -978,7 +981,7 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       msgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, agentId, system, agentName }) });
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }

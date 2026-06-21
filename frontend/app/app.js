@@ -257,9 +257,19 @@ const App = (() => {
     try {
       if (!agent) return;
       const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const body = {
+        agentId: (ws && ws.agentId) || 'agent',
+        system: agent.systemPrompt || '',
+        agentName: agent.name || '',
+        model: (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '',
+        provider
+      };
+      const key = (typeof Harness !== 'undefined' && Harness.getKey) ? Harness.getKey() : '';
+      if (key) body.key = key;
       fetch('/api/channels/telegram/sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: (ws && ws.agentId) || 'agent', system: agent.systemPrompt || '', agentName: agent.name || '' })
+        body: JSON.stringify(body)
       }).catch(() => {});
     } catch (_) {}
   }
