@@ -41,11 +41,14 @@ const job = (o) => Object.assign({ id: 'j1', enabled: true, schedule: null, next
   A.eq(cron.parseSchedule('in 2h', T0 + 1000).runAt, T0 + 1000 + 2 * 3600000, 'relative once tracks the passed now');
 }
 
-// ---- 3. parseSchedule: cron recognised-but-deferred, and garbage ----
+// ---- 3. parseSchedule: cron subset, and garbage ----
 {
   const c = cron.parseSchedule('*/30 * * * *', T0);
   A.eq(c.kind, 'cron', '5-field expr recognised as cron');
-  A.eq(c.supported, false, 'cron is DEFERRED in v1 (supported:false)');
+  A.eq(c.expr, '*/30 * * * *', 'cron expression is canonicalized');
+  A.eq(c.fields.minute, [0, 30], 'cron step field parsed');
+  A.eq(cron.parseSchedule('61 * * * *', T0), null, 'out-of-range cron field -> null');
+  A.eq(cron.parseSchedule('0 0 31 2 *', T0), null, 'impossible cron date -> null');
   A.eq(cron.parseSchedule('not a schedule', T0), null, 'garbage -> null');
   A.eq(cron.parseSchedule('', T0), null, 'empty -> null');
   A.eq(cron.parseSchedule('* * * *', T0), null, '4-field (not 5) is not cron -> null');
@@ -60,6 +63,15 @@ const job = (o) => Object.assign({ id: 'j1', enabled: true, schedule: null, next
   const iv = { kind: 'interval', minutes: 60 };
   A.eq(cron.nextFireAt(iv, null, T0), T0 + 3600000, 'interval no last-run -> now + period');
   A.eq(cron.nextFireAt(iv, cron._internals.iso(T0 - 600000), T0), T0 - 600000 + 3600000, 'interval -> lastRun + period');
+
+  const base = Date.parse('2026-06-19T08:58:00Z');
+  const daily = cron.parseSchedule('0 9 * * *', base);
+  A.eq(cron.nextFireAt(daily, null, base), Date.parse('2026-06-19T09:00:00Z'), 'daily cron -> next matching UTC minute');
+  A.eq(cron.nextFireAt(daily, cron._internals.iso(Date.parse('2026-06-19T09:00:00Z')), Date.parse('2026-06-19T09:00:00Z')),
+    Date.parse('2026-06-20T09:00:00Z'), 'cron advances strictly after the last fire');
+
+  const workHours = cron.parseSchedule('*/15 9-10 * * 1-5', Date.parse('2026-06-19T09:01:00Z')); // Friday
+  A.eq(cron.nextFireAt(workHours, null, Date.parse('2026-06-19T09:01:00Z')), Date.parse('2026-06-19T09:15:00Z'), 'cron range/list/step fields match');
 }
 
 // ---- 5. planTick: nothing due when nextRunAt is in the future ----
@@ -115,6 +127,28 @@ const job = (o) => Object.assign({ id: 'j1', enabled: true, schedule: null, next
   const r = cron.planTick(jobs, now);
   A.eq(r.fire.length, 1, 'within-grace lateness fires the catch-up');
   A.eq(r.skipped.length, 0, 'within-grace is not a skip');
+}
+
+// ---- 9b. cron jobs fire and advance with the same no-backlog policy as intervals ----
+{
+  const due = Date.parse('2026-06-19T09:00:00Z');
+  const sched = cron.parseSchedule('0 9 * * *', due - 60000);
+  const jobs = [job({ schedule: sched, nextRunAt: cron._internals.iso(due) })];
+  const r = cron.planTick(jobs, due);
+  A.eq(r.fire.length, 1, 'due cron job fires');
+  A.eq(r.next.length, 1, 'due cron job advances');
+  A.eq(r.next[0].nextAt, Date.parse('2026-06-20T09:00:00Z'), 'daily cron advances to the next day');
+}
+
+{
+  const due = Date.parse('2026-06-19T09:00:00Z');
+  const now = Date.parse('2026-06-19T13:30:00Z');              // 4.5h late > daily cron grace (2h clamp)
+  const sched = cron.parseSchedule('0 9 * * *', due - 60000);
+  const jobs = [job({ schedule: sched, nextRunAt: cron._internals.iso(due) })];
+  const r = cron.planTick(jobs, now);
+  A.eq(r.fire.length, 0, 'stale cron job does not fire a backlog');
+  A.eq(r.skipped.length, 1, 'stale cron job is skipped');
+  A.eq(r.next[0].nextAt, Date.parse('2026-06-20T09:00:00Z'), 'stale cron job fast-forwards to the next future run');
 }
 
 // ---- 10. one-shots: fire once when due, then permanently ineligible; disabled jobs ignored ----

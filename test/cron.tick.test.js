@@ -11,7 +11,7 @@
      · BOOT RESUME: a recurring job whose nextRunAt elapsed while down fires ONE catch-up within grace, else
        fast-forwards+skips (caught-up) — never a backlog burst
      · a throwing run records lastStatus:'error' and does not stop the next job from firing
-     · no key/model -> cron.skipped{no-capability} (cron is inert without a configured key)
+     · no provider credentials/model -> cron.skipped{no-capability}; OAuth-backed providers do not need a BYOK key
      · the [SILENT] no-spam check is strict-equals-after-trim (an embedded [SILENT] does NOT suppress) */
 'use strict';
 const A = require('./_assert.js');
@@ -41,7 +41,10 @@ function setup(jobs, runOnceFake, opts) {
     newAbort: () => new AbortController(),
     now: () => clock.now(),
     getKey: () => (opts.key !== undefined ? opts.key : 'sk-test'),
+    providerForJob: opts.providerForJob,
+    hasCredential: opts.hasCredential,
     defaultModel: opts.defaultModel !== undefined ? opts.defaultModel : 'test/model',
+    identityForAgent: opts.identityForAgent,
     persona: 'PERSONA',
     maxRunMs: opts.maxRunMs || 480000
   });
@@ -60,6 +63,10 @@ function intervalJob(id, everyStr) {
 function onceJob(id, inStr) {
   const schedule = cron.parseSchedule(inStr, T0);
   return cronStore.makeJob({ id, prompt: 'do ' + id, agentId: 'cron_' + id, schedule }, { id, now: T0 });
+}
+function cronJob(id, expr, base) {
+  const schedule = cron.parseSchedule(expr, base);
+  return cronStore.makeJob({ id, prompt: 'do ' + id, agentId: 'cron_' + id, schedule }, { id, now: base });
 }
 
 // a runOnce fake that emits a normal short reply then ends 'done'.
@@ -85,6 +92,19 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     await flush();
     A.eq(countOf(s.events, 'cron.result'), 1, 'one cron.result after it settles');
     A.eq(firstOf(s.events, 'cron.result').outcome, 'ok', 'a normal reply -> outcome ok');
+  }
+
+  // ---- 1b. a due cron job fires through the same autonomous path and advances to its next cron time ----
+  {
+    const base = Date.parse('2026-06-19T08:58:00Z');
+    const due = Date.parse('2026-06-19T09:00:00Z');
+    const j = cronJob('cj1', '0 9 * * *', base);
+    const s = setup([j], okRun(), { t0: base });
+    s.clock.set(due);
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary, { fired: 1, skipped: 0, planned: 1 }, 'one cron job planned + fired');
+    A.eq(s.runs[0].agentId, 'cron_cj1', 'cron fire runs as the job agent');
+    A.eq(s.getJob('cj1').nextRunAt, cron._internals.iso(Date.parse('2026-06-20T09:00:00Z')), 'cron nextRunAt advanced before launch');
   }
 
   // ---- 2. advance-before-run: nextRunAt is advanced BEFORE launch; lastRunAt only after completion ----
@@ -184,6 +204,22 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(firstOf(s.events, 'cron.skipped').reason, 'no-capability', 'skip reason no-capability');
   }
 
+  // ---- 8b. OAuth-backed providers launch without a BYOK key ----
+  {
+    const j = intervalJob('j1', 'every 1m');
+    const s = setup([j], okRun(), {
+      key: '',
+      defaultModel: 'gpt-5.3-codex',
+      providerForJob: () => 'codex',
+      hasCredential: (provider) => provider === 'codex'
+    });
+    s.clock.set(T0 + 60000);
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary, { fired: 1, skipped: 0, planned: 1 }, 'codex oauth cron fires without an OpenRouter key');
+    A.eq(s.runs[0].provider, 'codex', 'cron passes the inherited provider to runOnce');
+    A.eq(s.runs[0].key, '', 'codex cron does not fabricate a BYOK key');
+  }
+
   // ---- 9. the [SILENT] no-spam check is strict-equals-after-trim ----
   {
     // a bare "[SILENT]" suppresses (outcome silent); an embedded one does NOT (outcome ok).
@@ -234,6 +270,19 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const tick = firstOf(s.events, 'cron.tick');
     A.ok(tick != null, 'cron.tick emitted on an active tick');
     A.eq(tick, { fired: 1, skipped: 0, planned: 1 }, 'cron.tick carries the real counts');
+  }
+
+  // ---- 13. selected-agent identity: roster system/model are used when the job has no explicit model ----
+  {
+    const j = intervalJob('j1', 'every 1m');
+    const s = setup([j], okRun(), {
+      defaultModel: 'fallback/model',
+      identityForAgent: (agentId) => agentId === 'cron_j1' ? { system: 'ROSTER SYSTEM', model: 'roster/model' } : null
+    });
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    A.eq(s.runs[0].model, 'roster/model', 'cron fire uses the selected agent roster model');
+    A.eq(s.runs[0].system, 'ROSTER SYSTEM', 'cron fire uses the selected agent roster system prompt');
   }
 
   A.report('cron.tick');

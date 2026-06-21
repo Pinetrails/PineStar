@@ -23,8 +23,8 @@
      toEnvelope(jobs)                           -> { version, jobs } // for persistence
      isValidId(id)                              -> boolean
 
-   A CronJob (v1 — interval+once only; see cron.js for schedule shapes):
-     { id, name, prompt, schedule, scheduleDisplay, agentId, model, deliver, enabled,
+   A CronJob (see cron.js for schedule shapes):
+     { id, name, prompt, schedule, scheduleDisplay, agentId, model, provider, deliver, enabled,
        state:'scheduled'|'paused'|'completed'|'error', repeat:{times,completed},
        createdAt, nextRunAt, lastRunAt, lastRunId, lastStatus, lastError, lastReason, retryCount,
        skills, script, workdir, contextFrom }                         // last row = record-the-field, defer-the-consumer */
@@ -41,7 +41,7 @@
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
   // fields a user may edit via updateJob. `id`, timestamps, run-state and counters are NOT editable here.
-  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'deliver', 'skills', 'script', 'workdir', 'contextFrom'];
+  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'workdir', 'contextFrom'];
 
   function isValidId(id) { return typeof id === 'string' && ID_RE.test(id); }
 
@@ -70,9 +70,9 @@
     const schedule = spec.schedule || null;
     const enabled = spec.enabled !== false;                          // default true
     const isOnce = !!(schedule && schedule.kind === 'once');
-    const fireable = !!(schedule && (schedule.kind === 'once' || schedule.kind === 'interval'));
+    const fireable = !!(schedule && (schedule.kind === 'once' || schedule.kind === 'interval' || schedule.kind === 'cron'));
 
-    // repeat: a one-shot is exactly once; an interval is forever (null) unless a finite times is given.
+    // repeat: a one-shot is exactly once; recurring schedules are forever (null) unless a finite times is given.
     let times = null;
     if (isOnce) times = 1;
     else if (spec.repeat && spec.repeat.times != null) times = Math.max(1, parseInt(spec.repeat.times, 10) || 1);
@@ -85,6 +85,7 @@
       scheduleDisplay: schedule && schedule.display ? schedule.display : '',
       agentId: String(spec.agentId || 'agent'),
       model: spec.model != null ? String(spec.model) : null,        // null -> host's boot-frozen default
+      provider: spec.provider != null ? String(spec.provider) : null, // null -> selected agent/global provider
       deliver: String(spec.deliver || 'local'),
       enabled: enabled,
       state: enabled ? 'scheduled' : 'paused',

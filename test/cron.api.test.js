@@ -1,11 +1,11 @@
 /* node test/cron.api.test.js — boot-level end-to-end test of the /api/cron ROUTINES CRUD surface.
    Spawns the real Node host (sidecar/index.js) against an ISOLATED temp workspace on an ephemeral port, with
    NO key (so zero model spend), and drives the routine CRUD + preview + the run-now guard over real sockets:
-     - POST /api/cron            create (valid schedule -> ok; unparseable + 5-field cron -> 400)
+     - POST /api/cron            create (interval + 5-field cron -> ok; unparseable -> 400)
      - GET  /api/cron            the snapshot the panel renders (enabled:false when the tick is unarmed)
      - POST /api/cron/preview    next-5 fire times for an interval; one for a once; 400 on garbage
      - POST /api/cron/update     edit a field + pause/resume via the enabled flag
-     - POST /api/cron/run        no key -> 400 (guard, zero spend); unknown id -> 404
+     - POST /api/cron/run        no provider credentials -> 400 (guard, zero spend); unknown id -> 404
      - POST /api/cron/remove     delete; then a SECOND boot proves the job persisted to cron.jobs.json
    Mirrors sidecar.http.test.js; NOT in test:fast (a child-process boot test shouldn't gate other agents).
    Run via `npm run test:http`. */
@@ -62,17 +62,35 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(create.body.job.schedule.kind, 'interval', 'schedule parsed to an interval');
     A.eq(create.body.job.agentId, 'cron_brief', 'agentId stored');
     A.ok(create.body.job.nextRunAt, 'an enabled interval job is armed with a nextRunAt');
+    const roster = await j('POST', '/api/roster', { agents: [{ agentId: 'cron_brief', system: 'ROSTER SYSTEM', name: 'Briefing Agent', model: 'roster/model', provider: 'codex', role: 'news briefings' }] });
+    A.eq(roster.status, 200, 'POST /api/roster -> 200');
+    A.eq(roster.body.count, 1, 'roster stores the selected cron agent identity');
+    const rosterPath = path.join(ws, 'agent.roster.json');
+    A.ok(fs.existsSync(rosterPath), 'agent roster mirror persisted for headless cron');
+    const rosterDisk = JSON.parse(fs.readFileSync(rosterPath, 'utf8'));
+    A.eq(rosterDisk.agents[0].agentId, 'cron_brief', 'persisted roster carries the agentId');
+    A.eq(rosterDisk.agents[0].provider, 'codex', 'persisted roster carries the selected provider');
+
+    // ---- create: a valid 5-field cron routine is accepted and armed ----
+    const cronExpr = await j('POST', '/api/cron', { name: 'Daily brief', prompt: 'daily summary', schedule: '0 9 * * *', agentId: 'cron_brief', provider: 'codex' });
+    A.eq(cronExpr.status, 200, '5-field cron expr -> 200');
+    A.eq(cronExpr.body.job.schedule.kind, 'cron', 'cron schedule stored as cron');
+    A.eq(cronExpr.body.job.provider, 'codex', 'cron routine can pin a provider');
+    A.ok(cronExpr.body.job.nextRunAt, 'an enabled cron job is armed with a nextRunAt');
+    const cronId = cronExpr.body.job.id;
 
     // ---- create: bad inputs are refused (not silently stored as un-fireable) ----
     const badSched = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: 'whenever i feel like it' });
     A.eq(badSched.status, 400, 'unparseable schedule -> 400');
-    const cronExpr = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: '* * * * *' });
-    A.eq(cronExpr.status, 400, '5-field cron expr -> 400 (deferred, not stored as un-fireable)');
+    const badCronExpr = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: '61 * * * *' });
+    A.eq(badCronExpr.status, 400, 'invalid cron expr -> 400');
+    const badAgent = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: 'every 1h', agentId: '../escape' });
+    A.eq(badAgent.status, 400, 'malformed routine agentId -> 400');
 
     // ---- list: the snapshot the panel renders; enabled:false because SKYNET_CRON_ENABLED is unset ----
     const list = await j('GET', '/api/cron');
     A.eq(list.status, 200, 'GET /api/cron -> 200');
-    A.eq(list.body.jobs.length, 1, 'one routine listed');
+    A.eq(list.body.jobs.length, 2, 'two routines listed');
     A.eq(list.body.enabled, false, 'enabled:false — the tick is honestly reported as unarmed');
     A.ok(JSON.stringify(list.body).indexOf('sk-') < 0, 'no key-shaped secret in the snapshot');
 
@@ -86,6 +104,10 @@ function boot(port, workspaces, attemptsLeft) {
     const pvOnce = await j('POST', '/api/cron/preview', { schedule: 'in 2h' });
     A.eq(pvOnce.body.kind, 'once', 'preview kind once');
     A.eq(pvOnce.body.next.length, 1, 'a once schedule previews exactly one fire');
+    const pvCron = await j('POST', '/api/cron/preview', { schedule: '*/30 * * * *' });
+    A.eq(pvCron.status, 200, 'preview of valid cron -> 200');
+    A.eq(pvCron.body.kind, 'cron', 'preview kind cron');
+    A.eq(pvCron.body.next.length, 5, 'cron preview returns 5 fire times');
     const pvBad = await j('POST', '/api/cron/preview', { schedule: 'nonsense!!' });
     A.eq(pvBad.status, 400, 'preview of garbage -> 400');
 
@@ -101,10 +123,14 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(res.body.job.nextRunAt, 're-armed nextRunAt on resume');
     const updMissing = await j('POST', '/api/cron/update', { id: 'nope', patch: { name: 'z' } });
     A.eq(updMissing.status, 404, 'update of an unknown id -> 404');
+    const updBadAgent = await j('POST', '/api/cron/update', { id, patch: { agentId: 'bad agent!' } });
+    A.eq(updBadAgent.status, 400, 'update rejects a malformed agentId');
+    const updBadProvider = await j('POST', '/api/cron/update', { id, patch: { provider: 'bad-provider' } });
+    A.eq(updBadProvider.status, 400, 'update rejects an unknown provider');
 
-    // ---- run-now: guarded (no key -> 400; unknown id -> 404) — zero spend ----
+    // ---- run-now: guarded (no provider credentials -> 400; unknown id -> 404) — zero spend ----
     const runNoKey = await j('POST', '/api/cron/run', { id });
-    A.eq(runNoKey.status, 400, 'run-now with no key configured -> 400 (no spend)');
+    A.eq(runNoKey.status, 400, 'run-now with no provider credentials -> 400 (no spend)');
     const runMissing = await j('POST', '/api/cron/run', { id: 'nope' });
     A.eq(runMissing.status, 404, 'run-now of an unknown id -> 404');
 
@@ -113,12 +139,16 @@ function boot(port, workspaces, attemptsLeft) {
     try { child.kill(); } catch (_) {} await sleep(200);
     booted = await boot(port + 100, ws, 20); child = booted.child; port = booted.port;
     const after = await j('GET', '/api/cron');
-    A.eq(after.body.jobs.length, 1, 'the routine persisted across a restart');
-    A.eq(after.body.jobs[0].name, 'Renamed brief', 'the edited name persisted');
+    A.eq(after.body.jobs.length, 2, 'the routines persisted across a restart');
+    A.ok(after.body.jobs.some(job => job.name === 'Renamed brief'), 'the edited name persisted');
+    A.ok(after.body.jobs.some(job => job.schedule && job.schedule.kind === 'cron'), 'the cron routine persisted');
+    A.ok(after.body.jobs.some(job => job.provider === 'codex'), 'the routine provider persisted');
 
     // ---- remove: delete then confirm gone ----
     const rm = await j('POST', '/api/cron/remove', { id });
     A.eq(rm.status, 200, 'remove -> 200');
+    const rmCron = await j('POST', '/api/cron/remove', { id: cronId });
+    A.eq(rmCron.status, 200, 'remove cron -> 200');
     const empty = await j('GET', '/api/cron');
     A.eq(empty.body.jobs.length, 0, 'routine removed');
   } finally {
