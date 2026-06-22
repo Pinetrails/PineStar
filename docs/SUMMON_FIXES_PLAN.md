@@ -112,14 +112,20 @@ agent has no code path that moves it.
 **Decision: Light wander only** (kept SEPARATE from the hero's rich leisure/prop/couch AI, to
 respect the "crew = light bodies" boundary and avoid destabilizing the delicate hero code).
 
-**Fix (Phase 3).** Add a lightweight per-crew idle stepper, invoked from `tick()` for each
-non-hero `crew` body:
-- When the body is not `working` and its `idleUntil` has elapsed, pick a random reachable tile
-  (`geo.path` from its current tile, avoiding the belt/desk union like `wander()` does at
-  `world.js:614-628`) and walk it via the SAME movement integrator pattern used for the hero
-  (`world.js:1335-1356`), advancing `pathPts`/`pathIdx`.
-- No props, couch, quirks, or leisure — just "walk around the station waiting for a task."
-- A body with a live run (`working`) stays put in its working pose (current behavior preserved).
+**Fix (Phase 3) — DONE (pending live visual).** Added a self-contained crew stepper
+(`stepCrew`/`crewWander`/`crewNextWaypoint`, `world.js` after `beltUnion`), invoked from `tick()`
+right after `tickNeeds`:
+- Scoped to **summoned** bodies (`b.summoned`) — the explicit ask; a bay-bound body stays where
+  work is delivered (and avoids the `syncCrewFromPlan` re-foot yank).
+- When not `working` and `idleUntil` has elapsed, picks a random reachable tile (`geo.path`,
+  belt-free where possible via `beltUnion()`) and walks it with the SAME integrator math the hero
+  uses (`world.js:1335-1356`), advancing `pathPts`/`pathIdx`, then dwells 2.4–6.5s and repeats.
+- A live run (`b.working`, lit by `setActivityFor`) clears the path and holds the working pose.
+- Freshly summoned bodies hold a 1.4–3.2s materialize-dwell before the first stroll.
+
+Verification: parse-clean, full `test:fast` green, boots with no console errors, the per-PC rule
+runtime-verified. The walk itself needs a woken app (the static harness sits behind the BYOK
+awakening gate) — verify live in a running instance.
 
 ---
 

@@ -648,6 +648,55 @@ const World = (() => {
     return s;
   }
 
+  /* ---------- crew idle-wander (Bug 3) ----------
+     The hero owns the rich state machine (props/couch/quirks). A CREW body (summoned or bay-bound) gets a LIGHT,
+     independent stepper: when it isn't running a task, it strolls to a random reachable tile (belt-free where it
+     can), pauses a beat, and repeats — so an idle agent walks the station instead of standing frozen. A live run
+     (b.working, lit by setActivityFor) freezes it in the working pose. No leisure AI; reuses the hero's pathing. */
+  function crewNextWaypoint(b) {
+    if (!b.pathPts || b.pathIdx >= b.pathPts.length) { b.target = null; return; }
+    const wp = b.pathPts[b.pathIdx++];
+    b.target = footOf(wp.x, wp.y);
+  }
+  function crewWander(b, now) {
+    const rects = geo.allRects;
+    if (!rects || !rects.length) { b.idleUntil = now + 1200; return; }
+    const cur = tileOf(b.px, b.py);
+    const avoid = beltUnion();
+    for (let i = 0; i < 20; i++) {
+      const r = rects[U.irnd(0, rects.length - 1)];
+      const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
+      if (!geo.walkable(x, y, blocked) || avoid.has(x + ',' + y)) continue;
+      let p = geo.path(cur.x, cur.y, x, y, avoid);     // prefer a belt-free route
+      if (!p) p = geo.path(cur.x, cur.y, x, y, blocked); // fall back: a belt bridges the only crossing
+      if (p && p.length) { b.pathPts = p; b.pathIdx = 0; b.state = 'walk'; crewNextWaypoint(b); return; }
+    }
+    b.idleUntil = now + 1200;   // boxed in this frame — try again shortly
+  }
+  function stepCrew(dt, now) {
+    if (!geo || !crew.length) return;
+    const SPEED = 28;   // a calm background pace, a touch under the hero
+    for (const b of crew) {
+      if (!b.summoned || b.unplaced) continue;   // summoned workers roam; a bay-bound body stays where work is delivered
+      if (b.working) { b.pathPts = null; b.target = null; b.state = 'idle'; continue; }   // running → stand + work where it is
+      if (b.target) {
+        const dx = b.target.x - b.px, dy = b.target.y - b.py, d = Math.hypot(dx, dy);
+        if (d < 1.1) {
+          b.px = b.target.x; b.py = b.target.y;
+          if (b.pathPts && b.pathIdx < b.pathPts.length) crewNextWaypoint(b);
+          else { b.pathPts = null; b.target = null; b.state = 'idle'; b.idleUntil = now + U.irnd(2400, 6500); }   // arrived → dwell
+        } else {
+          const s = Math.min(d, SPEED * dt / 1000);
+          b.px += dx / d * s; b.py += dy / d * s; b.state = 'walk';
+          b.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+        }
+        continue;
+      }
+      if (now < (b.idleUntil || 0)) { b.state = 'idle'; continue; }   // dwelling between strolls
+      crewWander(b, now);
+    }
+  }
+
   // the catalog `use` descriptor for a placed prop, or null if it isn't a leisure prop
   function propUse(p) {
     if (typeof PropSprites === 'undefined' || typeof PropAnchor === 'undefined') return null;
@@ -1313,6 +1362,7 @@ const World = (() => {
     if (!agent || agent.unplaced || !geo || awakeFrozen) return;   // frozen during the awakening: the newborn holds still, facing the Commander
     if (!agent.lastTaskAt) agent.lastTaskAt = now;                 // anchor downtime at the first live tick
     tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
+    stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
     const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
     // settle: a beat of sitting (loading context) before the screens light + typing latches on
     if (agent.goal === 'work' && !agent.working && agent.settleUntil && now >= agent.settleUntil) { agent.working = true; agent.settleUntil = 0; }
@@ -1965,6 +2015,7 @@ const World = (() => {
     const f = geo ? workerFoot() : { x: 0, y: 0 };                        // pre-geo: parked at origin, re-footed on first syncCrewFromPlan
     const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y);
     b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
+    b.idleUntil = fnow + U.irnd(1400, 3200);                              // hold a beat after materializing, then it strolls
     crew.push(b);
   }
   // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
