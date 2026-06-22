@@ -37,7 +37,7 @@ const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
-const { redact, renderRecall, injectRecall, rank, makeContext } = require('./context.js');
+const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock } = require('./context.js');
 const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -1530,9 +1530,18 @@ async function runOnce(o) {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
       return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
     }).join('\n').slice(0, 16000);
+    // on_pre_compress (MEMORY-CORTEX): rank the agent's durable memory against the slice being folded and PREPEND
+    // it, so beliefs like "user prefers X" survive when the raw turns are discarded. '' when nothing to preserve
+    // (prepend nothing → byte-identical compaction). Fail-open: a memory hiccup must never block the summary.
+    let memBlock = '';
+    try {
+      const recs = notebookStore.get('notebook:' + agentId);
+      if (Array.isArray(recs) && recs.length) memBlock = compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
+    } catch (_) {}
+    const userMsg = (memBlock ? memBlock + '\n\n' : '') + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
     const req = { model, stream: true, signal, messages: [
       { role: 'system', content: 'You compress an earlier slice of an agent conversation into a dense factual summary. Preserve decisions made, facts and data learned (with sources), files written, tool results, and any still-open tasks. Drop pleasantries. Output ONLY the summary prose.' },
-      { role: 'user', content: 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript }
+      { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
