@@ -3854,7 +3854,7 @@ const PropSprites = (() => {
     { id: "consoleL", label: "CONSOLE L", cat: "workstation", tier: "functional", seat: true, w: 3, h: 1, animated: true, blocks: true, desc: D_WS },
     { id: "pixelrig", label: "PIXEL RIG", cat: "workstation", tier: "functional", seat: true, w: 2, h: 1, animated: true, blocks: true, desc: D_WS },
     { id: "bench", label: "BENCH", cat: "workstation", tier: "functional", seat: true, w: 4, h: 1, animated: true, blocks: true, desc: D_WS },
-    { id: "workbench", label: "WORKBENCH", cat: "workstation", tier: "functional", seat: true, w: 2, h: 1, animated: true, blocks: true, desc: "WORKBENCH — a workstation that also grants shell + verify, so its agent can run and test real code. Assign an agent to seat it here." },
+    { id: "workbench", label: "WORKBENCH", cat: "workstation", tier: "functional", w: 2, h: 1, animated: true, blocks: true, desc: "WORKBENCH — grants the room's agent shell + verify, so it can run and test real code. Pair it with a workstation in the same room." },
     // WORKFLOW — how work enters, moves, routes, and leaves.
     { id: "intake", label: "INTAKE", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "INTAKE — where outside work (a DM, a job) enters the station and drops onto a belt. The start of a workflow." },
     { id: "bay", label: "BAY", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "BAY — the agent dock. Assign an agent; work routed here runs as that agent, and the props in this room become its powers." },

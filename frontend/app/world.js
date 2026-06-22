@@ -245,27 +245,11 @@ const World = (() => {
     bakeDirty = false;
   }
 
-  // is this prop type an agent-assignable WORKSTATION (a desk/PC the builder can host an agent at)?
-  const isWorkstation = t => { const s = (typeof PropSprites !== 'undefined') && PropSprites.spec(t); return !!(s && s.seat); };
-  // the workstation a given agent is ASSIGNED to — a placed desk/PC carrying its agentId. Returns its desk rect +
-  // the seat (front approach tile) + facing, all in the geo LOCAL frame, or null if it has none on this floor.
-  function homeStationFor(aid) {
-    if (!aid || !geo || !geo.props) return null;
-    const p = geo.props.find(q => q.agentId === aid && isWorkstation(q.t));
-    if (!p) return null;
-    const w = p.w || 1, h = p.h || 1;
-    let seatTile = null, face = 'north';
-    if (typeof PropAnchor !== 'undefined' && PropAnchor.deriveAnchor) {   // prefer the front (south) walkable tile
-      const a = PropAnchor.deriveAnchor(p, geo, { approach: 'south', sit: true });
-      if (a) { seatTile = { tx: a.tx, ty: a.ty }; face = a.face; }
-    }
-    if (!seatTile) seatTile = { tx: p.x, ty: p.y + h };   // fallback: the row directly below the desk
-    return { desk: { tx: p.x, ty: p.y, w, h }, seat: seatTile, face, propId: p.id };
-  }
   // a PLACED workstation prop lights its screens while the agent assigned to it is working (mirrors the synthetic
-  // desk's work-glow + the bay-lit pattern) — so an assigned desk reads as "its agent is here, working."
+  // desk's work-glow + the bay-lit pattern) — so an assigned desk reads as "its agent is here, working".
+  // (The agent's desk + seat are resolved by the shared deskPropFor/deskSeat helpers defined further below.)
   function workstationLit(p) {
-    if (!p.agentId || !isWorkstation(p.t)) return false;
+    if (!p.agentId || !isWorkstationProp(p.t)) return false;
     if (agent && p.agentId === agent.id) return !!agent.working;
     const b = crew.find(x => x.agentId === p.agentId);
     return !!(b && b.working);
@@ -276,11 +260,13 @@ const World = (() => {
     blocked = new Set();
     deskPropId = null; deskFace = 'north';
     // 1) the hero's own assigned workstation prop → THAT desk is its seat (it walks here + sits when tasked).
-    const home = agent && homeStationFor(agent.id);
-    if (home) {
-      desk = home.desk; seat = home.seat; deskPropId = home.propId; deskFace = home.face;
+    //    Uses the SAME desk+seat resolver as crew (deskPropFor/deskSeat) so the hero & crew seat identically.
+    const home = agent && deskPropFor(agent.id), hs = home && deskSeat(home);
+    if (home && hs) {
+      desk = { tx: home.x, ty: home.y, w: home.w || 1, h: home.h || 1 }; seat = { tx: hs.tx, ty: hs.ty };
+      deskPropId = home.id; deskFace = hs.face;
       for (let dx = 0; dx < (desk.w || 1); dx++) for (let dy = 0; dy < (desk.h || 1); dy++) blocked.add((desk.tx + dx) + ',' + (desk.ty + dy));
-      return;   // the placed prop draws itself (skip the synthetic desk); the chair still renders at the seat
+      return;   // the placed prop + its chair are drawn by the render loop (skip the synthetic desk/chair)
     }
     // 2) fallback: the auto workstation on the spawn room's north wall, seat one row below.
     const sid = station.spawnRoomId(), z = sid && geo.zones[sid];
@@ -1632,7 +1618,7 @@ const World = (() => {
       }
     }
     if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
-    if (seat) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });
+    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
     items.sort((a, b) => a.y - b.y);
@@ -2097,21 +2083,17 @@ const World = (() => {
     const want = new Map();
     for (const bay of routingPlan.bays) {
       if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
-      let pos = null;
-      const home = homeStationFor(bay.agentId);                        // a placed workstation assigned to this agent → station it at its desk
-      if (home) { const f = footOf(home.seat.tx, home.seat.ty); pos = { x: f.x, y: f.y, face: home.face }; }
-      else {
-        const p = geo.props && geo.props.find(pp => pp.id === bay.propId);
-        if (!p) continue;
-        pos = { x: (p.x + (p.w > 1 ? 1 : 0)) * T + T / 2, y: (p.y + (p.h || 1) - 1) * T + T - 1 };   // foot at the bay's bottom-centre
-      }
-      want.set(bay.agentId, pos);
+      const p = geo.props && geo.props.find(pp => pp.id === bay.propId);
+      if (!p) continue;
+      const fx = (p.x + (p.w > 1 ? 1 : 0)) * T + T / 2;                // foot at the bay's bottom-centre — stepCrew walks it to its desk's chair when working
+      const fy = (p.y + (p.h || 1) - 1) * T + T - 1;
+      want.set(bay.agentId, { x: fx, y: fy });
     }
     crew = crew.filter(b => b.summoned || want.has(b.agentId));        // drop plan bodies whose bay is gone; KEEP summoned crew
     for (const [aid, pos] of want) {
       const b = crew.find(x => x.agentId === aid && !x.summoned);
-      if (b) { b.px = pos.x; b.py = pos.y; if (pos.face) b.dir = pos.face; }
-      else if (!crew.some(x => x.agentId === aid)) { const nb = makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y); if (pos.face) nb.dir = pos.face; crew.push(nb); }
+      if (b) { b.px = pos.x; b.py = pos.y; }
+      else if (!crew.some(x => x.agentId === aid)) crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
     }
     // a refit may have moved the floor under a summoned body — re-foot any that no longer stand on a walkable tile.
     for (const b of crew) {

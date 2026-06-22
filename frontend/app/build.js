@@ -182,8 +182,9 @@ const Build = (() => {
     workstation: 'WORKSTATIONS', workflow: 'WORKFLOW', capability: 'CAPABILITY', isolation: 'ISOLATION',
     screens: 'SCREENS', lab: 'LAB', storage: 'STORAGE', comms: 'COMMS', lounge: 'LOUNGE', decor: 'DECOR',
   };
-  // the agent-assignable workstation types (CATALOG seat:true) — these open the agent picker on place/click
-  const WORKSTATION_TYPES = { desk: 1, desk2: 1, console: 1, consoleL: 1, pixelrig: 1, bench: 1, workbench: 1 };
+  // the agent-assignable workstation types — the 'computer' props the agent walks to + sits at (matches
+  // world.js isWorkstationProp / deskPropFor seating + the CATALOG seat:true set). These open the picker on place/click.
+  const WORKSTATION_TYPES = { desk: 1, desk2: 1, console: 1, consoleL: 1, pixelrig: 1, bench: 1 };
   const catalog = () => (typeof PropSprites !== 'undefined') ? PropSprites.CATALOG : [];
   // the ordered list of category ids that belong to a tier (first-appearance order in the catalog)
   function catsForTier(tier) {
