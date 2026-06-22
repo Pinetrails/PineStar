@@ -10,7 +10,7 @@ const os = require('os');
 const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
 
 const ROOT = path.join(os.tmpdir(), 'skynet-fs-test-' + process.pid);
-const { writeTool, readTool, listTool, appendTool, editTool, _internals } = makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 32, readReturn: 1000 } });
+const { writeTool, readTool, listTool, appendTool, editTool, searchTool, _internals } = makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 32, readReturn: 1000 } });
 
 async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' — did NOT reject'); } catch (e) { A.ok(true, msg); } }
 
@@ -90,6 +90,40 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     const rb = await _internals.resolveInside('beta', 'note.md');
     A.ok(ra.base !== rb.base, 'each agent resolves under a DISTINCT per-agent jail base');
     A.ok(ra.abs !== rb.abs, 'the same relative path lands at different absolute paths per agent');
+  }
+
+  // ---- fs.search: content grep over the workspace (path:line: text), bounded + jailed ----
+  {
+    const ctx = { agentId: 'srch' };
+    await writeTool.run({ path: 'a.txt', content: 'alpha TODO one' }, ctx);   // <=32 bytes
+    await writeTool.run({ path: 'sub/b.txt', content: 'beta todo two' }, ctx);
+    await writeTool.run({ path: 'c.txt', content: 'no marker here' }, ctx);
+
+    // substring is case-sensitive by default: only a.txt's "TODO" matches
+    const s1 = await searchTool.run({ query: 'TODO' }, ctx);
+    A.ok(s1.content.indexOf('a.txt:1: alpha TODO one') >= 0, 'search finds the substring with workspace-relative path:line');
+    A.ok(s1.content.indexOf('b.txt') < 0, 'case-sensitive substring does NOT match lowercase "todo"');
+
+    // ignoreCase catches both
+    const s2 = await searchTool.run({ query: 'todo', ignoreCase: true }, ctx);
+    A.ok(s2.content.indexOf('a.txt:1:') >= 0 && s2.content.indexOf('sub/b.txt:1:') >= 0, 'ignoreCase matches both files');
+
+    // regex
+    const s3 = await searchTool.run({ query: 'beta|gamma', regex: true }, ctx);
+    A.ok(s3.content.indexOf('sub/b.txt:1:') >= 0, 'regex alternation matches');
+    await rejects(searchTool.run({ query: '(unclosed', regex: true }, ctx), 'invalid regex -> clean error');
+
+    // path scope limits the search to a subdirectory (paths stay workspace-root-relative)
+    const s4 = await searchTool.run({ query: 'todo', ignoreCase: true, path: 'sub' }, ctx);
+    A.ok(s4.content.indexOf('sub/b.txt:1:') >= 0 && s4.content.indexOf('a.txt:') < 0, 'path scopes the search to the subdir');
+
+    // no matches is a clean (non-error) result
+    const s5 = await searchTool.run({ query: 'zzz-nope' }, ctx);
+    A.ok(/0 matches/.test(s5.summary), 'no matches -> clean "0 matches" result');
+
+    // empty query is rejected; the jail still applies to the start path
+    await rejects(searchTool.run({ query: '' }, ctx), 'empty query rejected');
+    await rejects(searchTool.run({ query: 'x', path: '../other' }, ctx), 'search cannot escape the workspace jail');
   }
 
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}

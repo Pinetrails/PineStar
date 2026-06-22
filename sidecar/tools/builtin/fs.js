@@ -1,8 +1,8 @@
-/* sidecar/tools/builtin/fs.js — the CABINET capability: fs.read / fs.write / fs.list,
-   jailed to <root>/<agentId>/. The path guard is the security spine: every model- or
-   user-supplied path is resolved and PROVEN to stay inside the agent's workspace before any
-   I/O. Node-only (node:path + node:fs/promises injected for testability). Matches the
-   notebook.js / web.js tool shape.
+/* sidecar/tools/builtin/fs.js — the CABINET capability: fs.read / fs.write / fs.list /
+   fs.append / fs.edit / fs.search, jailed to <root>/<agentId>/. The path guard is the
+   security spine: every model- or user-supplied path is resolved and PROVEN to stay inside
+   the agent's workspace before any I/O. Node-only (node:path + node:fs/promises injected for
+   testability). Matches the notebook.js / web.js tool shape.
 
    makeFsTools({ fsp, pathMod, root, limits }) -> { writeTool, readTool, listTool, register(reg) }
      fsp     : node:fs/promises (injectable)
@@ -156,10 +156,78 @@
       }
     };
 
+    // recursive content search -> "path:line: text" rows (paths workspace-root-relative so they
+    // feed straight into fs.read). Bounded on every axis so a huge tree can't flood the prompt:
+    // skips node_modules/.git, oversized files, and binary (NUL-bearing) files; caps total matches.
+    const SEARCH_MAX_FILE_BYTES = 512 * 1024, SEARCH_MAX_FILES = 2000, SEARCH_LINE_CHARS = 240;
+    async function searchContents(absDir, prefix, matcher, opts, out, stats) {
+      if (out.length >= opts.maxResults || stats.files >= SEARCH_MAX_FILES) { stats.truncated = true; return; }
+      let entries;
+      try { entries = await fsp.readdir(absDir, { withFileTypes: true }); }
+      catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
+      entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));   // stable, deterministic output
+      for (const ent of entries) {
+        if (out.length >= opts.maxResults || stats.files >= SEARCH_MAX_FILES) { stats.truncated = true; return; }
+        const rel = prefix ? (prefix + '/' + ent.name) : ent.name;
+        const abs = P.join(absDir, ent.name);
+        if (ent.isDirectory()) {
+          if (ent.name === 'node_modules' || ent.name === '.git') continue;
+          await searchContents(abs, rel, matcher, opts, out, stats);
+          continue;
+        }
+        let buf;
+        try { buf = await fsp.readFile(abs); } catch (e) { continue; }
+        if (buf.length > SEARCH_MAX_FILE_BYTES || buf.indexOf(0) >= 0) continue;   // skip oversized / binary
+        stats.files++;
+        const lines = buf.toString('utf8').split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          if (!matcher(lines[i])) continue;
+          const text = lines[i].length > SEARCH_LINE_CHARS ? lines[i].slice(0, SEARCH_LINE_CHARS) + '…' : lines[i];
+          out.push(rel + ':' + (i + 1) + ': ' + text);
+          if (out.length >= opts.maxResults) { stats.truncated = true; return; }
+        }
+      }
+    }
+
+    const searchTool = {
+      name: 'fs.search', capability: 'cabinet', scope: 'read', requiresConsent: false, timeoutMs: 15000,
+      description: 'Search the TEXT CONTENTS of files in your workspace; returns matching lines as "path:line: text". Substring match by default — pass { "regex": true } to treat "query" as a regular expression, { "ignoreCase": true } to ignore case. Optional "path" limits the search to one subdirectory. Use this to FIND where something is before reading a whole file.',
+      schema: { type: 'object', required: ['query'], properties: {
+        query: { type: 'string' }, path: { type: 'string' },
+        regex: { type: 'boolean' }, ignoreCase: { type: 'boolean' }, maxResults: { type: 'number' }
+      } },
+      run: async (args, ctx) => {
+        const q = String(args && args.query != null ? args.query : '');
+        if (!q) throw new Error('"query" must be a non-empty string');
+        const { base, abs } = await resolveInside((ctx && ctx.agentId) || 'agent', (args && args.path) || '.');
+        const ignoreCase = !!(args && args.ignoreCase);
+        let matcher;
+        if (args && args.regex) {
+          let re;
+          try { re = new RegExp(q, ignoreCase ? 'i' : ''); }
+          catch (e) { throw new Error('invalid regex: ' + ((e && e.message) || e)); }
+          matcher = (line) => re.test(line);
+        } else if (ignoreCase) {
+          const needle = q.toLowerCase();
+          matcher = (line) => line.toLowerCase().indexOf(needle) >= 0;
+        } else {
+          matcher = (line) => line.indexOf(q) >= 0;
+        }
+        const opts = { maxResults: Math.max(1, Math.min(500, (args && Number(args.maxResults)) || 100)) };
+        const startPrefix = P.relative(base, abs).split(P.sep).join('/');   // '' when searching from the root
+        const out = [], stats = { files: 0, truncated: false };
+        await searchContents(abs, startPrefix, matcher, opts, out, stats);
+        if (!out.length) return { content: '(no matches for ' + q + ')', summary: '0 matches in ' + stats.files + ' file(s)' };
+        let body = out.join('\n');
+        if (stats.truncated) body += '\n…[truncated at ' + opts.maxResults + ' matches]';
+        return { content: body, summary: out.length + ' match' + (out.length === 1 ? '' : 'es') + ' in ' + stats.files + ' file(s)' };
+      }
+    };
+
     return {
-      writeTool, readTool, listTool, appendTool, editTool,
-      _internals: { resolveInside, workspaceRoot, safeAgentId, walk },
-      register(reg) { [writeTool, readTool, listTool, appendTool, editTool].forEach(t => reg.register(t)); return reg; }
+      writeTool, readTool, listTool, appendTool, editTool, searchTool,
+      _internals: { resolveInside, workspaceRoot, safeAgentId, walk, searchContents },
+      register(reg) { [writeTool, readTool, listTool, appendTool, editTool, searchTool].forEach(t => reg.register(t)); return reg; }
     };
   }
 
