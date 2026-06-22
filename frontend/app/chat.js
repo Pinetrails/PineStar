@@ -41,12 +41,29 @@ const Chat = (() => {
                                 // in BETWEEN text blocks, exactly where it happened.
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
+  let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const el = id => document.getElementById(id);
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
   function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
   function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; }
+
+  // RETIRE A SETTLED BEAT: a decided memory card / answered nudge fades + collapses, then drops out of the
+  // DOM so the feed never accumulates dead cards (the "discarded cards don't disappear" bug). Pure view —
+  // the decision was already committed by the caller. onGone fires once, after removal. Resilient: a missed
+  // transitionend can't leave a ghost (fallback timer), and a double-call is a no-op.
+  function vanish(node, onGone) {
+    if (!node) { if (onGone) onGone(); return; }
+    if (node.__vanishing) return;
+    node.__vanishing = true;
+    node.style.maxHeight = node.scrollHeight + 'px';                 // pin current height so the collapse can animate from it
+    requestAnimationFrame(() => { node.classList.add('beat-vanish'); node.style.maxHeight = '0px'; });
+    let done = false;
+    const finish = () => { if (done) return; done = true; if (node.parentNode) node.remove(); if (onGone) onGone(); };
+    node.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 460);   // fallback: a dropped transitionend (engine quirk / not displayed) still clears the card
+  }
 
   const KIND_TAG = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
 
@@ -197,9 +214,14 @@ const Chat = (() => {
   // verdict feeds the agent's confidence. This is the gamified formation loop — the agent learns, you approve.
   function proposalCard(batch, ws) {
     if (!batch || !batch.proposals || !batch.proposals.length) return;
+    clearNudge();   // ONE post-run beat at a time: the turn-in owns the moment, so retire any curiosity nudge that beat it here
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin');
     const n = batch.proposals.length;
     head.body.appendChild(document.createTextNode('🧠 ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — keep ' + (n > 1 ? 'them' : 'it') + '?'));
+
+    let remaining = n;
+    // a card is settled → it fades out; when the last one goes, the whole header retires with it (no empty husk).
+    function onItemGone() { if (--remaining <= 0) vanish(head.d); }
 
     for (const prop of batch.proposals) {
       const item = document.createElement('div'); item.className = 'turnin-item';
@@ -214,6 +236,7 @@ const Chat = (() => {
         decided = true; btns.remove();
         const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
         item.appendChild(tag);
+        setTimeout(() => vanish(item, onItemGone), 600);   // flash the verdict, then the card retires for good — vanish entirely
       }
       async function submit(verdict, content, label, isDeny) {
         if (decided) return; decided = true;
@@ -244,8 +267,7 @@ const Chat = (() => {
       }
       renderChoices();
     }
-    if (typeof StationUI !== 'undefined') StationUI.notify(name + ' has ' + n + (n > 1 ? ' memories' : ' memory') + ' to review', 'gold');
-    autoscroll();
+    autoscroll();   // the inline card IS the prompt — no extra toast (it just doubled the noise the card already shows)
   }
 
   // register ONCE: reflection announces proposals via the memory.proposed SSE event (re-emitted on U.bus). It
@@ -281,12 +303,20 @@ const Chat = (() => {
     if (typeof Dossier !== 'undefined' && Dossier.DIMS) { const d = Dossier.DIMS.find(x => x.key === dim); if (d) return d.label; }
     return String(dim);
   }
+  // retire the live curiosity nudge (its prompt row AND its choice chips) — called when it's answered or when a
+  // turn-in beat supersedes it. Both halves fade out together so no orphan chip row is left behind.
+  function clearNudge() {
+    if (!activeNudge) return;
+    const a = activeNudge; activeNudge = null;
+    vanish(a.choiceRow); vanish(a.row);
+  }
   function curiosityNudge(dim) {
     if (!log) return;
-    const r = row('agent'); r.d.classList.add('reply');
+    const r = row('agent'); r.d.classList.add('nudge');   // a quiet aside, NOT the lit headline (.reply) — it was reading as a 2nd reply
     r.body.textContent = '✦ one curious thing — i still don’t know your ' + dimLabel(dim).toLowerCase() + '. want to tell me? it sharpens how every agent here works for you.';
     autoscroll();
-    choices([{ label: 'sure — ask me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }], item => {
+    const choiceRow = choices([{ label: 'sure — ask me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }], item => {
+      activeNudge = null;   // answered → release the post-run beat slot (the choice row removes itself)
       if (item.value === 'yes' && typeof Intake !== 'undefined' && typeof Dossier !== 'undefined') {
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
@@ -298,16 +328,22 @@ const Chat = (() => {
         CuriosityStore.markDismissed(dim);   // waved off → never raise this dimension again
       }
     });
+    activeNudge = { row: r.d, choiceRow: choiceRow, dim: dim };   // track both halves so a turn-in can retire the whole nudge
   }
   function wireCuriosity() {
     if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
     curiosityWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
+      const runId = p.runId || p.id;
       setTimeout(() => {
         if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
         if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return;
         if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return;
+        // ONE post-run beat per run: if this run produced a memory turn-in (or a card is still open in the
+        // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
+        if (runId && proposalRunsSeen.has(runId)) return;
+        if (log && log.querySelector('.turnin-item')) return;
         if (typeof CuriosityStore === 'undefined') return;
         const dim = CuriosityStore.consider();
         if (!dim) return;
@@ -594,6 +630,7 @@ const Chat = (() => {
       rowEl.appendChild(b);
     });
     log.appendChild(rowEl); autoscroll();
+    return rowEl;   // caller (curiosity nudge) keeps a handle so the chip row can be retired with its prompt
   }
 
   // THE AWAKENING typewriter: reveals fixed text char-by-char (with per-segment speed + holds) through the
