@@ -247,6 +247,31 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
+/* JUST-IN-TIME CURIOSITY nudge — a QUIET aside, not a second lit reply. It used to reuse .cmsg.agent.reply
+   (the glowing headline), so it read as a duplicate answer competing with the real one. Now it shares the
+   soft gold-inset language of the consent / turn-in beats: clearly "the station is asking", visually subordinate
+   to the live reply above it. One post-run beat at a time (chat.js retires a nudge if a turn-in claims the moment). */
+.cmsg.agent.nudge {
+  border-left: 2px solid var(--gold); background: rgba(255,211,74,.05);
+  padding: 8px 11px; margin: 6px 0 2px; border-radius: 0 5px 5px 0;
+}
+.cmsg.agent.nudge .who { display: none; }
+.cmsg.agent.nudge .body { color: var(--ph-bright); font-size: 14.5px; }
+
+/* RETIRING A SETTLED BEAT (chat.js vanish()): a decided memory card / answered nudge fades and collapses to
+   nothing, then drops from the DOM — so the COMMS feed only ever holds the conversation and PENDING prompts,
+   never a graveyard of "✕ discarded" husks. overflow:hidden lets max-height clip padding for a clean collapse. */
+.turnin-item, .cmsg.turnin, .cmsg.nudge, .choice-row {
+  overflow: hidden;
+  transition: opacity .16s ease, max-height .26s ease, margin .26s ease, padding .26s ease, border-width .26s ease;
+}
+.beat-vanish {
+  opacity: 0 !important;
+  margin-top: 0 !important; margin-bottom: 0 !important;
+  padding-top: 0 !important; padding-bottom: 0 !important;
+  border-top-width: 0 !important; border-bottom-width: 0 !important;
+}
+
 /* Cortex MEMORY CORE (M-mem.6): the provenance panel — every belief, traceable, with pin/edit/forget */
 .mc-note { font-size: 12px; color: var(--ph-dim); line-height: 1.4; margin: 2px 0 10px; }
 .mc-note b { color: var(--ph); font-weight: 600; }
