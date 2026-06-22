@@ -897,6 +897,7 @@ const Build = (() => {
     drawFlashes(now, t);
     drawRoutingValidation(t, now);   // red/amber markers on any unroutable junction/bay (cost-safety)
     drawHover(t);
+    drawAgentTag(t);   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
     drawGhost(t, now);
     // animate the prop-palette preview gallery (~25fps is plenty + cheap). Runs LAST: it hijacks PropSprites'
     // ctx for the offscreen tiles, and the next frame re-points it at the main canvas in drawProps().
@@ -1017,6 +1018,25 @@ const Build = (() => {
       if (live && live.connectorId) continue;
       mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'UNBOUND');
     }
+  }
+
+  // hovering an agent-bound endpoint (a PC = compute, a BAY = routing) floats the bound agent's name above it —
+  // so a SHARED room (several agents, several PCs) stays legible without one-room-per-agent. An unbound PC reads
+  // amber "unassigned" to invite binding. (Belts/conveyors gain the same tag in Phase 2b once they carry agentId.)
+  function drawAgentTag(t) {
+    if (drag || !hoverPropId) return;
+    const p = station.propById(hoverPropId);
+    if (!p) return;
+    const isPc = isPcProp(p.t), isBay = p.t === 'bay';
+    if (!isPc && !isBay) return;
+    const bound = !!p.agentId;
+    const txt = (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : 'unassigned');
+    ctx.font = (8 / zoom) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const cx = (p.x + (p.w || 1) / 2) * t, topY = p.y * t - 2 / zoom;
+    const pad = 5 / zoom, bw = ctx.measureText(txt).width + pad * 2, bh = 11 / zoom;
+    ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw / 2, topY - bh, bw, bh);
+    ctx.fillStyle = bound ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
+    ctx.fillText(txt, cx, topY - 2 / zoom);
   }
 
   function drawHover(t) {
