@@ -1,6 +1,6 @@
 # RPG Layer Design
 
-_The role-play / gamification / "addictiveness" layer for the Skynet real-agent harness (2026-06-13). Output of a 6-lens parallel design pass + synthesis. Sits on top of the already-locked builder, object→capability, Salvage/XP economy, and truthful-telemetry foundation (see `BUILDER_AND_WORLD_FOUNDATION.md`, `docs/design-proposals.md`). This document plans the agent-as-character, quest, engagement, loot, and core-verb mechanics that those docs deliberately left untouched._
+_The role-play / gamification / "addictiveness" layer for the StarNet real-agent harness (2026-06-13). Output of a 6-lens parallel design pass + synthesis. Sits on top of the already-locked builder, object→capability, Salvage/XP economy, and truthful-telemetry foundation (see `BUILDER_AND_WORLD_FOUNDATION.md`, `docs/design-proposals.md`). This document plans the agent-as-character, quest, engagement, loot, and core-verb mechanics that those docs deliberately left untouched._
 
 > **Clarification (andro, 2026-06-14): this is a general-purpose agent sandbox (OpenClaw / Hermes-class), NOT a themed narrative game. There is NO lore.** The RPG is the management UI, gamified — every mechanic is a practical agent-ops feature you'd find in a boring agent harness, turned into a verb the user actually wants to use, and it must work for ANY use case. See the two clarifying laws and the feature→mechanic map below.
 
@@ -24,7 +24,7 @@ The character the player bonds to **is a body of work the agent actually did for
 
 ### Two clarifying laws (andro, 2026-06-14)
 
-1. **No lore.** This is a sandbox, not a themed story. No fixed narrative, no imposed fiction, no "saga," no scripted arcs. RPG *mechanics* — yes; RPG *lore* — no. Any element whose only job is to tell a story is cut (see the cut list: the "Skynet Codex" saga and prescribed-campaign framing are removed). The setting is just the user's own workspace, rendered.
+1. **No lore.** This is a sandbox, not a themed story. No fixed narrative, no imposed fiction, no "saga," no scripted arcs. RPG *mechanics* — yes; RPG *lore* — no. Any element whose only job is to tell a story is cut (see the cut list: the "StarNet Codex" saga and prescribed-campaign framing are removed). The setting is just the user's own workspace, rendered.
 2. **General-purpose, always.** This is OpenClaw / Hermes with a game for a face — a general agent sandbox the user drives for *whatever they want* (code, research, ops, content, a real company, anything). **No mechanic may assume a single domain.** The acceptance test for every feature: *is it a 1:1 wrapper around a real agent-ops action, and does it work for any task?* The RPG layer is the practical agent-management surface, gamified — the game IS the control panel.
 
 ---
@@ -107,7 +107,7 @@ Highest dark-pattern risk → where the moat is won or lost.
 - **Milestone Ceremonies + Plaques** — rare real firsts/thresholds detonate full CRT juice and hang a **permanent plaque that deep-links to the run that earned it**. Routine wins get a calm tier (over-firing cheapens the high).
 - **Honest Heads-Up Pings** — OS notifications fire **only** on real consequential events the user opted into per-class (`deliverable`, budget wall, `permission.prompt`, error/refusal), with a hard daily cap and a deep-link into the room. Re-engagement / "we miss you" pings are **forbidden by policy.**
 - **One-More-Directive Hook** — on a win, a **single dismissible** suggestion for the obvious next real move (re-run with follow-up, hand to another room, promote to a schedule), each showing its cost estimate first. Never an auto-spend carousel.
-- ~~The Skynet Codex~~ — **CUT (law 1: no lore).** A scripted "saga" is fiction with no real signal behind the prose. Its only honest residue — milestone *ceremonies* keyed to real aggregates — already lives in "Milestone Ceremonies + Plaques" above.
+- ~~The StarNet Codex~~ — **CUT (law 1: no lore).** A scripted "saga" is fiction with no real signal behind the prose. Its only honest residue — milestone *ceremonies* keyed to real aggregates — already lives in "Milestone Ceremonies + Plaques" above.
 
 ---
 
@@ -168,7 +168,7 @@ Current built state: title → connect (BYOK) → one starter room → agent wak
 - Rarity/stats from raw output size or raw deliverable count — normalize, cap, weight by kind, gate on `done`.
 - Class as a restrictive lock — keep it advisory and additive.
 - Fireteams / Party Combo before the real handoff plumbing (P4) exists.
-- **Imposed lore / a fixed story arc (the "Skynet saga", scripted campaigns)** — this is a general-purpose sandbox, not a themed game; ship RPG mechanics, not fiction.
+- **Imposed lore / a fixed story arc (the "StarNet saga", scripted campaigns)** — this is a general-purpose sandbox, not a themed game; ship RPG mechanics, not fiction.
 - **Any mechanic that assumes one use case** — every verb must work for code, research, ops, content, a real business, anything. If it only makes sense for "build an app," it's wrong.
 
 ---

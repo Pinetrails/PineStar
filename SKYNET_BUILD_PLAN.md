@@ -1,4 +1,4 @@
-# Skynet → Real: Build Plan for the Gamified AI-Agent Harness (`gen/`)
+# StarNet → Real: Build Plan for the Gamified AI-Agent Harness (`gen/`)
 
 **Document owner:** andro · **Date:** 2026-06-13 · **Status:** Decisions locked, ready to execute Phase 0.
 
@@ -24,7 +24,7 @@ downloaders keep the guardrails until they deliberately lower them; the object�
 visible, legible control surface either way. The sandbox itself is always **real** — "full access" widens
 scope, it does not remove metering, the kill-switch, or spend backpressure.
 
-> **Builder reframe (2026-06-13).** Skynet's core identity is now a **station builder** (Tuber-Simulator-style):
+> **Builder reframe (2026-06-13).** StarNet's core identity is now a **station builder** (Tuber-Simulator-style):
 > spawn in one shabby room, expand outward, and the layout you draw *configures your real agent org*. This makes
 > a **mutable, data-driven, scrollable world** the foundational rebuild, and adds **THE BUILDER** as a first-class
 > phase after the Phase 1 spine. The §8 roadmap below is the original product-level sketch; it is now superseded
@@ -182,7 +182,7 @@ Onboarding is a **diegetic 6-screen ritual** ("CRADLE BAY"), never a settings fo
 3. The user gives a **directive** (chat) or the agent has a scheduled job. A real task is dispatched.
 4. The agent **paths to the computer, sits, and `b.working` flips true** — driven by a real model call in flight.
 5. The user **clicks the agent** → the prop-terminal opens as a live session (real streamed tokens, real tool lines, real cost). Ambient $/hr chip floats over the agent's head; topbar shows live spend + credits remaining.
-6. **Growth:** shipped work / credits spent earn Station XP → unlock buyable room modules and additional Cradle slots → recruit more agents through the same ritual. The full 17-agent Skynet station is the **ghosted "destiny" silhouette** the crew grows into.
+6. **Growth:** shipped work / credits spent earn Station XP → unlock buyable room modules and additional Cradle slots → recruit more agents through the same ritual. The full 17-agent StarNet station is the **ghosted "destiny" silhouette** the crew grows into.
 
 ---
 

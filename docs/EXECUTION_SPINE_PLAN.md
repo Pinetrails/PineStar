@@ -1,6 +1,6 @@
 # Execution Spine — checkpoint → shell → verify
 
-> **Skynet** — the plan to take the harness from "can edit files in a jailed sandbox" to "can actually
+> **StarNet** — the plan to take the harness from "can edit files in a jailed sandbox" to "can actually
 > run code, complete a real engineering goal, and prove it worked — safely." This is the #1 goal-completion
 > gap vs Hermes (which has six shell backends + LSP lint-delta; we have neither). It obeys the same
 > discipline as `CRON_INTEGRATION_PLAN.md` / `HERMES_PARITY_PLAN.md`: pure-core / ambient-edge determinism
