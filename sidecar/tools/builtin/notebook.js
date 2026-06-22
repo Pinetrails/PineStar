@@ -23,6 +23,10 @@
     // never persist to disk (or get re-injected into a future prompt by recall) in cleartext. The host injects
     // redact (the same one reflection + edits + SSE use); identity fallback keeps the tool usable standalone.
     const redact = typeof deps.redact === 'function' ? deps.redact : (x => x);
+    // optional relevance ranker (context.rank — the SAME BM25+trust+recency+pinned brain auto-recall uses). The
+    // host injects it so an explicit notebook.read query orders its matches the way recall does; standalone (no
+    // injection) the tool falls back to store order, staying dependency-free for the browser build + tests.
+    const rank = typeof deps.rank === 'function' ? deps.rank : null;
     const KEY = aid => 'notebook:' + (aid || 'agent');
     // M-mem.2: widen any legacy {id,title,body,ts} note to the §5.2 memory-record shape
     // (kind/scope/provenance/trust/useCount/pinned), idempotently — so an existing notebook upgrades
@@ -86,7 +90,14 @@
         const aid = (ctx && ctx.agentId) || 'agent';
         let list = notesOf(aid);
         const q = args && args.query;
-        if (q) { const ql = String(q).toLowerCase(); list = list.filter(n => (n.title + ' ' + n.body).toLowerCase().indexOf(ql) >= 0); }
+        if (q) {
+          const ql = String(q).toLowerCase();
+          list = list.filter(n => (n.title + ' ' + n.body).toLowerCase().indexOf(ql) >= 0);
+          // substring stays the GATE (predictable "no match"); rank() only REORDERS the matches so the most
+          // relevant/trusted/pinned one leads — the explicit read now shares auto-recall's ranking, not raw
+          // store order. k = list.length so ranking never truncates a match the gate already admitted.
+          if (rank && list.length > 1) list = rank(list, String(q), { now: clock.now(), k: list.length });
+        }
         if (!list.length) return { content: q ? 'No notes match "' + q + '".' : 'Your notebook is empty.', summary: '0 notes' };
         return { content: list.map(n => '- [' + n.id + '] ' + n.title + ': ' + n.body).join('\n'), summary: list.length + ' note(s)' };
       }

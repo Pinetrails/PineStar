@@ -14,7 +14,7 @@ const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { canAgentUse, makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
-const { redact } = require('../sidecar/context.js');
+const { redact, rank } = require('../sidecar/context.js');
 
 function memStore() { const m = {}; return { get: k => m[k], set: (k, v) => { m[k] = v; } }; }
 function station(objs) {
@@ -57,6 +57,42 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     r = await reg.dispatch(dcall('notebook.write', { title: 'only title' }), { agentId: 'ag', consent: async () => ({ allow: true }) });
     A.eq(r.isError, true, 'missing body rejected by schema');
     A.eq(store.get('notebook:ag').length, 1, 'rejected write did not persist');
+  }
+
+  // ============ A1b. injected rank() reorders an explicit read by relevance (same brain as auto-recall) ============
+  {
+    const store = memStore();
+    const reg = makeRegistry();
+    // rank injected -> a query's matches come back relevance-ordered, not in raw store order.
+    makeNotebookTools({ store, clock: makeClock(1000), rank }).register(reg);
+    // three notes that all SUBSTRING-match "deploy", written in this store order: weak, strong, mid.
+    await reg.dispatch(dcall('notebook.write', { title: 'aside', body: 'we mention deploy once here' }), { agentId: 'ag', runId: 'r1' });
+    await reg.dispatch(dcall('notebook.write', { title: 'deploy guide', body: 'deploy runbook: deploy steps, deploy rollback, deploy checks' }), { agentId: 'ag', runId: 'r2' });
+    await reg.dispatch(dcall('notebook.write', { title: 'notes', body: 'deploy and also unrelated chatter' }), { agentId: 'ag', runId: 'r3' });
+
+    const r = await reg.dispatch(dcall('notebook.read', { query: 'deploy' }), { agentId: 'ag' });
+    A.ok(r.content.indexOf('deploy guide') >= 0, 'rank read: all matches still returned');
+    const posStrong = r.content.indexOf('deploy guide');
+    const posWeak = r.content.indexOf('aside');
+    A.ok(posStrong >= 0 && posWeak >= 0 && posStrong < posWeak, 'rank read: the strongest BM25 match leads (not store order)');
+
+    // a substring miss STILL misses — ranking never invents a match (the gate is unchanged).
+    const miss = await reg.dispatch(dcall('notebook.read', { query: 'zzz' }), { agentId: 'ag' });
+    A.ok(miss.content.indexOf('No notes match') >= 0, 'rank read: substring gate preserved — no false matches');
+
+    // a pinned match is the hard top regardless of term frequency.
+    store.get('notebook:ag').find(n => n.title === 'notes').pinned = true;
+    const rp = await reg.dispatch(dcall('notebook.read', { query: 'deploy' }), { agentId: 'ag' });
+    A.ok(rp.content.indexOf('notes') < rp.content.indexOf('deploy guide'), 'rank read: a pinned match outranks the strongest BM25 match');
+
+    // WITHOUT an injected ranker the tool still works (store order) — stays dependency-free standalone.
+    const store2 = memStore();
+    const reg2 = makeRegistry();
+    makeNotebookTools({ store: store2, clock: makeClock(1000) }).register(reg2);
+    await reg2.dispatch(dcall('notebook.write', { title: 'one', body: 'deploy a' }), { agentId: 'ag' });
+    await reg2.dispatch(dcall('notebook.write', { title: 'two', body: 'deploy b' }), { agentId: 'ag' });
+    const r2 = await reg2.dispatch(dcall('notebook.read', { query: 'deploy' }), { agentId: 'ag' });
+    A.ok(r2.content.indexOf('one') < r2.content.indexOf('two'), 'no ranker injected: falls back to store order, still returns matches');
   }
 
   // ============ A2. M-mem.2: widened §5.2 record shape + provenance + memory.write ============
