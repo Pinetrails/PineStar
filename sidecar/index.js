@@ -61,6 +61,11 @@ const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-t
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 const API_TOKEN = String(process.env.SKYNET_API_TOKEN || crypto.randomBytes(32).toString('hex'));
+// DEV fast-path (the `npm run dev:seed` launcher sets this): when on, the served index.html carries a small
+// boot payload (window.__SKYNET_DEV__ = {model, prov}) so a fresh browser origin auto-resumes the server-
+// seeded save with no connect screen / awakening. Holds NO secret — the API key stays in runtimeKey. Never
+// set in a packaged build, so this is inert in shipping. Loopback-only like the rest of the server.
+const DEV_MODE = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_DEV || '').trim());
 const LOOPBACK_ORIGINS = new Set(['http://127.0.0.1:' + PORT, 'http://localhost:' + PORT]);
 const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
 function isAllowedApiOrigin(origin) {
@@ -841,6 +846,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('     Open in your browser:  ' + url);
   console.log('     This one process IS the complete product — the UI you see and');
   console.log('     the agents/web-search/tools behind it are all served from here.');
+  if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
   makeOpenRouterProvider({ fetch: globalThis.fetch }).listModels().then(
@@ -2229,7 +2235,11 @@ async function serveStatic(req, res) {
     if (abs !== FRONTEND && abs.indexOf(FRONTEND + path.sep) !== 0) { res.writeHead(403); return res.end('forbidden'); }
     let data = await fsp.readFile(abs);
     if (abs.toLowerCase() === path.resolve(FRONTEND, 'index.html').toLowerCase()) {
-      const boot = '<script>window.__SKYNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';</script>';
+      let boot = '<script>window.__SKYNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
+      // DEV fast-path: hand the page a model + provider hint so a fresh origin auto-resumes the seeded
+      // save with no setup. No secret crosses here — the key stays server-side in runtimeKey.
+      if (DEV_MODE) boot += 'window.__SKYNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
+      boot += '</script>';
       data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
     }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });

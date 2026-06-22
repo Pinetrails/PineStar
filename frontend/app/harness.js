@@ -24,6 +24,18 @@ const Harness = (() => {
   const TAURI = (typeof window !== 'undefined') && window.__TAURI__ && window.__TAURI__.core;
   const DESKTOP = !!TAURI;
   const invoke = (cmd, args) => TAURI.invoke(cmd, args);
+  // DEV fast-path (sidecar started with SKYNET_DEV=1, e.g. `npm run dev:seed`): the host injects
+  // window.__SKYNET_DEV__ = {model, prov} and holds the API key in its own env (runtimeKey). We treat dev
+  // like the desktop "server holds the key" seam — no key in the page, configured() is true, and a fresh
+  // origin (a new worktree port) auto-resumes the server-seeded save with no connect screen / awakening.
+  const DEV = (typeof window !== 'undefined' && window.__SKYNET_DEV__ && typeof window.__SKYNET_DEV__ === 'object') ? window.__SKYNET_DEV__ : null;
+  const DEVMODE = !!DEV;
+  if (DEVMODE) {
+    try {
+      if (DEV.model) localStorage.setItem('skynet.byok.model', String(DEV.model));
+      localStorage.setItem('skynet.byok.prov', String(DEV.prov || 'openrouter'));
+    } catch (_) {}
+  }
   let _configured = false;   // desktop: cached "is a key stored?" (loaded by init())
   let apiToken = (typeof window !== 'undefined' && window.__SKYNET_API_TOKEN__) ? String(window.__SKYNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
@@ -64,8 +76,9 @@ const Harness = (() => {
     if (!DESKTOP) return;
     try { _configured = await invoke('harness_has_key'); } catch (_) { _configured = false; }
   }
-  /* whether a key is set — works in both modes; never exposes the value */
-  function configured() { return DESKTOP ? _configured : !!getKey(); }
+  /* whether a key is set — works in both modes; never exposes the value. In dev mode the host holds the
+     key (runtimeKey), so we report configured without one — that's what lets a fresh origin auto-resume. */
+  function configured() { return DESKTOP ? _configured : (DEVMODE || !!getKey()); }
 
   // getKey() returns the real key in the browser; in desktop it returns '' (the key isn't here).
   const getKey = () => DESKTOP ? '' : (localStorage.getItem(LS.key) || '');
@@ -129,7 +142,7 @@ const Harness = (() => {
     const key = getKey(), model = getModel(), provider = getProv();
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
-    if (provider !== 'codex' && !DESKTOP && !key) throw new Error('no API key set');
+    if (provider !== 'codex' && !DESKTOP && !DEVMODE && !key) throw new Error('no API key set');
     if (!model) throw new Error('no model selected');
 
     let res;
@@ -137,7 +150,7 @@ const Harness = (() => {
       const reqBody = { model, provider, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
       if (workbench) reqBody.workbench = true;     // a placed WORKBENCH grants this run shell.exec + verify.run
-      if (!DESKTOP) reqBody.key = key;
+      if (!DESKTOP && !DEVMODE) reqBody.key = key;   // dev: omit so the sidecar uses its env key (runtimeKey)
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
