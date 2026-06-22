@@ -1282,7 +1282,7 @@ async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
-  const { model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
+  const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   // a placed WORKBENCH grants this run the terminal capability (shell.exec + verify.run), additively on top of
   // the default office. The browser sends it off the floor (World.heroWorkbench); shell still walks the full
@@ -1341,7 +1341,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask, provider,
+      key, model, system, messages, agentId, isTask, provider, fallbackModels,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
@@ -1506,6 +1506,14 @@ async function runOnce(o) {
   }
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
+  // Provider FALLBACK chain (consumes the loop's failover seam). Cost-correct by construction: each entry reuses
+  // THIS provider object (same priceOf catalog) with an alternate model, so a fallback's spend is priced right.
+  // Source: o.fallbackModels (array of slugs from the run request) or env SKYNET_FALLBACK_MODELS (comma list).
+  // On overload/429/5xx/auth/billing the loop retries the turn on the next model instead of dying. Empty = off.
+  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(process.env.SKYNET_FALLBACK_MODELS || '').split(','))
+    .map(s => String(s || '').trim()).filter(s => s && s !== model);
+  const fallbacks = fallbackModels.map(m => ({ provider, model: m }));
+
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
   //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
   //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
@@ -1656,7 +1664,7 @@ async function runOnce(o) {
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
       limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
-      budget: runBudget, context: ctxMgr, summarize,
+      budget: runBudget, context: ctxMgr, summarize, fallbacks,
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
