@@ -136,4 +136,21 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.ok(P.compileRoutingPlan(mk()).hash !== P.compileRoutingPlan(other).hash, 'a different floor -> a different hash');
 }
 
+/* ---- SPLITTER lane pick: resolveTarget round-robins split lanes via the pick callback (else first lane) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'sp', t: 'splitter', x: 2, y: 0, w: 1, h: 1 },
+     { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' },       // E lane
+     { id: 'br', t: 'bay', x: 1, y: 4, w: 2, h: 2, agentId: 'researcher' }], // S lane
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'),
+     belt(2, 1, 'S'), belt(2, 2, 'S'), belt(2, 3, 'S')]
+  ));
+  A.eq(plan.errors.length, 0, 'a splitter feeding two distinct bound bays is valid');
+  A.eq(P.resolveTarget(plan, {}), P.resolveTarget(plan, {}), 'no pick -> the first lane every time (replay-stable read)');
+  const rr = {}, pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
+  const seq = [P.resolveTarget(plan, {}, pick), P.resolveTarget(plan, {}, pick), P.resolveTarget(plan, {}, pick), P.resolveTarget(plan, {}, pick)];
+  A.eq(seq.join(','), 'coder,researcher,coder,researcher', 'a round-robin pick spreads dispatch across the splitter lanes (' + seq.join(',') + ')');
+}
+
 A.report('pipeline');
