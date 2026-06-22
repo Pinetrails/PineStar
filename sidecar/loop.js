@@ -121,6 +121,16 @@
     // OPTIONAL context manager (sidecar/context.js) + summarizer for auto-compaction; both absent = never compact.
     const context = o.context;
     const summarize = o.summarize;
+    // LOOP GUARD (default ON): a tool called with IDENTICAL arguments that keeps FAILING is a stuck loop, not
+    // progress. Warn once (a system nudge the model can act on) at warnAfter, then hard-stop at stopAfter so a
+    // degraded run can't burn the whole budget spinning. Only errored, byte-identical (name+args) calls count;
+    // any success of that signature clears it. limits.loopGuard === false disables it; { warnAfter, stopAfter }
+    // overrides the thresholds (0 disables that tier). Pure: identical calls -> identical emits -> stable stream.
+    const _lg = limits.loopGuard;
+    const LG_WARN = (_lg === false) ? 0 : (_lg && _lg.warnAfter != null ? _lg.warnAfter : 3);
+    const LG_STOP = (_lg === false) ? 0 : (_lg && _lg.stopAfter != null ? _lg.stopAfter : 6);
+    const lgFails = new Map();    // signature (name\0args) -> failure count
+    const lgWarned = new Set();   // signatures already nudged (the warn fires once)
 
     let spentUsd = 0, turns = 0, spentTokens = 0;
     let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
@@ -200,8 +210,8 @@
         }
       } catch (e) {
         // classify the API failure so `transient` is honest (classifier-derived, not hardcoded false). The
-        // shouldFallback/shouldCompress hints have no consumer yet (single model per run, context.js unwired) —
-        // they are the documented extension point for the future failover/compaction layers; for now end('error').
+        // shouldFallback/shouldRotateCredential hints still have no consumer (single model per run) — the
+        // documented extension point for a future failover layer; for now end('error').
         const cls = classifyApiError(e, { model: model, approxTokens: approxTokens, contextLimit: contextLimit });
         emit('agent.run.error', { agentId, runId, message: cls.message || String((e && e.message) || e), transient: !!cls.retryable });
         return end('error');
@@ -243,6 +253,27 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+
+      // (8) LOOP GUARD — break out of a run that keeps making the SAME failing tool call. Warn once, then stop.
+      if (LG_WARN || LG_STOP) {
+        const sigOf = {};
+        for (const c of calls) sigOf[c.id] = (c.name || '') + ' ' + (c.argsRaw || '');
+        for (const r of results) {
+          const sig = sigOf[r.callId];
+          if (sig == null) continue;
+          if (!r.isError) { lgFails.delete(sig); lgWarned.delete(sig); continue; }   // a success clears the streak
+          const n = (lgFails.get(sig) || 0) + 1; lgFails.set(sig, n);
+          const nm = sig.split(' ')[0] || 'a tool';
+          if (LG_STOP && n >= LG_STOP) {
+            emit('agent.run.error', { agentId, runId, message: 'loop guard: ' + nm + ' failed ' + n + ' times with identical arguments — stopping a stuck loop', transient: false });
+            return end('error');
+          }
+          if (LG_WARN && n === LG_WARN && !lgWarned.has(sig)) {
+            lgWarned.add(sig);
+            messages.push({ role: 'system', content: '<loop_guard>You have called ' + nm + ' with the same arguments ' + n + ' times and it keeps failing. Do not repeat the identical call — change the arguments, try another approach, or stop and report the problem.</loop_guard>' });
+          }
+        }
+      }
     }
   }
 
