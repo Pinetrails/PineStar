@@ -1782,6 +1782,7 @@ const World = (() => {
      box at the INTAKE prop so it rides the player-laid belts to the desk. Pure visualization — if no
      INTAKE/belt path exists, nothing rides (the sidecar already ran the work either way). */
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
+  const serverLit = new Set();    // agentIds lit by an AUTONOMOUS run (cron/channel) — its run.end clears them
   let bridged = false, lastOutboxFlash = -1e9;
   let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
   let slaglog = null, lastCacheFrac = null;   // SlagLog: wasted-spend post-mortems + the last reconciled cache ratio (for the diagnosis)
@@ -2035,12 +2036,15 @@ const World = (() => {
       }
       return;
     }
-    // INBOUND: light the bay the box ACTUALLY rode to (its landing tile) — exact even past a SPLITTER's
-    // round-robin; fall back to resolveTarget(tag) only if it didn't land on a bound bay tile (open-end sink).
+    // INBOUND: prefer the agentId the box CARRIES — cron/channel address it explicitly to the run's agent, so the
+    // "received" beat lands on exactly the body that runs (server-authoritative; no re-derivation drift). Fall
+    // back to the landing tile, then resolveTarget(tag), for an unaddressed box. The work POSE itself is owned by
+    // the run-lifecycle binding above, so here we only ring the "received: <instruction>" beat and NEVER cut short
+    // an already-working body (an active run's glow must outlast this 4s pulse).
     const landed = (routingPlan && routingPlan.bayTileToAgent) ? routingPlan.bayTileToAgent[bx.x + ',' + bx.y] : null;
-    const aid = landed || ((typeof Pipeline !== 'undefined' && routingPlan) ? Pipeline.resolveTarget(routingPlan, { tag: p.tag }) : null);
+    const aid = p.agentId || landed || ((typeof Pipeline !== 'undefined' && routingPlan) ? Pipeline.resolveTarget(routingPlan, { tag: p.tag }) : null);
     const body = bodyForAgent(aid);
-    if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; body.workUntil = fnow + 4000; }
+    if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; if (!(body.workUntil > fnow + 5000)) body.workUntil = fnow + 4000; }
     else { say('received: ' + (p.preview || 'message')); wakeIn(); }   // the hero (or an unrouted box) — today's behaviour
   }
   // one app-level EventSource: re-emit validated channel/work-item events onto U.bus, and react in-world
@@ -2087,6 +2091,14 @@ const World = (() => {
     U.bus.on('agent.tool_result', p => { if (p && p.callId && p.callId === delegateCall) { delegateLead = null; delegateCall = null; } });
     U.bus.on('agent.run.start', p => { if (p && delegateLead) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(delegateLead, p.agentId, 'spawned'); } });
     U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(null, p.agentId, 'done'); } });
+    // AUTONOMOUS WORK (cron / channel): a server-initiated run has no in-app chat driving its body, so bind its
+    // run lifecycle to the work pose HERE — the agent goes to its workstation and works for the run's REAL
+    // duration, then stands when it ends. This is what makes a scheduled routine VISIBLE: the conveyor box rides
+    // in (kind 'cron'/'telegram') AND the agent actually runs to its PC and types until done. Interactive chat
+    // (trigger 'directive') drives its own body via chat.js and is excluded; a delegated worker (also 'directive')
+    // is handled by the handoff bindings above — so this never double-drives a body.
+    U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); setActivityFor(p.agentId, 'task'); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
     // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
     U.bus.on('agent.compact', p => {
