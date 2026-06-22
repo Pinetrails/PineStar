@@ -377,11 +377,12 @@ const StationUI = (() => {
       '</div>';
   }
 
-  function agSkills() {
-    const on = SKILLS.filter(s => s.on).length;
+  function agSkills(agentId) {
+    const skills = skillsFor(agentId);
+    const on = skills.filter(s => s.on).length;
     return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
       '<div class="perk-grid">' +
-      SKILLS.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
+      skills.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
         '<div class="perk-icon">' + s.icon + '</div>' +
         '<div class="perk-name">' + s.name + '</div>' +
         '<div class="perk-desc">' + s.tools + '</div>' +
@@ -560,7 +561,7 @@ const StationUI = (() => {
     const a = present[sel];
     const act = activity();
     const price = (typeof Harness === 'object' && Harness.priceOf) ? Harness.priceOf(a.model) : null;
-    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills() : agTab === 'growth' ? agGrowth(a) : agTab === 'memory' ? agMemory(a) : agBrief(a);
+    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills(a && a.id) : agTab === 'growth' ? agGrowth(a) : agTab === 'memory' ? agMemory(a) : agBrief(a);
     body.innerHTML =
       '<div class="ag-wrap"><div class="ag-list">' +
       present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '">' +
@@ -603,21 +604,32 @@ const StationUI = (() => {
      ids, and which actions pause for a one-click approval in COMMS (the P1.5 consent broker —
      writes to the user's files ask the Commander before they run; the private notebook does not).
      Kept in sync with the registry by hand; TERMINAL (shell.exec) is the registry's own "M5 next". */
+  // each skill maps to the capability OBJECT that grants it (object = capability — the moat).
+  // cap:null = COMPUTE, the always-on freebie; everything else needs its prop placed on the agent's floor.
   const SKILLS = [
-    { icon: '▣', name: 'COMPUTE',     tools: 'model.chat',               on: true },
-    { icon: '⌕', name: 'WEB SEARCH',  tools: 'web_search',               on: true },
-    { icon: '⇩', name: 'WEB FETCH',   tools: 'web_fetch',                on: true },
-    { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        on: true },
-    { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', on: true, consent: true },
-    { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    on: true },
-    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec · verify.run',  on: true, consent: true }
+    { icon: '▣', name: 'COMPUTE',     tools: 'model.chat',               cap: null },
+    { icon: '⌕', name: 'WEB SEARCH',  tools: 'web_search',               cap: 'dish' },
+    { icon: '⇩', name: 'WEB FETCH',   tools: 'web_fetch',                cap: 'dish' },
+    { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        cap: 'cabinet' },
+    { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', cap: 'cabinet', consent: true },
+    { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    cap: 'notebook' },
+    { icon: '⌗', name: 'TERMINAL',    tools: 'shell.exec · verify.run',  cap: 'workbench', consent: true }
   ];
+  // TRUTHFUL readout (QA-4): derive each skill's grant from the agent's REAL placed objects via World.heroCaps
+  // — the same source the run path resolves caps from. No placed prop = LOCKED on screen, matching the wire.
+  function skillsFor(agentId) {
+    let caps = [];
+    try { caps = (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(agentId).map(c => c.objectType) : []; } catch (e) {}
+    return SKILLS.map(s => ({ ...s, on: s.cap === null || caps.indexOf(s.cap) !== -1 }));
+  }
   function buildSkills(body) {
-    const on = SKILLS.filter(s => s.on).length;
+    const agentId = (present[sel] && present[sel].id) || 'agent';
+    const skills = skillsFor(agentId);
+    const on = skills.filter(s => s.on).length;
     body.innerHTML =
       '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
       '<div class="perk-grid">' +
-      SKILLS.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
+      skills.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
         '<div class="perk-icon">' + s.icon + '</div>' +
         '<div class="perk-name">' + s.name + '</div>' +
         '<div class="perk-desc">' + s.tools + '</div>' +
