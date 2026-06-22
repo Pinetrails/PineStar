@@ -38,7 +38,7 @@ const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
-const { redact, renderRecall, injectRecall, rank, makeContext } = require('./context.js');
+const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock } = require('./context.js');
 const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -1283,7 +1283,7 @@ async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
-  const { model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
+  const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
@@ -1356,7 +1356,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask, provider,
+      key, model, system, messages, agentId, isTask, provider, fallbackModels,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
@@ -1511,6 +1511,14 @@ async function runOnce(o) {
   }
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
+  // Provider FALLBACK chain (consumes the loop's failover seam). Cost-correct by construction: each entry reuses
+  // THIS provider object (same priceOf catalog) with an alternate model, so a fallback's spend is priced right.
+  // Source: o.fallbackModels (array of slugs from the run request) or env SKYNET_FALLBACK_MODELS (comma list).
+  // On overload/429/5xx/auth/billing the loop retries the turn on the next model instead of dying. Empty = off.
+  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(process.env.SKYNET_FALLBACK_MODELS || '').split(','))
+    .map(s => String(s || '').trim()).filter(s => s && s !== model);
+  const fallbacks = fallbackModels.map(m => ({ provider, model: m }));
+
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
   //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
   //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
@@ -1527,9 +1535,18 @@ async function runOnce(o) {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
       return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
     }).join('\n').slice(0, 16000);
+    // on_pre_compress (MEMORY-CORTEX): rank the agent's durable memory against the slice being folded and PREPEND
+    // it, so beliefs like "user prefers X" survive when the raw turns are discarded. '' when nothing to preserve
+    // (prepend nothing → byte-identical compaction). Fail-open: a memory hiccup must never block the summary.
+    let memBlock = '';
+    try {
+      const recs = notebookStore.get('notebook:' + agentId);
+      if (Array.isArray(recs) && recs.length) memBlock = compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
+    } catch (_) {}
+    const userMsg = (memBlock ? memBlock + '\n\n' : '') + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
     const req = { model, stream: true, signal, messages: [
       { role: 'system', content: 'You compress an earlier slice of an agent conversation into a dense factual summary. Preserve decisions made, facts and data learned (with sources), files written, tool results, and any still-open tasks. Drop pleasantries. Output ONLY the summary prose.' },
-      { role: 'user', content: 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript }
+      { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
@@ -1661,7 +1678,7 @@ async function runOnce(o) {
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
       limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
-      budget: runBudget, context: ctxMgr, summarize,
+      budget: runBudget, context: ctxMgr, summarize, fallbacks,
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
