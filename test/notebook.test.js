@@ -95,6 +95,48 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.ok(r2.content.indexOf('one') < r2.content.indexOf('two'), 'no ranker injected: falls back to store order, still returns matches');
   }
 
+  // ============ A1c. notebook.feedback — Hermes fact_feedback parity (trust nudge, asymmetric, no content change) ============
+  {
+    const { seq, emit } = setup();
+    const store = memStore();
+    const reg = makeRegistry();
+    makeNotebookTools({ store, clock: makeClock(5000) }).register(reg);
+    // seed two notes; note_1 already trusted (a prior keep), note_2 neutral
+    store.set('notebook:ag', [
+      { id: 'note_1', kind: 'note', title: 'Pref', body: 'prefers npm start over serve', trust: 0.3, lastFeedbackAt: 1, createdAt: 1, useCount: 0, pinned: false },
+      { id: 'note_2', kind: 'note', title: 'Env', body: 'deploys with npm publish', trust: 0, createdAt: 1, useCount: 0, pinned: false }
+    ]);
+
+    // helpful by id -> trust rises, lastFeedbackAt re-stamped (resets decay), content untouched
+    let r = await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', id: 'note_2' }), { agentId: 'ag', emit });
+    A.ok(!r.isError, 'feedback helpful by id succeeds');
+    let n2 = store.get('notebook:ag').find(n => n.id === 'note_2');
+    A.ok(Math.abs(n2.trust - 0.075) < 1e-9, 'helpful nudges trust up by the (weaker) agent delta (+0.075)');
+    A.eq(n2.lastFeedbackAt, 5000, 'feedback stamps lastFeedbackAt from the injected clock (resets trust decay)');
+    A.eq(n2.body, 'deploys with npm publish', 'feedback never changes content (rating != edit — user-owned invariant)');
+    const fb = seq.find(e => e.name === 'memory.feedback');
+    A.ok(fb && fb.payload.id === 'note_2' && fb.payload.delta > 0 && fb.payload.reason === 'helpful', 'memory.feedback rung emitted with positive delta + reason');
+
+    // unhelpful is HARSHER than helpful (asymmetric): from a 0.3 kept note, drops by 0.15
+    r = await reg.dispatch(dcall('notebook.feedback', { rating: 'unhelpful', id: 'note_1' }), { agentId: 'ag', emit });
+    A.ok(!r.isError, 'feedback unhelpful by id succeeds');
+    let n1 = store.get('notebook:ag').find(n => n.id === 'note_1');
+    A.ok(Math.abs(n1.trust - 0.15) < 1e-9, 'unhelpful sinks trust by the harsher agent delta (−0.15, 2× helpful)');
+
+    // identify by a unique substring (the recalled-context path, where no id is shown)
+    r = await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', match: 'npm publish' }), { agentId: 'ag', emit });
+    A.ok(!r.isError && r.summary.indexOf('note_2') >= 0, 'feedback resolves a unique substring match to the right entry');
+
+    // ambiguous + missing + no-target + empty all error cleanly (never silently mis-rate)
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', match: 'npm' }), { agentId: 'ag' })).isError, 'an ambiguous substring errors (both notes contain "npm")');
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', id: 'note_99' }), { agentId: 'ag' })).isError, 'an unknown id errors');
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful' }), { agentId: 'ag' })).isError, 'no id and no match errors');
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', id: 'x' }), { agentId: 'other' })).isError, 'rating against an empty notebook errors');
+    // trust never leaves [0,1] no matter how many downvotes
+    for (let i = 0; i < 20; i++) await reg.dispatch(dcall('notebook.feedback', { rating: 'unhelpful', id: 'note_1' }), { agentId: 'ag' });
+    A.eq(store.get('notebook:ag').find(n => n.id === 'note_1').trust, 0, 'repeated unhelpful clamps at 0, never negative');
+  }
+
   // ============ A2. M-mem.2: widened §5.2 record shape + provenance + memory.write ============
   {
     const { seq, emit } = setup();
