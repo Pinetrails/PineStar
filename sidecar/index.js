@@ -33,6 +33,7 @@ const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
+const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
@@ -1284,10 +1285,24 @@ async function handleRun(req, res) {
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
-  // a placed WORKBENCH grants this run the terminal capability (shell.exec + verify.run), additively on top of
-  // the default office. The browser sends it off the floor (World.heroWorkbench); shell still walks the full
-  // consent ladder (interactive prompts; autonomous exec-lockout) + auto-checkpoints before every command.
-  const extraObjects = (body && body.workbench) ? [{ instanceId: 'wb_placed', objectType: 'workbench' }] : [];
+  // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
+  // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
+  // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify.
+  // A placed WORKBENCH still walks the full consent ladder + auto-checkpoints before every command. Legacy clients
+  // send just `workbench:true`; that path is preserved so an older build still grants the terminal.
+  let extraObjects = [];
+  if (body && Array.isArray(body.placed)) {
+    extraObjects = body.placed
+      .filter(e => e && (typeof e === 'string' || e.objectType))
+      .map((e, i) => {
+        const ot = String(typeof e === 'string' ? e : e.objectType);
+        const ob = { instanceId: 'placed_' + i + '_' + ot, objectType: ot };
+        if (e && typeof e === 'object' && e.connectorId) ob.connectorId = e.connectorId;
+        return ob;
+      });
+  } else if (body && body.workbench) {
+    extraObjects = [{ instanceId: 'wb_placed', objectType: 'workbench' }];
+  }
   const usingCodex = (provider === 'codex' || provider === 'openai-codex');   // Codex authenticates by OAuth token, not an API key
   // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and updatable
   // via /api/key). The browser build still sends body.key, which wins.
@@ -1438,26 +1453,16 @@ async function runOnce(o) {
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
   //      web · cabinet = files · notebook = memory. resolveTools projects them into the agent's tools FRESH per
   //      run — no host-side toolset policy. Phase B5: a routed bay passes its OWN station (o.station) built from
-  //      the objects in that bay's room, so per-bay caps are isolated; absent (browser chat / unrouted work) =
-  //      the full default office, unchanged. ----
-  const defaultObjects = [
-    { instanceId: 'pc1', objectType: 'computer' },
-    { instanceId: 'dish1', objectType: 'dish' },
-    { instanceId: 'cab1', objectType: 'cabinet' },
-    { instanceId: 'nb1', objectType: 'notebook' },
-    { instanceId: 'studio1', objectType: 'studio' },      // STUDIO: image generation + vision analysis (OpenRouter)
-    { instanceId: 'jukebox1', objectType: 'jukebox' }     // JUKEBOX: Spotify (inert until connected in Settings)
-  ];
-  // the single-agent browser office also gets every configured connector portal — there is exactly ONE agent
-  // here, so this IS per-agent; routed multi-agent bays instead pass their OWN room objects (o.station) so each
-  // bay only reaches the connectors physically placed in it.
-  for (const cid of connectors.ids()) defaultObjects.push({ instanceId: 'conn_' + cid, objectType: 'connector', connectorId: cid });
-  // Stage 2: the LEAD (browser-commanded run) alone gets the orchestrator object -> the team.dispatch tool. A
-  // delegated worker runs with o.lead falsy and no o.station -> no orchestrator object -> cannot re-delegate.
-  if (o.lead) defaultObjects.push({ instanceId: 'orch1', objectType: 'orchestrator' });
-  // ADDITIVE placement: extra objects the caller says are placed for this agent (e.g. a WORKBENCH → shell.exec +
-  // verify.run) join the default office, so the hero gains a placed capability WITHOUT losing its baseline office.
-  if (Array.isArray(o.extraObjects)) for (const e of o.extraObjects) if (e && e.objectType) defaultObjects.push({ instanceId: String(e.instanceId || ('extra_' + e.objectType)), objectType: String(e.objectType) });
+  //      the objects in that bay's room, so per-bay caps are isolated; absent (browser chat / unrouted work) the
+  //      office is composed below. ----
+  // THE MOAT (FLOOR-REAL) lives in composeOffice (./capability/office.js, pure + tested): on the INTERACTIVE
+  // (browser COMMS) surface the floor is REAL — the office starts COMPUTE-ONLY (the single freebie: an agent can
+  // ALWAYS think, so a brand-new agent works out of the box and the floor is never a dead wall) and the agent's
+  // actual placed caps (o.extraObjects: dish→web · cabinet→files · workbench→terminal · …) are appended, so it
+  // grants exactly what the Commander placed. AUTONOMOUS/headless runs keep the full default office (no floor UI in
+  // the moment; stripping a scheduled/delegated run's web+files would regress shipped work). Connectors are
+  // account-level (both surfaces); the LEAD alone gets the orchestrator object so a delegated worker can't re-delegate.
+  const defaultObjects = composeOffice({ surface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
   const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   const resolved = resolveTools(agentId, station);
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.

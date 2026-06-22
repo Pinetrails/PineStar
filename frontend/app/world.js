@@ -2407,6 +2407,27 @@ const World = (() => {
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
       if (viaBay && viaBay.length) return viaBay.indexOf('workbench') >= 0;
       return !!(station.propsByType && station.propsByType('workbench').length);
+    },
+    // THE MOAT (FLOOR-REAL): the agent's REAL placed capability set — the EARNED reach the run client sends so the
+    // sidecar grants exactly what's on the floor (dish→web · cabinet→files · workbench→terminal · notebook→memory ·
+    // studio→image · jukebox→spotify). COMPUTE is the harness FREEBIE (always granted to an interactive agent, so it
+    // is never a dead wall) and CONNECTORS are account-level (added server-side), so both are excluded here — this is
+    // purely the placed-on-top set. An equipped BAY governs; with no bay (the simple single-agent floor) every distinct
+    // cap-prop placed anywhere is the hero's. Returns [{objectType}] room-object entries the sidecar appends as extras.
+    heroCaps: (agentId) => {
+      if (!station) return [];
+      const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
+      const norm = o => (o && typeof o === 'object') ? o.objectType : o;   // bayObjects entries are strings or {objectType}
+      const src = (viaBay && viaBay.length)
+        ? viaBay.map(norm)
+        : ((station.doc && station.doc().props) || []).map(p => (station.capForProp ? station.capForProp(p.t) : null));
+      const out = [], seen = {};
+      for (const cap of src) {
+        if (!cap || cap === 'computer' || cap === 'connector') continue;   // compute = freebie; connectors = added server-side
+        if (seen[cap]) continue; seen[cap] = true;
+        out.push({ objectType: cap });
+      }
+      return out;
     }
   };
 })();

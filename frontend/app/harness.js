@@ -138,7 +138,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal, streamId, workbench }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal, streamId, workbench, placed }) {
     const key = getKey(), model = getModel(), provider = getProv();
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -149,7 +149,11 @@ const Harness = (() => {
     try {
       const reqBody = { model, provider, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
-      if (workbench) reqBody.workbench = true;     // a placed WORKBENCH grants this run shell.exec + verify.run
+      // THE MOAT (FLOOR-REAL): send the agent's REAL placed capability objects so the sidecar grants exactly what's
+      // on the floor (dish→web · cabinet→files · workbench→terminal · …). `placed` supersedes the legacy `workbench`
+      // boolean; an old caller passing only `workbench` still grants the terminal.
+      if (Array.isArray(placed) && placed.length) reqBody.placed = placed;
+      else if (workbench) reqBody.workbench = true;
       if (!DESKTOP && !DEVMODE) reqBody.key = key;   // dev: omit so the sidecar uses its env key (runtimeKey)
       res = await fetch('/api/run', {
         method: 'POST', signal,
