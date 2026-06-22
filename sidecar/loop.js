@@ -121,6 +121,10 @@
     // OPTIONAL context manager (sidecar/context.js) + summarizer for auto-compaction; both absent = never compact.
     const context = o.context;
     const summarize = o.summarize;
+    // OPTIONAL todo re-injection: after a compaction folds older turns away, re-append the agent's ACTIVE task
+    // plan so a long run never loses it (Hermes' todo survives context compression the same way). A function
+    // returning the plan text (or null); absent = no-op (existing callers byte-identical).
+    const todoNote = (typeof o.todoNote === 'function') ? o.todoNote : null;
     // LOOP GUARD (default ON): a tool called with IDENTICAL arguments that keeps FAILING is a stuck loop, not
     // progress. Warn once (a system nudge the model can act on) at warnAfter, then hard-stop at stopAfter so a
     // degraded run can't burn the whole budget spinning. Only errored, byte-identical (name+args) calls count;
@@ -163,7 +167,9 @@
       if (!summary) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return; }   // empty -> don't drop history
       compactionFails = 0;
       const note = { role: 'system', content: '<conversation_summary>\n' + summary + '\n</conversation_summary>' };
-      const rebuilt = prefix.concat([note], plan.tail);
+      let rebuilt = prefix.concat([note], plan.tail);
+      // re-append the active task plan so it rides through the compaction (folded into the after-count below)
+      if (todoNote) { try { const tn = todoNote(); if (tn) rebuilt = rebuilt.concat([{ role: 'system', content: String(tn) }]); } catch (e) {} }
       const afterTokens = context.estimateMessages(rebuilt);
       messages.length = 0; for (const mm of rebuilt) messages.push(mm);
       if (r && typeof r === 'object') { spentUsd += r.usd || 0; spentTokens += r.tokens || 0; }   // count the summarizer's own spend
