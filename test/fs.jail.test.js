@@ -126,6 +126,68 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     await rejects(searchTool.run({ query: 'x', path: '../other' }, ctx), 'search cannot escape the workspace jail');
   }
 
+  // ---- fs.search v2 (Hermes-parity): targets, output modes, file_glob, context, densify, paging, redact ----
+  {
+    const SX = path.join(ROOT, 'sx');
+    await fsp.mkdir(path.join(SX, 'lib'), { recursive: true });
+    await fsp.mkdir(path.join(SX, '.secret'), { recursive: true });
+    await fsp.mkdir(path.join(SX, 'node_modules'), { recursive: true });
+    // fixtures written directly (bypass the 32-byte tool cap) — content search is read-only anyway
+    await fsp.writeFile(path.join(SX, 'app.js'), 'function alpha() {\n  // TODO refactor alpha\n  return 1\n}\n');
+    await fsp.writeFile(path.join(SX, 'lib', 'util.js'), '// TODO test util\nfunction beta() {\n  return alpha() // TODO wire\n}\n');
+    await fsp.writeFile(path.join(SX, 'notes.md'), '# Notes\nTODO write docs\nTODO ship it\nTODO review\n');
+    await fsp.writeFile(path.join(SX, '.secret', 'h.js'), 'TODO hidden\n');            // hidden dir -> skipped
+    await fsp.writeFile(path.join(SX, 'node_modules', 'dep.js'), 'TODO dep\n');         // node_modules -> skipped
+    await fsp.writeFile(path.join(SX, 'data.bin'), Buffer.from([0, 84, 79, 68, 79]));   // NUL -> binary, skipped
+    const ctx = { agentId: 'sx' };
+    const lines = s => s.content.split('\n');
+
+    // content mode, 6 matches across 3 files -> DENSIFIED (path header once, then "  <line>: text")
+    const c = await searchTool.run({ query: 'TODO' }, ctx);
+    A.ok(c.content.indexOf('TODO hidden') < 0, 'hidden dirs are skipped (rg default)');
+    A.ok(c.content.indexOf('TODO dep') < 0, 'node_modules is skipped');
+    A.ok(/6 matches in 3 file/.test(c.summary), 'counts true matches across files (binary/hidden/node_modules excluded)');
+    A.ok(lines(c).indexOf('app.js') >= 0 && lines(c).indexOf('lib/util.js') >= 0 && lines(c).indexOf('notes.md') >= 0, 'densified: each file path on its own header line');
+    A.ok(lines(c).some(l => /^ {2}\d+: .*TODO/.test(l)), 'densified: indented "  <line>: <content>" match rows');
+
+    // count mode -> matches per file
+    const cnt = await searchTool.run({ query: 'TODO', output_mode: 'count' }, ctx);
+    A.ok(/app\.js: 1/.test(cnt.content) && /lib\/util\.js: 2/.test(cnt.content) && /notes\.md: 3/.test(cnt.content), 'count mode reports matches per file');
+
+    // files_only -> just the paths with matches
+    const fo = await searchTool.run({ query: 'TODO', output_mode: 'files_only' }, ctx);
+    A.eq(lines(fo).filter(Boolean).sort(), ['app.js', 'lib/util.js', 'notes.md'], 'files_only lists the matching file paths');
+
+    // file_glob restricts which files are searched
+    const fg = await searchTool.run({ query: 'TODO', output_mode: 'count', file_glob: '*.md' }, ctx);
+    A.ok(/notes\.md: 3/.test(fg.content) && fg.content.indexOf('app.js') < 0, 'file_glob limits the search to matching files');
+
+    // context lines: a match row (":") plus neighbouring context rows ("-")
+    const cc = await searchTool.run({ query: 'beta', file_glob: '*.js', context: 1 }, ctx);
+    A.ok(/^ {2}2: function beta/m.test(cc.content), 'context: the match line is shown with ":"');
+    A.ok(/^ {2}1- /m.test(cc.content) && /^ {2}3- /m.test(cc.content), 'context: surrounding lines are shown with "-"');
+
+    // target 'files': glob over names
+    const ff = await searchTool.run({ query: '*.js', target: 'files' }, ctx);
+    A.eq(lines(ff).filter(Boolean).sort(), ['app.js', 'lib/util.js'], 'target files: glob matches both .js files (hidden/node_modules excluded)');
+    const fmd = await searchTool.run({ query: '*.md', target: 'files' }, ctx);
+    A.eq(lines(fmd).filter(Boolean), ['notes.md'], 'target files: *.md finds the markdown file');
+    const fu = await searchTool.run({ query: '*util*', target: 'files' }, ctx);
+    A.eq(lines(fu).filter(Boolean), ['lib/util.js'], 'target files: substring glob finds the nested file');
+
+    // paging: limit + offset + an actionable next-offset hint
+    const p1 = await searchTool.run({ query: 'TODO', limit: 2, offset: 0 }, ctx);
+    A.ok(/\[truncated/.test(p1.content) && /offset=2/.test(p1.content), 'paging: truncation hint names the next offset');
+    A.ok(/showing 2/.test(p1.summary), 'paging: summary reports the shown count');
+
+    // redaction: surfaced lines are scrubbed (separate instance with a redact dep)
+    const RID = makeFsTools({ fsp, pathMod: path, root: ROOT, redact: s => String(s).replace(/sk-secret-\d+/g, '[REDACTED]') });
+    await fsp.mkdir(path.join(ROOT, 'sxr'), { recursive: true });
+    await fsp.writeFile(path.join(ROOT, 'sxr', 'creds.md'), 'TODO use key sk-secret-123 here\n');
+    const rr = await RID.searchTool.run({ query: 'TODO' }, { agentId: 'sxr' });
+    A.ok(rr.content.indexOf('[REDACTED]') >= 0 && rr.content.indexOf('sk-secret-123') < 0, 'fs.search redacts secrets out of surfaced lines (§5.6)');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('fs.jail.test');
 })();
