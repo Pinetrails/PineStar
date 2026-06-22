@@ -19,6 +19,7 @@ const World = (() => {
   /* ---------- station + bake cache ---------- */
   let station = null, geo = null, cache = null, geoDirty = true, bakeDirty = true, unsub = null;
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
+  let deskPropId = null, deskFace = 'north';           // set when the hero's desk is a PLACED workstation prop assigned to it (its id + the seat's facing)
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
   let routingPlan = null, lastPlanHash = null;   // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
@@ -229,7 +230,7 @@ const World = (() => {
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
         if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
-        if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
+        if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = deskFace || 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
       }
     }
@@ -244,10 +245,45 @@ const World = (() => {
     bakeDirty = false;
   }
 
-  // the workstation: a 2-wide desk on the spawn room's north wall, seat one row below
+  // is this prop type an agent-assignable WORKSTATION (a desk/PC the builder can host an agent at)?
+  const isWorkstation = t => { const s = (typeof PropSprites !== 'undefined') && PropSprites.spec(t); return !!(s && s.seat); };
+  // the workstation a given agent is ASSIGNED to — a placed desk/PC carrying its agentId. Returns its desk rect +
+  // the seat (front approach tile) + facing, all in the geo LOCAL frame, or null if it has none on this floor.
+  function homeStationFor(aid) {
+    if (!aid || !geo || !geo.props) return null;
+    const p = geo.props.find(q => q.agentId === aid && isWorkstation(q.t));
+    if (!p) return null;
+    const w = p.w || 1, h = p.h || 1;
+    let seatTile = null, face = 'north';
+    if (typeof PropAnchor !== 'undefined' && PropAnchor.deriveAnchor) {   // prefer the front (south) walkable tile
+      const a = PropAnchor.deriveAnchor(p, geo, { approach: 'south', sit: true });
+      if (a) { seatTile = { tx: a.tx, ty: a.ty }; face = a.face; }
+    }
+    if (!seatTile) seatTile = { tx: p.x, ty: p.y + h };   // fallback: the row directly below the desk
+    return { desk: { tx: p.x, ty: p.y, w, h }, seat: seatTile, face, propId: p.id };
+  }
+  // a PLACED workstation prop lights its screens while the agent assigned to it is working (mirrors the synthetic
+  // desk's work-glow + the bay-lit pattern) — so an assigned desk reads as "its agent is here, working."
+  function workstationLit(p) {
+    if (!p.agentId || !isWorkstation(p.t)) return false;
+    if (agent && p.agentId === agent.id) return !!agent.working;
+    const b = crew.find(x => x.agentId === p.agentId);
+    return !!(b && b.working);
+  }
+
+  // the workstation: the hero's ASSIGNED desk if it placed one, else a 2-wide desk on the spawn room's north wall.
   function placeDesk() {
-    const sid = station.spawnRoomId(), z = sid && geo.zones[sid];
     blocked = new Set();
+    deskPropId = null; deskFace = 'north';
+    // 1) the hero's own assigned workstation prop → THAT desk is its seat (it walks here + sits when tasked).
+    const home = agent && homeStationFor(agent.id);
+    if (home) {
+      desk = home.desk; seat = home.seat; deskPropId = home.propId; deskFace = home.face;
+      for (let dx = 0; dx < (desk.w || 1); dx++) for (let dy = 0; dy < (desk.h || 1); dy++) blocked.add((desk.tx + dx) + ',' + (desk.ty + dy));
+      return;   // the placed prop draws itself (skip the synthetic desk); the chair still renders at the seat
+    }
+    // 2) fallback: the auto workstation on the spawn room's north wall, seat one row below.
+    const sid = station.spawnRoomId(), z = sid && geo.zones[sid];
     if (!z || (z.x2 - z.x1) < 1 || (z.y2 - z.y1) < 1) { desk = seat = null; return; }
     let dtx = z.x1 + Math.max(1, Math.floor((z.x2 - z.x1) / 2));
     if (dtx + 1 > z.x2) dtx = Math.max(z.x1, z.x2 - 1);
@@ -575,7 +611,7 @@ const World = (() => {
     if (agent.goal === 'firstwake') { agent.state = 'idle'; return; }   // the wake ritual self-drives via stepFirstWake; the rare 'find feet' arrival is a no-op
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
     if (FOND[agent.goal]) noteFond(now, FOND[agent.goal]);   // dwelling somewhere by choice deepens attachment to that tile
-    if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
+    if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = deskFace || 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
     else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); takeSeat(); if (agent.useSit && agent.needs.rest < 35) curiositySay(SELF_REST, 0.4, now); }
     else if (agent.goal === 'lounge') {
       // settled ON the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
@@ -1334,7 +1370,7 @@ const World = (() => {
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
       if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
-      else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } } }
+      else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; } } }
     }
     if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon')) {
       agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now;   // just finished real work → relaxed, downtime clock resets
@@ -1444,13 +1480,13 @@ const World = (() => {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
-        const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
+        const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || workstationLit(p) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
         // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
         const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work) });
       }
     }
-    if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
+    if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
     if (seat) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
@@ -1913,17 +1949,21 @@ const World = (() => {
     const want = new Map();
     for (const bay of routingPlan.bays) {
       if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
-      const p = geo.props && geo.props.find(pp => pp.id === bay.propId);
-      if (!p) continue;
-      const fx = (p.x + (p.w > 1 ? 1 : 0)) * T + T / 2;                // foot at the bay's bottom-centre
-      const fy = (p.y + (p.h || 1) - 1) * T + T - 1;
-      want.set(bay.agentId, { x: fx, y: fy });
+      let pos = null;
+      const home = homeStationFor(bay.agentId);                        // a placed workstation assigned to this agent → station it at its desk
+      if (home) { const f = footOf(home.seat.tx, home.seat.ty); pos = { x: f.x, y: f.y, face: home.face }; }
+      else {
+        const p = geo.props && geo.props.find(pp => pp.id === bay.propId);
+        if (!p) continue;
+        pos = { x: (p.x + (p.w > 1 ? 1 : 0)) * T + T / 2, y: (p.y + (p.h || 1) - 1) * T + T - 1 };   // foot at the bay's bottom-centre
+      }
+      want.set(bay.agentId, pos);
     }
     crew = crew.filter(b => b.summoned || want.has(b.agentId));        // drop plan bodies whose bay is gone; KEEP summoned crew
     for (const [aid, pos] of want) {
       const b = crew.find(x => x.agentId === aid && !x.summoned);
-      if (b) { b.px = pos.x; b.py = pos.y; }
-      else if (!crew.some(x => x.agentId === aid)) crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
+      if (b) { b.px = pos.x; b.py = pos.y; if (pos.face) b.dir = pos.face; }
+      else if (!crew.some(x => x.agentId === aid)) { const nb = makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y); if (pos.face) nb.dir = pos.face; crew.push(nb); }
     }
     // a refit may have moved the floor under a summoned body — re-foot any that no longer stand on a walkable tile.
     for (const b of crew) {

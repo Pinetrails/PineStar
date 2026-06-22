@@ -23,7 +23,7 @@ const Build = (() => {
   const SEEN_KEY = 'skynet.refit.seen';
 
   let opts = null, station = null, unsub = null;
-  let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, dpr = 1, ro = null;
+  let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
   let cache = null, cacheGeo = null, bakeDirty = true, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
@@ -36,7 +36,7 @@ const Build = (() => {
   const MINZ = 0.4, MAXZ = 6;
 
   // interaction state
-  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'work';
+  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
   let drag = null, hoverRoomId = null, hoverPropId = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let stars = [];
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
@@ -126,11 +126,13 @@ const Build = (() => {
         </div>
         <div class="refit-hint" id="refit-hint"></div>
       </div>
-      <div class="refit-tip" id="refit-tip"></div>`;
+      <div class="refit-tip" id="refit-tip"></div>
+      <div class="refit-propcard" id="refit-propcard" role="tooltip"></div>`;
     document.body.appendChild(root);
     cv = root.querySelector('.refit-canvas');
     ctx = cv.getContext('2d');
     tip = root.querySelector('#refit-tip');
+    propCard = root.querySelector('#refit-propcard');
     hintEl = root.querySelector('#refit-hint');
     undoBtn = root.querySelector('#refit-undo');
     redoBtn = root.querySelector('#refit-redo');
@@ -160,7 +162,7 @@ const Build = (() => {
     cv.addEventListener('pointermove', onMove);
     cv.addEventListener('pointerup', onUp);
     cv.addEventListener('pointercancel', onCancel);
-    cv.addEventListener('pointerleave', () => { hoverRoomId = null; hoverPropId = null; if (!drag) hideTip(); });
+    cv.addEventListener('pointerleave', () => { hoverRoomId = null; hoverPropId = null; if (!drag) hideTip(); hidePropCard(); });
     cv.addEventListener('wheel', onWheel, { passive: false });
     cv.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('resize', resize);
@@ -170,6 +172,30 @@ const Build = (() => {
     try { ro = new ResizeObserver(() => { resize(); }); ro.observe(cv); } catch (e) {}
     setHint();
   }
+
+  /* ---------- prop palette taxonomy ----------
+     Props are split into two TIERS (functional vs cosmetic) carried on each CATALOG entry, then grouped by
+     `cat` within the tier. This is the "clean area for the stuff that actually does something" split. */
+  const TIER_ORDER = ['functional', 'cosmetic'];
+  const TIER_LABEL = { functional: '⚙ SYSTEMS', cosmetic: '✦ DECOR' };   // display names; the internal tier keys stay functional/cosmetic
+  const CAT_LABEL = {
+    workstation: 'WORKSTATIONS', workflow: 'WORKFLOW', capability: 'CAPABILITY', isolation: 'ISOLATION',
+    screens: 'SCREENS', lab: 'LAB', storage: 'STORAGE', comms: 'COMMS', lounge: 'LOUNGE', decor: 'DECOR',
+  };
+  // the agent-assignable workstation types (CATALOG seat:true) — these open the agent picker on place/click
+  const WORKSTATION_TYPES = { desk: 1, desk2: 1, console: 1, consoleL: 1, pixelrig: 1, bench: 1, workbench: 1 };
+  const catalog = () => (typeof PropSprites !== 'undefined') ? PropSprites.CATALOG : [];
+  // the ordered list of category ids that belong to a tier (first-appearance order in the catalog)
+  function catsForTier(tier) {
+    const out = [], seen = {};
+    for (const c of catalog()) { if ((c.tier || 'cosmetic') !== tier) continue; if (!seen[c.cat]) { seen[c.cat] = 1; out.push(c.cat); } }
+    return out;
+  }
+  const agentLabel = aid => {
+    const list = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
+    const a = list.find(x => x.id === aid);
+    return a ? (a.name || a.id) : aid;
+  };
 
   function renderPalette() {
     const pal = root.querySelector('#refit-palette');
@@ -202,20 +228,34 @@ const Build = (() => {
         pal.appendChild(b);
       });
     } else if (tool === 'prop') {
-      paletteLabel = 'PROP CATALOG';
+      paletteLabel = 'PROPS';
       const CATS = (typeof PropSprites !== 'undefined') ? PropSprites.CATS : {};
-      const groups = Object.keys(CATS);
-      if (!CATS[propCat]) propCat = groups[0] || 'work';
-      // row 1 — category tabs
+      if (TIER_ORDER.indexOf(propTier) < 0) propTier = 'functional';
+      let cats = catsForTier(propTier);
+      if (cats.indexOf(propCat) < 0) { propCat = cats[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; }
+      // row 0 — the TIER toggle: a clear, hard split between props that DO something and props that are just looks
+      const tierRow = document.createElement('div'); tierRow.className = 'refit-tiers';
+      tierRow.setAttribute('aria-label', 'Prop tiers');
+      TIER_ORDER.forEach(t => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'bb sm refit-tier refit-tier-' + t + (t === propTier ? ' active' : '');
+        b.setAttribute('aria-pressed', t === propTier ? 'true' : 'false');
+        b.textContent = TIER_LABEL[t];
+        b.onclick = () => { propTier = t; const cs = catsForTier(t); propCat = cs[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
+        tierRow.appendChild(b);
+      });
+      pal.appendChild(tierRow);
+      // row 1 — category tabs WITHIN the chosen tier (clean, specific names — WORKSTATIONS · WORKFLOW · …)
       const catRow = document.createElement('div'); catRow.className = 'refit-propcats';
       catRow.setAttribute('aria-label', 'Prop categories');
-      groups.forEach(g => {
+      cats.forEach(g => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'bb sm refit-propcat' + (g === propCat ? ' active' : '');
         b.setAttribute('aria-pressed', g === propCat ? 'true' : 'false');
-        b.textContent = g.toUpperCase();
-        b.onclick = () => { propCat = g; if (CATS[g][0]) propType = CATS[g][0].id; renderPalette(); setHint(); sfx('click'); };
+        b.textContent = CAT_LABEL[g] || g.toUpperCase();
+        b.onclick = () => { propCat = g; if (CATS[g] && CATS[g][0]) propType = CATS[g][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
         catRow.appendChild(b);
       });
       pal.appendChild(catRow);
@@ -260,10 +300,12 @@ const Build = (() => {
   function propTile(c) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'refit-proptile' + (c.id === propType ? ' active' : '');
+    b.className = 'refit-proptile' + (c.tier === 'functional' ? ' fn' : '') + (c.id === propType ? ' active' : '');
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
-    b.title = c.label + ' · ' + c.w + '×' + c.h + (c.blocks === false ? ' · decor (walkable)' : '');
+    b.title = c.label + ' · ' + c.w + '×' + c.h;   // native fallback; the rich Fallout-style card is the hover surface
     b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
+    b.onmouseenter = (e) => showPropCard(c, null, e.clientX, e.clientY);   // "what does this do?" card
+    b.onmouseleave = hidePropCard;
 
     const DW = 76, DH = 50, SS = Math.max(2, Math.min(3, window.devicePixelRatio || 1));  // supersample so even wide props stay crisp
     const cvEl = document.createElement('canvas');
@@ -317,7 +359,7 @@ const Build = (() => {
   }
 
   function selectTool(id) {
-    tool = id; drag = null; hideTip();
+    tool = id; drag = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
       const active = b.dataset.tool === id;
       b.classList.toggle('active', active);
@@ -403,6 +445,49 @@ const Build = (() => {
     };
     g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, 'bay unbound', true); closeP(); };
     g.querySelector('#bay-cancel').onclick = closeP;
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+    try { input.focus(); input.select(); } catch (_) {}
+  }
+
+  /* ---------- WORKSTATION agent-picker: the desk/PC version of the BAY picker. A workstation carries an
+     agentId exactly like a bay does (assignPropAgent is type-agnostic); world.js then seats THAT agent here, so
+     when it's given a task it walks over and sits at this desk. The host/model is already chosen when the agent
+     was created, so this is a single "pick an agent" step. Opens on place + on click (PROP_EDITABLE). */
+  function openWorkstationPicker(propId, ev) {
+    if (!root || root.querySelector('.refit-ws-picker')) return;
+    const p = station.propById(propId); if (!p || !WORKSTATION_TYPES[p.t]) return;
+    const cur = p.agentId || '';
+    const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
+    const rows = agents.map(a => `<button type="button" class="bb sm ws-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}${a.model ? ' <span class="ws-model">' + esc(a.model) + '</span>' : ''}</button>`).join('');
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-ws-picker';
+    g.innerHTML = `
+      <div class="refit-guide-card">
+        <h3>▮ ASSIGN AGENT TO WORKSTATION</h3>
+        <ul><li>The assigned agent <b>walks here and sits to work</b> whenever it gets a task.</li>
+        <li>Just pick one of your active agents — its model/host was set when it was created.</li></ul>
+        ${agents.length
+          ? '<div class="refit-bay-agents" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">' + rows + '</div>'
+          : '<div style="color:#ffd34a;font:11px monospace;margin:6px 0">No active agents yet — summon one first, or type an id below.</div>'}
+        <input id="ws-aid" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}"
+          style="width:100%;box-sizing:border-box;margin:6px 0;padding:5px 7px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;border-radius:3px" />
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="btn-sm refit-primary" id="ws-ok">▸ ASSIGN</button>
+          <button type="button" class="btn-sm" id="ws-clear">UNASSIGN</button>
+          <button type="button" class="btn-sm" id="ws-cancel">CANCEL</button>
+        </div>
+      </div>`;
+    root.appendChild(g);
+    const input = g.querySelector('#ws-aid');
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
+    g.querySelector('#ws-ok').onclick = () => {
+      const res = station.assignPropAgent(propId, input.value.trim());
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('workstation → ' + res.agentId) : 'workstation cleared', true); closeP(); }
+      else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
+    };
+    g.querySelector('#ws-clear').onclick = () => { station.assignPropAgent(propId, ''); sfx('click'); flashTip(ev, 'workstation cleared', true); closeP(); };
+    g.querySelector('#ws-cancel').onclick = closeP;
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
     try { input.focus(); input.select(); } catch (_) {}
   }
@@ -614,6 +699,7 @@ const Build = (() => {
 
   function onDown(ev) {
     lastClient = { x: ev.clientX, y: ev.clientY };
+    hidePropCard();
     // right-button cancels an in-progress edit (and never starts one)
     if (ev.button === 2) { if (drag) { drag = null; hideTip(); } return; }
     try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
@@ -656,6 +742,11 @@ const Build = (() => {
     } else {
       hoverPropId = station.propAt(w.tx, w.ty);
       hoverRoomId = station.roomAt(w.tx, w.ty);
+      // hovering a placed FUNCTIONAL prop shows its Fallout-style card (what it does + its live assignment)
+      const hp = hoverPropId && station.propById(hoverPropId);
+      const sp = hp && (typeof PropSprites !== 'undefined') && PropSprites.spec(hp.t);
+      if (sp && sp.tier === 'functional') showPropCard(sp, hp, ev.clientX, ev.clientY);
+      else hidePropCard();
     }
   }
 
@@ -703,8 +794,8 @@ const Build = (() => {
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
-  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1 };
+  const openPropEditor = (id, t, ev) => { if (WORKSTATION_TYPES[t]) openWorkstationPicker(id, ev); else if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
+  const PROP_EDITABLE = Object.assign({ bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1 }, WORKSTATION_TYPES);   // workstations open the agent picker on place/click
   function commitPropStamp(d, ev) {
     // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
     if (PROP_EDITABLE[propType] && !d.moved) {
@@ -1101,6 +1192,48 @@ const Build = (() => {
     showTip(text, ok); clearTimeout(tipTimer);
     tipTimer = setTimeout(hideTip, 1300);
   }
+
+  /* ---------- Fallout-style prop description card ----------
+     A persistent hover panel (NOT the transient action tip): says what a prop IS and DOES, its footprint, and —
+     for a placed functional prop — its live assignment (hosted-by agent / bound server). Shown on palette-tile
+     hover (browsing) and on canvas hover of a placed functional prop. `c` = a CATALOG spec; `placed` = the live prop. */
+  function propCardHTML(c, placed) {
+    const fn = c.tier === 'functional';
+    const tier = fn ? '<span class="pc-tier fn">⚙ SYSTEMS</span>' : '<span class="pc-tier">✦ DECOR</span>';
+    const foot = c.w + '×' + c.h + (c.blocks === false ? ' · walkable' : ' · solid');
+    const desc = c.desc || (fn ? '' : 'Decor — looks only. Sets the mood; no effect on how the station runs.');
+    let assign = '';
+    if (placed && WORKSTATION_TYPES[placed.t]) {
+      assign = placed.agentId
+        ? '<div class="pc-assign ok">▸ HOSTED BY ' + esc(agentLabel(placed.agentId)) + '</div>'
+        : '<div class="pc-assign">UNASSIGNED — click to choose an agent</div>';
+    } else if (placed && placed.t === 'bay') {
+      assign = placed.agentId
+        ? '<div class="pc-assign ok">▸ AGENT ' + esc(agentLabel(placed.agentId)) + '</div>'
+        : '<div class="pc-assign">NO AGENT — click to assign</div>';
+    } else if (placed && placed.t === 'connector_portal') {
+      assign = placed.connectorId
+        ? '<div class="pc-assign ok">▸ BOUND ' + esc(placed.connectorId) + '</div>'
+        : '<div class="pc-assign">UNBOUND — click to bind a server</div>';
+    }
+    return '<h4>' + esc(c.label) + '</h4>' + tier + (desc ? ('<p>' + esc(desc) + '</p>') : '') + '<div class="pc-foot">' + foot + '</div>' + assign;
+  }
+  let propCardKey = null;
+  function showPropCard(c, placed, cx, cy) {
+    if (!propCard || !c) return;
+    const key = placed ? ('p:' + placed.id + ':' + (placed.agentId || placed.connectorId || '')) : ('c:' + c.id);
+    if (key !== propCardKey) { propCard.innerHTML = propCardHTML(c, placed); propCardKey = key; }
+    propCard.style.display = 'block';
+    const w = propCard.offsetWidth || 230, h = propCard.offsetHeight || 96;
+    const ax = (cx == null ? lastClient.x : cx), ay = (cy == null ? lastClient.y : cy);
+    let x = ax + 16, y = ay - h - 14;            // prefer above-right of the cursor
+    if (y < 6) y = ay + 20;                       // flip below if it would clip the top
+    x = Math.min(x, window.innerWidth - w - 8);
+    y = Math.min(y, window.innerHeight - h - 8);
+    propCard.style.left = Math.max(6, x) + 'px';
+    propCard.style.top = Math.max(6, y) + 'px';
+  }
+  function hidePropCard() { if (propCard) { propCard.style.display = 'none'; propCardKey = null; } }
 
   function sfx(n) { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); }
 
