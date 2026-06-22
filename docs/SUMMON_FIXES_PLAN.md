@@ -19,21 +19,61 @@ Summoned agents (`App.summonAgent`, `app.js:198`) become crew bodies via `World.
 
 ---
 
-## Bug 1 — No "needs a computer" guidance on summon
+## Bug 1 / Phase 2 — The per-agent PC rule + summon guidance
 
-**Root cause.** `summonAgent` (`app.js:198-223`) fires one generic toast — `"<name> summoned — give
-it a task"` (`app.js:221`) — with **no capability check**. A summoned agent has no bay and no
-compute by default. The only "NO COMPUTE" warning that exists is buried inside build mode
-(`build.js:998-1006`), so a new user never sees it.
+### Clarified design (Commander, 2026-06-22)
 
-**Decision: Toast + persistent marker.**
+> **Each agent MUST have its OWN dedicated PC.** Not its own *room* — multiple agents may share a
+> room (e.g. 3–4 agents passing work between them). But every agent needs a distinct computer.
+> Workflows run on **conveyors** an agent is assigned to; a conveyor may be customized to serve
+> multiple agents. **Hovering a PC or a conveyor shows the name of the agent it's bound to**, so a
+> shared room stays organized without one-room-per-agent.
 
-**Fix (Phase 2).** After `World.spawnAgent`, check the agent's compute capability via
-`station.bayObjects(agentId)` / `CAP_PROP_MAP` (`worldmodel.js:56-68`). If no `computer`:
-- Replace the generic toast with actionable guidance: *"Place a computer so `<name>` can work —
-  open REFIT to add one."*
-- Show a **persistent "needs computer" marker** over the agent body that clears once a computer
-  is placed/bound (re-checked on the routing-plan / floor change that already fires `geoDirty`).
+This replaces today's **room-based** compute model with **per-PC binding**.
+
+### What exists today (investigated)
+
+- **Binding is already generic.** `assignPropAgent(propId, agentId)` (`worldmodel.js:630`) tags ANY
+  prop with an agentId (validated `AID_RE`); `addProp` accepts `agentId`; `propsByAgent(agentId)`
+  exists. The bay agent-picker (`build.js:371-408`) is the existing assignment UX to clone.
+- **Compute is room-based.** `bayObjects(agentId)` (`worldmodel.js:683`) finds the agent's `bay`
+  prop, takes its ROOM, and grants every cap-prop in that room (`CAP_PROP_MAP`, `worldmodel.js:56`).
+  In a shared room, BOTH agents get every computer — the exact ambiguity to fix.
+- **Routing is geometric, via bays.** `compileRoutingPlan` (`pipeline.js`) builds `bays[]` from
+  `bay` props (each carries `agentId`); work rides belts to whichever bay tile it reaches
+  (`resolveTarget`). Belts carry **no** agentId today. Sidecar `router.stationFor(agentId)`
+  (`sidecar/routing/router.js:39`) feeds the bay's `objects` into the compute gate (`loop.js:177`).
+- **Bay sprite already draws the bound agent's name** (`propsprites.js F.bay`). Build-mode hover
+  (`build.js:1016`) draws only an outline — no agent label yet.
+
+### Staged plan (de-risked; routing/sidecar untouched until 2b)
+
+**Phase 2a — per-PC compute + hover + summon guidance (low risk, no routing changes):**
+1. **Per-agent PC binding.** Add a computer-prop agent-picker (clone the bay picker) so a `computer`
+   prop can carry an `agentId`. Change the **compute** determination so an agent has compute iff a
+   computer prop is **bound to it** (reuse `propsByAgent`). Keep cabinet/dish/notebook/connector
+   **room-based** (shared room resources) for now — only the PC (the compute gate) goes per-agent.
+   Update the build-mode "NO COMPUTE" check (`build.js:998`) to the per-agent rule.
+2. **Hover labels.** PC props (and belts) show the bound agent's name on hover — build mode first
+   (extend `drawHover`, `build.js:1016`), then the live world.
+3. **Summon guidance (the original Bug 1).** On `summonAgent`, after spawn: if the agent has no
+   bound PC, replace the generic toast with *"AGENT ready — type to task it now. Give it its own
+   computer (open REFIT) to run cost-isolated / take floor work."* + a **persistent marker** over
+   the body that clears once a PC is bound. (Truthful: direct chat already runs on the default
+   office — see the run-path note below — so the marker means "no dedicated PC yet," not "can't
+   run".)
+
+**Phase 2b — conveyor → agent assignment (later; touches routing + sidecar):**
+- Tag belts with an optional `agentId`; hover shows it; a conveyor may list several agents.
+- Decide whether the bound **PC becomes the routing endpoint** (absorbing the separate `bay`
+  concept) or bays stay as the endpoint while PCs add compute. **OPEN — gates the rewrite.**
+
+### Run-path truth (why the marker isn't "can't run")
+
+`/api/run` sends no per-agent station (`harness.js:137`); the sidecar falls back to the **default
+office, which includes a computer** (`index.js:1425-1443`). So a directly-chatted agent (hero or
+summoned) runs regardless. The compute gate only bites on **bay/conveyor-routed** work
+(`router.stationFor`). The PC rule makes the *floor* honest about who can take routed work.
 
 ---
 
