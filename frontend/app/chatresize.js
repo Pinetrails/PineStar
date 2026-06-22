@@ -22,16 +22,25 @@
   // restore a saved width (re-clamped to the current window)
   try { const s = parseInt(localStorage.getItem(KEY), 10); if (s) apply(s); } catch (_) {}
 
-  let dragging = false;
+  let dragging = false, pendingW = null, moveRaf = 0;
+  // coalesce to one width write per frame: pointermove can fire several times between paints, and each
+  // write resizes the centre stage's canvas — batching to rAF keeps the resize cadence in step with paint.
+  function flushMove() {
+    moveRaf = 0;
+    if (pendingW != null) { apply(pendingW); pendingW = null; }
+  }
   function onMove(e) {
     if (!dragging) return;
     // COMMS right edge is the window edge minus padding; its width is that edge minus the cursor x
-    apply((window.innerWidth - PAD) - e.clientX);
+    pendingW = (window.innerWidth - PAD) - e.clientX;
+    if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
     e.preventDefault();
   }
   function onUp(e) {
     if (!dragging) return;
     dragging = false;
+    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
+    if (pendingW != null) { apply(pendingW); pendingW = null; }   // land the final position the rAF hadn't flushed yet
     document.body.classList.remove('col-resizing');
     try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
     const cur = getComputedStyle(game).getPropertyValue('--chat-w').trim();

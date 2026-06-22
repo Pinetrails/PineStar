@@ -326,7 +326,7 @@ const World = (() => {
     cv = canvas; ctx = cv.getContext('2d');
     if (!stars.length) for (let i = 0; i < 90; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
     resize();
-    try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; }); ro.observe(cv.parentElement || cv); } catch (e) {}
+    try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
     window.addEventListener('resize', resize);
 
     cv.addEventListener('wheel', ev => {
@@ -373,7 +373,19 @@ const World = (() => {
     if (!cv) return;
     const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth || cv.parentElement.clientWidth, h = cv.clientHeight || cv.parentElement.clientHeight;
-    cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr));
+    const nw = Math.max(1, Math.round(w * dpr)), nh = Math.max(1, Math.round(h * dpr));
+    if (cv.width === nw && cv.height === nh) return;   // assigning to canvas.width/height WIPES the bitmap even when unchanged — skip the needless clear
+    cv.width = nw; cv.height = nh;
+  }
+
+  // A canvas resize blanks the bitmap, and the repaint only lands on the NEXT rAF — so dragging the
+  // COMMS seam (a stream of ResizeObserver hits) strobes the station black. Repaint synchronously in the
+  // observer (after layout, before paint) so the new-size frame is on screen this paint, not next. Cancel
+  // the queued rAF first so frame()'s own re-schedule doesn't leave two loops running.
+  function redrawNow() {
+    if (!running || !cache) return;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    frame(performance.now());
   }
 
   function start() { if (running) return; running = true; last = performance.now(); frame(last); }
