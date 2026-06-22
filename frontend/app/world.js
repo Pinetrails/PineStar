@@ -1910,7 +1910,9 @@ const World = (() => {
   // reconcile `crew` with the plan's bound bays: one light body per bay (except the hero's own), standing at
   // the bay prop's foot. Reuses existing bodies by agentId so a re-bake doesn't wipe a live say bubble.
   function syncCrewFromPlan() {
-    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { if (crew.length) crew = []; return; }
+    // No bound bays (or no geo yet): drop the plan-derived crew, but KEEP summoned bodies — a summoned-but-unbound
+    // agent has no bay, so an empty plan must NOT wipe it (else it vanishes on the next rederive, e.g. a build toggle).
+    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { crew = crew.filter(b => b.summoned); return; }
     const want = new Map();
     for (const bay of routingPlan.bays) {
       if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
