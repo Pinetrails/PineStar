@@ -12,6 +12,8 @@
     "start": "node sidecar/index.js",
     "app": "node sidecar/index.js",
     "sidecar": "node sidecar/index.js",
+    "dev:seed": "node dev/seed.js",
+    "dev:seed:keep": "node dev/seed.js --keep",
     "serve": "node scripts/serve-ui-only.js",
     "serve:ui-only": "node scripts/serve-ui-only.js",
     "tauri": "tauri",
