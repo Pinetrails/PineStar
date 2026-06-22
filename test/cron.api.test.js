@@ -47,8 +47,17 @@ function boot(port, workspaces, attemptsLeft) {
   let booted = await boot(8890 + (process.pid % 60), ws, 20);
   let child = booted.child, port = booted.port;
   const B = () => 'http://' + HOST + ':' + port;
+  let apiToken = '';
+  async function refreshToken() {
+    const r = await fetch(B() + '/api/session', { method: 'POST', headers: { Origin: B() } });
+    const j = await r.json();
+    apiToken = String((j && j.token) || '');
+  }
+  await refreshToken();
   const j = async (m, p, body) => {
-    const r = await fetch(B() + p, { method: m, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiToken && m !== 'GET') headers['X-Skynet-Token'] = apiToken;
+    const r = await fetch(B() + p, { method: m, headers, body: body ? JSON.stringify(body) : undefined });
     const t = await r.text(); let v; try { v = JSON.parse(t); } catch (_) { v = t; }
     return { status: r.status, body: v };
   };
@@ -112,6 +121,7 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(fs.existsSync(path.join(ws, 'cron.jobs.json')), 'cron.jobs.json written to the workspace');
     try { child.kill(); } catch (_) {} await sleep(200);
     booted = await boot(port + 100, ws, 20); child = booted.child; port = booted.port;
+    await refreshToken();
     const after = await j('GET', '/api/cron');
     A.eq(after.body.jobs.length, 1, 'the routine persisted across a restart');
     A.eq(after.body.jobs[0].name, 'Renamed brief', 'the edited name persisted');

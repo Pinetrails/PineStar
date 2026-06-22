@@ -25,9 +25,42 @@ const Harness = (() => {
   const DESKTOP = !!TAURI;
   const invoke = (cmd, args) => TAURI.invoke(cmd, args);
   let _configured = false;   // desktop: cached "is a key stored?" (loaded by init())
+  let apiToken = (typeof window !== 'undefined' && window.__SKYNET_API_TOKEN__) ? String(window.__SKYNET_API_TOKEN__) : '';
+  let apiTokenPromise = null;
+
+  function isApiUrl(u) {
+    if (typeof u === 'string') return u.indexOf('/api/') === 0 || /\/api\//.test(u);
+    return !!(u && typeof u.url === 'string' && /\/api\//.test(u.url));
+  }
+  function withApiToken(init, token) {
+    init = Object.assign({}, init || {});
+    const headers = new Headers(init.headers || {});
+    if (token) headers.set('X-Skynet-Token', token);
+    init.headers = headers;
+    return init;
+  }
+  function ensureApiToken() {
+    if (apiToken) return Promise.resolve(apiToken);
+    if (apiTokenPromise) return apiTokenPromise;
+    apiTokenPromise = fetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { apiToken = String((j && j.token) || ''); return apiToken; })
+      .catch(() => '')
+      .then(t => { apiTokenPromise = null; return t; });
+    return apiTokenPromise;
+  }
+  if (typeof window !== 'undefined' && window.fetch && !window.__SKYNET_FETCH_HARDENED__) {
+    const rawFetch = window.fetch.bind(window);
+    window.fetch = function (u, init) {
+      if (!isApiUrl(u) || String(u) === '/api/session') return rawFetch(u, init);
+      return ensureApiToken().then(t => rawFetch(u, withApiToken(init, t)));
+    };
+    window.__SKYNET_FETCH_HARDENED__ = true;
+  }
 
   /* desktop: load the keychain "configured?" flag once at boot, before the connect screen reads it */
   async function init() {
+    await ensureApiToken();
     if (!DESKTOP) return;
     try { _configured = await invoke('harness_has_key'); } catch (_) { _configured = false; }
   }
@@ -239,6 +272,8 @@ const Harness = (() => {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
     memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
+    apiToken: () => apiToken,
+    apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
     resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; lastTokensIn = 0; }

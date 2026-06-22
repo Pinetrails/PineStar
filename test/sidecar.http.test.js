@@ -58,8 +58,11 @@ function boot(port, workspaces, attemptsLeft) {
   const booted = await boot(8820 + (process.pid % 60), ws, 20);
   const { child, port } = booted;
   const B = 'http://' + HOST + ':' + port;
+  let apiToken = '';
   const j = async (m, p, body) => {
-    const r = await fetch(B + p, { method: m, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiToken && m !== 'GET') headers['X-Skynet-Token'] = apiToken;
+    const r = await fetch(B + p, { method: m, headers, body: body ? JSON.stringify(body) : undefined });
     const t = await r.text(); let v; try { v = JSON.parse(t); } catch (_) { v = t; }
     return { status: r.status, body: v };
   };
@@ -69,6 +72,38 @@ function boot(port, workspaces, attemptsLeft) {
     const health = await j('GET', '/api/health');
     A.eq(health.status, 200, 'GET /api/health -> 200');
     A.eq(health.body, 'ok', 'health body is ok');
+
+    // ---- localhost API hardening: no wildcard CORS, hostile web origins rejected ----
+    const sameOrigin = await fetch(B + '/api/budget/status', { headers: { Origin: B } });
+    A.eq(sameOrigin.status, 200, 'same-origin API request with Origin -> 200');
+    A.eq(sameOrigin.headers.get('access-control-allow-origin'), B, 'same-origin CORS mirrors the exact loopback origin');
+
+    const tauriOrigin = 'http://tauri.localhost';
+    const tauri = await fetch(B + '/api/budget/status', { headers: { Origin: tauriOrigin } });
+    A.eq(tauri.status, 200, 'Tauri app origin API request -> 200');
+    A.eq(tauri.headers.get('access-control-allow-origin'), tauriOrigin, 'Tauri CORS mirrors the trusted app origin');
+
+    const badOrigin = await fetch(B + '/api/budget/status', { headers: { Origin: 'https://evil.example' } });
+    A.eq(badOrigin.status, 403, 'foreign web origin API request -> 403');
+    A.eq(badOrigin.headers.get('access-control-allow-origin'), null, 'foreign origin gets no CORS read access');
+
+    const preflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: B, 'Access-Control-Request-Method': 'POST' } });
+    A.eq(preflight.status, 204, 'trusted API preflight -> 204');
+    A.eq(preflight.headers.get('access-control-allow-origin'), B, 'trusted preflight mirrors loopback origin');
+    const badPreflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' } });
+    A.eq(badPreflight.status, 403, 'foreign API preflight -> 403');
+
+    const injected = await (await fetch(B + '/')).text();
+    A.ok(/__SKYNET_API_TOKEN__/.test(injected), 'served index.html bootstraps the API token for browser mode');
+
+    const sess = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } });
+    A.eq(sess.status, 200, 'POST /api/session from trusted origin -> 200');
+    const sessBody = await sess.json();
+    apiToken = String(sessBody.token || '');
+    A.ok(apiToken.length >= 32, 'session returns a high-entropy API token');
+
+    const noApiToken = await fetch(B + '/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ scope: 'day' }) });
+    A.eq(noApiToken.status, 403, 'privileged POST without X-Skynet-Token -> 403');
 
     // ---- budget status reflects the PRE-SEEDED ledger (persisted spend survived a fresh boot) ----
     const st = await j('GET', '/api/budget/status');
@@ -103,7 +138,7 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(noKey.status, 400, 'POST /api/run without a key -> 400');
     const noModel = await j('POST', '/api/run', { key: 'sk-or-v1-fake' });
     A.eq(noModel.status, 400, 'POST /api/run without a model -> 400');
-    const badJson = await fetch(B + '/api/run', { method: 'POST', body: '{not json' });
+    const badJson = await fetch(B + '/api/run', { method: 'POST', headers: { 'X-Skynet-Token': apiToken }, body: '{not json' });
     A.eq(badJson.status, 400, 'POST /api/run with malformed JSON -> 400');
   } finally {
     try { child.kill(); } catch (_) {}
