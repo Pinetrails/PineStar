@@ -129,6 +129,27 @@ awakening gate) — verify live in a running instance.
 
 ---
 
+## Bug 4 / Phase 2c — agents only interact with props assigned to THEM
+
+**Report.** Placing a PC made the hero walk over and use it — the curiosity/novelty system treats
+any freshly-placed prop as "go inspect it." For complex Factorio-style multi-agent floors, an agent
+must only interact with props **assigned to it**; another agent's (or an unassigned) workstation /
+capability prop must be ignored.
+
+**Fix — DONE.** Added `isOwnableProp(t)` (a capability prop via `capForProp`, or a `bay`) +
+`mayTouchProp(agentId, p)` (`world.js` after `propUse`). An OWNABLE prop is touchable only by its
+assignee; leisure/decor stay shared; an UNASSIGNED capability prop is touchable by no one. Applied
+at every hero prop-targeting site:
+- `scanNovelty` — a not-mine/unclaimed capability prop is never queued as novelty (no walk, no
+  startle glance).
+- `planPOI` — the ambient "machines to inspect" list excludes not-mine capability props.
+- `planInspect` — defensive re-check when popping the novelty queue.
+- `maybeRounds` — the caretaker lap skips ownership beats at not-mine capability props.
+
+Runtime-verified: hero ignores coder's PC, an unassigned PC, and writer's bay; still uses its own
+PC; decor (plant) stays shared. Crew bodies don't target props (Phase 3 wander only), so the rule is
+enforced wherever an agent actually chooses a prop.
+
 ## Sequencing
 
 1. **Phase 1 — Bug 2 one-line guard fix + test gate green.** ← done, pending verification.
