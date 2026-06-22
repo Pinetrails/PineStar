@@ -181,6 +181,12 @@ b { font-weight: normal; color: var(--ph-bright); }
   display: flex; align-items: center; gap: 12px; flex-shrink: 0;
 }
 .logo-mark { font-size: 27px; color: var(--bad); text-shadow: 0 0 12px rgba(255,92,77,0.7); animation: pulse 2.8s infinite; }
+/* the STARNET wordmark image sits in the chrome top-left; the big version
+   lives on the title screen where it has room to read */
+.logo-img {
+  height: 30px; width: auto; display: block;
+  filter: drop-shadow(0 0 8px var(--ph-glow)) drop-shadow(0 0 2px var(--ph-glow));
+}
 /* one confident wordmark in the chrome — the big ASCII logo lives on the
    title screen where it has room to read (salvaged from agent/design-system) */
 .logo-word {
@@ -898,6 +904,7 @@ body.no-scan .crt-scan { display: none; }
 @media (max-width: 1480px) {
   .logo-sub { display: none; }
   .logo-word { font-size: var(--fs-3); letter-spacing: 4px; }
+  .logo-img { height: 24px; }
 }
 @media (max-width: 1100px) {
   #app { grid-template-columns: 184px 1fr 254px; }

@@ -144,7 +144,7 @@ const Harness = (() => {
         body: JSON.stringify(reqBody)
       });
     } catch (e) {
-      throw new Error('cannot reach the SKYNET sidecar — start it with `npm start` (node sidecar/index.js)');
+      throw new Error('cannot reach the STARNET sidecar — start it with `npm start` (node sidecar/index.js)');
     }
     if (!res.ok || !res.body) throw new Error('sidecar HTTP ' + res.status);
 

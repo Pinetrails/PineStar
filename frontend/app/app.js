@@ -46,7 +46,7 @@ const App = (() => {
      and composeSystemPrompt() assembles them into the EXACT system prompt sent to the model each run.
      They are not decoration: editing one in the dossier re-shapes the live agent (see applyAgentConfig). */
   function baseIdentity(name) {
-    return 'You are ' + name + ', an AI agent operating from a workstation aboard the SKYNET station — a room '
+    return 'You are ' + name + ', an AI agent operating from a workstation aboard the STARNET station — a room '
       + 'your Commander (the user) is building for you. Address the user as "Commander" and keep a spark of personality. '
       + 'When the Commander assigns you a TASK you have REAL tools at your workstation — you can search and read the '
       + 'live web and read/write files in your workspace — so actually do the work and report what you find; never '

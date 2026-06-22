@@ -379,7 +379,7 @@ const UI = (() => {
       '</div>' +
       '<h4 class="ms-h">SAVE DATA</h4>' +
       '<div class="set-save"><button class="bb sm" id="set-save">SAVE NOW</button> <button class="bb sm danger" id="set-reset">RESET STATION</button></div>' +
-      '<p class="set-about">SKYNET STATION OS v2.077 — autosaves every 30s.<br>17 agents · HERMES/OPENCLAW harnesses · simulated GPT 5.5 / OPUS 4.8 / FABLE 5 workloads.</p>';
+      '<p class="set-about">STARNET STATION OS v2.077 — autosaves every 30s.<br>17 agents · HERMES/OPENCLAW harnesses · simulated GPT 5.5 / OPUS 4.8 / FABLE 5 workloads.</p>';
     body.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       st.theme = b.dataset.t; GAME.applySettings(); SFX.click(); rerender('settings');
     }));
