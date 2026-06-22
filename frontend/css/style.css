@@ -22,6 +22,43 @@
   --ok: #69ff8e;              /* the "online / success" status green — tokenized so every surface themes through it */
   /* color grade applied to the station feed so the world sits inside the terminal */
   --cam-grade: saturate(0.8) sepia(0.12) hue-rotate(-5deg) contrast(1.08) brightness(0.9);
+
+  /* ============================================================
+     DESIGN SYSTEM SCALE — the one scale everything snaps to.
+     (type/letter/space/radius adopted from agent/design-system; the
+      colour roles stay at their richer trunk values on purpose.)
+       type   6 steps, floor 11px so VT323 stays crisp
+       space  4px base unit · radius one family
+     ============================================================ */
+  --fs-0: 11px;  --fs-1: 13px;  --fs-2: 15px;  --fs-3: 18px;  --fs-4: 24px;  --fs-5: 34px;
+  --ls-1: 0.5px; --ls-2: 1px;   --ls-3: 2px;   --ls-4: 4px;
+  --s-1: 4px;    --s-2: 8px;    --s-3: 12px;   --s-4: 16px;   --s-5: 24px;
+  --r-sm: 3px;   --r: 7px;      --r-lg: 11px;
+
+  /* ---- PREMIUM CRT SURFACE: the shared depth recipe (windows + panels) ----
+     A molded-bezel monitor, outside-in: outer phosphor ring → black casing
+     line → bloom → drop shadow → deep inner vignette → top edge highlight.
+     One light source (top-left) so every raised surface agrees. */
+  --bezel:
+    0 0 0 2px var(--ph),
+    0 0 0 3.5px rgba(0, 0, 0, 0.9),
+    0 0 22px var(--ph-glow2),
+    0 12px 34px rgba(0, 0, 0, 0.85),
+    inset 0 0 56px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 228, 180, 0.07);
+  /* recessed control well — values glow up out of a dark inset floor */
+  --well:
+    inset 0 2px 7px rgba(0, 0, 0, 0.92),
+    inset 0 0 0 1px var(--ph-dim),
+    inset 0 -1px 0 rgba(255, 228, 180, 0.05);
+  /* curved-glass overlay — corner vignette + top-left specular + faint glare */
+  --glass:
+    radial-gradient(ellipse 52% 32% at 25% 9%, rgba(255, 242, 214, 0.07), transparent 60%),
+    radial-gradient(ellipse 108% 96% at 50% 46%, transparent 60%, rgba(0, 0, 0, 0.52) 100%),
+    linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
+  /* raised tile — a card lifted off the window surface by the one top light:
+     thin top edge highlight + a soft contact shadow below. */
+  --raise: inset 0 1px 0 rgba(255, 228, 180, 0.07), 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 body.theme-amber {
   --ph: #ffaa33; --ph-bright: #ffd9a3; --ph-dim: #b9791c; --ph-faint: #1e1404;
@@ -63,10 +100,11 @@ body {
 }
 
 /* ====== CRT GLASS: scanlines + bezel vignette + slow roll band ====== */
-body::after { /* scanlines over EVERYTHING */
+body::after { /* scanlines + aperture-grille over EVERYTHING */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 950;
   background:
-    repeating-linear-gradient(0deg, rgba(0,0,0,0.26) 0 1px, transparent 1px 3px);
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.26) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(255,80,40,0.035) 0 1px, rgba(40,180,120,0.022) 1px 2px, rgba(60,120,255,0.035) 2px 3px);
 }
 body.no-scan::after { display: none; }
 body::before { /* curved-glass vignette + corner darkening */
@@ -101,21 +139,13 @@ body:not(.no-flicker) #app { animation: flick 7s infinite; }
   background:
     radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
     var(--panel);
-  box-shadow:
-    0 0 0 2px var(--ph),
-    0 0 0 3.5px rgba(0, 0, 0, 0.9),
-    0 0 22px var(--ph-glow2),
-    0 9px 28px rgba(0, 0, 0, 0.85),
-    inset 0 0 52px rgba(0, 0, 0, 0.85),
-    inset 0 1px 0 rgba(255, 228, 180, 0.07);
+  box-shadow: var(--bezel);
 }
-/* curved-glass vignette + diagonal glare on every panel */
+/* curved-glass: top-left specular + corner vignette + faint diagonal glare */
 #topbar::before, #left::before, #right::before, #bottombar::before, #center::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
   border-radius: inherit;
-  background:
-    radial-gradient(ellipse 108% 96% at 50% 45%, transparent 60%, rgba(0, 0, 0, 0.5) 100%),
-    linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
+  background: var(--glass);
 }
 
 /* panel header: glyph + title, gradient rule, dim auxiliary readout on the right */
@@ -151,15 +181,16 @@ b { font-weight: normal; color: var(--ph-bright); }
   display: flex; align-items: center; gap: 12px; flex-shrink: 0;
 }
 .logo-mark { font-size: 27px; color: var(--bad); text-shadow: 0 0 12px rgba(255,92,77,0.7); animation: pulse 2.8s infinite; }
-#logo-ascii {
-  font-family: inherit; font-size: 10px; line-height: 1.0; letter-spacing: 0;
-  color: var(--ph);
-  text-shadow: 0 0 12px var(--ph-glow), 0 0 2px var(--ph-glow);
+/* one confident wordmark in the chrome — the big ASCII logo lives on the
+   title screen where it has room to read (salvaged from agent/design-system) */
+.logo-word {
+  font-family: inherit; font-size: var(--fs-4); line-height: 1; letter-spacing: 6px;
+  color: var(--ph); text-shadow: 0 0 12px var(--ph-glow), 0 0 2px var(--ph-glow);
 }
 .logo-sub {
-  font-size: 10px; letter-spacing: 3px; color: var(--ph-dim); text-shadow: none;
-  white-space: nowrap; align-self: flex-end; padding-bottom: 5px;
-  border-top: 1px solid var(--ph-faint); margin-top: 3px; padding-top: 2px;
+  font-size: var(--fs-0); letter-spacing: var(--ls-3); color: var(--ph-dim); text-shadow: none;
+  white-space: nowrap; align-self: center;
+  border-left: 1px solid var(--ph-faint); margin-left: var(--s-1); padding-left: var(--s-3);
 }
 .tb-stats { display: flex; align-items: center; gap: 0; height: 100%; }
 .tb-stat {
@@ -355,32 +386,117 @@ body.no-scan .crt-scan { display: none; }
 #save-dot { color: var(--ph-faint); font-size: 13px; transition: color 0.3s; }
 #save-dot.flash { color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
 
-/* ================= TERMINAL WINDOWS (floating) ================= */
+/* ================= TERMINAL WINDOWS (floating) =================
+   The shared window shell. Every floating window (dossier, settings,
+   kanban, prop consoles…) is built from the same molded-CRT material as
+   the panels: bezel + recessed curved-glass overlay + a CRT power-on +
+   an inverted-chip header. Prop consoles (.pw) keep their own power-on
+   and amber-on-dark title; everything else inherits this verbatim. */
 #terms { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+/* focus scrim — dims & desaturates the station so the open window owns the eye.
+   Mounted under the lowest window (z 480 < the 501+ that zTop() hands out). */
+.term-scrim {
+  position: fixed; inset: 0; pointer-events: none; z-index: 480;
+  background: radial-gradient(ellipse 72% 66% at 50% 47%, rgba(0,0,0,0.30) 0%, rgba(0,0,0,0.62) 100%);
+  -webkit-backdrop-filter: saturate(0.72); backdrop-filter: saturate(0.72);
+  animation: scrim-in 0.22s ease-out;
+}
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
 .term {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -52%);
   width: 480px; max-width: 94vw; max-height: 82vh;
-  background: rgba(4, 2, 1, 0.97);
-  border: 2px solid var(--ph);
-  border-radius: 7px;
-  outline: 1px solid rgba(0,0,0,0.9); outline-offset: 2px;
-  box-shadow: 0 0 30px rgba(0,0,0,0.9), 0 0 16px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,0.6);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
+    rgba(5, 3, 1, 0.97);
+  box-shadow: var(--bezel);
   pointer-events: auto; display: flex; flex-direction: column; overflow: hidden;
+  transform-origin: center; animation: term-power 0.42s ease-out;
+}
+/* recessed curved-glass overlay sits over the screen content (not the header) */
+.term::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 6; background: var(--glass);
+}
+@keyframes term-power {
+  0%   { transform: translate(-50%, -52%) scale(1, 0.012); filter: brightness(6); }
+  9%   { transform: translate(-50%, -52%) scale(1, 0.04); }
+  46%  { transform: translate(-50%, -52%) scale(1.004, 1.03); filter: brightness(2.2); }
+  100% { transform: translate(-50%, -52%) scale(1, 1); filter: brightness(1); }
 }
 .term-head {
-  display: flex; justify-content: space-between; align-items: center;
-  background: rgba(0,0,0,0.45); color: var(--ph); padding: 3px 10px; cursor: grab; flex-shrink: 0;
-  border-bottom: 2px solid var(--ph); text-shadow: 0 0 6px var(--ph-glow2);
+  display: flex; justify-content: space-between; align-items: center; gap: var(--s-2);
+  background: linear-gradient(180deg, var(--ph-glow2), transparent);
+  color: var(--ph); padding: 5px 7px 5px 10px; cursor: grab; flex-shrink: 0;
+  position: relative; z-index: 7;
+  border-bottom: 1px solid var(--ph-dim); text-shadow: 0 0 6px var(--ph-glow2);
 }
-.term-title { color: var(--ph); letter-spacing: 3px; font-size: 16px; }
+.term-head:active { cursor: grabbing; }
+.term-title { color: var(--ph); letter-spacing: var(--ls-3); font-size: var(--fs-2); }
+/* inverted title chip on the main windows — ties them to the panel header
+   language; prop consoles keep amber-on-dark + their per-prop accent bullet */
+.term:not(.pw) .term-title {
+  color: var(--ink); background: var(--ph); padding: 1px 10px;
+  border-radius: var(--r-sm); box-shadow: 0 0 12px var(--ph-glow2); text-shadow: none;
+}
 .term-x {
-  background: none; border: 2px solid var(--ph); color: var(--ph);
-  font-family: inherit; cursor: pointer; font-size: 13px; padding: 0 6px; text-shadow: none;
+  background: rgba(0,0,0,0.35); border: 1px solid var(--ph-dim); color: var(--ph);
+  font-family: inherit; cursor: pointer; font-size: var(--fs-1); line-height: 1;
+  padding: 2px 7px; border-radius: var(--r-sm); text-shadow: none;
 }
-.term-x:hover { background: var(--ph-faint); color: var(--ph-bright); }
-.term-body { padding: 10px 12px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--ph) transparent; }
+.term-x:hover { background: var(--ph-faint); color: var(--ph-bright); border-color: var(--ph); }
+.term-body {
+  padding: var(--s-3) var(--s-4); overflow-y: auto; position: relative; z-index: 5;
+  scrollbar-width: thin; scrollbar-color: var(--ph) transparent;
+}
 .term-body::-webkit-scrollbar { width: 6px; }
 .term-body::-webkit-scrollbar-thumb { background: var(--ph); }
+
+/* ---- HERO "feature window": the full molded-monitor casing (opt-in) ----
+   Reserved for hero windows (the dossier). The casing is real plastic with
+   corner screws + a nameplate + control knobs; head+body live inside a
+   recessed glass screen. Built by toggleTerm({ feature: true }). */
+.term.feature {
+  padding: 13px 13px 24px; border-radius: 16px;
+  background:
+    radial-gradient(circle at 11px 11px, #2c1f0d 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 11px) 11px, #2c1f0d 0 2px, transparent 3px),
+    radial-gradient(circle at 11px calc(100% - 22px), #2c1f0d 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 11px) calc(100% - 22px), #2c1f0d 0 2px, transparent 3px),
+    linear-gradient(180deg, #0d0a05, #080502 62%, #050301);
+  box-shadow: var(--bezel), 0 0 70px var(--ph-glow2);
+}
+.term.feature::before { display: none; }   /* glass moves onto the inner screen */
+.term-screen {
+  position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+  border-radius: var(--r); overflow: hidden;
+  background:
+    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
+    rgba(5, 3, 1, 0.97);
+  box-shadow:
+    inset 0 0 0 1.5px var(--ph), inset 0 0 0 3px rgba(0, 0, 0, 0.92), inset 0 0 52px rgba(0, 0, 0, 0.9);
+}
+.term-screen::before {   /* recessed curved-glass over the screen */
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 6; background: var(--glass);
+}
+.term.feature .term-body { flex: 1 1 auto; min-height: 0; }
+/* nameplate strip in the bottom rim — brand + control knobs */
+.term-plate {
+  position: absolute; left: 14px; right: 14px; bottom: 5px; height: 16px;
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--fs-0); letter-spacing: var(--ls-3); color: var(--ph-dim);
+}
+.term-plate .term-knobs { margin-left: auto; display: inline-flex; gap: 9px; }
+.term-knobs .knob {
+  width: 13px; height: 13px; border-radius: 50%; position: relative;
+  background: radial-gradient(circle at 35% 30%, #1c1307, #080502 72%);
+  box-shadow: inset 0 0 0 1px rgba(255, 228, 180, 0.10), 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.term-knobs .knob::after {
+  content: ''; position: absolute; left: 50%; top: 2px; width: 2px; height: 4px;
+  transform: translateX(-50%); background: var(--ph); box-shadow: 0 0 4px var(--ph-glow2);
+}
 
 /* ================= AGENTS TERMINAL ================= */
 .ag-wrap { display: flex; gap: 10px; }
@@ -413,7 +529,7 @@ body.no-scan .crt-scan { display: none; }
 .ag-stats { display: flex; gap: 14px; margin: 8px 0 4px; font-size: 13px; color: var(--ph-dim); flex-wrap: wrap; }
 .ag-status { font-size: 14px; color: var(--ph); margin-top: 4px; }
 .ag-note { font-size: 12px; opacity: 0.55; margin-top: 6px; }
-.ag-task-block { border: 1px solid var(--ph-dim); padding: 6px 8px; margin: 8px 0 6px; background: var(--ph-faint); }
+.ag-task-block { border: 1px solid var(--ph-dim); padding: 6px 8px; margin: 8px 0 6px; background: var(--ph-faint); border-radius: var(--r-sm); box-shadow: var(--raise); }
 .ag-task-label { font-size: 11px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 4px; }
 .ag-task-title { font-size: 13px; color: var(--ph); line-height: 1.3; }
 .ag-task-pct { font-size: 11px; color: var(--ph-dim); margin-top: 2px; }
@@ -439,6 +555,7 @@ body.no-scan .crt-scan { display: none; }
 .cf {
   border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
   background: rgba(0,0,0,0.35); padding: 6px 9px; margin-bottom: 8px;
+  border-radius: var(--r-sm); box-shadow: var(--raise);
 }
 .cf.cf-on { border-left-color: var(--ph); box-shadow: 0 0 10px var(--ph-glow2); }
 .cf.cf-ro { border-left-color: var(--ph-faint); opacity: 0.92; }
@@ -482,6 +599,7 @@ body.no-scan .crt-scan { display: none; }
 .kb-card {
   border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim); background: rgba(0,0,0,0.35);
   padding: 4px 6px; margin-bottom: 5px; font-size: 13px;
+  border-radius: var(--r-sm); box-shadow: var(--raise);
 }
 .kb-card.failed { opacity: 0.4; text-decoration: line-through; }
 .kb-card.order { border-left-color: var(--gold); }
@@ -498,8 +616,8 @@ body.no-scan .crt-scan { display: none; }
 }
 .ms-h::after { content: ''; flex: 1; height: 2px; background: var(--ph-dim); }
 .perk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.perk { border: 1px solid var(--ph-faint); padding: 5px 4px; text-align: center; opacity: 0.34; }
-.perk.on { opacity: 1; border: 1px solid var(--ph-dim); box-shadow: inset 0 0 12px var(--ph-glow2); }
+.perk { border: 1px solid var(--ph-faint); padding: 5px 4px; text-align: center; opacity: 0.34; border-radius: var(--r-sm); box-shadow: var(--raise); }
+.perk.on { opacity: 1; border: 1px solid var(--ph-dim); box-shadow: var(--raise), inset 0 0 12px var(--ph-glow2); }
 .perk-icon { font-size: 22px; color: var(--gold); }
 .perk-name { font-size: 11px; color: var(--ph); letter-spacing: 0.5px; }
 .perk-desc { font-size: 10px; opacity: 0.7; }
@@ -512,7 +630,7 @@ body.no-scan .crt-scan { display: none; }
 
 /* ================= STATS ================= */
 .st-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.st-card { border: 1px solid var(--ph-dim); background: rgba(0,0,0,0.3); padding: 4px 6px; text-align: center; }
+.st-card { box-shadow: var(--well); background: linear-gradient(180deg, #0a0602, #050301); padding: var(--s-2) var(--s-2); text-align: center; border-radius: var(--r-sm); }
 .st-card i { display: block; font-style: normal; font-size: 11px; color: var(--ph-dim); letter-spacing: 1px; }
 .st-card b { font-size: 17px; }
 #st-chart { width: 100%; border: 1px solid var(--ph-dim); margin-top: 2px; }
@@ -526,7 +644,7 @@ body.no-scan .crt-scan { display: none; }
 /* ================= FEEDBACK ================= */
 .fb-empty { text-align: center; padding: 30px 16px; color: var(--ph); letter-spacing: 1px; }
 .fb-empty span { font-size: 13px; color: var(--text); opacity: 0.6; letter-spacing: 0; }
-.fb-item { border: 1px solid var(--ph-dim); border-left: 4px solid var(--warn); background: rgba(0,0,0,0.35); padding: 8px 10px; margin-bottom: 10px; }
+.fb-item { border: 1px solid var(--ph-dim); border-left: 4px solid var(--warn); background: rgba(0,0,0,0.35); padding: 8px 10px; margin-bottom: 10px; border-radius: var(--r-sm); box-shadow: var(--raise); }
 .fb-head { display: flex; gap: 8px; align-items: baseline; font-size: 15px; }
 .fb-kind { font-size: 11px; border: 1px solid var(--ph-faint); padding: 0 5px; color: var(--ph-dim); }
 .fb-title { font-size: 15px; color: var(--ph-bright); margin: 3px 0; }
@@ -779,7 +897,7 @@ body.no-scan .crt-scan { display: none; }
 /* narrow screens */
 @media (max-width: 1480px) {
   .logo-sub { display: none; }
-  #logo-ascii { font-size: 9px; }
+  .logo-word { font-size: var(--fs-3); letter-spacing: 4px; }
 }
 @media (max-width: 1100px) {
   #app { grid-template-columns: 184px 1fr 254px; }

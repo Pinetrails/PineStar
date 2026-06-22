@@ -34,10 +34,11 @@ const Chat = (() => {
   // Channels (channels.js) so streams are isolated and survive a switch — chat.js is the DOM view over it. The
   // one thing that can't live in the pure model is the live AbortController (not serializable), so it stays here.
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
-  let activeLiveRow = null;     // streaming DOM row for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
-  let pinnedReplyEl = null;     // THE PINNED REPLY: while a reply streams, its DOM row is held as the LAST log child so the
-                                // actual message sits at the bottom of COMMS; work lines (tool ▶/◀, deliverables, consent) slot
-                                // in ABOVE it instead of pushing it up out of view. Cleared the moment the reply finishes.
+  let activeLiveRow = null;     // streaming text controller for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
+                                // CLASSIC HARNESS FLOW: prose and the agent's actions (tool ▶/◀ lines, deliverables, approval
+                                // prompts) render CHRONOLOGICALLY — newest at the bottom — instead of pinning one reply block to
+                                // the bottom with work floating above it. streamingAgent() segments the prose so an action drops
+                                // in BETWEEN text blocks, exactly where it happened.
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
@@ -115,8 +116,7 @@ const Chat = (() => {
     who.textContent = role === 'user' ? 'COMMANDER' : name;
     const body = document.createElement('span'); body.className = 'body';
     d.appendChild(who); d.appendChild(body);
-    if (!(opts && opts.live) && pinnedReplyEl && pinnedReplyEl.parentNode === log) log.insertBefore(d, pinnedReplyEl);
-    else log.appendChild(d);
+    log.appendChild(d);   // CHRONOLOGICAL: every row lands at the bottom, in the order it happened (classic chat)
     autoscroll();
     return { d, body };
   }
@@ -322,7 +322,7 @@ const Chat = (() => {
     for (const m of h) {
       if (m.role === 'user') { addUser(m.content); continue; }
       if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
-      const r = row('agent'); r.d.classList.add('reply');   // past agent turns get the same framed-headline look as live ones
+      const r = row('agent');   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       r.body.textContent = m.content;
     }
@@ -333,7 +333,7 @@ const Chat = (() => {
   // the snapshot is empty and this is a no-op. (Live token re-binding for a stream switched-to MID-run lands
   // with the frontend-hud change that lifts the "can't switch while busy" guard — see the GATE handoff note.)
   function replayChannel() {
-    activeLiveRow = null; pinnedReplyEl = null;   // log was just cleared by load(); drop any stale pin before re-rendering
+    activeLiveRow = null;   // log was just cleared by load(); drop any stale live controller before re-rendering
     if (!activeWs || typeof Channels === 'undefined') return;
     const s = Channels.snapshot(activeWs.id);
     if (!s) return;
@@ -345,21 +345,31 @@ const Chat = (() => {
     if (s.pending) permissionRow(s.pending, activeWs);
   }
 
+  // A streaming turn's PROSE controller. The agent's text streams into an open paragraph row with a blinking
+  // caret; when an action happens (tool call/result, deliverable, approval) the caller breaks the current
+  // paragraph so the action row lands BELOW it, and the next tokens open a fresh paragraph under the action —
+  // so a turn reads top-to-bottom as "said this → did that → said this", classic-harness style.
   function streamingAgent() {
-    const r = row('agent', { live: true });   // the reply row pins to the bottom; work lines stack above it
-    pinnedReplyEl = r.d;
-    // bare name + blinking caret = "agent is composing"; the framed .reply headline is added on the FIRST real
-    // token, so a tool-only turn never leaves an empty framed box at the bottom of COMMS.
-    const caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
-    r.d.appendChild(caret);
-    const unpin = () => { if (pinnedReplyEl === r.d) pinnedReplyEl = null; };   // reply finished — later rows append at the very bottom again
+    let seg = null, caret = null;   // seg: the currently-open agent text row; null ⇒ next token opens a new one
+    function open() {
+      seg = row('agent');
+      caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
+      seg.d.appendChild(caret);
+    }
+    function closeSeg() {   // drop the caret, discard an empty stub, and arm the next token to start fresh
+      if (caret) { caret.remove(); caret = null; }
+      if (seg && !seg.body.textContent.trim()) seg.d.remove();
+      seg = null;
+    }
     return {
-      el: r.d,
-      append(t) { r.body.textContent += t; if (r.body.textContent && !r.d.classList.contains('reply')) r.d.classList.add('reply'); autoscroll(); },
-      done() { caret.remove(); unpin(); if (!r.body.textContent.trim()) r.d.remove(); },   // collapse a no-prose stub
-      error(m) { r.d.classList.add('reply', 'err'); r.body.textContent = '⚠ ' + m; caret.remove(); unpin(); }
+      append(t) { if (!t) return; if (!seg) open(); seg.body.textContent += t; autoscroll(); },
+      breakSeg() { closeSeg(); },   // an inline action is about to render below — end this paragraph
+      done() { closeSeg(); },
+      error(m) { if (!seg) open(); seg.d.classList.add('err'); seg.body.textContent += (seg.body.textContent ? '\n' : '') + '⚠ ' + m; if (caret) { caret.remove(); caret = null; } seg = null; }
     };
   }
+  // close the live paragraph (if any) so the action about to render lands BELOW the prose, in order
+  function breakLive() { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); }
 
   // task-vs-chat classification lives in app/classify.js (pure + unit-tested); see Classify.isTaskDirective.
 
@@ -468,17 +478,17 @@ const Chat = (() => {
         onRunId: id => { Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) toolLine(t); if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
-        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) toolLine(t, ev.isError); },
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
+        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) { breakLive(); toolLine(t, ev.isError); } },
         onDeliverable: ev => {
           if (ev.kind === 'file' && !seenDeliv[ev.title]) {
-            seenDeliv[ev.title] = true; if (isActiveWs(ws)) deliverableLine(ev.title, ev.agentId);
+            seenDeliv[ev.title] = true; if (isActiveWs(ws)) { breakLive(); deliverableLine(ev.title, ev.agentId); }
             // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock
             if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: ev.kind, runId: Channels.runIdOf(ws.id), t: Date.now() });
             if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold');
           }
         },
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); if (isActiveWs(ws)) permissionRow(ev, ws); }
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } }
       });
       if (error) {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }
@@ -488,10 +498,9 @@ const Chat = (() => {
         const replyText = reply || acc;
         finalReply = replyText;
         if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText });   // never persist an empty turn
-        // the stop-reason is part of the WORK log → render it ABOVE the message (while the reply is still
-        // pinned), THEN unpin via done(). done() also collapses the reply row if the turn produced no prose.
+        // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done') {
-          if (isActiveWs(ws)) toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
+          if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? 'reached this run\'s cost limit'
             : endReason === 'cancelled' ? 'run cancelled'
             : 'stopped (' + endReason + ')'));

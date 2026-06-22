@@ -9,7 +9,8 @@
 #screen-game.active {
   display: grid;
   grid-template-rows: 64px 1fr 44px;
-  grid-template-columns: 232px 1fr 360px;
+  /* COMMS width is a live var so the user can drag the stage/COMMS divider (chatresize.js) */
+  grid-template-columns: 232px 1fr var(--chat-w, 360px);
   grid-template-areas: "top top top" "left center chat" "bot bot bot";
   padding: 11px; gap: 9px;
 }
@@ -36,7 +37,7 @@
 input[type=text], input[type=password], input:not([type]) {
   width: 100%; font-family: inherit; font-size: 19px; color: var(--ph-bright);
   background: #000; border: 2px solid var(--ph-dim); padding: 7px 10px; outline: none;
-  text-shadow: 0 0 5px var(--ph-glow2);
+  text-shadow: 0 0 5px var(--ph-glow2); box-shadow: inset 0 2px 5px rgba(0,0,0,.65);
 }
 input:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
 input::placeholder { color: var(--ph-dim); opacity: .7; }
@@ -56,9 +57,8 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .panel {
   position: relative; background:
     radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%), var(--panel);
-  border: 1px solid rgba(0,0,0,.85); border-radius: 9px;
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2),
-    0 9px 28px rgba(0,0,0,.85), inset 0 0 52px rgba(0,0,0,.85);
+  border: 1px solid rgba(0,0,0,.85); border-radius: var(--r-lg);
+  box-shadow: var(--bezel);
   padding: 20px 22px;
 }
 .panel h2 { color: var(--ink); background: var(--ph); display: inline-block; padding: 2px 12px; margin-bottom: 12px; letter-spacing: 2px; }
@@ -144,7 +144,7 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 }
 #chat-panel h3 .dim { color: var(--ink); opacity: .7; font-size: 14px; }
 #chat-panel h3::after { display: none; }   /* the global engraved-rule ::after doesn't belong on the solid amber COMMS header */
-#chat-log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+#chat-log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 3px; }
 /* COMMS scrollbar — scoped to #chat-log so it cleanly beats the global .scrolly rules on both engines */
 #chat-log { scrollbar-color: var(--ph-dim) transparent; }
 #chat-log::-webkit-scrollbar { width: 8px; }
@@ -152,37 +152,55 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 #chat-log::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 4px; }
 #chat-log::-webkit-scrollbar-thumb:hover { background: var(--ph); }
 
-.cmsg { font-size: 17px; line-height: 1.25; min-width: 0; }   /* min-width:0 lets a flex item shrink so long tokens wrap instead of stretching the column */
-.cmsg .who { font-size: 13px; letter-spacing: 1px; color: var(--ph-dim); display: block; margin-bottom: 2px; }
-/* the Commander's turn: a light gold-right counterpart to the agent's green-left reply, so the exchange reads as two parties */
-.cmsg.user { align-self: flex-end; max-width: 88%; padding: 6px 10px; border-radius: 5px; border-right: 2px solid var(--gold); background: rgba(255, 211, 74, .06); }
-.cmsg.user .who { color: var(--gold); }
-.cmsg.user .body { color: var(--ph-bright); }
+/* ===== COMMS as a CONVERSATION (not a stack of boxes) =====
+   De-boxed + grouped by speaker: consecutive turns from the same speaker collapse under ONE
+   name header (the repeated label is hidden), tied together by a thin side rail — agent on the
+   left, Commander on the right. The LIVE reply stays the lit headline pinned at the bottom; past
+   turns render as plain grouped messages (chat.js renderHistory no longer tags them .reply).
+   No per-message timestamps — the stored history carries none, and we don't fabricate them. */
+.cmsg { font-size: 16px; line-height: 1.4; min-width: 0; max-width: 100%; }   /* min-width:0 lets long tokens wrap instead of stretching the column */
+.cmsg .who { font-size: 12px; letter-spacing: 1.5px; color: var(--ph-dim); display: block; margin: 9px 0 3px; text-transform: uppercase; font-weight: bold; }
+.cmsg .body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+
+/* the agent: a left rail + phosphor name */
+.cmsg.agent { align-self: stretch; border-left: 2px solid var(--ph-faint); padding-left: 11px; }
 .cmsg.agent .who { color: var(--ph); }
 .cmsg.agent .body { color: var(--text); }
 .cmsg.agent.err .body { color: var(--bad); }
-.cmsg .body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+
+/* the Commander: right-aligned with a gold right rail — a party opposite the agent, no heavy box */
+.cmsg.user { align-self: flex-end; max-width: 86%; text-align: left; border-right: 2px solid var(--gold); padding-right: 11px; }
+.cmsg.user .who { color: var(--gold); text-align: right; }
+.cmsg.user .body { color: var(--ph-bright); }
+
+/* GROUPING — hide the repeated name when the SAME speaker continues; add air on a speaker change */
+.cmsg.agent + .cmsg.agent .who,
+.cmsg.user + .cmsg.user .who { display: none; }
+.cmsg.user + .cmsg.agent, .cmsg.agent + .cmsg.user { margin-top: 8px; }
+
 .cmsg .caret { display: inline-block; width: .5em; margin-left: 1px; color: var(--ph); text-shadow: 0 0 6px var(--ph-glow); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* THE REPLY: the agent's actual message. It is pinned to the BOTTOM of COMMS (see chat.js row/streamingAgent)
-   and styled as the lit headline — a framed glass block with phosphor bloom — so the thing the agent is saying
-   reads clearly and is never buried above the dim step-by-step tool log. */
+/* THE LIVE REPLY: the agent's in-progress / latest answer, pinned to the BOTTOM and lit as the
+   headline so it never hides under the dim tool log. It always shows its name (overriding the
+   group-collapse) and keeps the framed glass bloom. Past turns stay plain — the hierarchy reads
+   "this is the answer right now". */
 .cmsg.agent.reply {
-  padding: 9px 12px; border-radius: 5px;
-  background: linear-gradient(180deg, var(--ph-faint), rgba(0,0,0,.25));
+  padding: 9px 12px 9px 11px; border-radius: 0 5px 5px 0; margin-top: 4px;
+  background: linear-gradient(180deg, var(--ph-faint), rgba(0,0,0,.22));
   border-left: 3px solid var(--ph);
   box-shadow: inset 0 1px 0 rgba(255,228,180,.07), 0 0 14px var(--ph-glow2);
 }
-.cmsg.agent.reply .who { color: var(--ph-bright); text-shadow: 0 0 4px var(--ph-glow); }
+.cmsg.agent.reply .who { display: block !important; color: var(--ph-bright); text-shadow: 0 0 4px var(--ph-glow); }
 .cmsg.agent.reply .body { color: var(--ph-bright); text-shadow: 0 0 6px var(--ph-glow); }
 .cmsg.agent.reply.err { border-left-color: var(--bad); }
 
 /* first-run / empty stream: a single dim hint instead of a blank void */
 .cmsg-empty { color: var(--ph-dim); font-size: 14px; line-height: 1.5; text-align: center; padding: 18px 10px; opacity: .85; }
 
-/* tool-activity lines: the agent's real work, shown step by step */
-.cmsg.tool { font-size: 14px; }
+/* tool-activity lines: the agent's actions, interleaved with its prose (classic harness flow).
+   Dim subordinate micro-lines that read as "what it's doing" between what it's saying. */
+.cmsg.tool { font-size: 13.5px; padding-left: 11px; }
 .cmsg.tool .who { display: none; }
 .cmsg.tool .body { color: var(--ph-dim); letter-spacing: 0.3px; }
 .cmsg.tool.err .body { color: var(--bad); }
@@ -190,7 +208,9 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .deliverable-link { color: var(--gold); text-decoration: underline; cursor: pointer; }
 .deliverable-link:hover { color: var(--ph-bright); }
 
-/* live consent prompt: the agent is paused waiting for the Commander to approve an action */
+/* live consent prompt — the agent paused for approval, INLINE in the flow where it happened (this
+   replaced the always-on top APPROVALS panel). A clear gold frame so it reads as "act on me now". */
+.cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(255,211,74,.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }
 .cmsg.consent .body { color: var(--ph-bright); }
 .consent-btns { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .consent-btn {
@@ -354,8 +374,28 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 #topbar { grid-area: top; }
 #left { grid-area: left; }
 #stage-wrap { grid-area: center; }
-#chat-panel { grid-area: chat; }
+#chat-panel { grid-area: chat; position: relative; }
 #bottombar { grid-area: bot; }
+
+/* ---------- COMMS / stage divider: drag left to widen COMMS (chatresize.js) ----------
+   A thin handle living in the 9px grid gap on the COMMS panel's left edge. Invisible until
+   hovered/dragged, then a phosphor grip lights up so it reads as a real control. */
+.col-resizer {
+  position: absolute; top: 0; bottom: 0; left: -10px; width: 12px; z-index: 25;
+  cursor: col-resize; display: flex; align-items: center; justify-content: center;
+  touch-action: none;
+}
+.col-resizer-grip {
+  width: 2px; height: 46px; border-radius: 2px; background: var(--ph-dim); opacity: 0;
+  transition: opacity .12s, background .12s, box-shadow .12s;
+}
+.col-resizer:hover .col-resizer-grip,
+body.col-resizing .col-resizer-grip {
+  opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
+}
+/* while dragging: column-resize cursor everywhere + no text selection + canvas ignores the pointer */
+body.col-resizing { cursor: col-resize; user-select: none; }
+body.col-resizing #stage { pointer-events: none; }
 
 /* the v7 screen-flicker animation targets #app (which this app doesn't
    have) — re-point it at the live station so the SETTINGS toggle works */
@@ -462,10 +502,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .prov-card, .key-row {
   display: flex; align-items: center; gap: 10px;
   border: 1px solid var(--ph-dim); background: rgba(0, 0, 0, 0.3); padding: 7px 10px;
+  border-radius: var(--r-sm); box-shadow: var(--raise);
 }
 .prov-card.soon { opacity: 0.45; border-color: var(--ph-faint); }          /* not-yet-shipped: fully locked */
 .prov-card.avail { opacity: 0.8; border-color: var(--ph-dim); }            /* live but keyless: actionable, not locked */
-.prov-card.conn { box-shadow: inset 0 0 12px var(--ph-glow2); }
+.prov-card.conn { box-shadow: var(--raise), inset 0 0 12px var(--ph-glow2); }
 .conn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ph-dim); flex: none; }
 .prov-card.conn .conn-dot, .key-row .conn-dot { background: var(--ok); box-shadow: 0 0 8px rgba(105, 255, 142, 0.7); }
 .prov-main, .key-main { flex: 1; min-width: 0; }
@@ -562,10 +603,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   gap: 6px; margin: 10px 0 8px;
 }
 .stat-cell {
-  background: var(--ph-faint); border: 1px solid var(--ph-dim);
-  padding: 8px 6px; text-align: center;
+  background: linear-gradient(180deg, #0a0602, #050301); box-shadow: var(--well);
+  padding: var(--s-3) var(--s-2); text-align: center; border-radius: var(--r-sm);
 }
-.stat-val { font-size: 22px; color: var(--ph-bright); letter-spacing: 1px; line-height: 1; }
+.stat-val { font-size: var(--fs-4); color: var(--ph-bright); letter-spacing: 1px; line-height: 1; text-shadow: 0 0 12px var(--ph-glow2); }
 .stat-val.pos { color: var(--gold); }
 .stat-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-top: 4px; }
 
@@ -672,7 +713,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* responsive: keep the three columns usable on smaller windows */
 @media (max-width: 1120px) {
-  #screen-game.active { grid-template-columns: 200px 1fr 300px; }
+  #screen-game.active { grid-template-columns: 200px 1fr var(--chat-w, 300px); }
 }
 
 /* ============================================================
@@ -844,7 +885,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* ---------- CONNECTORS panel (MCP) ---------- */
 .mc-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }
-.mc-row { border: 1px solid var(--ph-dim); border-radius: 6px; padding: 8px 10px; background: rgba(0,0,0,.35); }
+.mc-row { border: 1px solid var(--ph-dim); border-radius: var(--r-sm); padding: 8px 10px; background: rgba(0,0,0,.35); box-shadow: var(--raise); }
 .mc-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .mc-top b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
 .mc-state { margin-left: auto; font-size: 13px; white-space: nowrap; }

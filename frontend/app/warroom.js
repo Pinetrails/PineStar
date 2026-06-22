@@ -149,10 +149,12 @@
 
   /* ---------------- boot + tick ---------------- */
   function boot() {
-    buildReactor(); buildHotspot(); buildCinema();
+    // NOTE: the old top APPROVALS hotspot is gone — approvals now render INLINE at the bottom of COMMS
+    // (chat.js permissionRow), classic-harness style, in the conversation flow where the agent paused.
+    buildReactor(); buildCinema();
     tick(); setInterval(tick, 300);
   }
-  function tick() { try { tickReactor(); tickHotspot(); tickCrew(); } catch (_) {} }
+  function tick() { try { tickReactor(); tickCrew(); } catch (_) {} }
   if (document.readyState !== 'loading') boot();
   else document.addEventListener('DOMContentLoaded', boot);
 })();
