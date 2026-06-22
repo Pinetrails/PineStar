@@ -370,9 +370,13 @@ const Build = (() => {
 
   /* ---------- BAY agent-picker (Phase B4c): bind a docking bay to an agent — work that reaches it runs as
      that agent. Sourced from the app's agent list (opts.agents()) when present, plus a free-text agent id. */
+  // is this prop a COMPUTER (PC)? — sourced from the station's CAP_PROP_MAP so the type list never drifts.
+  const isPcProp = t => !!(station && typeof station.capForProp === 'function' && station.capForProp(t) === 'computer');
   function openBayPicker(bayId, ev) {
     if (!root || root.querySelector('.refit-bay-picker')) return;
-    const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
+    const p = station.propById(bayId); if (!p || !(p.t === 'bay' || isPcProp(p.t))) return;
+    const isPc = isPcProp(p.t);
+    const noun = isPc ? 'PC' : 'bay';
     const cur = p.agentId || '';
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
@@ -380,9 +384,10 @@ const Build = (() => {
     g.className = 'refit-guide refit-bay-picker';
     g.innerHTML = `
       <div class="refit-guide-card">
-        <h3>▮ ASSIGN AGENT TO BAY</h3>
-        <ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li>
-        <li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>
+        <h3>▮ ASSIGN AGENT TO ${isPc ? 'PC' : 'BAY'}</h3>
+        ${isPc
+          ? '<ul><li>This computer becomes the chosen agent\'s <b>dedicated PC</b> — its compute.</li><li><b>Every agent needs its own PC</b>; roommates can share one room, not one computer.</li></ul>'
+          : '<ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li><li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>'}
         ${agents.length ? '<div class="refit-bay-agents" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">' + rows + '</div>' : ''}
         <input id="bay-aid" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}"
           style="width:100%;box-sizing:border-box;margin:6px 0;padding:5px 7px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;border-radius:3px" />
@@ -398,10 +403,10 @@ const Build = (() => {
     g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
     g.querySelector('#bay-ok').onclick = () => {
       const res = station.assignPropAgent(bayId, input.value.trim());
-      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('bay → ' + res.agentId) : 'bay unbound', true); closeP(); }
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP(); }
       else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
     };
-    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, 'bay unbound', true); closeP(); };
+    g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, noun + ' unbound', true); closeP(); };
     g.querySelector('#bay-cancel').onclick = closeP;
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
     try { input.focus(); input.select(); } catch (_) {}
@@ -703,11 +708,12 @@ const Build = (() => {
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
-  const openPropEditor = (id, t, ev) => { if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
+  const openPropEditor = (id, t, ev) => { if (t === 'bay' || isPcProp(t)) openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
   const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1 };
+  const isEditableProp = t => !!PROP_EDITABLE[t] || isPcProp(t);   // a PC binds an agent too (its dedicated compute)
   function commitPropStamp(d, ev) {
     // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
-    if (PROP_EDITABLE[propType] && !d.moved) {
+    if (isEditableProp(propType) && !d.moved) {
       const exist = station.propAt(d.cur.tx, d.cur.ty);
       const ep = exist && station.propById(exist);
       if (ep && ep.t === propType) { openPropEditor(exist, ep.t, ev); return; }
@@ -718,7 +724,7 @@ const Build = (() => {
     const res = station.addProp(placement);
     if (res && res.ok) {
       pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
-      if (PROP_EDITABLE[propType] && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
+      if (isEditableProp(propType) && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
     }
     feedback(res, ev, 'placed ' + propType);
   }
@@ -891,6 +897,7 @@ const Build = (() => {
     drawFlashes(now, t);
     drawRoutingValidation(t, now);   // red/amber markers on any unroutable junction/bay (cost-safety)
     drawHover(t);
+    drawAgentTag(t);   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
     drawGhost(t, now);
     // animate the prop-palette preview gallery (~25fps is plenty + cheap). Runs LAST: it hijacks PropSprites'
     // ctx for the offscreen tiles, and the next frame re-points it at the main canvas in drawProps().
@@ -1011,6 +1018,25 @@ const Build = (() => {
       if (live && live.connectorId) continue;
       mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'UNBOUND');
     }
+  }
+
+  // hovering an agent-bound endpoint (a PC = compute, a BAY = routing) floats the bound agent's name above it —
+  // so a SHARED room (several agents, several PCs) stays legible without one-room-per-agent. An unbound PC reads
+  // amber "unassigned" to invite binding. (Belts/conveyors gain the same tag in Phase 2b once they carry agentId.)
+  function drawAgentTag(t) {
+    if (drag || !hoverPropId) return;
+    const p = station.propById(hoverPropId);
+    if (!p) return;
+    const isPc = isPcProp(p.t), isBay = p.t === 'bay';
+    if (!isPc && !isBay) return;
+    const bound = !!p.agentId;
+    const txt = (isPc ? 'PC · ' : 'BAY · ') + (bound ? String(p.agentId).replace(/^tg_/, '') : 'unassigned');
+    ctx.font = (8 / zoom) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const cx = (p.x + (p.w || 1) / 2) * t, topY = p.y * t - 2 / zoom;
+    const pad = 5 / zoom, bw = ctx.measureText(txt).width + pad * 2, bh = 11 / zoom;
+    ctx.fillStyle = 'rgba(8,16,12,0.92)'; ctx.fillRect(cx - bw / 2, topY - bh, bw, bh);
+    ctx.fillStyle = bound ? 'rgba(125,240,200,0.96)' : 'rgba(255,190,60,0.96)';
+    ctx.fillText(txt, cx, topY - 2 / zoom);
   }
 
   function drawHover(t) {

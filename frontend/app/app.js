@@ -218,7 +218,7 @@ const App = (() => {
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' summoned — give it a task', 'good');
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' summoned — type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).', 'good');
     return a;
   }
   // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).

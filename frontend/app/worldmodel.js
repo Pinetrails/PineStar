@@ -680,15 +680,27 @@ const WorldModel = (() => {
     }
     // Phase B5: the capability objectTypes (CAP_REGISTRY) granted by the cap-props sharing the agent's BAY room —
     // exactly what the sidecar feeds resolveTools, so each bay's tools are what you placed in its room. Deduped.
+    // PER-AGENT PC (the true rule): COMPUTE is granted by a computer prop DEDICATED to this agent — one BOUND to
+    // it (agentId match), or (back-compat) an UNBOUND computer when the room holds a single bound bay. So a SHARED
+    // room (3-4 agents passing work) demands a distinct PC per agent, while a solo room still runs unbound. Every
+    // OTHER cap (cabinet/dish/notebook/connector) stays room-based — a shared room's files/web/memory are shared.
     function bayObjects(agentId) {
       const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
       const room = bay ? roomAt(bay.x, bay.y) : null;
       if (!room) return [];
+      const boundBays = doc.props.filter(p => p.t === 'bay' && p.agentId && roomAt(p.x, p.y) === room).length;
+      const soloRoom = boundBays <= 1;   // one bay in the room -> an unbound PC is unambiguously this agent's
       const seen = {}, out = [];
       for (const p of doc.props) {
         const cap = CAP_PROP_MAP[p.t];
         if (!cap) continue;
         if (roomAt(p.x, p.y) !== room) continue;
+        if (cap === 'computer') {
+          if (!(p.agentId === agentId || (!p.agentId && soloRoom))) continue;   // not THIS agent's dedicated PC
+          if (seen.computer) continue;
+          seen.computer = true; out.push('computer');
+          continue;
+        }
         if (cap === 'connector') {
           // per-instance, NOT deduped: each BOUND connector portal grants its OWN server's tools. The sidecar
           // reads { objectType, connectorId } (router.stationFor passes the object through; resolveTools yields
@@ -720,6 +732,7 @@ const WorldModel = (() => {
       setBelt, removeBelt, placeBeltRun,
       // agent-bay binding queries
       propsByType, propsByAgent, agentRoomId, bayObjects,
+      capForProp: t => CAP_PROP_MAP[t] || null,   // a prop type's capability objectType (single source for the UI)
       undo, redo, canUndo, canRedo,
       // projection + io
       projectGeometry, serialize, onChange,
