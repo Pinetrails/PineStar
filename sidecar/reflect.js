@@ -22,13 +22,17 @@
   const MIN_REFLECT_CHARS = 200;  // skip reflection on trivial exchanges (one cheap call still costs)
   const LINE = /^\s*[-*•]?\s*(FACT|SKILL|PREFERENCE|PROFILE|NOTE)\s*[:\-—]\s*(.+?)\s*$/i;
 
+  // strip a recall fence the model may have echoed, so a forged <recalled-memory> block can't be reflected
+  // into a durable memory (mirrors context.stripRecallFence — kept inline so reflect stays standalone).
+  const RECALL_FENCE = /<recalled-memory>[\s\S]*?<\/recalled-memory>|<\/?recalled-memory>/gi;
+
   // the reflection prompt: the recent user/assistant exchange (system + tool turns stripped), tail-capped.
   function buildPrompt(messages, cap) {
     cap = cap || PROMPT_CAP;
     const turns = [];
     for (const msg of (Array.isArray(messages) ? messages : [])) {
       if (!msg || (msg.role !== 'user' && msg.role !== 'assistant')) continue;
-      const c = typeof msg.content === 'string' ? msg.content : '';
+      const c = typeof msg.content === 'string' ? msg.content.replace(RECALL_FENCE, '') : '';
       if (c) turns.push((msg.role === 'user' ? 'USER: ' : 'AGENT: ') + c);
     }
     let body = turns.join('\n');
@@ -52,6 +56,23 @@
 
   const textOf = r => (r && (r.content != null ? r.content : ((r.title || '') + ' ' + (r.body || '')))) || '';
 
+  // near-duplicate guard (Hermes-parity Jaccard; mirrors memcore.tokenJaccard, inlined so reflect stays standalone):
+  // exact-text dedup misses PARAPHRASES ("prefers npm start" vs "Andrew prefers running npm start"), which would
+  // re-surface a belief the user already kept and clutter the turn-in beat. Drop a candidate >= SIM_THRESHOLD-similar.
+  const SIM_THRESHOLD = 0.6;
+  const SIM_STOP = new Set(('a an the of to in on for and or but is are was were be been it its this that with as at by from your you i we they').split(/\s+/));
+  function simTokens(s) {
+    const set = new Set();
+    for (const t of String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/)) if (t.length >= 3 && !SIM_STOP.has(t)) set.add(t);
+    return set;
+  }
+  function jaccard(a, b) {
+    const A = simTokens(a), B = simTokens(b);
+    if (!A.size || !B.size) return 0;
+    let inter = 0; for (const t of A) if (B.has(t)) inter++;
+    return inter / (A.size + B.size - inter);
+  }
+
   // reflect(run, {propose, clock, redact, existing, max}) -> { proposals[], prompt }
   // run: { agentId, runId, messages }.  proposals: { id, kind, content, scope, streamId, sourceRunId, createdAt }.
   async function reflect(run, opts) {
@@ -67,15 +88,19 @@
     try { raw = await propose(prompt); } catch (_) { return { proposals: [], prompt: prompt }; }   // a failed reflection never hurts the run
 
     const seen = {};
-    for (const r of (Array.isArray(opts.existing) ? opts.existing : [])) seen[textOf(r).trim().toLowerCase()] = 1;
+    const priorTexts = [];   // existing beliefs + already-accepted proposals, for near-dupe (paraphrase) rejection
+    for (const r of (Array.isArray(opts.existing) ? opts.existing : [])) { const t = textOf(r).trim(); seen[t.toLowerCase()] = 1; if (t) priorTexts.push(t); }
     const now = clock.now();
     const proposals = [];
     for (const cand of parse(raw)) {
       let content = redact(String(cand.content)).trim();
       if (content.length > MAX_CONTENT) content = content.slice(0, MAX_CONTENT - 1) + '…';
       const key = content.toLowerCase();
-      if (!content || seen[key]) continue;        // drop empties + dupes (vs existing AND earlier proposals)
-      seen[key] = 1;
+      if (!content || seen[key]) continue;        // drop empties + EXACT dupes (vs existing AND earlier proposals)
+      let near = false;                           // drop PARAPHRASE dupes (Jaccard) vs the same set
+      for (const pt of priorTexts) { if (jaccard(pt, content) >= SIM_THRESHOLD) { near = true; break; } }
+      if (near) continue;
+      seen[key] = 1; priorTexts.push(content);
       proposals.push({
         id: 'prop_' + (proposals.length + 1), kind: cand.kind, content: content,
         scope: 'global', streamId: null, sourceRunId: run.runId || null, createdAt: now
