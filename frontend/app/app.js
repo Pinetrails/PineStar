@@ -257,9 +257,19 @@ const App = (() => {
     try {
       if (!agent) return;
       const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const body = {
+        agentId: (ws && ws.agentId) || 'agent',
+        system: agent.systemPrompt || '',
+        agentName: agent.name || '',
+        model: (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '',
+        provider
+      };
+      const key = (typeof Harness !== 'undefined' && Harness.getKey) ? Harness.getKey() : '';
+      if (key) body.key = key;
       fetch('/api/channels/telegram/sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: (ws && ws.agentId) || 'agent', system: agent.systemPrompt || '', agentName: agent.name || '' })
+        body: JSON.stringify(body)
       }).catch(() => {});
     } catch (_) {}
   }
@@ -275,7 +285,8 @@ const App = (() => {
   }
   function pushRoster() {
     try {
-      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', role: rosterRole(a) }));
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider, role: rosterRole(a) }));
       fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
     } catch (_) {}
   }

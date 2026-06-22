@@ -21,6 +21,7 @@ const StationUI = (() => {
   let crewLiveWired = false;         // the crew-status live listener is registered exactly once
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
+  let routineAgentId = 'agent'; // selected roster agent for new scheduled routines
   let tickTimer = 0;
   const open = {};           // key -> open terminal-window element
   let started = false;
@@ -942,14 +943,14 @@ const StationUI = (() => {
 
   /* ============== MESSAGING — connect a Telegram bot so the Commander can DM the agent ==============
      The bot token comes from Telegram's @BotFather; the agent answers DMs using this app's current
-     OpenRouter key + model (handed to the sidecar on connect and persisted there for headless polling). */
+     provider + model (OpenRouter key or ChatGPT sign-in, persisted there for headless polling). */
   function buildMessaging(body) {
     body.innerHTML =
       '<h4 class="ms-h">TELEGRAM</h4>' +
       '<div id="tg-status" class="set-row">checking…</div>' +
       '<p class="set-about">DM your agent from Telegram. ' +
         '<b>1.</b> In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → copy the token it gives you. ' +
-        '<b>2.</b> Paste it below and connect. Your agent answers DMs using this app\'s current OpenRouter key + model, ' +
+        '<b>2.</b> Paste it below and connect. Your agent answers DMs using this app\'s current provider + model, ' +
         'with its own memory + workspace per chat. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span></p>' +
       '<label class="ms-h" for="tg-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
       '<input id="tg-token" type="password" class="key-input" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">' +
@@ -986,9 +987,12 @@ const StationUI = (() => {
       const token = (body.querySelector('#tg-token').value || '').trim();
       // a saved token can be reused (reconnect) — only require a fresh token on first-time setup.
       if (!token && !configured) { sfx('bad'); msgEl.textContent = 'paste your @BotFather token first'; return; }
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const usingCodex = provider === 'codex' || provider === 'openai-codex';
       const key = (typeof Harness !== 'undefined' && Harness.getKey()) || '';
+      const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
       const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
-      if (!key || !model) { sfx('bad'); msgEl.textContent = 'connect your agent (API key + model) on the title screen first'; return; }
+      if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); msgEl.textContent = 'connect your agent (provider + model) on the title screen first'; return; }
       // hand the sidecar the REAL agent identity so Telegram is the SAME agent: the agentId the app uses for runs
       // (shared notebook/memory/workspace) + the composed system prompt (identity.md/purpose.md/manual.md).
       const ag = present[0] || {};
@@ -998,7 +1002,7 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       msgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, agentId, system, agentName }) });
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }
@@ -1180,20 +1184,38 @@ const StationUI = (() => {
     return d >= 0 ? ('in ' + span) : (span + ' ago');
   }
   function buildRoutines(body) {
+    const roster = present.length ? present : [{ id: 'agent', name: 'Agent', color: 'var(--ph)' }];
+    const hasSelected = roster.some(a => a && a.id === routineAgentId);
+    if (!hasSelected) routineAgentId = (present[sel] && present[sel].id) || (roster[0] && roster[0].id) || 'agent';
+    function agentFor(id) { return roster.find(a => a && a.id === id) || null; }
+    function agentLabel(id) {
+      const a = agentFor(id);
+      if (!a) return id || 'agent';
+      const nm = a.name || a.id;
+      return nm === a.id ? nm : (nm + ' [' + a.id + ']');
+    }
+    function agentButton(a) {
+      const id = (a && a.id) || 'agent';
+      const nm = (a && (a.name || a.id)) || id;
+      const active = id === routineAgentId;
+      return '<button type="button" class="rt-agent-btn' + (active ? ' active' : '') + '" data-agent="' + esc(id) + '" aria-pressed="' + (active ? 'true' : 'false') + '" style="--rt-agent-color:' + esc((a && a.color) || 'var(--ph)') + '">' +
+        '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(nm) + '</span><span class="rt-agent-id">' + esc(id) + '</span></button>';
+    }
     body.innerHTML =
       '<h4 class="ms-h">SCHEDULED ROUTINES</h4>' +
       '<p class="set-about">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
         'With no one watching, ungranted file writes are denied silently unless you have pre-approved them. ' +
-        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
+        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
       '<div id="rt-gate" class="set-about"></div>' +
       '<div id="rt-list" class="mc-list">loading…</div>' +
       '<h4 class="ms-h">ADD A ROUTINE</h4>' +
       '<div class="mc-form">' +
         '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
         '<textarea id="rt-prompt" class="key-input" rows="2" placeholder="what should it do each run? e.g. search for new AI-policy news and summarize the top 3" style="resize:vertical"></textarea>' +
-        '<input id="rt-sched" class="key-input" placeholder="schedule — every 30m · in 2h · 2026-07-01T09:00" autocomplete="off">' +
+        '<input id="rt-sched" class="key-input" placeholder="schedule — every 30m · 0 9 * * * · in 2h" autocomplete="off">' +
         '<div id="rt-preview" class="dim" style="min-height:1em;font-size:.9em"></div>' +
-        '<input id="rt-agent" class="key-input" placeholder="agent id (optional — default: agent)" maxlength="40" autocomplete="off">' +
+        '<div class="rt-agent-pick" role="group" aria-label="Routine agent">' + roster.map(agentButton).join('') + '</div>' +
+        '<input id="rt-agent" type="hidden" value="' + esc(routineAgentId) + '">' +
         '<button class="bb sm" id="rt-add">+ ADD ROUTINE</button>' +
       '</div>' +
       '<div id="rt-msg" class="msg"></div>' +
@@ -1214,7 +1236,7 @@ const StationUI = (() => {
       const next = on && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
       return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '">' +
         '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + '</div>' +
-        '<div class="mc-url dim">runs as ' + esc(j.agentId || 'agent') + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
+        '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-act="run">▶ RUN NOW</button>' +
@@ -1249,6 +1271,18 @@ const StationUI = (() => {
         } catch (_) {}
       }, 300);
     });
+
+    body.querySelectorAll('.rt-agent-btn').forEach(btn => btn.addEventListener('click', () => {
+      routineAgentId = btn.dataset.agent || 'agent';
+      const input = body.querySelector('#rt-agent');
+      if (input) input.value = routineAgentId;
+      body.querySelectorAll('.rt-agent-btn').forEach(b => {
+        const on = b.dataset.agent === routineAgentId;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      sfx('click');
+    }));
 
     // row actions: run-now (stream + show the reply), toggle enable/disable, delete (two-step arm/confirm).
     listEl.addEventListener('click', async ev => {
@@ -1289,14 +1323,15 @@ const StationUI = (() => {
       const prompt = (body.querySelector('#rt-prompt').value || '').trim();
       const schedule = (body.querySelector('#rt-sched').value || '').trim();
       const agentId = (body.querySelector('#rt-agent').value || '').trim();
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
       if (!prompt || !schedule) { sfx('bad'); msgEl.textContent = 'a prompt and a schedule are required'; return; }
       msgEl.textContent = 'saving…';
       try {
-        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined })).json();
+        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider })).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
         else {
-          msgEl.textContent = ''; notify('routine "' + (name || 'unnamed') + '" scheduled', 'good'); sfx('click');
-          ['#rt-name', '#rt-prompt', '#rt-sched', '#rt-agent'].forEach(s => { body.querySelector(s).value = ''; });
+          msgEl.textContent = ''; notify('routine "' + (name || 'unnamed') + '" scheduled for ' + agentLabel(agentId || 'agent'), 'good'); sfx('click');
+          ['#rt-name', '#rt-prompt', '#rt-sched'].forEach(s => { body.querySelector(s).value = ''; });
           pvEl.textContent = '';
         }
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'failed to reach the sidecar') + '</span>'; sfx('bad'); }
@@ -1582,6 +1617,7 @@ const StationUI = (() => {
     if (sel >= present.length) sel = 0;
     crewRender();
     if (open.agents) rerender('agents');
+    if (open.routines) rerender('routines');
   }
 
   /* ============== ARCADE CABINET ==============

@@ -43,6 +43,15 @@ const iso = cron._internals.iso;
   A.eq(jobs[0].nextRunAt, iso(T0 + 2 * HOUR), 'one-shot arms at its runAt');
 }
 
+// ---- 2b. createJob: a cron job is recurring and arms at its next matching minute ----
+{
+  const base = Date.parse('2026-06-19T08:58:00Z');
+  const sched = cron.parseSchedule('0 9 * * *', base);
+  const jobs = store.createJob([], { id: 'cron1', schedule: sched }, { now: base });
+  A.eq(jobs[0].repeat.times, null, 'cron -> forever by default');
+  A.eq(jobs[0].nextRunAt, iso(Date.parse('2026-06-19T09:00:00Z')), 'cron arms at its next matching time');
+}
+
 // ---- 3. createJob: invalid + duplicate ids are rejected; disabled spec -> paused ----
 {
   A.throws(() => store.createJob([], { id: 'bad id!', schedule: null }, { now: T0 }), 'invalid id rejected');

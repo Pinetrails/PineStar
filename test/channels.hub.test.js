@@ -69,6 +69,26 @@ async function run() {
     A.eq(store.hist.has('tg_555'), false, 'did NOT create a separate tg_<chatId> agent');
   }
 
+  // ---- B3. Codex OAuth config: no API key is required, but provider must reach runOnce ----
+  {
+    const store = fakeStore(); let lastRun = null; const sends = [];
+    const runOnce = async (o) => {
+      lastRun = o;
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'codex-ok' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ provider: 'codex', model: 'gpt-5.3-codex', agentId: 'agent' }),
+      classify: () => false, newId: idGen()
+    });
+    await hub.onInbound(dm('hi'));
+    A.eq(sends, ['codex-ok'], 'Codex Telegram config runs without an API key');
+    A.eq(lastRun.provider, 'codex', 'provider=codex passed into runOnce');
+    A.eq(lastRun.key, '', 'Codex run does not receive an API key placeholder');
+  }
+
   // ---- C. error / capdenied surfaced; assistant turn NOT persisted on error ----
   {
     const store = fakeStore(); const sends = [];
