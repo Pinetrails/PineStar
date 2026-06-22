@@ -1590,9 +1590,11 @@ const World = (() => {
         // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
         const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work) });
-        // a placed workstation is the hero's desk with another name: give it the same chair, in front, y-sorted
-        // exactly like the hero's (one row below the desk) so its assigned agent reads as sitting IN it.
-        if (isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => F_chair(s.tx * T, s.ty * T) }); }
+        // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
+        // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
+        // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
+        // appears where an agent will actually sit (chair + sitter stay in lockstep — see stepCrewToSeat).
+        if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => F_chair(s.tx * T, s.ty * T) }); }
       }
     }
     if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
@@ -2135,7 +2137,7 @@ const World = (() => {
     if (!to || to === agent) return;
     const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
     if (phase === 'done') { to.working = false; to.workUntil = 0; to.dir = 'south'; return; }
-    to.working = true; to.sitting = false; to.dir = 'north';
+    to.working = true; to.sitting = false; to.dir = 'north'; to.target = null; to.pathPts = null;   // re-path straight to its desk if it has one (stepCrew), else stand
     to.workUntil = now + 3600000; if (!to.wakeAt || now - to.wakeAt > 1500) to.wakeAt = now;
     sayAt(to, 'on it…');
     const from = bodyForAgent(fromId) || agent;
