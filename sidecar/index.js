@@ -613,6 +613,16 @@ const cronDriver = makeCronDriver({
   hasCredential: (provider, key) => cronHasCredential(provider, key),
   defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
   identityForAgent: (agentId) => cronIdentityFor(agentId),
+  // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
+  // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
+  // crate arrives at the agent's bay and (with the run-lifecycle binding in world.js) the agent goes to work.
+  // The agentId is the job's (server-authoritative), so the box lands on exactly the agent the run executes as.
+  placeWorkitem: (agentId, prompt, runId) => {
+    try {
+      const preview = String(prompt || '').replace(/\s+/g, ' ').slice(0, 40);
+      chanEmit('workitem.placed', { workitemId: crypto.randomUUID(), queueId: agentId, agentId, kind: 'cron', preview, queueDepth: 0, ts: Date.now() });
+    } catch (_) {}
+  },
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
   persona: (agentId) => cronSystemFor(agentId)
