@@ -290,5 +290,45 @@ function chatFixture() {
     A.eq(seq.filter(e => e.name === 'agent.compact').length, 0, 'no agent.compact without a context manager');
   }
 
+  // ---- todo re-injection: a compaction re-appends the active task plan so a long run keeps its list ----
+  {
+    const { seq, emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const fixture = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'final' }, { type: 'usage', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const provider = makeReplayProvider(fixture);
+    const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
+    const messages = [{ role: 'user', content: 'do it' }];
+    let injectCalls = 0;
+    const todoNote = () => { injectCalls++; return '[Your active task list was preserved across context compaction]\n- [>] 1. keep building (in_progress)'; };
+    const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize: async () => 'SUMMARY', todoNote });
+    A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'compaction happened');
+    A.ok(injectCalls >= 1, 'todoNote was consulted during the compaction');
+    A.ok(messages.some(m => m.role === 'system' && m.content.indexOf('keep building') >= 0), 'the active task plan was re-appended after the compaction');
+    A.eq(res.reason, 'done', 'the run completes with the plan re-injected');
+  }
+
+  // ---- no todoNote -> compaction is unchanged (existing callers byte-identical) ----
+  {
+    const { seq, emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const fixture = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'final' }, { type: 'usage', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const provider = makeReplayProvider(fixture);
+    const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
+    const messages = [{ role: 'user', content: 'do it' }];
+    await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize: async () => 'SUMMARY' });
+    A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'compaction still happens without todoNote');
+    A.ok(!messages.some(m => m.role === 'system' && /task list was preserved/.test(m.content)), 'no plan injected when todoNote is absent');
+  }
+
   A.report('loop.replay.test');
 })();

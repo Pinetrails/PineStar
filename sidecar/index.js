@@ -23,6 +23,7 @@ const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
+const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
 const { makeSpotifyTools } = require('./tools/builtin/spotify.js');       // JUKEBOX: control/query the user's Spotify
 const { makeSpotifyStore } = require('./spotify/store.js');               // Spotify OAuth (PKCE) token store + auto-refresh
@@ -1404,8 +1405,9 @@ async function runOnce(o) {
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order
+  Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   // STUDIO (media skills): image_generate / image_analyze ride the SAME BYOK OpenRouter key + key the run uses.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   makeImageTools({ openrouter: { apiKey: key, model }, fsp, pathMod: path, root: WORKSPACES }).register(registry);
@@ -1649,6 +1651,7 @@ async function runOnce(o) {
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
       limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
       budget: runBudget, context: ctxMgr, summarize,
+      todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
       // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the

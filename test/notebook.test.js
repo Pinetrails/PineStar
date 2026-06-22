@@ -279,5 +279,65 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.eq(res.reason, 'done', 'loop recovers and finishes');
   }
 
+  // ---- todo tool (same NOTEBOOK/memory capability): read/write/merge/dedupe/bounds + injection ----
+  {
+    const { makeTodoTool, formatForInjection, _internals } = require('../sidecar/tools/builtin/todo.js');
+    const store = memStore();
+    const { todoTool } = makeTodoTool({ store });
+    const ctx = { agentId: 'ag' };
+
+    const e = await todoTool.run({}, ctx);
+    A.ok(/empty/.test(e.content) && e.summary === '0 tasks', 'empty list reads clean');
+
+    const w = await todoTool.run({ todos: [
+      { id: '1', content: 'design', status: 'completed' },
+      { id: '2', content: 'build', status: 'in_progress' },
+      { id: '3', content: 'test', status: 'pending' }
+    ] }, ctx);
+    A.ok(/\[x\] 1\. design/.test(w.content) && /\[>\] 2\. build/.test(w.content) && /\[ \] 3\. test/.test(w.content), 'render uses status markers');
+    A.ok(/3 tasks: 1 pending, 1 in progress, 1 done/.test(w.summary), 'summary counts by status');
+    A.eq((store.get('todo:ag') || []).length, 3, 'persisted to the per-agent key');
+
+    const r = await todoTool.run({}, ctx);
+    A.ok(/\[>\] 2\. build/.test(r.content), 'read returns the stored list');
+
+    const m = await todoTool.run({ merge: true, todos: [
+      { id: '2', content: 'build', status: 'completed' },   // update status only
+      { id: '4', content: 'ship', status: 'pending' }        // new -> appended
+    ] }, ctx);
+    A.ok(/\[x\] 2\. build/.test(m.content), 'merge updates an existing item by id');
+    A.ok(/\[ \] 4\. ship/.test(m.content), 'merge appends a new item');
+    A.ok(/\[ \] 3\. test/.test(m.content), 'merge leaves untouched items alone');
+    A.eq((store.get('todo:ag') || []).length, 4, 'merge did not drop items');
+
+    const rep = await todoTool.run({ todos: [{ id: 'a', content: 'fresh', status: 'pending' }] }, ctx);
+    A.eq((store.get('todo:ag') || []).length, 1, 'merge=false replaces the whole list');
+    A.ok(/\[ \] a\. fresh/.test(rep.content), 'replaced with the fresh plan');
+
+    // dedupe by id (keep last), invalid status -> pending, blank content -> placeholder
+    const d = _internals.writeList(store, 'z', [
+      { id: 'x', content: 'first', status: 'pending' },
+      { id: 'x', content: 'second', status: 'bogus' },
+      { id: 'y', content: '', status: 'pending' }
+    ], false);
+    A.eq(d.length, 2, 'duplicate ids collapse to one');
+    A.eq(d[0], { id: 'x', content: 'second', status: 'pending' }, 'last dup wins; invalid status -> pending');
+    A.eq(d[1].content, '(no description)', 'blank content -> placeholder');
+
+    const big = _internals.writeList(store, 'z2', [{ id: '1', content: 'q'.repeat(5000), status: 'pending' }], false);
+    A.ok(big[0].content.length <= 4000 && /truncated/.test(big[0].content), 'oversized content is capped');
+
+    // formatForInjection: only pending/in_progress survive a compaction
+    store.set('todo:inj', [
+      { id: '1', content: 'done thing', status: 'completed' },
+      { id: '2', content: 'active thing', status: 'in_progress' },
+      { id: '3', content: 'todo thing', status: 'pending' }
+    ]);
+    const inj = formatForInjection(store, 'inj');
+    A.ok(/preserved across context compaction/.test(inj), 'injection has the handoff header');
+    A.ok(/active thing/.test(inj) && /todo thing/.test(inj) && inj.indexOf('done thing') < 0, 'only pending/in_progress items are re-injected');
+    A.eq(formatForInjection(store, 'nobody'), null, 'no active items -> null (nothing injected)');
+  }
+
   A.report('notebook.test');
 })();

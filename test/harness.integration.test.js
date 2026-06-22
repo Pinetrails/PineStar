@@ -21,6 +21,7 @@ const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeWebTools } = require('../sidecar/tools/builtin/web.js');
 const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
 const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
+const { makeTodoTool } = require('../sidecar/tools/builtin/todo.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
@@ -72,6 +73,7 @@ const fixture = {
   makeWebTools({ fetchImpl: cannedFetch, lookup: null }).register(registry);
   makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
   makeNotebookTools({ store: new Map(), clock: { now: () => 0 } }).register(registry);
+  makeTodoTool({ store: new Map() }).register(registry);
 
   const station = { agents: { agent: { id: 'agent', room: 'office' } }, rooms: { office: { id: 'office', objects: [
     { instanceId: 'pc1', objectType: 'computer' }, { instanceId: 'd1', objectType: 'dish' },
@@ -86,7 +88,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['web_search', 'web_fetch', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'notebook.read', 'notebook.write'];
+  const EXPECTED = ['web_search', 'web_fetch', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'notebook.read', 'notebook.write', 'todo'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 
