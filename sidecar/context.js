@@ -141,6 +141,17 @@
     return out;
   }
 
+  // Output-side fence scrub (Hermes-parity: their StreamingContextScrubber strips the recall fence from the
+  // MODEL's output so it can't forge one). A `<recalled-memory>…</recalled-memory>` block (and a stray opener/
+  // closer) is something only WE emit on the prompt boundary — if the model echoes one (prompt-injection, an
+  // adversarial paste), scrubbing it before the text is persisted/reflected stops a forged fence laundering
+  // into durable memory and then being re-recalled as authentic. Pure, idempotent; leaves ordinary prose alone.
+  const RECALL_FENCE_BLOCK = /<recalled-memory>[\s\S]*?<\/recalled-memory>/gi;
+  const RECALL_FENCE_TAG = /<\/?recalled-memory>/gi;
+  function stripRecallFence(text) {
+    return String(text == null ? '' : text).replace(RECALL_FENCE_BLOCK, '').replace(RECALL_FENCE_TAG, '');
+  }
+
   // Inject a recall fence as a system note immediately before the newest user message. Pure: returns a NEW
   // array, never mutates input. Blank recall → messages.slice() (byte-identical to a memoryless run).
   function injectRecall(messages, recallText) {
@@ -174,7 +185,8 @@
     const now = typeof rankOpts.now === 'number' ? rankOpts.now : 0;
     const streamId = rankOpts.streamId || null;   // M-mem.2b: the active workstream — same-stream working memory gets a recall boost
     const k = rankOpts.k || 8;
-    const halfLife = rankOpts.halfLifeMs || 6048e5;   // 7 days
+    const halfLife = rankOpts.halfLifeMs || 6048e5;   // 7 days (usage recency)
+    const trustHalfLife = rankOpts.trustHalfLifeMs || 2592e6;   // 30 days (endorsement fade — mirrors memcore.TRUST_HALFLIFE_MS)
     const K1 = 1.2;
     const recs = Array.isArray(records) ? records.filter(Boolean) : [];
     if (!recs.length) return [];
@@ -193,7 +205,12 @@
       }
       const age = Math.max(0, now - (r.lastUsedAt || r.createdAt || r.ts || 0));
       const recency = Math.pow(0.5, age / halfLife);        // 1 at age 0 → halves each half-life
-      const trust = Math.max(0, Math.min(1, Number(r.trust) || 0));
+      // time-decayed trust: an endorsement fades toward 0 the longer a belief goes un-reinforced (mirrors
+      // memcore.decayTrust — keep in sync). Measured from the last memory.feedback, else creation. Recall stays
+      // truthful: a belief the user hasn't reaffirmed in months no longer rides an old "keep" to the top.
+      const rawTrust = Math.max(0, Math.min(1, Number(r.trust) || 0));
+      const tAge = Math.max(0, now - (r.lastFeedbackAt || r.createdAt || r.ts || 0));
+      const trust = rawTrust > 0 ? rawTrust * Math.pow(0.5, tAge / trustHalfLife) : 0;
       // M-mem.2b: same-stream working memory floats up; global records always compete; OTHER streams stay
       // searchable (no boost, not filtered) — "global always-on, workstream-scoped, cross-stream searchable".
       const sameStream = (streamId && r.scope === 'stream' && r.streamId === streamId) ? 0.5 : 0;
@@ -285,5 +302,5 @@
     return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, redact, contextLimit, keepTail };
   }
 
-  return { makeContext, redact, renderRecall, injectRecall, rank, flagInjection };
+  return { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence };
 });

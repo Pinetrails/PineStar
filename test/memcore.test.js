@@ -5,7 +5,7 @@
    and mirrors content into body for the legacy readers; projectRecord surfaces the full §5.2 shape. */
 'use strict';
 const A = require('./_assert.js');
-const { nextTrust, nextNoteId, reduceStats, applyPin, applyEdit, applyForget, projectRecord, TRUST_STEP, clamp01 } = require('../sidecar/memcore.js');
+const { nextTrust, nextNoteId, reduceStats, applyPin, applyEdit, applyForget, projectRecord, TRUST_STEP, TRUST_HALFLIFE_MS, clamp01, decayTrust, tokenJaccard, findSimilar } = require('../sidecar/memcore.js');
 
 const base = () => [
   { id: 'note_1', kind: 'note', title: 'API base', body: 'openrouter.ai/api/v1', useCount: 0, trust: 0, lastUsedAt: null, createdAt: 1000, ts: 1000, sourceRunId: 'run_a', pinned: false },
@@ -103,5 +103,38 @@ A.eq(usedDup[1].useCount, 0, 'the second duplicate is left untouched');
 A.eq(applyForget(dup(), 'note_3').records.length, 1, 'forget removes only ONE of a duplicate pair (never both)');
 A.eq(applyPin(dup(), 'note_3', true).records.filter(r => r.pinned).length, 1, 'pin sets only the first of a duplicate pair');
 A.eq(applyEdit(dup(), 'note_3', 'x').records.filter(r => r.content === 'x').length, 1, 'edit changes only the first of a duplicate pair');
+
+// ---- decayTrust: an unreinforced endorsement fades toward 0 (Hermes-parity trust decay) ----
+A.ok(decayTrust(0.8, 1000, 1000) === 0.8, 'no time elapsed -> trust unchanged');
+A.ok(Math.abs(decayTrust(0.8, 1000, 1000 + TRUST_HALFLIFE_MS) - 0.4) < 1e-9, 'one half-life halves the trust');
+A.ok(Math.abs(decayTrust(0.8, 1000, 1000 + 2 * TRUST_HALFLIFE_MS) - 0.2) < 1e-9, 'two half-lives quarter the trust');
+A.eq(decayTrust(0, 1000, 9e15), 0, 'zero trust stays zero (nothing to fade)');
+A.eq(decayTrust(0.5, 0, 9e15), 0.5, 'unknown reinforcement time -> no decay (returns raw)');
+A.eq(decayTrust(0.5, 2000, 1000), 0.5, 'a future reinforcement time -> no decay');
+A.ok(decayTrust(0.8, 1000, 1000 + TRUST_HALFLIFE_MS, 2 * TRUST_HALFLIFE_MS) > 0.4, 'a longer custom half-life fades slower');
+
+// ---- reduceStats: memory.feedback stamps the reinforcement clock (lastFeedbackAt) ----
+const fbStamp = reduceStats(base(), { name: 'memory.feedback', payload: { id: 'note_2', delta: 2 } }, { now: 7777 });
+A.eq(fbStamp[1].lastFeedbackAt, 7777, 'memory.feedback stamps lastFeedbackAt from the injected clock');
+A.eq(reduceStats(base(), { name: 'memory.used', payload: { id: 'note_1' } }, { now: 7777 })[0].lastFeedbackAt, undefined, 'memory.used does NOT stamp the feedback clock (usage != endorsement)');
+
+// ---- tokenJaccard + findSimilar: near-duplicate (paraphrase) detection ----
+A.eq(tokenJaccard('', 'anything'), 0, 'empty side -> 0 similarity');
+A.eq(tokenJaccard('the and of', 'to in on'), 0, 'pure stopwords -> 0 (no real tokens)');
+A.ok(tokenJaccard('Andrew prefers npm start', 'Andrew prefers running npm start') > 0.6, 'a paraphrase scores high');
+A.ok(tokenJaccard('deploys with npm publish', 'the sky is blue today') < 0.2, 'unrelated text scores low');
+const simSet = [{ id: 'n1', content: 'Andrew prefers npm start over serve' }];
+A.ok(findSimilar(simSet, 'prefers running npm start over serve') !== null, 'findSimilar flags a paraphrase of an existing belief');
+A.eq(findSimilar(simSet, 'the reactor gauge reads cost'), null, 'findSimilar passes an unrelated belief');
+A.eq(findSimilar([], 'anything'), null, 'findSimilar on an empty store -> null');
+A.eq(findSimilar(simSet, 'npm', { threshold: 0.01 }), simSet[0], 'a low threshold catches a single shared token');
+
+// ---- projectRecord(now): surfaces effectiveTrust (time-decayed) + lastFeedbackAt ----
+const decayRec = { id: 'd1', kind: 'note', body: 'x', trust: 0.8, lastFeedbackAt: 1000, createdAt: 1000 };
+const projNow = projectRecord(decayRec, 1000 + TRUST_HALFLIFE_MS);
+A.eq(projNow.trust, 0.8, 'projection keeps the raw EARNED trust');
+A.ok(Math.abs(projNow.effectiveTrust - 0.4) < 1e-9, 'projection surfaces the time-decayed effectiveTrust');
+A.eq(projNow.lastFeedbackAt, 1000, 'projection surfaces lastFeedbackAt');
+A.eq(projectRecord(decayRec).effectiveTrust, undefined, 'no now -> no effectiveTrust (back-compat: callers/tests without a clock)');
 
 A.report('memcore.test');

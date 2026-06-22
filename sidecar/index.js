@@ -2173,7 +2173,8 @@ function serveMemoryRecords(req, res) {
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
     const raw = notebookStore.get('notebook:' + agent);
-    const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r))) : [];
+    const nowMs = Date.now();   // surface effectiveTrust (time-decayed) so the panel shows earned-vs-current trust
+    const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r, nowMs))) : [];
     json(200, { agentId: agent, records });
   } catch (e) { json(200, { records: [] }); }
 }
