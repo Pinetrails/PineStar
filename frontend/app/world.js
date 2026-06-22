@@ -695,12 +695,46 @@ const World = (() => {
     }
     b.idleUntil = now + 1200;   // boxed in this frame — try again shortly
   }
+  /* a working crew body walks to the chair in front of its assigned desk and sits facing it — the hero's exact
+     desk pose, generalised to crew: foot on the front tile, dir north, sitting (the chair sprite y-sorts behind
+     so it reads as sitting IN the chair). Returns once seated; until then it advances along a path to the seat. */
+  function stepCrewToSeat(b, s, dt, now) {
+    const foot = footOf(s.tx, s.ty);
+    if (Math.hypot(foot.x - b.px, foot.y - b.py) < 1.1) {   // arrived → sit at the desk
+      b.px = foot.x; b.py = foot.y; b.pathPts = null; b.target = null; b.state = 'idle'; b.sitting = true; b.dir = 'north';
+      return;
+    }
+    if (!b.target) {   // plot a fresh path to the chair tile
+      const cur = tileOf(b.px, b.py);
+      const p = geo.path(cur.x, cur.y, s.tx, s.ty, blocked);
+      if (p && p.length) { b.pathPts = p; b.pathIdx = 0; crewNextWaypoint(b); }
+      else { b.px = foot.x; b.py = foot.y; b.sitting = true; b.dir = 'north'; b.state = 'idle'; return; }   // unreachable → snap into the seat
+    }
+    if (b.target) {
+      const dx = b.target.x - b.px, dy = b.target.y - b.py, d = Math.hypot(dx, dy);
+      if (d < 1.1) {
+        b.px = b.target.x; b.py = b.target.y;
+        if (b.pathPts && b.pathIdx < b.pathPts.length) crewNextWaypoint(b); else b.target = null;
+      } else {
+        const sp = Math.min(d, 28 * dt / 1000);
+        b.px += dx / d * sp; b.py += dy / d * sp; b.state = 'walk'; b.sitting = false;
+        b.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+      }
+    }
+  }
   function stepCrew(dt, now) {
     if (!geo || !crew.length) return;
     const SPEED = 28;   // a calm background pace, a touch under the hero
     for (const b of crew) {
-      if (!b.summoned || b.unplaced) continue;   // summoned workers roam; a bay-bound body stays where work is delivered
-      if (b.working) { b.pathPts = null; b.target = null; b.state = 'idle'; continue; }   // running → stand + work where it is
+      if (b.unplaced) continue;
+      if (b.working) {                                 // running → sit at its desk if it has one, else stand where work is delivered
+        const dp = deskPropFor(b.agentId), s = dp ? deskSeat(dp) : null;
+        if (s) stepCrewToSeat(b, s, dt, now);
+        else { b.pathPts = null; b.target = null; b.state = 'idle'; b.sitting = false; }
+        continue;
+      }
+      b.sitting = false;                               // not working → never seated
+      if (!b.summoned) continue;                       // summoned workers roam; a bay-bound body stays where work is delivered
       if (b.target) {
         const dx = b.target.x - b.px, dy = b.target.y - b.py, d = Math.hypot(dx, dy);
         if (d < 1.1) {
@@ -732,6 +766,26 @@ const World = (() => {
   // multi-agent factory floors legible: agents never wander to another agent's (or an unclaimed) workstation.
   function isOwnableProp(t) { return !!(station && typeof station.capForProp === 'function' && station.capForProp(t)) || t === 'bay'; }
   function mayTouchProp(agentId, p) { return !p || !isOwnableProp(p.t) || p.agentId === agentId; }
+
+  /* ---------- placed workstations = clones of the hero's desk+chair ----------
+     A placed PC (any computer-capability prop) is a real workstation: it gets a chair attached in front and
+     its ASSIGNED agent walks over and sits in it to work — the exact desk behaviour the hero has at its
+     preinstalled desk, just bound to another agent. These three helpers + stepCrewToSeat (below) are the whole
+     of that promise; rendering draws F_chair at deskSeat() so the chair lines up with where the body sits. */
+  function isWorkstationProp(t) { return !!(station && typeof station.capForProp === 'function' && station.capForProp(t) === 'computer'); }
+  // the placed workstation bound to this agent, or null (first match — one PC per agent is the rule)
+  function deskPropFor(aid) {
+    if (!geo || !geo.props || !aid) return null;
+    for (const p of geo.props) if (p.agentId === aid && isWorkstationProp(p.t)) return p;
+    return null;
+  }
+  // the chair tile in front of a workstation: the south-front approach tile (PropAnchor falls back to other
+  // sides if the front is walled), facing INTO the desk — mirrors the hero's seat one row below its desk.
+  function deskSeat(prop) {
+    if (typeof PropAnchor === 'undefined' || !geo || !prop) return null;
+    const a = PropAnchor.deriveAnchor(prop, geo, { approach: 'south', sit: true, extra: blocked });
+    return a ? { tx: a.tx, ty: a.ty, face: a.face } : null;
+  }
 
   /* free this agent's claimed seat (idempotent) and drop the on-couch render offset */
   function releaseSeat() {
@@ -1536,6 +1590,9 @@ const World = (() => {
         // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
         const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work) });
+        // a placed workstation is the hero's desk with another name: give it the same chair, in front, y-sorted
+        // exactly like the hero's (one row below the desk) so its assigned agent reads as sitting IN it.
+        if (isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => F_chair(s.tx * T, s.ty * T) }); }
       }
     }
     if (desk) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });
@@ -2063,7 +2120,8 @@ const World = (() => {
     const b = crew.find(x => x.agentId === agentId);
     if (!b) return;                                                       // not yet spawned (e.g. summon mid-flight) — nothing to animate
     const working = (kind === 'task' || kind === 'thinking');
-    b.working = working; b.sitting = false; b.dir = working ? 'north' : 'south';   // stand (no desk/chair); face away = "at work"
+    b.working = working; b.sitting = false; b.dir = working ? 'north' : 'south';   // face away = "at work"; stepCrew seats it at its desk if it has one, else it stands here
+    if (working) { b.target = null; b.pathPts = null; }   // drop any in-flight stroll so stepCrew re-paths straight to the chair
     const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
