@@ -221,6 +221,24 @@
     return scored.slice(0, k).map(s => s.r);
   }
 
+  // on_pre_compress parity (Hermes injects relevant memory into the compaction summary so insights survive
+  // when old turns are discarded). PURE helper the host calls right before summarizing the foldable slice:
+  // ranks the agent's durable memory against the recent conversation text and renders a compact block to
+  // PREPEND to the summarizer's input — so a summary can never silently drop "user prefers X". Returns '' when
+  // there is nothing to preserve (caller prepends nothing → byte-identical to a memoryless compaction). `now`
+  // injected (deterministic). Reuses rank + renderRecall so the selection matches live recall exactly.
+  function compactionMemoryBlock(records, recentText, opts) {
+    opts = opts || {};
+    const now = typeof opts.now === 'number' ? opts.now : 0;
+    const ranked = rank(records, recentText || '', { now: now, k: opts.k || 5, streamId: opts.streamId || null });
+    if (!ranked.length) return '';
+    const rr = renderRecall(ranked, {
+      limit: opts.limit || 800,
+      header: '[durable memory — preserve any of these still-relevant facts in the summary below]'
+    });
+    return rr.text || '';
+  }
+
   function makeContext(opts) {
     opts = opts || {};
     const contextLimit = opts.contextLimit || 0;       // 0 = unknown (never auto-compact)
@@ -302,5 +320,5 @@
     return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, redact, contextLimit, keepTail };
   }
 
-  return { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence };
+  return { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock };
 });

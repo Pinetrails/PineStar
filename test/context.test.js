@@ -1,7 +1,7 @@
 /* node test/context.test.js — pure context-transform tests (zero IO). */
 'use strict';
 const A = require('./_assert.js');
-const { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence } = require('../sidecar/context.js');
+const { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock } = require('../sidecar/context.js');
 
 const ctx = makeContext({ contextLimit: 1000, compactAt: 0.65, keepTail: 2 });
 const m = (role, content) => ({ role, content });
@@ -264,5 +264,17 @@ A.eq(stripRecallFence(''), '', 'empty in -> empty out');
 A.eq(stripRecallFence(null), '', 'null tolerated');
 A.ok(stripRecallFence(renderRecall([{ id: 'r', title: 't', body: 'real recall' }], {}).text).indexOf('recalled-memory') === -1,
      'scrubbing our own genuine recall fence leaves no fence tag behind (idempotent vs the real producer)');
+
+// ---- compactionMemoryBlock: durable memory survives a context compaction (Hermes on_pre_compress parity) ----
+const memRecs = [
+  { id: 'm1', kind: 'profile', content: 'user prefers terse replies', createdAt: 1000, trust: 0 },
+  { id: 'm2', kind: 'note', title: 'db', body: 'nightly postgres dump to s3', createdAt: 1000, trust: 0 }
+];
+const block = compactionMemoryBlock(memRecs, 'remind me how the user likes replies', { now: 1000 });
+A.ok(block.indexOf('user prefers terse replies') >= 0, 'compaction block surfaces the query-relevant belief to preserve');
+A.ok(block.indexOf('preserve') >= 0, 'compaction block is labeled so the summarizer keeps the facts');
+A.eq(compactionMemoryBlock([], 'anything', { now: 0 }), '', 'no records -> empty block (caller prepends nothing, byte-identical compaction)');
+A.ok(compactionMemoryBlock(memRecs, 'zzz totally unrelated', { now: 1000 }).length > 0, 'with no query overlap it still preserves top memory (recency floor) rather than dropping everything');
+A.eq(JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), 'deterministic for the same inputs + now');
 
 A.report('context.test');

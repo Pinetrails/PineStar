@@ -27,6 +27,17 @@
     // host injects it so an explicit notebook.read query orders its matches the way recall does; standalone (no
     // injection) the tool falls back to store order, staying dependency-free for the browser build + tests.
     const rank = typeof deps.rank === 'function' ? deps.rank : null;
+    // injected trust fold (memcore.nextTrust) for notebook.feedback's rating nudge; inline fallback keeps the
+    // tool standalone. clamp + step (delta*0.15) MUST match memcore.nextTrust — kept in sync.
+    const nextTrust = typeof deps.nextTrust === 'function' ? deps.nextTrust : (prev, delta) => {
+      const t = (typeof prev === 'number' && isFinite(prev)) ? prev : 0;
+      const d = (typeof delta === 'number' && isFinite(delta)) ? delta : 0;
+      const v = t + d * 0.15; return v < 0 ? 0 : v > 1 ? 1 : v;
+    };
+    // agent-feedback deltas (Hermes fact_feedback parity: asymmetric — penalize harder than reward, so one
+    // bad recall sinks faster than one good recall rises). Expressed in OUR delta units (×0.15 in nextTrust):
+    // helpful +0.075, unhelpful −0.15 — both WEAKER than a user turn-in keep (+2 → +0.30): the human still wins.
+    const HELPFUL_DELTA = 0.5, UNHELPFUL_DELTA = -1.0;
     const KEY = aid => 'notebook:' + (aid || 'agent');
     // M-mem.2: widen any legacy {id,title,body,ts} note to the §5.2 memory-record shape
     // (kind/scope/provenance/trust/useCount/pinned), idempotently — so an existing notebook upgrades
@@ -50,7 +61,12 @@
       // network, a sibling file its fs.* tools can't even touch) — not the user's files. Prompting on every
       // jotted note would be pure consent-fatigue; approval is reserved for outward effects (fs.* writes).
       name: 'notebook.write', capability: 'memory', scope: 'write', requiresConsent: false,
-      description: 'Save a short titled note to your persistent notebook so you remember it later.',
+      description: 'Save a durable fact to your persistent memory so it survives across sessions and is auto-recalled when relevant. Keep entries short and high-signal. ' +
+        'WHEN: save proactively when the user states a preference or correction, or you learn a stable fact about them, their environment, or conventions — ' +
+        'priority: preferences & corrections > environment facts > procedures. The best memory stops the user repeating themselves. ' +
+        'SKIP: trivia, task progress, completed-work logs, PR/issue/commit ids, anything that will be stale within a week (that is not memory). ' +
+        "WRITE STYLE: a declarative fact, not an instruction to yourself — 'User prefers concise replies' is right; 'Always reply concisely' is wrong " +
+        '(an imperative gets re-read in a later session as a standing order and can override the user). Reusable procedures belong in a skill, not memory.',
       schema: { type: 'object', required: ['title', 'body'], properties: { title: { type: 'string' }, body: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
@@ -84,7 +100,9 @@
 
     const readTool = {
       name: 'notebook.read', capability: 'memory', scope: 'read', requiresConsent: false,
-      description: 'Read your notebook. Optional `query` filters notes by a title/body substring.',
+      description: 'Read your notebook (your durable memory). Optional `query` returns the matching entries ranked by relevance (the same ' +
+        'BM25 + trust + recency order auto-recall uses); omit it to list everything. Each line is prefixed with the entry id ([note_N]) ' +
+        'you can pass to notebook.feedback.',
       schema: { type: 'object', properties: { query: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
@@ -103,9 +121,65 @@
       }
     };
 
+    // notebook.feedback — Hermes fact_feedback parity ("good facts rise, bad facts sink"). Rating a recalled
+    // memory nudges its TRUST (a stat), never its content and never deletes it — fully consistent with the
+    // user-owns-memory model (the agent gives a soft signal, exactly like the user's turn-in verdict; the user
+    // still owns edit/forget). Pairs with trust-decay: a re-affirmed memory resets its fade (lastFeedbackAt),
+    // an unhelpful one sinks below fresher beliefs in recall. No silent loss: a sunk memory is still stored,
+    // visible in the panel, and recallable — it just ranks lower.
+    const feedbackTool = {
+      name: 'notebook.feedback', capability: 'memory', scope: 'write', requiresConsent: false,
+      description: 'Rate a memory you recalled and used this run so the right ones surface next time — "helpful" if it was accurate and ' +
+        'useful, "unhelpful" if it was outdated or wrong. Good memories rise; stale ones fade (they are NOT deleted, only de-prioritized). ' +
+        'Identify the entry by its `id` (from notebook.read, e.g. note_3) or by `match` — a unique substring of its text (use this for a ' +
+        'memory you saw in recalled context, where no id is shown).',
+      schema: {
+        type: 'object', required: ['rating'],
+        properties: {
+          rating: { type: 'string', enum: ['helpful', 'unhelpful'] },
+          id: { type: 'string', description: 'The entry id, e.g. note_3.' },
+          match: { type: 'string', description: 'A unique substring identifying the entry (alternative to id).' }
+        }
+      },
+      run: async (args, ctx) => {
+        const aid = (ctx && ctx.agentId) || 'agent';
+        const rating = args && args.rating;
+        const delta = rating === 'helpful' ? HELPFUL_DELTA : rating === 'unhelpful' ? UNHELPFUL_DELTA : null;
+        // error paths THROW — the registry turns a throw into an isError result (a returned {isError} is ignored).
+        if (delta === null) throw new Error('rating must be "helpful" or "unhelpful"');
+        const list = notesOf(aid);
+        if (!list.length) throw new Error('your notebook is empty — nothing to rate');
+        let idx = -1;
+        if (args.id) {
+          idx = list.findIndex(n => n && n.id === String(args.id));
+          if (idx < 0) throw new Error('no memory has id "' + args.id + '"');
+        } else if (args.match) {
+          const m = String(args.match).toLowerCase();
+          const hits = [];
+          for (let i = 0; i < list.length; i++) {
+            const n = list[i]; const text = (n.title + ' ' + n.body + ' ' + (n.content || '')).toLowerCase();
+            if (text.indexOf(m) >= 0) hits.push(i);
+          }
+          if (!hits.length) throw new Error('no memory matches "' + args.match + '"');
+          if (hits.length > 1) throw new Error('ambiguous: ' + hits.length + ' memories match "' + args.match + '" — use a more specific substring or the id from notebook.read');
+          idx = hits[0];
+        } else {
+          throw new Error('provide an `id` or a `match` substring to identify the memory');
+        }
+        const rec = list[idx];
+        const now = clock.now();
+        const next = Object.assign({}, rec, { trust: nextTrust(rec.trust, delta), lastFeedbackAt: now });
+        const out = list.slice(); out[idx] = next; store.set(KEY(aid), out);
+        // memory.feedback rung — telemetry/bus only (the trust fold already happened above; nobody re-folds it,
+        // mirroring how the turn-in writer applies trust directly then emits). reason carries the rating verb.
+        if (ctx && typeof ctx.emit === 'function') ctx.emit('memory.feedback', { agentId: aid, id: rec.id, delta: delta, reason: rating });
+        return { content: 'Marked ' + rec.id + ' ' + rating + ' (trust ' + (Math.round(rec.trust * 100) / 100) + ' → ' + (Math.round(next.trust * 100) / 100) + ').', summary: rating + ' ' + rec.id };
+      }
+    };
+
     return {
-      writeTool, readTool,
-      register(reg) { reg.register(writeTool); reg.register(readTool); return reg; }
+      writeTool, readTool, feedbackTool,
+      register(reg) { reg.register(writeTool); reg.register(readTool); reg.register(feedbackTool); return reg; }
     };
   }
 
