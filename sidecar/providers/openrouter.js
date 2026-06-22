@@ -5,8 +5,10 @@
 
    SSE handling (verified against OpenRouter, June 2026): skip ':' keep-alive comments, honor the
    '[DONE]' sentinel, buffer partial reads across chunks, and accumulate tool-call argument
-   fragments BY INDEX. We do NOT send `usage:{include:true}` — it is a deprecated no-op; usage
-   (incl. real billed `cost`) is always returned in the final chunk. */
+   fragments BY INDEX. We DO send `usage:{include:true}`: a streaming response returns token
+   counts by default, but the real billed `cost` field is OPT-IN — without this flag usage.cost is
+   absent, so SPEND silently reads $0 (only the token tallies move) for any model not in the warmed
+   price catalog. With it, the final chunk carries the authoritative billed cost cost.js prefers. */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'));
@@ -78,7 +80,10 @@
     const referer = opts.referer || 'http://127.0.0.1';
 
     async function* stream(req) {
-      const body = { model: req.model, messages: applyCacheControl(req.messages, req.model), stream: true };
+      // usage.include asks OpenRouter to return the real billed `cost` in the final usage chunk (opt-in for
+      // streaming). Without it tokens still tally but usd stays 0 unless priceOf(model) resolves — so SPEND
+      // reads $0 for any custom/uncatalogued slug. cost.js then takes this authoritative cost over the estimate.
+      const body = { model: req.model, messages: applyCacheControl(req.messages, req.model), stream: true, usage: { include: true } };
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
         body.tool_choice = 'auto';

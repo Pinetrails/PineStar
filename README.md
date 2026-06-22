@@ -1,4 +1,4 @@
-# ▲ SKYNET — Real Gamified AI-Agent Harness
+# ▲ STARNET — Real Gamified AI-Agent Harness
 
 A **real**, downloadable desktop app where you create AI agents, raise them through a gamified
 onboarding, and watch them do real work — real model calls, real tools, real cost — inside a living
@@ -34,11 +34,11 @@ npm run desktop:build    # produce the NSIS installer
 ```
 
 > Data (agent memory, spend ledger, saves, secrets) is stored per-user under your OS app-data dir
-> (`%LOCALAPPDATA%\Skynet` on Windows). Secrets are held by the sidecar / OS keychain, never in the frontend.
+> (`%LOCALAPPDATA%\StarNet` on Windows). Secrets are held by the sidecar / OS keychain, never in the frontend.
 
 ## How it works (the one-line bet)
 
-Keep v7 Skynet's entire vanilla-JS canvas world (renderer, tile map, movement/sit/work state machine, sprite
+Keep v7 StarNet's entire vanilla-JS canvas world (renderer, tile map, movement/sit/work state machine, sprite
 recolor, CRT theme) and make it real by replacing the simulation with a **thin bridge that re-emits real
 agent-runtime events** onto the same `U.bus` event vocabulary the frontend already listens for. The agent
 loop, tools (web/files/notebook/MCP connectors), cost accounting, memory (Cortex), and budget governance
@@ -66,4 +66,4 @@ as design history, not as the entry point:
 
 ## Source project
 
-The v7 Skynet simulation this was grown from lives at `../v7` — we copied its engine + assets in unchanged.
+The v7 StarNet simulation this was grown from lives at `../v7` — we copied its engine + assets in unchanged.

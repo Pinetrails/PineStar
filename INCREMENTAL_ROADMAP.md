@@ -1,6 +1,6 @@
 # Incremental Roadmap
 
-> **Skynet** — converting the v7 fully-simulated pixel-art colony sim into a real, downloadable, gamified AI-agent harness desktop app. This roadmap slices the entire build into the smallest individually-shippable, test-gated steps, ordered to validate the central bet (real agent work on the kept v7 canvas via the U.bus event seam) as early as possible and never take a big risky leap.
+> **StarNet** — converting the v7 fully-simulated pixel-art colony sim into a real, downloadable, gamified AI-agent harness desktop app. This roadmap slices the entire build into the smallest individually-shippable, test-gated steps, ordered to validate the central bet (real agent work on the kept v7 canvas via the U.bus event seam) as early as possible and never take a big risky leap.
 
 ---
 

@@ -1,4 +1,4 @@
-# Skynet harness — multi-agent operating protocol
+# StarNet harness — multi-agent operating protocol
 
 This project is built by **many agents at once** (commonly 7–10). This file is the contract
 that keeps them from overwriting each other. Read it before you touch anything.

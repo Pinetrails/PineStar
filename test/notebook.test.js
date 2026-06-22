@@ -95,6 +95,48 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.ok(r2.content.indexOf('one') < r2.content.indexOf('two'), 'no ranker injected: falls back to store order, still returns matches');
   }
 
+  // ============ A1c. notebook.feedback — Hermes fact_feedback parity (trust nudge, asymmetric, no content change) ============
+  {
+    const { seq, emit } = setup();
+    const store = memStore();
+    const reg = makeRegistry();
+    makeNotebookTools({ store, clock: makeClock(5000) }).register(reg);
+    // seed two notes; note_1 already trusted (a prior keep), note_2 neutral
+    store.set('notebook:ag', [
+      { id: 'note_1', kind: 'note', title: 'Pref', body: 'prefers npm start over serve', trust: 0.3, lastFeedbackAt: 1, createdAt: 1, useCount: 0, pinned: false },
+      { id: 'note_2', kind: 'note', title: 'Env', body: 'deploys with npm publish', trust: 0, createdAt: 1, useCount: 0, pinned: false }
+    ]);
+
+    // helpful by id -> trust rises, lastFeedbackAt re-stamped (resets decay), content untouched
+    let r = await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', id: 'note_2' }), { agentId: 'ag', emit });
+    A.ok(!r.isError, 'feedback helpful by id succeeds');
+    let n2 = store.get('notebook:ag').find(n => n.id === 'note_2');
+    A.ok(Math.abs(n2.trust - 0.075) < 1e-9, 'helpful nudges trust up by the (weaker) agent delta (+0.075)');
+    A.eq(n2.lastFeedbackAt, 5000, 'feedback stamps lastFeedbackAt from the injected clock (resets trust decay)');
+    A.eq(n2.body, 'deploys with npm publish', 'feedback never changes content (rating != edit — user-owned invariant)');
+    const fb = seq.find(e => e.name === 'memory.feedback');
+    A.ok(fb && fb.payload.id === 'note_2' && fb.payload.delta > 0 && fb.payload.reason === 'helpful', 'memory.feedback rung emitted with positive delta + reason');
+
+    // unhelpful is HARSHER than helpful (asymmetric): from a 0.3 kept note, drops by 0.15
+    r = await reg.dispatch(dcall('notebook.feedback', { rating: 'unhelpful', id: 'note_1' }), { agentId: 'ag', emit });
+    A.ok(!r.isError, 'feedback unhelpful by id succeeds');
+    let n1 = store.get('notebook:ag').find(n => n.id === 'note_1');
+    A.ok(Math.abs(n1.trust - 0.15) < 1e-9, 'unhelpful sinks trust by the harsher agent delta (−0.15, 2× helpful)');
+
+    // identify by a unique substring (the recalled-context path, where no id is shown)
+    r = await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', match: 'npm publish' }), { agentId: 'ag', emit });
+    A.ok(!r.isError && r.summary.indexOf('note_2') >= 0, 'feedback resolves a unique substring match to the right entry');
+
+    // ambiguous + missing + no-target + empty all error cleanly (never silently mis-rate)
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', match: 'npm' }), { agentId: 'ag' })).isError, 'an ambiguous substring errors (both notes contain "npm")');
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', id: 'note_99' }), { agentId: 'ag' })).isError, 'an unknown id errors');
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful' }), { agentId: 'ag' })).isError, 'no id and no match errors');
+    A.ok((await reg.dispatch(dcall('notebook.feedback', { rating: 'helpful', id: 'x' }), { agentId: 'other' })).isError, 'rating against an empty notebook errors');
+    // trust never leaves [0,1] no matter how many downvotes
+    for (let i = 0; i < 20; i++) await reg.dispatch(dcall('notebook.feedback', { rating: 'unhelpful', id: 'note_1' }), { agentId: 'ag' });
+    A.eq(store.get('notebook:ag').find(n => n.id === 'note_1').trust, 0, 'repeated unhelpful clamps at 0, never negative');
+  }
+
   // ============ A2. M-mem.2: widened §5.2 record shape + provenance + memory.write ============
   {
     const { seq, emit } = setup();
@@ -277,6 +319,66 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.eq((store.get('notebook:ag') || []).length, 0, 'nothing persisted after reclaim');
     A.eq(seq.filter(e => e.name === 'deliverable').length, 0, 'no deliverable when denied');
     A.eq(res.reason, 'done', 'loop recovers and finishes');
+  }
+
+  // ---- todo tool (same NOTEBOOK/memory capability): read/write/merge/dedupe/bounds + injection ----
+  {
+    const { makeTodoTool, formatForInjection, _internals } = require('../sidecar/tools/builtin/todo.js');
+    const store = memStore();
+    const { todoTool } = makeTodoTool({ store });
+    const ctx = { agentId: 'ag' };
+
+    const e = await todoTool.run({}, ctx);
+    A.ok(/empty/.test(e.content) && e.summary === '0 tasks', 'empty list reads clean');
+
+    const w = await todoTool.run({ todos: [
+      { id: '1', content: 'design', status: 'completed' },
+      { id: '2', content: 'build', status: 'in_progress' },
+      { id: '3', content: 'test', status: 'pending' }
+    ] }, ctx);
+    A.ok(/\[x\] 1\. design/.test(w.content) && /\[>\] 2\. build/.test(w.content) && /\[ \] 3\. test/.test(w.content), 'render uses status markers');
+    A.ok(/3 tasks: 1 pending, 1 in progress, 1 done/.test(w.summary), 'summary counts by status');
+    A.eq((store.get('todo:ag') || []).length, 3, 'persisted to the per-agent key');
+
+    const r = await todoTool.run({}, ctx);
+    A.ok(/\[>\] 2\. build/.test(r.content), 'read returns the stored list');
+
+    const m = await todoTool.run({ merge: true, todos: [
+      { id: '2', content: 'build', status: 'completed' },   // update status only
+      { id: '4', content: 'ship', status: 'pending' }        // new -> appended
+    ] }, ctx);
+    A.ok(/\[x\] 2\. build/.test(m.content), 'merge updates an existing item by id');
+    A.ok(/\[ \] 4\. ship/.test(m.content), 'merge appends a new item');
+    A.ok(/\[ \] 3\. test/.test(m.content), 'merge leaves untouched items alone');
+    A.eq((store.get('todo:ag') || []).length, 4, 'merge did not drop items');
+
+    const rep = await todoTool.run({ todos: [{ id: 'a', content: 'fresh', status: 'pending' }] }, ctx);
+    A.eq((store.get('todo:ag') || []).length, 1, 'merge=false replaces the whole list');
+    A.ok(/\[ \] a\. fresh/.test(rep.content), 'replaced with the fresh plan');
+
+    // dedupe by id (keep last), invalid status -> pending, blank content -> placeholder
+    const d = _internals.writeList(store, 'z', [
+      { id: 'x', content: 'first', status: 'pending' },
+      { id: 'x', content: 'second', status: 'bogus' },
+      { id: 'y', content: '', status: 'pending' }
+    ], false);
+    A.eq(d.length, 2, 'duplicate ids collapse to one');
+    A.eq(d[0], { id: 'x', content: 'second', status: 'pending' }, 'last dup wins; invalid status -> pending');
+    A.eq(d[1].content, '(no description)', 'blank content -> placeholder');
+
+    const big = _internals.writeList(store, 'z2', [{ id: '1', content: 'q'.repeat(5000), status: 'pending' }], false);
+    A.ok(big[0].content.length <= 4000 && /truncated/.test(big[0].content), 'oversized content is capped');
+
+    // formatForInjection: only pending/in_progress survive a compaction
+    store.set('todo:inj', [
+      { id: '1', content: 'done thing', status: 'completed' },
+      { id: '2', content: 'active thing', status: 'in_progress' },
+      { id: '3', content: 'todo thing', status: 'pending' }
+    ]);
+    const inj = formatForInjection(store, 'inj');
+    A.ok(/preserved across context compaction/.test(inj), 'injection has the handoff header');
+    A.ok(/active thing/.test(inj) && /todo thing/.test(inj) && inj.indexOf('done thing') < 0, 'only pending/in_progress items are re-injected');
+    A.eq(formatForInjection(store, 'nobody'), null, 'no active items -> null (nothing injected)');
   }
 
   A.report('notebook.test');

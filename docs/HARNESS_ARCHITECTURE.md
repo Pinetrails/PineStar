@@ -1,4 +1,4 @@
-# SKYNET Harness — Architecture Reference
+# STARNET Harness — Architecture Reference
 
 > Engineering reference for the agent-harness backend. The *roadmap* (what to build when) lives in
 > `INCREMENTAL_ROADMAP.md` and the approved plan; this doc is the *target shape* (modules, interfaces,

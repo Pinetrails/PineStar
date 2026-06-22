@@ -98,7 +98,7 @@
 
   async function runAgentLoop(o) {
     const messages = o.messages;
-    const provider = o.provider;
+    let provider = o.provider;
     const emit = o.emit;
     const tools = o.tools || [];
     const limits = o.limits || {};
@@ -111,7 +111,7 @@
     const capCtx = o.capCtx;
     const agentId = o.agentId || 'agent';
     const runId = o.runId || 'run';
-    const model = o.model || 'replay/model';
+    let model = o.model || 'replay/model';
     const trigger = o.trigger || 'directive';
     const approxTokens = o.approxTokens || 0;   // initial rough estimate; feeds the error classifier's overflow ratio
     const contextLimit = o.contextLimit || 0;   // 0 = unknown (cold catalog) -> the ratio heuristic is skipped
@@ -121,6 +121,27 @@
     // OPTIONAL context manager (sidecar/context.js) + summarizer for auto-compaction; both absent = never compact.
     const context = o.context;
     const summarize = o.summarize;
+    // OPTIONAL provider FALLBACK chain — the consumer for errorClass's shouldFallback/shouldRotateCredential hints
+    // (previously computed then discarded). On a classified failover (overloaded/5xx/auth/billing/rate-limit/
+    // model-not-found) the loop advances to the next entry and RETRIES the same turn instead of dying — the
+    // Hermes try_activate_fallback pattern. Each entry: { provider, model? }. Empty = no fallback (existing
+    // callers byte-identical). Cost stays honest when entries reuse the primary provider (shared priceOf catalog).
+    const fallbacks = Array.isArray(o.fallbacks) ? o.fallbacks.slice() : [];
+    let fbIndex = 0;
+    // OPTIONAL todo re-injection: after a compaction folds older turns away, re-append the agent's ACTIVE task
+    // plan so a long run never loses it (Hermes' todo survives context compression the same way). A function
+    // returning the plan text (or null); absent = no-op (existing callers byte-identical).
+    const todoNote = (typeof o.todoNote === 'function') ? o.todoNote : null;
+    // LOOP GUARD (default ON): a tool called with IDENTICAL arguments that keeps FAILING is a stuck loop, not
+    // progress. Warn once (a system nudge the model can act on) at warnAfter, then hard-stop at stopAfter so a
+    // degraded run can't burn the whole budget spinning. Only errored, byte-identical (name+args) calls count;
+    // any success of that signature clears it. limits.loopGuard === false disables it; { warnAfter, stopAfter }
+    // overrides the thresholds (0 disables that tier). Pure: identical calls -> identical emits -> stable stream.
+    const _lg = limits.loopGuard;
+    const LG_WARN = (_lg === false) ? 0 : (_lg && _lg.warnAfter != null ? _lg.warnAfter : 3);
+    const LG_STOP = (_lg === false) ? 0 : (_lg && _lg.stopAfter != null ? _lg.stopAfter : 6);
+    const lgFails = new Map();    // signature (name\0args) -> failure count
+    const lgWarned = new Set();   // signatures already nudged (the warn fires once)
 
     let spentUsd = 0, turns = 0, spentTokens = 0;
     let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
@@ -137,28 +158,35 @@
     // the run total) see it — not just at run end. After 2 consecutive failed/empty summaries, compaction gives
     // up for the rest of the run, bounding wasted paid calls against a degraded model.
     let compactionFails = 0, compactionOff = false;
-    async function maybeCompact() {
-      if (compactionOff || !context || !lastUsage || !context.shouldCompact(lastUsage)) return;
+    // force=true skips the threshold gate (used by the context_overflow error-recovery path: compact, then retry
+    // the turn instead of dying). Returns true iff history was actually folded — the caller only retries on true,
+    // so a no-foldable-history overflow can't spin. Existing callers pass no arg and ignore the return.
+    async function maybeCompact(force) {
+      if (compactionOff || !context) return false;
+      if (!force && (!lastUsage || !context.shouldCompact(lastUsage))) return false;
       let i = 0;
       while (i < messages.length && messages[i].role === 'system') i++;   // leading system prefix kept verbatim
       const prefix = messages.slice(0, i);
       const plan = context.planCompaction(messages.slice(i));
-      if (!plan.older.length) return;                                     // nothing safely foldable yet (no paid call)
-      const beforeTokens = lastUsage.prompt_tokens || lastUsage.promptTokens || 0;
+      if (!plan.older.length) return false;                               // nothing safely foldable yet (no paid call)
+      const beforeTokens = (lastUsage && (lastUsage.prompt_tokens || lastUsage.promptTokens)) || context.estimateMessages(messages);
       let r;
       try { r = summarize ? await summarize(plan.older) : ''; }
-      catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return; }   // summarizer threw -> skip
-      if (signal.aborted) return;
+      catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return false; }   // summarizer threw -> skip
+      if (signal.aborted) return false;
       const summary = (typeof r === 'string') ? r : ((r && r.summary) || '');
-      if (!summary) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return; }   // empty -> don't drop history
+      if (!summary) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return false; }   // empty -> don't drop history
       compactionFails = 0;
       const note = { role: 'system', content: '<conversation_summary>\n' + summary + '\n</conversation_summary>' };
-      const rebuilt = prefix.concat([note], plan.tail);
+      let rebuilt = prefix.concat([note], plan.tail);
+      // re-append the active task plan so it rides through the compaction (folded into the after-count below)
+      if (todoNote) { try { const tn = todoNote(); if (tn) rebuilt = rebuilt.concat([{ role: 'system', content: String(tn) }]); } catch (e) {} }
       const afterTokens = context.estimateMessages(rebuilt);
       messages.length = 0; for (const mm of rebuilt) messages.push(mm);
       if (r && typeof r === 'object') { spentUsd += r.usd || 0; spentTokens += r.tokens || 0; }   // count the summarizer's own spend
       lastUsage = null;   // the next turn re-measures against the compacted prompt before considering another fold
       emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'context' });
+      return true;
     }
 
     emit('agent.run.start', { agentId, runId, trigger, model });
@@ -185,25 +213,50 @@
       if (signal.aborted) return end('cancelled');   // a cancel during summarization ends cleanly
       turns++;
 
-      // (2) STREAM one model call
+      // (2) STREAM one model call — with classified RECOVERY (compress on overflow / fall back on a failover) so a
+      //     transient backend failure retries the SAME turn instead of killing the run. Bounded: at most one
+      //     compaction plus one switch per fallback entry, so a degraded backend can't spin.
       const acc = { text: '', toolCalls: {} };
-      let usage = null;
-      try {
-        const req = { model, messages, tools, signal, stream: true };
-        for await (const ev of provider.stream(req)) {
-          if (signal.aborted) break;
-          if (ev.type === 'text') { acc.text += ev.delta; emit('agent.token', { agentId, runId, delta: ev.delta }); }
-          else if (ev.type === 'tool_start') { acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '' }; }
-          else if (ev.type === 'tool_args') { if (acc.toolCalls[ev.index]) acc.toolCalls[ev.index].args += (ev.chunk || ''); }
-          else if (ev.type === 'usage') { usage = ev.usage; if (cost) emit('cost.estimate', Object.assign({ agentId, runId }, cost.estimate(usage, model))); }
-          // 'tool_done' / 'done' need no action here
+      let usage = null, fatal = null;
+      let recoveries = 0;
+      const maxRecoveries = 1 + fallbacks.length;
+      while (true) {
+        acc.text = ''; acc.toolCalls = {}; usage = null;
+        let streamErr = null;
+        try {
+          const req = { model, messages, tools, signal, stream: true };
+          for await (const ev of provider.stream(req)) {
+            if (signal.aborted) break;
+            if (ev.type === 'text') { acc.text += ev.delta; emit('agent.token', { agentId, runId, delta: ev.delta }); }
+            else if (ev.type === 'tool_start') { acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '' }; }
+            else if (ev.type === 'tool_args') { if (acc.toolCalls[ev.index]) acc.toolCalls[ev.index].args += (ev.chunk || ''); }
+            else if (ev.type === 'usage') { usage = ev.usage; if (cost) emit('cost.estimate', Object.assign({ agentId, runId }, cost.estimate(usage, model))); }
+            // 'tool_done' / 'done' need no action here
+          }
+        } catch (e) { streamErr = e; }
+        if (!streamErr) break;                       // stream succeeded
+        if (signal.aborted) break;                   // a cancel mid-stream: fall through to the cancel check below
+        // classify so `transient` is honest, and so the shouldCompress / shouldFallback / shouldRotateCredential
+        // hints drive recovery instead of being discarded.
+        const cls = classifyApiError(streamErr, { model: model, approxTokens: approxTokens, contextLimit: contextLimit });
+        if (recoveries < maxRecoveries && cls.shouldCompress && context && summarize) {
+          // context_overflow: fold older turns away, then retry the turn. Only counts as recovery if it shrank.
+          if (await maybeCompact(true)) { recoveries++; continue; }
         }
-      } catch (e) {
-        // classify the API failure so `transient` is honest (classifier-derived, not hardcoded false). The
-        // shouldFallback/shouldCompress hints have no consumer yet (single model per run, context.js unwired) —
-        // they are the documented extension point for the future failover/compaction layers; for now end('error').
-        const cls = classifyApiError(e, { model: model, approxTokens: approxTokens, contextLimit: contextLimit });
-        emit('agent.run.error', { agentId, runId, message: cls.message || String((e && e.message) || e), transient: !!cls.retryable });
+        if (recoveries < maxRecoveries && (cls.shouldFallback || cls.shouldRotateCredential) && fbIndex < fallbacks.length) {
+          const fb = fallbacks[fbIndex++];
+          if (fb && fb.provider) {
+            provider = fb.provider;
+            if (fb.model) model = fb.model;   // the next agent.cost carries the switched model — the visible failover signal
+            recoveries++;
+            continue;
+          }
+        }
+        fatal = cls;                                 // unrecoverable / chain exhausted
+        break;
+      }
+      if (fatal) {
+        emit('agent.run.error', { agentId, runId, message: fatal.message || 'model call failed', transient: !!fatal.retryable });
         return end('error');
       }
 
@@ -243,6 +296,27 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+
+      // (8) LOOP GUARD — break out of a run that keeps making the SAME failing tool call. Warn once, then stop.
+      if (LG_WARN || LG_STOP) {
+        const sigOf = {};
+        for (const c of calls) sigOf[c.id] = (c.name || '') + ' ' + (c.argsRaw || '');
+        for (const r of results) {
+          const sig = sigOf[r.callId];
+          if (sig == null) continue;
+          if (!r.isError) { lgFails.delete(sig); lgWarned.delete(sig); continue; }   // a success clears the streak
+          const n = (lgFails.get(sig) || 0) + 1; lgFails.set(sig, n);
+          const nm = sig.split(' ')[0] || 'a tool';
+          if (LG_STOP && n >= LG_STOP) {
+            emit('agent.run.error', { agentId, runId, message: 'loop guard: ' + nm + ' failed ' + n + ' times with identical arguments — stopping a stuck loop', transient: false });
+            return end('error');
+          }
+          if (LG_WARN && n === LG_WARN && !lgWarned.has(sig)) {
+            lgWarned.add(sig);
+            messages.push({ role: 'system', content: '<loop_guard>You have called ' + nm + ' with the same arguments ' + n + ' times and it keeps failing. Do not repeat the identical call — change the arguments, try another approach, or stop and report the problem.</loop_guard>' });
+          }
+        }
+      }
     }
   }
 

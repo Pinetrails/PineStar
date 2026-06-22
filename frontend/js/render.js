@@ -186,7 +186,7 @@ const RENDER = (() => {
     // hull stencils
     b.font = '8px monospace';
     b.fillStyle = 'rgba(195,180,142,0.30)';
-    b.fillText('SKYNET·07', 31 * T, 3 * T - 10);
+    b.fillText('STARNET·07', 31 * T, 3 * T - 10);
     b.fillText('DECK·A', 19 * T, 12 * T - 10);
     b.fillStyle = 'rgba(202,168,74,0.25)';
     b.fillText('CARGO', 64 * T - 16, 23 * T - 10);

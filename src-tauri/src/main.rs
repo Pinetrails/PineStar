@@ -376,7 +376,7 @@ fn main() {
             );
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("SKYNET")
+                .title("StarNet")
                 .inner_size(1280.0, 832.0)
                 .min_inner_size(960.0, 600.0)
                 .initialization_script(&init)

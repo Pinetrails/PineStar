@@ -31,12 +31,14 @@ function setup(jobs, runOnceFake, opts) {
   let store = (jobs || []).slice();
   const events = [];        // every cron.*/forwarded event the driver emitted
   const runs = [];          // every runOnce opts object the driver passed
+  const placed = [];        // every placeWorkitem(agentId,prompt,runId) — the conveyor box a fire rides onto the floor
   let idN = 0;
   const driver = makeCronDriver({
     getJobs: () => store,
     setJobs: (j) => { store = j; },
     runOnce: (o) => { runs.push(o); return Promise.resolve(runOnceFake ? runOnceFake(o) : undefined); },
     emit: (name, payload) => { events.push({ name, payload }); },
+    placeWorkitem: (agentId, prompt, runId) => { placed.push({ agentId, prompt, runId }); },
     newId: () => 'run-' + (++idN),
     newAbort: () => new AbortController(),
     now: () => clock.now(),
@@ -48,7 +50,7 @@ function setup(jobs, runOnceFake, opts) {
     persona: 'PERSONA',
     maxRunMs: opts.maxRunMs || 480000
   });
-  return { driver, clock, events, runs, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id) };
+  return { driver, clock, events, runs, placed, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id) };
 }
 
 const evNames = (events) => events.map(e => e.name);
@@ -283,6 +285,28 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     s.driver.applyTick(s.clock.now());
     A.eq(s.runs[0].model, 'roster/model', 'cron fire uses the selected agent roster model');
     A.eq(s.runs[0].system, 'ROSTER SYSTEM', 'cron fire uses the selected agent roster system prompt');
+  }
+
+  // ---- CONVEYOR: a real fire rides a box onto the floor for its agent (workitem.placed plumbing) ----
+  {
+    const j = intervalJob('j1', 'every 1m');
+    const s = setup([j], okRun());
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    A.eq(s.placed.length, 1, 'a fired routine rides exactly one conveyor box');
+    A.eq(s.placed[0].agentId, 'cron_j1', 'the box is bound for the job agent (server-authoritative)');
+    A.eq(s.placed[0].prompt, 'do j1', 'the box carries the routine instruction as its payload');
+    A.eq(s.placed[0].runId, s.runs[0].runId, 'the box is stamped with the launched runId (crate<->run correlation)');
+  }
+
+  // ---- CONVEYOR: a no-capability skip rides NO box (a crate appears only when a run truly fires) ----
+  {
+    const j = intervalJob('j1', 'every 1m');
+    const s = setup([j], okRun(), { key: '' });            // no key -> no-capability skip
+    s.clock.set(T0 + 60000);
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary.fired, 0, 'no run fires without capability');
+    A.eq(s.placed.length, 0, 'and no conveyor box rides — the floor never shows phantom work');
   }
 
   A.report('cron.tick');

@@ -290,5 +290,123 @@ function chatFixture() {
     A.eq(seq.filter(e => e.name === 'agent.compact').length, 0, 'no agent.compact without a context manager');
   }
 
+  // ---- todo re-injection: a compaction re-appends the active task plan so a long run keeps its list ----
+  {
+    const { seq, emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const fixture = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'final' }, { type: 'usage', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const provider = makeReplayProvider(fixture);
+    const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
+    const messages = [{ role: 'user', content: 'do it' }];
+    let injectCalls = 0;
+    const todoNote = () => { injectCalls++; return '[Your active task list was preserved across context compaction]\n- [>] 1. keep building (in_progress)'; };
+    const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize: async () => 'SUMMARY', todoNote });
+    A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'compaction happened');
+    A.ok(injectCalls >= 1, 'todoNote was consulted during the compaction');
+    A.ok(messages.some(m => m.role === 'system' && m.content.indexOf('keep building') >= 0), 'the active task plan was re-appended after the compaction');
+    A.eq(res.reason, 'done', 'the run completes with the plan re-injected');
+  }
+
+  // ---- no todoNote -> compaction is unchanged (existing callers byte-identical) ----
+  {
+    const { seq, emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const fixture = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'final' }, { type: 'usage', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const provider = makeReplayProvider(fixture);
+    const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
+    const messages = [{ role: 'user', content: 'do it' }];
+    await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize: async () => 'SUMMARY' });
+    A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'compaction still happens without todoNote');
+    A.ok(!messages.some(m => m.role === 'system' && /task list was preserved/.test(m.content)), 'no plan injected when todoNote is absent');
+  }
+
+  // ---- provider fallback: consume errorClass's shouldFallback/shouldRotateCredential to retry the turn ----
+  {
+    const httpErr = (s, m) => Object.assign(new Error('http ' + s + (m ? ' — ' + m : '')), { status: s });
+    const okTurn = [{ type: 'text', delta: 'ok' }, { type: 'usage', usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }, { type: 'done', finishReason: 'stop' }];
+    // ONE provider object (mirrors index.js: same provider + shared priceOf, alternate model). It throws the
+    // configured error for a model, else streams a normal text turn — so a fallback to a healthy model recovers.
+    function modelAware(failByModel) {
+      let calls = 0;
+      return {
+        async *stream(req) { calls++; const e = failByModel[req.model]; if (e) throw e; for (const ev of okTurn) yield ev; },
+        priceOf: () => ({ prompt: '0.000001', completion: '0.000002' }), contextLimit: () => 8000, callCount: () => calls, lastModel: () => null
+      };
+    }
+    async function run(failByModel, fallbacks, extra) {
+      const { seq, emit } = setup();
+      const provider = modelAware(failByModel);
+      const res = await runAgentLoop(Object.assign({
+        messages: [{ role: 'user', content: 'hi' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+        model: 'm1', agentId: 'a', runId: 'r', fallbacks: (fallbacks || []).map(m => ({ provider, model: m }))
+      }, extra || {}));
+      return { seq, res, provider };
+    }
+
+    // overloaded primary -> fall back to a healthy model, run completes on it
+    {
+      const r = await run({ m1: httpErr(503, 'overloaded') }, ['m2']);
+      A.eq(r.res.reason, 'done', '503 overloaded -> fell back and completed (not error)');
+      A.eq(r.provider.callCount(), 2, 'one failed attempt + one fallback attempt');
+      A.eq(r.seq.find(e => e.name === 'agent.cost').payload.model, 'm2', 'agent.cost reports the fallback model (the visible failover signal)');
+      A.eq(r.seq.filter(e => e.name === 'agent.run.error').length, 0, 'no run.error when the fallback recovers');
+    }
+    // auth failure -> shouldRotateCredential also triggers a fallback
+    {
+      const r = await run({ m1: httpErr(401, 'bad key') }, ['m2']);
+      A.eq(r.res.reason, 'done', '401 auth -> fell back and completed');
+      A.eq(r.seq.find(e => e.name === 'agent.cost').payload.model, 'm2', 'auth fallback switched the model');
+    }
+    // chain exhausted: both models fail -> the run ends error, honestly transient
+    {
+      const r = await run({ m1: httpErr(503), m2: httpErr(503) }, ['m2']);
+      A.eq(r.res.reason, 'error', 'exhausted chain -> error');
+      A.eq(r.provider.callCount(), 2, 'tried primary then the one fallback, then gave up');
+      A.eq(r.seq.find(e => e.name === 'agent.run.error').payload.transient, true, '503 is transient');
+    }
+    // no fallback configured -> dies on the failover error (today's behavior; no app-lie)
+    {
+      const r = await run({ m1: httpErr(503) }, []);
+      A.eq(r.res.reason, 'error', 'no fallback -> the run still ends error');
+      A.eq(r.provider.callCount(), 1, 'no extra attempt without a chain');
+    }
+    // a NON-failover error (malformed 400) is fatal immediately — the chain is not burned on a client bug
+    {
+      const r = await run({ m1: httpErr(400, 'malformed') }, ['m2']);
+      A.eq(r.res.reason, 'error', '400 -> fatal, not retried');
+      A.eq(r.provider.callCount(), 1, 'fallback NOT consumed on a non-failover error');
+      A.eq(r.seq.find(e => e.name === 'agent.run.error').payload.transient, false, '400 is not transient');
+    }
+    // context_overflow -> compress + retry the SAME turn (zero-config; uses the existing compaction), then succeed
+    {
+      const { seq, emit } = setup();
+      let calls = 0;
+      const provider = { async *stream() { calls++; if (calls === 1) throw new Error('prompt is too long'); for (const ev of okTurn) yield ev; },
+        priceOf: () => ({ prompt: '0.000001', completion: '0.000002' }), contextLimit: () => 10 };
+      const ctxMgr = makeContext({ contextLimit: 1000, compactAt: 0.65, keepTail: 1 });
+      let summarized = 0;
+      const res = await runAgentLoop({
+        messages: [{ role: 'user', content: 'aaa' }, { role: 'assistant', content: 'bbb' }, { role: 'user', content: 'ccc' }],
+        provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'm1', agentId: 'a', runId: 'r',
+        context: ctxMgr, summarize: async () => { summarized++; return 'SUMMARY'; },
+        approxTokens: 100, contextLimit: 10   // > 0.4*limit -> classifier returns context_overflow -> shouldCompress
+      });
+      A.eq(res.reason, 'done', 'context_overflow -> compacted and retried to completion');
+      A.eq(calls, 2, 'one overflow attempt + one post-compaction retry');
+      A.ok(summarized >= 1, 'the summarizer ran as part of the overflow recovery');
+      A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'exactly one compaction during recovery');
+    }
+  }
+
   A.report('loop.replay.test');
 })();

@@ -47,6 +47,20 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq(dd.proposals.length, 1, 'dupes (vs existing AND within-batch) dropped');
   A.eq(dd.proposals[0].content, 'brand new', 'the genuinely new fact survives');
 
+  // ---- near-duplicate (paraphrase) dedup: Jaccard, not just exact text (Hermes-parity) ----
+  const near = await reflect(run, {
+    propose: () => 'PREFERENCE: Andrew prefers running npm start over serve\nFACT: the reactor gauge is cost-driven',
+    clock: makeClock(0), redact, existing: [{ kind: 'profile', content: 'Andrew prefers npm start over serve' }]
+  });
+  A.eq(near.proposals.length, 1, 'a paraphrase of an existing belief is dropped (exact-text dedup would have missed it)');
+  A.eq(near.proposals[0].content, 'the reactor gauge is cost-driven', 'the genuinely-distinct belief survives near-dup dedup');
+  // near-dup also applies WITHIN the batch: a reworded repeat of an earlier accepted proposal is dropped
+  const nearBatch = await reflect(run, {
+    propose: () => 'FACT: deploys to production with npm publish then tag the release\nFACT: deploys to production with npm publish then tags the release',
+    clock: makeClock(0), redact
+  });
+  A.eq(nearBatch.proposals.length, 1, 'a within-batch paraphrase of an earlier proposal is dropped');
+
   // ---- count cap: never dump a wall at the turn-in beat ----
   const wall = await reflect(run, { propose: () => 'FACT: a\nFACT: b\nFACT: c\nFACT: d\nFACT: e\nFACT: f', clock: makeClock(0), redact, max: 3 });
   A.eq(wall.proposals.length, 3, 'proposal count capped at max');

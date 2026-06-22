@@ -353,6 +353,25 @@ cap2.assignPropAgent(b2.id, 'r');
 cap2.addProp({ t: 'plant', x: cr2.x1 + 5, y: cr2.y1 + 2, w: 1, h: 1, block: false });
 A.eq(JSON.stringify(cap2.bayObjects('r')), '[]', 'decor (a plant) grants no capabilities');
 
+/* ---- per-agent PC: a SHARED room (multiple bays) demands a DEDICATED computer per agent (the true rule) ---- */
+const pcm = WM.create();
+const pcr = pcm.roomById(pcm.spawnRoomId()).rects[0];
+const bx = pcr.x1 + 2, by = pcr.y1 + 1;
+const bayCo = pcm.addProp({ t: 'bay', x: bx, y: by, w: 2, h: 2, block: false });
+const bayWr = pcm.addProp({ t: 'bay', x: bx, y: by + 3, w: 2, h: 2, block: false });
+pcm.assignPropAgent(bayCo.id, 'coder');
+pcm.assignPropAgent(bayWr.id, 'writer');
+const sharedPc = pcm.addProp({ t: 'console', x: bx + 3, y: by, w: 2, h: 1, block: true });   // UNBOUND PC, 2 bays in the room
+A.eq(pcm.bayObjects('coder').indexOf('computer'), -1, 'shared room + UNBOUND PC -> ambiguous, grants compute to nobody');
+A.eq(pcm.bayObjects('writer').indexOf('computer'), -1, 'the roommate also gets no compute from an unbound PC');
+pcm.assignPropAgent(sharedPc.id, 'coder');                                                    // dedicate it to coder
+A.ok(pcm.bayObjects('coder').indexOf('computer') >= 0, 'a PC BOUND to coder gives coder compute');
+A.eq(pcm.bayObjects('writer').indexOf('computer'), -1, "coder's dedicated PC does NOT grant the roommate compute");
+const pcWr = pcm.addProp({ t: 'desk', x: bx + 3, y: by + 3, w: 2, h: 1, block: true });
+pcm.assignPropAgent(pcWr.id, 'writer');
+A.ok(pcm.bayObjects('writer').indexOf('computer') >= 0, 'writer gets compute once it has its OWN bound PC');
+A.ok(pcm.bayObjects('coder').indexOf('computer') >= 0, 'coder still has compute — each agent now has a dedicated PC');
+
 /* ---- connector portal: a per-instance, BOUND capability — bayObjects emits its {objectType,connectorId} only when bound ---- */
 const cc = WM.create();
 const ccr = cc.roomById(cc.spawnRoomId()).rects[0];

@@ -33,7 +33,14 @@
      deps.persona          -> string | ()=>string // the autonomous system prompt (carries the [SILENT] hint);
                                                  //   a getter is re-read each fire so it can fold in the live
                                                  //   Commander dossier (Phase C). Both forms stay determinism-clean.
-     deps.maxRunMs         -> int                // self-healing lease ceiling: a run older than this is reclaimed */
+     deps.maxRunMs         -> int                // self-healing lease ceiling: a run older than this is reclaimed
+     deps.placeWorkitem(agentId, prompt, runId)
+                           -> void               // OPTIONAL: ride the routine's instruction onto the CONVEYOR as a
+                                                 //   box bound for its agent (the SAME workitem.placed plumbing a
+                                                 //   Telegram message uses) so a scheduled fire is VISIBLE on the
+                                                 //   floor — a crate arrives and the agent goes to work. Injected
+                                                 //   (the ambient id-mint + emit live in index.js), so this file
+                                                 //   stays determinism-clean. No-op when not provided. */
 'use strict';
 (function (root, factory) {
   const api = factory(
@@ -62,6 +69,7 @@
     // (Phase C: index.js passes a getter so each run folds in the live Commander dossier). Both stay
     // determinism-clean — a getter is just an injected dep, exactly like getKey/getJobs.
     const personaOf = typeof d.persona === 'function' ? d.persona : function () { return d.persona || ''; };
+    const placeWorkitem = typeof d.placeWorkitem === 'function' ? d.placeWorkitem : function () {};
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
@@ -106,6 +114,9 @@
       const ac = newAbort();
       leases.set(job.id, { runId: runId, startedAt: nowMs, ac: ac });
       try { emit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: scheduledFor }); } catch (_) {}
+      // ride the routine's instruction onto the CONVEYOR as a box bound for this agent — only NOW (past the
+      // capability gate, lease taken), so a crate appears on the floor iff a run is genuinely firing.
+      try { placeWorkitem(job.agentId, job.prompt, runId); } catch (_) {}
 
       // in-process emit sink: assemble the reply from agent.token deltas (the SAME contract harness.js/hub.js use —
       // there is no agent.message event), capture the end reason / error / transient flag, and FORWARD every

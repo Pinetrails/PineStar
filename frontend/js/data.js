@@ -31,7 +31,7 @@ DATA.ROOMS = {
 DATA.AGENTS = [
   { id: 'ULTRON',     room: 'bridge',     color: '#ff4a3d', harness: 'OPENCLAW', model: 'FABLE',
     role: 'STATION ORCHESTRATOR',
-    desc: 'Head commanding agent of SKYNET. Receives Commander directives, decomposes them, routes work to the right specialist and verifies every deliverable against standard before reporting back. Nothing moves on this station without ULTRON knowing.',
+    desc: 'Head commanding agent of STARNET. Receives Commander directives, decomposes them, routes work to the right specialist and verifies every deliverable against standard before reporting back. Nothing moves on this station without ULTRON knowing.',
     skill: 88, autonomy: 82, reliability: 90, robot: true },
   { id: 'NOVA',       room: 'research',   color: '#4ad9ff', harness: 'HERMES', model: 'OPUS',
     role: 'LEAD RESEARCH AGENT',

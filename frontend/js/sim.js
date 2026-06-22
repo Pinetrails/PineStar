@@ -799,7 +799,7 @@ const SIM = (() => {
     S = newState();
     rollObjectives();
     // opening salvo
-    ops('SKYNET STATION OS v2.077 — all systems nominal', 'gold');
+    ops('STARNET STATION OS v2.077 — all systems nominal', 'gold');
     ops('17 agents online. Harnesses: HERMES ×16, OPENCLAW ×1', 'good');
     chat('ULTRON', 'Commander on deck. Station is yours. Speak a directive and I will make it real. All departments: report readiness.');
     chat('NOVA', 'research lab warm. I have three Etsy scans queued. the meta shifted overnight — it always does.');

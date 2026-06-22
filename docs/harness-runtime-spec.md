@@ -2,7 +2,7 @@ I now have complete ground truth. The findings assumed a greenfield browser app,
 
 I'll write the spec to honor the existing contract exactly. No more reads needed.
 
-# SKYNET Sidecar — BUILD SPEC (Lead Engineer, decisive)
+# STARNET Sidecar — BUILD SPEC (Lead Engineer, decisive)
 
 > **Reconciliation note (read first).** The three research findings assumed a greenfield browser app and proposed a fresh ESM single-file sidecar with an invented `{t:'token', d}` NDJSON protocol. **That is wrong for this repo.** The codebase is already at ~M4 of `docs/HARNESS_ARCHITECTURE.md`: a **frozen `agent.*` event bus** (`shared/events.js`), a **deterministic, dependency-injected loop** (`sidecar/loop.js`), a **provider seam** (`stream(req) -> AsyncIterable<HarnessEvent>`), a **cap-gated registry with consent** (`sidecar/tools/registry.js`), a **working `web.js`**, a **cost engine**, and a **UMD module style** (CommonJS-under-node / global-under-browser). This spec builds the MVP **on those real seams**. We do **not** invent a new event vocabulary; the NDJSON wire is literally `{name, payload}` pairs of existing `agent.*` events. We do **not** rewrite the loop; we feed it a real provider + dispatcher + emitter. Two files are genuinely missing (`providers/openrouter.js`, the Node host `sidecar/index.js`) plus `tools/builtin/fs.js`. That's the build.
 
@@ -29,7 +29,7 @@ POST https://openrouter.ai/api/v1/chat/completions
 Authorization: Bearer <USER_BYOK_KEY>
 Content-Type: application/json
 HTTP-Referer: http://127.0.0.1
-X-Title: SKYNET
+X-Title: STARNET
 
 {
   "model": "anthropic/claude-sonnet-4.5",
@@ -334,7 +334,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'GET'  && req.url === '/api/health') return res.writeHead(200).end('ok');
   return serveStatic(req, res);   // everything else -> frontend/ (path-jailed, see below)
-}).listen(PORT, '127.0.0.1', () => console.log('SKYNET sidecar → http://127.0.0.1:' + PORT));
+}).listen(PORT, '127.0.0.1', () => console.log('STARNET sidecar → http://127.0.0.1:' + PORT));
 
 async function handleRun(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 20)); }
@@ -535,7 +535,7 @@ AGENT      Done, Commander. I compared four boards and saved keyboards.md …   
 
 ### 7c. `frontend/index.html` — copy + DISCONNECT wiring (no structural change)
 
-Scripts are relative and the sidecar serves the same `frontend/` tree, so paths resolve unchanged. Two edits: (1) connect-panel copy → "Your key + messages go to your **local** SKYNET sidecar on this machine, which calls the model and runs the agent's web/file tools" (informed consent). (2) Wire the existing DISCONNECT button to also `POST /api/cancel {runId}` of the active run so closing down stops live spend immediately (belt-and-suspenders with `req.on('close')`).
+Scripts are relative and the sidecar serves the same `frontend/` tree, so paths resolve unchanged. Two edits: (1) connect-panel copy → "Your key + messages go to your **local** STARNET sidecar on this machine, which calls the model and runs the agent's web/file tools" (informed consent). (2) Wire the existing DISCONNECT button to also `POST /api/cancel {runId}` of the active run so closing down stops live spend immediately (belt-and-suspenders with `req.on('close')`).
 
 ---
 

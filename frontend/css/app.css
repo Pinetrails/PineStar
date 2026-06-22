@@ -45,8 +45,8 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 /* ---------- TITLE ---------- */
 .title-wrap { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 22px; }
 #title-logo {
-  font-family: inherit; color: var(--ph); line-height: 1; font-size: 16px;
-  text-shadow: 0 0 10px var(--ph-glow), 0 0 26px var(--ph-glow2); white-space: pre;
+  display: block; width: min(560px, 82vw); height: auto; margin: 0 auto;
+  filter: drop-shadow(0 0 12px var(--ph-glow)) drop-shadow(0 0 30px var(--ph-glow2));
 }
 .title-sub { color: var(--ph-bright); font-size: 22px; letter-spacing: 4px; }
 .title-foot { color: var(--ph-dim); font-size: 15px; letter-spacing: 2px; }

@@ -20,12 +20,15 @@
     ],
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)
-      { capId: 'memory', tool: 'notebook.read', scope: 'read', requiresConsent: false, network: false }
+      { capId: 'memory', tool: 'notebook.read', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'memory', tool: 'notebook.feedback', scope: 'write', requiresConsent: false, network: false }, // rate a recalled memory helpful/unhelpful — trust nudge only (see notebook.js)
+      { capId: 'memory', tool: 'todo', scope: 'write', requiresConsent: false, network: false }              // in-session task plan — the agent's working memory (see todo.js)
     ],
     // M5: object = capability made real — placing these grants the agent real-world reach.
     cabinet: [
       { capId: 'cabinet', tool: 'fs.read', scope: 'read', requiresConsent: false, network: false },
       { capId: 'cabinet', tool: 'fs.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'cabinet', tool: 'fs.search', scope: 'read', requiresConsent: false, network: false },
       { capId: 'cabinet', tool: 'fs.write', scope: 'write', requiresConsent: true, network: false },
       { capId: 'cabinet', tool: 'fs.append', scope: 'write', requiresConsent: true, network: false },
       { capId: 'cabinet', tool: 'fs.edit', scope: 'write', requiresConsent: true, network: false }

@@ -1,6 +1,6 @@
 # Builder & World Foundation
 
-> The architectural bible for Skynet's station builder and mutable world. This document is decisive. Where the five pillar designs converged, it locks the consensus; where they disagreed, it picks a winner and says why. Everything downstream — renderer, agents, sidecar, save format, tests — builds on what is written here.
+> The architectural bible for StarNet's station builder and mutable world. This document is decisive. Where the five pillar designs converged, it locks the consensus; where they disagreed, it picks a winner and says why. Everything downstream — renderer, agents, sidecar, save format, tests — builds on what is written here.
 
 ---
 
@@ -8,7 +8,7 @@
 
 ### The builder vision
 
-Skynet is a **station builder** in the lineage of PewDiePie's *Tuber Simulator*: the user spawns into one shabby starter room with one agent and, over time, **expands and beautifies a space station** — placing rooms, dragging hallways, painting floors, dropping furniture, and upgrading from rusty to pristine. The twist that makes Skynet not just a toy: **the way you build the station literally configures your real multi-agent org.** A room is a capability-scoped team. A door or hallway is an authorized handoff lane. A placed object is a real capability grant (model, shell, files, web, image, comms). The spatial diagram the user draws *is* the workflow graph the sidecar executes against real model calls, real tools, and real cost.
+StarNet is a **station builder** in the lineage of PewDiePie's *Tuber Simulator*: the user spawns into one shabby starter room with one agent and, over time, **expands and beautifies a space station** — placing rooms, dragging hallways, painting floors, dropping furniture, and upgrading from rusty to pristine. The twist that makes StarNet not just a toy: **the way you build the station literally configures your real multi-agent org.** A room is a capability-scoped team. A door or hallway is an authorized handoff lane. A placed object is a real capability grant (model, shell, files, web, image, comms). The spatial diagram the user draws *is* the workflow graph the sidecar executes against real model calls, real tools, and real cost.
 
 The "shabby → glorious" arc is not a cosmetic skin tree. It is **truthful telemetry applied to architecture**: a room is dim and rusty because its agent hasn't proven itself, and becomes pristine as that agent ships *real* deliverables and spends *real* credits. Building is a trophy case for real productivity.
 

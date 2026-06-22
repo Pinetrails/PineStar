@@ -1,6 +1,6 @@
 # Cortex — Memory & Context Plan
 
-> **Skynet** — the agent memory + context system. Companion to `HERMES_INTEGRATION_PLAN.md` and `INCREMENTAL_ROADMAP.md`; obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, frozen event rung *before* any producer, one-commit-sized steps (≤3 source files, gating test first, `test:fast` green `<~10s` before the next), critical-path-first.
+> **StarNet** — the agent memory + context system. Companion to `HERMES_INTEGRATION_PLAN.md` and `INCREMENTAL_ROADMAP.md`; obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, frozen event rung *before* any producer, one-commit-sized steps (≤3 source files, gating test first, `test:fast` green `<~10s` before the next), critical-path-first.
 >
 > _Source studied: `NousResearch/hermes-agent` (MIT) at `C:\Users\andro\hermes-ref`, mapped 2026-06-14. **Pattern mine, not a port** — we take the shape of an idea and re-derive the smallest honest version against our real seams._
 

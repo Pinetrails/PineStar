@@ -292,6 +292,28 @@ const World = (() => {
     seat = { tx: dtx, ty: Math.min(dty + 1, z.y2) };
     blocked.add(dtx + ',' + dty); blocked.add((dtx + 1) + ',' + dty);
   }
+  // walk the hero to its work seat (or snap onto it if unreachable) + enter the 'work' goal — the shared "now sit
+  // and work" step, reached EITHER straight from on-duty OR after the conveyor-fetch leg below.
+  function goToSeat() {
+    agent.goal = 'work';
+    if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) {
+      if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; }   // face the assigned desk (deskFace) when teleport-fallback seating
+    }
+  }
+  // the hero's ASSIGNED conveyor: a walkable tile beside the BAY bound to this agent (agentId match, so it never
+  // reacts to another agent's bay). null = this agent has no conveyor → no fetch leg (straight to work).
+  function assignedConveyorTile(aid) {
+    if (!geo || !geo.props || !aid) return null;
+    const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid);
+    if (!bay) return null;
+    const bw = bay.w || 1, bh = bay.h || 1;
+    for (let yy = bay.y - 1; yy <= bay.y + bh; yy++)
+      for (let xx = bay.x - 1; xx <= bay.x + bw; xx++) {
+        if (xx >= bay.x && xx < bay.x + bw && yy >= bay.y && yy < bay.y + bh) continue;   // skip the footprint itself
+        if (geo.walkable(xx, yy, blocked)) return { x: xx, y: yy };
+      }
+    return null;
+  }
 
   function spawnTileLocal() {
     const sid = station.spawnRoomId(), z = sid && geo.zones[sid];
@@ -684,12 +706,68 @@ const World = (() => {
     return s;
   }
 
+  /* ---------- crew idle-wander (Bug 3) ----------
+     The hero owns the rich state machine (props/couch/quirks). A CREW body (summoned or bay-bound) gets a LIGHT,
+     independent stepper: when it isn't running a task, it strolls to a random reachable tile (belt-free where it
+     can), pauses a beat, and repeats — so an idle agent walks the station instead of standing frozen. A live run
+     (b.working, lit by setActivityFor) freezes it in the working pose. No leisure AI; reuses the hero's pathing. */
+  function crewNextWaypoint(b) {
+    if (!b.pathPts || b.pathIdx >= b.pathPts.length) { b.target = null; return; }
+    const wp = b.pathPts[b.pathIdx++];
+    b.target = footOf(wp.x, wp.y);
+  }
+  function crewWander(b, now) {
+    const rects = geo.allRects;
+    if (!rects || !rects.length) { b.idleUntil = now + 1200; return; }
+    const cur = tileOf(b.px, b.py);
+    const avoid = beltUnion();
+    for (let i = 0; i < 20; i++) {
+      const r = rects[U.irnd(0, rects.length - 1)];
+      const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
+      if (!geo.walkable(x, y, blocked) || avoid.has(x + ',' + y)) continue;
+      let p = geo.path(cur.x, cur.y, x, y, avoid);     // prefer a belt-free route
+      if (!p) p = geo.path(cur.x, cur.y, x, y, blocked); // fall back: a belt bridges the only crossing
+      if (p && p.length) { b.pathPts = p; b.pathIdx = 0; b.state = 'walk'; crewNextWaypoint(b); return; }
+    }
+    b.idleUntil = now + 1200;   // boxed in this frame — try again shortly
+  }
+  function stepCrew(dt, now) {
+    if (!geo || !crew.length) return;
+    const SPEED = 28;   // a calm background pace, a touch under the hero
+    for (const b of crew) {
+      if (!b.summoned || b.unplaced) continue;   // summoned workers roam; a bay-bound body stays where work is delivered
+      if (b.working) { b.pathPts = null; b.target = null; b.state = 'idle'; continue; }   // running → stand + work where it is
+      if (b.target) {
+        const dx = b.target.x - b.px, dy = b.target.y - b.py, d = Math.hypot(dx, dy);
+        if (d < 1.1) {
+          b.px = b.target.x; b.py = b.target.y;
+          if (b.pathPts && b.pathIdx < b.pathPts.length) crewNextWaypoint(b);
+          else { b.pathPts = null; b.target = null; b.state = 'idle'; b.idleUntil = now + U.irnd(2400, 6500); }   // arrived → dwell
+        } else {
+          const s = Math.min(d, SPEED * dt / 1000);
+          b.px += dx / d * s; b.py += dy / d * s; b.state = 'walk';
+          b.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+        }
+        continue;
+      }
+      if (now < (b.idleUntil || 0)) { b.state = 'idle'; continue; }   // dwelling between strolls
+      crewWander(b, now);
+    }
+  }
+
   // the catalog `use` descriptor for a placed prop, or null if it isn't a leisure prop
   function propUse(p) {
     if (typeof PropSprites === 'undefined' || typeof PropAnchor === 'undefined') return null;
     const s = PropSprites.spec(p.t);
     return s && s.use ? s.use : null;
   }
+  // OWNERSHIP: a prop that gets ASSIGNED to an agent for a gamified capability (a PC/workstation, cabinet, dish,
+  // notebook, connector, workbench, or a docking bay) is that agent's ALONE — only its assignee walks over to
+  // use/inspect it. Leisure + decor (couch/tv/arcade/plant) stay shared. An UNASSIGNED capability prop belongs to
+  // no one yet, so no agent is drawn to it either ("...or simply not assigned to them"). This keeps complex
+  // multi-agent factory floors legible: agents never wander to another agent's (or an unclaimed) workstation.
+  function isOwnableProp(t) { return !!(station && typeof station.capForProp === 'function' && station.capForProp(t)) || t === 'bay'; }
+  function mayTouchProp(agentId, p) { return !p || !isOwnableProp(p.t) || p.agentId === agentId; }
 
   /* free this agent's claimed seat (idempotent) and drop the on-couch render offset */
   function releaseSeat() {
@@ -795,6 +873,7 @@ const World = (() => {
     if (seenProps === null) { seenProps = propIds; seenBelts = beltKeys; propFoot = foot; return; }   // first look: learn the scene, react to nothing
     for (const p of props) {
       if (seenProps.has(p.id)) continue;
+      if (!mayTouchProp(agent && agent.id, p)) continue;   // another agent's (or unclaimed) workstation isn't "novel" to this one — don't walk over
       pushNovelty(Math.floor(p.x + (p.w || 1) / 2), Math.floor(p.y + (p.h || 1) / 2), 'prop', p.id);
     }
     for (const b of belts) {                       // a long run lands as one tile-flag, not a spam of them
@@ -873,7 +952,7 @@ const World = (() => {
     while (novelty.length) {
       const n = novelty.pop();
       let foot = { x: n.tx, y: n.ty, w: 1, h: 1 };
-      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p) continue; foot = p; }
+      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(agent.id, p)) continue; foot = p; }
       const extra = n.kind === 'belt' ? beltUnion() : blocked;   // for a belt, stand beside it — not on the machinery
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra });
       if (a && setPathTo({ x: a.tx, y: a.ty })) {
@@ -893,7 +972,7 @@ const World = (() => {
     if (belts.length) { const b = belts[U.irnd(0, belts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
     // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation)
-    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4; });
+    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(agent.id, p); });
     if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', key: p.id, foot: p, extra: blocked }); }
     if (cands.length === 2 && U.chance(0.5)) cands.reverse();
     for (const c of cands) {
@@ -1131,7 +1210,7 @@ const World = (() => {
   function maybeRounds(now) {
     if (now < (agent.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
     const cur = tileOf(agent.px, agent.py), stops = [];
-    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }
+    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(agent.id, p) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another agent's (or unclaimed) workstation
     const belts = (geo.belts || []); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
     if (stops.length < 2) return false;
     for (let i = stops.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = stops[i]; stops[i] = stops[j]; stops[j] = t; }   // shuffle
@@ -1349,6 +1428,7 @@ const World = (() => {
     if (!agent || agent.unplaced || !geo || awakeFrozen) return;   // frozen during the awakening: the newborn holds still, facing the Commander
     if (!agent.lastTaskAt) agent.lastTaskAt = now;                 // anchor downtime at the first live tick
     tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
+    stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
     const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
     // settle: a beat of sitting (loading context) before the screens light + typing latches on
     if (agent.goal === 'work' && !agent.working && agent.settleUntil && now >= agent.settleUntil) { agent.working = true; agent.settleUntil = 0; }
@@ -1369,11 +1449,19 @@ const World = (() => {
     // classify.js (stanceFor) + classify.test.js; this is the world half of the same promise.
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
-      if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
-      else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; } } }
+      if (agent.goal !== 'summon' && agent.goal !== 'fetch') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
+      // CONVEYOR-DELIVERED work (cron/channel): first walk UP TO this agent's ASSIGNED conveyor (its bound bay),
+      // THEN to the workstation. Only when the work actually rode a belt (taskViaConveyor) AND this agent owns a
+      // reachable bay; otherwise straight to the seat (in-app chat is byte-identical — no detour).
+      else if (agent.goal === 'summon' && now >= agent.thinkUntil) {
+        const conv = agent.taskViaConveyor ? assignedConveyorTile(agent.id) : null;
+        if (conv && setPathTo({ x: conv.x, y: conv.y })) agent.goal = 'fetch'; else goToSeat();
+      }
+      // reached the conveyor → now head to the workstation and work
+      else if (agent.goal === 'fetch' && agent.state !== 'walk' && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) goToSeat();
     }
-    if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon')) {
-      agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now;   // just finished real work → relaxed, downtime clock resets
+    if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon' || agent.goal === 'fetch')) {
+      agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now; agent.taskViaConveyor = false;   // just finished real work → relaxed, downtime clock resets
     }
     // freshly placed thing + free to roam → divert and go check it out (even mid-stroll), throttled
     if (activity === 'idle' && novelty.length && agent.goal === null && !agent.working && !agent.sitting && now >= (agent.noticeCd || 0)) {
@@ -1818,6 +1906,7 @@ const World = (() => {
      box at the INTAKE prop so it rides the player-laid belts to the desk. Pure visualization — if no
      INTAKE/belt path exists, nothing rides (the sidecar already ran the work either way). */
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
+  const serverLit = new Set();    // agentIds lit by an AUTONOMOUS run (cron/channel) — its run.end clears them
   let bridged = false, lastOutboxFlash = -1e9;
   let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
   let slaglog = null, lastCacheFrac = null;   // SlagLog: wasted-spend post-mortems + the last reconciled cache ratio (for the diagnosis)
@@ -1945,7 +2034,9 @@ const World = (() => {
   // reconcile `crew` with the plan's bound bays: one light body per bay (except the hero's own), standing at
   // the bay prop's foot. Reuses existing bodies by agentId so a re-bake doesn't wipe a live say bubble.
   function syncCrewFromPlan() {
-    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { if (crew.length) crew = []; return; }
+    // No bound bays (or no geo yet): drop the plan-derived crew, but KEEP summoned bodies — a summoned-but-unbound
+    // agent has no bay, so an empty plan must NOT wipe it (else it vanishes on the next rederive, e.g. a build toggle).
+    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { crew = crew.filter(b => b.summoned); return; }
     const want = new Map();
     for (const bay of routingPlan.bays) {
       if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
@@ -2002,6 +2093,7 @@ const World = (() => {
     const f = geo ? workerFoot() : { x: 0, y: 0 };                        // pre-geo: parked at origin, re-footed on first syncCrewFromPlan
     const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y);
     b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
+    b.idleUntil = fnow + U.irnd(1400, 3200);                              // hold a beat after materializing, then it strolls
     crew.push(b);
   }
   // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
@@ -2075,12 +2167,15 @@ const World = (() => {
       }
       return;
     }
-    // INBOUND: light the bay the box ACTUALLY rode to (its landing tile) — exact even past a SPLITTER's
-    // round-robin; fall back to resolveTarget(tag) only if it didn't land on a bound bay tile (open-end sink).
+    // INBOUND: prefer the agentId the box CARRIES — cron/channel address it explicitly to the run's agent, so the
+    // "received" beat lands on exactly the body that runs (server-authoritative; no re-derivation drift). Fall
+    // back to the landing tile, then resolveTarget(tag), for an unaddressed box. The work POSE itself is owned by
+    // the run-lifecycle binding above, so here we only ring the "received: <instruction>" beat and NEVER cut short
+    // an already-working body (an active run's glow must outlast this 4s pulse).
     const landed = (routingPlan && routingPlan.bayTileToAgent) ? routingPlan.bayTileToAgent[bx.x + ',' + bx.y] : null;
-    const aid = landed || ((typeof Pipeline !== 'undefined' && routingPlan) ? Pipeline.resolveTarget(routingPlan, { tag: p.tag }) : null);
+    const aid = p.agentId || landed || ((typeof Pipeline !== 'undefined' && routingPlan) ? Pipeline.resolveTarget(routingPlan, { tag: p.tag }) : null);
     const body = bodyForAgent(aid);
-    if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; body.workUntil = fnow + 4000; }
+    if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; if (!(body.workUntil > fnow + 5000)) body.workUntil = fnow + 4000; }
     else { say('received: ' + (p.preview || 'message')); wakeIn(); }   // the hero (or an unrouted box) — today's behaviour
   }
   // one app-level EventSource: re-emit validated channel/work-item events onto U.bus, and react in-world
@@ -2127,6 +2222,14 @@ const World = (() => {
     U.bus.on('agent.tool_result', p => { if (p && p.callId && p.callId === delegateCall) { delegateLead = null; delegateCall = null; } });
     U.bus.on('agent.run.start', p => { if (p && delegateLead) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(delegateLead, p.agentId, 'spawned'); } });
     U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(null, p.agentId, 'done'); } });
+    // AUTONOMOUS WORK (cron / channel): a server-initiated run has no in-app chat driving its body, so bind its
+    // run lifecycle to the work pose HERE — the agent goes to its workstation and works for the run's REAL
+    // duration, then stands when it ends. This is what makes a scheduled routine VISIBLE: the conveyor box rides
+    // in (kind 'cron'/'telegram') AND the agent actually runs to its PC and types until done. Interactive chat
+    // (trigger 'directive') drives its own body via chat.js and is excluded; a delegated worker (also 'directive')
+    // is handled by the handoff bindings above — so this never double-drives a body.
+    U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
     // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
     U.bus.on('agent.compact', p => {
@@ -2344,6 +2447,27 @@ const World = (() => {
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
       if (viaBay && viaBay.length) return viaBay.indexOf('workbench') >= 0;
       return !!(station.propsByType && station.propsByType('workbench').length);
+    },
+    // THE MOAT (FLOOR-REAL): the agent's REAL placed capability set — the EARNED reach the run client sends so the
+    // sidecar grants exactly what's on the floor (dish→web · cabinet→files · workbench→terminal · notebook→memory ·
+    // studio→image · jukebox→spotify). COMPUTE is the harness FREEBIE (always granted to an interactive agent, so it
+    // is never a dead wall) and CONNECTORS are account-level (added server-side), so both are excluded here — this is
+    // purely the placed-on-top set. An equipped BAY governs; with no bay (the simple single-agent floor) every distinct
+    // cap-prop placed anywhere is the hero's. Returns [{objectType}] room-object entries the sidecar appends as extras.
+    heroCaps: (agentId) => {
+      if (!station) return [];
+      const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
+      const norm = o => (o && typeof o === 'object') ? o.objectType : o;   // bayObjects entries are strings or {objectType}
+      const src = (viaBay && viaBay.length)
+        ? viaBay.map(norm)
+        : ((station.doc && station.doc().props) || []).map(p => (station.capForProp ? station.capForProp(p.t) : null));
+      const out = [], seen = {};
+      for (const cap of src) {
+        if (!cap || cap === 'computer' || cap === 'connector') continue;   // compute = freebie; connectors = added server-side
+        if (seen[cap]) continue; seen[cap] = true;
+        out.push({ objectType: cap });
+      }
+      return out;
     }
   };
 })();

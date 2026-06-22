@@ -1,6 +1,6 @@
 # Hermes Integration Plan
 
-> **Skynet** — a layered plan for borrowing Hermes-derived capabilities on top of the proven M1 sidecar harness. This document is the companion to `INCREMENTAL_ROADMAP.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
+> **StarNet** — a layered plan for borrowing Hermes-derived capabilities on top of the proven M1 sidecar harness. This document is the companion to `INCREMENTAL_ROADMAP.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
 
 > _Source: `NousResearch/hermes-agent` (MIT), cloned to `C:\Users\andro\hermes-ref`. Pattern mine, not a port. Produced by a 9-layer parallel design + adversarial-verify pass against the real sidecar (2026-06-14)._
 
@@ -198,7 +198,7 @@ These attach where a future phase's prerequisite seam lands. They are written so
 
 **Goal.** Turn the three OpenRouter-specific lines in `openrouter.js` into a declarative `ProviderProfile` + a tiny registry, so provider #2 is a data record, not a forked file — without touching `loop.js`/`cost.js`/the event contract.
 
-**Seam.** `makeOpenRouterProvider` call sites at `index.js:137` (per-run) and `:85` (catalog warmer), behind the `LLMProvider` contract. The entire provider-specific surface is: `BASE` (`openrouter.js:18`), the request body's extra fields (`:53`), and the `'HTTP-Referer'`/`'X-Title':'SKYNET'` headers (`:170`).
+**Seam.** `makeOpenRouterProvider` call sites at `index.js:137` (per-run) and `:85` (catalog warmer), behind the `LLMProvider` contract. The entire provider-specific surface is: `BASE` (`openrouter.js:18`), the request body's extra fields (`:53`), and the `'HTTP-Referer'`/`'X-Title':'STARNET'` headers (`:170`).
 
 **Risk.** low. **Defer rationale:** a registry with one entry is indirection without a caller. Land `P-prof.1`+`P-prof.2` the commit **before** provider #2; gate `P-prof.3` on that second provider existing.
 

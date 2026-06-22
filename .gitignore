@@ -18,6 +18,10 @@ workspaces/
 # preview/verify sidecar workspaces (per-worktree launch.json SKYNET_WORKSPACES)
 .verify-workspaces/
 
+# dev seed launcher: local secrets + the throwaway seeded workspace it materializes
+dev/.env.dev
+dev/.scratch-workspace/
+
 # rust / tauri desktop shell build output
 src-tauri/target/
 src-tauri/gen/

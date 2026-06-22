@@ -23,6 +23,7 @@ const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
+const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
 const { makeSpotifyTools } = require('./tools/builtin/spotify.js');       // JUKEBOX: control/query the user's Spotify
 const { makeSpotifyStore } = require('./spotify/store.js');               // Spotify OAuth (PKCE) token store + auto-refresh
@@ -32,11 +33,12 @@ const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
+const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
-const { redact, renderRecall, injectRecall, rank, makeContext } = require('./context.js');
+const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock } = require('./context.js');
 const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -60,6 +62,11 @@ const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-t
 
 const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
 const API_TOKEN = String(process.env.SKYNET_API_TOKEN || crypto.randomBytes(32).toString('hex'));
+// DEV fast-path (the `npm run dev:seed` launcher sets this): when on, the served index.html carries a small
+// boot payload (window.__SKYNET_DEV__ = {model, prov}) so a fresh browser origin auto-resumes the server-
+// seeded save with no connect screen / awakening. Holds NO secret — the API key stays in runtimeKey. Never
+// set in a packaged build, so this is inert in shipping. Loopback-only like the rest of the server.
+const DEV_MODE = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_DEV || '').trim());
 const LOOPBACK_ORIGINS = new Set(['http://127.0.0.1:' + PORT, 'http://localhost:' + PORT]);
 const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
 function isAllowedApiOrigin(origin) {
@@ -613,6 +620,16 @@ const cronDriver = makeCronDriver({
   hasCredential: (provider, key) => cronHasCredential(provider, key),
   defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
   identityForAgent: (agentId) => cronIdentityFor(agentId),
+  // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
+  // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
+  // crate arrives at the agent's bay and (with the run-lifecycle binding in world.js) the agent goes to work.
+  // The agentId is the job's (server-authoritative), so the box lands on exactly the agent the run executes as.
+  placeWorkitem: (agentId, prompt, runId) => {
+    try {
+      const preview = String(prompt || '').replace(/\s+/g, ' ').slice(0, 40);
+      chanEmit('workitem.placed', { workitemId: crypto.randomUUID(), queueId: agentId, agentId, kind: 'cron', preview, queueDepth: 0, ts: Date.now() });
+    } catch (_) {}
+  },
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
   persona: (agentId) => cronSystemFor(agentId)
@@ -830,6 +847,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('     Open in your browser:  ' + url);
   console.log('     This one process IS the complete product — the UI you see and');
   console.log('     the agents/web-search/tools behind it are all served from here.');
+  if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
   makeOpenRouterProvider({ fetch: globalThis.fetch }).listModels().then(
@@ -1265,12 +1283,26 @@ async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
-  const { model, system, messages = [], agentId = 'agent', isTask = false, provider } = body || {};
+  const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
-  // a placed WORKBENCH grants this run the terminal capability (shell.exec + verify.run), additively on top of
-  // the default office. The browser sends it off the floor (World.heroWorkbench); shell still walks the full
-  // consent ladder (interactive prompts; autonomous exec-lockout) + auto-checkpoints before every command.
-  const extraObjects = (body && body.workbench) ? [{ instanceId: 'wb_placed', objectType: 'workbench' }] : [];
+  // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
+  // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
+  // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify.
+  // A placed WORKBENCH still walks the full consent ladder + auto-checkpoints before every command. Legacy clients
+  // send just `workbench:true`; that path is preserved so an older build still grants the terminal.
+  let extraObjects = [];
+  if (body && Array.isArray(body.placed)) {
+    extraObjects = body.placed
+      .filter(e => e && (typeof e === 'string' || e.objectType))
+      .map((e, i) => {
+        const ot = String(typeof e === 'string' ? e : e.objectType);
+        const ob = { instanceId: 'placed_' + i + '_' + ot, objectType: ot };
+        if (e && typeof e === 'object' && e.connectorId) ob.connectorId = e.connectorId;
+        return ob;
+      });
+  } else if (body && body.workbench) {
+    extraObjects = [{ instanceId: 'wb_placed', objectType: 'workbench' }];
+  }
   const usingCodex = (provider === 'codex' || provider === 'openai-codex');   // Codex authenticates by OAuth token, not an API key
   // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and updatable
   // via /api/key). The browser build still sends body.key, which wins.
@@ -1324,7 +1356,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask, provider,
+      key, model, system, messages, agentId, isTask, provider, fallbackModels,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
@@ -1394,8 +1426,9 @@ async function runOnce(o) {
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
-  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
+  Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   // STUDIO (media skills): image_generate / image_analyze ride the SAME BYOK OpenRouter key + key the run uses.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   makeImageTools({ openrouter: { apiKey: key, model }, fsp, pathMod: path, root: WORKSPACES }).register(registry);
@@ -1420,26 +1453,16 @@ async function runOnce(o) {
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
   //      web · cabinet = files · notebook = memory. resolveTools projects them into the agent's tools FRESH per
   //      run — no host-side toolset policy. Phase B5: a routed bay passes its OWN station (o.station) built from
-  //      the objects in that bay's room, so per-bay caps are isolated; absent (browser chat / unrouted work) =
-  //      the full default office, unchanged. ----
-  const defaultObjects = [
-    { instanceId: 'pc1', objectType: 'computer' },
-    { instanceId: 'dish1', objectType: 'dish' },
-    { instanceId: 'cab1', objectType: 'cabinet' },
-    { instanceId: 'nb1', objectType: 'notebook' },
-    { instanceId: 'studio1', objectType: 'studio' },      // STUDIO: image generation + vision analysis (OpenRouter)
-    { instanceId: 'jukebox1', objectType: 'jukebox' }     // JUKEBOX: Spotify (inert until connected in Settings)
-  ];
-  // the single-agent browser office also gets every configured connector portal — there is exactly ONE agent
-  // here, so this IS per-agent; routed multi-agent bays instead pass their OWN room objects (o.station) so each
-  // bay only reaches the connectors physically placed in it.
-  for (const cid of connectors.ids()) defaultObjects.push({ instanceId: 'conn_' + cid, objectType: 'connector', connectorId: cid });
-  // Stage 2: the LEAD (browser-commanded run) alone gets the orchestrator object -> the team.dispatch tool. A
-  // delegated worker runs with o.lead falsy and no o.station -> no orchestrator object -> cannot re-delegate.
-  if (o.lead) defaultObjects.push({ instanceId: 'orch1', objectType: 'orchestrator' });
-  // ADDITIVE placement: extra objects the caller says are placed for this agent (e.g. a WORKBENCH → shell.exec +
-  // verify.run) join the default office, so the hero gains a placed capability WITHOUT losing its baseline office.
-  if (Array.isArray(o.extraObjects)) for (const e of o.extraObjects) if (e && e.objectType) defaultObjects.push({ instanceId: String(e.instanceId || ('extra_' + e.objectType)), objectType: String(e.objectType) });
+  //      the objects in that bay's room, so per-bay caps are isolated; absent (browser chat / unrouted work) the
+  //      office is composed below. ----
+  // THE MOAT (FLOOR-REAL) lives in composeOffice (./capability/office.js, pure + tested): on the INTERACTIVE
+  // (browser COMMS) surface the floor is REAL — the office starts COMPUTE-ONLY (the single freebie: an agent can
+  // ALWAYS think, so a brand-new agent works out of the box and the floor is never a dead wall) and the agent's
+  // actual placed caps (o.extraObjects: dish→web · cabinet→files · workbench→terminal · …) are appended, so it
+  // grants exactly what the Commander placed. AUTONOMOUS/headless runs keep the full default office (no floor UI in
+  // the moment; stripping a scheduled/delegated run's web+files would regress shipped work). Connectors are
+  // account-level (both surfaces); the LEAD alone gets the orchestrator object so a delegated worker can't re-delegate.
+  const defaultObjects = composeOffice({ surface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
   const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   const resolved = resolveTools(agentId, station);
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
@@ -1488,6 +1511,14 @@ async function runOnce(o) {
   }
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
+  // Provider FALLBACK chain (consumes the loop's failover seam). Cost-correct by construction: each entry reuses
+  // THIS provider object (same priceOf catalog) with an alternate model, so a fallback's spend is priced right.
+  // Source: o.fallbackModels (array of slugs from the run request) or env SKYNET_FALLBACK_MODELS (comma list).
+  // On overload/429/5xx/auth/billing the loop retries the turn on the next model instead of dying. Empty = off.
+  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(process.env.SKYNET_FALLBACK_MODELS || '').split(','))
+    .map(s => String(s || '').trim()).filter(s => s && s !== model);
+  const fallbacks = fallbackModels.map(m => ({ provider, model: m }));
+
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
   //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
   //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
@@ -1504,9 +1535,18 @@ async function runOnce(o) {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
       return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
     }).join('\n').slice(0, 16000);
+    // on_pre_compress (MEMORY-CORTEX): rank the agent's durable memory against the slice being folded and PREPEND
+    // it, so beliefs like "user prefers X" survive when the raw turns are discarded. '' when nothing to preserve
+    // (prepend nothing → byte-identical compaction). Fail-open: a memory hiccup must never block the summary.
+    let memBlock = '';
+    try {
+      const recs = notebookStore.get('notebook:' + agentId);
+      if (Array.isArray(recs) && recs.length) memBlock = compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
+    } catch (_) {}
+    const userMsg = (memBlock ? memBlock + '\n\n' : '') + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
     const req = { model, stream: true, signal, messages: [
       { role: 'system', content: 'You compress an earlier slice of an agent conversation into a dense factual summary. Preserve decisions made, facts and data learned (with sources), files written, tool results, and any still-open tasks. Drop pleasantries. Output ONLY the summary prose.' },
-      { role: 'user', content: 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript }
+      { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
@@ -1638,7 +1678,8 @@ async function runOnce(o) {
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
       limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
-      budget: runBudget, context: ctxMgr, summarize,
+      budget: runBudget, context: ctxMgr, summarize, fallbacks,
+      todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
       // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
@@ -2160,7 +2201,8 @@ function serveMemoryRecords(req, res) {
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
     const raw = notebookStore.get('notebook:' + agent);
-    const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r))) : [];
+    const nowMs = Date.now();   // surface effectiveTrust (time-decayed) so the panel shows earned-vs-current trust
+    const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r, nowMs))) : [];
     json(200, { agentId: agent, records });
   } catch (e) { json(200, { records: [] }); }
 }
@@ -2215,7 +2257,11 @@ async function serveStatic(req, res) {
     if (abs !== FRONTEND && abs.indexOf(FRONTEND + path.sep) !== 0) { res.writeHead(403); return res.end('forbidden'); }
     let data = await fsp.readFile(abs);
     if (abs.toLowerCase() === path.resolve(FRONTEND, 'index.html').toLowerCase()) {
-      const boot = '<script>window.__SKYNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';</script>';
+      let boot = '<script>window.__SKYNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
+      // DEV fast-path: hand the page a model + provider hint so a fresh origin auto-resumes the seeded
+      // save with no setup. No secret crosses here — the key stays server-side in runtimeKey.
+      if (DEV_MODE) boot += 'window.__SKYNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
+      boot += '</script>';
       data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
     }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });

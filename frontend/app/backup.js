@@ -90,7 +90,7 @@ const Backup = (() => {
   // validate a parsed bundle WITHOUT mutating anything — callers decide whether to apply.
   function validate(doc) {
     if (!doc || typeof doc !== 'object') return 'not a JSON object';
-    if (doc.schema !== SCHEMA) return 'not a SKYNET backup file';
+    if (doc.schema !== SCHEMA) return 'not a STARNET backup file';
     if (!doc.store || typeof doc.store !== 'object') return 'backup has no data';
     if (typeof doc.store['skynet.save'] !== 'string') return 'backup has no agent';
     return null;   // ok
