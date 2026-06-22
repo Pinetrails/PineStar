@@ -256,6 +256,28 @@ const World = (() => {
     seat = { tx: dtx, ty: Math.min(dty + 1, z.y2) };
     blocked.add(dtx + ',' + dty); blocked.add((dtx + 1) + ',' + dty);
   }
+  // walk the hero to its work seat (or snap onto it if unreachable) + enter the 'work' goal — the shared "now sit
+  // and work" step, reached EITHER straight from on-duty OR after the conveyor-fetch leg below.
+  function goToSeat() {
+    agent.goal = 'work';
+    if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) {
+      if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; }
+    }
+  }
+  // the hero's ASSIGNED conveyor: a walkable tile beside the BAY bound to this agent (agentId match, so it never
+  // reacts to another agent's bay). null = this agent has no conveyor → no fetch leg (straight to work).
+  function assignedConveyorTile(aid) {
+    if (!geo || !geo.props || !aid) return null;
+    const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid);
+    if (!bay) return null;
+    const bw = bay.w || 1, bh = bay.h || 1;
+    for (let yy = bay.y - 1; yy <= bay.y + bh; yy++)
+      for (let xx = bay.x - 1; xx <= bay.x + bw; xx++) {
+        if (xx >= bay.x && xx < bay.x + bw && yy >= bay.y && yy < bay.y + bh) continue;   // skip the footprint itself
+        if (geo.walkable(xx, yy, blocked)) return { x: xx, y: yy };
+      }
+    return null;
+  }
 
   function spawnTileLocal() {
     const sid = station.spawnRoomId(), z = sid && geo.zones[sid];
@@ -1391,11 +1413,19 @@ const World = (() => {
     // classify.js (stanceFor) + classify.test.js; this is the world half of the same promise.
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
-      if (agent.goal !== 'summon') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
-      else if (now >= agent.thinkUntil) { agent.goal = 'work'; if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) { if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = 'north'; } } }
+      if (agent.goal !== 'summon' && agent.goal !== 'fetch') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
+      // CONVEYOR-DELIVERED work (cron/channel): first walk UP TO this agent's ASSIGNED conveyor (its bound bay),
+      // THEN to the workstation. Only when the work actually rode a belt (taskViaConveyor) AND this agent owns a
+      // reachable bay; otherwise straight to the seat (in-app chat is byte-identical — no detour).
+      else if (agent.goal === 'summon' && now >= agent.thinkUntil) {
+        const conv = agent.taskViaConveyor ? assignedConveyorTile(agent.id) : null;
+        if (conv && setPathTo({ x: conv.x, y: conv.y })) agent.goal = 'fetch'; else goToSeat();
+      }
+      // reached the conveyor → now head to the workstation and work
+      else if (agent.goal === 'fetch' && agent.state !== 'walk' && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) goToSeat();
     }
-    if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon')) {
-      agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now;   // just finished real work → relaxed, downtime clock resets
+    if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon' || agent.goal === 'fetch')) {
+      agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now; agent.taskViaConveyor = false;   // just finished real work → relaxed, downtime clock resets
     }
     // freshly placed thing + free to roam → divert and go check it out (even mid-stroll), throttled
     if (activity === 'idle' && novelty.length && agent.goal === null && !agent.working && !agent.sitting && now >= (agent.noticeCd || 0)) {
@@ -2158,7 +2188,7 @@ const World = (() => {
     // in (kind 'cron'/'telegram') AND the agent actually runs to its PC and types until done. Interactive chat
     // (trigger 'directive') drives its own body via chat.js and is excluded; a delegated worker (also 'directive')
     // is handled by the handoff bindings above — so this never double-drives a body.
-    U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); setActivityFor(p.agentId, 'task'); } });
+    U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
     U.bus.on('agent.run.end', p => { if (p && p.agentId && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
     // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
