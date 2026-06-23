@@ -22,7 +22,8 @@
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)
       { capId: 'memory', tool: 'notebook.read', scope: 'read', requiresConsent: false, network: false },
       { capId: 'memory', tool: 'notebook.feedback', scope: 'write', requiresConsent: false, network: false }, // rate a recalled memory helpful/unhelpful — trust nudge only (see notebook.js)
-      { capId: 'memory', tool: 'todo', scope: 'write', requiresConsent: false, network: false }              // in-session task plan — the agent's working memory (see todo.js)
+      { capId: 'memory', tool: 'todo', scope: 'write', requiresConsent: false, network: false },             // in-session task plan — the agent's working memory (see todo.js)
+      { capId: 'memory', tool: 'recall_conversation', scope: 'read', requiresConsent: false, network: false } // H1.3: search your own past dialogue (transcriptstore) — read-only, no consent (see recall.js)
     ],
     // M5: object = capability made real — placing these grants the agent real-world reach.
     cabinet: [

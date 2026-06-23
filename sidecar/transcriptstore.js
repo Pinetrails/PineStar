@@ -51,6 +51,29 @@
 
     // a bad/missing streamId collapses to 'global' — exactly index.js's rule (bad streamId -> the global stream).
     function normStream(v) { const s = str(v); return SID_RE.test(s) ? s : 'global'; }
+    function tokenize(s) { return (str(s).toLowerCase().match(/[a-z0-9]+/g)) || []; }
+
+    // H1.3: keyword recall over ONE stream's transcript — the substrate for the agent-callable recall_conversation
+    // tool, so it can find weeks-old dialogue no longer in context. Lightweight BM25-ish: rank a row by how many
+    // DISTINCT query terms it contains (primary), then total term frequency, then recency. Dependency-free + pure.
+    function search(streamId, query, o) {
+      o = o || {};
+      const limit = num(o.limit) > 0 ? Math.min(num(o.limit), 50) : 10;
+      const terms = Array.from(new Set(tokenize(query)));
+      if (!terms.length) return [];
+      const want = normStream(streamId);
+      const scored = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (r.streamId !== want) continue;
+        const tf = {}; for (const t of tokenize(r.content)) tf[t] = (tf[t] || 0) + 1;
+        let distinct = 0, freq = 0;
+        for (const t of terms) { if (tf[t]) { distinct++; freq += tf[t]; } }
+        if (distinct) scored.push({ idx: i, role: r.role, content: r.content, ts: r.ts, score: distinct * 1000 + freq });
+      }
+      scored.sort((a, b) => (b.score - a.score) || (b.ts - a.ts) || (b.idx - a.idx));
+      return scored.slice(0, limit).map(x => ({ role: x.role, content: x.content, ts: x.ts, score: x.score }));
+    }
 
     function append(e) {
       e = e || {};
@@ -132,7 +155,7 @@
     }
 
     return {
-      append, appendTurns, history, reconstruct,
+      append, appendTurns, history, reconstruct, search,
       all() { return rows.map(r => Object.assign({}, r)); },
       count() { return rows.length; },
       _internals: { normStream, SID_RE }

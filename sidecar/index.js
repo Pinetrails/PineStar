@@ -23,6 +23,7 @@ const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
+const { makeRecallTool } = require('./tools/builtin/recall.js');
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
 const { makeSpotifyTools } = require('./tools/builtin/spotify.js');       // JUKEBOX: control/query the user's Spotify
@@ -1466,6 +1467,7 @@ async function runOnce(o) {
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
+  makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   // STUDIO (media skills): image_generate / image_analyze ride the SAME BYOK OpenRouter key + key the run uses.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
