@@ -169,21 +169,30 @@
     // folded into spentUsd/spentTokens HERE, so the per-run ceiling + cross-run pool guards on the NEXT turn (and
     // the run total) see it — not just at run end. After 2 consecutive failed/empty summaries, compaction gives
     // up for the rest of the run, bounding wasted paid calls against a degraded model.
-    let compactionFails = 0, compactionOff = false;
+    let compactionFails = 0, compactionOff = false, lowSavingsStreak = 0;
+    // H5.2: a conversation_summary note from an EARLIER fold must be MERGED into the next one (one running summary),
+    // never left to stack alongside a new note. Detect/strip it anywhere; its inner text seeds the merge.
+    const isSummaryNote = (m) => m && m.role === 'system' && typeof m.content === 'string' && m.content.indexOf('<conversation_summary>') === 0;
+    const summaryInner = (c) => String(c).replace(/^<conversation_summary>\n?/, '').replace(/\n?<\/conversation_summary>$/, '').trim();
     // force=true skips the threshold gate (used by the context_overflow error-recovery path: compact, then retry
     // the turn instead of dying). Returns true iff history was actually folded — the caller only retries on true,
     // so a no-foldable-history overflow can't spin. Existing callers pass no arg and ignore the return.
     async function maybeCompact(force) {
       if (compactionOff || !context) return false;
       if (!force && (!lastUsage || !context.shouldCompact(lastUsage))) return false;
+      // H5.2: lift any prior summary OUT of the working set first — its text seeds the merge, and the rebuild below
+      // re-inserts exactly ONE note, so successive folds keep a single running summary instead of stacking notes.
+      let prevSummary = '';
+      const working = [];
+      for (const m of messages) { if (isSummaryNote(m)) { if (!prevSummary) prevSummary = summaryInner(m.content); } else working.push(m); }
       let i = 0;
-      while (i < messages.length && messages[i].role === 'system') i++;   // leading system prefix kept verbatim
-      const prefix = messages.slice(0, i);
-      const plan = context.planCompaction(messages.slice(i));
+      while (i < working.length && working[i].role === 'system') i++;   // leading system prefix kept verbatim
+      const prefix = working.slice(0, i);
+      const plan = context.planCompaction(working.slice(i));
       if (!plan.older.length) return false;                               // nothing safely foldable yet (no paid call)
       const beforeTokens = (lastUsage && (lastUsage.prompt_tokens || lastUsage.promptTokens)) || context.estimateMessages(messages);
       let r;
-      try { r = summarize ? await summarize(plan.older) : ''; }
+      try { r = summarize ? await summarize(plan.older, prevSummary) : ''; }   // prevSummary => the summarizer MERGE-updates it (H5.2)
       catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return false; }   // summarizer threw -> skip
       if (signal.aborted) return false;
       const summary = (typeof r === 'string') ? r : ((r && r.summary) || '');
@@ -198,6 +207,11 @@
       if (r && typeof r === 'object') { spentUsd += r.usd || 0; spentTokens += r.tokens || 0; }   // count the summarizer's own spend
       lastUsage = null;   // the next turn re-measures against the compacted prompt before considering another fold
       emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'context' });
+      // H5.2 anti-thrash: a fold that barely shrinks the prompt isn't worth another paid summarizer call. After two
+      // folds in a row that each freed <10% of the prompt, stop compacting for the rest of the run (same
+      // circuit-breaker shape as compactionFails) — bounds wasted spend when the kept tail/summary already dominate.
+      const savings = beforeTokens > 0 ? (beforeTokens - afterTokens) / beforeTokens : 0;
+      if (savings < 0.10) { if (++lowSavingsStreak >= 2) compactionOff = true; } else { lowSavingsStreak = 0; }
       return true;
     }
 
