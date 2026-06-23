@@ -2189,8 +2189,27 @@ const World = (() => {
       phase: U.hash('' + aid) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
-      glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0,
-      wakeAt: 0, workUntil: 0
+      glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
+      wakeAt: 0, workUntil: 0,
+      // B0 — FULL ENGINE STATE SHAPE (additive, runtime-only): mirror the hero literal (spawn ~346-367) so a
+      // crew body will read real meters/temperament once Tier B (B2) routes the sentience engine through it.
+      // The engine is NOT called on crew yet (they still run crewWander) — this only seeds the shape. Every
+      // field is per-body: a FRESH needs object and a NEW fond Map (never a shared reference) so no body ever
+      // reads/mutates another's state (J2). Determinism: needs seeded via U.irnd, temperament via makePersonality
+      // (U.hash, no RNG) — no Math.random/Date.now (J5).
+      pers: makePersonality(aid),
+      needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content (same init as the hero)
+      lastTaskAt: 0, thinkUntil: 0, settleUntil: 0, trackUntil: 0,
+      quirkKind: null,
+      placeTarget: null, removeId: null,
+      roundsQueue: null, roundsCd: 0,
+      fond: new Map(), revisitCd: 0,   // SPATIAL MEMORY: a NEW Map per body — never shared
+      pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0,
+      stilling: false,
+      inspectNovel: null, lookCd: 0,   // lazily-read engine fields (arrive/planInspect/maybeGlance) seeded so first read isn't undefined
+      // per-body copies of the cooldowns the engine currently reads from MODULE scope (quirkCd/offbeatCd/placeCd/
+      // mournCd). Seeded now so B3 can move those gates per-body without a swarm-wide lockstep; harmless today.
+      quirkCd: 0, offbeatCd: 0, placeCd: 0, mournCd: 0
     };
   }
   // reconcile `crew` with the plan's bound bays: one light body per bay (except the hero's own), standing at
