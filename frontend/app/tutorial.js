@@ -26,6 +26,7 @@ const Tutorial = (() => {
   let agentName = 'AGENT';
   // one-shot latches so a repeated bus event can never double-narrate a beat
   let sawStart = false, sawPermission = false, sawEnd = false;
+  let briefSawPrompt = false;   // session-wide: a consent prompt appeared this run → tick the brief step only once the run ENDS (= the Commander actually responded, approve OR deny), never on mere prompt-appearance
 
   function load() {
     let r = null;
@@ -125,8 +126,8 @@ const Tutorial = (() => {
     if (wired || typeof U === 'undefined' || !U.bus) return;
     wired = true;
     U.bus.on('agent.run.start', () => { if (active && !sawStart) { sawStart = true; onRunStart(); } });
-    U.bus.on('permission.prompt', () => { tickBrief('approve'); if (active && !sawPermission) { sawPermission = true; onPermission(); } });
-    U.bus.on('agent.run.end', () => { tickBrief('command'); if (active && !sawEnd) { sawEnd = true; onRunEnd(); } });
+    U.bus.on('permission.prompt', () => { briefSawPrompt = true; if (active && !sawPermission) { sawPermission = true; onPermission(); } });
+    U.bus.on('agent.run.end', () => { tickBrief('command'); if (briefSawPrompt) { tickBrief('approve'); briefSawPrompt = false; } if (active && !sawEnd) { sawEnd = true; onRunEnd(); } });
   }
 
   // the agent is now walking to the desk (chat.js set World.setActivity('task') the instant the chip fired)
@@ -294,7 +295,7 @@ const Tutorial = (() => {
 
   const STEPS = [
     { k: 'command',   label: 'Give your agent a command' },
-    { k: 'approve',   label: 'Approve a tool request' },
+    { k: 'approve',   label: 'Respond to a tool request' },
     { k: 'build',     label: 'Place a piece of gear in REFIT' },
     { k: 'belt',      label: 'Lay a conveyor belt' },
     { k: 'connector', label: 'Bind a connector portal' },
