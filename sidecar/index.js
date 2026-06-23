@@ -1611,7 +1611,7 @@ async function runOnce(o) {
   // spend stays visible; that event deliberately OMITS tokensIn/tokensOut so the context-occupancy gauge (which
   // reads agent.cost.tokensIn as "current prompt size") is not transiently corrupted by the summarizer's small
   // prompt. The loop owns the accounting; this emit is for the cost stream only.
-  async function summarize(older) {
+  async function summarize(older, prevSummary) {
     const transcript = older.map(mm => {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
       return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
@@ -1624,9 +1624,11 @@ async function runOnce(o) {
       const recs = notebookStore.get('notebook:' + agentId);
       if (Array.isArray(recs) && recs.length) memBlock = compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
     } catch (_) {}
-    const userMsg = (memBlock ? memBlock + '\n\n' : '') + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
+    const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
+    const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
+    const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
     const req = { model, stream: true, signal, messages: [
-      { role: 'system', content: compactionSummaryPrompt({ prevSummary: false }) },   // H5.1: structured section template (Hermes parity)
+      { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
       { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
