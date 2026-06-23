@@ -29,6 +29,7 @@ const Marketplace = (() => {
   let pendingMintTemplate = null;               // the proposed directive template the recipe save form pre-fills with
   let tab = 'agents';                           // 'agents' (specialties) | 'recipes' (missions) — the deploy-bay tab
   let glassOpen = false;                        // the "what I've learned about you" panel expanded? (per-session)
+  let pickedSummonSkin = null;                  // SUMMON mode: which skin the new agent wears (set lazily to DATA.DEFAULT_SKIN)
   const expanded = {};                          // specId/recipeId -> preview open (persists across re-renders)
 
   const hasRecipes = () => typeof Recipes !== 'undefined';   // the Recipe library is optional (degrades to agents-only)
@@ -158,8 +159,24 @@ const Marketplace = (() => {
     const deploy = !ctx || ctx.mode !== 'pick';
     let html = tabsHTML();
     html += glassHTML();        // "STATION FAMILIARITY" — the shared glass box of what the station has learned (deploy mode, both tabs)
+    html += summonSkinBarHTML();   // SUMMON mode: pick the new agent's skin (one bar, applied to whichever specialty you RECRUIT)
     html += (deploy && tab === 'recipes') ? recipesPaneHTML() : agentsPaneHTML(deploy);
     return html;
+  }
+
+  // SUMMON-only: a single skin selector for the agent being summoned. The choice rides on the spec
+  // handed to onPick (→ summonAgent), so the new crew body wears it. Reuses the create-screen .skin-picker styles.
+  function summonSkinBarHTML() {
+    if (!(ctx && ctx.mode === 'pick' && ctx.summon) || typeof DATA === 'undefined' || !DATA.SKINS) return '';
+    if (!pickedSummonSkin || !DATA.SKINS[pickedSummonSkin]) pickedSummonSkin = DATA.DEFAULT_SKIN;
+    const thumbs = Object.keys(DATA.SKINS).map(id => {
+      const sk = DATA.SKINS[id];
+      return '<button type="button" class="skin-thumb' + (id === pickedSummonSkin ? ' sel' : '') +
+        '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '">' +
+        '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
+    }).join('');
+    return '<div class="mkt-skinbar"><label class="mkt-skinlabel">SKIN <span class="mkt-hint">— which character this agent wears</span></label>' +
+      '<div class="skin-picker" id="mkt-skin-picker">' + thumbs + '</div></div>';
   }
 
   // the AGENTS tab — the specialty catalog (the bay's original content) + its affinity-ranked shelf
@@ -425,6 +442,14 @@ const Marketplace = (() => {
     const saveas = body.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; render(); });
 
+    // SUMMON skin picker — set the chosen skin (applied to whichever specialty is RECRUITed)
+    const skinWrap = body.querySelector('#mkt-skin-picker');
+    if (skinWrap) skinWrap.querySelectorAll('.skin-thumb').forEach(b => b.addEventListener('click', () => {
+      pickedSummonSkin = b.dataset.skin;
+      skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
+      b.classList.add('sel'); sfx('click');
+    }));
+
     // PREVIEW toggles IN PLACE (no full re-render) so it animates and keeps keyboard focus on the button
     body.querySelectorAll('.mkt-prev').forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.id, card = b.closest('.mkt-card');
@@ -457,7 +482,11 @@ const Marketplace = (() => {
       const s = Specialties.get(b.dataset.id);
       if (!s) return;
       sfx('click');
-      if (ctx && ctx.mode === 'pick') { if (ctx.onPick) ctx.onPick(s); close(); }
+      if (ctx && ctx.mode === 'pick') {
+        // SUMMON carries the picked skin onto the new agent; wake-mode pick (hero) keeps the connect-screen skin.
+        if (ctx.onPick) ctx.onPick(ctx.summon ? Object.assign({}, s, { skin: pickedSummonSkin || DATA.DEFAULT_SKIN }) : s);
+        close();
+      }
       else {
         const cb = root && root.querySelector('.mkt-adopt-cb');
         const adoptVoice = !!(cb && cb.checked);
