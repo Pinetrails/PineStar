@@ -32,6 +32,7 @@ const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { makeTranscriptStore } = require('./transcriptstore.js');
+const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
@@ -251,6 +252,11 @@ const transcriptIo = {
   }
 };
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
+
+// credential pool (P0.2): orders the primary OpenRouter key + alternates and cools a key that just hit a
+// rotate-reason failure (rate_limit/auth/billing) so it isn't retried first next run. In-memory only; never
+// logged/persisted. Singleton so the cooldown survives across runs within a sidecar process.
+const credPool = makeCredPool({ clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
@@ -1542,7 +1548,18 @@ async function runOnce(o) {
   // On overload/429/5xx/auth/billing the loop retries the turn on the next model instead of dying. Empty = off.
   const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(process.env.SKYNET_FALLBACK_MODELS || '').split(','))
     .map(s => String(s || '').trim()).filter(s => s && s !== model);
-  const fallbacks = fallbackModels.map(m => ({ provider, model: m }));
+  // CREDENTIAL ROTATION (P0.2): on a rate-limit/auth/billing failure the loop rotates to an alternate KEY for the
+  // SAME model BEFORE trying alternate models. Pool source: o.keyPool (array) or env SKYNET_KEY_POOL (comma list).
+  // credPool sinks cooled (recently-failed) keys to the back; each entry is a fresh provider on that key (priceOf
+  // is key-independent → cost stays correct) tagged with credKey so the loop's onFallback can cool it on failure.
+  // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
+  let rotationFallbacks = [];
+  if (!usingCodex) {
+    const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(process.env.SKYNET_KEY_POOL || '').split(','))
+      .map(s => String(s || '').trim()).filter(s => s && s !== key);
+    rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk }), model, credKey: rk }));
+  }
+  const fallbacks = rotationFallbacks.concat(fallbackModels.map(m => ({ provider, model: m })));
 
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
   //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
@@ -1704,6 +1721,10 @@ async function runOnce(o) {
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
       limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
+      // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
+      // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
+      credKey: usingCodex ? null : key,
+      onFallback: ({ rotate, credKey }) => { if (rotate && credKey) credPool.penalize(credKey); },
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
