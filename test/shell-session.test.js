@@ -1,0 +1,96 @@
+/* node test/shell-session.test.js — persistent shell session cwd (H2.1).
+   Proves: a `cd` carries over to the next command (state persists), an out-of-jail cwd is NOT persisted (clamp),
+   the REAL exit code is recovered from the marker (the appended echo can't mask it), and `cd ..` past the jail
+   root is still refused. Uses an INJECTED fake spawn (no real shell) + the real `path` module, so it is
+   platform-stable and deterministic. Also unit-tests the pure marker helpers. */
+'use strict';
+const A = require('./_assert.js');
+const path = require('path');
+const shell = require('../sidecar/tools/builtin/shell.js');
+const { makeShellTool, buildMarkedCmd, parseMarker, withinJail } = shell;
+
+// a fake spawn: records each call's cwd, and on close emits stdout = out + the marker for a configured cwd/ec.
+function makeFake() {
+  const calls = [];
+  let next = { reportCwd: '', ec: 0, out: 'ok' };
+  function spawn(cmd, opts) {
+    calls.push({ cmd: cmd, cwd: opts && opts.cwd });
+    const cfg = next; next = { reportCwd: '', ec: 0, out: 'ok' };
+    let dataCb = null;
+    const child = {
+      pid: 1, kill: function () {},
+      stdout: { on: function (ev, fn) { if (ev === 'data') dataCb = fn; } },
+      stderr: { on: function () {} },
+      on: function (ev, fn) {
+        if (ev === 'close') setTimeout(function () {
+          const marker = '\n__SK_CWD__' + cfg.reportCwd + '__SK_EC__' + cfg.ec + '__SK_END__';
+          if (dataCb) dataCb(Buffer.from(String(cfg.out) + marker));
+          fn(0);   // the marked shell itself exits 0; the REAL code is inside the marker
+        }, 0);
+      }
+    };
+    return child;
+  }
+  spawn.calls = calls;
+  spawn.setNext = function (c) { next = Object.assign({ reportCwd: '', ec: 0, out: 'ok' }, c); };
+  return spawn;
+}
+
+(async () => {
+  // ---- pure helpers ----
+  A.ok(buildMarkedCmd('ls', false).indexOf('pwd') >= 0, 'posix marker appends a pwd printf');
+  A.ok(buildMarkedCmd('dir', true).indexOf('%CD%') >= 0 && buildMarkedCmd('dir', true).indexOf('%ERRORLEVEL%') >= 0, 'win marker appends %CD% + %ERRORLEVEL%');
+  {
+    const pm = parseMarker('hello world\n__SK_CWD__/ws/a/sub__SK_EC__3__SK_END__');
+    A.eq(pm.cwd, '/ws/a/sub', 'parseMarker extracts cwd');
+    A.eq(pm.ec, 3, 'parseMarker extracts the real exit code');
+    A.eq(pm.cleanOut, 'hello world', 'parseMarker strips the marker (and the newline we added) from the output');
+    A.eq(parseMarker('no marker here').cwd, null, 'no marker -> null cwd, output untouched');
+  }
+  {
+    const jail = path.join('root', 'a');
+    A.ok(withinJail(path, path.join(jail, 'sub'), jail), 'a subdir is in-jail');
+    A.ok(withinJail(path, jail, jail), 'the jail root itself is in-jail');
+    A.ok(!withinJail(path, path.resolve(path.sep + 'etc'), jail), 'an absolute outside path is out-of-jail');
+  }
+
+  // ---- integration via the fake spawn ----
+  const ROOT = path.join('shelltest-root');
+  const fs = { mkdirSync: function () {}, existsSync: function () { return true; } };
+  const spawn = makeFake();
+  const { execTool } = makeShellTool({ spawn: spawn, fs: fs, pathMod: path, root: ROOT, clock: { now: function () { return 0; } }, platform: 'linux' });
+  const ctx = { agentId: 'a' };
+  const jail = path.join(ROOT, 'a');
+  const sub = path.join(jail, 'sub');
+
+  // Step 1: `cd sub` reports cwd = jail/sub -> persisted
+  spawn.setNext({ reportCwd: sub, ec: 0, out: 'changed dir' });
+  let r = await execTool.run({ cmd: 'cd sub' }, ctx);
+  A.eq(spawn.calls[0].cwd, jail, 'first command runs in the jail root (no session yet)');
+  A.ok(r.content.indexOf('__SK_CWD__') < 0, 'the marker is stripped from the shown output');
+
+  // Step 2: next command runs in the PERSISTED cwd (cd carried over)
+  spawn.setNext({ reportCwd: sub, ec: 0, out: 'in sub' });
+  r = await execTool.run({ cmd: 'pwd' }, ctx);
+  A.eq(spawn.calls[1].cwd, sub, 'second command runs in the persisted cwd — `cd` carried over across calls');
+
+  // Step 3: a command whose marker reports an OUT-OF-JAIL cwd must NOT be persisted (clamp)
+  spawn.setNext({ reportCwd: path.resolve(path.sep + 'etc'), ec: 0, out: 'escaped' });
+  await execTool.run({ cmd: 'cd /etc' }, ctx);
+  spawn.setNext({ reportCwd: sub, ec: 0 });
+  await execTool.run({ cmd: 'pwd' }, ctx);
+  A.eq(spawn.calls[3].cwd, sub, 'an out-of-jail cwd is refused for persistence (clamp); next call stays in jail');
+
+  // Step 4: the REAL exit code (from the marker) is reported, not the appended echo's 0
+  spawn.setNext({ reportCwd: sub, ec: 7, out: 'boom' });
+  r = await execTool.run({ cmd: 'false' }, ctx);
+  A.ok(/exit 7/.test(r.content), 'the real exit code is recovered from the marker (not masked by the appended echo)');
+  A.ok(/exit 7/.test(r.summary), 'the summary also reports the real exit code');
+
+  // Step 5: `cd ..` past the jail root is still refused outright
+  let threw = false;
+  try { await execTool.run({ cmd: 'cd ..' }, ctx); } catch (e) { threw = /refused/.test(String(e.message)); }
+  A.ok(threw, 'cd .. past the jail root is refused (escapesWorkspace)');
+
+  A.report('shell-session.test');
+})().catch(function (e) { console.error(e); process.exit(1); });
