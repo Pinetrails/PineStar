@@ -2066,6 +2066,22 @@ const World = (() => {
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
   const serverLit = new Set();    // agentIds lit by an AUTONOMOUS run (cron/channel) — its run.end clears them
   let bridged = false, lastOutboxFlash = -1e9;
+  // N1/N2/N3: the channel SSE stream + the connector poll are "opened once" but used to be NEVER released —
+  // after a DISCONNECT they kept polling /api/connectors every 5s and the EventSource self-reconnected forever
+  // from the title screen. Hoisted here so pauseBridge() (on disconnect) can release them and resumeBridge()
+  // (on re-entry) can re-arm them. The U.bus.on(...) subscriptions stay put (idempotent under `bridged`).
+  let chanES = null, connPollTimer = null, connPollFn = null, connOpenFn = null, bridgePaused = false;
+  function pauseBridge() {
+    bridgePaused = true;
+    if (connPollTimer) { clearInterval(connPollTimer); connPollTimer = null; }
+    if (chanES) { try { chanES.close(); } catch (_) {} chanES = null; }
+  }
+  function resumeBridge() {
+    if (!bridged) return;                 // never set up yet (no agent has entered) — connectChannelBridge will open it
+    bridgePaused = false;
+    if (!connPollTimer && connPollFn) { connPollFn(); connPollTimer = setInterval(connPollFn, 5000); }
+    if (!chanES && connOpenFn) connOpenFn();
+  }
   let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
   let slaglog = null, lastCacheFrac = null;   // SlagLog: wasted-spend post-mortems + the last reconciled cache ratio (for the diagnosis)
   let lastRunDoneUsd = 0;   // the most recent 'done' run's REAL reconciled cost — sizes the banked PRODUCT crate
@@ -2430,7 +2446,7 @@ const World = (() => {
         }
       }).catch(() => {});
     }
-    pollConnectors(); setInterval(pollConnectors, 5000);
+    connPollFn = pollConnectors; pollConnectors(); connPollTimer = setInterval(pollConnectors, 5000);
     U.bus.on('agent.tool_call', p => {            // chat.js re-emits the hero's tool calls here; routed agents arrive via SSE
       const n = p && p.name;
       if (!n || n.indexOf('mcp__') !== 0 || !PropSprites.pulseConnector) return;
@@ -2440,13 +2456,15 @@ const World = (() => {
     U.bus.on('shell.exec', () => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
     U.bus.on('verify.result', p => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
     if (typeof EventSource === 'undefined') return;
-    let es = null, backoff = 1000;
+    let backoff = 1000;
     const open = () => {
-      try { es = new EventSource('/api/channels/events'); } catch (_) { return; }
-      es.onopen = () => { backoff = 1000; };
-      es.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
-      es.onerror = () => { try { es.close(); } catch (_) {} es = null; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
+      if (bridgePaused) return;   // disconnected to the title screen — do not (re)open
+      try { chanES = new EventSource('/api/channels/events'); } catch (_) { return; }
+      chanES.onopen = () => { backoff = 1000; };
+      chanES.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
+      chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
     };
+    connOpenFn = open;
     open();
   }
   // the live backlog total — FloorStats owns it (tested), with the chanQueues sum as a fallback if
@@ -2595,7 +2613,7 @@ const World = (() => {
     ctx.textAlign = 'left';
   }
 
-  return { init, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit,
+  return { init, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes the hero's pre-computed Xp.compute() snapshot here (station arg unused —
     // the colony headline is the top-bar STATION chip); pulseLevelUp fires the gold ring.
     setXp: (a) => { xpAgent = a || null; },
@@ -2606,7 +2624,7 @@ const World = (() => {
       if (agent && level != null && !(agent.say && agent.say.text && agent.say.until > now)) agent.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow() },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer } },
     // does this agent have a WORKBENCH placed (-> shell.exec + verify.run)? An equipped BAY governs; with no bay
     // (simple single-agent floor) any placed workbench grants it. The run client sends this so the hero's run
     // gains shell ADDITIVELY on top of its default office (the room layout is the permission system, for the hero too).

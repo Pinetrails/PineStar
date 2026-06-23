@@ -37,8 +37,8 @@ product-call borderlines. The founding crew bug is FIXED and shipped on trunk.
 |---|---|---|---|---|---|
 | **W1** | Med | High | **FIXED** | world.js spawn | FloorStats economy (spend/slag/yield) + SlagLog not reset → new agent's HUD shows prior agent's numbers. Reset in `spawn()` (NOT loadStation — that also runs on refit). Verified live: spend 0.42 → 0. |
 | **W2** | Med | High | **FIXED** | world.js spawn | Conveyor boxes not reset → prior agent's belt crates ride the new floor. `convey.reset()` now called in `spawn()`. |
-| **N1** | Med | High | OPEN | world.js connectChannelBridge | `setInterval(pollConnectors,5000)` handle never captured → permanent `/api/connectors` poll from the title screen after disconnect. |
-| **N2** | Med | High | OPEN | world.js connectChannelBridge | `EventSource('/api/channels/events')` never closed on disconnect; `onerror` self-reconnects forever from the title screen. |
+| **N1** | Med | High | **FIXED** | world.js + app.js | Connector poll now held in `connPollTimer`; `pauseBridge()` (on disconnect) clears it, `resumeBridge()` (on entry) restarts it. Verified live: poll true → false → true. |
+| **N2** | Med | High | **FIXED** | world.js + app.js | Channel `EventSource` now held in `chanES`; closed on disconnect, reopened on entry; `onerror` bails while paused. Verified live: es true → false → true. |
 | **S1** | Med | High | OPEN | mintstore.js + onWake | `skynet.mint.v1` survives `Save.clear()` (which only wipes `skynet.save`) → new agent inherits prior agent's recurring-task memory + SUGGESTED shelf. |
 | **V1** | High | High | **FIXED** | chat.js send | **Voice ownership (Commander rule):** only the orchestrator (hero) may speak; summoned/secondary agents must be silent. `willSpeak` now requires the active stream's agent be the orchestrator. |
 | **C4** | Med | Med | **FIXED** | voice.js init | `Voice.init()` now calls `stopSpeaking()` → prior agent's TTS + watchdog interval are cut before the next agent takes the mic. |
@@ -46,7 +46,7 @@ product-call borderlines. The founding crew bug is FIXED and shipped on trunk.
 | **W4** | Low | Med | **FIXED** | world.js spawn | `xpAgent` + one-shot beat clocks (levelUp/compact/slag/outbox) not reset → brief stale level chip / a beat replays one frame into the new agent. Reset in `spawn()`. |
 | **S2** | Low | High | OPEN | curiositystore.js + onWake | `skynet.curiosity.v1` (`dismissed` dims) survives `Save.clear()` → new agent's curiosity nudges suppressed by prior agent's dismissals. |
 | **C1** | Low | Med | OPEN | tutorial.js | `finished` latch set in finishUp, never reset → diverges from the persisted gate; a re-triggered first-command becomes a silent no-op. |
-| **N3** | Low | High | OPEN | world.js | Structural: `listenersBound`/`bridged` latched, no paired disconnect-time release — the root that makes N1/N2 leak. Fix alongside N1/N2. |
+| **N3** | Low | High | **FIXED** | world.js + app.js | Root cause resolved by N1/N2: the open-once bridge now has a paired pause(disconnect)/resume(entry); the once-guarded `U.bus.on` subscriptions stay put. |
 | **C2** | Low | Low | OPEN | chat.js init | `proposalRunsSeen` Set + `wiQDepth` Map (keyed by the literal `'agent'`) not cleared on init → possible phantom queue depth for the new hero. |
 | **C3** | Low | Low | **FIXED** | voice.js init | `forcedSpeak` now reset in `Voice.init()` → the speaker-restore bookkeeping never carries across agents. |
 | **S3** | Low | Med | **WONTFIX (intended)** | marketplace.js | Commander decided: consent is **per-user** (global). Already behaves that way — no change. |
@@ -80,3 +80,8 @@ onboarding/intake stop() (clear timers/flags), Tutorial bus handlers (gated by `
   summoned agents silent) gated at the single `chat.js` TTS seam; C4 (`Voice.init` now cuts the
   prior agent's in-flight speech + watchdog); C3 (`forcedSpeak` reset per agent). Also recorded
   the Commander's NEW-AGENT scope decision (S1/S2 reset per-agent; S3/S4/C5 stay per-user). `test:fast` green.
+- **Iteration 3** (2026-06-23): N1/N2/N3 — the channel SSE stream + connector poll used to run forever
+  after a disconnect (battery/network drain from the title screen). Hoisted the handles to module scope
+  and added `World.pauseBridge()` (called from `disconnect()`) / `World.resumeBridge()` (called from
+  `enterGame`). Verified live across the full lifecycle: in-game {es,poll}=on → disconnect=off →
+  resume=on. `test:fast` green.
