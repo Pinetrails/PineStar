@@ -51,7 +51,8 @@
     function blank() {
       return {
         spendUsd: 0, tokensIn: 0, tokensOut: 0, cachedTokens: 0,
-        products: 0, slag: 0, slagUsd: 0, delivered: 0, dwellSum: 0, dwellN: 0
+        products: 0, slag: 0, slagUsd: 0, delivered: 0, dwellSum: 0, dwellN: 0,
+        failovers: 0, lastFailover: null   // H3.1: provider.fallback — model/credential switches mid-run (was invisible)
       };
     }
     function reset() { s = blank(); placedAt = new Map(); queues = new Map(); inRing = []; outRing = []; lastTms = 0; }
@@ -99,6 +100,11 @@
       } else if (name === 'queue.status') {
         // the live per-agent backlog — the source for the physical "jam" of waiting crates at the bay
         if (p.queueId != null) queues.set(p.queueId, Math.max(0, p.depth | 0));
+      } else if (name === 'provider.fallback') {
+        // H3.1: the loop switched model/credential mid-run (rate-limit/auth/billing). Count it + remember the
+        // last one so the operator can SEE failovers (the truthful-telemetry promise) instead of it being silent.
+        s.failovers++;
+        s.lastFailover = { fromModel: String(p.fromModel || ''), toModel: String(p.toModel || ''), reason: String(p.reason || ''), rotate: !!p.rotate };
       }
     }
 
@@ -123,6 +129,7 @@
         cacheKnown, cacheFrac, cachePct: Math.round(cacheFrac * 100),
         thruInPerMin: countWithin(inRing, now), thruOutPerMin: countWithin(outRing, now),
         dwellKnown, avgDwellMs, avgDwellSec: avgDwellMs / 1000,
+        failovers: s.failovers, lastFailover: s.lastFailover,
         clean: s.slag === 0
       };
     }

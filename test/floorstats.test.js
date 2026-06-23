@@ -136,4 +136,18 @@ ss = k.snapshot(5000);
 A.eq(ss.thruOutPerMin, 0, 'reset clears throughput');
 A.ok(ss.dwellKnown === false, 'reset clears dwell');
 
+// ---- (H3.1) provider.fallback folds into a visible failover counter + last-failover ----
+{
+  const ff = FloorStats.create();
+  A.eq(ff.snapshot().failovers, 0, 'fresh: no failovers');
+  A.ok(ff.snapshot().lastFailover === null, 'fresh: no last failover');
+  ff.onEvent('provider.fallback', { fromModel: 'm1', toModel: 'm2', reason: 'rate_limit', rotate: true });
+  ff.onEvent('provider.fallback', { fromModel: 'm2', toModel: 'm3', reason: 'overloaded', rotate: false });
+  const fs = ff.snapshot();
+  A.eq(fs.failovers, 2, 'failovers counted (a mid-run model/credential switch is now visible)');
+  A.eq(fs.lastFailover.toModel, 'm3', 'the last failover target is recorded');
+  A.eq(fs.lastFailover.reason, 'overloaded', 'the last failover reason is recorded');
+  A.eq(fs.lastFailover.rotate, false, 'the last failover rotate flag is recorded');
+}
+
 A.report('floorstats.test');

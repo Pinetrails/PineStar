@@ -2356,6 +2356,15 @@ const World = (() => {
       // remember the most recent RECONCILED cache ratio — the smelter temperature a slag diagnosis reads
       if (p && (p.tokensIn | 0) > 0) lastCacheFrac = Math.max(0, Math.min(1, (p.cachedTokens || 0) / p.tokensIn));
     });
+    // H3.1: a mid-run model/credential FAILOVER was invisible (provider.fallback had no consumer). Fold it into
+    // the floor stats AND surface a LOGBOOK line so the operator sees the harness rerouting around a bad provider.
+    U.bus.on('provider.fallback', p => {
+      if (floor) floor.onEvent('provider.fallback', p, Date.now());
+      if (p && typeof StationUI !== 'undefined' && StationUI.notify) {
+        const how = p.rotate ? 'rotated credential' : 'switched model';
+        StationUI.notify('⤳ failover (' + (p.reason || 'error') + ') · ' + how + ': ' + (p.fromModel || '?') + ' → ' + (p.toModel || '?'), 'warn');
+      }
+    });
     // THROUGHPUT + DWELL: pair each work-item's placement with its delivery (a reliable Date.now() clock,
     // since the box's belt-ride spans real wall-clock seconds) to fold items/min + time-on-line.
     U.bus.on('workitem.placed', p => { if (floor) floor.onEvent('workitem.placed', p, Date.now()); });
