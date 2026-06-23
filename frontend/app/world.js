@@ -779,9 +779,11 @@ const World = (() => {
     if (!rects || !rects.length) { b.idleUntil = now + 1200; return; }
     const cur = tileOf(b.px, b.py);
     const avoid = beltUnion();
+    const zone = zoneFor(b);   // P2: a crew stroll stays inside this body's own zone (same primitive as the hero)
     for (let i = 0; i < 20; i++) {
       const r = rects[U.irnd(0, rects.length - 1)];
       const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
+      if (!tileInZone(zone, x, y)) continue;             // off-zone target — never stroll out of this body's area
       if (!geo.walkable(x, y, blocked) || avoid.has(x + ',' + y)) continue;
       let p = geo.path(cur.x, cur.y, x, y, avoid);     // prefer a belt-free route
       if (!p) p = geo.path(cur.x, cur.y, x, y, blocked); // fall back: a belt bridges the only crossing
