@@ -659,14 +659,16 @@ const App = (() => {
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
     else if (opts.wake) { World.wakeIn(); SFX.level(); }
-    World.start();
-    // the canonical station the builder edits — restored from the save, or a fresh starter room
+    // the canonical station the builder edits — restored from the save, or a fresh starter room. LOAD it
+    // BEFORE World.start() so the first painted frame renders THIS agent's floor — a NEW AGENT must never
+    // flash the previous agent's built station (start() paints synchronously off the live geo/cache).
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
     // give resumed summoned crew their real floor bodies now that the station/geo is loaded (no-op for a
     // single-agent save; summon-during-game spawns its own body directly).
     for (const a of liveAgents()) if (a.id !== agent.id && typeof World.spawnAgent === 'function') World.spawnAgent(a);
+    World.start();   // first frame now paints the fresh floor + crew, never a stale frame of the prior world
     if (typeof Build !== 'undefined') {
       // agents: the live multi-agent roster the BAY agent-picker / builder offer. The bay->agent binding
       // persists via station.serialize (prop.agentId round-trips), so the routing floor is saved per agent.
@@ -788,7 +790,7 @@ const App = (() => {
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
 
-  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
+  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
 
   /* ---------- title ---------- */
   function showTitle() {

@@ -25,7 +25,7 @@ const World = (() => {
   let routingPlan = null, lastPlanHash = null;   // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
 
   /* ---------- canvas + camera ---------- */
-  let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null;
+  let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null, listenersBound = false;   // listenersBound: init() can run again per new agent — bind canvas/window/doc handlers + the SSE bridge ONCE
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -328,6 +328,12 @@ const World = (() => {
 
   /* ---------- agent lifecycle ---------- */
   function spawn(a) {
+    // a fresh hero body owns a fresh floor: drop EVERY crew body left over from a previous agent on this
+    // same page (NEW AGENT keeps this module alive — nothing tears it down). Otherwise the prior agent's
+    // SUMMONED crew (which loadStation deliberately preserves) would haunt the newborn's "fresh" station.
+    // Safe for RESUME: enterGame re-derives plan crew (syncCrewFromPlan) and re-spawns the rehydrated
+    // summoned crew (spawnAgent loop) immediately after this call, so a resumed crew is rebuilt, not lost.
+    crew = [];
     agent = {
       id: a.id, name: a.name, color: a.color || '#5ad0ff', skin: a.skin || DATA.DEFAULT_SKIN,
       px: 0, py: 0, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: true,
@@ -371,6 +377,10 @@ const World = (() => {
     if (!stars.length) for (let i = 0; i < 90; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
     resize();
     try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
+    // bind the input/visibility handlers + SSE bridge ONCE — init() re-runs on every NEW AGENT (same canvas
+    // element), so without this guard each new agent stacked another full set of listeners and SSE streams.
+    if (listenersBound) return;
+    listenersBound = true;
     window.addEventListener('resize', resize);
 
     cv.addEventListener('wheel', ev => {
@@ -447,7 +457,16 @@ const World = (() => {
   }
   // a camera target that centers world point (px,py) on screen at zoom sc — 0.46 height leaves headroom above
   function camCenterOn(px, py, sc) { sc = clampz(sc, MINZ, MAXZ); return [sc, cv.width / 2 - px * sc, cv.height * 0.46 - py * sc]; }
-  function beginAwakening() { awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; camAnim = null; if (agent) agent.dir = 'north'; }   // newborn faces AWAY until the Turn
+  function beginAwakening() {
+    // a brand-new birth: wipe any ceremony state a previous agent left on this page so the newborn gets a
+    // pristine dark->dawn ritual. Only a real awakening calls this (never a re-bake/refit), so re-arming the
+    // once-per-life first-light latch here keeps "a refit never re-arms it" true while fixing NEW AGENT.
+    firstWakeDone = false;
+    sparkAt = bornAt = dawnAt = truthPulseAt = 0;
+    floodAt = floodEndAt = 0; floodStreams = null;
+    kindleArmed = false; kindleP = 0; kindleHolding = false; kindlePeak = 0;
+    awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; camAnim = null; if (agent) agent.dir = 'north';   // newborn faces AWAY until the Turn
+  }
   function setWakeProgress(p) { p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
   function igniteSpark() { sparkAt = performance.now(); bornAt = performance.now(); wakeDark = 0.985; wakeDarkTarget = 0.985; kindleArmed = false; kindleP = 0; }   // the mind catches fire — snap to near-total dark so the spark is the ONLY light (and end any kindle)
   /* THE KINDLING — the pre-ignition beat: one dim, almost-dead ember sits where the mind will be, and the
@@ -2480,7 +2499,7 @@ const World = (() => {
       if (agent && level != null && !(agent.say && agent.say.text && agent.say.until > now)) agent.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length },
     // does this agent have a WORKBENCH placed (-> shell.exec + verify.run)? An equipped BAY governs; with no bay
     // (simple single-agent floor) any placed workbench grants it. The run client sends this so the hero's run
     // gains shell ADDITIVELY on top of its default office (the room layout is the permission system, for the hero too).
