@@ -113,6 +113,8 @@ A.eq(Z.inZone(zMain, 20, 12), true, 'room far corner (20,12) is in-zone (inclusi
 A.eq(Z.inZone(zMain, 21, 12), false, 'one tile past the east edge is out-of-zone');
 A.eq(Z.inZone(zMain, 10, 13), false, 'one tile past the south edge is out-of-zone');
 A.eq(Z.inZone(zMain, -1, 5), false, 'negative tile is out-of-zone');
+A.eq(Z.inZone(zMain, 10, 0), true, 'room top edge (10,0) is in-zone at a non-corner X (inclusive)');
+A.eq(Z.inZone(zMain, 10, -1), false, 'one tile north of the room top edge is out-of-zone (ly low-Y guard)');
 
 // ---- inZone: leash membership (Chebyshev square) ----
 const lz = { kind: 'leash', cx: 10, cy: 10, r: 3 };
