@@ -180,6 +180,9 @@ const Chat = (() => {
       if (decided) return; decided = true;
       const rid = (ws && typeof Channels !== 'undefined') ? Channels.runIdOf(ws.id) : null;
       Harness.consent(rid, p.promptId, decision);
+      // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
+      // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
+      try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id);
       btns.remove();
       const tag = document.createElement('span');
@@ -618,6 +621,14 @@ const Chat = (() => {
     status('online');
   }
   function echoUser(text) { addUser(text); }
+  // scaffold the COMMS input with a starter the Commander finishes typing (the awakening's open CONTEXT
+  // question uses this so a chip seeds "what i'm building: …" instead of committing a half-empty answer).
+  function prefill(t) {
+    if (!input) return;
+    input.value = String(t == null ? '' : t);
+    input.focus();
+    try { const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
+  }
   // a row of tappable suggestion pills in COMMS; picking one (or typing) is an answer. onPick gets the item.
   function choices(items, onPick) {
     if (!log) return;
@@ -662,5 +673,5 @@ const Chat = (() => {
     return () => { killed = true; };
   }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, choices, typeLine };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine };
 })();

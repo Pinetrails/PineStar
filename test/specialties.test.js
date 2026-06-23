@@ -11,7 +11,7 @@ const S = require('../frontend/app/specialties.js');
 /* personas.js is a browser IIFE (a module-scoped `Personas` const, exports nothing under node), so we
    can't require its id set here. Mirror it explicitly: a specialty that references a persona NOT in
    this set is a typo / dangling ref and fails the gate. Keep in sync with personas.js PRESETS. */
-const PERSONA_IDS = ['worker-homie', 'deadpan-bot', 'hype-buddy', 'old-salt', 'gremlin'];
+const PERSONA_IDS = ['confidant', 'straight-shooter', 'dry-wit', 'veteran', 'spark', 'maverick'];
 
 /* ---------- catalog integrity ---------- */
 const builtins = S.builtins();
@@ -53,7 +53,10 @@ A.eq(S.compose('no-such-id'), null, 'compose() of an unknown id is null');
 // compose accepts a spec object directly too (the marketplace passes either)
 A.eq(S.compose(builtins[1]).purpose, builtins[1].purpose, 'compose() accepts a spec object, not just an id');
 
-/* ---------- custom (save-your-own) round-trip ---------- */
+/* ---------- custom (save-your-own) round-trip ----------
+   NB: the persona strings here ('deadpan-bot' below, 'gremlin' further down) are deliberately LEGACY ids —
+   saveCustom/fromAgent pass persona through verbatim without validating it against PRESETS, so these double
+   as back-compat coverage that an old persona id survives the round-trip (it resolves via personas.js ALIASES). */
 A.eq(S.customs().length, 0, 'no customs at first (node has no localStorage)');
 const saved = S.saveCustom({ name: 'Night Owl', emoji: '🦉', tagline: 'after-hours ops', purpose: 'Run things while the Commander sleeps.', manual: '- Be quiet.', persona: 'deadpan-bot' });
 A.ok(saved.id.indexOf('custom-') === 0, 'a saved custom gets a custom- id: ' + saved.id);
