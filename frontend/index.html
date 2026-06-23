@@ -113,8 +113,10 @@
   <header id="topbar">
     <div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
     <div class="tb-stats">
-      <div class="tb-stat">AGENT <b id="gt-agent">—</b></div>
-      <div class="tb-stat">MODEL <b id="gt-model">—</b></div>
+      <!-- AGENT/MODEL are intentionally NOT shown in the HUD: a station runs many agents, so a single
+           name+model here misrepresents the crew. Kept hidden as the focused-agent data source that
+           app.js writes and tutorial coachmarks / warroom approvals read in-voice. -->
+      <div hidden><b id="gt-agent">—</b><b id="gt-model">—</b></div>
       <div class="tb-stat">SPEND <b id="gt-cost" class="pos">$0.000000</b></div>
       <div class="tb-stat">TOKENS <b id="gt-tok">0</b></div>
       <div class="tb-stat station" id="tb-station" title="The whole station's cumulative level — every agent's honest track record rolled up. Raise it.">STATION <b id="gt-station">Lv 1</b></div>
