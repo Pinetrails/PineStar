@@ -900,7 +900,7 @@ const World = (() => {
      tvId != null → goal 'lounge' (watch + light the TV); else a plain couch sit. */
   const LOUNGE_MAXT = 7;
   const SEAT_NB = [[0, 1], [0, -1], [1, 0], [-1, 0]];   // approach a cushion from any walkable neighbour
-  function planCouchSit(now, couch, tvId, faceDir) {
+  function planCouchSit(now, couch, tvId, faceDir, zone) {
     const w = couch.w || 1, h = couch.h || 1;
     const lo = w >= 3 ? 1 : 0, hi = w >= 3 ? w - 2 : w - 1;   // skip an arm tile each end when wide
     const slots = [];
@@ -910,8 +910,10 @@ const World = (() => {
     for (let k = 0; k < slots.length; k++) {
       const slot = slots[(order + k) % slots.length];
       const sx = couch.x + slot, sy = couch.y;                // the couch tile the agent will sit on
+      if (!tileInZone(zone, sx, sy)) continue;                // P1: the cushion the body RENDERS on must be in-zone (a wide couch can straddle a wall)
       for (const [dx, dy] of SEAT_NB) {
         const ax = sx + dx, ay = sy + dy;
+        if (!tileInZone(zone, ax, ay)) continue;              // P1: the approach tile the body WALKS to must be in-zone too
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(couch.id + ':' + slot); agent.seatKey = couch.id + ':' + slot;
@@ -932,7 +934,7 @@ const World = (() => {
     const couches = [], tvs = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') { if (tileInZone(zone, p.x, p.y)) couches.push(p); }   // the couch is where the body sits — must be in-zone
+      if (use.kind === 'couch') { couches.push(p); }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
       else if (use.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });   // the TV is only WATCHED from the couch (no walk) — may sit anywhere in view
     }
     if (!couches.length || !tvs.length) return false;
@@ -944,7 +946,7 @@ const World = (() => {
       for (const tv of tvs) { const d = Math.hypot(tv.cx - cx, tv.cy - cy); if (d <= LOUNGE_MAXT && (!best || d < best.d)) best = { tv, d }; }
       if (!best) continue;
       const face = dirToward(cx, cy, best.tv.cx, best.tv.cy);   // turn to the TV from the couch
-      if (planCouchSit(now, couch, best.tv.p.id, face)) return true;
+      if (planCouchSit(now, couch, best.tv.p.id, face, zone)) return true;
     }
     return false;
   }
@@ -958,7 +960,7 @@ const World = (() => {
     const cands = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') { if (tileInZone(zone, p.x, p.y)) cands.push({ couch: p }); continue; }   // sit ON it — the couch tile must be in-zone
+      if (use.kind === 'couch') { cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
@@ -966,7 +968,7 @@ const World = (() => {
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
-      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north')) return true; continue; }   // lone couch → sit on it facing UP (back to the viewer)
+      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) return true; continue; }   // lone couch → sit on it facing UP (back to the viewer)
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         agent.goal = 'use'; agent.usingProp = c.id; agent.useFace = c.a.face; agent.useSit = c.a.sit;
         if (!agent.target) arrive(now);   // already standing on the approach tile

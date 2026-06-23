@@ -171,6 +171,20 @@ A.eq(Z.inZone(zMain, -1, 5), false, 'negative tile is out-of-zone');
 A.eq(Z.inZone(zMain, 10, 0), true, 'room top edge (10,0) is in-zone at a non-corner X (inclusive)');
 A.eq(Z.inZone(zMain, 10, -1), false, 'one tile north of the room top edge is out-of-zone (ly low-Y guard)');
 
+// ---- COUCH STRADDLE: a 5-wide couch whose left corner is in-zone but whose right cushions and
+// their approach tiles spill past the room wall must report those out-of-zone (the predicate the
+// planCouchSit cage relies on: gate the cushion sx,sy AND the approach ax,ay, NOT the prop corner).
+// Room: a side room x:[22..27]. Couch at (24,3) w:5 -> cushions (couch.x+slot) for slot 1..3 =
+// columns 25,26,27; the right cushion 27 is the room's last in-zone column, but column 28 (a slot
+// that a wider couch / different anchor would reach) and the EAST approach (sx+1) of column 27 fall
+// outside the wall. We assert: the corner is in-zone (so the OLD corner-only gate passed), yet a
+// cushion/approach past the east wall is out-of-zone (so the corner gate was the WRONG tile).
+const COUCH_ZONE = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 } });
+A.eq(Z.inZone(COUCH_ZONE, 24, 3), true, 'couch LEFT corner (the prop x,y) is in-zone — the old corner-only gate would accept the couch');
+A.eq(Z.inZone(COUCH_ZONE, 27, 3), true, 'rightmost in-wall cushion (col 27) is in-zone');
+A.eq(Z.inZone(COUCH_ZONE, 28, 3), false, 'a cushion column past the east wall is OUT-of-zone (cushion sx,sy must be gated, not the corner)');
+A.eq(Z.inZone(COUCH_ZONE, 28, 3), false, 'the EAST approach (sx+1) of the rightmost cushion is OUT-of-zone (approach ax,ay must be gated too)');
+
 // ---- inZone: leash membership (Chebyshev square) ----
 const lz = { kind: 'leash', cx: 10, cy: 10, r: 3 };
 A.eq(Z.inZone(lz, 10, 10), true, 'leash center is in-zone');
