@@ -54,8 +54,11 @@ We do not touch work routing.
 - I4. **No shared-contract edits.** Zero changes to `shared/events.js` or `shared/schema.js`. Zones
   are *derived*, never persisted, so the owned contract is untouched.
 - I5. **Tight blast radius.** The only files this lane may change: `frontend/app/world.js`, a NEW pure
-  module `frontend/app/zones.js`, its test `test/zones.test.js`, and this plan doc. Commit ONLY these
-  via pathspec — never `git add -A`. Touch no other lane's files.
+  module `frontend/app/zones.js`, its test `test/zones.test.js`, this plan doc, and **exactly ONE
+  additive `<script src="app/zones.js">` line** in the loader (`frontend/index.html`, placed right
+  before `world.js`, mirroring how `xp.js`/`ctxgauge.js` are loaded). `index.html` is a hotspot —
+  the change is a single additive line, flagged for the orchestrator to sequence at merge. Commit
+  ONLY these via pathspec — never `git add -A`. Touch no other lane's files.
 - I6. **Green + verified before "done".** Full `npm run test:fast` exit 0, new `zones` unit tests
   pass, and an adversarial review round returns ZERO confirmed defects.
 
