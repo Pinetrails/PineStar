@@ -27,12 +27,14 @@
   'use strict';
 
   const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;   // 5 min: long enough to skip a rate-limited key, short enough to recover
+  const MAX_COOLDOWN_MS = 60 * 60 * 1000;      // 1 h ceiling: a bogus server "retry after 9999999s" can't strand a key all session
   const MAX_KEYS = 8;                           // a sane ceiling so a pasted blob can't build an unbounded chain
 
   function makeCredPool(opts) {
     opts = opts || {};
     const clock = opts.clock || { now() { return 0; } };
     const cooldownMs = (typeof opts.cooldownMs === 'number' && opts.cooldownMs >= 0) ? opts.cooldownMs : DEFAULT_COOLDOWN_MS;
+    const maxCooldownMs = (typeof opts.maxCooldownMs === 'number' && opts.maxCooldownMs >= 0) ? opts.maxCooldownMs : MAX_COOLDOWN_MS;
     const cooling = new Map();   // key -> ms timestamp it is cooling until
 
     function coolingUntil(key) {
@@ -60,13 +62,19 @@
       return available.concat(coolingList);
     }
 
-    function penalize(key) {
+    // H6.1: an explicit ttlMs (e.g. derived from a Retry-After / reset_at) cools the key for EXACTLY that long —
+    // honoring the server instead of a blind fixed window. ttlMs is clamped to [0, maxCooldownMs] so a bogus
+    // "retry after 9999999s" can't strand a key for the whole session. No ttl => the default cooldown.
+    function penalize(key, ttlMs) {
       const s = (key == null ? '' : String(key));
-      if (s) cooling.set(s, clock.now() + cooldownMs);
+      if (!s) return;
+      let ms = cooldownMs;
+      if (typeof ttlMs === 'number' && isFinite(ttlMs) && ttlMs >= 0) ms = Math.min(ttlMs, maxCooldownMs);
+      cooling.set(s, clock.now() + ms);
     }
 
     return { order, penalize, coolingUntil, _internals: { cooling, cooldownMs } };
   }
 
-  return { makeCredPool, _internals: { DEFAULT_COOLDOWN_MS, MAX_KEYS } };
+  return { makeCredPool, _internals: { DEFAULT_COOLDOWN_MS, MAX_COOLDOWN_MS, MAX_KEYS } };
 });

@@ -1777,7 +1777,15 @@ async function runOnce(o) {
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
       credKey: usingCodex ? null : key,
-      onFallback: ({ rotate, credKey }) => { if (rotate && credKey) credPool.penalize(credKey); },
+      onFallback: ({ rotate, credKey, retryAfterMs, resetAtMs }) => {
+        if (!rotate || !credKey) return;
+        // H6.1: honor a server-stated wait — a relative Retry-After directly, or an absolute reset_at minus now.
+        // Falsy/expired => undefined => credPool's default cooldown (and it clamps any absurd value).
+        let ttlMs;
+        if (typeof retryAfterMs === 'number' && retryAfterMs >= 0) ttlMs = retryAfterMs;
+        else if (typeof resetAtMs === 'number') { const d = resetAtMs - Date.now(); if (d > 0) ttlMs = d; }
+        credPool.penalize(credKey, ttlMs);
+      },
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
