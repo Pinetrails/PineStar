@@ -59,6 +59,7 @@ const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tic
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
+const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
@@ -584,6 +585,11 @@ const chanBus = { emit: (name, payload) => {
 } };
 const chanEmitValidated = makeEmitter(chanBus, e => console.warn('[channel-event]', e.kind, e.event, (e.errors || []).join(';')));
 const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redact(payload)); } catch (_) {} };
+
+// H2.2: the SINGLETON background-process manager — persists across runs so a backgrounded dev server survives the
+// run that started it. shell.bg.exit fires AFTER the originating run's NDJSON stream closed, so it rides the
+// durable channel bus (chanEmit). Children are unref'd; killAll() reaps them on E-STOP (handleHalt) / shutdown.
+const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5 });
 
 // per-agent inbound work-item depth (backpressure): bumped when a message is admitted, dropped when its
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
@@ -1477,7 +1483,7 @@ async function runOnce(o) {
   makeSpotifyTools({ store: spotifyStore }).register(registry);
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
-  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
@@ -1815,6 +1821,7 @@ async function handleCancel(req, res) {
 function handleHalt(req, res) {
   const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
   const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
+  try { shellBg.killAll(); } catch (_) {}   // H2.2: E-STOP also reaps every background process (no orphaned dev servers)
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ halted }));
 }

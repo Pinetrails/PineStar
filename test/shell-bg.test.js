@@ -5,7 +5,9 @@
    procs are agent-scoped. Deterministic (injected clock); isWin:true so kill uses taskkill (no real process.kill). */
 'use strict';
 const A = require('./_assert.js');
+const path = require('path');
 const { makeShellBg } = require('../sidecar/shellbg.js');
+const { makeShellTool } = require('../sidecar/tools/builtin/shell.js');
 
 // a fake spawn: each child exposes _emit(data) and _close(code) so the test drives the lifecycle by hand.
 function makeFakeSpawn() {
@@ -90,4 +92,24 @@ let T = 1000; const clock = { now: () => T };
   A.eq(bg.killAll(), 1, 'killAll() reaps everything remaining');
 }
 
-A.report('shell-bg.test');
+// ---- the shell TOOLS delegate to the manager (background:true + shell.bg.status/kill) ----
+(async () => {
+  const spawn = makeFakeSpawn();
+  const bg = makeShellBg({ spawn, clock, maxPerAgent: 5, isWin: true });
+  const fs = { mkdirSync: function () {}, existsSync: function () { return true; } };
+  const tools = makeShellTool({ spawn, fs, pathMod: path, root: path.join('root'), clock, bg, platform: 'win32' });
+  const ctx = { agentId: 'a' };
+
+  const r = await tools.execTool.run({ cmd: 'npm run dev', background: true }, ctx);
+  A.ok(/Started background process bg_/.test(r.content), 'shell.exec background:true starts a bg process via the manager');
+  A.eq(bg.count('a'), 1, 'the manager tracks the backgrounded process');
+
+  const st = await tools.bgStatusTool.run({}, ctx);
+  A.ok(/RUNNING/.test(st.content) && /bg_1/.test(st.content), 'shell.bg.status lists it running');
+
+  const k = await tools.bgKillTool.run({ id: 'bg_1' }, ctx);
+  A.ok(/Killed/.test(k.content), 'shell.bg.kill stops it');
+  A.eq(bg.count('a'), 0, 'the slot is freed after kill');
+
+  A.report('shell-bg.test');
+})().catch(function (e) { console.error(e); process.exit(1); });

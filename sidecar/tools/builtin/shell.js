@@ -115,6 +115,7 @@
   function makeShellTool(deps) {
     deps = deps || {};
     const spawn = deps.spawn, fs = deps.fs, P = deps.pathMod, ROOT = deps.root;
+    const bg = deps.bg || null;   // H2.2: the singleton background-process manager (shellbg.js); null -> bg disabled
     if (typeof spawn !== 'function' || !fs || !P || !ROOT) throw new Error('shell.js requires { spawn, fs, pathMod, root }');
     const redact = typeof deps.redact === 'function' ? deps.redact : (s) => s;
     const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : () => 0;
@@ -130,8 +131,10 @@
       timeoutMs: MAX_MS + 10000,   // registry backstop ABOVE our own kill logic, so withTimeout never preempts the child-kill
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
         + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands run INSIDE your own '
-        + 'workspace folder; absolute paths and parent (..) paths are refused. Optional timeoutMs (default 30s, max 120s).',
-      schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, timeoutMs: { type: 'number' } } },
+        + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
+        + 'paths are refused. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
+        + '(e.g. a dev server) — it returns immediately with a handle; check it with shell.bg.status, stop it with shell.bg.kill.',
+      schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, timeoutMs: { type: 'number' }, background: { type: 'boolean' } } },
       run: function (args, ctx) {
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
@@ -146,6 +149,16 @@
         let cwd = jailRoot;
         if (sess && sess.cwd && withinJail(P, sess.cwd, jailRoot) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
         try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {}
+        // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
+        // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
+        if (args && args.background) {
+          if (!bg) return Promise.resolve({ content: 'Background processes are not available in this build.', summary: 'unavailable' });
+          const r = bg.start({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin });
+          const content = r.ok
+            ? 'Started background process ' + r.bgId + ' in your workspace. It keeps running while you work — check it with shell.bg.status (id "' + r.bgId + '"), stop it with shell.bg.kill.'
+            : 'Could not start a background process: ' + r.error;
+          return Promise.resolve({ content: content, summary: r.ok ? ('bg started ' + r.bgId) : 'bg refused' });
+        }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         return runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin }).then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
@@ -166,10 +179,43 @@
       }
     };
 
+    // H2.2: inspect / stop the agent's own background processes (started via shell.exec background:true).
+    const bgStatusTool = {
+      name: 'shell.bg.status', capability: 'workbench', scope: 'read', requiresConsent: false,
+      description: 'List your running/finished background processes (from shell.exec background:true), or pass an id '
+        + 'for one process — shows whether it is still running, its exit code if done, and a tail of its output.',
+      schema: { type: 'object', properties: { id: { type: 'string' } } },
+      run: function (args, ctx) {
+        const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
+        if (!bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
+        const id = args && args.id ? String(args.id) : null;
+        if (id) {
+          const v = bg.status(aid, id);
+          if (!v) return { content: 'No background process "' + id + '".', summary: 'not found' };
+          return { content: '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '')) + ' · ' + v.ms + 'ms · ' + v.cmd + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : 'exited ' + v.exitCode };
+        }
+        const list = bg.status(aid) || [];
+        if (!list.length) return { content: 'No background processes.', summary: '0' };
+        return { content: list.map(function (v) { return '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode) + ' · ' + v.cmd; }).join('\n'), summary: list.length + ' process(es)' };
+      }
+    };
+    const bgKillTool = {
+      name: 'shell.bg.kill', capability: 'workbench', scope: 'write', requiresConsent: false,
+      description: 'Stop one of your background processes by id (from shell.bg.status). Kills the whole process tree.',
+      schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+      run: function (args, ctx) {
+        const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
+        if (!bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
+        const id = args && args.id ? String(args.id) : '';
+        const r = bg.kill(aid, id);
+        return { content: r.ok ? (r.alreadyExited ? 'Process ' + id + ' had already exited.' : 'Killed background process ' + id + '.') : ('Could not kill: ' + r.error), summary: r.ok ? 'killed' : 'not killed' };
+      }
+    };
+
     return {
-      execTool: execTool,
+      execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
       _internals: { escapesWorkspace: escapesWorkspace, killTree: killTree, safeAgentId: safeAgentId },
-      register: function (reg) { reg.register(execTool); return reg; }
+      register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
     };
   }
 
