@@ -67,6 +67,14 @@ const WorldModel = (() => {
     workbench: 'workbench'                                                                                                    // a workbench = shell.exec + verify.run (real code execution, consent-gated)
   };
 
+  /* the plain-English POWER each capability grants — one OWNED source of truth so the palette tile, the
+     placement toast, and the Field Manual all say the SAME word for the same thing (kills DISH-vs-antenna
+     drift: a prop, the power it grants, and what the agent then does all match). */
+  const CAP_LABEL = {
+    computer: 'COMPUTE', cabinet: 'FILES', dish: 'WEB', notebook: 'MEMORY', connector: 'LIVE TOOLS', workbench: 'TERMINAL'
+  };
+  function grantLabelForProp(propType) { const c = CAP_PROP_MAP[propType]; return c ? (CAP_LABEL[c] || c) : null; }   // prop -> plain power word (or null = inert decor)
+
   /* the paint palette — each is a floor BASE colour; every other floor detail
      (seams / rivets / vents / hatches) is derived from it via U.shade in the bake. */
   const FLOOR_STYLES = {
@@ -778,6 +786,8 @@ const WorldModel = (() => {
     defaultDoc: freshDoc,
     // pure helpers reused by the build layer
     normRect, rectW, rectH, rectsHit, inRect,
+    // capability legibility — prop -> plain power word (WEB/FILES/…); one owned source for the palette tile + Field Manual
+    CAP_PROP_MAP, CAP_LABEL, capForProp: t => CAP_PROP_MAP[t] || null, grantLabelForProp,
   };
 })();
 

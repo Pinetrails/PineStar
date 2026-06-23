@@ -675,7 +675,7 @@ const App = (() => {
       if (bbBuild) {
         let seenBuild = false; try { seenBuild = !!localStorage.getItem('skynet.refit.seen'); } catch (e) {}
         if (!seenBuild) bbBuild.classList.add('refit-nudge');   // pulse the dock button until first opened
-        bbBuild.onclick = () => { SFX.click(); bbBuild.classList.remove('refit-nudge'); Build.toggle(); };
+        bbBuild.onclick = () => { SFX.click(); bbBuild.classList.remove('refit-nudge'); Build.toggle(); if (typeof Tutorial !== 'undefined' && Tutorial.onBuildOpen && Build.isOpen && Build.isOpen()) Tutorial.onBuildOpen(); };
       }
     }
     const bbRoster = el('bb-roster');
@@ -744,9 +744,13 @@ const App = (() => {
         specialty: opts.specialty || null,                   // if recruited from the Roster, the awakening skips re-asking the mission
         commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
         done: persist,
-        notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null
+        notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
+        // FIRST COMMAND — once the awakening lands, the agent itself teaches the Commander the one real loop (tutorial.js)
+        taught: () => { if (typeof Tutorial !== 'undefined' && Tutorial.firstCommand) Tutorial.firstCommand({ name: agent.name }); }
       });
     }
+    // P3: arm the first-steps briefing's bus ticks; re-offer the checklist to a returning user mid-progress
+    if (typeof Tutorial !== 'undefined' && Tutorial.onEnterGame) Tutorial.onEnterGame();
     el('btn-disconnect').onclick = disconnect;
   }
 
@@ -784,7 +788,7 @@ const App = (() => {
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
 
-  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop) Onboarding.stop(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
+  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
 
   /* ---------- title ---------- */
   function showTitle() {
