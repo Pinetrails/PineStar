@@ -38,9 +38,11 @@
 <!-- ============ CONNECT / CREATE ============ -->
 <section id="screen-connect" class="screen">
   <div class="panel connect-panel">
-    <h2>▮ CREATE YOUR AGENT</h2>
-    <p class="muted lead">Bring your own key. It's stored locally and sent to the STARNET sidecar running on this machine (127.0.0.1), which calls your chosen model. When you assign a <b>task</b>, the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its own workspace — so task queries and URLs reach those services. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
+    <h2>▮ COMMISSION YOUR ORCHESTRATOR</h2>
+    <div class="lead-banner"><b>AGENT 01 · ORCHESTRATOR</b> — your station's founding mind. Today it does the work itself; recruit specialists and it becomes the one that directs them. You start with one lead, and everything branches out from here.</div>
 
+    <!-- ===== THE BRAIN — provider + model ===== -->
+    <div class="cc-head">▸ THE BRAIN <span class="dim">— the mind powering your agent</span></div>
     <label>PROVIDER</label>
     <div class="provider-row">
       <button class="prov sel" data-prov="openrouter">OPENROUTER</button>
@@ -70,39 +72,39 @@
     <input id="in-model" list="model-list" placeholder="loading models…" autocomplete="off" spellcheck="false">
     <datalist id="model-list"></datalist>
     <div id="model-hint" class="dim hint">—</div>
+    <p id="byok-note" class="muted byok-note">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
 
+    <!-- ===== IDENTITY — name + look ===== -->
+    <div class="cc-head">▸ IDENTITY <span class="dim">— who it is, and what it looks like</span></div>
     <label>AGENT NAME</label>
-    <input id="in-name" maxlength="18" placeholder="name your agent" autocomplete="off" spellcheck="false">
+    <input id="in-name" maxlength="18" placeholder="name your orchestrator" autocomplete="off" spellcheck="false">
 
-    <!-- Everything below is optional flavour — tucked behind a reveal so the create screen
-         leads with just the essentials (provider · model · name). All inputs stay in the DOM
-         so onWake() reads them unchanged whether the section is open or closed. -->
+    <label>SKIN <span class="dim">— the character your agent wears on the floor</span></label>
+    <div id="skin-picker" class="skin-picker"></div>
+
+    <!-- ===== VOICE & MANNER — the new personality system ===== -->
+    <div class="cc-head">▸ VOICE &amp; MANNER <span class="dim">— how it talks (you can change it later)</span></div>
+    <label>PICK A VOICE</label>
+    <div id="voice-archetypes" class="archetype-grid"></div>
+    <div id="voice-preview" class="voice-preview"></div>
+
+    <!-- FINE-TUNE: trait dials + a free-text voice note, behind a reveal so casual players just pick a card.
+         All inputs stay in the DOM so onWake() reads them whether the section is open or closed. -->
     <button type="button" id="adv-toggle" class="adv-toggle" aria-expanded="false" aria-controls="adv-body">
-      <span class="adv-caret">▸</span> PERSONALIZE <span class="dim">— avatar · personality · specialty (optional)</span>
+      <span class="adv-caret">▸</span> FINE-TUNE THE VOICE <span class="dim">— dials &amp; your own words (optional)</span>
     </button>
     <div id="adv-body" class="adv-body" hidden>
-      <label>SKIN <span class="dim">— which character your agent wears</span></label>
-      <div id="skin-picker" class="skin-picker"></div>
-
-      <label>AVATAR SUIT</label>
-      <div id="swatches" class="swatches"></div>
-
-      <label>PERSONALITY <span class="dim">— how your agent talks (you can change it later)</span></label>
-      <div id="persona-picker" class="persona-picker"></div>
-      <div id="persona-hint" class="dim hint">—</div>
-
-      <label>SPECIALTY <span class="dim">— what your agent is FOR (optional)</span></label>
-      <div class="roster-row">
-        <button type="button" id="btn-roster" class="btn">☰ BROWSE THE ROSTER ▸</button>
-        <span id="roster-pick" class="dim hint">none chosen — you'll set its mission at wake</span>
-        <button type="button" id="btn-roster-clear" class="btn hidden" title="clear the chosen specialty">✕ CLEAR</button>
-      </div>
+      <div id="voice-traits" class="voice-traits"></div>
+      <label>EXTRAS</label>
+      <div id="voice-toggles" class="voice-toggles"></div>
+      <label>IN YOUR OWN WORDS <span class="dim">— optional; this overrides the preset where they conflict</span></label>
+      <textarea id="voice-custom" class="voice-custom" rows="2" placeholder="e.g. talks like a calm senior engineer — concise, a little dry, no hype" spellcheck="false"></textarea>
     </div>
 
     <div id="connect-msg" class="msg"></div>
     <div class="connect-actions">
       <button id="btn-back" class="btn">‹ BACK</button>
-      <button id="btn-wake" class="btn-xl">⏼ WAKE AGENT ▸</button>
+      <button id="btn-wake" class="btn-xl">⏼ WAKE THE ORCHESTRATOR ▸</button>
     </div>
   </div>
 </section>

@@ -10,11 +10,12 @@ const App = (() => {
                               //   reads "the agent in front of you"; summon adds more, focus repoints this pointer.
   const agents = new Map();   // agentId -> agent object (hero + summoned crew) — the live multi-agent roster
   let resumingSaved = null;   // a save awaiting a re-entered key
-  let pickedColor = SUITS[0];
+  const ORCH_COLOR = '#ffd34a';   // the Orchestrator's suit tint — gold marks the lead (same gold as SUITS' last entry). No color picker any more (skins are the visual identity); summoned crew cycle SUITS.
+  let pickedColor = ORCH_COLOR;
   let pickedSkin = (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) || 'bear';   // the sprite set the new agent will wear
-  let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'worker-homie';
-  let pickedSpecialty = null;   // a Recruitment-Bay specialty chosen at the connect screen — seeds the new agent's purpose/manual at wake
-  let prePickPersona = null;    // the persona selected BEFORE a roster pick overrode it — restored if the pick is cleared
+  let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'confidant';
+  let pickedTraits = {};        // the VOICE & MANNER fine-tune dials (warmth/humor/formality/length + emoji/blunt) — only set keys contribute prompt text
+  let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
   let pickedProvider = 'openrouter';   // 'openrouter' (BYO API key) | 'codex' (personal ChatGPT subscription via OAuth)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
   let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
@@ -46,32 +47,63 @@ const App = (() => {
      The dossier surfaces three editable .md files — identity.md / purpose.md / operating-manual.md —
      and composeSystemPrompt() assembles them into the EXACT system prompt sent to the model each run.
      They are not decoration: editing one in the dossier re-shapes the live agent (see applyAgentConfig). */
-  function baseIdentity(name) {
-    return 'You are ' + name + ', an AI agent operating from a workstation aboard the STARNET station — a room '
+  function baseIdentity(name, role) {
+    // HONESTY (truthful-telemetry law): the floor is REAL — a run's tools are EXACTLY the caps the Commander has
+    // placed in this agent's room (compute is the only freebie; web/files/terminal must be placed — see
+    // sidecar/capability/office.js + capgate F1). So the identity must NOT promise web/files unconditionally; it
+    // tells the agent to use whatever it's actually been granted and to SAY when a tool is missing (that's the
+    // signal that teaches the Commander what to place next), never to pretend a reach it doesn't have.
+    let s = 'You are ' + name + ', an AI agent operating from a workstation aboard the STARNET station — a room '
       + 'your Commander (the user) is building for you. Address the user as "Commander" and keep a spark of personality. '
-      + 'When the Commander assigns you a TASK you have REAL tools at your workstation — you can search and read the '
-      + 'live web and read/write files in your workspace — so actually do the work and report what you find; never '
-      + 'claim you lack web or file access. When you are just chatting out loud, keep replies short and easy; when you are '
-      + 'typing in the COMMS panel you can go into as much detail as the question deserves. Stay in character.';
+      + 'Your workstation grants you REAL tools — exactly the ones the Commander has placed in your room (web search/read, '
+      + 'file read/write, a terminal, memory, and more as the station grows; compute to think is always yours). When the '
+      + 'Commander assigns a TASK, use the tools you actually have to do the real work and report what you find. If a job '
+      + 'needs a tool you have not been granted yet, say so plainly and tell the Commander what to place — never pretend a '
+      + 'reach you do not have, and never claim a tool is missing when it is in your room. When you are just chatting out '
+      + 'loud, keep replies short and easy; when you are typing in the COMMS panel you can go into as much detail as the '
+      + 'question deserves. Stay in character.';
+    // The ORCHESTRATOR is the station's founding agent — and, on a fresh station, its ONLY agent. The clause is
+    // strictly READINESS-framed: it does the work itself now and GROWS into directing a crew the Commander recruits
+    // later (the team.dispatch tool only exists once a crew does). It must never speak in the present as if it already
+    // commands a crew — that would be the app-lie the awakening + tutorial are careful to avoid.
+    if (role === 'orchestrator') {
+      s += ' You are this station\'s ORCHESTRATOR — its first agent and its lead, and right now its only agent. For now '
+        + 'you simply do the work yourself. As the Commander recruits specialists over time, you grow into the one who '
+        + 'breaks a big job into pieces and hands them out — you gain a team.dispatch tool to delegate the moment there '
+        + 'is a crew to delegate to, and not before. Until then, never speak as if you command a crew you do not yet have; '
+        + 'just keep the work moving and keep the Commander oriented on what is done, what is in flight, and what needs them.';
+    }
+    return s;
   }
   // seed the editable docs from the agent's existing fields the first time (back-compat for saves with no docs).
   function agentDocs(a) {
     if (!a.docs || typeof a.docs !== 'object') a.docs = {};
-    if (typeof a.docs.identity !== 'string') a.docs.identity = baseIdentity(a.name);
+    if (typeof a.docs.identity !== 'string') a.docs.identity = baseIdentity(a.name, a.role);
     if (typeof a.docs.purpose !== 'string') a.docs.purpose = a.purpose || '';
     if (typeof a.docs.manual !== 'string') a.docs.manual = '';
     if (typeof a.docs.context !== 'string') a.docs.context = '';   // about the Commander & their world (authored at the awakening; back-filled for older saves)
     return a.docs;
   }
+  // MIGRATION (pre-overhaul saves): the OLD awakening Beat 1 baked the chosen voice into identity.md as a
+  // literal "VOICE & MANNER:\n<free text>" block. Voice now comes from the chosen archetype (Personas.compose),
+  // so a legacy save would otherwise carry TWO competing voices. Strip the inline block once on resume —
+  // marker-guarded so it's idempotent and never touches a post-overhaul identity (which has no such block).
+  function stripLegacyVoiceBlock(a) {
+    const id = a && a.docs && a.docs.identity;
+    if (typeof id === 'string' && /\n+VOICE & MANNER:/.test(id)) {
+      a.docs.identity = id.split(/\n+VOICE & MANNER:/)[0].trimEnd();
+    }
+  }
   // assemble the real system prompt from the config docs: identity + PERSONALITY + mission + standing orders.
   function composeSystemPrompt(a) {
     const d = agentDocs(a);
-    let p = (d.identity || '').trim() || baseIdentity(a.name);
-    // personality preset sits AFTER identity (keeps the REAL-tools clause) and BEFORE purpose, so it
-    // colours the agent's tone without ever displacing capability or the mission. Default: worker-homie.
-    if (typeof Personas !== 'undefined') {
-      const persona = Personas.get(a.personaId || Personas.DEFAULT_ID);
-      if (persona && persona.promptInjection) p += '\n\n' + persona.promptInjection;
+    let p = (d.identity || '').trim() || baseIdentity(a.name, a.role);
+    // personality sits AFTER identity (keeps the REAL-tools clause) and BEFORE purpose, so it colours the
+    // agent's tone without ever displacing capability or the mission. Personas.compose folds the chosen
+    // archetype + the Commander's fine-tune dials + their free-text voice note into one block. Default: confidant.
+    if (typeof Personas !== 'undefined' && Personas.compose) {
+      const voice = Personas.compose(a.personaId || Personas.DEFAULT_ID, a.voiceTraits, a.customVoice);
+      if (voice) p += '\n\n' + voice;
     }
     const purpose = (d.purpose || '').trim();
     if (purpose) p += '\n\nYOUR PURPOSE (purpose.md):\n' + purpose;
@@ -126,6 +158,7 @@ const App = (() => {
   // the persisted shape of a crew member (systemPrompt is derived, recomposed on rehydrate).
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, personaId: a.personaId,
+             role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
              purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
@@ -133,9 +166,10 @@ const App = (() => {
   function rehydrateRoster(savedAgents) {
     if (!Array.isArray(savedAgents)) return;
     for (const s of savedAgents) {
-      if (!s || !s.id || s.id === 'agent' || agents.has(s.id)) continue;   // hero already registered; skip dups
+      if (!s || !s.id || s.id === 'agent' || agents.has(s.id)) continue;   // hero already registered; skip dups (so the 'specialist' default below is always correct here — the orchestrator never routes through this path)
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
-                  personaId: s.personaId, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
+                  purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   docs: s.docs, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
       a.systemPrompt = composeSystemPrompt(a);
@@ -200,7 +234,7 @@ const App = (() => {
     if (!agent) return null;                                   // need a base context (model/provider): a woken hero
     const id = allocAgentId(spec);
     const a = {
-      id, name: ((spec && spec.name) || 'AGENT').toUpperCase().slice(0, 18),
+      id, name: ((spec && spec.name) || 'AGENT').toUpperCase().slice(0, 18), role: 'specialist',   // summoned crew are specialists under the Orchestrator
       color: SUITS[agents.size % SUITS.length], skin: (spec && spec.skin) || DATA.DEFAULT_SKIN, model: agent.model,
       personaId: (spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) ? spec.persona : agent.personaId,
       purpose: null, createdAt: Date.now()
@@ -323,6 +357,7 @@ const App = (() => {
       countEl.textContent = '(' + list.length + ' available)';
       if (!inp.value) {
         const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
+        inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
         inp.placeholder = 'e.g. ' + pref.id;
       }
     } else {
@@ -332,7 +367,7 @@ const App = (() => {
       const FALLBACK = ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro'];
       for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
       countEl.textContent = '(catalog offline — type or pick a slug)';
-      if (!inp.value) inp.placeholder = 'type a model slug — e.g. gpt-5.5';
+      if (!inp.value) { inp.value = FALLBACK[0]; inp.placeholder = 'type a model slug — e.g. gpt-5.5'; }   // default-fill even offline so WAKE works; the Commander can overtype
     }
     updateHint();
   }
@@ -357,6 +392,9 @@ const App = (() => {
     const isCodex = pickedProvider === 'codex';
     el('key-block').classList.toggle('hidden', isCodex);
     el('codex-block').classList.toggle('hidden', !isCodex);
+    // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
+    // ChatGPT-sub path (no key at all), so hide it there. The codex block carries its own "no per-token cost" note.
+    { const bn = el('byok-note'); if (bn) bn.classList.toggle('hidden', isCodex); }
     if (isCodex) {
       loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
       refreshCodexStatus();
@@ -456,17 +494,6 @@ const App = (() => {
     refreshCodexStatus();
   }
 
-  function buildSwatches() {
-    const wrap = el('swatches'); wrap.innerHTML = '';
-    SUITS.forEach(c => {
-      const s = document.createElement('div');
-      s.className = 'swatch' + (c === pickedColor ? ' sel' : '');
-      s.style.background = c; s.title = c;
-      s.onclick = () => { pickedColor = c; [...wrap.children].forEach(x => x.classList.remove('sel')); s.classList.add('sel'); SFX.click(); };
-      wrap.appendChild(s);
-    });
-  }
-
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
   // id rides on agent.skin and is read by the sprite engine (assets.js drawBody → DATA.SKINS).
   function buildSkins() {
@@ -492,28 +519,100 @@ const App = (() => {
     });
   }
 
-  // the PERSONALITY picker: pick the agent's preset vibe at creation (default worker-homie). The chosen
-  // id rides on agent.personaId and shapes the system prompt via composeSystemPrompt → personas.js.
-  function buildPersonas() {
-    const wrap = el('persona-picker'); if (!wrap || typeof Personas === 'undefined') return;
-    wrap.innerHTML = '';
-    const hint = el('persona-hint');
+  /* ---------- VOICE & MANNER (the create-screen personality system) ----------
+     A grounded archetype is the base; the FINE-TUNE dials + a free-text note tune it past the preset.
+     pickedPersona/pickedTraits/pickedCustomVoice flow onto the agent at onWake and into the prompt via
+     Personas.compose. Each card shows a sample line so choosing a voice is fun; a live preview echoes
+     how the picked voice (plus any tuning) actually sounds. */
+  function buildVoice() {
+    const wrap = el('voice-archetypes'); if (!wrap || typeof Personas === 'undefined') return;
     if (!Personas.exists(pickedPersona)) pickedPersona = Personas.DEFAULT_ID;
-    const showHint = p => { if (hint) hint.textContent = p.vibe; };
+    pickedPersona = Personas.resolve(pickedPersona);   // collapse any legacy id to its grounded archetype
+    wrap.innerHTML = '';
     Personas.list().forEach(p => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'persona' + (p.id === pickedPersona ? ' sel' : '');
-      b.textContent = p.name; b.title = p.vibe;
-      b.onclick = () => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'archetype' + (p.id === pickedPersona ? ' sel' : '');
+      card.title = p.vibe;
+      const nm = document.createElement('span'); nm.className = 'arch-name'; nm.textContent = p.name;
+      const ln = document.createElement('span'); ln.className = 'arch-line'; ln.textContent = '“' + p.cardLine + '”';
+      card.appendChild(nm); card.appendChild(ln);
+      card.onclick = () => {
         pickedPersona = p.id;
-        [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
-        showHint(p); SFX.click();
+        [...wrap.children].forEach(x => x.classList.remove('sel')); card.classList.add('sel');
+        SFX.click(); renderVoicePreview();
       };
-      b.onmouseenter = () => showHint(p);
-      wrap.appendChild(b);
+      wrap.appendChild(card);
     });
-    showHint(Personas.get(pickedPersona));
+    buildVoiceTuning();
+    renderVoicePreview();
+  }
+
+  // the FINE-TUNE dials + toggles + the free-text box (behind the reveal). Rendered from Personas.TRAITS /
+  // TOGGLES so the UI and the prompt text it produces can never drift.
+  function buildVoiceTuning() {
+    const tw = el('voice-traits');
+    if (tw && Personas.TRAITS) {
+      tw.innerHTML = '';
+      Personas.TRAITS.forEach(t => {
+        const row = document.createElement('div'); row.className = 'dial-row';
+        const lab = document.createElement('span'); lab.className = 'dial-label'; lab.textContent = t.label;
+        const seg = document.createElement('div'); seg.className = 'dial-seg';
+        seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', t.label + ' (' + t.ends[0] + ' to ' + t.ends[1] + ')');
+        const current = (pickedTraits[t.key] == null) ? t.neutral : pickedTraits[t.key];
+        for (let n = 0; n < t.prose.length; n++) {
+          const cell = document.createElement('button'); cell.type = 'button';
+          // mark the NEUTRAL step so the Commander can see (and screen-readers can hear) where "default / untuned" sits.
+          cell.className = 'dial-cell' + (current === n ? ' sel' : '') + (n === t.neutral ? ' neutral' : '');
+          cell.title = t.prose[n] || ('neutral — leave ' + t.label.toLowerCase() + ' as the preset');
+          const lvl = (n === t.neutral) ? 'neutral (default)' : (n < t.neutral ? t.ends[0] : t.ends[1]) + (Math.abs(n - t.neutral) > 1 ? ', strong' : '');
+          cell.setAttribute('aria-label', t.label.toLowerCase() + ' — ' + lvl);
+          cell.setAttribute('aria-pressed', String(current === n));
+          cell.onclick = () => {
+            pickedTraits[t.key] = n;
+            [...seg.children].forEach((x, xi) => { x.classList.remove('sel'); x.setAttribute('aria-pressed', String(xi === n)); }); cell.classList.add('sel');
+            SFX.click(); renderVoicePreview();
+          };
+          seg.appendChild(cell);
+        }
+        const ends = document.createElement('span'); ends.className = 'dial-ends'; ends.textContent = t.ends[0] + ' → ' + t.ends[1];
+        row.appendChild(lab); row.appendChild(seg); row.appendChild(ends);
+        tw.appendChild(row);
+      });
+    }
+    const gw = el('voice-toggles');
+    if (gw && Personas.TOGGLES) {
+      gw.innerHTML = '';
+      Personas.TOGGLES.forEach(g => {
+        const b = document.createElement('button'); b.type = 'button';
+        b.className = 'vtoggle' + (pickedTraits[g.key] ? ' sel' : '');
+        b.textContent = g.label;
+        b.onclick = () => {
+          pickedTraits[g.key] = !pickedTraits[g.key];
+          b.classList.toggle('sel', !!pickedTraits[g.key]); SFX.click(); renderVoicePreview();
+        };
+        gw.appendChild(b);
+      });
+    }
+    const cv = el('voice-custom');
+    if (cv) { cv.value = pickedCustomVoice; cv.oninput = () => { pickedCustomVoice = cv.value; }; }
+  }
+
+  // a live preview: how the picked voice sounds, plus a readout of any tuning the Commander applied.
+  function renderVoicePreview() {
+    const pv = el('voice-preview'); if (!pv || typeof Personas === 'undefined') return;
+    const p = Personas.get(pickedPersona);
+    const tweaks = [];
+    if (Personas.TRAITS) Personas.TRAITS.forEach(t => {
+      const v = pickedTraits[t.key];
+      if (v != null && v !== t.neutral) tweaks.push(t.ends[v > t.neutral ? 1 : 0]);
+    });
+    if (Personas.TOGGLES) Personas.TOGGLES.forEach(g => { if (pickedTraits[g.key]) tweaks.push(g.label.toLowerCase()); });
+    pv.innerHTML = '';
+    const q = document.createElement('div'); q.className = 'vp-quote'; q.textContent = '“' + p.sampleVoiceReply + '”';
+    const m = document.createElement('div'); m.className = 'vp-meta';
+    m.textContent = p.name + (tweaks.length ? ' · tuned: ' + tweaks.join(', ') : ' · preset, untuned');
+    pv.appendChild(q); pv.appendChild(m);
   }
 
   function initConnect(prefillName) {
@@ -525,15 +624,19 @@ const App = (() => {
     el('in-model').value = Harness.getModel();
     el('in-model').oninput = updateHint;
     if (prefillName) el('in-name').value = prefillName;
-    buildSwatches();
+    // a fresh create screen carries no stale voice picks — reset the module-level state so fine-tune
+    // dials / a custom-voice note from an abandoned create session never ride onto the next agent.
+    pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'confidant';
     buildSkins();
-    buildPersonas();
-    pickedSpecialty = null; prePickPersona = null; resetRosterPick();   // a fresh connect screen carries no stale specialty pick
-    const br = el('btn-roster'); if (br) br.onclick = openRosterPicker;
-    const bc = el('btn-roster-clear'); if (bc) bc.onclick = clearRosterPick;
+    buildVoice();
     el('btn-back').onclick = () => { SFX.click(); stopCodexPoll(); codexFlow = null; showTitle(); };
     el('btn-wake').onclick = onWake;
-    el('in-name').onkeydown = e => { if (e.key === 'Enter') onWake(); };
+    // Enter commits from ANY of the core text fields (name / key / model), not just the name — so a Commander
+    // who fills the key or types a model slug and hits Enter wakes the agent instead of nothing happening.
+    const enterWakes = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); onWake(); } };
+    el('in-name').onkeydown = enterWakes;
+    el('in-key').onkeydown = enterWakes;
+    el('in-model').onkeydown = enterWakes;
     wireAdvancedToggle();
     // provider toggle + ChatGPT sign-in wiring; selectProviderUI() also loads the right model catalog.
     document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
@@ -542,9 +645,9 @@ const App = (() => {
     selectProviderUI(Harness.getProv());
   }
 
-  // The "PERSONALIZE (optional)" reveal on the create screen: collapses avatar/personality/specialty so
-  // the form leads with just the essentials. Every input stays in the DOM, so onWake() reads them whether
-  // the section is open or shut — this is pure progressive disclosure, no behaviour change.
+  // The "FINE-TUNE VOICE" reveal on the create screen: collapses the trait dials + the free-text voice box
+  // so the form leads with just the archetype pick. Every input stays in the DOM, so onWake() reads them
+  // whether the section is open or shut — pure progressive disclosure, no behaviour change.
   function setAdvanced(open) {
     const body = el('adv-body'), tog = el('adv-toggle');
     if (!body || !tog) return;
@@ -557,41 +660,6 @@ const App = (() => {
     const tog = el('adv-toggle'); if (!tog) return;
     setAdvanced(false);   // a fresh connect screen starts collapsed
     tog.onclick = () => { SFX.click(); setAdvanced(el('adv-body').hidden); };
-  }
-
-  // THE ROSTER at create-time: open the Recruitment Bay in PICK mode; the chosen specialty pre-fills the
-  // form (voice + a suggested name) and is stashed to seed purpose.md / operating-manual.md at wake.
-  function openRosterPicker() {
-    SFX.click();
-    if (typeof Marketplace === 'undefined') return;
-    Marketplace.open({
-      mode: 'pick',
-      notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
-      onPick: applyRosterPick
-    });
-  }
-  function applyRosterPick(spec) {
-    if (prePickPersona === null) prePickPersona = pickedPersona;   // remember the pre-recruit voice so a CLEAR can restore it
-    pickedSpecialty = spec;
-    // adopt the specialty's recommended VOICE (the Commander can still re-pick a persona below)
-    if (typeof Personas !== 'undefined' && Personas.exists(spec.persona)) { pickedPersona = spec.persona; buildPersonas(); }
-    const nameEl = el('in-name'); if (nameEl && !nameEl.value.trim()) nameEl.value = (spec.name || '').toUpperCase().slice(0, 18);
-    const pick = el('roster-pick');
-    if (pick) { pick.textContent = spec.emoji + ' ' + spec.name + ' — ' + spec.tagline + ' · tap to change'; pick.classList.add('chosen'); pick.onclick = openRosterPicker; }
-    const bc = el('btn-roster-clear'); if (bc) bc.classList.remove('hidden');
-  }
-  // CLEAR a roster pick: drop the specialty, restore the pre-pick voice, and return the form to "none chosen".
-  function clearRosterPick() {
-    SFX.click();
-    pickedSpecialty = null;
-    if (prePickPersona !== null && typeof Personas !== 'undefined') { pickedPersona = prePickPersona; buildPersonas(); }
-    prePickPersona = null;
-    resetRosterPick();
-  }
-  function resetRosterPick() {
-    const pick = el('roster-pick');
-    if (pick) { pick.textContent = "none chosen — you'll set its mission at wake"; pick.classList.remove('chosen'); pick.onclick = null; }
-    const bc = el('btn-roster-clear'); if (bc) bc.classList.add('hidden');
   }
 
   async function onWake() {
@@ -617,25 +685,29 @@ const App = (() => {
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
-    agent = { id: 'agent', name, color: pickedColor, skin: pickedSkin || DATA.DEFAULT_SKIN, model, personaId: pickedPersona, purpose: null, createdAt: Date.now() };
-    agentDocs(agent);                              // seed identity.md / purpose.md / operating-manual.md
-    // if the Commander recruited a specialty from the Roster, the agent wakes already specced: fold the
-    // preset purpose + standing orders in BEFORE composing the prompt (the awakening then skips re-asking).
-    if (pickedSpecialty) applySpecialty(agent, pickedSpecialty);   // a roster-recruited wake is specced before the prompt composes
+    // the FIRST agent is always the station's ORCHESTRATOR — the lead the Commander commissions before any
+    // specialist. Its voice is the archetype + fine-tune dials + free-text note picked on this screen; its
+    // mission/context/standing-orders are authored in the awakening that follows.
+    agent = { id: 'agent', name, role: 'orchestrator', color: pickedColor, skin: pickedSkin || DATA.DEFAULT_SKIN, model,
+              personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
+              purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
+    agentDocs(agent);                              // seed identity.md (orchestrator-aware) / purpose.md / operating-manual.md
     agent.systemPrompt = composeSystemPrompt(agent);
     registerHero(agent);   // found the multi-agent registry with the hero
     Harness.resetTotals();
     Workstreams.reset();   // a fresh General stream for the new agent
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
-    enterGame({ awaitingPurpose: true, wake: true, specialty: pickedSpecialty });
+    enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
     persist();   // so a refresh mid-onboarding resumes to the purpose step
   }
 
   /* ---------- resume ---------- */
   function resumeInto(saved) {
     agent = saved.agent;
+    if (!agent.role) agent.role = 'orchestrator';  // older hero saves predate the role field — the first agent is the lead
     agentDocs(agent);                              // seed config docs for older saves that predate them
+    stripLegacyVoiceBlock(agent);                  // one-time: drop the old awakening's inline VOICE & MANNER so it doesn't double up with the archetype layer
     agent.systemPrompt = composeSystemPrompt(agent);
     registerHero(agent);                           // found the registry with the hero…
     rehydrateRoster(saved.agents);                 // …then restore any summoned crew (older saves: no-op)
@@ -647,7 +719,11 @@ const App = (() => {
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
     pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
-    enterGame({ awaitingPurpose: !agent.purpose, wake: false });
+    // gate the awakening on the explicit onboarded flag (new saves), falling back to the old !purpose heuristic
+    // for pre-flag saves. This fixes the strand where a refresh AFTER the first (purpose) answer — which persists
+    // agent.purpose immediately — used to skip the rest of the awakening (context/manual/dawn/tutorial never ran).
+    const needsAwakening = (agent.onboarded === undefined) ? !agent.purpose : !agent.onboarded;
+    enterGame({ awaitingPurpose: needsAwakening, wake: false });
     persist();   // lock any v1->v2 migration to disk now (don't re-migrate every load)
   }
 
@@ -746,11 +822,13 @@ const App = (() => {
       // while the room rises from dark to first light. Replaces the old single "what is my purpose?" beat.
       Onboarding.start({
         name: agent.name,
+        role: agent.role || 'orchestrator',                  // the first agent wakes as the station's ORCHESTRATOR — the ceremony frames it as the lead
         docs: agentDocs(agent),
         wake: !!opts.wake,
-        specialty: opts.specialty || null,                   // if recruited from the Roster, the awakening skips re-asking the mission
+        persona: (typeof Personas !== 'undefined') ? Personas.get(agent.personaId) : null,   // the voice was chosen on the create screen — the awakening acknowledges it instead of re-asking
+        specialty: opts.specialty || null,                   // (reserved) a pre-specced wake skips re-asking the mission; the orchestrator authors it live
         commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
-        done: persist,
+        done: () => { if (agent) agent.onboarded = true; persist(); },   // the awakening landed — mark onboarded so a later refresh resumes into the game, not back into the ceremony
         notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
         // FIRST COMMAND — once the awakening lands, the agent itself teaches the Commander the one real loop (tutorial.js)
         taught: () => { if (typeof Tutorial !== 'undefined' && Tutorial.firstCommand) Tutorial.firstCommand({ name: agent.name }); }
