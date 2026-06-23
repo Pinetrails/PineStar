@@ -136,4 +136,30 @@ const redact = (s) => String(s).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(h.every(r => r.content !== 'OLD history turn (already persisted last run)'), 'pre-boundary history is NOT re-appended (no duplication)');
 }
 
+// ---- L. (H1.2) reconstruct(): rebuild OpenAI-format messages incl. tool_calls/tool pairs for resume ----
+{
+  const s = makeTranscriptStore({ io: memIo(), clock });
+  s.appendTurns('s1', 'a', [
+    { role: 'user', content: 'find the file' },
+    { role: 'assistant', content: '', tool_calls: [{ id: 'tc1', function: { name: 'fs_read', arguments: '{}' } }] },
+    { role: 'tool', content: 'contents', tool_call_id: 'tc1' },
+    { role: 'assistant', content: 'Found it.' },
+  ], 0);
+  const m = s.reconstruct('s1');
+  A.eq(m.map(x => x.role), ['user', 'assistant', 'tool', 'assistant'], 'reconstructs every prior turn in order');
+  A.ok(Array.isArray(m[1].tool_calls) && m[1].tool_calls[0].function.name === 'fs_read', 'assistant tool_calls parsed back to an array');
+  A.eq(m[2].tool_call_id, 'tc1', 'tool message keeps its tool_call_id (pairs to the call)');
+  A.eq(m[3].content, 'Found it.', 'final assistant text reconstructed');
+}
+// ---- M. (H1.2) reconstruct() is pairing-safe at a truncated boundary ----
+{
+  const s = makeTranscriptStore({ io: memIo(), clock });
+  s.append({ streamId: 'x', role: 'tool', content: 'orphan result', toolCallId: 'z' });   // a tool with no preceding call (slice start)
+  s.append({ streamId: 'x', role: 'user', content: 'hello' });
+  s.append({ streamId: 'x', role: 'assistant', content: '', toolCalls: [{ id: 'tail', function: { name: 'x', arguments: '{}' } }] }); // results cut off the end
+  const m = s.reconstruct('x');
+  A.eq(m[0].role, 'user', 'a leading orphaned tool message is dropped (valid for the provider)');
+  A.ok(!m[m.length - 1].tool_calls, 'a trailing assistant with cut-off results has its tool_calls stripped');
+}
+
 A.report('transcript.test');
