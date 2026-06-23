@@ -329,7 +329,7 @@ const World = (() => {
   /* ---------- agent lifecycle ---------- */
   function spawn(a) {
     agent = {
-      id: a.id, name: a.name, color: a.color || '#5ad0ff',
+      id: a.id, name: a.name, color: a.color || '#5ad0ff', skin: a.skin || DATA.DEFAULT_SKIN,
       px: 0, py: 0, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: true,
       phase: U.hash(a.id) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
@@ -2065,9 +2065,9 @@ const World = (() => {
   /* ---------- crew bodies (the OTHER agents, standing at their bays) ---------- */
   // a LIGHT body: the full agent field-shape (so SPRITES.drawBody/drawFallback never choke) but STATIC —
   // it never ticks/paths. It only receives work (a say bubble + a wake ripple + a bay work-glow).
-  function makeCrewBody(aid, name, color, fx, fy) {
+  function makeCrewBody(aid, name, color, fx, fy, skin) {
     return {
-      id: aid, agentId: aid, name: name || aid, color: color || '#5ad0ff', crewBody: true,
+      id: aid, agentId: aid, name: name || aid, color: color || '#5ad0ff', skin: skin || DATA.DEFAULT_SKIN, crewBody: true,
       px: fx, py: fy, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: false,
       phase: U.hash('' + aid) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
@@ -2132,7 +2132,7 @@ const World = (() => {
     if (!a || !a.id || (agent && a.id === agent.id)) return;
     if (crew.some(b => b.agentId === a.id)) return;                       // already present
     const f = geo ? workerFoot() : { x: 0, y: 0 };                        // pre-geo: parked at origin, re-footed on first syncCrewFromPlan
-    const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y);
+    const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y, a.skin);
     b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
     b.idleUntil = fnow + U.irnd(1400, 3200);                              // hold a beat after materializing, then it strolls
     crew.push(b);

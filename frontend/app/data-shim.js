@@ -12,3 +12,14 @@ function registerAgent(id, color) {
   DATA.AGENT[id] = { id, color: color || '#5ad0ff' };
   return DATA.AGENT[id];
 }
+
+/* SKIN REGISTRY — each agent picks a skin (a natively-colored sprite set) at
+   creation. assets.js drawBody maps agent.skin -> DATA.SKINS[skin].set -> the
+   manifest's "<set>.<state>.<dir>" frames. ADDITIVE: new skins = new entries
+   here + a matching sprite set in assets/sprites/manifest.json. `scale` is the
+   per-set downscale applied at tint time (crew sprites render on a 92px canvas). */
+DATA.SKINS = {
+  bear: { name: 'Teddy Bear', set: 'bear', scale: 0.36 },
+  pepe: { name: 'Pepe',       set: 'pepe', scale: 0.36 },
+};
+DATA.DEFAULT_SKIN = 'bear';
