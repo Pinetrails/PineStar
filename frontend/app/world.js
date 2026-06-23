@@ -119,6 +119,12 @@ const World = (() => {
      Lines stay sparse and unresolved; the SILENCE is the unsettling part. */
   // quirk/off-beat cooldowns are now PER-BODY (self.quirkCd / self.offbeatCd, seeded on the hero literal + crew init) —
   // J2: a body's gate must never throttle another body. (Module globals removed; maybeQuirk/offbeat read/write self.)
+  // B3 RESTRAINT-AT-SCALE: a single FLOOR-WIDE "a quirk just fired somewhere" timestamp. It is NOT cross-agent
+  // awareness (no body perceives another — that is Tier C); it is a light rarity governor so a floor of N agents
+  // doesn't burst into simultaneous quirks/stares. Only CREW quirk rolls are damped by it (the hero's roll stays
+  // byte-identical → J1 parity); every quirk (hero or crew) arms it. lastQuirkAt is wall-clock-free (set from the
+  // tick's `now`, which is U-driven), so it stays deterministic (J5).
+  let lastQuirkAt = -1e9;
   const Q_PONDER = ['hm.', '...', 'i wonder', 'strange', 'thinking'];
   const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
   const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
@@ -1287,14 +1293,29 @@ const World = (() => {
     { tag: 'ease', rest: 1.4, stim: 0.85, soc: 1.0, restless: 0.7 },     // gravitates to the couch
     { tag: 'drift', rest: 1.2, stim: 0.7, soc: 0.85, restless: 0.55 },   // sleepy, sparse, long dwells
   ];
-  function phaseOf(now) { return PHASES[(Math.floor(now / 210000) + (self ? self.phase : 0)) % PHASES.length]; }  // ~3.5 min per phase, offset per body
+  // B3 DISTINCTNESS: the hero keeps the exact original clock (skew 0 → self===agent byte-parity, J1). Crew bodies
+  // get a deterministic per-body TIME skew (0..PHASE_MS, from U.hash on the stable id) so their phase TRANSITIONS
+  // desync — without it every body flips mood at the same now/210000 boundary (offset-but-lockstep). Now a floor of
+  // N agents is in genuinely different modes AND changes mode at different instants — distinct minds, not a swarm (G3).
+  const PHASE_MS = 210000;
+  function phaseOf(now) {
+    if (!self) return PHASES[Math.floor(now / PHASE_MS) % PHASES.length];
+    const skew = self === agent ? 0 : (U.hash('ph:' + self.id) % PHASE_MS);   // hero unchanged (J1); crew time-shifted
+    return PHASES[(Math.floor((now + skew) / PHASE_MS) + self.phase) % PHASES.length];   // ~3.5 min per phase, offset + skewed per body
+  }
 
   /* ---------- quirks: rare, gated, UNPREDICTABLE one-offs — the off-screen inner life surfacing ----------
      Eerie through stillness + ambiguity (the "why did it just do that"), never spooky one-liners. */
   function maybeQuirk(now) {
     if (now < (self.quirkCd || 0)) return false;   // J2: per-body cooldown — a crew quirk must NOT throttle the hero or siblings (was the shared module global)
-    if (!U.chance(0.085 * (0.6 + self.pers.restless * 0.4))) return false;
+    let p = 0.085 * (0.6 + self.pers.restless * 0.4);
+    // B3: the hero's probability is UNCHANGED (J1 byte-parity). For a crew body, if a quirk fired ANYWHERE on the
+    // floor in the last ~8s, soften this roll so the floor doesn't quirk in unison — eerie restraint at scale (G3).
+    // Not awareness: the body learns nothing about the other; it's a global rarity governor on the dice only.
+    if (self !== agent && (now - lastQuirkAt) < 8000) p *= 0.35;
+    if (!U.chance(p)) return false;
     self.quirkCd = now + U.irnd(45000, 90000);    // quirks stay special — even rarer now, so each lands with weight
+    lastQuirkAt = now;                            // arm the floor-wide governor (hero or crew) so the NEXT crew quirk is damped if it clusters
     const r = U.irnd(0, 999);
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
     if (r < 520) return quirkScan(now);      // 20% — a slow, deliberate sweep of the room
