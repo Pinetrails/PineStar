@@ -109,13 +109,18 @@ const cands = [
 const kept = Z.clampPickable(zMain, cands);
 A.eq(kept.map(c => c.tag), ['A', 'C', 'E'], 'clampPickable keeps only in-zone candidates, in original order');
 
-// keyFn extracts the tile from a richer candidate shape
-const props2 = [
-  { id: 'q1', x: 3,  y: 3 },    // in big room
-  { id: 'q2', x: 26, y: 1 },    // side room — out
+// keyFn extracts the tile from a richer candidate shape. The tile is NESTED under .tile so the
+// default identity keyFn (c => c) reads undefined coords — this candidate shape can only be
+// filtered correctly if keyFn is actually honored, making the keyFn path load-bearing (not vacuous).
+const nested = [
+  { id: 'q1', tile: { x: 3,  y: 3 } },    // in big room
+  { id: 'q2', tile: { x: 26, y: 1 } },    // side room — out
 ];
-const keptProps = Z.clampPickable(zMain, props2, p => ({ x: p.x, y: p.y }));
+const keptProps = Z.clampPickable(zMain, nested, c => c.tile);
 A.eq(keptProps.map(p => p.id), ['q1'], 'clampPickable uses keyFn to read each candidate tile');
+// companion: the SAME nested candidates under the DEFAULT keyFn yield [] (top-level x/y are
+// undefined → inZone false), proving the keyFn above is what makes filtering succeed.
+A.eq(Z.clampPickable(zMain, nested), [], 'default identity keyFn cannot read nested tiles — keyFn is load-bearing');
 
 // null zone / bad input -> empty (caller falls through to an in-place beat)
 A.eq(Z.clampPickable(null, cands), [], 'clampPickable(null,..) is empty — nothing to pick, no roaming');

@@ -61,6 +61,18 @@ We do not touch work routing.
   ONLY these via pathspec — never `git add -A`. Touch no other lane's files.
 - I6. **Green + verified before "done".** Full `npm run test:fast` exit 0, new `zones` unit tests
   pass, and an adversarial review round returns ZERO confirmed defects.
+  - **I5↔I6 resolution (the `package.json` hotspot — decided, like the `index.html` line).** The
+    `test:fast` script is a hardcoded `node test/<name>.test.js` chain with **no auto-discovery**, and
+    `package.json` is deliberately **outside** I5's blast radius — so this lane does NOT edit it.
+    Therefore `test/zones.test.js` is gated by a **separate explicit invocation** that the loop's
+    gate command MUST run alongside `npm run test:fast`, namely:
+    `node --check frontend/app/world.js && (node --check frontend/app/zones.js) && node test/zones.test.js && npm run test:fast`.
+    Running `node test/zones.test.js` here is what makes I6 ("new zones unit tests pass AS PART OF
+    green") true today without touching `package.json`. **Orchestrator handoff:** at integration the
+    orchestrator should fold the new test into the standing suite by appending the single additive
+    line `&& node test/zones.test.js` to the `test:fast` chain in `package.json` (right after
+    `node test/ctxgauge.test.js`, mirroring `xp`/`ctxgauge`), flagged exactly like the `index.html`
+    additive line — until then the explicit invocation above keeps the test load-bearing in the gate.
 
 ## ARCHITECTURE (decided; scope-lock confirms exact anchors against the live file)
 
