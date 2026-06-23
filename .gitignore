@@ -28,3 +28,13 @@ src-tauri/gen/
 
 # bundled Node runtime fetched by scripts/prepare-node.mjs (large build input, never committed)
 src-tauri/binaries/
+
+# visual-harness screenshot output — regenerated scratch from uishoot/uiplay/uiresidue/uisummon
+# (each run writes a SHOT_DIR with a nested _profile chrome user-data-dir). Never committed.
+.uishots*/
+.uiplay/
+.uiresidue/
+.uisummon/
+.matest-workspaces/
+# skin-generation working files (pixellab scratch; the committed sprite sets + _preset recipe stay tracked)
+frontend/assets/sprites/_clawd_work/
