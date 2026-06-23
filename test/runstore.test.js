@@ -76,4 +76,13 @@ const clock = { now: () => clk };
   A.eq(s.record({ runId: 'r', reason: 'done' }).runId, 'r', 'record still works over a corrupt log');
 }
 
+// ---- G. (H3.2) a run records its streamId so the RUNS row can open its transcript ----
+{
+  const s = makeRunStore({ io: memIo(), clock });
+  const e = s.record({ runId: 'r9', agentId: 'a', reason: 'done', streamId: 'general' });
+  A.eq(e.streamId, 'general', 'record stores the run\'s streamId');
+  A.eq(s.list('a')[0].streamId, 'general', 'list surfaces streamId (join key to GET /api/transcript)');
+  A.eq(s.record({ runId: 'r10', agentId: 'a' }).streamId, '', 'a streamless run -> empty streamId (no crash)');
+}
+
 A.report('runstore.test');

@@ -1768,7 +1768,7 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title });
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title, streamId: o.streamId || '' });   // H3.2: join the outcome row to its transcript
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
