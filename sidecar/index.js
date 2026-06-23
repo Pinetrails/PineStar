@@ -114,6 +114,10 @@ function rejectBadApiToken(req, res) {
 // Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
 let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
+// OpenRouter base URL override (env SKYNET_OPENROUTER_BASE). Default undefined -> the provider's own
+// https://openrouter.ai/api/v1. Lets a user point at an OR-compatible proxy, and lets the boot+run E2E aim
+// the provider at a local mock so the real streaming path is tested end-to-end without a live key.
+const OPENROUTER_BASE = String(process.env.SKYNET_OPENROUTER_BASE || '').trim() || undefined;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
 // the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). SKYNET_WORKSPACES
 // wins (the desktop shell + isolated tests set it); otherwise resolve a PER-USER, writable OS app-data dir.
@@ -883,7 +887,7 @@ server.listen(PORT, '127.0.0.1', () => {
   if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
-  makeOpenRouterProvider({ fetch: globalThis.fetch }).listModels().then(
+  makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: OPENROUTER_BASE }).listModels().then(
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
@@ -1540,7 +1544,7 @@ async function runOnce(o) {
     }
     provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token: codexToken });
   } else {
-    provider = selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key });
+    provider = selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key, baseUrl: OPENROUTER_BASE });
   }
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
@@ -1559,7 +1563,7 @@ async function runOnce(o) {
   if (!usingCodex) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(process.env.SKYNET_KEY_POOL || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== key);
-    rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk }), model, credKey: rk }));
+    rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk, baseUrl: OPENROUTER_BASE }), model, credKey: rk }));
   }
   const fallbacks = rotationFallbacks.concat(fallbackModels.map(m => ({ provider, model: m })));
 
