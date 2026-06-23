@@ -144,6 +144,9 @@ const StationUI = (() => {
   }
   function toggleTerm(key, title, builder, opts) {
     if (open[key]) { closeTerm(key); return; }
+    // Mode-exclusivity: a dock panel and full-screen REFIT must never be mounted at once.
+    // Opening a panel exits refit first so two features can't stack (see COHERENCE_MATRIX dim T).
+    if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) { try { Build.close(); } catch (_) {} }
     sfx('open');
     const w = el('div', 'term');
     w.style.zIndex = U.zTop();
