@@ -619,7 +619,7 @@ const World = (() => {
   const OPP = { north: 'south', south: 'north', east: 'west', west: 'east' };
   // only while casually wandering (never a summon/goal walk): a brief considered pause, or the rare eerie double-take
   function maybeStrollBeat() {
-    if (!self || self.goal != null || activity !== 'idle' || self.unplaced) return;
+    if (!self || self.goal != null || ((self === agent) && activity !== 'idle') || self.unplaced) return;
     const now = fnow;
     if (now < (self.pauseCd || 0)) return;
     // THE DOUBLE-TAKE (rare): stop and turn to look back the way it came, as if something caught its attention
