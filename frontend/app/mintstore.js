@@ -46,7 +46,10 @@ const MintStore = (() => {
   function enabled() { return ready() ? !!state.enabled : true; }
   function setEnabled(on) { if (ready()) { Mint.setEnabled(state, on); persist(); } }
   function forget() { if (ready()) { state = Mint.forget(state); persist(); } }
+  // S1: a NEW AGENT starts with no recurring-task memory. Drop the self-persisted key so the next init()
+  // hydrates clean (Save.clear() only wipes skynet.save — this store persists to its own key).
+  function reset() { state = null; try { if (typeof localStorage !== 'undefined') localStorage.removeItem(KEY); } catch (_) {} }
   function serialize() { return ready() ? JSON.parse(JSON.stringify(state)) : null; }
 
-  return { init, observe, candidates, markMinted, markDismissed, enabled, setEnabled, forget, serialize };
+  return { init, observe, candidates, markMinted, markDismissed, enabled, setEnabled, forget, reset, serialize };
 })();

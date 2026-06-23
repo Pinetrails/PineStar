@@ -31,5 +31,9 @@ const CuriosityStore = (() => {
   function markShown() { sessionCount++; }   // spend this session's budget (whether or not the Commander answers)
   function markDismissed(dim) { if (ready() && dim) { state.dismissed[dim] = true; save(); } }   // never raise it again
 
-  return { init, consider, markShown, markDismissed };
+  // S2: a NEW AGENT starts with no waved-off dimensions. Drop the self-persisted key so the next init()
+  // hydrates clean (Save.clear() only wipes skynet.save — this store persists to its own key).
+  function reset() { state = null; sessionCount = 0; try { localStorage.removeItem(KEY); } catch (_) {} }
+
+  return { init, consider, markShown, markDismissed, reset };
 })();

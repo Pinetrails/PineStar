@@ -111,7 +111,7 @@ const Tutorial = (() => {
     if (state.firstCommandDone) return;       // learned once, never again
     if (!hasChat()) return;
     agentName = (opts && opts.name) || agentName;
-    active = true; sawStart = sawPermission = sawEnd = sawDeny = false;
+    active = true; finished = false; sawStart = sawPermission = sawEnd = sawDeny = false;   // C1: un-latch finishUp for this fresh run (it's symmetric with the saw-flags; without it a prior agent's completed lesson left finishUp a no-op)
     kitMode = false; kitComplete = false; kitWasOpen = false; kitNeeded = null;
     wireBus(); showSkip();
     // Beat 1 — orient. Picks up the awakening's closing "so — where do we begin?" as one continuous voice, then

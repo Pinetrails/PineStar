@@ -895,7 +895,15 @@ const App = (() => {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
     if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
     el('btn-begin').onclick = startCreation;
-    el('btn-newagent').onclick = () => { SFX.click(); Save.clear(); startCreation(); };
+    el('btn-newagent').onclick = () => {
+      SFX.click(); Save.clear();
+      // NEW AGENT = a clean slate: also wipe the behavioral stores that self-persist OUTSIDE the save
+      // envelope (Save.clear only removes skynet.save). Per the Commander's scope decision, learned
+      // task-mining (S1) + curiosity dismissals (S2) are per-agent and reset; one-time UI/consent flags stay.
+      if (typeof MintStore !== 'undefined' && MintStore.reset) MintStore.reset();
+      if (typeof CuriosityStore !== 'undefined' && CuriosityStore.reset) CuriosityStore.reset();
+      startCreation();
+    };
     el('btn-resume').onclick = () => { const s = Save.load(); if (s) { SFX.open(); resumeInto(s); } };
 
     // data portability — the safety net for the localStorage-fragile agent. Export bundles every

@@ -70,6 +70,7 @@ const Chat = (() => {
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
+    proposalRunsSeen.clear(); wiQDepth.clear();   // C2: per-session run-tracking + the queue gauge start clean for each agent (listeners stay once-registered)
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
     input.value = '';
