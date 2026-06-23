@@ -114,6 +114,11 @@
     'shell.exec': obj(['agentId', 'runId', 'callId', 'exitCode'], {
       agentId: str, runId: str, callId: str, cmdSummary: str, cwd: str, exitCode: int, ms: num, truncated: bool
     }),
+    // H2.2: a background/long-running shell process (shell.exec background:true) ended — fires AFTER the
+    // originating run's stream closed, so it rides the durable SSE bus (chanEmit), not the per-run NDJSON.
+    'shell.bg.exit': obj(['agentId', 'bgId', 'exitCode'], {
+      agentId: str, bgId: str, exitCode: int, ms: num, killed: bool
+    }),
     // post-edit verification: the project's own check, or an LSP lint-DELTA (only NEWLY-introduced diagnostics).
     'verify.result': obj(['agentId', 'runId', 'passed'], {
       agentId: str, runId: str, tool: str, passed: bool, added: int, removed: int, summary: str

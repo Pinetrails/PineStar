@@ -51,7 +51,9 @@
     // is one rollback away. (Container/job-object OS sandboxing is a deferred backend behind the same tool seam.)
     workbench: [
       { capId: 'workbench', tool: 'shell.exec', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true }
+      { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'shell.bg.status', scope: 'read', requiresConsent: false, network: false },   // H2.2: inspect your background processes
+      { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
     ],
     // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,
     // each of which runs its OWN real agent loop. NO consent gate (internal orchestration of the user's own crew,

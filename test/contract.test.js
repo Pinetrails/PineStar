@@ -45,6 +45,7 @@ const cases = [
   ['checkpoint.created', { agentId: 'a', runId: 'r', turn: 2, snapshotId: 's1', files: 3, bytes: 900 }, { agentId: 'a', runId: 'r', snapshotId: 's1' }],
   ['checkpoint.restored', { agentId: 'a', runId: 'r', toSnapshotId: 's1', reason: 'rewind' }, { agentId: 'a', runId: 'r' }],
   ['shell.exec', { agentId: 'a', runId: 'r', callId: 'c1', cmdSummary: 'npm test', cwd: '/w', exitCode: 0, ms: 12, truncated: false }, { agentId: 'a', runId: 'r', callId: 'c1', exitCode: 'zero' }],
+  ['shell.bg.exit', { agentId: 'a', bgId: 'bg_1', exitCode: 0, ms: 4200, killed: false }, { agentId: 'a', bgId: 'bg_1', exitCode: 'done' }],
   ['verify.result', { agentId: 'a', runId: 'r', tool: 'tsserver', passed: true, added: 0, removed: 1, summary: 'clean' }, { agentId: 'a', runId: 'r', passed: 'yes' }],
   ['notify', 'a station log line', 123],
   ['task', { id: 't1', status: 'running' }, { id: 't1', status: 'invented' }],
