@@ -230,9 +230,11 @@ const runsIo = {
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
 // durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
-// the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID so a sidecar
-// restart can rehydrate the dialogue per workstream — the full message log is otherwise dropped at SSE close,
-// the single most jarring day-to-day regression vs a Hermes-class agent. Content is redacted on write.
+// the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
+// authoritative, append-only record covering EVERY surface, including headless cron/Telegram/delegated runs
+// that have no browser ws.history (the interactive browser conversation already persists durably via the
+// save-envelope mirror in cloudsave.js/savestore.js). Hermes keeps a SQLite transcript for all surfaces; this
+// closes that gap for the headless paths + gives an autopsy/replay substrate. Content is redacted on write.
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
 const transcriptIo = {
   readAll() {
@@ -1719,8 +1721,9 @@ async function runOnce(o) {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
       runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title });
-      // P0.1: persist the DIALOGUE (not just the outcome) so a sidecar restart can rehydrate this workstream's
-      // COMMS history. Append the triggering user message + the agent's final text reply, scoped to the stream.
+      // P0.1: persist the DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY run,
+      // incl. headless ones (cron/Telegram/delegated) that leave no browser history. Append the triggering
+      // user message + the agent's final text reply, scoped to the stream.
       let replyText = '';
       if (result && Array.isArray(result.messages)) {
         for (let i = result.messages.length - 1; i >= 0; i--) {
@@ -2167,8 +2170,8 @@ function serveRuns(req, res) {
 }
 
 // GET /api/transcript?stream=<id>&agent=<id>&limit=<n> — the durable per-workstream conversation transcript
-// (P0.1), chronological, so the browser can REHYDRATE COMMS after a sidecar restart (runStore keeps only the
-// one-line outcome). Read-only; fail-open to an empty transcript, never a 500.
+// (P0.1), chronological. Feeds a server-side autopsy/replay view and recovers headless-run dialogue (the
+// browser's own COMMS history persists via the save-envelope mirror). Read-only; fail-open, never a 500.
 function serveTranscript(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
