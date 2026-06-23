@@ -239,6 +239,20 @@
     return rr.text || '';
   }
 
+  // H5.1: the compaction summarizer's system prompt — a STRUCTURED section template (Hermes parity) instead of
+  // free prose, so a folded summary preserves task/goal/decisions/open-questions/next-steps/critical-context in a
+  // predictable shape the agent can act on. `prevSummary` true => instruct a MERGE-update of the prior summary
+  // (H5.2 iterative merge) rather than a fresh one. Pure string builder — exported so it is unit-testable.
+  const COMPACTION_SECTIONS = ['Active Task', 'Goal', 'Completed', 'Open Questions', 'Remaining Work', 'Critical Context'];
+  function compactionSummaryPrompt(opts) {
+    opts = opts || {};
+    const lead = opts.prevSummary
+      ? 'You maintain a running summary of an agent conversation. MERGE the new earlier-slice into the PREVIOUS SUMMARY (update, do not just append; drop anything now obsolete), keeping ONE summary in this exact structure.'
+      : 'You compress an earlier slice of an agent conversation into a structured summary that REPLACES the raw turns. Use this EXACT structure.';
+    return lead + ' Output ONLY these sections, each as "## <name>" on its own line; omit a section only if truly empty; be terse and factual (no pleasantries); keep exact identifiers, paths, values, and sources:\n' +
+      COMPACTION_SECTIONS.map(s => '## ' + s).join('\n');
+  }
+
   function makeContext(opts) {
     opts = opts || {};
     const contextLimit = opts.contextLimit || 0;       // 0 = unknown (never auto-compact)
@@ -320,5 +334,5 @@
     return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, redact, contextLimit, keepTail };
   }
 
-  return { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock };
+  return { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock, compactionSummaryPrompt, COMPACTION_SECTIONS };
 });
