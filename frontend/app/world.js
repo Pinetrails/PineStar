@@ -1235,7 +1235,7 @@ const World = (() => {
     const observing = self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'lounge' || self.goal === 'gaze';
     n.rest = U.clamp(n.rest + (self.working ? -2.1 : sitLeisure ? 3.4 : 0.35) * s, 0, 100);
     n.stim = U.clamp(n.stim + (observing ? 2.6 : self.working ? 0.6 : self.state === 'walk' ? 0.2 : -1.25) * s, 0, 100);
-    n.social = U.clamp(n.social + (activity === 'task' || activity === 'talk' ? 2.2 : (self.goal === 'tend' || nearDesk()) ? 1.6 : -0.45) * s, 0, 100);
+    n.social = U.clamp(n.social + (((self === agent) && (activity === 'task' || activity === 'talk')) ? 2.2 : (self.goal === 'tend' || nearDesk()) ? 1.6 : -0.45) * s, 0, 100);
   }
   // lonely → drift to a tile by the desk and face south (its window to the Commander); refills social
   function planSeekDesk(now) {
