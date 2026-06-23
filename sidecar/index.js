@@ -1684,7 +1684,18 @@ async function runOnce(o) {
       + 'call it with workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
   }
   const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface });   // ground-truth caps: name the object to place instead of promising work it has no tool for
-  let msgs = sys ? [{ role: 'system', content: sys }, ...messages] : messages.slice();
+  // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
+  // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
+  // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
+  // history the caller already supplied; gated to an explicit streamId (the global catch-all is not auto-seeded).
+  let convo = messages;
+  try {
+    if (streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
+      const seed = transcriptStore.reconstruct(streamId, { limit: 100 });
+      if (seed.length) convo = seed.concat(messages);   // prior dialogue first, the new directive stays last
+    }
+  } catch (_) { /* resume is best-effort; a bad transcript never blocks a run */ }
+  let msgs = sys ? [{ role: 'system', content: sys }, ...convo] : convo.slice();
   // Cortex (M-mem.3): surface the agent's OWN memory in-prompt — RANK it by relevance to this message
   // (BM25 + recency/trust/pin), inject the top few as a recalled-memory fence before the triggering user
   // message, and emit memory.used per surfaced record (-> useCount/trust + the XP reuse path). The recency

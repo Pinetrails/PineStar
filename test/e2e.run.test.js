@@ -15,6 +15,7 @@ const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 
 // ---- a mock OpenRouter: /models -> a minimal catalog; /chat/completions -> a short SSE completion ----
 function startMockOpenRouter() {
+  const requests = [];   // H1.2: capture each request's messages so a test can assert what reached the provider
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
@@ -24,6 +25,7 @@ function startMockOpenRouter() {
       }
       if (req.url.indexOf('/chat/completions') >= 0) {
         let body = ''; req.on('data', d => { body += d; }); req.on('end', () => {
+          try { requests.push(JSON.parse(body)); } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }) + '\n\n');
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: ', world' } }] }) + '\n\n');
@@ -35,7 +37,7 @@ function startMockOpenRouter() {
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({ server, requests, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
   });
 }
 
@@ -106,6 +108,19 @@ function boot(port, env, attemptsLeft) {
     const turns = (tr && tr.turns) || [];
     A.ok(turns.some(t => t.role === 'user' && t.content === 'hi'), 'transcript captured the user directive');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content).indexOf('Hello') >= 0), 'transcript captured the assistant reply turn');
+
+    // H1.2: bulletproof resume — a 2nd run on the SAME stream with EMPTY history must seed the prior dialogue.
+    async function drive(streamId, text) {
+      const r = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': token, Origin: B },
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e', streamId, messages: [{ role: 'user', content: text }] }) });
+      const rd = r.body.getReader(); while (true) { const { done } = await rd.read(); if (done) break; }   // drain
+    }
+    await drive('s1', 'remember alpha-token-42');   // run A: establishes the s1 transcript
+    await drive('s1', 'what was it');               // run B: EMPTY history, same stream -> must seed run A back
+    const lastReq = mock.requests[mock.requests.length - 1];
+    const seeded = JSON.stringify((lastReq && lastReq.messages) || []);
+    A.ok(seeded.indexOf('alpha-token-42') >= 0, 'H1.2: run B (empty history) seeded the prior turn from the transcript');
+    A.ok(seeded.indexOf('what was it') >= 0, 'run B still carries its own new directive last');
   } finally {
     try { child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}

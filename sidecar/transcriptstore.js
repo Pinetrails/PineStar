@@ -108,8 +108,31 @@
       return out;
     }
 
+    // H1.2: rebuild the recent dialogue for a stream as an OpenAI-format messages array, so a fresh run (empty
+    // browser history) can RESUME exact prior state. Pairing-safe: a tool message needs its assistant tool_call,
+    // so we drop a leading orphaned 'tool' (truncated-slice start) and strip tool_calls off a trailing assistant
+    // whose results got cut — keeping the array valid for the provider.
+    function reconstruct(streamId, o) {
+      const rows = history(streamId, o);   // chronological, capped
+      const out = [];
+      for (const r of rows) {
+        if (r.role === 'user') out.push({ role: 'user', content: r.content });
+        else if (r.role === 'assistant') {
+          const m = { role: 'assistant', content: r.content || '' };
+          if (r.toolCalls) { try { const tc = JSON.parse(r.toolCalls); if (Array.isArray(tc) && tc.length) m.tool_calls = tc; } catch (_) {} }
+          out.push(m);
+        } else if (r.role === 'tool') {
+          out.push({ role: 'tool', content: r.content, tool_call_id: str(r.toolCallId) });
+        }
+      }
+      while (out.length && out[0].role === 'tool') out.shift();                 // orphaned tool at a truncated start
+      const last = out[out.length - 1];
+      if (last && last.role === 'assistant' && last.tool_calls) delete last.tool_calls;   // results cut off the end
+      return out;
+    }
+
     return {
-      append, appendTurns, history,
+      append, appendTurns, history, reconstruct,
       all() { return rows.map(r => Object.assign({}, r)); },
       count() { return rows.length; },
       _internals: { normStream, SID_RE }
