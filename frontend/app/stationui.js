@@ -651,7 +651,7 @@ const StationUI = (() => {
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
       '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
-      '(<b>computer</b> → compute · <b>antenna</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory · ' +
+      '(<b>computer</b> → compute · <b>dish</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory · ' +
       '<b>workbench</b> → terminal), so the room layout IS the permission system. Read-only skills run freely, and ' +
       'the agent\'s own private <b>notebook memory</b> saves without asking; <b>writing to your files</b> and ' +
       '<b>running commands</b> pause for a one-click approval in COMMS before they run. Place a <b>WORKBENCH</b> ' +
@@ -1597,7 +1597,9 @@ const StationUI = (() => {
     routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
     logbook:  ['LOGBOOK',                buildLogbook,   { w: '600px' }],
-    notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }]
+    notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
+    // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
+    manual:   ['▮ FIELD MANUAL',         body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }]
   };
 
   function init() {

@@ -303,7 +303,8 @@ const Build = (() => {
     b.type = 'button';
     b.className = 'refit-proptile' + (c.tier === 'functional' ? ' fn' : '') + (c.id === propType ? ' active' : '');
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
-    b.title = c.label + ' · ' + c.w + '×' + c.h;   // native fallback; the rich Fallout-style card is the hover surface
+    const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(c.id) : null;
+    b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '');   // native fallback; the rich Fallout-style card is the hover surface
     b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
     b.onmouseenter = (e) => showPropCard(c, null, e.clientX, e.clientY);   // "what does this do?" card
     b.onmouseleave = hidePropCard;
@@ -320,7 +321,9 @@ const Build = (() => {
 
     const lbl = document.createElement('span'); lbl.className = 'refit-proptile-lbl'; lbl.textContent = c.label;
     b.appendChild(cvEl); b.appendChild(lbl);
-    if (c.blocks === false) {   // walkable decor marker (agents path THROUGH it) — matches the title hint
+    if (grant) {   // capability prop — flag the POWER it grants so the gallery shows at a glance which props matter
+      const g = document.createElement('span'); g.className = 'refit-proptile-grant'; g.textContent = grant; b.appendChild(g);
+    } else if (c.blocks === false) {   // walkable decor marker (agents path THROUGH it) — matches the title hint
       const tag = document.createElement('span'); tag.className = 'refit-proptile-tag'; tag.textContent = '○'; b.appendChild(tag);
     }
     propThumbs.push({ id: c.id, w: c.w, h: c.h, off, octx: off.getContext('2d'), dctx: cvEl.getContext('2d'),
@@ -815,16 +818,26 @@ const Build = (() => {
     const s = propSpec(propType);
     const placement = { t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h, block: s.blocks !== false };
     if (propType === 'airlock') placement.door = 'closed';   // a fresh airlock seals its room (then click to cycle)
+    const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(propType) : null;
     const res = station.addProp(placement);
     if (res && res.ok) {
       pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
+      if (grant) sfx('chime');   // a capability just came online — a brighter note than the plain placement click
+      // first-touch coachmark (tutorial.js): a portal teaches "live tools", any other gear teaches "props are permissions"
+      if (typeof Tutorial !== 'undefined') {
+        if (propType === 'connector_portal') { if (Tutorial.onConnectorPlaced) Tutorial.onConnectorPlaced(); }
+        else if (!isEditableProp(propType) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
+      }
       if (isEditableProp(propType) && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
     }
-    feedback(res, ev, 'placed ' + propType);
+    feedback(res, ev, grant ? ('EQUIPPED · grants ' + grant) : ('placed ' + propType));
   }
   function commitBeltRun(d, ev) {
     const res = station.placeBeltRun(d.start, d.cur);
-    if (res && res.ok && res.count) pushFlash([beltRunBox(d.start, d.cur)], false);
+    if (res && res.ok && res.count) {
+      pushFlash([beltRunBox(d.start, d.cur)], false);
+      if (typeof Tutorial !== 'undefined' && Tutorial.onBeltPlaced) Tutorial.onBeltPlaced();   // first-touch coachmark: belts + ▸ TEST
+    }
     feedback(res, ev, res && res.dir ? ('belt → ' + res.dir) : 'belt');
   }
   function commitPropMove(d, ev) {
