@@ -1,27 +1,59 @@
 // Fetch the Node runtime that ships inside the desktop installer.
 //
 // Download-blocker A: the Tauri shell used to spawn "node" from PATH, so a
-// clean Windows machine without Node installed could not start the sidecar.
-// Tauri externalBin expects the binary named with the build target triple under
+// clean machine without Node installed could not start the sidecar. Tauri
+// externalBin expects the binary named with the build target triple under
 // src-tauri/binaries, then copies it beside the packaged app executable.
 //
-// Run directly: node scripts/prepare-node.mjs
-// Override version: SKYNET_BUNDLE_NODE=v22.12.0
-import { createWriteStream, mkdirSync, existsSync, rmSync, renameSync, readFileSync } from 'node:fs';
+// Run directly:        node scripts/prepare-node.mjs            (auto-detects the host OS/arch)
+// Cross-target:        node scripts/prepare-node.mjs linux-x64  (or darwin-arm64 / darwin-x64 / win-x64)
+// Override version:    SKYNET_BUNDLE_NODE=v22.12.0
+//
+// Windows ships Node as a bare node.exe; macOS/Linux ship a .tar.gz whose bin/node we extract via `tar`.
+import { createWriteStream, mkdirSync, existsSync, rmSync, renameSync, readFileSync, chmodSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { get } from 'node:https';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 
 const NODE_VERSION = process.env.SKYNET_BUNDLE_NODE || 'v22.12.0';
-const TRIPLE = 'x86_64-pc-windows-msvc';
-const DIST_URL = `https://nodejs.org/dist/${NODE_VERSION}/win-x64/node.exe`;
-const SHASUMS_URL = `https://nodejs.org/dist/${NODE_VERSION}/SHASUMS256.txt`;
-const SHASUMS_ENTRY = 'win-x64/node.exe';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const outDir = join(here, '..', 'src-tauri', 'binaries');
-const out = join(outDir, `node-${TRIPLE}.exe`);
+// the supported externalBin targets. `dist` / `sha` are paths under https://nodejs.org/dist/<version>/ ;
+// `member` (archive targets) is the path INSIDE the tarball to extract as the bundled binary. ${V} = version.
+const TARGETS = {
+  'win-x64':      { triple: 'x86_64-pc-windows-msvc',   dist: 'win-x64/node.exe',              sha: 'win-x64/node.exe',              ext: '.exe', member: null },
+  'darwin-arm64': { triple: 'aarch64-apple-darwin',     dist: 'node-${V}-darwin-arm64.tar.gz', sha: 'node-${V}-darwin-arm64.tar.gz', ext: '',     member: 'node-${V}-darwin-arm64/bin/node' },
+  'darwin-x64':   { triple: 'x86_64-apple-darwin',      dist: 'node-${V}-darwin-x64.tar.gz',   sha: 'node-${V}-darwin-x64.tar.gz',   ext: '',     member: 'node-${V}-darwin-x64/bin/node' },
+  'linux-x64':    { triple: 'x86_64-unknown-linux-gnu', dist: 'node-${V}-linux-x64.tar.gz',    sha: 'node-${V}-linux-x64.tar.gz',    ext: '',     member: 'node-${V}-linux-x64/bin/node' },
+};
+
+// host OS/arch -> a TARGETS key. Keeps the default (no-arg) behavior = "bundle for THIS machine", so a
+// Windows run stays byte-identical to the original (win-x64), while a mac/linux run now works too.
+export function defaultTarget(platform = process.platform, arch = process.arch) {
+  if (platform === 'win32') return 'win-x64';
+  if (platform === 'darwin') return arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+  if (platform === 'linux') return 'linux-x64';
+  throw new Error(`unsupported host platform ${platform}/${arch}; pass an explicit target (${Object.keys(TARGETS).join(', ')})`);
+}
+
+// PURE: resolve a target name -> the concrete URLs, triple, output filename, and (for archives) the member to
+// extract. No I/O, so it is unit-testable. Throws on an unknown target.
+export function resolveTarget(target = defaultTarget(), version = NODE_VERSION) {
+  const t = TARGETS[target];
+  if (!t) throw new Error(`unknown target "${target}"; supported: ${Object.keys(TARGETS).join(', ')}`);
+  const sub = s => s == null ? null : s.replace(/\$\{V\}/g, version);
+  const base = `https://nodejs.org/dist/${version}`;
+  return {
+    target, version, triple: t.triple,
+    distUrl: `${base}/${sub(t.dist)}`,
+    shasumsUrl: `${base}/SHASUMS256.txt`,
+    shasumEntry: sub(t.sha),
+    outName: `node-${t.triple}${t.ext}`,
+    member: sub(t.member),       // null = bare binary (win); else extract this path from the tarball
+  };
+}
 
 function fetchTo(url, dest, redirects = 0) {
   return new Promise((resolve, reject) => {
@@ -31,19 +63,13 @@ function fetchTo(url, dest, redirects = 0) {
         res.resume();
         return resolve(fetchTo(res.headers.location, dest, redirects + 1));
       }
-      if (res.statusCode !== 200) {
-        res.resume();
-        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode} for ${url}`)); }
       const f = createWriteStream(dest);
       res.pipe(f);
       f.on('finish', () => f.close(() => resolve()));
       f.on('error', reject);
     }).on('error', reject);
-
-    req.setTimeout(60000, () => {
-      req.destroy(new Error('download timed out (no data for 60s)'));
-    });
+    req.setTimeout(60000, () => req.destroy(new Error('download timed out (no data for 60s)')));
   });
 }
 
@@ -55,58 +81,70 @@ function fetchText(url, redirects = 0) {
         res.resume();
         return resolve(fetchText(res.headers.location, redirects + 1));
       }
-      if (res.statusCode !== 200) {
-        res.resume();
-        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode} for ${url}`)); }
       res.setEncoding('utf8');
       let body = '';
       res.on('data', chunk => { body += chunk; });
       res.on('end', () => resolve(body));
     }).on('error', reject);
-
-    req.setTimeout(60000, () => {
-      req.destroy(new Error('checksum download timed out (no data for 60s)'));
-    });
+    req.setTimeout(60000, () => req.destroy(new Error('checksum download timed out (no data for 60s)')));
   });
 }
 
-function sha256(file) {
-  return createHash('sha256').update(readFileSync(file)).digest('hex');
-}
+function sha256(file) { return createHash('sha256').update(readFileSync(file)).digest('hex'); }
 
-async function expectedSha256() {
-  const sums = await fetchText(SHASUMS_URL);
-  for (const line of sums.split(/\r?\n/)) {
+// PURE: pick the expected hash for `entry` out of a SHASUMS256.txt body. Exported for testing.
+export function pickSha(sumsBody, entry) {
+  for (const line of sumsBody.split(/\r?\n/)) {
     const m = line.match(/^([a-f0-9]{64})\s+(.+)$/i);
-    if (m && m[2] === SHASUMS_ENTRY) return m[1].toLowerCase();
+    if (m && m[2] === entry) return m[1].toLowerCase();
   }
-  throw new Error(`missing ${SHASUMS_ENTRY} in ${SHASUMS_URL}`);
+  throw new Error(`missing ${entry} in SHASUMS256.txt`);
 }
 
-(async () => {
+async function main(target) {
+  const r = resolveTarget(target);
+  const here = dirname(fileURLToPath(import.meta.url));
+  const outDir = join(here, '..', 'src-tauri', 'binaries');
+  const out = join(outDir, r.outName);
   mkdirSync(outDir, { recursive: true });
   if (existsSync(out) && !process.env.SKYNET_BUNDLE_FORCE) {
     console.log(`[prepare-node] ${out} already present; skipping (set SKYNET_BUNDLE_FORCE=1 to re-fetch)`);
     return;
   }
 
-  console.log(`[prepare-node] fetching Node ${NODE_VERSION} (win-x64) -> ${out}`);
-  const tmp = out + '.partial';
+  console.log(`[prepare-node] fetching Node ${r.version} (${r.target}) -> ${out}`);
+  const dl = out + '.download';
   try {
-    await fetchTo(DIST_URL, tmp);
-    const expected = await expectedSha256();
-    const actual = sha256(tmp);
-    if (actual !== expected) {
-      throw new Error(`checksum mismatch for ${SHASUMS_ENTRY}: expected ${expected}, got ${actual}`);
+    await fetchTo(r.distUrl, dl);
+    const expected = pickSha(await fetchText(r.shasumsUrl), r.shasumEntry);
+    const actual = sha256(dl);
+    if (actual !== expected) throw new Error(`checksum mismatch for ${r.shasumEntry}: expected ${expected}, got ${actual}`);
+
+    if (!r.member) {                         // win-x64: the download IS the binary
+      rmSync(out, { force: true });
+      renameSync(dl, out);
+    } else {                                 // mac/linux: extract bin/node from the verified tarball via `tar`
+      const exDir = join(outDir, '.extract-' + r.target);
+      rmSync(exDir, { recursive: true, force: true });
+      mkdirSync(exDir, { recursive: true });
+      execFileSync('tar', ['-xzf', dl, '-C', exDir, r.member], { stdio: 'ignore' });
+      rmSync(out, { force: true });
+      renameSync(join(exDir, r.member), out);
+      try { chmodSync(out, 0o755); } catch {}
+      rmSync(exDir, { recursive: true, force: true });
+      rmSync(dl, { force: true });
     }
-    rmSync(out, { force: true });
-    renameSync(tmp, out);
     console.log('[prepare-node] done (checksum verified; gitignored build input)');
   } catch (e) {
-    try { rmSync(tmp, { force: true }); } catch {}
+    try { rmSync(dl, { force: true }); } catch {}
     console.error(`[prepare-node] FAILED: ${e.message}`);
-    console.error('[prepare-node] the desktop build needs this Node runtime; check connectivity or set SKYNET_BUNDLE_NODE to a valid version.');
+    console.error('[prepare-node] the desktop build needs this Node runtime; check connectivity, that `tar` is on PATH (mac/linux targets), or set SKYNET_BUNDLE_NODE to a valid version.');
     process.exit(1);
   }
-})();
+}
+
+// run only when executed directly (not when imported by a test). Optional CLI arg = the target.
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  main(process.argv[2]);
+}
