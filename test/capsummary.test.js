@@ -39,5 +39,24 @@ const resolvedWith = (...capIds) => ({ grants: capIds.map((id) => ({ capId: id, 
   A.eq(typeof summarizeCapabilities(null, { surface: 'interactive' }), 'string', 'null resolved: still returns a string');
   A.eq(typeof summarizeCapabilities({}, {}), 'string', 'empty resolved + empty opts: string');
 
+  // 7) studio (a non-core cap) surfaces under CAN but is NEVER nagged as missing
+  const studio = summarizeCapabilities(resolvedWith('studio'), { surface: 'interactive' });
+  A.ok(/You CAN:.*generate and analyze images/.test(studio), 'studio present: listed under CAN');
+  A.ok(!/do NOT have:[^\n]*image/i.test(none), 'studio/memory (non-core) are never listed under "do NOT have"');
+  A.ok(!/do NOT have:[^\n]*memory/i.test(none), 'memory (non-core) is never nagged as missing');
+
+  // 8) the exact power→object pairing is correct (guards against a mismatched object label)
+  A.ok(/search and fetch the web → place a DISH/.test(none), 'pairing: web → DISH');
+  A.ok(/read and write files → place a CABINET/.test(none), 'pairing: files → CABINET');
+  A.ok(/run shell commands → place a WORKBENCH/.test(none), 'pairing: shell → WORKBENCH');
+
+  // 9) the note is AUTHORITATIVE (defeats an earlier unconditional "you always have web/files" identity clause)
+  A.ok(/AUTHORITATIVE/.test(none) && /ignore it/.test(none), 'note explicitly overrides any earlier blanket capability claim');
+
+  // 10) malformed grants array (null / {} / blank capId) is tolerated and contributes nothing
+  const junk = summarizeCapabilities({ grants: [null, {}, { capId: '' }, { capId: 'web' }] }, { surface: 'interactive' });
+  A.ok(/You CAN:.*search and fetch the web/.test(junk), 'malformed grants: still surfaces the valid web cap');
+  A.ok(!/undefined|null/.test(junk), 'malformed grants: no junk leaks into the note');
+
   A.report('capsummary.test');
 })();
