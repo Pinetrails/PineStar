@@ -118,6 +118,31 @@ A.eq(Z.inZone(zDeskless, 40 + Z.DEFAULT_LEASH + 1, 40), false, 'but the deskless
 const zDesklessInRoom = Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 } });
 A.eq(zDesklessInRoom.kind, 'room', 'a deskless body whose foot tile is inside a room is caged to that room, not a leash');
 
+// ---- LEASH DOES NOT DRIFT as the body walks (the b5c3580 ratchet regression) ----
+// world.js anchorFor() must feed computeZone a STABLE home tile (b.home), NOT the body's transient
+// live foot tile. If it fed the live tile, then each crewWander cycle would re-center the leash on
+// wherever the body now stands, so the body could step up to DEFAULT_LEASH tiles, re-center there,
+// and ratchet across the whole floor in 5-tile hops — defeating A2 'bounded leash'. We simulate the
+// two anchor strategies here at the primitive level: a body SPAWNED at (40,40) then walked to the
+// leash edge (45,40). The STABLE-home strategy keeps the leash fixed at the spawn spot; the buggy
+// live-tile strategy would have moved it. We assert the bounded edge does not advance.
+const HOME = { x: 40, y: 40 };
+const zAtSpawn = Z.computeZone({ rects: RECTS, anchorTile: HOME });        // anchorFor returns b.home
+A.eq(zAtSpawn.cx, 40, 'leash centered on the STABLE home, not wherever the body currently stands');
+// the body strolls to the far in-zone edge (40 + DEFAULT_LEASH, 40), then a new wander cycle recomputes
+const farEdgeX = 40 + Z.DEFAULT_LEASH;
+A.eq(Z.inZone(zAtSpawn, farEdgeX, 40), true, 'the body can reach the leash edge while strolling');
+// CORRECT (stable home): recompute with the SAME home tile -> leash unchanged, edge does NOT advance
+const zNextStable = Z.computeZone({ rects: RECTS, anchorTile: HOME });
+A.eq(zNextStable.cx, 40, 'after the body walked to the edge, the stable-home leash STILL centers at the spawn spot (no drift)');
+A.eq(Z.inZone(zNextStable, farEdgeX + 1, 40), false, 'the bounded edge does NOT advance past the spawn-centered leash (A2 holds over time)');
+// BUG (live tile): had anchorFor read the live foot tile (now at the edge), the leash would re-center
+// there and a tile that MUST stay out-of-zone would become reachable — locking why home must be stable.
+const zNextLive = Z.computeZone({ rects: RECTS, anchorTile: { x: farEdgeX, y: 40 } });
+A.eq(Z.inZone(zNextLive, farEdgeX + Z.DEFAULT_LEASH, 40), true,
+  'control: a leash recomputed from the LIVE tile WOULD ratchet outward — proving anchorFor must use b.home, not px/py');
+A.ok(zNextLive.cx !== zNextStable.cx, 'stable-home vs live-tile anchors diverge once the body has moved — the drift the fix prevents');
+
 // ---- non-positive leashR falls back to DEFAULT_LEASH (the `> 0` guard) ----
 // A 0/negative radius would yield a degenerate single-tile leash (r:0) the agent can't roam in,
 // so the guard must reject it and use DEFAULT_LEASH. Mutating `opts.leashR > 0` -> `>= 0` lets

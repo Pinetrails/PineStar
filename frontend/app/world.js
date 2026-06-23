@@ -745,7 +745,7 @@ const World = (() => {
     // before the user assigns it a PC) anchors on its OWN foot tile, so zoneFor yields a bounded leash
     // around its spawn spot instead of null — keeping it alive (BR-4 'summoned agents move') without
     // letting it roam the whole floor. Unplaced/dormant bodies still return null (A2: no zone, no roam).
-    if (body && body.crewBody && !body.unplaced) return tileOf(body.px, body.py);
+    if (body && body.crewBody && !body.unplaced) return body.home ? { x: body.home.x, y: body.home.y } : tileOf(body.px, body.py);
     return null;
   }
   /* soleOwner(body): does this body effectively own the WHOLE station (so its zone must widen to
@@ -2172,6 +2172,10 @@ const World = (() => {
   function makeCrewBody(aid, name, color, fx, fy, skin) {
     return {
       id: aid, agentId: aid, name: name || aid, color: color || '#5ad0ff', skin: skin || DATA.DEFAULT_SKIN, crewBody: true,
+      // P2 STABLE HOME: the spawn foot tile, pinned ONCE here. anchorFor's deskless leash-fallback reads this
+      // (never the live px/py) so a wandering body's leash stays CENTRED ON ITS SPAWN SPOT and does not ratchet
+      // across the floor in DEFAULT_LEASH hops as it strolls (A2 'bounded leash' / world.js anchor note: stable home).
+      home: tileOf(fx, fy),
       px: fx, py: fy, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: false,
       phase: U.hash('' + aid) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
@@ -2205,7 +2209,7 @@ const World = (() => {
     for (const b of crew) {
       if (!b.summoned) continue;
       const t = tileOf(b.px, b.py);
-      if (!geo.walkable(t.x, t.y, blocked)) { const f = workerFoot(); b.px = f.x; b.py = f.y; }
+      if (!geo.walkable(t.x, t.y, blocked)) { const f = workerFoot(); b.px = f.x; b.py = f.y; b.home = tileOf(f.x, f.y); }   // re-foot AND re-pin the leash home: the spawn spot genuinely moved (A2 stays centred on the new home)
     }
   }
   // the body that runs a given agentId: the hero, a crew body, or null (caller falls back to the hero)
