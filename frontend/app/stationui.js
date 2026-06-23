@@ -766,6 +766,7 @@ const StationUI = (() => {
      full key is never written into the DOM (truthful-telemetry + don't-leak-the-key). */
   const PROVIDERS = [
     { id: 'openrouter',    name: 'OPENROUTER',        endpoint: 'openrouter.ai/api/v1',      blurb: 'one key · 300+ models',  live: true },
+    { id: 'codex',         name: 'CHATGPT (CODEX)',   endpoint: 'OAuth · ChatGPT subscription', blurb: 'sign-in, no API key',  live: true },
     { id: 'local',         name: 'LOCAL',             endpoint: '127.0.0.1 · Ollama/llama.cpp', blurb: 'run models on-device', live: false },
     { id: 'openai-compat', name: 'OPENAI-COMPATIBLE', endpoint: 'any /v1 base URL',          blurb: 'bring a custom endpoint', live: false }
   ];
@@ -783,12 +784,21 @@ const StationUI = (() => {
   }
   // the REAL connected keys, read from the BYOK store. Today that's a single OpenRouter key;
   // the shape is a LIST so extra providers slot in later without touching this view.
+  // Codex authenticates by ChatGPT OAuth (no API key). The runnable signal is the persisted provider the runs
+  // actually use — getProv()==='codex'. (QA-1: without this the panel reported "No API keys connected" while a
+  // Codex session was live and running.)
+  function codexConnected() { const h = H(); return !!(h && h.getProv && h.getProv() === 'codex'); }
   function connectedKeys() {
-    const h = H(); if (!h || !h.getKey) return [];
-    // desktop: the key is in the OS keychain (getKey returns ''); use configured() to know it's set.
-    const set = (h.configured && h.configured()) || !!h.getKey();
-    if (!set) return [];
-    return [{ provider: 'openrouter', key: h.getKey(), model: (h.getModel && h.getModel()) || '' }];
+    const h = H(); if (!h) return [];
+    const out = [];
+    // Codex first when it's the live provider — an OAuth connection that carries a model but no API key.
+    if (codexConnected()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true });
+    // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
+    if (h.getKey) {
+      const set = (h.configured && h.configured()) || !!h.getKey();
+      if (set) out.push({ provider: 'openrouter', key: h.getKey(), model: (h.getModel && h.getModel()) || '' });
+    }
+    return out;
   }
   function keysFor(id) { return connectedKeys().filter(x => x.provider === id); }
 
@@ -800,7 +810,7 @@ const StationUI = (() => {
       // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
       const runnable = connected && p.id === active && !!ks[0].model;
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
-      const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : '○ NO KEY';
+      const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : '○ NO KEY');
       const n = ks.length;
       return '<div class="prov-card ' + cls + '">' +
         '<span class="conn-dot"></span>' +
@@ -826,6 +836,18 @@ const StationUI = (() => {
     return keys.map((k, i) => {
       // ACTIVE only when the key can actually run: selected provider AND a model is set (never overstate runnability).
       const runnable = k.provider === active && !!k.model;
+      // Codex (OAuth) has no API key to mask/edit/remove — render it honestly as a sign-in connection.
+      if (k.oauth) {
+        return '<div class="key-row">' +
+          '<span class="conn-dot"></span>' +
+          '<div class="key-main">' +
+          '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
+          '<code class="key-mask" title="authenticated by ChatGPT sign-in (OAuth) — no API key is stored">ChatGPT OAuth</code></div>' +
+          '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
+          (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
+          ' · <span class="key-stat">no API key needed</span></div>' +
+          '</div></div>';
+      }
       return '<div class="key-row">' +
         '<span class="conn-dot"></span>' +
         '<div class="key-main">' +
