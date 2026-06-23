@@ -26,6 +26,10 @@ const PROPS = [
   { id: 'p1', t: 'bay',         x: 24, y: 3, w: 1, h: 1, agentId: 'a1' },
   { id: 'p2', t: 'workstation', x: 8,  y: 6, w: 2, h: 1, agentId: 'a2' },
   { id: 'p3', t: 'couch',       x: 5,  y: 5, w: 1, h: 1, agentId: null },   // unbound
+  // 'a3' has TWO bound props: a non-bay (workstation) that comes BEFORE its bay. anchorFromProps
+  // must PREFER the bay, discriminating the `bay || any` selection (not just take the first bound).
+  { id: 'p4', t: 'workstation', x: 1,  y: 1, w: 1, h: 1, agentId: 'a3' },   // earlier, non-bay
+  { id: 'p5', t: 'bay',         x: 24, y: 4, w: 1, h: 1, agentId: 'a3' },   // later, the bay (preferred)
 ];
 
 // ---- room-anchored zone (explicit anchorTile) ----
@@ -42,6 +46,14 @@ const zFromProp = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1' });
 A.eq(zFromProp.kind, 'room', 'anchor resolved from the bay prop when no anchorTile given');
 A.eq(zFromProp.rect.x1, 22, 'prop-derived anchor lands in the side room');
 
+// ---- bay preference: an earlier non-bay bound prop must NOT win over a later bay ----
+// 'a3' is bound to a workstation at (1,1) in the BIG room AND a bay at (24,4) in the SIDE room,
+// workstation first. If anchorFromProps took the first bound prop it would resolve the big room;
+// preferring the bay resolves the side room. This discriminates the `bay || any` branch.
+const zBayPref = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a3' });
+A.eq(zBayPref.kind, 'room', 'a3 anchor resolves to a room via its bay');
+A.eq(zBayPref.rect, { x1: 22, y1: 0, x2: 27, y2: 5 }, 'anchor resolves from the BAY (side room), not the earlier workstation (big room)');
+
 // agent in the big room
 const zMain = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a2', anchorTile: { x: 8, y: 6 } });
 A.eq(zMain.kind, 'room', 'agent in the big room gets a room zone');
@@ -54,6 +66,18 @@ const NESTED = [
 ];
 const zNook = Z.computeZone({ rects: NESTED, anchorTile: { x: 7, y: 7 } });
 A.eq(zNook.rect, { x1: 5, y1: 5, x2: 9, y2: 9 }, 'tightest enclosing rect wins (the nook, not the hall)');
+
+// ---- equal-area tie-break: strict < keeps the FIRST of equal-area ties (stable / deterministic) ----
+// two distinct rects of identical area (5*10 = 50) both enclose the anchor (4,5). The documented
+// rule (zones.js: strict < / earliest array index) must return the FIRST. Changing < to <= would
+// return the second — this case locks the stable tie-break so determinism (I3) cannot regress.
+const TIE = [
+  { z: 0, x1: 0, y1: 0, x2: 4, y2: 9 },   // first, area 5*10 = 50, contains (4,5)
+  { z: 1, x1: 3, y1: 0, x2: 7, y2: 9 },   // second, area 5*10 = 50, also contains (4,5)
+];
+A.ok(Z.rectArea(TIE[0]) === Z.rectArea(TIE[1]), 'tie-break fixture: the two rects are equal-area');
+const zTie = Z.computeZone({ rects: TIE, anchorTile: { x: 4, y: 5 } });
+A.eq(zTie.rect, { x1: 0, y1: 0, x2: 4, y2: 9 }, 'equal-area tie -> the FIRST in array order wins (stable tie-break)');
 
 // ---- leash fallback: anchor on open floor with NO enclosing rect ----
 const zLeash = Z.computeZone({ rects: RECTS, anchorTile: { x: 40, y: 40 }, leashR: 4 });
@@ -97,6 +121,14 @@ A.eq(Z.inZone(lz, 13, 13), true, 'leash corner (cx+r,cy+r) is in-zone (Chebyshev
 A.eq(Z.inZone(lz, 14, 10), false, 'one tile past the leash radius is out-of-zone');
 A.eq(Z.inZone(lz, 7, 10), true, 'leash reaches r tiles to the west');
 A.eq(Z.inZone(lz, 6, 10), false, 'r+1 to the west is out');
+// vary Y while holding X centered — exercises the ty branch of the Chebyshev containment so an
+// asymmetric/broken leash that lets agents roam vertically out of zone cannot ship green
+A.eq(Z.inZone(lz, 10, 13), true, 'leash reaches r tiles to the south (Y branch)');
+A.eq(Z.inZone(lz, 10, 14), false, 'one tile past the leash radius to the south is out');
+A.eq(Z.inZone(lz, 10, 7), true, 'leash reaches r tiles to the north (Y branch)');
+A.eq(Z.inZone(lz, 10, 6), false, 'r+1 to the north is out');
+// a true diagonal miss: in-range on X but out-of-range on Y -> out (both axes required)
+A.eq(Z.inZone(lz, 13, 14), false, 'in-range X but out-of-range Y is out (both axes gate the leash)');
 
 // ---- clampPickable: filter candidates to the zone, preserving order ----
 const cands = [
