@@ -60,6 +60,7 @@ const { withDossier } = require('./dossierinject.js');     // Phase C: fold the 
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
+const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
@@ -868,6 +869,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
   if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/insights') === 0) return serveInsights(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/runs') === 0) return serveRuns(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/transcript') === 0) return serveTranscript(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
@@ -1768,7 +1770,7 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title, streamId: o.streamId || '' });   // H3.2: join the outcome row to its transcript
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title, streamId: o.streamId || '', model: model || '' });   // H3.2/H3.3: join to transcript + per-model insights
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
@@ -2209,6 +2211,19 @@ function serveRuns(req, res) {
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     json(200, { runs: runStore.list(agent, { limit }) });
   } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
+}
+
+// GET /api/insights?agent=<id> — H3.3: aggregate usage folded from the run history (overview, per-model spend,
+// outcome breakdown, per-agent, runs/spend-over-time). Read-only; fail-open to an empty fold, never a 500.
+function serveInsights(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent');
+    if (agent && !/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const rows = agent ? runStore.list(agent, { limit: 1000 }) : runStore.all();   // agent-scoped or whole station
+    json(200, foldInsights(rows, { nowMs: Date.now(), bucketMs: 3600000, buckets: 24 }));
+  } catch (e) { json(200, { totalRuns: 0, totalUsd: 0, byModel: [], byReason: {}, byAgent: [], overTime: [] }); }
 }
 
 // GET /api/transcript?stream=<id>&agent=<id>&limit=<n> — the durable per-workstream conversation transcript
