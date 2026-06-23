@@ -1123,6 +1123,42 @@ const World = (() => {
 
   function setGlance(dir, ms, now) { if (self) self.glance = { dir, until: now + ms }; }
 
+  /* ================= Tier C (cross-agent awareness) — C0 plumbing =================
+     INVIOLABLE RULE: perceive across zones, ACT (move) only within your own. These two helpers are the
+     GAZE-ONLY foundation — they READ neighbor positions and turn a head; they NEVER introduce a path,
+     target, goal, or any movement (K1). Wired to NO trigger in C0 — this phase changes zero behavior. */
+
+  // Every body = the hero `agent` + the crew[] array. Bounded O(N) (hero + a handful of crew).
+  const allBodies = () => (agent ? [agent].concat(crew) : crew.slice());
+
+  // neighborsOf — READ-ONLY. Returns the OTHER bodies within `radius` tiles of `body` AND in a basic
+  // sightline (same zone — the containment-aware "can see" test; reads px/py/tile only, mutates NOTHING).
+  // Skips: itself, unplaced bodies. N is tiny, so an O(N) scan gated to the idle cadence is cheap (K4).
+  function neighborsOf(body, radius) {
+    const out = [];
+    if (!body || body.unplaced) return out;
+    const rPx = radius * T;                       // compare in pixels (px/py are the canonical coords)
+    const zone = zoneFor(body);                   // basic sightline = the observer's own zone (read-only)
+    for (const other of allBodies()) {
+      if (other === body || !other || other.unplaced) continue;
+      if (Math.hypot(other.px - body.px, other.py - body.py) > rPx) continue;   // proximity (deterministic)
+      const ot = tileOf(other.px, other.py);      // logical tile (seated bodies still carry px/py here)
+      if (!tileInZone(zone, ot.x, ot.y)) continue;   // sightline: neighbor stands within the observer's zone
+      out.push(other);
+    }
+    return out;
+  }
+
+  // glanceAt — turn `self` to FACE otherBody for `dur` ms. Calls ONLY setGlance (head-turn, auto-reverts at
+  // render via assets.js). It mutates ONLY self's own glance state — never a path/target/goal/position (K1),
+  // never another body (K2). MUST run with `self` pointing at the GLANCING body (Tier B self discipline).
+  function glanceAt(self_, otherBody, dur, now) {
+    if (!self_ || !otherBody) return;
+    const dir = dirToward(self_.px, self_.py, otherBody.px, otherBody.py);
+    if (self_ === self) { setGlance(dir, dur, now); return; }   // current actor: reuse setGlance (writes self.glance)
+    self_.glance = { dir, until: now + dur };                   // non-current body: direct glance write (no self repoint)
+  }
+
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
   // Petz "it knows where you are" (continuous tracking, NOT the rare dramatic look-up). Falls back to a
   // random cardinal when the cursor's gone quiet, so it never reads as locked-on.
