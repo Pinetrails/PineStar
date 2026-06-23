@@ -1449,7 +1449,8 @@ const StationUI = (() => {
     body.innerHTML =
       '<h4 class="ms-h">LOGBOOK — ' + esc(agentId) + '</h4>' +
       '<div class="set-save"><button class="bb sm lb-tab active" data-tab="runs">▦ RUNS</button> ' +
-      '<button class="bb sm lb-tab" data-tab="slag">⚠ SLAG</button></div>' +
+      '<button class="bb sm lb-tab" data-tab="slag">⚠ SLAG</button> ' +
+      '<button class="bb sm lb-tab" data-tab="insights">📊 INSIGHTS</button></div>' +
       '<p class="set-about" id="lb-about"></p>' +
       '<div id="lb-list" class="mc-list">loading…</div>';
     const listEl = body.querySelector('#lb-list'), aboutEl = body.querySelector('#lb-about');
@@ -1465,6 +1466,18 @@ const StationUI = (() => {
       return '<div class="' + cls + '"' + attr + '><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + (sid ? ' · ▸ transcript' : '') + '</span></div>' +
         '<div class="mc-url dim">' + rl + ' · $' + (Number(r.usd) || 0).toFixed(4) + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + (r.tokens ? (' · ' + r.tokens + ' tok') : '') + '</div>' +
         (sid ? '<div class="lb-tx" hidden></div>' : '') + '</div>';
+    }
+    function insightsHtml(j) {
+      j = j || {};
+      if (!j.totalRuns) return '<div class="fb-empty">NO DATA YET.<br><span>Insights appear once this agent finishes some runs.</span></div>';
+      const ov = '<div class="mc-row"><div class="mc-top"><b>' + j.totalRuns + ' run' + (j.totalRuns === 1 ? '' : 's') + ' · $' + (Number(j.totalUsd) || 0).toFixed(4) + '</b></div>' +
+        '<div class="mc-url dim">avg $' + (Number(j.avgUsdPerRun) || 0).toFixed(4) + '/run · ' + (j.successPct == null ? '—' : j.successPct + '% success') + ' · ' + (j.totalTokens || 0) + ' tok</div></div>';
+      const models = (j.byModel || []).slice(0, 8).map(m =>
+        '<div class="mc-row"><div class="mc-top"><b>' + esc(m.model) + '</b> <span class="dim">' + m.runs + ' run' + (m.runs === 1 ? '' : 's') + '</span></div>' +
+        '<div class="mc-url dim">$' + (Number(m.usd) || 0).toFixed(4) + ' · ' + (m.tokens || 0) + ' tok</div></div>').join('');
+      const reasons = Object.keys(j.byReason || {}).map(k => esc(k) + ' ' + j.byReason[k]).join(' · ');
+      return ov + '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">BY MODEL</div>' + (models || '<div class="mc-detail dim">—</div>') +
+        '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">OUTCOMES</div><div class="mc-detail dim">' + (reasons || '—') + '</div>';
     }
     function slagRow(d) {
       return '<div class="mc-row"><div class="mc-top"><b style="color:var(--bad)">⚠ ' + esc(d.title || 'wasted spend') + '</b></div>' +
@@ -1493,11 +1506,18 @@ const StationUI = (() => {
             } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load transcript.</div>'; }
           }));
         } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see run history.</div>'; }
-      } else {
+      } else if (tab === 'slag') {
         aboutEl.innerHTML = 'Wasted-spend post-mortems: every run that burned dollars without a deliverable, diagnosed into a real, fixable cause. Optimise these down.';
         let slag = [];
         try { if (typeof World !== 'undefined' && World.slagLog) slag = World.slagLog().slice().reverse(); } catch (_) {}
         listEl.innerHTML = slag.length ? slag.map(slagRow).join('') : '<div class="fb-empty">NO SLAG — clean line.<br><span>A post-mortem appears here when a run burns spend without producing a result.</span></div>';
+      } else {
+        // H3.3: aggregate usage — overview + per-model spend + outcomes, folded from the run history (GET /api/insights).
+        aboutEl.innerHTML = 'How this agent spends: total runs and cost, average per run, success rate, and where the money goes by model.';
+        try {
+          const j = await (await fetch('/api/insights?agent=' + encodeURIComponent(agentId))).json();
+          listEl.innerHTML = insightsHtml(j);
+        } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see insights.</div>'; }
       }
     }
     body.querySelectorAll('.lb-tab').forEach(b => b.addEventListener('click', () => {

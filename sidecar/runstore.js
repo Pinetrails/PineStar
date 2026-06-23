@@ -49,6 +49,7 @@
         turns: num(e.turns), tokens: num(e.tokens), usd: num(e.usd),
         title: str(e.title).slice(0, TITLE_MAX),
         streamId: str(e.streamId),     // H3.2: the run's workstream — joins this outcome row to its transcript (GET /api/transcript?stream=)
+        model: str(e.model).slice(0, 80),   // H3.3: the model this run used — powers per-model spend in /api/insights
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);
