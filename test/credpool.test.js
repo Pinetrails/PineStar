@@ -60,4 +60,18 @@ const clock = { now: () => clk };
   A.eq(p.order(['a', 'b']), ['a', 'b'], 'all cooled -> all returned, soonest-available first');
 }
 
+// ---- G. (H6.1) penalize(key, ttlMs): honor a server-stated wait; clamp a bogus one ----
+{
+  const p = makeCredPool({ clock, cooldownMs: 1000, maxCooldownMs: 10000 });
+  clk = 0;
+  p.penalize('a', 3000);                                   // explicit TTL overrides the default cooldown
+  A.eq(p.coolingUntil('a'), 3000, 'explicit ttlMs cools for exactly that long (not the 1000 default)');
+  p.penalize('b');                                         // no ttl -> default cooldown
+  A.eq(p.coolingUntil('b'), 1000, 'no ttl -> default cooldown');
+  p.penalize('c', 999999999);                              // absurd server value
+  A.eq(p.coolingUntil('c'), 10000, 'a bogus huge ttl is clamped to maxCooldownMs (no all-session strand)');
+  p.penalize('d', -5);                                     // garbage negative
+  A.eq(p.coolingUntil('d'), 1000, 'a negative ttl falls back to the default cooldown');
+}
+
 A.report('credpool.test');

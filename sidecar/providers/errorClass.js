@@ -71,6 +71,49 @@
     return (err && (err.code || err.errno || (err.cause && err.cause.code))) || '';
   }
 
+  // H6.1: surface how long the server says to wait, so a rate-limited credential cools for exactly that long
+  // (instead of a blind fixed cooldown). PURE — no clock: a RELATIVE hint (Retry-After: 30, "try again in 1.5s")
+  // becomes `retryAfterMs`; an ABSOLUTE hint (HTTP-date, X-RateLimit-Reset epoch, "resets at <epoch>") becomes
+  // `resetAtMs` and the consumer (with its injected clock) turns it into a delay. Either/both may be null.
+  function extractHeaders(err) { return (err && (err.headers || (err.response && err.response.headers))) || null; }
+  function headerGet(headers, name) {
+    if (!headers) return null;
+    const lname = name.toLowerCase();
+    if (typeof headers.get === 'function') { const v = headers.get(name); if (v != null) return v; }
+    for (const k in headers) { if (String(k).toLowerCase() === lname) return headers[k]; }
+    return null;
+  }
+  function extractRetryAfter(err, body, message) {
+    let retryAfterMs = null, resetAtMs = null;
+    const headers = extractHeaders(err);
+    const e = body && (body.error || body);
+    // 1. Retry-After: bare integer = delta-seconds; otherwise an HTTP-date (absolute).
+    const ra = headerGet(headers, 'retry-after') || (e && (e.retry_after != null ? e.retry_after : (body && body.retry_after)));
+    if (ra != null && String(ra).trim() !== '') {
+      const s = String(ra).trim();
+      if (/^\d+(\.\d+)?$/.test(s)) retryAfterMs = Math.round(parseFloat(s) * 1000);
+      else { const t = Date.parse(s); if (!isNaN(t)) resetAtMs = t; }
+    }
+    // 2. X-RateLimit-Reset header: epoch seconds or ms (a small delta-seconds value is ambiguous -> skip).
+    const xr = headerGet(headers, 'x-ratelimit-reset') || headerGet(headers, 'x-ratelimit-reset-requests') || headerGet(headers, 'x-ratelimit-reset-tokens');
+    if (resetAtMs == null && xr != null && /^\d+(\.\d+)?$/.test(String(xr).trim())) {
+      const n = parseFloat(xr);
+      if (n > 1e12) resetAtMs = Math.round(n);            // already epoch-ms
+      else if (n > 1e9) resetAtMs = Math.round(n * 1000); // epoch-seconds
+    }
+    // 3. message text: "(try again|retry|resets|available) in <n><unit>"
+    if (retryAfterMs == null) {
+      const m = String(message || '').toLowerCase().match(/(?:try again|retry|resets?|available|wait)\s+(?:in\s+)?(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|sec|secs|seconds?|m|min|mins|minutes?)\b/);
+      if (m) { const v = parseFloat(m[1]); const u = m[2]; retryAfterMs = /^ms|^milli/.test(u) ? Math.round(v) : /^m/.test(u) ? Math.round(v * 60000) : Math.round(v * 1000); }
+    }
+    // 4. message text: "resets at <epoch>" (10–13 digit unix time)
+    if (resetAtMs == null) {
+      const m = String(message || '').toLowerCase().match(/resets?\s+at\s+(\d{10,13})/);
+      if (m) { const n = Number(m[1]); resetAtMs = n > 1e12 ? n : n * 1000; }
+    }
+    return { retryAfterMs, resetAtMs };
+  }
+
   function classify400(low, code, ctx) {
     const c = String(code || '').toLowerCase();
     if (/context_length|context_window|max.*token/.test(c)) return 'context_overflow';
@@ -130,6 +173,7 @@
     const message = extractMessage(err, body);
     const reason = pickReason(status, code, String(message).toLowerCase(), err, ctx);
     const f = REASONS[reason] || REASONS.unknown;
+    const wait = extractRetryAfter(err, body, message);
     return {
       reason,
       retryable: f.retryable,
@@ -137,9 +181,11 @@
       shouldFallback: f.shouldFallback,
       shouldCompress: f.shouldCompress,
       statusCode: status || null,
+      retryAfterMs: wait.retryAfterMs,   // H6.1: server-stated delay (relative ms), or null
+      resetAtMs: wait.resetAtMs,         // H6.1: server-stated absolute reset (epoch ms), or null
       message: message
     };
   }
 
-  return { classifyApiError, REASONS, _internals: { extractStatus, extractCode, extractMessage, classify400, pickReason } };
+  return { classifyApiError, REASONS, _internals: { extractStatus, extractCode, extractMessage, classify400, pickReason, extractRetryAfter } };
 });

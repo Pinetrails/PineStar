@@ -93,4 +93,32 @@ const R = (err, ctx) => classifyApiError(err, ctx || {});
   }
 }
 
+// ---- H6.1: server-stated wait extraction (Retry-After / reset_at), pure & clockless ----
+{
+  let c = R({ status: 429, headers: { 'Retry-After': '30' } });
+  A.eq(c.retryAfterMs, 30000, 'Retry-After: 30 -> 30000ms relative');
+  A.eq(c.resetAtMs, null, 'a relative Retry-After leaves resetAtMs null');
+
+  c = R({ status: 429, headers: { 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' } });
+  A.eq(c.retryAfterMs, null, 'an HTTP-date Retry-After is not a relative delay');
+  A.eq(c.resetAtMs, Date.parse('Wed, 21 Oct 2026 07:28:00 GMT'), 'HTTP-date Retry-After -> absolute resetAtMs');
+
+  c = R({ status: 429, headers: { 'x-ratelimit-reset': '1900000000' } });
+  A.eq(c.resetAtMs, 1900000000 * 1000, 'X-RateLimit-Reset epoch-seconds -> *1000 resetAtMs');
+
+  c = R({ status: 429, message: 'Rate limit exceeded. Please try again in 1.5s.' });
+  A.eq(c.retryAfterMs, 1500, '"try again in 1.5s" -> 1500ms');
+
+  c = R({ status: 429, message: 'Too many requests, retry in 2 minutes' });
+  A.eq(c.retryAfterMs, 120000, '"retry in 2 minutes" -> 120000ms');
+
+  c = R({ status: 500, message: 'internal error' });
+  A.eq(c.retryAfterMs, null, 'no hint -> retryAfterMs null');
+  A.eq(c.resetAtMs, null, 'no hint -> resetAtMs null');
+
+  c = R({ status: 429, headers: { 'retry-after': 'soon-ish' } });
+  A.eq(c.reason, 'rate_limit', 'unparseable Retry-After still classifies normally');
+  A.eq(c.retryAfterMs, null, 'unparseable Retry-After -> null (no crash)');
+}
+
 A.report('errorclass.test');

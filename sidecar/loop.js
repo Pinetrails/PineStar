@@ -278,7 +278,7 @@
           const fb = fallbacks[fbIndex++];
           if (fb && fb.provider) {
             // notify BEFORE switching: activeCredKey is still the OUTGOING key that just failed (cool it if rotate).
-            if (onFallback) { try { onFallback({ reason: cls.reason, rotate: !!cls.shouldRotateCredential, credKey: activeCredKey }); } catch (_) {} }
+            if (onFallback) { try { onFallback({ reason: cls.reason, rotate: !!cls.shouldRotateCredential, credKey: activeCredKey, retryAfterMs: cls.retryAfterMs, resetAtMs: cls.resetAtMs }); } catch (_) {} }   // H6.1: pass the server-stated wait so the cooldown honors it
             // observable failover telemetry (P3.1): which model we left, which we moved to, and why.
             emit('provider.fallback', { agentId, runId, fromModel: model, toModel: (fb.model || model), reason: cls.reason, rotate: !!cls.shouldRotateCredential });
             if (fb.credKey != null) activeCredKey = fb.credKey;   // the entry we switch TO becomes the live credential
