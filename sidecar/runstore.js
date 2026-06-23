@@ -48,6 +48,7 @@
         reason: REASONS[e.reason] ? e.reason : 'done',     // clamp to the known enum (matches agent.run.end)
         turns: num(e.turns), tokens: num(e.tokens), usd: num(e.usd),
         title: str(e.title).slice(0, TITLE_MAX),
+        streamId: str(e.streamId),     // H3.2: the run's workstream — joins this outcome row to its transcript (GET /api/transcript?stream=)
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);

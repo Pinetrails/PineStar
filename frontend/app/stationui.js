@@ -1458,8 +1458,13 @@ const StationUI = (() => {
       const when = r.ts ? esc(fmtRel(new Date(r.ts).toISOString())) : '';
       const rl = LB_REASON[r.reason] || esc(r.reason || 'done');
       const title = r.title ? esc(r.title) : esc(String(r.runId || 'run').slice(0, 12));
-      return '<div class="mc-row"><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + '</span></div>' +
-        '<div class="mc-url dim">' + rl + ' · $' + (Number(r.usd) || 0).toFixed(4) + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + (r.tokens ? (' · ' + r.tokens + ' tok') : '') + '</div></div>';
+      // H3.2: a run with a streamId can OPEN its transcript inline (the join the audit found was missing).
+      const sid = r.streamId ? esc(String(r.streamId)) : '';
+      const cls = sid ? 'mc-row lb-run-open' : 'mc-row';
+      const attr = sid ? ' data-stream="' + sid + '" title="click to open this run\'s transcript"' : '';
+      return '<div class="' + cls + '"' + attr + '><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + (sid ? ' · ▸ transcript' : '') + '</span></div>' +
+        '<div class="mc-url dim">' + rl + ' · $' + (Number(r.usd) || 0).toFixed(4) + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + (r.tokens ? (' · ' + r.tokens + ' tok') : '') + '</div>' +
+        (sid ? '<div class="lb-tx" hidden></div>' : '') + '</div>';
     }
     function slagRow(d) {
       return '<div class="mc-row"><div class="mc-top"><b style="color:var(--bad)">⚠ ' + esc(d.title || 'wasted spend') + '</b></div>' +
@@ -1473,6 +1478,20 @@ const StationUI = (() => {
           const j = await (await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100')).json();
           const runs = (j && j.runs) || [];
           listEl.innerHTML = runs.length ? runs.map(runRow).join('') : '<div class="fb-empty">NO RUNS YET.<br><span>Finished runs appear here once this agent does real work.</span></div>';
+          // H3.2: clicking a run opens its durable transcript (GET /api/transcript?stream=) inline — toggle + lazy-load.
+          listEl.querySelectorAll('.lb-run-open').forEach(row => row.addEventListener('click', async () => {
+            const tx = row.querySelector('.lb-tx'); if (!tx) return;
+            if (!tx.hidden) { tx.hidden = true; return; }
+            tx.hidden = false;
+            if (tx.dataset.loaded) return;
+            tx.innerHTML = '<div class="mc-detail">loading transcript…</div>';
+            try {
+              const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(row.dataset.stream) + '&agent=' + encodeURIComponent(agentId) + '&limit=50')).json();
+              const turns = (t && t.turns) || [];
+              tx.innerHTML = turns.length ? turns.map(m => '<div class="mc-detail"><b>' + esc(m.role) + ':</b> ' + esc(String(m.content || '').slice(0, 400)) + '</div>').join('') : '<div class="mc-detail">no transcript recorded for this workstream.</div>';
+              tx.dataset.loaded = '1';
+            } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load transcript.</div>'; }
+          }));
         } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see run history.</div>'; }
       } else {
         aboutEl.innerHTML = 'Wasted-spend post-mortems: every run that burned dollars without a deliverable, diagnosed into a real, fixable cause. Optimise these down.';

@@ -121,6 +121,10 @@ function boot(port, env, attemptsLeft) {
     const seeded = JSON.stringify((lastReq && lastReq.messages) || []);
     A.ok(seeded.indexOf('alpha-token-42') >= 0, 'H1.2: run B (empty history) seeded the prior turn from the transcript');
     A.ok(seeded.indexOf('what was it') >= 0, 'run B still carries its own new directive last');
+
+    // H3.2: the RUNS history rows carry their streamId — the join that lets a row open its transcript.
+    const runsJson = await (await fetch(B + '/api/runs?agent=e2e&limit=20')).json();
+    A.ok((runsJson.runs || []).some(r => r.streamId === 's1'), 'H3.2: a RUNS row records its streamId (joins outcome -> transcript)');
   } finally {
     try { child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}
