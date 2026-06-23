@@ -19,7 +19,16 @@ function registerAgent(id, color) {
    here + a matching sprite set in assets/sprites/manifest.json. `scale` is the
    per-set downscale applied at tint time (crew sprites render on a 92px canvas). */
 DATA.SKINS = {
-  bear: { name: 'Teddy Bear', set: 'bear', scale: 0.36 },
-  pepe: { name: 'Pepe',       set: 'pepe', scale: 0.36 },
+  bear:       { name: 'Teddy Bear', set: 'bear',       scale: 0.36 },
+  pepe:       { name: 'Pepe',       set: 'pepe',       scale: 0.36 },
+  steve:      { name: 'Steve',      set: 'steve',      scale: 0.414 },
+  alien:      { name: 'Alien',      set: 'alien',      scale: 0.376 },
+  skeleton:   { name: 'Skeleton',   set: 'skeleton',   scale: 0.414 },
+  crewmate:   { name: 'Crewmate',   set: 'crewmate',   scale: 0.385 },
+  capybara:   { name: 'Capybara',   set: 'capybara',   scale: 0.425 },
+  robot:      { name: 'Robot',      set: 'robot',      scale: 0.385 },
+  vaultboy:   { name: 'Vault Boy',  set: 'vaultboy',   scale: 0.376 },
+  blank:      { name: 'Blank',      set: 'blank',      scale: 0.385 },
+  heisenberg: { name: 'Heisenberg', set: 'heisenberg', scale: 0.36  },
 };
 DATA.DEFAULT_SKIN = 'bear';
