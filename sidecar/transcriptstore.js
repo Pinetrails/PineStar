@@ -63,9 +63,35 @@
         content: content,
         ts: num(e.ts) || clock.now()
       };
+      // H1.1: optional structured fields so a RESUME can rebuild the EXACT OpenAI-format turn — an assistant's
+      // tool_calls and a tool result's tool_call_id. Redacted like content; absent fields => byte-identical to before.
+      if (e.toolCalls != null) {
+        let tc = '';
+        try { tc = str(redact(typeof e.toolCalls === 'string' ? e.toolCalls : JSON.stringify(e.toolCalls))).slice(0, CONTENT_MAX); } catch (_) {}
+        if (tc) entry.toolCalls = tc;
+      }
+      if (e.toolCallId != null) { const id = str(e.toolCallId).slice(0, 200); if (id) entry.toolCallId = id; }
       rows.push(entry);
       try { io.append(entry); } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
       return entry;
+    }
+
+    // H1.1: append a SLICE of an OpenAI-format messages array (a run's new turns) as full transcript rows —
+    // user / assistant (with tool_calls) / tool (with tool_call_id). Skips injected 'system' fences (recall,
+    // loop-guard, compaction) so the transcript stays the real dialogue. Returns the count appended. PURE +
+    // testable: the host passes result.messages + the pre-loop boundary index.
+    function appendTurns(streamId, agentId, messages, fromIndex) {
+      if (!Array.isArray(messages)) return 0;
+      let n = 0;
+      for (let i = Math.max(0, num(fromIndex)); i < messages.length; i++) {
+        const m = messages[i];
+        if (!m || !ROLES[m.role] || m.role === 'system') continue;
+        const content = (typeof m.content === 'string') ? m.content
+          : (Array.isArray(m.content) ? m.content.map(p => (p && typeof p.text === 'string') ? p.text : '').join(' ') : '');
+        append({ streamId: streamId, agentId: agentId, role: m.role, content: content, toolCalls: m.tool_calls, toolCallId: m.tool_call_id });
+        n++;
+      }
+      return n;
     }
 
     // the recent dialogue for ONE workstream, oldest-first (ready to replay back into COMMS). We keep the LAST
@@ -83,7 +109,7 @@
     }
 
     return {
-      append, history,
+      append, appendTurns, history,
       all() { return rows.map(r => Object.assign({}, r)); },
       count() { return rows.length; },
       _internals: { normStream, SID_RE }

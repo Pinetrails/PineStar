@@ -103,4 +103,37 @@ const redact = (s) => String(s).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.eq(s.append({ streamId: 'x', content: 'plain text' }).content, 'plain text', 'works without an injected redact');
 }
 
+// ---- J. (H1.1) optional structured fields: tool_calls + tool_call_id round-trip + redaction; additive ----
+{
+  const s = makeTranscriptStore({ io: memIo(), clock, redact: (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]') });
+  const a = s.append({ streamId: 'x', role: 'assistant', content: '', toolCalls: [{ id: 'c1', function: { name: 'fs_write', arguments: '{"k":"sk-ABCD1234EFGH"}' } }] });
+  A.ok(typeof a.toolCalls === 'string' && a.toolCalls.indexOf('fs_write') !== -1, 'assistant tool_calls stored as a JSON string');
+  A.ok(a.toolCalls.indexOf('sk-ABCD1234') === -1, 'secrets in tool_calls args are redacted');
+  const t = s.append({ streamId: 'x', role: 'tool', content: 'ok', toolCallId: 'c1' });
+  A.eq(t.toolCallId, 'c1', 'tool result carries tool_call_id');
+  const plain = s.append({ streamId: 'x', role: 'user', content: 'hi' });
+  A.ok(!('toolCalls' in plain) && !('toolCallId' in plain), 'no structured fields when absent (additive / byte-identical to before)');
+}
+
+// ---- K. (H1.1) appendTurns: records EVERY new turn verbatim (user, assistant+tool_call, tool-result, final) ----
+{
+  const s = makeTranscriptStore({ io: memIo(), clock });
+  // a realistic OpenAI-format messages array: [prior history..., directive, assistant(tool_call), tool, assistant(final)]
+  const messages = [
+    { role: 'user', content: 'OLD history turn (already persisted last run)' },           // index 0 — BEFORE the boundary
+    { role: 'system', content: '<recalled-memory>fence</recalled-memory>' },              // a system fence — must be skipped
+    { role: 'assistant', content: '', tool_calls: [{ id: 'tc1', function: { name: 'fs_read', arguments: '{"p":"a.txt"}' } }] },
+    { role: 'tool', content: 'file contents', tool_call_id: 'tc1' },
+    { role: 'assistant', content: 'Here is the answer.' },
+  ];
+  const n = s.appendTurns('s1', 'agent', messages, 2);   // boundary = 2: only this run's new turns (skip the OLD history at 0)
+  A.eq(n, 3, 'appended 3 turns (assistant+tool_call, tool-result, final) — system fence skipped, old history skipped');
+  const h = s.history('s1');
+  A.eq(h.map(r => r.role), ['assistant', 'tool', 'assistant'], 'exact roles, chronological');
+  A.ok(h[0].toolCalls && h[0].toolCalls.indexOf('fs_read') !== -1, 'the assistant tool_call is captured verbatim');
+  A.eq(h[1].toolCallId, 'tc1', 'the tool result keeps its tool_call_id (pairs to the call)');
+  A.eq(h[2].content, 'Here is the answer.', 'the final assistant text is captured');
+  A.ok(h.every(r => r.content !== 'OLD history turn (already persisted last run)'), 'pre-boundary history is NOT re-appended (no duplication)');
+}
+
 A.report('transcript.test');
