@@ -35,14 +35,14 @@ product-call borderlines. The founding crew bug is FIXED and shipped on trunk.
 
 | ID | Sev | Conf | Status | File | Leak (one line) |
 |---|---|---|---|---|---|
-| **W1** | Med | High | OPEN | world.js loadStation | FloorStats economy (spend/slag/yield) + SlagLog not reset → new agent's HUD shows prior agent's numbers. `floor.reset()`/`slaglog.reset()` exist. |
-| **W2** | Med | High | OPEN | world.js loadStation | Conveyor boxes not reset → prior agent's belt crates ride the new floor (and stale coords after REFIT). `convey.reset()` exists. |
+| **W1** | Med | High | **FIXED** | world.js spawn | FloorStats economy (spend/slag/yield) + SlagLog not reset → new agent's HUD shows prior agent's numbers. Reset in `spawn()` (NOT loadStation — that also runs on refit). Verified live: spend 0.42 → 0. |
+| **W2** | Med | High | **FIXED** | world.js spawn | Conveyor boxes not reset → prior agent's belt crates ride the new floor. `convey.reset()` now called in `spawn()`. |
 | **N1** | Med | High | OPEN | world.js connectChannelBridge | `setInterval(pollConnectors,5000)` handle never captured → permanent `/api/connectors` poll from the title screen after disconnect. |
 | **N2** | Med | High | OPEN | world.js connectChannelBridge | `EventSource('/api/channels/events')` never closed on disconnect; `onerror` self-reconnects forever from the title screen. |
 | **S1** | Med | High | OPEN | mintstore.js + onWake | `skynet.mint.v1` survives `Save.clear()` (which only wipes `skynet.save`) → new agent inherits prior agent's recurring-task memory + SUGGESTED shelf. |
 | **C4** | Med | Med | OPEN | voice.js init | `Voice.init()` doesn't `stopSpeaking()` → if WAKE isn't preceded by a draining disconnect, prior agent's TTS finishes into the new agent + leaked watchdog interval. |
-| **W3** | Low | Med | OPEN | world.js loadStation | `chanQueues` Map + `serverLit` Set never cleared → phantom backlog gauge / a body stuck "working" after a mid-run disconnect. |
-| **W4** | Low | Med | OPEN | world.js spawn | `xpAgent` + one-shot beat clocks (levelUp/compact/slag/outbox) not reset → brief stale level chip / a beat replays one frame into the new agent. |
+| **W3** | Low | Med | **FIXED** | world.js spawn | `chanQueues` Map + `serverLit` Set never cleared → phantom backlog gauge / a body stuck "working". Cleared in `spawn()`. Verified live: queueDepth 7 → 0. |
+| **W4** | Low | Med | **FIXED** | world.js spawn | `xpAgent` + one-shot beat clocks (levelUp/compact/slag/outbox) not reset → brief stale level chip / a beat replays one frame into the new agent. Reset in `spawn()`. |
 | **S2** | Low | High | OPEN | curiositystore.js + onWake | `skynet.curiosity.v1` (`dismissed` dims) survives `Save.clear()` → new agent's curiosity nudges suppressed by prior agent's dismissals. |
 | **C1** | Low | Med | OPEN | tutorial.js | `finished` latch set in finishUp, never reset → diverges from the persisted gate; a re-triggered first-command becomes a silent no-op. |
 | **N3** | Low | High | OPEN | world.js | Structural: `listenersBound`/`bridged` latched, no paired disconnect-time release — the root that makes N1/N2 leak. Fix alongside N1/N2. |
@@ -65,4 +65,9 @@ onboarding/intake stop() (clear timers/flags), Tutorial bus handlers (gated by `
 
 ## Iteration log
 
-- _(iteration 1 — see status updates above as rows move to FIXED)_
+- **Iteration 1** (2026-06-23): W1+W2+W3+W4 — the World per-agent session state (FloorStats
+  economy, SlagLog, Conveyor boxes, channel queue gauge / working-lights, XP chip + one-shot
+  beats). Reset at the `spawn()` seam (NOT loadStation, which also runs on a same-agent REFIT
+  where the economy must persist). Verified live on a seeded station: injected spend=$0.42 +
+  queueDepth=7 into NOVA → NEW AGENT "KILO" → both read 0 (and crew 0). `test:fast` green.
+  Refit-preservation guaranteed by construction (reset only in spawn, never in loadStation/rederive).
