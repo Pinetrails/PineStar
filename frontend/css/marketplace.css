@@ -143,15 +143,6 @@
   outline: 2px solid var(--ph); outline-offset: 2px; box-shadow: 0 0 9px var(--ph-glow2);
 }
 
-/* ---- connect-screen roster entry ---- */
-.roster-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.roster-row #roster-pick { font-size: 13px; }
-.roster-row #roster-pick.chosen {
-  color: var(--ph-bright); opacity: 1; cursor: pointer;
-  text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px;
-}
-.roster-row #roster-pick.chosen:hover { color: var(--gold); }
-
 /* ===================== personalization: the glass box + the recommended shelf ===================== */
 
 /* ---- "STATION FAMILIARITY" glass box (what the station has learned about the Commander) ---- */
