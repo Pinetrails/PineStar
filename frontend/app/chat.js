@@ -454,7 +454,11 @@ const Chat = (() => {
     // real work, so it ALWAYS walks to the workstation and works there until done (the signature visible
     // loop), speaker on or off. When voice is on, a task's result is also spoken — it's just no longer
     // answered "on the spot" in place of the desk trip.
-    const willSpeak = typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
+    // VOICE OWNERSHIP: ONLY the orchestrator (the hero, id 'agent') speaks aloud. A summoned/secondary agent
+    // exists for the orchestrator to DELEGATE to — the Commander talks to the orchestrator, not to a crowd of
+    // agents — so a summoned agent's replies are never voiced (and never get the short spoken-style prompt).
+    const isOrchestrator = !ws.agentId || ws.agentId === 'agent';
+    const willSpeak = isOrchestrator && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
     // A TASK -> walk to the workstation + work there until the run completes (visible desk trip), whatever
     // the speaker setting. A CHAT (no task) -> face the Commander one-on-one (framed below when voice is on).
     // The decision lives in Classify.stanceFor, which takes ONLY isTask BY DESIGN: voice/speaker/UI state

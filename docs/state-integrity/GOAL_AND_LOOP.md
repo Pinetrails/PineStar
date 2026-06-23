@@ -43,6 +43,16 @@ All happen **without a page reload**:
 > - Every "open once per page" resource is paired with a "release on disconnect / re-arm
 >   on re-entry" — *guarding against duplication is not enough; un-released is also a bug.*
 
+## 3a. Voice ownership (a product invariant, decided 2026-06-23)
+
+> **Only the orchestrator (the hero, agent id `'agent'`) has a voice.** Summoned /
+> secondary agents NEVER speak aloud and are never given the short spoken-reply style.
+
+A secondary agent exists for the orchestrator to **delegate** to — the Commander talks to
+the orchestrator, not to a crowd of agents. Enforced at the one TTS gate in `chat.js`
+(`willSpeak` requires the active stream's agent be the orchestrator). Ambient mutters are
+already hero-only (crew bodies render silent speech bubbles, never `Voice.mutter`).
+
 ## 4. Definition of Done (per finding — the bar every fix clears)
 
 A finding is **BULLETPROOF** only when ALL of:

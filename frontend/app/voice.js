@@ -672,6 +672,8 @@ const Voice = (() => {
     if (opts.personaId) activePersonaId = opts.personaId;
     convoMode = false;   // a fresh game session starts in push-to-talk; the toggle opts into hands-free
     clearTimeout(rearmTimer); rearmTimer = null; emptyStreak = 0;
+    stopSpeaking();      // C4: cut any in-flight speech + the Chrome watchdog interval left by a PRIOR agent before this one takes the mic
+    forcedSpeak = false; // C3: clear the "we force-enabled the speaker, restore on exit" bookkeeping so it never carries across agents
     inputEl = el('chat-input'); statusEl = el('chat-status');
     micBtn = el('chat-mic'); toggleBtn = el('voice-toggle'); modeBtn = el('voice-mode');
 

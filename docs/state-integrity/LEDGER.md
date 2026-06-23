@@ -40,17 +40,22 @@ product-call borderlines. The founding crew bug is FIXED and shipped on trunk.
 | **N1** | Med | High | OPEN | world.js connectChannelBridge | `setInterval(pollConnectors,5000)` handle never captured → permanent `/api/connectors` poll from the title screen after disconnect. |
 | **N2** | Med | High | OPEN | world.js connectChannelBridge | `EventSource('/api/channels/events')` never closed on disconnect; `onerror` self-reconnects forever from the title screen. |
 | **S1** | Med | High | OPEN | mintstore.js + onWake | `skynet.mint.v1` survives `Save.clear()` (which only wipes `skynet.save`) → new agent inherits prior agent's recurring-task memory + SUGGESTED shelf. |
-| **C4** | Med | Med | OPEN | voice.js init | `Voice.init()` doesn't `stopSpeaking()` → if WAKE isn't preceded by a draining disconnect, prior agent's TTS finishes into the new agent + leaked watchdog interval. |
+| **V1** | High | High | **FIXED** | chat.js send | **Voice ownership (Commander rule):** only the orchestrator (hero) may speak; summoned/secondary agents must be silent. `willSpeak` now requires the active stream's agent be the orchestrator. |
+| **C4** | Med | Med | **FIXED** | voice.js init | `Voice.init()` now calls `stopSpeaking()` → prior agent's TTS + watchdog interval are cut before the next agent takes the mic. |
 | **W3** | Low | Med | **FIXED** | world.js spawn | `chanQueues` Map + `serverLit` Set never cleared → phantom backlog gauge / a body stuck "working". Cleared in `spawn()`. Verified live: queueDepth 7 → 0. |
 | **W4** | Low | Med | **FIXED** | world.js spawn | `xpAgent` + one-shot beat clocks (levelUp/compact/slag/outbox) not reset → brief stale level chip / a beat replays one frame into the new agent. Reset in `spawn()`. |
 | **S2** | Low | High | OPEN | curiositystore.js + onWake | `skynet.curiosity.v1` (`dismissed` dims) survives `Save.clear()` → new agent's curiosity nudges suppressed by prior agent's dismissals. |
 | **C1** | Low | Med | OPEN | tutorial.js | `finished` latch set in finishUp, never reset → diverges from the persisted gate; a re-triggered first-command becomes a silent no-op. |
 | **N3** | Low | High | OPEN | world.js | Structural: `listenersBound`/`bridged` latched, no paired disconnect-time release — the root that makes N1/N2 leak. Fix alongside N1/N2. |
 | **C2** | Low | Low | OPEN | chat.js init | `proposalRunsSeen` Set + `wiQDepth` Map (keyed by the literal `'agent'`) not cleared on init → possible phantom queue depth for the new hero. |
-| **C3** | Low | Low | OPEN | voice.js init | `forcedSpeak` bookkeeping flag not reset in init → an unpaired set can make the next agent wrongly restore-mute the speaker. |
-| **S3** | Low | Med | NEEDS-PRODUCT-CALL | marketplace.js | `skynet.profile.ack.v1` consent flag is global; new agent's profile resets to zero but consent note stays suppressed. Per-user or per-profile? |
-| **S4** | Low | Med | NEEDS-PRODUCT-CALL | build.js | `skynet.refit.seen` global → new agent skips the BUILD first-use guide. Per-user or per-agent? |
-| **C5** | Low | Low | NEEDS-PRODUCT-CALL | tutorial.js | `skynet.tutorial.v1` station-wide; NEW AGENT doesn't re-teach First Command. Intended once-ever, or per-agent? |
+| **C3** | Low | Low | **FIXED** | voice.js init | `forcedSpeak` now reset in `Voice.init()` → the speaker-restore bookkeeping never carries across agents. |
+| **S3** | Low | Med | **WONTFIX (intended)** | marketplace.js | Commander decided: consent is **per-user** (global). Already behaves that way — no change. |
+| **S4** | Low | Med | **WONTFIX (intended)** | build.js | Commander decided: BUILD first-use guide is **per-user** (once-ever). Already behaves that way — no change. |
+| **C5** | Low | Low | **WONTFIX (intended)** | tutorial.js | Commander decided: First-Command lesson is **per-user** (once-ever). Already behaves that way — no change. |
+
+**Scope decision (Commander, 2026-06-23):** on NEW AGENT, *behavioral/learned* state resets
+per-agent (S1 task-mining, S2 curiosity → fix by reset); *one-time UI/teaching/consent*
+flags stay per-user (S3/S4/C5 → no change, already correct).
 
 ## Verified-clean (do not re-audit)
 
@@ -71,3 +76,7 @@ onboarding/intake stop() (clear timers/flags), Tutorial bus handlers (gated by `
   where the economy must persist). Verified live on a seeded station: injected spend=$0.42 +
   queueDepth=7 into NOVA → NEW AGENT "KILO" → both read 0 (and crew 0). `test:fast` green.
   Refit-preservation guaranteed by construction (reset only in spawn, never in loadStation/rederive).
+- **Iteration 2** (2026-06-23): Voice cluster — V1 (Commander rule: only the orchestrator speaks;
+  summoned agents silent) gated at the single `chat.js` TTS seam; C4 (`Voice.init` now cuts the
+  prior agent's in-flight speech + watchdog); C3 (`forcedSpeak` reset per agent). Also recorded
+  the Commander's NEW-AGENT scope decision (S1/S2 reset per-agent; S3/S4/C5 stay per-user). `test:fast` green.
