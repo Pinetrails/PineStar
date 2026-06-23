@@ -722,9 +722,14 @@ const World = (() => {
      from `geo` for a given body. Guarded on `typeof Zones` (mirrors the PropAnchor/Conveyor guards)
      so a missing module degrades to "no zone object" rather than a hard error mid-tick.
 
-     INVARIANT I2 (HERO PARITY): for a SOLO hero whose desk room spans the whole station, computeZone
-     returns that whole-floor rect, so every previously-valid target stays in-zone — caging is a no-op
-     and the 8 sentience passes are unchanged. Multi-room lane discipline is the intended NEW behavior.
+     INVARIANT I2 (HERO PARITY) / A3 (SOLE OWNERSHIP): when one agent effectively owns the space
+     (`soleOwner(body)` — no other bound bay/crew body), its zone WIDENS to the union of every room
+     rect (the whole reachable floor = the exact geo.allRects set the pre-change pickers drew from),
+     so EVERY previously-valid cross-room target stays in-zone and the 8 sentience passes are
+     unchanged — even in a multi-room built-out solo station where the desk room is only ONE room.
+     This is the real condition (sole-ownership widening), not "the desk room spans the station"
+     (which only holds for a fresh single-room floor). Multi-room lane discipline (caging each body
+     to its own room) is the intended NEW behavior ONLY once more than one agent shares the floor.
 
      anchorFor(body): the body's own workstation/bay foot tile — its STABLE home (never its transient
      px/py, so the zone doesn't drift as it walks). Hero falls back to the module `seat` (its synthetic
@@ -738,9 +743,21 @@ const World = (() => {
     if (body === agent && seat) return { x: seat.tx, y: seat.ty };   // hero on the synthetic auto-desk
     return null;
   }
+  /* soleOwner(body): does this body effectively own the WHOLE station (so its zone must widen to
+     the whole floor per A3/I2)? True when no OTHER placed body shares the floor — i.e. every crew
+     body is unplaced (dormant at spawn, occupying nothing). The lone hero in a built-out multi-room
+     station is the realistic solo case: caging it to its desk room would strip previously-valid
+     cross-room idle targets (the I2 regression). When ANY other body is placed, lane discipline
+     kicks in and each body is caged to its own room. The hero is the only sole-owner candidate;
+     a crew body is, by definition, never alone while the hero is on the floor. */
+  function soleOwner(body) {
+    if (body !== agent) return false;                 // only the hero can solely own the floor
+    if (agent && agent.unplaced) return false;        // an unplaced hero owns nothing
+    return crew.every(b => b && b.unplaced);          // no OTHER placed body shares the station
+  }
   function zoneFor(body) {
     if (typeof Zones === 'undefined' || !geo) return null;
-    return Zones.computeZone({ rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: anchorFor(body) });
+    return Zones.computeZone({ rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: anchorFor(body), solo: soleOwner(body) });
   }
   // membership shorthands — a null zone admits NOTHING (the body has no roam area → fall through to
   // an in-place beat). When Zones is absent the wrapper returns null; treat that as "uncaged" so a

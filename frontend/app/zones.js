@@ -13,6 +13,12 @@
        yields a large rect, so its rich station-wide behavior is NOT regressed (invariant I2/A3).
      • { kind:'leash', cx,cy,r }           — no enclosing room found around the anchor; roam a
        bounded leash radius (Chebyshev) around the workstation/bay foot tile.
+     • { kind:'multi', rects:[...] }        — SOLE-OWNERSHIP widening (invariant A3/I2): when one
+       agent effectively owns the whole space (no other bound bay/crew), its zone is the UNION of
+       EVERY room rect — i.e. the whole reachable floor, exactly the set the pre-change idle
+       pickers drew from (geo.allRects). This is what keeps the solo hero's rich, station-wide
+       behavior un-regressed even in a multi-room built-out station (its desk room is NOT the whole
+       station, so a single 'room' zone would wrongly cage it).
      • null                                — unassigned / unplaced: NO zone, the agent does not
        roam (it stays put; callers treat null as "no in-zone candidate").
 
@@ -93,19 +99,25 @@
   }
 
   // ---- the main resolver ----
-  // computeZone({ rects, props, agentId, anchorTile, leashR }) -> zone | null
+  // computeZone({ rects, props, agentId, anchorTile, leashR, solo }) -> zone | null
   //   rects      : Array<{x1,y1,x2,y2,...}> LOCAL inclusive room rects (geo.allRects)
   //   props      : Array<{agentId,t,x,y,...}> LOCAL props (geo.props) — used only to locate the
   //                anchor when anchorTile is not supplied
   //   agentId    : the agent's id (to match bound props); may be null/undefined
   //   anchorTile : {x,y} the agent's bay/workstation foot tile (preferred input)
   //   leashR     : Chebyshev radius for the open-floor fallback (default DEFAULT_LEASH)
+  //   solo       : when truthy, this agent effectively OWNS the whole space (no other bound
+  //                bay/crew). Per A3/I2 its zone widens to the UNION of all room rects (the whole
+  //                reachable floor) so its rich station-wide behavior is never caged — even in a
+  //                multi-room station where its desk room is only one of several. (Applies only
+  //                when there IS an anchor — an unplaced agent still gets no zone.)
   //
-  // Resolution order (matches the plan A2):
+  // Resolution order (matches the plan A2/A3):
   //   1. resolve an anchor tile (explicit anchorTile, else from a bound prop)
   //   2. no anchor at all -> unassigned/unplaced -> null (does not roam)
-  //   3. anchor inside an enclosing room rect -> { kind:'room', rect }
-  //   4. anchor on open floor (no enclosing rect) -> { kind:'leash', cx,cy,r }
+  //   3. SOLE OWNERSHIP (solo) with >=1 room rect -> { kind:'multi', rects:[...] } (whole floor)
+  //   4. anchor inside an enclosing room rect -> { kind:'room', rect }
+  //   5. anchor on open floor (no enclosing rect) -> { kind:'leash', cx,cy,r }
   function computeZone(opts) {
     opts = opts || {};
     const rects = opts.rects;
@@ -121,12 +133,31 @@
     // 2) unassigned / unplaced -> no zone
     if (!a) return null;
 
-    // 3) enclosing room
+    // 3) sole-ownership widening: the whole reachable floor (union of every room rect). This is the
+    // exact target set the pre-change idle pickers drew from (geo.allRects), so a SOLO agent keeps
+    // every previously-valid cross-room target — invariant I2/A3 held for the realistic solo case
+    // (a built-out solo station where the desk room != the whole station).
+    const multi = soloMulti(rects, opts.solo);
+    if (multi) return multi;
+
+    // 4) enclosing room
     const room = smallestEnclosing(rects, a.x, a.y);
     if (room) return { kind: 'room', rect: room };
 
-    // 4) open-floor leash around the anchor
+    // 5) open-floor leash around the anchor
     return { kind: 'leash', cx: a.x, cy: a.y, r };
+  }
+
+  // Build the sole-ownership 'multi' zone: a normalized COPY of every valid room rect (never an
+  // alias of geo's arrays). Returns null when not solo or there is no rect to span (then the caller
+  // falls back to room/leash). Iteration order is the stable geo.allRects order — no RNG (I3).
+  function soloMulti(rects, solo) {
+    if (!solo || !Array.isArray(rects)) return null;
+    const out = [];
+    for (let i = 0; i < rects.length; i++) {
+      if (isRect(rects[i])) out.push(normRect(rects[i]));
+    }
+    return out.length ? { kind: 'multi', rects: out } : null;
   }
 
   // ---- membership test ----
@@ -138,6 +169,11 @@
     if (zone.kind === 'room') return rectHas(zone.rect, tx, ty);
     if (zone.kind === 'leash') {
       return Math.abs(tx - zone.cx) <= zone.r && Math.abs(ty - zone.cy) <= zone.r;
+    }
+    if (zone.kind === 'multi') {                       // sole-ownership: in ANY room rect (whole floor)
+      if (!Array.isArray(zone.rects)) return false;
+      for (let i = 0; i < zone.rects.length; i++) if (rectHas(zone.rects[i], tx, ty)) return true;
+      return false;
     }
     return false;
   }

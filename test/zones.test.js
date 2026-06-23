@@ -131,6 +131,36 @@ A.ok(Z.rectArea(zSolo.rect) === 64 * 48, 'solo zone is large (whole floor) — r
 A.ok(Z.inZone(zSolo, 0, 0) && Z.inZone(zSolo, 63, 47) && Z.inZone(zSolo, 63, 0) && Z.inZone(zSolo, 0, 47),
   'solo zone admits all four station corners (gaze-out / vigil unaffected)');
 
+// ---- SOLE OWNERSHIP (solo) in a MULTI-ROOM station -> a 'multi' zone spanning every room (A3/I2) ----
+// The realistic solo case the I2-regression fix targets: a lone hero in a BUILT-OUT station whose
+// desk room is only ONE of several rooms. Without solo widening, computeZone would resolve the
+// SMALLEST enclosing room (the side room here) and cage the hero out of the big room — stripping
+// previously-valid cross-room idle targets. With solo:true the zone is the UNION of all rects.
+const zSoloMulti = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 }, solo: true });
+A.eq(zSoloMulti.kind, 'multi', 'sole owner in a multi-room station gets a multi zone (whole floor), not its desk room');
+A.eq(zSoloMulti.rects.length, 2, 'multi zone unions EVERY room rect');
+// every rect is a normalized COPY — mutating the result must not touch geo's source array
+zSoloMulti.rects[0].x1 = 999;
+A.eq(RECTS[0].x1, 0, 'multi zone rects are COPIES — source allRects untouched');
+// in-zone across BOTH rooms (the cross-room targets a single-room zone would have dropped)
+const zSoloMulti2 = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 }, solo: true });
+A.eq(Z.inZone(zSoloMulti2, 8, 6), true, 'solo hero anchored in the side room is STILL in-zone in the big room (no I2 regression)');
+A.eq(Z.inZone(zSoloMulti2, 24, 3), true, 'solo hero is in-zone in its own desk room too');
+A.eq(Z.inZone(zSoloMulti2, 50, 50), false, 'off-floor tile (in no room rect) is out-of-zone even for the sole owner');
+// clampPickable spans rooms for the sole owner: a candidate in EITHER room survives
+const soloCands = [{ x: 8, y: 6, tag: 'big' }, { x: 24, y: 3, tag: 'side' }, { x: 50, y: 50, tag: 'off' }];
+A.eq(Z.clampPickable(zSoloMulti2, soloCands).map(c => c.tag), ['big', 'side'],
+  'clampPickable keeps in-zone candidates across ALL rooms for the sole owner, dropping only off-floor');
+
+// solo with NO rects (degenerate) -> falls back (null here since the anchor also has no room/leash basis...
+// actually open-floor leash): solo widening only applies when there IS a rect to span.
+const zSoloNoRects = Z.computeZone({ rects: [], anchorTile: { x: 5, y: 5 }, solo: true });
+A.eq(zSoloNoRects.kind, 'leash', 'solo with no room rects falls back to the leash (nothing to span)');
+
+// solo never overrides the unassigned->null rule (no anchor still means no zone)
+A.eq(Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'ghost', solo: true }), null,
+  'solo:true does NOT grant a zone to an unplaced/unassigned agent (no anchor -> still null)');
+
 // ---- inZone: room membership (inclusive) ----
 A.eq(Z.inZone(null, 5, 5), false, 'inZone(null,..) is false — no zone, no roaming');
 A.eq(Z.inZone(zMain, 0, 0), true, 'room corner (0,0) is in-zone (inclusive)');
