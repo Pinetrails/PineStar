@@ -365,6 +365,7 @@ const World = (() => {
       // awareness & curiosity: head-turn glance (drawBody reads agent.glance), study/observe dwell, fidget + notice cooldowns
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory so a summon-glance fires once per event, not every frame (runtime-only)
+      neighborGlanceCd: 0, // Tier C / C-Beat2: per-body cooldown so two idle neighbors don't re-roll a mutual glance the instant the last lapses (runtime-only)
       // INNER LIFE: a fixed temperament + three slow-draining needs that drive WHICH goal it pursues
       pers: makePersonality(a.id),
       needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
@@ -1192,6 +1193,39 @@ const World = (() => {
     }
   }
 
+  /* ================= Tier C — C-Beat2: MUTUAL IDLE GLANCE =================
+     When `self` (the deciding idle body) has a neighbor that is ALSO idle within sight, occasionally — rarity-gated
+     behind a long PER-BODY cooldown (self.neighborGlanceCd) — both bodies turn their heads toward each other for a
+     held beat, then the normal glance timeout ENDS it. A quiet, silent "they noticed each other." GAZE-ONLY: glanceAt
+     calls setGlance / writes .glance only — no path/target/goal/movement (K1). Each body mutates ONLY its OWN glance
+     state — self via setGlance, the neighbor via glanceAt's DIRECT .glance write — never any other field (K2).
+     K4 no deadlock: the mutual glance self-terminates by `until` at render (assets.js); nothing re-arms it until the
+     cooldown elapses, so two facing idle bodies can't lock into a sustained stare. K4 no cascade: this fires off
+     both-idle PROXIMITY + the cooldown ONLY — it reads neighbor px/py/idle-state, NEVER neighbor.glance, so A glancing
+     can't make B glance. Called from decideIdle (idle-cadence gated, NOT every frame) with self set to the deciding
+     body, so hero (self===agent) and crew (self===b) behave uniformly. Returns true iff a mutual glance was struck.
+     Determinism: U.chance / U.irnd / U.pick only (K5). */
+  const MUTUAL_GAZE_RADIUS = 4;   // tiles — a near neighbor; neighborsOf already caps to the deciding body's zone
+  function maybeMutualGlance(now) {
+    if (!self || self.stilling) return false;          // never interrupt a deliberate stilling hold (eerie calm wins — K8)
+    if (now < (self.neighborGlanceCd || 0)) return false;   // long per-body cooldown so it's occasional, not busy (K8/K4)
+    const cands = [];
+    for (const other of neighborsOf(self, MUTUAL_GAZE_RADIUS)) {
+      if (!bodyIsIdle(other, now)) continue;           // only a free neighbor can lock eyes back (read-only idle test)
+      if (other.stilling) continue;                    // respect the neighbor's deliberate hold too (don't yank it out)
+      cands.push(other);
+    }
+    if (!cands.length) { self.neighborGlanceCd = now + U.irnd(8000, 16000); return false; }   // arm a short re-scan gap even on a miss (no per-frame rescans)
+    self.neighborGlanceCd = now + U.irnd(14000, 26000);   // arm the cooldown whether or not the roll lands (no re-roll storm)
+    if (!U.chance(0.18)) return false;                 // rare — a quiet noticing, not a constant swivel (K8 eerie restraint)
+    const other = U.pick(cands);
+    const dur = U.irnd(900, 1500);                      // a HELD beat (longer than an ambient flick) — they regard each other, then break
+    glanceAt(self, other, dur, now);                   // self looks at the neighbor (self===self -> setGlance)
+    glanceAt(other, self, dur, now);                   // the neighbor looks back — glanceAt's DIRECT .glance write (K2: only its glance)
+    other.neighborGlanceCd = now + U.irnd(14000, 26000);   // arm the partner's cooldown too so it doesn't immediately re-initiate
+    return true;
+  }
+
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
   // Petz "it knows where you are" (continuous tracking, NOT the rare dramatic look-up). Falls back to a
   // random cardinal when the cursor's gone quiet, so it never reads as locked-on.
@@ -1600,6 +1634,7 @@ const World = (() => {
     const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
+      if (maybeMutualGlance(now)) { self.idleUntil = now + U.irnd(1400, 3000); return; }  // C-Beat2: a quiet noticing between two idle neighbors — gaze-only, ends by timeout
       if (U.chance(0.10) && maybeRevisit(now)) return;                                 //   occasionally drift back to its favorite spot
       const r = U.irnd(0, 99);
       if (r < 62) standStill(now);                                                      //   62% just stand and be here
@@ -2359,6 +2394,7 @@ const World = (() => {
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
+      neighborGlanceCd: 0, // Tier C / C-Beat2: per-body mutual-glance cooldown (mirrors the hero literal) — runtime-only
       wakeAt: 0, workUntil: 0,
       // B0 — FULL ENGINE STATE SHAPE (additive, runtime-only): mirror the hero literal (spawn ~346-367) so a
       // crew body reads real meters/temperament when Tier B2 routes the sentience engine through it (stepCrew →
