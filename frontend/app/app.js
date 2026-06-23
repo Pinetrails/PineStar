@@ -210,8 +210,12 @@ const App = (() => {
     a.systemPrompt = composeSystemPrompt(a);
     agents.set(id, a);
     registerAgent(id, a.color);                                // sprite tint shim
-    if (typeof World !== 'undefined' && World.spawnAgent) World.spawnAgent(a);   // Phase C: a real floor body
+    const _spawned = (typeof World !== 'undefined' && !!World.spawnAgent);
+    if (_spawned) World.spawnAgent(a);                          // Phase C: a real floor body
+    else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+    else console.warn('[summon] StationUI.setRoster missing — crew manifest not refreshed');
+    try { console.log('[summon]', JSON.stringify({ id, name: a.name, skin: a.skin, hadHero: !!agent, worldSpawn: _spawned, crew: (typeof World !== 'undefined' && World.crewCount) ? World.crewCount() : '?', roster: agents.size })); } catch (e) {}
     // a fresh workstream BOUND to the new agent; focusing it routes COMMS + the next run to this identity
     const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name) : null;
     if (ws && typeof Workstreams.setAgent === 'function') Workstreams.setAgent(ws.id, id);
@@ -219,7 +223,8 @@ const App = (() => {
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(a.name + ' summoned — type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).', 'good');
+    const _notify = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : (m) => console.log('[summon]', m);
+    _notify(a.name + ' summoned — type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).', 'good');
     return a;
   }
   // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
