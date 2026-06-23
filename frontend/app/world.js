@@ -364,6 +364,7 @@ const World = (() => {
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       // awareness & curiosity: head-turn glance (drawBody reads agent.glance), study/observe dwell, fidget + notice cooldowns
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
+      summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory so a summon-glance fires once per event, not every frame (runtime-only)
       // INNER LIFE: a fixed temperament + three slow-draining needs that drive WHICH goal it pursues
       pers: makePersonality(a.id),
       needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
@@ -1157,6 +1158,38 @@ const World = (() => {
     const dir = dirToward(self_.px, self_.py, otherBody.px, otherBody.py);
     if (self_ === self) { setGlance(dir, dur, now); return; }   // current actor: reuse setGlance (writes self.glance)
     self_.glance = { dir, until: now + dur };                   // non-current body: direct glance write (no self repoint)
+  }
+
+  // bodyIsIdle — READ-ONLY: is `b` free to notice (not tasked, not walking, no active goal)? The hero's busy
+  // flag is the module-scope `activity` (HERO-ONLY); crew busyness is per-body (b.working/b.workUntil), and only
+  // SUMMONED crew have the inner life (stepCrew gates the engine on b.summoned). Reads only — mutates nothing.
+  function bodyIsIdle(b, now) {
+    if (!b || b.unplaced || b.state === 'walk' || b.working || b.goal != null) return false;
+    if (agent && b === agent) return activity === 'idle';                 // hero: the single module-scope busy flag
+    return !!b.summoned && b.workUntil <= now;                            // crew: only summoned bodies are alive; not mid-run
+  }
+
+  /* ================= Tier C — C-Beat1: SUMMON GLANCE =================
+     When a body is summoned to a task, each OTHER body that is currently IDLE and within sight has a 50% chance
+     to turn its head toward the summoned body for a brief beat, then resume. GAZE-ONLY (glanceAt → setGlance/direct
+     .glance write — no path/target/goal/movement, K1). Fires off the summon EVENT only (never off another body's
+     glance, K4 no cascade). A short per-observer refractory makes it fire ONCE per event, not every frame. The
+     glance is ADDITIVE and NEVER delays the summon — this runs AFTER the work-seize (K3 summon-wins). The summoned
+     body itself does NOT glance (it's tasked, excluded as the scan target). Determinism: U.chance(0.5) + U.irnd (K5).
+     CRITICAL self-discipline (K2): this runs OUTSIDE the per-body engine loop (from setActivityFor/handoff/bus where
+     `self` points at the hero or a stale body), so it writes each observer's glance via glanceAt's DIRECT path —
+     it enumerates bodies explicitly and never re-points the module `self`. */
+  const SUMMON_GAZE_RADIUS = 7;   // tiles — same zone + within sight; neighborsOf already caps to the observer's zone
+  function summonGlance(summonedBody, now) {
+    if (!summonedBody) return;
+    for (const obs of neighborsOf(summonedBody, SUMMON_GAZE_RADIUS)) {
+      if (obs === summonedBody) continue;            // the tasked body goes to work, never glances (defensive; neighborsOf already excludes self)
+      if (!bodyIsIdle(obs, now)) continue;           // only free bodies notice (a busy/walking body keeps its task — K3)
+      if (now < (obs.summonGlanceCd || 0)) continue; // per-observer refractory: once per summon event, not every frame
+      obs.summonGlanceCd = now + U.irnd(1600, 2800); // arm refractory whether or not the roll lands (no re-roll storm)
+      if (!U.chance(0.5)) continue;                  // 50% — half notice, half stay absorbed
+      glanceAt(obs, summonedBody, U.irnd(650, 1050), now);   // brief head-turn toward the summoned, auto-reverts at render
+    }
   }
 
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
@@ -2325,6 +2358,7 @@ const World = (() => {
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
+      summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
       wakeAt: 0, workUntil: 0,
       // B0 — FULL ENGINE STATE SHAPE (additive, runtime-only): mirror the hero literal (spawn ~346-367) so a
       // crew body reads real meters/temperament when Tier B2 routes the sentience engine through it (stepCrew →
@@ -2411,15 +2445,21 @@ const World = (() => {
   // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
   // body lights + takes the working pose while its run is live, and extinguishes when it ends.
   function setActivityFor(agentId, kind) {
-    if (!agentId || (agent && agentId === agent.id)) { setActivity(kind); return; }
+    const now0 = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    if (!agentId || (agent && agentId === agent.id)) {
+      setActivity(kind);                                                  // HERO: byte-identical single-agent path (the seize itself is in tick)
+      if (kind === 'task' || kind === 'thinking') summonGlance(agent, now0);   // C-Beat1: AFTER the activity flips to task — observers (crew) may glance at the summoned hero (K3 never blocks the seize)
+      return;
+    }
     const b = crew.find(x => x.agentId === agentId);
     if (!b) return;                                                       // not yet spawned (e.g. summon mid-flight) — nothing to animate
     const working = (kind === 'task' || kind === 'thinking');
     b.working = working; b.sitting = false; b.dir = working ? 'north' : 'south';   // face away = "at work"; stepCrew seats it at its desk if it has one, else it stands here
     if (working) { b.target = null; b.pathPts = null; seizeFromIdle(b); }   // drop any in-flight stroll AND any couch/leisure latch so stepCrew re-paths straight to the chair (J4)
-    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    const now = now0;
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
+    if (working) summonGlance(b, now);   // C-Beat1: AFTER the work-seize (K3 summon-wins) — OTHER idle in-sight bodies 50% glance at the newly-summoned `b`
   }
 
   // the WATCHABLE HANDOFF: the lead delegated to worker `toId`. 'spawned' lights the worker (chat.js does NOT
@@ -2435,6 +2475,7 @@ const World = (() => {
     sayAt(to, 'on it…');
     const from = bodyForAgent(fromId) || agent;
     if (from && from !== to) handoffBoxes.push({ fromX: from.px, fromY: from.py - 6, toX: to.px, toY: to.py - 6, t0: now, color: to.color || '#5ad0ff' });
+    summonGlance(to, now);   // C-Beat1: a delegated worker just started — OTHER idle in-sight bodies 50% glance at it (AFTER its seize, K3)
   }
   // draw the in-flight handoff boxes (world space, over the entities). A small arced lerp that self-expires.
   function drawHandoffBoxes(now) {
