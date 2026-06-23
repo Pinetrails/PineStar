@@ -128,6 +128,12 @@
     // callers byte-identical). Cost stays honest when entries reuse the primary provider (shared priceOf catalog).
     const fallbacks = Array.isArray(o.fallbacks) ? o.fallbacks.slice() : [];
     let fbIndex = 0;
+    // OPTIONAL credential-rotation hook (P0.2): a chain entry may carry a `credKey`; the loop tracks which
+    // credential is live and, as it ROTATES AWAY from one on a failover, calls onFallback({ reason, rotate,
+    // credKey }) where credKey is the OUTGOING (just-failed) key. index.js uses this to cool a rate-limited /
+    // auth-failed key (credpool.js) so it isn't tried first next run. No hook / no credKey = byte-identical.
+    const onFallback = (typeof o.onFallback === 'function') ? o.onFallback : null;
+    let activeCredKey = (o.credKey != null) ? o.credKey : null;
     // OPTIONAL todo re-injection: after a compaction folds older turns away, re-append the agent's ACTIVE task
     // plan so a long run never loses it (Hermes' todo survives context compression the same way). A function
     // returning the plan text (or null); absent = no-op (existing callers byte-identical).
@@ -246,6 +252,9 @@
         if (recoveries < maxRecoveries && (cls.shouldFallback || cls.shouldRotateCredential) && fbIndex < fallbacks.length) {
           const fb = fallbacks[fbIndex++];
           if (fb && fb.provider) {
+            // notify BEFORE switching: activeCredKey is still the OUTGOING key that just failed (cool it if rotate).
+            if (onFallback) { try { onFallback({ reason: cls.reason, rotate: !!cls.shouldRotateCredential, credKey: activeCredKey }); } catch (_) {} }
+            if (fb.credKey != null) activeCredKey = fb.credKey;   // the entry we switch TO becomes the live credential
             provider = fb.provider;
             if (fb.model) model = fb.model;   // the next agent.cost carries the switched model — the visible failover signal
             recoveries++;
