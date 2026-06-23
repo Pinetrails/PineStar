@@ -691,9 +691,11 @@ const World = (() => {
     if (!rects.length) { agent.idleUntil = now + 800; return; }
     const cur = tileOf(agent.px, agent.py);
     const avoid = beltUnion();   // desk footprint + belt tiles: an idle stroll should step AROUND the machinery
+    const zone = zoneFor(agent);   // P1: a stroll stays inside the agent's own zone
     for (let i = 0; i < 24; i++) {
       const r = rects[U.irnd(0, rects.length - 1)];
       const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
+      if (!tileInZone(zone, x, y)) continue;                 // off-zone target — never stroll out of the agent's area
       if (!geo.walkable(x, y, blocked)) continue;
       if (avoid.has(x + ',' + y)) continue;                  // don't stroll to a belt tile
       let p = geo.path(cur.x, cur.y, x, y, avoid);           // prefer a belt-free route
@@ -710,6 +712,40 @@ const World = (() => {
     for (const b of belts) s.add(b.x + ',' + b.y);
     return s;
   }
+
+  /* ---------- IDLE ZONE (P1: cage every hero idle picker to the agent's own area) ----------
+     A "zone" is the area a body may ROAM while idle, DERIVED on the fly from the room rects +
+     props the world already holds (never persisted — shared/events.js/schema.js untouched). It is
+     the room enclosing the body's assigned workstation/bay; a leash radius if it sits on open floor;
+     null if it has no assignment (then it does not roam). The pure geometry lives in app/zones.js
+     (window.Zones), unit-tested headlessly; this thin wrapper just resolves the anchor + room rects
+     from `geo` for a given body. Guarded on `typeof Zones` (mirrors the PropAnchor/Conveyor guards)
+     so a missing module degrades to "no zone object" rather than a hard error mid-tick.
+
+     INVARIANT I2 (HERO PARITY): for a SOLO hero whose desk room spans the whole station, computeZone
+     returns that whole-floor rect, so every previously-valid target stays in-zone — caging is a no-op
+     and the 8 sentience passes are unchanged. Multi-room lane discipline is the intended NEW behavior.
+
+     anchorFor(body): the body's own workstation/bay foot tile — its STABLE home (never its transient
+     px/py, so the zone doesn't drift as it walks). Hero falls back to the module `seat` (its synthetic
+     desk) when it has no placed workstation prop; crew resolve purely via deskPropFor/bay (P2/P3). */
+  function anchorFor(body) {
+    if (!geo) return null;
+    const aid = body && body.id;
+    const dp = aid && deskPropFor(aid);
+    if (dp) return { x: dp.x, y: dp.y };
+    if (aid && geo.props) { const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid); if (bay) return { x: bay.x, y: bay.y }; }
+    if (body === agent && seat) return { x: seat.tx, y: seat.ty };   // hero on the synthetic auto-desk
+    return null;
+  }
+  function zoneFor(body) {
+    if (typeof Zones === 'undefined' || !geo) return null;
+    return Zones.computeZone({ rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: anchorFor(body) });
+  }
+  // membership shorthands — a null zone admits NOTHING (the body has no roam area → fall through to
+  // an in-place beat). When Zones is absent the wrapper returns null; treat that as "uncaged" so a
+  // module load failure can never freeze the agent — true(in-zone) for every tile.
+  function tileInZone(zone, tx, ty) { return (typeof Zones === 'undefined') ? true : Zones.inZone(zone, tx, ty); }
 
   /* ---------- crew idle-wander (Bug 3) ----------
      The hero owns the rich state machine (props/couch/quirks). A CREW body (summoned or bay-bound) gets a LIGHT,
@@ -875,11 +911,12 @@ const World = (() => {
   /* couch + a TV nearby → sit on the couch and watch it. The pairing is derived live (gen has no
      authored couch/TV pairs): for each couch, the nearest TV within range, faced from the couch. */
   function tryLounge(now) {
+    const zone = zoneFor(agent);   // P1: only lounge on a couch INSIDE the agent's zone (the body sits there)
     const couches = [], tvs = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') couches.push(p);
-      else if (use.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });
+      if (use.kind === 'couch') { if (tileInZone(zone, p.x, p.y)) couches.push(p); }   // the couch is where the body sits — must be in-zone
+      else if (use.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });   // the TV is only WATCHED from the couch (no walk) — may sit anywhere in view
     }
     if (!couches.length || !tvs.length) return false;
     const order = U.irnd(0, couches.length - 1);   // don't always favour the same couch
@@ -900,12 +937,13 @@ const World = (() => {
   function planProp(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
     if (tryLounge(now)) return true;   // couch + TV nearby → sit ON the couch and watch (the v7 lounge)
+    const zone = zoneFor(agent);   // P1: only use leisure props the body can reach WITHOUT leaving its zone
     const cands = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') { cands.push({ couch: p }); continue; }   // sit ON it (handled below)
+      if (use.kind === 'couch') { if (tileInZone(zone, p.x, p.y)) cands.push({ couch: p }); continue; }   // sit ON it — the couch tile must be in-zone
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
-      if (a) cands.push({ id: p.id, a });
+      if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
     if (!cands.length) return false;
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
@@ -930,13 +968,17 @@ const World = (() => {
     const foot = new Map();
     for (const p of props) foot.set(p.id, { x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 });
     if (seenProps === null) { seenProps = propIds; seenBelts = beltKeys; propFoot = foot; return; }   // first look: learn the scene, react to nothing
+    const zone = zoneFor(agent);   // P1: only queue novelties INSIDE the hero's zone (it won't walk out to inspect)
     for (const p of props) {
       if (seenProps.has(p.id)) continue;
       if (!mayTouchProp(agent && agent.id, p)) continue;   // another agent's (or unclaimed) workstation isn't "novel" to this one — don't walk over
-      pushNovelty(Math.floor(p.x + (p.w || 1) / 2), Math.floor(p.y + (p.h || 1) / 2), 'prop', p.id);
+      const tx = Math.floor(p.x + (p.w || 1) / 2), ty = Math.floor(p.y + (p.h || 1) / 2);
+      if (!tileInZone(zone, tx, ty)) continue;             // out-of-zone placement — noticed, but not walked to
+      pushNovelty(tx, ty, 'prop', p.id);
     }
     for (const b of belts) {                       // a long run lands as one tile-flag, not a spam of them
       if (seenBelts.has(b.x + ',' + b.y)) continue;
+      if (!tileInZone(zone, b.x, b.y)) continue;            // a new belt outside the zone isn't an inspect target
       pushNovelty(b.x, b.y, 'belt', null); break;
     }
     // REMOVALS -> grief: a prop the Commander deletes, if it stood on a spot this agent loved, is mourned
@@ -1008,13 +1050,14 @@ const World = (() => {
 
   // go inspect the freshest queued placement (pops the queue; tries each until one is reachable)
   function planInspect(now) {
+    const zone = zoneFor(agent);   // P1: never walk OUT of the zone to inspect (defensive even though the queue is zone-filtered at enqueue)
     while (novelty.length) {
       const n = novelty.pop();
       let foot = { x: n.tx, y: n.ty, w: 1, h: 1 };
       if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(agent.id, p)) continue; foot = p; }
       const extra = n.kind === 'belt' ? beltUnion() : blocked;   // for a belt, stand beside it — not on the machinery
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra });
-      if (a && setPathTo({ x: a.tx, y: a.ty })) {
+      if (a && tileInZone(zone, a.tx, a.ty) && setPathTo({ x: a.tx, y: a.ty })) {
         agent.goal = 'inspect'; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = true;
         agent.studyKey = n.kind === 'belt' ? ('belt:' + n.tx + ',' + n.ty) : n.pid;
         if (!agent.target) arrive(now);
@@ -1026,17 +1069,20 @@ const World = (() => {
 
   // ambient curiosity (no fresh placement): study a machine or watch a belt go by
   function planPOI(now) {
+    const zone = zoneFor(agent);   // P1: study/watch only kit reachable inside the zone
     const cands = [];
     const belts = (geo && geo.belts) || [];
-    if (belts.length) { const b = belts[U.irnd(0, belts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
+    // pick a belt tile that is itself in-zone (the body stands BESIDE it, but an in-zone belt keeps the approach in-zone)
+    const inBelts = belts.filter(b => tileInZone(zone, b.x, b.y));
+    if (inBelts.length) { const b = inBelts[U.irnd(0, inBelts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
-    // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation)
-    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(agent.id, p); });
+    // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation); in-zone only
+    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(agent.id, p) && tileInZone(zone, p.x, p.y); });
     if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', key: p.id, foot: p, extra: blocked }); }
     if (cands.length === 2 && U.chance(0.5)) cands.reverse();
     for (const c of cands) {
       const a = PropAnchor.deriveAnchor(c.foot, geo, { approach: 'auto', extra: c.extra });
-      if (a && setPathTo({ x: a.tx, y: a.ty })) {
+      if (a && tileInZone(zone, a.tx, a.ty) && setPathTo({ x: a.tx, y: a.ty })) {
         agent.goal = c.kind; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = false; agent.studyKey = c.key;
         if (!agent.target) arrive(now);
         return true;
@@ -1118,15 +1164,17 @@ const World = (() => {
   // restless → short back-and-forth hops near the current tile (paces in place instead of strolling far off)
   function pace(now) {
     const cur = tileOf(agent.px, agent.py), dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const zone = zoneFor(agent);   // P1: pace in place, but never a hop OUT of the zone
     for (let i = 0; i < 5; i++) {
       const d = dirs[U.irnd(0, 3)], step = U.irnd(1, 2), tx = cur.x + d[0] * step, ty = cur.y + d[1] * step;
-      if (geo.walkable(tx, ty, blocked) && setPathTo({ x: tx, y: ty })) { agent.goal = null; curiositySay(SELF_STIM, 0.4, now); return true; }
+      if (tileInZone(zone, tx, ty) && geo.walkable(tx, ty, blocked) && setPathTo({ x: tx, y: ty })) { agent.goal = null; curiositySay(SELF_STIM, 0.4, now); return true; }
     }
     return false;
   }
   // deep downtime → walk to the station edge and contemplate the void (faces outward, long quiet dwell)
   function planGazeOut(now) {
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
+    const zone = zoneFor(agent);   // P1: gaze at the OWN-ZONE edge — clamped, not the whole-station edge (a solo whole-station zone keeps the true edge)
     const cx = geo.COLS / 2, cy = geo.ROWS / 2, cands = [];
     for (const r of geo.allRects) {
       cands.push({ tx: r.x1, ty: (r.y1 + r.y2) >> 1, face: 'west' }); cands.push({ tx: r.x2, ty: (r.y1 + r.y2) >> 1, face: 'east' });
@@ -1134,6 +1182,7 @@ const World = (() => {
     }
     cands.sort((a, b) => ((b.tx - cx) ** 2 + (b.ty - cy) ** 2) - ((a.tx - cx) ** 2 + (a.ty - cy) ** 2));   // furthest-out first
     for (const c of cands) {
+      if (!tileInZone(zone, c.tx, c.ty)) continue;   // only the edges of the agent's own zone
       if (geo.walkable(c.tx, c.ty, blocked) && setPathTo({ x: c.tx, y: c.ty })) { agent.goal = 'gaze'; agent.useFace = c.face; agent.usingProp = null; agent.studyKey = null; if (!agent.target) arrive(now); return true; }
     }
     return false;
@@ -1180,10 +1229,12 @@ const World = (() => {
   function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), U.pick(['north', 'east', 'west'])); curiositySay(Q_PONDER, 0.4, now); return true; }
   function quirkFaceWall(now) {   // walks to a wall and just... faces it. no explanation. (uses arrive's quirk dwell)
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
+    const zone = zoneFor(agent);   // P1: face a wall WITHIN the zone, not a wall across the station
     const DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
     for (let tries = 0; tries < 30; tries++) {
       const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
       const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
+      if (!tileInZone(zone, tx, ty)) continue;
       if (!geo.walkable(tx, ty, blocked)) continue;
       const walls = DIRS.filter(([d, dx, dy]) => !geo.walkable(tx + dx, ty + dy, blocked));
       if (!walls.length) continue;
@@ -1196,9 +1247,11 @@ const World = (() => {
   }
   function quirkVigil(now) {   // walks to a room's center, faces ONE cardinal, holds dead still — the held emptiness (silent)
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
+    const zone = zoneFor(agent);   // P1: the vigil stands at a rect-center INSIDE the zone (a solo whole-station zone admits every center)
     for (let t = 0; t < 24; t++) {
       const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
       const tx = (r.x1 + r.x2) >> 1, ty = (r.y1 + r.y2) >> 1;
+      if (!tileInZone(zone, tx, ty)) continue;
       if (!geo.walkable(tx, ty, blocked)) continue;
       if (!setPathTo({ x: tx, y: ty })) continue;
       agent.goal = 'quirk'; agent.quirkKind = 'vigil'; agent.useFace = U.pick(['north', 'south', 'east', 'west']); agent.usingProp = null; agent.studyKey = null;
@@ -1268,16 +1321,17 @@ const World = (() => {
   /* ---------- caretaker rounds: a deliberate 2-3 stop lap of the station, an ownership beat at each ---------- */
   function maybeRounds(now) {
     if (now < (agent.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
+    const zone = zoneFor(agent);   // P1: a caretaker lap stays inside the zone (no straddling into the next room)
     const cur = tileOf(agent.px, agent.py), stops = [];
-    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(agent.id, p) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another agent's (or unclaimed) workstation
-    const belts = (geo.belts || []); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
+    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(agent.id, p) && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another agent's (or unclaimed) workstation, and never out of zone
+    const belts = (geo.belts || []).filter(b => tileInZone(zone, b.x, b.y)); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
     if (stops.length < 2) return false;
     for (let i = stops.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = stops[i]; stops[i] = stops[j]; stops[j] = t; }   // shuffle
     const q = [];
     for (const st of stops.slice(0, U.irnd(2, 3))) {
       const foot = st.belt ? { x: st.belt.x, y: st.belt.y, w: 1, h: 1 } : st.prop;
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra: st.belt ? beltUnion() : blocked });
-      if (a) q.push({ tx: a.tx, ty: a.ty, face: a.face });
+      if (a && tileInZone(zone, a.tx, a.ty)) q.push({ tx: a.tx, ty: a.ty, face: a.face });   // the stand-tile of each stop stays in-zone too
     }
     if (q.length < 2) return false;
     agent.roundsQueue = q; agent.roundsCd = now + U.irnd(60000, 130000);
@@ -1311,6 +1365,7 @@ const World = (() => {
   function maybeRevisit(now) {
     if (now < (agent.revisitCd || 0)) return false;
     const f = favTile(); if (!f) return false;
+    if (!tileInZone(zoneFor(agent), f.x, f.y)) return false;   // P1: a remembered haunt outside the new zone isn't revisited (a zone change must not strand revisit — it just no-ops this beat)
     const cur = tileOf(agent.px, agent.py);
     if (cur.x === f.x && cur.y === f.y) { agent.revisitCd = now + U.irnd(40000, 80000); return false; }
     if (!geo.walkable(f.x, f.y, blocked) || !setPathTo({ x: f.x, y: f.y })) return false;
@@ -1327,6 +1382,10 @@ const World = (() => {
     if (geo.walkable(sx, sy, blocked)) dest = { x: sx, y: sy };
     else { const a = PropAnchor.deriveAnchor({ x: m.tx, y: m.ty, w: 1, h: 1 }, geo, { approach: 'auto', extra: blocked }); if (a && geo.walkable(a.tx, a.ty, blocked)) dest = { x: a.tx, y: a.ty }; }
     if (!dest) { pendingMourn = null; return false; }
+    // P1 (A1): grief never walks OUT of the zone. The mourned spot is normally in-zone already (fond
+    // accrues where the body dwells, which is in-zone), but a cross-zone removal is released unmourned
+    // rather than dragging the body across the floor — containment outranks the singleton grief beat.
+    if (!tileInZone(zoneFor(agent), dest.x, dest.y)) { agent.fond.delete(m.spotKey); pendingMourn = null; return false; }
     const cur = tileOf(agent.px, agent.py), here = cur.x === dest.x && cur.y === dest.y;
     if (!here && !setPathTo({ x: dest.x, y: dest.y })) { pendingMourn = null; return false; }
     agent.goal = 'mourn'; agent.usingProp = null; agent.studyKey = null;
