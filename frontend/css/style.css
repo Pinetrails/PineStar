@@ -404,8 +404,8 @@ body.no-scan .crt-scan { display: none; }
    Mounted under the lowest window (z 480 < the 501+ that zTop() hands out). */
 .term-scrim {
   position: fixed; inset: 0; pointer-events: none; z-index: 480;
-  background: radial-gradient(ellipse 72% 66% at 50% 47%, rgba(0,0,0,0.30) 0%, rgba(0,0,0,0.62) 100%);
-  -webkit-backdrop-filter: saturate(0.72); backdrop-filter: saturate(0.72);
+  background: radial-gradient(ellipse 72% 66% at 50% 47%, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.84) 100%);
+  -webkit-backdrop-filter: saturate(0.5) blur(1.5px); backdrop-filter: saturate(0.5) blur(1.5px);
   animation: scrim-in 0.22s ease-out;
 }
 @keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
