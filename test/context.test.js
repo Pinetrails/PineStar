@@ -1,7 +1,7 @@
 /* node test/context.test.js — pure context-transform tests (zero IO). */
 'use strict';
 const A = require('./_assert.js');
-const { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock } = require('../sidecar/context.js');
+const { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock, compactionSummaryPrompt, COMPACTION_SECTIONS } = require('../sidecar/context.js');
 
 const ctx = makeContext({ contextLimit: 1000, compactAt: 0.65, keepTail: 2 });
 const m = (role, content) => ({ role, content });
@@ -276,5 +276,15 @@ A.ok(block.indexOf('preserve') >= 0, 'compaction block is labeled so the summari
 A.eq(compactionMemoryBlock([], 'anything', { now: 0 }), '', 'no records -> empty block (caller prepends nothing, byte-identical compaction)');
 A.ok(compactionMemoryBlock(memRecs, 'zzz totally unrelated', { now: 1000 }).length > 0, 'with no query overlap it still preserves top memory (recency floor) rather than dropping everything');
 A.eq(JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), 'deterministic for the same inputs + now');
+
+// ---- (H5.1) the compaction summary prompt is a structured section template, not free prose ----
+{
+  const p = compactionSummaryPrompt({ prevSummary: false });
+  for (const s of COMPACTION_SECTIONS) A.ok(p.indexOf('## ' + s) >= 0, 'fresh summary template includes section: ' + s);
+  A.ok(/REPLACES the raw turns/.test(p), 'fresh template frames the summary as a replacement');
+  const m = compactionSummaryPrompt({ prevSummary: true });
+  A.ok(/MERGE/.test(m) && /PREVIOUS SUMMARY/.test(m), 'with a prior summary the template instructs a MERGE-update (H5.2)');
+  for (const s of COMPACTION_SECTIONS) A.ok(m.indexOf('## ' + s) >= 0, 'merge template keeps section: ' + s);
+}
 
 A.report('context.test');

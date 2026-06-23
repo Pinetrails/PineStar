@@ -44,7 +44,7 @@ const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
 const { makeEmitter } = require('../shared/emitter.js');
-const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock } = require('./context.js');
+const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
 const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -1626,7 +1626,7 @@ async function runOnce(o) {
     } catch (_) {}
     const userMsg = (memBlock ? memBlock + '\n\n' : '') + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
     const req = { model, stream: true, signal, messages: [
-      { role: 'system', content: 'You compress an earlier slice of an agent conversation into a dense factual summary. Preserve decisions made, facts and data learned (with sources), files written, tool results, and any still-open tasks. Drop pleasantries. Output ONLY the summary prose.' },
+      { role: 'system', content: compactionSummaryPrompt({ prevSummary: false }) },   // H5.1: structured section template (Hermes parity)
       { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
