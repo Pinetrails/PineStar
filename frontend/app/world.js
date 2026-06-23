@@ -51,6 +51,11 @@ const World = (() => {
      and light up). Empty crew === today's exact single-agent world; every crew code path is gated so the
      hero behaves byte-for-byte as before. The crew is derived from the RoutingPlan's bays (syncCrewFromPlan). */
   let agent = null, activity = 'idle';
+  // B1 (crew-sentience): module-level "current actor" pointer for the reusable sentience engine.
+  // DEFAULTS to the hero `agent`; the hero tick runs with self===agent so its path is byte-identical.
+  // B2 will temporarily repoint `self` to each crew body, then UNCONDITIONALLY restore self=agent.
+  // Engine-core fns read/write the current body via `self.`; hero-identity refs stay on `agent`.
+  let self = agent;
   let crew = [];
   // Stage 2 (orchestration): a lead→worker handoff is WATCHABLE — boxes that fly from the lead body to a worker
   // body when the lead delegates. delegateLead/delegateCall track the open team.dispatch window (tool_call→result)
@@ -365,6 +370,7 @@ const World = (() => {
       stilling: false,   // STILLNESS: true during a real CONTENT=STILL quiet hold (suppresses the ambient swivel + cargo body-track)
       wakePhase: 0   // FIRST LIGHT: the wake-ritual sub-beat sequencer (driven by studyUntil; reset on exit + on a REFIT drop)
     };
+    self = agent;   // B1: track the hero from birth so engine helpers called BEFORE the first tick (awakening / mouse handlers via setGlance/releaseSeat) act on the hero — self is restored to agent every tick anyway
     if (geo) placeAgent();
   }
 
@@ -594,36 +600,36 @@ const World = (() => {
 
   /* ---------- pathing + behaviour ---------- */
   function setPathTo(dest) {
-    agent.pathPts = null; agent.target = null; agent.glance = null;
+    self.pathPts = null; self.target = null; self.glance = null;
     if (!dest || !geo) return false;
-    const cur = tileOf(agent.px, agent.py);
+    const cur = tileOf(self.px, self.py);
     const p = geo.path(cur.x, cur.y, dest.x, dest.y, blocked);
     if (!p) return false;
-    agent.pathPts = p; agent.pathIdx = 0; agent.state = 'walk';
+    self.pathPts = p; self.pathIdx = 0; self.state = 'walk';
     nextWaypoint();
     return true;
   }
   function nextWaypoint() {
-    if (!agent.pathPts || agent.pathIdx >= agent.pathPts.length) { agent.target = null; return; }
-    const wp = agent.pathPts[agent.pathIdx++];
-    agent.target = footOf(wp.x, wp.y);
+    if (!self.pathPts || self.pathIdx >= self.pathPts.length) { self.target = null; return; }
+    const wp = self.pathPts[self.pathIdx++];
+    self.target = footOf(wp.x, wp.y);
     maybeStrollBeat();   // CONSIDERED MOVEMENT: a casual stroll occasionally hesitates / doubles back — not a sprite on rails
   }
   const OPP = { north: 'south', south: 'north', east: 'west', west: 'east' };
   // only while casually wandering (never a summon/goal walk): a brief considered pause, or the rare eerie double-take
   function maybeStrollBeat() {
-    if (!agent || agent.goal != null || activity !== 'idle' || agent.unplaced) return;
+    if (!self || self.goal != null || activity !== 'idle' || self.unplaced) return;
     const now = fnow;
-    if (now < (agent.pauseCd || 0)) return;
+    if (now < (self.pauseCd || 0)) return;
     // THE DOUBLE-TAKE (rare): stop and turn to look back the way it came, as if something caught its attention
-    if (now >= (agent.lookBackCd || 0) && U.chance(0.045 * (agent.pers ? agent.pers.curious : 1))) {
-      agent.pauseUntil = now + U.irnd(900, 1700); agent.pauseLook = 'back';
-      agent.pauseCd = now + U.irnd(9000, 16000); agent.lookBackCd = now + U.irnd(50000, 95000);
+    if (now >= (self.lookBackCd || 0) && U.chance(0.045 * (self.pers ? self.pers.curious : 1))) {
+      self.pauseUntil = now + U.irnd(900, 1700); self.pauseLook = 'back';
+      self.pauseCd = now + U.irnd(9000, 16000); self.lookBackCd = now + U.irnd(50000, 95000);
       curiositySay(['hm?', '...', 'did something move', 'thought i saw something'], 0.22, now);
       return;
     }
     // a considered pause mid-stroll: a beat of weight, then on it goes (rarer now — a stroll shouldn't be peppered with stutters)
-    if (U.chance(0.07)) { agent.pauseUntil = now + U.irnd(320, 720); agent.pauseLook = null; agent.pauseCd = now + U.irnd(10000, 18000); }
+    if (U.chance(0.07)) { self.pauseUntil = now + U.irnd(320, 720); self.pauseLook = null; self.pauseCd = now + U.irnd(10000, 18000); }
   }
   // active cargo passing right in front of it while it walks → wait a beat and let it go by (belt-yield)
   function shouldYieldToCargo() {
@@ -636,82 +642,83 @@ const World = (() => {
   }
   // a quick 2-beat settle-scan (left, then right) before committing the gaze to finalDir — reads as deliberate "taking it in"
   function scanThen(now, finalDir) {
-    const guard = () => agent && (agent.goal === 'inspect' || agent.goal === 'watch');
+    const body = self;   // B1: capture the scheduling body — the setTimeout closures must animate THIS body, not whatever `self` points to at fire time (self is restored to agent each tick)
+    const guard = () => body && (body.goal === 'inspect' || body.goal === 'watch');
     const sides = U.chance(0.5) ? ['west', 'east'] : ['east', 'west'];
-    setGlance(sides[0], 380, now);
-    setTimeout(() => { if (guard()) setGlance(sides[1], 380, performance.now()); }, 420);
-    setTimeout(() => { if (guard()) { agent.glance = null; agent.dir = finalDir; } }, 860);
+    if (body) body.glance = { dir: sides[0], until: now + 380 };
+    setTimeout(() => { if (guard()) body.glance = { dir: sides[1], until: performance.now() + 380 }; }, 420);
+    setTimeout(() => { if (guard()) { body.glance = null; body.dir = finalDir; } }, 860);
   }
   function arrive(now) {
-    agent.pathPts = null; agent.target = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.stilling = false;
-    if (agent.goal === 'firstwake') { agent.state = 'idle'; return; }   // the wake ritual self-drives via stepFirstWake; the rare 'find feet' arrival is a no-op
+    self.pathPts = null; self.target = null; self.pauseUntil = 0; self.pauseLook = null; self.stilling = false;
+    if (self.goal === 'firstwake') { self.state = 'idle'; return; }   // the wake ritual self-drives via stepFirstWake; the rare 'find feet' arrival is a no-op
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
-    if (FOND[agent.goal]) noteFond(now, FOND[agent.goal]);   // dwelling somewhere by choice deepens attachment to that tile
-    if (agent.goal === 'work') { agent.sitting = true; agent.working = false; agent.dir = deskFace || 'north'; agent.state = 'idle'; agent.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
-    else if (agent.goal === 'use') { agent.sitting = agent.useSit; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle'; agent.useUntil = now + U.irnd(10000, 22000); takeSeat(); if (agent.useSit && agent.needs.rest < 35) curiositySay(SELF_REST, 0.4, now); }
-    else if (agent.goal === 'lounge') {
+    if (FOND[self.goal]) noteFond(now, FOND[self.goal]);   // dwelling somewhere by choice deepens attachment to that tile
+    if (self.goal === 'work') { self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
+    else if (self.goal === 'use') { self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle'; self.useUntil = now + U.irnd(10000, 22000); takeSeat(); if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now); }
+    else if (self.goal === 'lounge') {
       // settled ON the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
-      agent.sitting = true; agent.working = false; agent.dir = agent.useFace; agent.state = 'idle';
-      agent.useUntil = now + U.irnd(18000, 30000); agent.glanceCd = 0; agent.nextFidget = now + U.irnd(1500, 3500);
-      takeSeat(); curiositySay(agent.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
+      self.sitting = true; self.working = false; self.dir = self.useFace; self.state = 'idle';
+      self.useUntil = now + U.irnd(18000, 30000); self.glanceCd = 0; self.nextFidget = now + U.irnd(1500, 3500);
+      takeSeat(); curiositySay(self.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
-    else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare') {
+    else if (self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'tend' || self.goal === 'gaze' || self.goal === 'quirk' || self.goal === 'stare') {
       // reached the thing — stand, face it, observe for a spell. Familiar things hold the gaze less (habituation).
-      agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
-      agent.glanceCd = 0; agent.nextFidget = now + U.irnd(700, 1600);
-      if (agent.goal === 'quirk' || agent.goal === 'stare') { const base = agent.quirkKind === 'vigil' ? U.irnd(12000, 26000) : U.irnd(4000, 9000); agent.studyUntil = now + offbeat(now, base); return; }   // a walked quirk (face-a-wall) or the VIGIL: hold the pose, silent — vigil holds far longer
-      const fam = agent.studyKey ? (seenCount.get(agent.studyKey) || 0) : 0, famK = 1 / (1 + fam * 0.8);
-      if (agent.studyKey) seenCount.set(agent.studyKey, fam + 1);
-      if (agent.goal === 'tend') { agent.studyUntil = now + offbeat(now, U.irnd(3500, 8000)); curiositySay(agent.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
-      else if (agent.goal === 'gaze') { agent.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
-      else if (agent.goal === 'watch') { agent.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, agent.useFace); }
-      else { agent.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(agent.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (agent.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, agent.useFace); }
+      self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
+      self.glanceCd = 0; self.nextFidget = now + U.irnd(700, 1600);
+      if (self.goal === 'quirk' || self.goal === 'stare') { const base = self.quirkKind === 'vigil' ? U.irnd(12000, 26000) : U.irnd(4000, 9000); self.studyUntil = now + offbeat(now, base); return; }   // a walked quirk (face-a-wall) or the VIGIL: hold the pose, silent — vigil holds far longer
+      const fam = self.studyKey ? (seenCount.get(self.studyKey) || 0) : 0, famK = 1 / (1 + fam * 0.8);
+      if (self.studyKey) seenCount.set(self.studyKey, fam + 1);
+      if (self.goal === 'tend') { self.studyUntil = now + offbeat(now, U.irnd(3500, 8000)); curiositySay(self.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
+      else if (self.goal === 'gaze') { self.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
+      else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, self.useFace); }
+      else { self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, self.useFace); }
     }
-    else if (agent.goal === 'rounds') {
+    else if (self.goal === 'rounds') {
       // a stop on the caretaker lap — face it, a brief ownership beat, then tick advances to the next stop
-      agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
-      agent.glanceCd = 0; agent.studyUntil = now + U.irnd(1500, 3000); curiositySay(SELF_ROUNDS, 0.4, now);
+      self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
+      self.glanceCd = 0; self.studyUntil = now + U.irnd(1500, 3000); curiositySay(SELF_ROUNDS, 0.4, now);
     }
-    else if (agent.goal === 'mourn') {
+    else if (self.goal === 'mourn') {
       // stands where its thing used to be — a long, near-silent beat (the off-beat duration is the unsettling part)
-      agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
-      agent.glanceCd = now + 1500; agent.studyUntil = now + U.irnd(11000, 22000); curiositySay(MOURN_LINE, 0.4, now);
+      self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
+      self.glanceCd = now + 1500; self.studyUntil = now + U.irnd(11000, 22000); curiositySay(MOURN_LINE, 0.4, now);
     }
-    else if (agent.goal === 'revisit') {
+    else if (self.goal === 'revisit') {
       // back at a favorite haunt, just being there a while
-      agent.sitting = false; agent.working = false; agent.dir = agent.useFace || 'south'; agent.state = 'idle';
-      agent.glanceCd = 0; agent.studyUntil = now + U.irnd(5000, 11000); curiositySay(REVISIT_LINE, 0.35, now);
+      self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
+      self.glanceCd = 0; self.studyUntil = now + U.irnd(5000, 11000); curiositySay(REVISIT_LINE, 0.35, now);
     }
-    else if (agent.goal === 'place') {
+    else if (self.goal === 'place') {
       // it acts on the station: drops a piece of its OWN decor on the empty tile, or removes one it placed before
-      agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.dir = agent.useFace || 'south';
-      if (agent.placeTarget && station.addProp) {
-        const tg = agent.placeTarget, res = station.addProp({ t: tg.t, x: tg.x, y: tg.y, w: 1, h: 1, block: false });
+      self.sitting = false; self.working = false; self.state = 'idle'; self.dir = self.useFace || 'south';
+      if (self.placeTarget && station.addProp) {
+        const tg = self.placeTarget, res = station.addProp({ t: tg.t, x: tg.x, y: tg.y, w: 1, h: 1, block: false });
         if (res && res.ok) { agentDecor.push(res.id); ownPlaced.add(res.id); if (seenProps) seenProps.add(res.id); curiositySay(SELF_PLACE, 0.6, now); }   // suppress self-novelty so it doesn't go inspect its own work
-      } else if (agent.removeId && station.removeProp) {
-        station.removeProp(agent.removeId); const i = agentDecor.indexOf(agent.removeId); if (i >= 0) agentDecor.splice(i, 1); curiositySay(SELF_PLACE, 0.4, now);
+      } else if (self.removeId && station.removeProp) {
+        station.removeProp(self.removeId); const i = agentDecor.indexOf(self.removeId); if (i >= 0) agentDecor.splice(i, 1); curiositySay(SELF_PLACE, 0.4, now);
       }
-      agent.placeTarget = null; agent.removeId = null; agent.goal = null; agent.idleUntil = now + U.irnd(900, 2000);
+      self.placeTarget = null; self.removeId = null; self.goal = null; self.idleUntil = now + U.irnd(900, 2000);
     }
-    else { agent.state = 'idle'; agent.idleUntil = now + U.irnd(1600, 3600); }
+    else { self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600); }
   }
   function wander(now) {
     const rects = geo.allRects;
-    if (!rects.length) { agent.idleUntil = now + 800; return; }
-    const cur = tileOf(agent.px, agent.py);
+    if (!rects.length) { self.idleUntil = now + 800; return; }
+    const cur = tileOf(self.px, self.py);
     const avoid = beltUnion();   // desk footprint + belt tiles: an idle stroll should step AROUND the machinery
-    const zone = zoneFor(agent);   // P1: a stroll stays inside the agent's own zone
+    const zone = zoneFor(self);   // P1: a stroll stays inside the body's own zone
     for (let i = 0; i < 24; i++) {
       const r = rects[U.irnd(0, rects.length - 1)];
       const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
-      if (!tileInZone(zone, x, y)) continue;                 // off-zone target — never stroll out of the agent's area
+      if (!tileInZone(zone, x, y)) continue;                 // off-zone target — never stroll out of the body's area
       if (!geo.walkable(x, y, blocked)) continue;
       if (avoid.has(x + ',' + y)) continue;                  // don't stroll to a belt tile
       let p = geo.path(cur.x, cur.y, x, y, avoid);           // prefer a belt-free route
       if (!p) p = geo.path(cur.x, cur.y, x, y, blocked);     // fall back: a belt bridges the only way across
-      if (p && p.length) { agent.goal = null; agent.pathPts = p; agent.pathIdx = 0; agent.state = 'walk'; nextWaypoint(); return; }
+      if (p && p.length) { self.goal = null; self.pathPts = p; self.pathIdx = 0; self.state = 'walk'; nextWaypoint(); return; }
     }
-    agent.idleUntil = now + 800;
+    self.idleUntil = now + 800;
   }
 
   /* desk footprint ∪ all belt tiles — the soft no-tread set for casual wandering */
@@ -899,13 +906,13 @@ const World = (() => {
 
   /* free this agent's claimed seat (idempotent) and drop the on-couch render offset */
   function releaseSeat() {
-    if (!agent) return;
-    if (agent.seatKey) occupiedSeats.delete(agent.seatKey);
-    agent.seatKey = null; agent.seated = false; agent.pendSeat = null;
+    if (!self) return;
+    if (self.seatKey) occupiedSeats.delete(self.seatKey);
+    self.seatKey = null; self.seated = false; self.pendSeat = null;
   }
   /* on arrival, snap the render position onto the cushion claimed at plan time (logical pos stays put) */
   function takeSeat() {
-    if (agent.seatKey && agent.pendSeat) { agent.seated = true; agent.seatPx = agent.pendSeat.px; agent.seatPy = agent.pendSeat.py; agent.pendSeat = null; }
+    if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
   }
 
   /* v7 sit-ON-the-couch: a couch is a blocking prop (you can't path onto it), so the agent walks to
@@ -932,11 +939,11 @@ const World = (() => {
         if (!tileInZone(zone, ax, ay)) continue;              // P1: the approach tile the body WALKS to must be in-zone too
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
-        occupiedSeats.add(couch.id + ':' + slot); agent.seatKey = couch.id + ':' + slot;
-        agent.pendSeat = { px: (sx + 0.5) * T, py: (couch.y + h) * T - 2 };   // render foot at the cushion front
-        agent.goal = tvId ? 'lounge' : 'use'; agent.usingProp = couch.id; agent.watchProp = tvId || null;
-        agent.useSit = true; agent.useFace = faceDir || 'south';
-        if (!agent.target) arrive(now);                       // already adjacent → sit immediately
+        occupiedSeats.add(couch.id + ':' + slot); self.seatKey = couch.id + ':' + slot;
+        self.pendSeat = { px: (sx + 0.5) * T, py: (couch.y + h) * T - 2 };   // render foot at the cushion front
+        self.goal = tvId ? 'lounge' : 'use'; self.usingProp = couch.id; self.watchProp = tvId || null;
+        self.useSit = true; self.useFace = faceDir || 'south';
+        if (!self.target) arrive(now);                       // already adjacent → sit immediately
         return true;
       }
     }
@@ -946,7 +953,7 @@ const World = (() => {
   /* couch + a TV nearby → sit on the couch and watch it. The pairing is derived live (gen has no
      authored couch/TV pairs): for each couch, the nearest TV within range, faced from the couch. */
   function tryLounge(now) {
-    const zone = zoneFor(agent);   // P1: only lounge on a couch INSIDE the agent's zone (the body sits there)
+    const zone = zoneFor(self);   // P1: only lounge on a couch INSIDE the body's zone (the body sits there)
     const couches = [], tvs = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
@@ -972,7 +979,7 @@ const World = (() => {
   function planProp(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
     if (tryLounge(now)) return true;   // couch + TV nearby → sit ON the couch and watch (the v7 lounge)
-    const zone = zoneFor(agent);   // P1: only use leisure props the body can reach WITHOUT leaving its zone
+    const zone = zoneFor(self);   // P1: only use leisure props the body can reach WITHOUT leaving its zone
     const cands = [];
     for (const p of geo.props) {
       const use = propUse(p); if (!use) continue;
@@ -986,8 +993,8 @@ const World = (() => {
       const c = cands[(start + k) % cands.length];
       if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) return true; continue; }   // lone couch → sit on it facing UP (back to the viewer)
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
-        agent.goal = 'use'; agent.usingProp = c.id; agent.useFace = c.a.face; agent.useSit = c.a.sit;
-        if (!agent.target) arrive(now);   // already standing on the approach tile
+        self.goal = 'use'; self.usingProp = c.id; self.useFace = c.a.face; self.useSit = c.a.sit;
+        if (!self.target) arrive(now);   // already standing on the approach tile
         return true;
       }
     }
@@ -1067,35 +1074,35 @@ const World = (() => {
       if (b.sink > 0) continue;
       const v = DV[b.dir] || [0, 0];
       const bx = (b.x + 0.5 + (b.prog - 0.5) * v[0]) * T, by = (b.y + 0.5 + (b.prog - 0.5) * v[1]) * T;
-      const d = Math.hypot(bx - agent.px, by - agent.py);
+      const d = Math.hypot(bx - self.px, by - self.py);
       if (d < bd) { bd = d; best = { x: bx, y: by, d }; }
     }
     return best;
   }
 
-  function setGlance(dir, ms, now) { if (agent) agent.glance = { dir, until: now + ms }; }
+  function setGlance(dir, ms, now) { if (self) self.glance = { dir, until: now + ms }; }
 
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
   // Petz "it knows where you are" (continuous tracking, NOT the rare dramatic look-up). Falls back to a
   // random cardinal when the cursor's gone quiet, so it never reads as locked-on.
   function ambientGazeDir(now) {
-    if ((now - lastCursor.t) < 8000 && U.chance(0.32)) return dirToward(agent.px, agent.py, lastCursor.wx, lastCursor.wy);
+    if ((now - lastCursor.t) < 8000 && U.chance(0.32)) return dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
     return U.pick(['east', 'west', 'south', 'north']);
   }
 
   // go inspect the freshest queued placement (pops the queue; tries each until one is reachable)
   function planInspect(now) {
-    const zone = zoneFor(agent);   // P1: never walk OUT of the zone to inspect (defensive even though the queue is zone-filtered at enqueue)
+    const zone = zoneFor(self);   // P1: never walk OUT of the zone to inspect (defensive even though the queue is zone-filtered at enqueue)
     while (novelty.length) {
       const n = novelty.pop();
       let foot = { x: n.tx, y: n.ty, w: 1, h: 1 };
-      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(agent.id, p)) continue; foot = p; }
+      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(self.id, p)) continue; foot = p; }
       const extra = n.kind === 'belt' ? beltUnion() : blocked;   // for a belt, stand beside it — not on the machinery
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra });
       if (a && tileInZone(zone, a.tx, a.ty) && setPathTo({ x: a.tx, y: a.ty })) {
-        agent.goal = 'inspect'; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = true;
-        agent.studyKey = n.kind === 'belt' ? ('belt:' + n.tx + ',' + n.ty) : n.pid;
-        if (!agent.target) arrive(now);
+        self.goal = 'inspect'; self.useFace = a.face; self.usingProp = null; self.inspectNovel = true;
+        self.studyKey = n.kind === 'belt' ? ('belt:' + n.tx + ',' + n.ty) : n.pid;
+        if (!self.target) arrive(now);
         return true;
       }
     }
@@ -1104,7 +1111,7 @@ const World = (() => {
 
   // ambient curiosity (no fresh placement): study a machine or watch a belt go by
   function planPOI(now) {
-    const zone = zoneFor(agent);   // P1: study/watch only kit reachable inside the zone
+    const zone = zoneFor(self);   // P1: study/watch only kit reachable inside the zone
     const cands = [];
     const belts = (geo && geo.belts) || [];
     // pick a belt tile that is itself in-zone (the body stands BESIDE it, but an in-zone belt keeps the approach in-zone)
@@ -1112,14 +1119,14 @@ const World = (() => {
     if (inBelts.length) { const b = inBelts[U.irnd(0, inBelts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
     // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation); in-zone only
-    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(agent.id, p) && tileInZone(zone, p.x, p.y); });
+    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y); });
     if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', key: p.id, foot: p, extra: blocked }); }
     if (cands.length === 2 && U.chance(0.5)) cands.reverse();
     for (const c of cands) {
       const a = PropAnchor.deriveAnchor(c.foot, geo, { approach: 'auto', extra: c.extra });
       if (a && tileInZone(zone, a.tx, a.ty) && setPathTo({ x: a.tx, y: a.ty })) {
-        agent.goal = c.kind; agent.useFace = a.face; agent.usingProp = null; agent.inspectNovel = false; agent.studyKey = c.key;
-        if (!agent.target) arrive(now);
+        self.goal = c.kind; self.useFace = a.face; self.usingProp = null; self.inspectNovel = false; self.studyKey = c.key;
+        if (!self.target) arrive(now);
         return true;
       }
     }
@@ -1129,16 +1136,16 @@ const World = (() => {
   // pan the gaze around without moving — "taking the place in"
   function lookAround(now) {
     const dir = ambientGazeDir(now);
-    setGlance(dir, U.irnd(600, 1100), now); agent.dir = dir;
-    agent.idleUntil = now + U.irnd(2200, 4200);
+    setGlance(dir, U.irnd(600, 1100), now); self.dir = dir;
+    self.idleUntil = now + U.irnd(2200, 4200);
     if (U.chance(0.15)) curiositySay(CURIO_LOOK, 1, now);
   }
   // CONTENT = STILL: the calm default — just be here, holding the facing, genuinely motionless for a long beat.
   // maybeGlance's `stilling` early-out suppresses the ambient swivel AND the cargo body-track, so it's true stillness.
   function standStill(now) {
-    agent.goal = null; agent.stilling = true; agent.usingProp = null; agent.state = 'idle';
-    agent.glance = null; agent.trackUntil = 0;   // drop any in-flight head-turn / box-track so nothing bleeds into the hold
-    agent.idleUntil = now + offbeat(now, U.irnd(4500, 9000));
+    self.goal = null; self.stilling = true; self.usingProp = null; self.state = 'idle';
+    self.glance = null; self.trackUntil = 0;   // drop any in-flight head-turn / box-track so nothing bleeds into the hold
+    self.idleUntil = now + offbeat(now, U.irnd(4500, 9000));
   }
   // OFF-BEAT HOLD: rarely (and on its own long cooldown) stretch a single dwell to ~2.2x-3.0x — a learned rhythm that
   // suddenly refuses to end. Skipped under reduceMotion so motion-sensitive users keep the normal cadence.
@@ -1174,17 +1181,17 @@ const World = (() => {
   // is the agent loitering near its desk (its tether to the Commander)?
   function nearDesk() {
     if (!seat) return false;
-    const c = tileOf(agent.px, agent.py);
+    const c = tileOf(self.px, self.py);
     return Math.abs(c.x - seat.tx) <= 2 && Math.abs(c.y - seat.ty) <= 2;
   }
   // three slow meters decay/refill by what the agent is doing; clamped 0..100. O(1), every tick.
   function tickNeeds(dt) {
-    const s = dt / 1000, n = agent.needs;
-    const sitLeisure = agent.goal === 'lounge' || (agent.goal === 'use' && agent.sitting);
-    const observing = agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'lounge' || agent.goal === 'gaze';
-    n.rest = U.clamp(n.rest + (agent.working ? -2.1 : sitLeisure ? 3.4 : 0.35) * s, 0, 100);
-    n.stim = U.clamp(n.stim + (observing ? 2.6 : agent.working ? 0.6 : agent.state === 'walk' ? 0.2 : -1.25) * s, 0, 100);
-    n.social = U.clamp(n.social + (activity === 'task' || activity === 'talk' ? 2.2 : (agent.goal === 'tend' || nearDesk()) ? 1.6 : -0.45) * s, 0, 100);
+    const s = dt / 1000, n = self.needs;
+    const sitLeisure = self.goal === 'lounge' || (self.goal === 'use' && self.sitting);
+    const observing = self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'lounge' || self.goal === 'gaze';
+    n.rest = U.clamp(n.rest + (self.working ? -2.1 : sitLeisure ? 3.4 : 0.35) * s, 0, 100);
+    n.stim = U.clamp(n.stim + (observing ? 2.6 : self.working ? 0.6 : self.state === 'walk' ? 0.2 : -1.25) * s, 0, 100);
+    n.social = U.clamp(n.social + (activity === 'task' || activity === 'talk' ? 2.2 : (self.goal === 'tend' || nearDesk()) ? 1.6 : -0.45) * s, 0, 100);
   }
   // lonely → drift to a tile by the desk and face south (its window to the Commander); refills social
   function planSeekDesk(now) {
@@ -1192,24 +1199,24 @@ const World = (() => {
     const spots = [[seat.tx, seat.ty + 1], [seat.tx - 1, seat.ty], [seat.tx + 1, seat.ty], [seat.tx, seat.ty]];
     for (const [tx, ty] of spots) {
       if (!geo.walkable(tx, ty, blocked)) continue;
-      if (setPathTo({ x: tx, y: ty })) { agent.goal = 'tend'; agent.useFace = 'south'; agent.usingProp = null; agent.studyKey = null; if (!agent.target) arrive(now); return true; }
+      if (setPathTo({ x: tx, y: ty })) { self.goal = 'tend'; self.useFace = 'south'; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
     }
     return false;
   }
   // restless → short back-and-forth hops near the current tile (paces in place instead of strolling far off)
   function pace(now) {
-    const cur = tileOf(agent.px, agent.py), dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    const zone = zoneFor(agent);   // P1: pace in place, but never a hop OUT of the zone
+    const cur = tileOf(self.px, self.py), dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const zone = zoneFor(self);   // P1: pace in place, but never a hop OUT of the zone
     for (let i = 0; i < 5; i++) {
       const d = dirs[U.irnd(0, 3)], step = U.irnd(1, 2), tx = cur.x + d[0] * step, ty = cur.y + d[1] * step;
-      if (tileInZone(zone, tx, ty) && geo.walkable(tx, ty, blocked) && setPathTo({ x: tx, y: ty })) { agent.goal = null; curiositySay(SELF_STIM, 0.4, now); return true; }
+      if (tileInZone(zone, tx, ty) && geo.walkable(tx, ty, blocked) && setPathTo({ x: tx, y: ty })) { self.goal = null; curiositySay(SELF_STIM, 0.4, now); return true; }
     }
     return false;
   }
   // deep downtime → walk to the station edge and contemplate the void (faces outward, long quiet dwell)
   function planGazeOut(now) {
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
-    const zone = zoneFor(agent);   // P1: gaze at the OWN-ZONE edge — clamped, not the whole-station edge (a solo whole-station zone keeps the true edge)
+    const zone = zoneFor(self);   // P1: gaze at the OWN-ZONE edge — clamped, not the whole-station edge (a solo whole-station zone keeps the true edge)
     const cx = geo.COLS / 2, cy = geo.ROWS / 2, cands = [];
     for (const r of geo.allRects) {
       cands.push({ tx: r.x1, ty: (r.y1 + r.y2) >> 1, face: 'west' }); cands.push({ tx: r.x2, ty: (r.y1 + r.y2) >> 1, face: 'east' });
@@ -1218,7 +1225,7 @@ const World = (() => {
     cands.sort((a, b) => ((b.tx - cx) ** 2 + (b.ty - cy) ** 2) - ((a.tx - cx) ** 2 + (a.ty - cy) ** 2));   // furthest-out first
     for (const c of cands) {
       if (!tileInZone(zone, c.tx, c.ty)) continue;   // only the edges of the agent's own zone
-      if (geo.walkable(c.tx, c.ty, blocked) && setPathTo({ x: c.tx, y: c.ty })) { agent.goal = 'gaze'; agent.useFace = c.face; agent.usingProp = null; agent.studyKey = null; if (!agent.target) arrive(now); return true; }
+      if (geo.walkable(c.tx, c.ty, blocked) && setPathTo({ x: c.tx, y: c.ty })) { self.goal = 'gaze'; self.useFace = c.face; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
     }
     return false;
   }
@@ -1232,13 +1239,13 @@ const World = (() => {
     { tag: 'ease', rest: 1.4, stim: 0.85, soc: 1.0, restless: 0.7 },     // gravitates to the couch
     { tag: 'drift', rest: 1.2, stim: 0.7, soc: 0.85, restless: 0.55 },   // sleepy, sparse, long dwells
   ];
-  function phaseOf(now) { return PHASES[(Math.floor(now / 210000) + (agent ? agent.phase : 0)) % PHASES.length]; }  // ~3.5 min per phase, offset per agent
+  function phaseOf(now) { return PHASES[(Math.floor(now / 210000) + (self ? self.phase : 0)) % PHASES.length]; }  // ~3.5 min per phase, offset per body
 
   /* ---------- quirks: rare, gated, UNPREDICTABLE one-offs — the off-screen inner life surfacing ----------
      Eerie through stillness + ambiguity (the "why did it just do that"), never spooky one-liners. */
   function maybeQuirk(now) {
     if (now < quirkCd) return false;
-    if (!U.chance(0.085 * (0.6 + agent.pers.restless * 0.4))) return false;
+    if (!U.chance(0.085 * (0.6 + self.pers.restless * 0.4))) return false;
     quirkCd = now + U.irnd(45000, 90000);    // quirks stay special — even rarer now, so each lands with weight
     const r = U.irnd(0, 999);
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
@@ -1250,21 +1257,22 @@ const World = (() => {
     return quirkStare(now);                  // ~5.5% — the long stare straight at YOU (rarest, eeriest)
   }
   function startQuirk(now, kind, ms, face) {
-    agent.goal = 'quirk'; agent.quirkKind = kind; agent.usingProp = null; agent.studyKey = null;
-    agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.studyUntil = now + ms; agent.glanceCd = 0;
-    if (face) { agent.dir = face; setGlance(face, U.irnd(300, 600), now); }
+    self.goal = 'quirk'; self.quirkKind = kind; self.usingProp = null; self.studyKey = null;
+    self.sitting = false; self.working = false; self.state = 'idle'; self.studyUntil = now + ms; self.glanceCd = 0;
+    if (face) { self.dir = face; setGlance(face, U.irnd(300, 600), now); }
     return true;
   }
   function quirkListen(now) { const d = U.pick(['east', 'west', 'south', 'north']); startQuirk(now, 'listen', U.irnd(2200, 4500), d); setGlance(d, 260, now); curiositySay(Q_LISTEN, 0.22, now); return true; }
   function quirkScan(now) {
     startQuirk(now, 'scan', U.irnd(3200, 4600), 'north');
-    ['north', 'east', 'south', 'west'].forEach((d, i) => setTimeout(() => { if (agent && agent.goal === 'quirk' && agent.quirkKind === 'scan') { agent.dir = d; setGlance(d, 900, performance.now()); } }, i * 850));
+    const body = self;   // B1: capture the scheduling body — the deferred sweep must turn THIS body, not whatever `self` points to at fire time
+    ['north', 'east', 'south', 'west'].forEach((d, i) => setTimeout(() => { if (body && body.goal === 'quirk' && body.quirkKind === 'scan') { body.dir = d; body.glance = { dir: d, until: performance.now() + 900 }; } }, i * 850));
     return true;
   }
   function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), U.pick(['north', 'east', 'west'])); curiositySay(Q_PONDER, 0.4, now); return true; }
   function quirkFaceWall(now) {   // walks to a wall and just... faces it. no explanation. (uses arrive's quirk dwell)
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
-    const zone = zoneFor(agent);   // P1: face a wall WITHIN the zone, not a wall across the station
+    const zone = zoneFor(self);   // P1: face a wall WITHIN the zone, not a wall across the station
     const DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
     for (let tries = 0; tries < 30; tries++) {
       const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
@@ -1274,38 +1282,38 @@ const World = (() => {
       const walls = DIRS.filter(([d, dx, dy]) => !geo.walkable(tx + dx, ty + dy, blocked));
       if (!walls.length) continue;
       if (!setPathTo({ x: tx, y: ty })) continue;
-      agent.goal = 'quirk'; agent.quirkKind = 'wall'; agent.useFace = U.pick(walls)[0]; agent.usingProp = null; agent.studyKey = null;
-      if (!agent.target) arrive(now);
+      self.goal = 'quirk'; self.quirkKind = 'wall'; self.useFace = U.pick(walls)[0]; self.usingProp = null; self.studyKey = null;
+      if (!self.target) arrive(now);
       return true;
     }
     return false;
   }
   function quirkVigil(now) {   // walks to a room's center, faces ONE cardinal, holds dead still — the held emptiness (silent)
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
-    const zone = zoneFor(agent);   // P1: the vigil stands at a rect-center INSIDE the zone (a solo whole-station zone admits every center)
+    const zone = zoneFor(self);   // P1: the vigil stands at a rect-center INSIDE the zone (a solo whole-station zone admits every center)
     for (let t = 0; t < 24; t++) {
       const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
       const tx = (r.x1 + r.x2) >> 1, ty = (r.y1 + r.y2) >> 1;
       if (!tileInZone(zone, tx, ty)) continue;
       if (!geo.walkable(tx, ty, blocked)) continue;
       if (!setPathTo({ x: tx, y: ty })) continue;
-      agent.goal = 'quirk'; agent.quirkKind = 'vigil'; agent.useFace = U.pick(['north', 'south', 'east', 'west']); agent.usingProp = null; agent.studyKey = null;
-      if (!agent.target) arrive(now);
+      self.goal = 'quirk'; self.quirkKind = 'vigil'; self.useFace = U.pick(['north', 'south', 'east', 'west']); self.usingProp = null; self.studyKey = null;
+      if (!self.target) arrive(now);
       return true;
     }
     return false;
   }
   function quirkStare(now) {   // turns to the Commander and holds eye contact, mostly in silence
-    agent.goal = 'stare'; agent.quirkKind = 'stare'; agent.usingProp = null; agent.studyKey = null;
-    agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.studyUntil = now + U.irnd(14000, 34000); agent.glanceCd = now + 1200;
-    agent.dir = 'south'; setGlance('south', 700, now); curiositySay(Q_STARE, 0.18, now);   // mostly silent — the stillness is the unsettling part
+    self.goal = 'stare'; self.quirkKind = 'stare'; self.usingProp = null; self.studyKey = null;
+    self.sitting = false; self.working = false; self.state = 'idle'; self.studyUntil = now + U.irnd(14000, 34000); self.glanceCd = now + 1200;
+    self.dir = 'south'; setGlance('south', 700, now); curiositySay(Q_STARE, 0.18, now);   // mostly silent — the stillness is the unsettling part
     return true;
   }
 
   /* ---------- the agent ACTS ON the station: place / rearrange its OWN decor (rare, safety-railed) ---------- */
   function emptySpotNear() {
     if (!geo || !station || !station.canPlaceProp) return null;
-    const cur = tileOf(agent.px, agent.py);
+    const cur = tileOf(self.px, self.py);
     const belts = new Set(((geo && geo.belts) || []).map(b => b.x + ',' + b.y));
     for (let tries = 0; tries < 40; tries++) {
       const x = cur.x + U.irnd(-5, 5), y = cur.y + U.irnd(-5, 5);
@@ -1330,35 +1338,35 @@ const World = (() => {
       let ap = null; for (const [ax, ay] of SEAT_NB) if (geo.walkable(p.x + ax, p.y + ay, blocked)) { ap = { x: p.x + ax, y: p.y + ay }; break; }
       if (!ap || !setPathTo({ x: ap.x, y: ap.y })) return false;
       placeCd = now + U.irnd(120000, 240000);
-      agent.goal = 'place'; agent.placeTarget = null; agent.removeId = id; agent.useFace = dirToward(ap.x * T, ap.y * T, (p.x + 0.5) * T, (p.y + 0.5) * T);
-      if (!agent.target) arrive(now);
+      self.goal = 'place'; self.placeTarget = null; self.removeId = id; self.useFace = dirToward(ap.x * T, ap.y * T, (p.x + 0.5) * T, (p.y + 0.5) * T);
+      if (!self.target) arrive(now);
       return true;
     }
     if ((geo.props || []).filter(p => AGENT_DECOR.indexOf(p.t) >= 0).length >= 5) return false;   // floor-wide decor cap (reload-safe; never clutters a station already full of decor)
     const spot = emptySpotNear();
     if (!spot || !setPathTo({ x: spot.ax, y: spot.ay })) return false;
     placeCd = now + U.irnd(120000, 240000);
-    agent.goal = 'place'; agent.placeTarget = spot; agent.removeId = null; agent.useFace = dirToward(spot.ax * T, spot.ay * T, (spot.x + 0.5) * T, (spot.y + 0.5) * T);
-    if (!agent.target) arrive(now);
+    self.goal = 'place'; self.placeTarget = spot; self.removeId = null; self.useFace = dirToward(spot.ax * T, spot.ay * T, (spot.x + 0.5) * T, (spot.y + 0.5) * T);
+    if (!self.target) arrive(now);
     return true;
   }
 
   /* ---------- power-down: in the deep wind-down mood it goes dormant where it stands (the eerie "is it off?") ---------- */
   function sleep(now) {
-    agent.goal = 'sleep'; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null;
-    agent.sitting = true; agent.working = false; agent.state = 'idle';
-    agent.glance = null;                                      // frozen: maybeGlance skips goal==='sleep', so no lingering cooldown to leak
-    agent.studyUntil = now + U.irnd(20000, 55000);
+    self.goal = 'sleep'; self.usingProp = null; self.studyKey = null; self.quirkKind = null;
+    self.sitting = true; self.working = false; self.state = 'idle';
+    self.glance = null;                                      // frozen: maybeGlance skips goal==='sleep', so no lingering cooldown to leak
+    self.studyUntil = now + U.irnd(20000, 55000);
     curiositySay(SLEEP_LINE, 0.3, now);
     return true;
   }
 
   /* ---------- caretaker rounds: a deliberate 2-3 stop lap of the station, an ownership beat at each ---------- */
   function maybeRounds(now) {
-    if (now < (agent.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
-    const zone = zoneFor(agent);   // P1: a caretaker lap stays inside the zone (no straddling into the next room)
-    const cur = tileOf(agent.px, agent.py), stops = [];
-    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(agent.id, p) && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another agent's (or unclaimed) workstation, and never out of zone
+    if (now < (self.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
+    const zone = zoneFor(self);   // P1: a caretaker lap stays inside the zone (no straddling into the next room)
+    const cur = tileOf(self.px, self.py), stops = [];
+    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another body's (or unclaimed) workstation, and never out of zone
     const belts = (geo.belts || []).filter(b => tileInZone(zone, b.x, b.y)); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
     if (stops.length < 2) return false;
     for (let i = stops.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = stops[i]; stops[i] = stops[j]; stops[j] = t; }   // shuffle
@@ -1369,44 +1377,44 @@ const World = (() => {
       if (a && tileInZone(zone, a.tx, a.ty)) q.push({ tx: a.tx, ty: a.ty, face: a.face });   // the stand-tile of each stop stays in-zone too
     }
     if (q.length < 2) return false;
-    agent.roundsQueue = q; agent.roundsCd = now + U.irnd(60000, 130000);
+    self.roundsQueue = q; self.roundsCd = now + U.irnd(60000, 130000);
     return roundsNext(now);
   }
   function roundsNext(now) {
-    while (agent.roundsQueue && agent.roundsQueue.length) {
-      const s = agent.roundsQueue.shift();
-      if (setPathTo({ x: s.tx, y: s.ty })) { agent.goal = 'rounds'; agent.useFace = s.face; if (!agent.target) arrive(now); return true; }
+    while (self.roundsQueue && self.roundsQueue.length) {
+      const s = self.roundsQueue.shift();
+      if (setPathTo({ x: s.tx, y: s.ty })) { self.goal = 'rounds'; self.useFace = s.face; if (!self.target) arrive(now); return true; }
     }
-    agent.goal = null; agent.roundsQueue = null; agent.idleUntil = now + U.irnd(400, 1400); return true;   // lap complete -> back to the menu
+    self.goal = null; self.roundsQueue = null; self.idleUntil = now + U.irnd(400, 1400); return true;   // lap complete -> back to the menu
   }
 
   /* SPATIAL MEMORY — affection accrues at a tile each time the agent chooses to dwell there. Over a long
      watch one or two haunts emerge: it starts drifting back to them, and grieves if one is taken away. */
   function noteFond(now, amt) {
-    if (!agent || !agent.fond) return;
-    const t = tileOf(agent.px, agent.py), k = t.x + ',' + t.y;
-    agent.fond.set(k, Math.min(40, (agent.fond.get(k) || 0) + amt));   // cap so a haunt can fade and shift over time
-    if (agent.fond.size > 28) { let lo = Infinity, lk = null; for (const [kk, v] of agent.fond) if (v < lo) { lo = v; lk = kk; } if (lk) agent.fond.delete(lk); }
+    if (!self || !self.fond) return;
+    const t = tileOf(self.px, self.py), k = t.x + ',' + t.y;
+    self.fond.set(k, Math.min(40, (self.fond.get(k) || 0) + amt));   // cap so a haunt can fade and shift over time
+    if (self.fond.size > 28) { let lo = Infinity, lk = null; for (const [kk, v] of self.fond) if (v < lo) { lo = v; lk = kk; } if (lk) self.fond.delete(lk); }
   }
   // the one haunt that clearly leads the pack, or null (so revisits read as a real favorite, not random)
   function favTile() {
-    if (!agent || !agent.fond) return null;
+    if (!self || !self.fond) return null;
     let best = null, bv = 0, second = 0;
-    for (const [k, v] of agent.fond) { if (v > bv) { second = bv; bv = v; best = k; } else if (v > second) second = v; }
+    for (const [k, v] of self.fond) { if (v > bv) { second = bv; bv = v; best = k; } else if (v > second) second = v; }
     if (bv < 8 || bv < second + 3) return null;
     const [x, y] = best.split(',').map(Number); return { x, y, score: bv };
   }
   // rarely, drawn back to its favorite spot just to be there a while (gated by a long cooldown + a real favorite)
   function maybeRevisit(now) {
-    if (now < (agent.revisitCd || 0)) return false;
+    if (now < (self.revisitCd || 0)) return false;
     const f = favTile(); if (!f) return false;
-    if (!tileInZone(zoneFor(agent), f.x, f.y)) return false;   // P1: a remembered haunt outside the new zone isn't revisited (a zone change must not strand revisit — it just no-ops this beat)
-    const cur = tileOf(agent.px, agent.py);
-    if (cur.x === f.x && cur.y === f.y) { agent.revisitCd = now + U.irnd(40000, 80000); return false; }
+    if (!tileInZone(zoneFor(self), f.x, f.y)) return false;   // P1: a remembered haunt outside the new zone isn't revisited (a zone change must not strand revisit — it just no-ops this beat)
+    const cur = tileOf(self.px, self.py);
+    if (cur.x === f.x && cur.y === f.y) { self.revisitCd = now + U.irnd(40000, 80000); return false; }
     if (!geo.walkable(f.x, f.y, blocked) || !setPathTo({ x: f.x, y: f.y })) return false;
-    agent.goal = 'revisit'; agent.useFace = U.pick(['south', 'north', 'east', 'west']); agent.usingProp = null; agent.studyKey = null;
-    agent.revisitCd = now + U.irnd(60000, 120000);
-    if (!agent.target) arrive(now);
+    self.goal = 'revisit'; self.useFace = U.pick(['south', 'north', 'east', 'west']); self.usingProp = null; self.studyKey = null;
+    self.revisitCd = now + U.irnd(60000, 120000);
+    if (!self.target) arrive(now);
     return true;
   }
   // grief walk: return to the very spot it used to stand and face where its thing was, then let go
@@ -1420,14 +1428,14 @@ const World = (() => {
     // P1 (A1): grief never walks OUT of the zone. The mourned spot is normally in-zone already (fond
     // accrues where the body dwells, which is in-zone), but a cross-zone removal is released unmourned
     // rather than dragging the body across the floor — containment outranks the singleton grief beat.
-    if (!tileInZone(zoneFor(agent), dest.x, dest.y)) { agent.fond.delete(m.spotKey); pendingMourn = null; return false; }
-    const cur = tileOf(agent.px, agent.py), here = cur.x === dest.x && cur.y === dest.y;
+    if (!tileInZone(zoneFor(self), dest.x, dest.y)) { self.fond.delete(m.spotKey); pendingMourn = null; return false; }
+    const cur = tileOf(self.px, self.py), here = cur.x === dest.x && cur.y === dest.y;
     if (!here && !setPathTo({ x: dest.x, y: dest.y })) { pendingMourn = null; return false; }
-    agent.goal = 'mourn'; agent.usingProp = null; agent.studyKey = null;
-    agent.useFace = dirToward((dest.x + 0.5) * T, (dest.y + 0.5) * T, (m.tx + 0.5) * T, (m.ty + 0.5) * T);
-    agent.fond.delete(m.spotKey);                  // grieve it, then release it — don't loop on an empty tile forever
+    self.goal = 'mourn'; self.usingProp = null; self.studyKey = null;
+    self.useFace = dirToward((dest.x + 0.5) * T, (dest.y + 0.5) * T, (m.tx + 0.5) * T, (m.ty + 0.5) * T);
+    self.fond.delete(m.spotKey);                  // grieve it, then release it — don't loop on an empty tile forever
     pendingMourn = null;
-    if (here || !agent.target) arrive(now);        // already standing on the spot? grieve in place
+    if (here || !self.target) arrive(now);        // already standing on the spot? grieve in place
     return true;
   }
 
@@ -1435,14 +1443,14 @@ const World = (() => {
   // the current mood phase, + how long since real work) leads; novelty + rare quirks interrupt. The SAME
   // planners run, but now there is a legible reason behind every move so it stops reading as aimless.
   function decideIdle(now) {
-    agent.stilling = false;                            // every fresh decision starts clean (standStill re-sets it)
+    self.stilling = false;                            // every fresh decision starts clean (standStill re-sets it)
     if (pendingMourn && planMourn(now)) return;        // grief reflex: a beloved spot was just emptied — go stand where it was
     if (novelty.length && planInspect(now)) return;   // curiosity reflex: a fresh placement always wins
     if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
     // AUTONOMOUS PROP PLACEMENT — REMOVED (Thronglet direction). The agent no longer drops
     // plant/coffee/cans/poster on random floor tiles (it read as nonsensical clutter). It still
     // USES the Commander's placed props (couch/TV/arcade) via planProp below — that stays.
-    const n = agent.needs, p = agent.pers, ph = phaseOf(now), idleAge = now - (agent.lastTaskAt || now);
+    const n = self.needs, p = self.pers, ph = phaseOf(now), idleAge = now - (self.lastTaskAt || now);
     if (ph.tag === 'drift' && idleAge > 45000 && n.rest > 50 && U.chance(0.22) && sleep(now)) return;   // deep downtime in the wind-down mood -> power down where it stands
     const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody) * ph.rest;
     const wStim = ((100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless) * ph.stim;   // boredom climbs with downtime
@@ -1579,6 +1587,7 @@ const World = (() => {
 
   function tick(dt, now) {
     if (!agent || agent.unplaced || !geo || awakeFrozen) return;   // frozen during the awakening: the newborn holds still, facing the Commander
+    self = agent;                                                  // B1: the hero tick runs with self===agent (engine core reads the current body via self) — byte-identical hero path
     if (!agent.lastTaskAt) agent.lastTaskAt = now;                 // anchor downtime at the first live tick
     tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
     stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
