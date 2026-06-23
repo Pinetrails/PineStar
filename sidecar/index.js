@@ -24,6 +24,7 @@ const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
+const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
 const { makeSpotifyTools } = require('./tools/builtin/spotify.js');       // JUKEBOX: control/query the user's Spotify
@@ -33,6 +34,7 @@ const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { makeTranscriptStore } = require('./transcriptstore.js');
+const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
@@ -262,6 +264,25 @@ const transcriptIo = {
   }
 };
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
+
+// H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of
+// the fs jail (the agent's fs.* tools can't reach it). Singleton (persists across runs); redacted on write.
+const SKILLS_FILE = path.join(WORKSPACES, 'skills.jsonl');
+const skillsIo = {
+  readAll() {
+    try {
+      return fs.readFileSync(SKILLS_FILE, 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+    } catch (e) { return []; }
+  },
+  append(entry) {
+    let fd = null;
+    try { fd = fs.openSync(SKILLS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
+    catch (e) { console.warn('[skills] append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+  }
+};
+const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact });
 
 // credential pool (P0.2): orders the primary OpenRouter key + alternates and cools a key that just hit a
 // rotate-reason failure (rate_limit/auth/billing) so it isn't retried first next run. In-memory only; never
@@ -1476,6 +1497,7 @@ async function runOnce(o) {
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
+  makeSkillTools({ store: skillStore }).register(registry);   // H4: skill.write/list/view — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   // STUDIO (media skills): image_generate / image_analyze ride the SAME BYOK OpenRouter key + key the run uses.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
