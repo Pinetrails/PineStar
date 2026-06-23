@@ -76,4 +76,22 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(!s.write({ agentId: 'a', body: 'x' }).ok, 'a skill with no name is refused');
 }
 
+// ---- G. (H4.2) the skill tools delegate to the store: write saves, list=metadata, view=body ----
+{
+  const { makeSkillTools } = require('../sidecar/tools/builtin/skills.js');
+  const store = makeSkillStore({ io: memIo(), clock, redact });
+  const tools = makeSkillTools({ store });
+  const ctx = { agentId: 'a' };
+  A.eq(tools.writeTool.capability, 'memory', 'skill.write joins the NOTEBOOK (memory) capability');
+  const w = tools.writeTool.run({ name: 'Deploy', summary: 'ship it', body: 'step 1\nstep 2 deploy' }, ctx);
+  A.ok(/Saved skill/.test(w.content), 'skill.write saves');
+  const l = tools.listTool.run({}, ctx);
+  A.ok(/Deploy/.test(l.content) && /ship it/.test(l.content), 'skill.list shows name + summary');
+  A.ok(l.content.indexOf('step 2 deploy') === -1, 'skill.list does NOT leak the body (progressive disclosure)');
+  const v = tools.viewTool.run({ name: 'Deploy' }, ctx);
+  A.ok(/step 2 deploy/.test(v.content), 'skill.view loads the full body');
+  A.ok(/No skill named/.test(tools.viewTool.run({ name: 'ghost' }, ctx).content), 'skill.view on a missing name -> helpful message');
+  A.ok(/Updated/.test(tools.writeTool.run({ name: 'Deploy', body: 'v2' }, ctx).content), 'same-name write reports edited');
+}
+
 A.report('skills.test');
