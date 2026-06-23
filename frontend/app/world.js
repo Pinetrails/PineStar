@@ -117,8 +117,8 @@ const World = (() => {
   /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
      Lines stay sparse and unresolved; the SILENCE is the unsettling part. */
-  let quirkCd = 0;   // quirks stay special — long cooldown between them
-  let offbeatCd = 0;   // OFF-BEAT HOLD: rare, separately-gated multiplier that stretches ONE dwell to an unsettling length
+  // quirk/off-beat cooldowns are now PER-BODY (self.quirkCd / self.offbeatCd, seeded on the hero literal + crew init) —
+  // J2: a body's gate must never throttle another body. (Module globals removed; maybeQuirk/offbeat read/write self.)
   const Q_PONDER = ['hm.', '...', 'i wonder', 'strange', 'thinking'];
   const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
   const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
@@ -368,7 +368,8 @@ const World = (() => {
       fond: new Map(), revisitCd: 0,   // SPATIAL MEMORY: tileKey -> affection; builds where it dwells, drives revisit-a-haunt + mourning
       pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0,   // CONSIDERED MOVEMENT: brief mid-stroll holds, belt-yield to cargo, the rare double-take
       stilling: false,   // STILLNESS: true during a real CONTENT=STILL quiet hold (suppresses the ambient swivel + cargo body-track)
-      wakePhase: 0   // FIRST LIGHT: the wake-ritual sub-beat sequencer (driven by studyUntil; reset on exit + on a REFIT drop)
+      wakePhase: 0,   // FIRST LIGHT: the wake-ritual sub-beat sequencer (driven by studyUntil; reset on exit + on a REFIT drop)
+      quirkCd: 0, offbeatCd: 0   // J2: per-body quirk/off-beat gates (read/written via self in maybeQuirk/offbeat) — uniform with the crew init shape; self===agent keeps the hero byte-identical
     };
     self = agent;   // B1: track the hero from birth so engine helpers called BEFORE the first tick (awakening / mouse handlers via setGlance/releaseSeat) act on the hero — self is restored to agent every tick anyway
     if (geo) placeAgent();
@@ -1185,7 +1186,7 @@ const World = (() => {
   // suddenly refuses to end. Skipped under reduceMotion so motion-sensitive users keep the normal cadence.
   function offbeat(now, ms) {
     if (reduceMotion()) return ms;
-    if (now >= offbeatCd && U.chance(0.09)) { offbeatCd = now + U.irnd(70000, 140000); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }
+    if (now >= (self.offbeatCd || 0) && U.chance(0.09)) { self.offbeatCd = now + U.irnd(70000, 140000); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }   // J2: per-body off-beat gate — a crew dwell-stretch must NOT throttle hero/siblings (was the shared module global)
     return ms;
   }
   /* FIRST LIGHT — the newborn's first autonomous act: hold the gaze, take one slow look at the room it now
@@ -1241,8 +1242,10 @@ const World = (() => {
   function planSeekDesk(now) {
     const seat = seatFor(self);   // the CURRENT body's own desk (hero → synthetic `seat`; crew → its workstation chair) — never the hero's seat for a crew body (J2/J3)
     if (!seat) return false;
+    const zone = zoneFor(self);   // J3: the desk spots derive from the seat with +2 south / ±1 offsets; clamp them to the body's OWN zone like every sibling picker
     const spots = [[seat.tx, seat.ty + 1], [seat.tx - 1, seat.ty], [seat.tx + 1, seat.ty], [seat.tx, seat.ty]];
     for (const [tx, ty] of spots) {
+      if (!tileInZone(zone, tx, ty)) continue;   // J3: never tether OUT of the body's zone (hero whole-floor 'multi' zone admits its own spots → byte-parity)
       if (!geo.walkable(tx, ty, blocked)) continue;
       if (setPathTo({ x: tx, y: ty })) { self.goal = 'tend'; self.useFace = 'south'; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
     }
@@ -1289,9 +1292,9 @@ const World = (() => {
   /* ---------- quirks: rare, gated, UNPREDICTABLE one-offs — the off-screen inner life surfacing ----------
      Eerie through stillness + ambiguity (the "why did it just do that"), never spooky one-liners. */
   function maybeQuirk(now) {
-    if (now < quirkCd) return false;
+    if (now < (self.quirkCd || 0)) return false;   // J2: per-body cooldown — a crew quirk must NOT throttle the hero or siblings (was the shared module global)
     if (!U.chance(0.085 * (0.6 + self.pers.restless * 0.4))) return false;
-    quirkCd = now + U.irnd(45000, 90000);    // quirks stay special — even rarer now, so each lands with weight
+    self.quirkCd = now + U.irnd(45000, 90000);    // quirks stay special — even rarer now, so each lands with weight
     const r = U.irnd(0, 999);
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
     if (r < 520) return quirkScan(now);      // 20% — a slow, deliberate sweep of the room
@@ -2266,8 +2269,8 @@ const World = (() => {
       pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0,
       stilling: false,
       inspectNovel: null, lookCd: 0,   // lazily-read engine fields (arrive/planInspect/maybeGlance) seeded so first read isn't undefined
-      // per-body copies of the cooldowns the engine currently reads from MODULE scope (quirkCd/offbeatCd/placeCd/
-      // mournCd). Seeded now so B3 can move those gates per-body without a swarm-wide lockstep; harmless today.
+      // per-body cooldown gates the engine reads via self (quirkCd/offbeatCd are now per-body in maybeQuirk/offbeat —
+      // no swarm-wide lockstep; placeCd/mournCd seeded for the same per-body discipline as B3 generalizes those gates).
       quirkCd: 0, offbeatCd: 0, placeCd: 0, mournCd: 0
     };
   }
@@ -2684,7 +2687,7 @@ const World = (() => {
       if (agent && level != null && !(agent.say && agent.say.text && agent.say.until > now)) agent.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, quirkCd - fnow)), offbeatCd: Math.round(Math.max(0, offbeatCd - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow() },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow() },
     // does this agent have a WORKBENCH placed (-> shell.exec + verify.run)? An equipped BAY governs; with no bay
     // (simple single-agent floor) any placed workbench grants it. The run client sends this so the hero's run
     // gains shell ADDITIVELY on top of its default office (the room layout is the permission system, for the hero too).
