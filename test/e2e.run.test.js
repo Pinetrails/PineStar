@@ -100,6 +100,12 @@ function boot(port, env, attemptsLeft) {
     const ends = events.filter(e => e.name === 'agent.run.end');
     A.eq(ends.length, 1, 'exactly one agent.run.end');
     A.eq(ends[0].payload.reason, 'done', 'the run completes with reason done');
+
+    // H1.1: the run's full dialogue was persisted to the durable transcript (not just title+final) — fetch it back.
+    const tr = await (await fetch(B + '/api/transcript?stream=global&agent=e2e&limit=20')).json();
+    const turns = (tr && tr.turns) || [];
+    A.ok(turns.some(t => t.role === 'user' && t.content === 'hi'), 'transcript captured the user directive');
+    A.ok(turns.some(t => t.role === 'assistant' && String(t.content).indexOf('Hello') >= 0), 'transcript captured the assistant reply turn');
   } finally {
     try { child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}

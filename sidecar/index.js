@@ -1720,6 +1720,7 @@ async function runOnce(o) {
   } catch (_) {}
 
   let result;
+  const _txStart = msgs.length;   // H1.1: boundary — turns the loop appends to msgs after this ARE this run's new dialogue
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
@@ -1749,18 +1750,11 @@ async function runOnce(o) {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
       runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title });
-      // P0.1: persist the DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY run,
-      // incl. headless ones (cron/Telegram/delegated) that leave no browser history. Append the triggering
-      // user message + the agent's final text reply, scoped to the stream.
-      let replyText = '';
-      if (result && Array.isArray(result.messages)) {
-        for (let i = result.messages.length - 1; i >= 0; i--) {
-          const m = result.messages[i];
-          if (m && m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) { replyText = m.content; break; }
-        }
-      }
+      // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
+      // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
+      // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
-      if (replyText) transcriptStore.append({ streamId: o.streamId, agentId, role: 'assistant', content: replyText });
+      if (result && Array.isArray(result.messages)) transcriptStore.appendTurns(o.streamId, agentId, result.messages, _txStart);
     } catch (_) {}
     budget.clearLive(runId);
   }
