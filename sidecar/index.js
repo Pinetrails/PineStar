@@ -31,6 +31,7 @@ const spotifyPkce = require('./spotify/pkce.js');                          // pu
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
+const { makeTranscriptStore } = require('./transcriptstore.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
@@ -227,6 +228,27 @@ const runsIo = {
   }
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
+
+// durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
+// the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID so a sidecar
+// restart can rehydrate the dialogue per workstream — the full message log is otherwise dropped at SSE close,
+// the single most jarring day-to-day regression vs a Hermes-class agent. Content is redacted on write.
+const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
+const transcriptIo = {
+  readAll() {
+    try {
+      return fs.readFileSync(TRANSCRIPT_FILE, 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+    } catch (e) { return []; }
+  },
+  append(entry) {
+    let fd = null;
+    try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
+    catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+  }
+};
+const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
@@ -825,6 +847,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
   if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/runs') === 0) return serveRuns(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/transcript') === 0) return serveTranscript(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/records') === 0) return serveMemoryRecords(req, res);
@@ -1696,6 +1719,17 @@ async function runOnce(o) {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
       runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title });
+      // P0.1: persist the DIALOGUE (not just the outcome) so a sidecar restart can rehydrate this workstream's
+      // COMMS history. Append the triggering user message + the agent's final text reply, scoped to the stream.
+      let replyText = '';
+      if (result && Array.isArray(result.messages)) {
+        for (let i = result.messages.length - 1; i >= 0; i--) {
+          const m = result.messages[i];
+          if (m && m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) { replyText = m.content; break; }
+        }
+      }
+      if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
+      if (replyText) transcriptStore.append({ streamId: o.streamId, agentId, role: 'assistant', content: replyText });
     } catch (_) {}
     budget.clearLive(runId);
   }
@@ -2130,6 +2164,21 @@ function serveRuns(req, res) {
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     json(200, { runs: runStore.list(agent, { limit }) });
   } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
+}
+
+// GET /api/transcript?stream=<id>&agent=<id>&limit=<n> — the durable per-workstream conversation transcript
+// (P0.1), chronological, so the browser can REHYDRATE COMMS after a sidecar restart (runStore keeps only the
+// one-line outcome). Read-only; fail-open to an empty transcript, never a 500.
+function serveTranscript(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const stream = u.searchParams.get('stream') || 'global';
+    const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 200));
+    json(200, { stream, turns: transcriptStore.history(stream, { limit }) });
+  } catch (e) { json(200, { turns: [] }); }   // tolerate any error — empty transcript, never a 500
 }
 
 // GET /api/memory/proposals?agent=<id>&run=<id> — the pending Keep/Edit/Discard candidates reflection raised
