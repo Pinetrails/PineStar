@@ -314,10 +314,20 @@ const App = (() => {
     const list = await Harness.listModels();
     dl.innerHTML = '';
     for (const m of list) { const o = document.createElement('option'); o.value = m.id; dl.appendChild(o); }
-    countEl.textContent = list.length ? '(' + list.length + ' available)' : '(offline — type a slug)';
-    if (list.length && !inp.value) {
-      const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
-      inp.placeholder = 'e.g. ' + pref.id;
+    if (list.length) {
+      countEl.textContent = '(' + list.length + ' available)';
+      if (!inp.value) {
+        const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
+        inp.placeholder = 'e.g. ' + pref.id;
+      }
+    } else {
+      // catalog unreachable (no network to openrouter.ai, or fetch blocked): DON'T leave the field
+      // looking like it's still loading. Seed a few common slugs and make the placeholder actionable
+      // so the screen stays usable — you can always just type the slug you use.
+      const FALLBACK = ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro'];
+      for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
+      countEl.textContent = '(catalog offline — type or pick a slug)';
+      if (!inp.value) inp.placeholder = 'type a model slug — e.g. gpt-5.5';
     }
     updateHint();
   }
