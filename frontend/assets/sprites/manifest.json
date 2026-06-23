@@ -634,6 +634,14 @@
     "vaultboy.sit.north": [
       "vaultboy/sit_north.png"
     ],
+    "vaultboy.walk.south": [
+      "vaultboy/walk_south_0.png",
+      "vaultboy/walk_south_1.png",
+      "vaultboy/walk_south_2.png",
+      "vaultboy/walk_south_3.png",
+      "vaultboy/walk_south_4.png",
+      "vaultboy/walk_south_5.png"
+    ],
     "vaultboy.walk.east": [
       "vaultboy/walk_east_0.png",
       "vaultboy/walk_east_1.png",
