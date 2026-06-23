@@ -100,6 +100,24 @@ const zLeashDefault = Z.computeZone({ rects: [], anchorTile: { x: 3, y: 3 } });
 A.eq(zLeashDefault.kind, 'leash', 'empty rects -> leash');
 A.eq(zLeashDefault.r, Z.DEFAULT_LEASH, 'leash falls back to DEFAULT_LEASH when none supplied');
 
+// ---- leash-from-current-tile: the deskless placed crew body (world.js anchorFor fallback) ----
+// A freshly-summoned worker is PLACED (unplaced:false) but has no workstation/bay yet, so world.js
+// anchorFor() falls back to the body's OWN foot tile (tileOf(px,py)) as the anchor. If that tile sits
+// on open floor outside every room rect, computeZone must yield a BOUNDED leash centered there — NOT
+// null. This is what restores BR-4 'summoned agents move' (a null zone froze the body permanently in
+// crewWander). Here the worker stands at (40,40), outside both RECTS rooms.
+const zDeskless = Z.computeZone({ rects: RECTS, anchorTile: { x: 40, y: 40 } });
+A.eq(zDeskless.kind, 'leash', 'deskless placed crew body (anchored on its own off-room foot tile) gets a leash, not null');
+A.ok(zDeskless != null, 'a placed deskless body is NEVER null-zoned (would freeze it — the P2 regression)');
+A.eq(zDeskless.cx, 40, 'leash centers on the body foot tile x');
+A.eq(zDeskless.cy, 40, 'leash centers on the body foot tile y');
+A.eq(Z.inZone(zDeskless, 40, 40), true, 'the body can stand on its own anchor tile (so crewWander has at least one in-zone target)');
+A.eq(Z.inZone(zDeskless, 40 + Z.DEFAULT_LEASH, 40), true, 'the leash extends DEFAULT_LEASH tiles so the body can actually stroll a little');
+A.eq(Z.inZone(zDeskless, 40 + Z.DEFAULT_LEASH + 1, 40), false, 'but the deskless body stays bounded near its spawn spot (lane discipline)');
+// if that same foot tile DOES sit inside a room, the body gets that room (the room path still wins)
+const zDesklessInRoom = Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 } });
+A.eq(zDesklessInRoom.kind, 'room', 'a deskless body whose foot tile is inside a room is caged to that room, not a leash');
+
 // ---- non-positive leashR falls back to DEFAULT_LEASH (the `> 0` guard) ----
 // A 0/negative radius would yield a degenerate single-tile leash (r:0) the agent can't roam in,
 // so the guard must reject it and use DEFAULT_LEASH. Mutating `opts.leashR > 0` -> `>= 0` lets

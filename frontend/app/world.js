@@ -741,6 +741,11 @@ const World = (() => {
     if (dp) return { x: dp.x, y: dp.y };
     if (aid && geo.props) { const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid); if (bay) return { x: bay.x, y: bay.y }; }
     if (body === agent && seat) return { x: seat.tx, y: seat.ty };   // hero on the synthetic auto-desk
+    // A2 leash fallback: a PLACED crew body with no workstation/bay (the common freshly-summoned worker
+    // before the user assigns it a PC) anchors on its OWN foot tile, so zoneFor yields a bounded leash
+    // around its spawn spot instead of null — keeping it alive (BR-4 'summoned agents move') without
+    // letting it roam the whole floor. Unplaced/dormant bodies still return null (A2: no zone, no roam).
+    if (body && body.crewBody && !body.unplaced) return tileOf(body.px, body.py);
     return null;
   }
   /* soleOwner(body): does this body effectively own the WHOLE station (so its zone must widen to
