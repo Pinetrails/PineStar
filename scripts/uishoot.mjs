@@ -39,6 +39,24 @@ function findChrome() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Ensure a SKYNET_DEV sidecar is serving the target port; boot one from cwd if not.
+// Lets the Visual-Auditor loop be a single self-contained command.
+async function ensureSidecar() {
+  const up = async () => { try { const r = await fetch(APP_URL); return r.ok; } catch { return false; } };
+  if (await up()) { console.log(`sidecar: already up on :${APP_PORT}`); return null; }
+  if (process.argv.indexOf('--boot') === -1) {
+    console.log(`sidecar: down on :${APP_PORT} (pass --boot to auto-start, or start it yourself)`);
+    return null;
+  }
+  console.log(`sidecar: booting SKYNET_DEV on :${APP_PORT} from ${process.cwd()} ...`);
+  const sc = spawn(process.execPath, ['sidecar/index.js'], {
+    env: { ...process.env, SKYNET_DEV: '1', SKYNET_PORT: String(APP_PORT) },
+    stdio: 'ignore', detached: false,
+  });
+  for (let i = 0; i < 60; i++) { if (await up()) { console.log('sidecar: ready'); return sc; } await sleep(500); }
+  throw new Error('sidecar failed to come up on :' + APP_PORT);
+}
+
 // ---- minimal CDP client over the page target's websocket ----
 class CDP {
   constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); this.handlers = new Map();
@@ -99,6 +117,7 @@ async function main() {
   const onlyIdx = process.argv.indexOf('--only');
   const only = onlyIdx > -1 ? process.argv[onlyIdx + 1] : null;
   mkdirSync(OUT_DIR, { recursive: true });
+  const ownSidecar = await ensureSidecar();
   const chrome = findChrome();
   console.log(`chrome: ${chrome}`);
   console.log(`target: ${APP_URL}`);
@@ -138,6 +157,7 @@ async function main() {
   } finally {
     try { cdp?.ws.close(); } catch {}
     proc.kill('SIGKILL');
+    if (ownSidecar) { try { ownSidecar.kill('SIGKILL'); } catch {} }
   }
 }
 
