@@ -785,32 +785,15 @@ const World = (() => {
   // module load failure can never freeze the agent — true(in-zone) for every tile.
   function tileInZone(zone, tx, ty) { return (typeof Zones === 'undefined') ? true : Zones.inZone(zone, tx, ty); }
 
-  /* ---------- crew idle-wander (Bug 3) ----------
-     The hero owns the rich state machine (props/couch/quirks). A CREW body (summoned or bay-bound) gets a LIGHT,
-     independent stepper: when it isn't running a task, it strolls to a random reachable tile (belt-free where it
-     can), pauses a beat, and repeats — so an idle agent walks the station instead of standing frozen. A live run
-     (b.working, lit by setActivityFor) freezes it in the working pose. No leisure AI; reuses the hero's pathing. */
+  /* ---------- crew movement helper ----------
+     A crew body walks to its assigned chair when working (stepCrewToSeat below). When NOT working it now runs the
+     HERO's full sentience engine per-body (crewEngineStep, Tier B2) instead of the old light crewWander stepper —
+     so an idle crew body has needs/temperament/want-engine/quirks, caged to its own zone, not just a random stroll.
+     crewNextWaypoint is the path-stepper the working-path (stepCrewToSeat) still uses. */
   function crewNextWaypoint(b) {
     if (!b.pathPts || b.pathIdx >= b.pathPts.length) { b.target = null; return; }
     const wp = b.pathPts[b.pathIdx++];
     b.target = footOf(wp.x, wp.y);
-  }
-  function crewWander(b, now) {
-    const rects = geo.allRects;
-    if (!rects || !rects.length) { b.idleUntil = now + 1200; return; }
-    const cur = tileOf(b.px, b.py);
-    const avoid = beltUnion();
-    const zone = zoneFor(b);   // P2: a crew stroll stays inside this body's own zone (same primitive as the hero)
-    for (let i = 0; i < 20; i++) {
-      const r = rects[U.irnd(0, rects.length - 1)];
-      const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
-      if (!tileInZone(zone, x, y)) continue;             // off-zone target — never stroll out of this body's area
-      if (!geo.walkable(x, y, blocked) || avoid.has(x + ',' + y)) continue;
-      let p = geo.path(cur.x, cur.y, x, y, avoid);     // prefer a belt-free route
-      if (!p) p = geo.path(cur.x, cur.y, x, y, blocked); // fall back: a belt bridges the only crossing
-      if (p && p.length) { b.pathPts = p; b.pathIdx = 0; b.state = 'walk'; crewNextWaypoint(b); return; }
-    }
-    b.idleUntil = now + 1200;   // boxed in this frame — try again shortly
   }
   /* a working crew body walks to the chair in front of its assigned desk and sits facing it — the hero's exact
      desk pose, generalised to crew: foot on the front tile, dir north, sitting (the chair sprite y-sorts behind
@@ -839,34 +822,73 @@ const World = (() => {
       }
     }
   }
+  /* ---------- per-body sentience engine (Tier B2) ----------
+     The HERO's idle/dwell ladder (tick ~1644-1687), generalised to the CURRENT body (`self`). The caller in
+     stepCrew sets self=b, calls this, then UNCONDITIONALLY restores self=agent — so every read/write here lands on
+     the crew body, and the hero's own run (self===agent) is byte-identical to before (J1). What is DELIBERATELY left
+     out vs the hero tick (hero-identity, not idle life): the summon-seize block (crew route through b.working in
+     stepCrew, J4), FIRST LIGHT / stepFirstWake (hero-only G2), maybeGlance + the belt-yield shouldYieldToCargo()
+     hold (Commander/camera-coupled; shouldYieldToCargo reads agent.target — hero-only). decideIdle's grief/novelty
+     reflexes are already self===agent-gated, so a crew body here only consumes its OWN want-engine + quirks. Every
+     target picker it can reach is caged to zoneFor(self)=zoneFor(b) (Tier A), so no body leaves its zone (J3). */
+  function crewEngineStep(dt, now) {
+    const SPEED = 28 * (self.pers ? self.pers.pace : 1);   // a calm background pace (a touch under the hero's 34), tilted by temperament
+    // a just-finished task leaves the desk-sit pose (stepCrewToSeat set sitting=true). The engine only keeps sitting
+    // for a leisure dwell (goal use/lounge); any other goal → stand, or the !sitting decideIdle gate freezes it.
+    if (self.sitting && self.goal !== 'use' && self.goal !== 'lounge') { self.sitting = false; self.state = 'idle'; self.idleUntil = Math.max(self.idleUntil || 0, now + U.irnd(200, 800)); }
+    // self-heal a stuck walker (mirrors the hero tick): walk pose with nowhere to go → drop to idle so this tick re-decides
+    if (self.state === 'walk' && !self.target && (!self.pathPts || self.pathIdx >= self.pathPts.length)) { self.state = 'idle'; self.idleUntil = 0; }
+    if (self.target) {
+      if (now < (self.pauseUntil || 0)) {
+        self.state = 'idle';                                // a deliberate hold mid-walk (maybeStrollBeat's considered pause / double-take)
+        if (self.pauseLook === 'back') self.dir = OPP[self.dir] || self.dir;
+      } else {
+        const dx = self.target.x - self.px, dy = self.target.y - self.py, d = Math.hypot(dx, dy);
+        if (d < 1.1) {
+          self.px = self.target.x; self.py = self.target.y;
+          if (self.pathPts && self.pathIdx < self.pathPts.length) nextWaypoint();
+          else arrive(now);
+        } else {
+          const s = Math.min(d, SPEED * dt / 1000);
+          self.px += dx / d * s; self.py += dy / d * s; self.state = 'walk';
+          self.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
+        }
+      }
+    } else if (self.goal === 'use') {
+      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
+    } else if (self.goal === 'lounge') {
+      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
+    } else if (self.goal === 'rounds') {
+      if (now >= self.studyUntil) roundsNext(now);
+    } else if (self.goal === 'sleep') {
+      if (now >= self.studyUntil) { self.goal = null; self.sitting = false; self.glanceCd = 0; self.state = 'idle'; self.idleUntil = now + U.irnd(600, 1800); }
+    } else if (self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'tend' || self.goal === 'gaze' || self.goal === 'quirk' || self.goal === 'stare' || self.goal === 'mourn' || self.goal === 'revisit') {
+      if (now >= self.studyUntil) {
+        const back = (self.goal === 'inspect' || self.goal === 'watch') ? self.useFace : null;
+        self.goal = null; self.usingProp = null; self.studyKey = null; self.quirkKind = null; self.state = 'idle'; self.idleUntil = now + U.irnd(1400, 3000);
+        if (back && U.chance(0.5)) setGlance(back, U.irnd(500, 900), now);
+      }
+    } else if (self.state !== 'walk' && !self.sitting && now >= self.idleUntil) {
+      decideIdle(now);   // the want-engine (wander is its fallback) — caged to zoneFor(self)
+    }
+  }
   function stepCrew(dt, now) {
     if (!geo || !crew.length) return;
-    const SPEED = 28;   // a calm background pace, a touch under the hero
     for (const b of crew) {
       if (b.unplaced) continue;
       if (b.working) {                                 // running → sit at its desk if it has one, else stand where work is delivered
         const dp = deskPropFor(b.agentId), s = dp ? deskSeat(dp) : null;
         if (s) stepCrewToSeat(b, s, dt, now);
         else { b.pathPts = null; b.target = null; b.state = 'idle'; b.sitting = false; }
-        continue;
+        continue;                                      // J4: the working seize sits ABOVE the engine — a task always wins
       }
-      b.sitting = false;                               // not working → never seated
-      if (!b.summoned) continue;                       // summoned workers roam; a bay-bound body stays where work is delivered
-      if (b.target) {
-        const dx = b.target.x - b.px, dy = b.target.y - b.py, d = Math.hypot(dx, dy);
-        if (d < 1.1) {
-          b.px = b.target.x; b.py = b.target.y;
-          if (b.pathPts && b.pathIdx < b.pathPts.length) crewNextWaypoint(b);
-          else { b.pathPts = null; b.target = null; b.state = 'idle'; b.idleUntil = now + U.irnd(2400, 6500); }   // arrived → dwell
-        } else {
-          const s = Math.min(d, SPEED * dt / 1000);
-          b.px += dx / d * s; b.py += dy / d * s; b.state = 'walk';
-          b.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
-        }
-        continue;
-      }
-      if (now < (b.idleUntil || 0)) { b.state = 'idle'; continue; }   // dwelling between strolls
-      crewWander(b, now);
+      if (!b.summoned) { b.sitting = false; continue; }   // bay-bound bodies stay where work is delivered (never seated when not working); only summoned workers get the inner life
+      // PLACED + NON-WORKING + summoned → run the full sentience engine on THIS body, caged to its own zone.
+      // self=b for the duration, then UNCONDITIONALLY restore self=agent so the next body / the hero tick is clean (J1/J2).
+      self = b;
+      tickNeeds(dt);          // this body's own meters drain/refill by what IT is doing
+      crewEngineStep(dt, now);
+      self = agent;           // MANDATORY restore — a single synchronous tick, no re-entrancy once every body restores
     }
   }
 
@@ -913,6 +935,18 @@ const World = (() => {
   /* on arrival, snap the render position onto the cushion claimed at plan time (logical pos stays put) */
   function takeSeat() {
     if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
+  }
+  /* B2: drop ANY body's idle/leisure latch (couch cushion claim + the engine goal bookkeeping) when a task SEIZES
+     it — the crew analogue of the hero summon-seize's releaseSeat()+goal-clear (tick ~1614). Without this, a crew
+     body summoned mid-lounge keeps a stale goal='use'/'lounge' and leaks its occupiedSeats cushion claim forever
+     (a permanently-blocked seat). Operates on an explicit body (NOT `self`) so setActivityFor/handoff can call it
+     without disturbing the actor pointer. Idempotent. */
+  function seizeFromIdle(b) {
+    if (!b) return;
+    if (b.seatKey) occupiedSeats.delete(b.seatKey);
+    b.seatKey = null; b.seated = false; b.pendSeat = null;
+    b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
+    b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
   }
 
   /* v7 sit-ON-the-couch: a couch is a blocking prop (you can't path onto it), so the agent walks to
@@ -1178,11 +1212,21 @@ const World = (() => {
   function sayFirstThought() { /* no spoken wake line — removed */ }
 
   /* ---------- inner life: needs + temperament decide WHICH goal it pursues ---------- */
+  // the desk-seat tile of the CURRENT body (self): the hero falls back to its synthetic module `seat`; a crew body
+  // resolves its OWN assigned workstation's chair (deskSeat(deskPropFor(self.id))) — never the hero's seat, so the
+  // social-refill tether (nearDesk) + the lonely planner (planSeekDesk) measure/path to each body's own desk (J2/J3).
+  // null when the body has no desk (a deskless crew body simply never gets the desk-proximity social refill).
+  function seatFor(body) {
+    if (body === agent) return seat;
+    const dp = body && deskPropFor(body.id);
+    return dp ? deskSeat(dp) : null;
+  }
   // is the agent loitering near its desk (its tether to the Commander)?
   function nearDesk() {
-    if (!seat) return false;
+    const s = seatFor(self);
+    if (!s) return false;
     const c = tileOf(self.px, self.py);
-    return Math.abs(c.x - seat.tx) <= 2 && Math.abs(c.y - seat.ty) <= 2;
+    return Math.abs(c.x - s.tx) <= 2 && Math.abs(c.y - s.ty) <= 2;
   }
   // three slow meters decay/refill by what the agent is doing; clamped 0..100. O(1), every tick.
   function tickNeeds(dt) {
@@ -1195,6 +1239,7 @@ const World = (() => {
   }
   // lonely → drift to a tile by the desk and face south (its window to the Commander); refills social
   function planSeekDesk(now) {
+    const seat = seatFor(self);   // the CURRENT body's own desk (hero → synthetic `seat`; crew → its workstation chair) — never the hero's seat for a crew body (J2/J3)
     if (!seat) return false;
     const spots = [[seat.tx, seat.ty + 1], [seat.tx - 1, seat.ty], [seat.tx + 1, seat.ty], [seat.tx, seat.ty]];
     for (const [tx, ty] of spots) {
@@ -1444,8 +1489,13 @@ const World = (() => {
   // planners run, but now there is a legible reason behind every move so it stops reading as aimless.
   function decideIdle(now) {
     self.stilling = false;                            // every fresh decision starts clean (standStill re-sets it)
-    if (pendingMourn && planMourn(now)) return;        // grief reflex: a beloved spot was just emptied — go stand where it was
-    if (novelty.length && planInspect(now)) return;   // curiosity reflex: a fresh placement always wins
+    // The grief + novelty reflexes read the MODULE pendingMourn/novelty queues, which are the HERO's awareness
+    // (scanNovelty/maybeMourn only run for the hero). A crew body must NOT consume the hero's queue (J2) — gate
+    // both reflexes to self===agent so only the hero acts on them. Crew get their idle life from the want-engine below.
+    if (self === agent) {
+      if (pendingMourn && planMourn(now)) return;      // grief reflex: a beloved spot was just emptied — go stand where it was
+      if (novelty.length && planInspect(now)) return;  // curiosity reflex: a fresh placement always wins
+    }
     if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
     // AUTONOMOUS PROP PLACEMENT — REMOVED (Thronglet direction). The agent no longer drops
     // plant/coffee/cans/poster on random floor tiles (it read as nonsensical clutter). It still
@@ -2201,9 +2251,9 @@ const World = (() => {
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       wakeAt: 0, workUntil: 0,
       // B0 — FULL ENGINE STATE SHAPE (additive, runtime-only): mirror the hero literal (spawn ~346-367) so a
-      // crew body will read real meters/temperament once Tier B (B2) routes the sentience engine through it.
-      // The engine is NOT called on crew yet (they still run crewWander) — this only seeds the shape. Every
-      // field is per-body: a FRESH needs object and a NEW fond Map (never a shared reference) so no body ever
+      // crew body reads real meters/temperament when Tier B2 routes the sentience engine through it (stepCrew →
+      // crewEngineStep, with self=b). Every field is per-body: a FRESH needs object and a NEW fond Map (never a
+      // shared reference) so no body ever
       // reads/mutates another's state (J2). Determinism: needs seeded via U.irnd, temperament via makePersonality
       // (U.hash, no RNG) — no Math.random/Date.now (J5).
       pers: makePersonality(aid),
@@ -2290,7 +2340,7 @@ const World = (() => {
     if (!b) return;                                                       // not yet spawned (e.g. summon mid-flight) — nothing to animate
     const working = (kind === 'task' || kind === 'thinking');
     b.working = working; b.sitting = false; b.dir = working ? 'north' : 'south';   // face away = "at work"; stepCrew seats it at its desk if it has one, else it stands here
-    if (working) { b.target = null; b.pathPts = null; }   // drop any in-flight stroll so stepCrew re-paths straight to the chair
+    if (working) { b.target = null; b.pathPts = null; seizeFromIdle(b); }   // drop any in-flight stroll AND any couch/leisure latch so stepCrew re-paths straight to the chair (J4)
     const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
@@ -2304,7 +2354,7 @@ const World = (() => {
     if (!to || to === agent) return;
     const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
     if (phase === 'done') { to.working = false; to.workUntil = 0; to.dir = 'south'; return; }
-    to.working = true; to.sitting = false; to.dir = 'north'; to.target = null; to.pathPts = null;   // re-path straight to its desk if it has one (stepCrew), else stand
+    to.working = true; to.sitting = false; to.dir = 'north'; to.target = null; to.pathPts = null; seizeFromIdle(to);   // re-path straight to its desk if it has one (stepCrew), else stand; drop any leisure latch (J4)
     to.workUntil = now + 3600000; if (!to.wakeAt || now - to.wakeAt > 1500) to.wakeAt = now;
     sayAt(to, 'on it…');
     const from = bodyForAgent(fromId) || agent;
