@@ -51,6 +51,7 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
+const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
 const { makeSseHub } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
@@ -729,6 +730,9 @@ const checkpointEmit = (name, payload) => { try { return checkpointEmitValidated
 
 let telegram = null;                                    // { adapter, hub } when connected, else null
 let telegramStatus = { connected: false, state: 'down', detail: '' };
+let discord = null;                                     // H6.2: { adapter, hub } when connected, else null
+let discordStatus = { connected: false, state: 'down', detail: '' };
+const channelRegistry = makeChannelRegistry();          // H6.2: telegram + discord descriptors
 
 function normalizeProvider(provider) {
   return (provider === 'codex' || provider === 'openai-codex') ? 'codex' : 'openrouter';
@@ -827,6 +831,57 @@ function stopTelegram() {
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
   telegram = null;
   telegramStatus = { connected: false, state: 'down', detail: '' };
+}
+
+// H6.2: Discord — the adapter shipped fully-tested but the host never started it. Wire it the SAME way as
+// Telegram, but through the generic channelRegistry/wireChannel so there is one inbound->runOnce path. The live
+// gateway connects over a real WebSocket from the bot token (transport default); everything else is the shared hub.
+const DISCORD_PERSONA = 'You are the Commander\'s AI agent aboard the StarNet station, reachable over Discord. '
+  + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
+  + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
+  + 'report what you actually found; never claim you cannot act.';
+function startDiscord(token, key, model, agentCfg) {
+  stopDiscord();
+  const cfg = agentCfg || {};
+  const provider = normalizeProvider(cfg.provider);
+  channelSecrets = Object.assign({}, channelSecrets, { discord: {
+    token: token, key: key, model: model, provider: provider, enabled: true,
+    agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined
+  } });
+  saveChannelSecrets(channelSecrets);
+  const wired = wireChannel(channelRegistry.get('discord'), {
+    hub: {
+      runOnce: runOnce, store: channelStore,
+      secrets: () => {
+        const d = (channelSecrets && channelSecrets.discord) || {};
+        const provider = normalizeProvider(d.provider);
+        const k = provider === 'openrouter' ? (d.key || runtimeKey) : '';
+        return { key: k, model: d.model, provider, agentId: d.agentId, system: d.system };
+      },
+      persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+      newId: () => crypto.randomUUID(),
+      resolveAgent: (ctx) => router.resolveTarget(ctx),
+      getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
+      resolveStation: (agentId) => router.stationFor(agentId)
+    },
+    adapter: {
+      fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
+      onStatus: (s) => {
+        const state = (s && s.state) || 'down';
+        discordStatus = { connected: state === 'error' ? false : !!discord, state: state, detail: (s && s.detail) || '' };
+        if (wired && wired.hub) wired.hub.onStatus(s);
+      }
+    }
+  });
+  discord = { adapter: wired.adapter, hub: wired.hub };
+  discordStatus = { connected: true, state: 'up', detail: '' };
+  wired.adapter.connect();
+  console.log('  · discord channel connected');
+}
+function stopDiscord() {
+  if (discord && discord.adapter) { try { discord.adapter.disconnect(); } catch (_) {} }
+  discord = null;
+  discordStatus = { connected: false, state: 'down', detail: '' };
 }
 
 const server = http.createServer((req, res) => {
@@ -931,6 +986,15 @@ server.listen(PORT, '127.0.0.1', () => {
     if (t.enabled && t.token && t.model && (providerUsesCodex(t.provider) || t.key || runtimeKey)) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider }); console.log('  · telegram auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
+  // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
+  try {
+    const d = (channelSecrets && channelSecrets.discord) || {};
+    const envTok = String(process.env.SKYNET_DISCORD_TOKEN || '').trim();
+    const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
+    const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+    if (d.enabled && d.token && d.model && (providerUsesCodex(d.provider) || d.key || runtimeKey)) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider }); console.log('  · discord auto-started from saved config'); }
+    else if (envTok && envKey && envModel) { startDiscord(envTok, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
+  } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
   // connector that is down/errors simply projects no tools — it never blocks the host or a run).
   try {
