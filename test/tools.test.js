@@ -158,11 +158,11 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
     reg.register({ name: 'echo', schema: { type: 'object' }, run: async () => 'ok' });
     const res = await runAgentLoop({
       messages: [{ role: 'user', content: 'x' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
-      model: 'replay/model', limits: { maxIters: 3 }, tools: reg.wireFormat(),
+      model: 'replay/model', limits: { maxIters: 3, grace: false }, tools: reg.wireFormat(),
       dispatch: (c, ctx) => reg.dispatch(c, ctx)
     });
     A.eq(res.reason, 'max_iters', 'max_iters bounds an always-tool-calling loop');
-    A.eq(provider.callCount(), 3, 'exactly maxIters model calls');
+    A.eq(provider.callCount(), 3, 'exactly maxIters model calls (grace:false -> raw cap)');
   }
 
   // no dispatcher configured but a tool is requested -> typed error, still paired
