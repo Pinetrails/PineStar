@@ -127,7 +127,9 @@ function defaultWorkspaces() {
   return path.join(base, 'Skynet', 'workspaces');
 }
 const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : defaultWorkspaces();
-const CAPS = { maxIters: 16, maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+// maxIters: per-run tool-turn ceiling. Raised 16→40 (P0.3) so real multi-step work isn't truncated early;
+// env-overridable. Parsed inline (num() is defined below). The loop adds one grace turn on top to finish cleanly.
+const CAPS = { maxIters: (Number(process.env.SKYNET_MAX_ITERS) > 0 ? Math.floor(Number(process.env.SKYNET_MAX_ITERS)) : 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
 // can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.

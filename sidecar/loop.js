@@ -103,6 +103,11 @@
     const tools = o.tools || [];
     const limits = o.limits || {};
     const maxIters = limits.maxIters || 10;
+    // GRACE TURN (P0.3): when a run hits the iteration ceiling, give it ONE final no-tools turn to deliver its
+    // best answer instead of dead-stopping at 'max_iters' (the Hermes grace-call pattern). Default on; pass
+    // limits.grace === false to test/force the raw hard cap. Bounded: exactly one grace turn per run.
+    const graceEnabled = (limits.grace !== false);
+    let graceUsed = false;
     const maxCostUsd = (limits.maxCostUsd != null) ? limits.maxCostUsd : Infinity;
     const signal = o.signal || { aborted: false };
     const clock = o.clock;
@@ -200,7 +205,12 @@
     while (true) {
       // (1) GUARDS — before any paid call
       if (signal.aborted) return end('cancelled');
-      if (turns >= maxIters) return end('max_iters');
+      if (turns >= maxIters) {                            // per-RUN iteration ceiling
+        if (graceUsed || !graceEnabled) return end('max_iters');
+        graceUsed = true;                                 // spend ONE grace turn on a final, tool-free answer
+        messages.push({ role: 'system', content: '<iteration_limit>You have reached the maximum number of tool-using turns (' + maxIters + '). Do NOT call any more tools. Give your best final answer to the user now using what you already have.</iteration_limit>' });
+        // fall through: the grace turn runs below; if it still calls tools, the next pass ends max_iters.
+      }
       if (spentUsd >= maxCostUsd) return end('budget');   // per-RUN hard ceiling
       // CROSS-RUN BUDGET: day/global pool over the ledger. check() emits any threshold crossing itself and
       // returns a block descriptor when a soft cap is reached (no resume headroom left) -> stop as 'budget'.

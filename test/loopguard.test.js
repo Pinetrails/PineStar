@@ -68,7 +68,7 @@ const alwaysFail = async () => ({ ok: false, isError: true, content: 'nope', sum
     // fail, fail, SUCCEED, fail, fail, fail, ... — the success at #3 resets the counter so STOP (6) is never hit
     const dispatch = async () => { calls++; return calls === 3 ? { ok: true, isError: false, content: 'ok', summary: 'ok' } : { ok: false, isError: true, content: 'nope', summary: 'error' }; };
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'go' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
-      model: 'replay/model', agentId: 'a', runId: 'r', limits: { maxIters: 8 }, dispatch, capCtx: openCtx() });
+      model: 'replay/model', agentId: 'a', runId: 'r', limits: { maxIters: 8, grace: false }, dispatch, capCtx: openCtx() });
     A.eq(res.reason, 'max_iters', 'with an intervening success the guard never hard-stops (runs to maxIters)');
     A.ok(seq.filter(e => e.name === 'agent.run.error' && /loop guard/.test(e.payload.message)).length === 0, 'no loop-guard stop when the streak was cleared');
   }
@@ -78,7 +78,7 @@ const alwaysFail = async () => ({ ok: false, isError: true, content: 'nope', sum
     const { emit } = setup();
     const provider = toolLoopProvider(10, (i) => '{"x":' + i + '}');   // different args every turn
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'go' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
-      model: 'replay/model', agentId: 'a', runId: 'r', limits: { maxIters: 5 }, dispatch: alwaysFail, capCtx: openCtx() });
+      model: 'replay/model', agentId: 'a', runId: 'r', limits: { maxIters: 5, grace: false }, dispatch: alwaysFail, capCtx: openCtx() });
     A.eq(res.reason, 'max_iters', 'varied-arg failures are not a stuck loop -> runs to maxIters, not a guard stop');
   }
 
@@ -87,7 +87,7 @@ const alwaysFail = async () => ({ ok: false, isError: true, content: 'nope', sum
     const { seq, emit } = setup();
     const provider = toolLoopProvider(10, () => '{"x":1}');
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'go' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
-      model: 'replay/model', agentId: 'a', runId: 'r', limits: { maxIters: 4, loopGuard: false }, dispatch: alwaysFail, capCtx: openCtx() });
+      model: 'replay/model', agentId: 'a', runId: 'r', limits: { maxIters: 4, loopGuard: false, grace: false }, dispatch: alwaysFail, capCtx: openCtx() });
     A.eq(res.reason, 'max_iters', 'loopGuard:false -> no early stop (runs to maxIters)');
     A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'no loop-guard error when disabled');
     A.eq(provider.callCount(), 4, 'ran the full maxIters with the guard off');
