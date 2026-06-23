@@ -41,6 +41,29 @@
     return null;
   }
 
+  /* H2.1 — persistent session cwd. A command runs in one shell invocation, so a `cd` only survives if we
+     RECOVER the final cwd from that same invocation. We append a marker that prints the working dir + the real
+     exit code (captured BEFORE the marker so the appended echo can't mask it), parse it back, strip it from the
+     shown output, and persist the cwd PER AGENT — clamped to the fs jail so it can never drift outside. */
+  const MARK_A = '__SK_CWD__', MARK_EC = '__SK_EC__', MARK_END = '__SK_END__';
+  function buildMarkedCmd(cmd, isWin) {
+    if (isWin) return cmd + ' & call echo ' + MARK_A + '%CD%' + MARK_EC + '%ERRORLEVEL%' + MARK_END;   // `call echo` re-expands %ERRORLEVEL% at runtime
+    return cmd + '\n__sk_ec=$?; printf "\\n' + MARK_A + '%s' + MARK_EC + '%s' + MARK_END + '" "$(pwd)" "$__sk_ec"';
+  }
+  function parseMarker(out) {
+    out = String(out == null ? '' : out);
+    const re = new RegExp(MARK_A + '([\\s\\S]*?)' + MARK_EC + '(-?\\d+)' + MARK_END);
+    const m = out.match(re);
+    if (!m) return { cwd: null, ec: null, cleanOut: out };
+    const ec = parseInt(m[2], 10);
+    const cleanOut = (out.slice(0, m.index).replace(/\n$/, '')) + out.slice(m.index + m[0].length);
+    return { cwd: m[1].trim(), ec: isFinite(ec) ? ec : null, cleanOut: cleanOut };
+  }
+  // is `cwd` the jail root or strictly inside it? (resolve both so .. / symlinks can't sneak past)
+  function withinJail(P, cwd, jailRoot) {
+    try { const r = P.resolve(cwd), j = P.resolve(jailRoot); return r === j || r.indexOf(j + P.sep) === 0; } catch (_) { return false; }
+  }
+
   // best-effort tree-kill: child.kill() reaps the shell; on Windows taskkill /T also reaps its grandchildren.
   function killTree(spawn, child, isWin) {
     try { child.kill(); } catch (_) {}
@@ -100,6 +123,7 @@
     const MAX_BYTES = L.maxBytes || 64000;
     const DEFAULT_MS = L.defaultTimeoutMs || 30000;
     const MAX_MS = L.maxTimeoutMs || 120000;
+    const sessions = new Map();   // H2.1: aid -> { cwd } — a persistent working dir that survives across calls (jail-clamped)
 
     const execTool = {
       name: 'shell.exec', capability: 'workbench', scope: 'execute', requiresConsent: true,
@@ -115,20 +139,29 @@
         if (!cmd) throw new Error('empty command');
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
-        const cwd = P.join(ROOT, aid);
+        const jailRoot = P.join(ROOT, aid);
+        // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
+        // that is still in-jail and still exists; otherwise fall back to the jail root.
+        const sess = sessions.get(aid);
+        let cwd = jailRoot;
+        if (sess && sess.cwd && withinJail(P, sess.cwd, jailRoot) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
         try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {}
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
-        return runCommand({ spawn: spawn, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin }).then(function (res) {
+        return runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin }).then(function (res) {
+          // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
+          const pm = parseMarker(res.out);
+          if (pm.cwd && withinJail(P, pm.cwd, jailRoot)) sessions.set(aid, { cwd: pm.cwd });
+          const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
-          const body = redact(res.out || '(no output)');
-          const content = body + '\n[exit ' + res.exitCode + (res.truncated ? ', output truncated to ' + Math.round(MAX_BYTES / 1000) + 'KB' : '') + note + ']';
+          const body = redact(pm.cleanOut || '(no output)');
+          const content = body + '\n[exit ' + exitCode + (res.truncated ? ', output truncated to ' + Math.round(MAX_BYTES / 1000) + 'KB' : '') + note + ']';
           try {
             if (typeof ctx.emit === 'function') ctx.emit('shell.exec', {
               agentId: aid, runId: ctx.runId || '', callId: ctx.callId || 'call',
-              cmdSummary: redact(clip(cmd)), cwd: aid, exitCode: res.exitCode, ms: res.ms, truncated: res.truncated
+              cmdSummary: redact(clip(cmd)), cwd: aid, exitCode: exitCode, ms: res.ms, truncated: res.truncated
             });
           } catch (_) {}
-          return { content: content, summary: 'exit ' + res.exitCode + ' (' + res.ms + 'ms)' + (res.truncated ? ', truncated' : '') };
+          return { content: content, summary: 'exit ' + exitCode + ' (' + res.ms + 'ms)' + (res.truncated ? ', truncated' : '') };
         });
       }
     };
@@ -140,5 +173,5 @@
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, safeAgentId: safeAgentId };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail };
 });
