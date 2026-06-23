@@ -27,26 +27,23 @@ const SPRITES = (() => {
   }
   const BASE_HUE = 190, BASE_SAT = 0.80;
   function filterFor(agentId) {
-    const a = DATA.AGENT[agentId];
-    if (!a || a.id === 'ULTRON') return '';
-    const { h, s, l } = hexToHsl(a.color);
-    const rot = Math.round(h - BASE_HUE);
-    const sat = Math.max(0.1, Math.min(2, s / BASE_SAT));
-    const bri = Math.max(0.75, Math.min(1.25, 0.85 + l * 0.45));
-    return 'hue-rotate(' + rot + 'deg) saturate(' + sat.toFixed(2) + ') brightness(' + bri.toFixed(2) + ')';
+    // Skins are natively-colored sprite sets, so there is no per-agent hue-rotate.
+    // (An agent's `color` still drives its name-tag / UI accents — just not the sprite.)
+    return '';
   }
 
   /* crew sprites render on a 92px canvas — too large for 12px tiles. downscale
      once at recolor time (cached), nearest-neighbor for crispness.
      ultron keeps more of his source size so he towers over the crew. */
-  const SCALE = { minion: 0.36, ultron: 0.60 };
+  const SCALE = { ultron: 0.60 };   // skins read their scale from DATA.SKINS; ULTRON is special
   function tintFrames(agentId, key) {
     const ck = agentId + '|' + key;
     if (tinted[ck]) return tinted[ck];
     const src = frames[key];
     if (!src) return null;
     const filt = filterFor(agentId);
-    const sc = SCALE[key.split('.')[0]] || 2 / 3;
+    const setName = key.split('.')[0];
+    const sc = SCALE[setName] || (DATA.SKINS[setName] && DATA.SKINS[setName].scale) || 2 / 3;
     tinted[ck] = src.map(img => {
       const w = Math.max(1, Math.round(img.width * sc));
       const h = Math.max(1, Math.round(img.height * sc));
@@ -79,7 +76,8 @@ const SPRITES = (() => {
 
   /* main draw: foot-anchored at (x, y) */
   function drawBody(ctx, b, nowMs) {
-    const set = b.id === 'ULTRON' ? 'ultron' : 'minion';
+    const set = b.id === 'ULTRON' ? 'ultron'
+      : ((DATA.SKINS[b.skin] && DATA.SKINS[b.skin].set) || DATA.SKINS[DATA.DEFAULT_SKIN].set);
     const glancing = b.glance && b.glance.until > nowMs;   // brief look-up: overrides facing & typing
     const meeting = b.meet && b.meet.until > nowMs;        // hallway chat: stand still, face partner
     const dir = glancing ? b.glance.dir : (b.dir || 'south');
@@ -162,9 +160,14 @@ const SPRITES = (() => {
         }));
       }
       await Promise.all(jobs);
-      if (frames['minion.rot.south']) {
+      // ready when the DEFAULT skin's base pose loaded (the old `minion` astronaut set
+      // was retired in favour of DATA.SKINS — gating on it left ready=false forever, so
+      // every body fell through to the procedural fallback regardless of picked skin).
+      const defSet = (typeof DATA !== 'undefined' && DATA.SKINS && DATA.DEFAULT_SKIN
+        && DATA.SKINS[DATA.DEFAULT_SKIN] && DATA.SKINS[DATA.DEFAULT_SKIN].set) || 'bear';
+      if (frames[defSet + '.rot.south'] || frames['ultron.rot.south'] || Object.keys(frames).length) {
         ready = true;
-        console.log('[SPRITES] pixellab crew loaded:', Object.keys(frames).length, 'animation tracks');
+        console.log('[SPRITES] crew loaded:', Object.keys(frames).length, 'animation tracks (default skin:', defSet + ')');
       }
     } catch (e) { console.warn('[SPRITES] manifest missing — procedural fallback', e); }
   }

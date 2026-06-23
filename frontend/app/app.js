@@ -11,6 +11,7 @@ const App = (() => {
   const agents = new Map();   // agentId -> agent object (hero + summoned crew) — the live multi-agent roster
   let resumingSaved = null;   // a save awaiting a re-entered key
   let pickedColor = SUITS[0];
+  let pickedSkin = (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) || 'bear';   // the sprite set the new agent will wear
   let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'worker-homie';
   let pickedSpecialty = null;   // a Recruitment-Bay specialty chosen at the connect screen — seeds the new agent's purpose/manual at wake
   let prePickPersona = null;    // the persona selected BEFORE a roster pick overrode it — restored if the pick is cleared
@@ -124,7 +125,7 @@ const App = (() => {
   }
   // the persisted shape of a crew member (systemPrompt is derived, recomposed on rehydrate).
   function serializeAgentLite(a) {
-    return { id: a.id, name: a.name, color: a.color, model: a.model, personaId: a.personaId,
+    return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, personaId: a.personaId,
              purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
@@ -133,7 +134,7 @@ const App = (() => {
     if (!Array.isArray(savedAgents)) return;
     for (const s of savedAgents) {
       if (!s || !s.id || s.id === 'agent' || agents.has(s.id)) continue;   // hero already registered; skip dups
-      const a = { id: s.id, name: s.name, color: s.color, model: s.model || (agent && agent.model),
+      const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   personaId: s.personaId, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   docs: s.docs, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
@@ -200,7 +201,7 @@ const App = (() => {
     const id = allocAgentId(spec);
     const a = {
       id, name: ((spec && spec.name) || 'AGENT').toUpperCase().slice(0, 18),
-      color: SUITS[agents.size % SUITS.length], model: agent.model,
+      color: SUITS[agents.size % SUITS.length], skin: (spec && spec.skin) || DATA.DEFAULT_SKIN, model: agent.model,
       personaId: (spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) ? spec.persona : agent.personaId,
       purpose: null, createdAt: Date.now()
     };
@@ -451,6 +452,31 @@ const App = (() => {
     });
   }
 
+  // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
+  // id rides on agent.skin and is read by the sprite engine (assets.js drawBody → DATA.SKINS).
+  function buildSkins() {
+    const wrap = el('skin-picker'); if (!wrap || typeof DATA === 'undefined' || !DATA.SKINS) return;
+    wrap.innerHTML = '';
+    if (!DATA.SKINS[pickedSkin]) pickedSkin = DATA.DEFAULT_SKIN;
+    Object.keys(DATA.SKINS).forEach(id => {
+      const sk = DATA.SKINS[id];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'skin-thumb' + (id === pickedSkin ? ' sel' : '');
+      b.title = sk.name || id;
+      const img = document.createElement('img');
+      img.src = 'assets/sprites/' + sk.set + '/rot_south.png';
+      img.alt = sk.name || id; img.draggable = false;
+      b.appendChild(img);
+      b.onclick = () => {
+        pickedSkin = id;
+        [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        SFX.click();
+      };
+      wrap.appendChild(b);
+    });
+  }
+
   // the PERSONALITY picker: pick the agent's preset vibe at creation (default worker-homie). The chosen
   // id rides on agent.personaId and shapes the system prompt via composeSystemPrompt → personas.js.
   function buildPersonas() {
@@ -485,6 +511,7 @@ const App = (() => {
     el('in-model').oninput = updateHint;
     if (prefillName) el('in-name').value = prefillName;
     buildSwatches();
+    buildSkins();
     buildPersonas();
     pickedSpecialty = null; prePickPersona = null; resetRosterPick();   // a fresh connect screen carries no stale specialty pick
     const br = el('btn-roster'); if (br) br.onclick = openRosterPicker;
@@ -575,7 +602,7 @@ const App = (() => {
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
-    agent = { id: 'agent', name, color: pickedColor, model, personaId: pickedPersona, purpose: null, createdAt: Date.now() };
+    agent = { id: 'agent', name, color: pickedColor, skin: pickedSkin || DATA.DEFAULT_SKIN, model, personaId: pickedPersona, purpose: null, createdAt: Date.now() };
     agentDocs(agent);                              // seed identity.md / purpose.md / operating-manual.md
     // if the Commander recruited a specialty from the Roster, the agent wakes already specced: fold the
     // preset purpose + standing orders in BEFORE composing the prompt (the awakening then skips re-asking).
