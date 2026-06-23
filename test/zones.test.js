@@ -54,6 +54,16 @@ const zBayPref = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a3' });
 A.eq(zBayPref.kind, 'room', 'a3 anchor resolves to a room via its bay');
 A.eq(zBayPref.rect, { x1: 22, y1: 0, x2: 27, y2: 5 }, 'anchor resolves from the BAY (side room), not the earlier workstation (big room)');
 
+// ---- workstation-ONLY agent resolved from a bound PROP (no bay, no anchorTile) ----
+// 'a2' is bound to a single NON-bay prop (a workstation at (8,6) in the big room). With no
+// anchorTile, anchorFromProps has no bay to take, so it MUST fall through to the `any` bound
+// prop and resolve the workstation's room. This exercises the `bay || any` fallback through the
+// public computeZone API: mutating `const p = bay || any` -> `const p = bay` makes a3-style
+// agents still pass but resolves a2 to null here (so this case kills that mutant).
+const zWorkOnly = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a2' });
+A.eq(zWorkOnly.kind, 'room', 'workstation-only agent (no bay) resolves a room via the `any` bound-prop fallback');
+A.eq(zWorkOnly.rect, { x1: 0, y1: 0, x2: 20, y2: 12 }, 'a2 anchor resolves from its only prop (the big-room workstation), not null');
+
 // agent in the big room
 const zMain = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a2', anchorTile: { x: 8, y: 6 } });
 A.eq(zMain.kind, 'room', 'agent in the big room gets a room zone');
@@ -89,6 +99,21 @@ A.eq(zLeash.r, 4, 'leash honors the supplied radius');
 const zLeashDefault = Z.computeZone({ rects: [], anchorTile: { x: 3, y: 3 } });
 A.eq(zLeashDefault.kind, 'leash', 'empty rects -> leash');
 A.eq(zLeashDefault.r, Z.DEFAULT_LEASH, 'leash falls back to DEFAULT_LEASH when none supplied');
+
+// ---- non-positive leashR falls back to DEFAULT_LEASH (the `> 0` guard) ----
+// A 0/negative radius would yield a degenerate single-tile leash (r:0) the agent can't roam in,
+// so the guard must reject it and use DEFAULT_LEASH. Mutating `opts.leashR > 0` -> `>= 0` lets
+// leashR:0 produce r:0 — these cases lock the guard.
+A.eq(Z.computeZone({ rects: [], anchorTile: { x: 5, y: 5 }, leashR: 0 }).r, Z.DEFAULT_LEASH,
+  'leashR:0 is non-positive -> falls back to DEFAULT_LEASH (not a degenerate r:0)');
+A.eq(Z.computeZone({ rects: [], anchorTile: { x: 5, y: 5 }, leashR: -3 }).r, Z.DEFAULT_LEASH,
+  'negative leashR -> falls back to DEFAULT_LEASH');
+
+// ---- fractional leashR is floored to an integer tile count (Math.floor) ----
+// A radius is a count of tiles; a fractional input must normalize down. Mutating
+// `Math.floor(opts.leashR)` -> `opts.leashR` would leak the 4.9 — this locks the flooring.
+A.eq(Z.computeZone({ rects: [], anchorTile: { x: 0, y: 0 }, leashR: 4.9 }).r, 4,
+  'fractional leashR (4.9) is floored to an integer radius (4)');
 
 // ---- unassigned / unplaced -> null (no anchor at all) ----
 A.eq(Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'ghost' }), null, 'unknown agent with no anchor -> null');
