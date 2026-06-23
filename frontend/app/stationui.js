@@ -104,10 +104,21 @@ const StationUI = (() => {
     const p = termPos[key];
     if (p) { w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none'; return; }
     const prior = Math.max(0, Object.keys(open).length - 1);   // how many were already open
-    const baseL = 92, baseT = 80, step = 30, span = 6;
     const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
-    let left = baseL + (prior % span) * step;
-    let top  = baseT + (prior % span) * step;
+    let left, top;
+    if (prior === 0) {
+      // SINGLE window = the focal point: center it (slightly high, like a CRT).
+      // Cascading from the top-left corner only makes sense once panels stack;
+      // for the common one-panel case a centered window reads as intentional
+      // instead of "a box shoved in the corner" with COMMS + floor competing.
+      left = (window.innerWidth  - wpx) / 2;
+      top  = (window.innerHeight - hpx) / 2 - 18;
+    } else {
+      // 2nd+ window: cascade off the corner so stacked panels never bury each other.
+      const baseL = 92, baseT = 80, step = 30, span = 6;
+      left = baseL + (prior % span) * step;
+      top  = baseT + (prior % span) * step;
+    }
     left = Math.max(8, Math.min(left, window.innerWidth  - wpx - 8));
     top  = Math.max(8, Math.min(top,  window.innerHeight - hpx - 8));
     w.style.left = left + 'px'; w.style.top = top + 'px'; w.style.transform = 'none';
