@@ -111,7 +111,8 @@
     const maxCostUsd = (limits.maxCostUsd != null) ? limits.maxCostUsd : Infinity;
     const signal = o.signal || { aborted: false };
     const clock = o.clock;
-    const cost = o.cost;
+    let cost = o.cost;   // swappable: a cross-provider fallback entry can carry its own cost engine (fb.cost) so
+                         // spend is priced by the NEW provider's catalog after a switch (P3.1 per-provider cost).
     const dispatch = o.dispatch;
     const capCtx = o.capCtx;
     const agentId = o.agentId || 'agent';
@@ -264,7 +265,10 @@
           if (fb && fb.provider) {
             // notify BEFORE switching: activeCredKey is still the OUTGOING key that just failed (cool it if rotate).
             if (onFallback) { try { onFallback({ reason: cls.reason, rotate: !!cls.shouldRotateCredential, credKey: activeCredKey }); } catch (_) {} }
+            // observable failover telemetry (P3.1): which model we left, which we moved to, and why.
+            emit('provider.fallback', { agentId, runId, fromModel: model, toModel: (fb.model || model), reason: cls.reason, rotate: !!cls.shouldRotateCredential });
             if (fb.credKey != null) activeCredKey = fb.credKey;   // the entry we switch TO becomes the live credential
+            if (fb.cost) cost = fb.cost;                          // cross-provider: price subsequent turns by the new provider's catalog
             provider = fb.provider;
             if (fb.model) model = fb.model;   // the next agent.cost carries the switched model — the visible failover signal
             recoveries++;

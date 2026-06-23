@@ -9,6 +9,7 @@ const events = require('../shared/events.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
 const { makeCredPool } = require('../sidecar/credpool.js');
+const { makeCostEngine } = require('../sidecar/cost.js');
 
 function setup() {
   const bus = A.makeBus();
@@ -52,6 +53,11 @@ function okProvider(text) {
     const assistant = res.messages.filter(m => m.role === 'assistant').pop();
     A.ok(assistant && String(assistant.content).indexOf('rotated reply') !== -1, 'assistant carries the fresh-key reply');
     A.eq(seq.filter(e => e.name === 'agent.run.end').length, 1, 'exactly one run.end despite the rotation');
+    // P3.1 telemetry: the failover is observable on the bus, not just implied by the switched agent.cost.model
+    const fb = seq.filter(e => e.name === 'provider.fallback');
+    A.eq(fb.length, 1, 'a provider.fallback telemetry event is emitted on rotation');
+    A.eq(fb[0].payload.reason, 'rate_limit', 'fallback event carries the classified reason');
+    A.eq(fb[0].payload.rotate, true, 'fallback event flags it as a credential rotation');
   }
 
   // ---- exhausted pool: primary + the only fallback both rate-limit -> honest error, no infinite spin ----
@@ -75,6 +81,24 @@ function okProvider(text) {
     });
     A.eq(res.reason, 'done', 'single-provider run unaffected by the rotation additions');
     A.eq(seq.filter(e => e.name === 'agent.run.end').length, 1, 'one run.end');
+  }
+
+  // ---- cross-provider failover prices subsequent turns by the NEW provider's cost engine (P3.1) ----
+  {
+    const { seq, emit } = setup();
+    const primaryCost = makeCostEngine({ priceOf: () => ({ in: 0, out: 0 }) });           // primary: free
+    const fbCost = makeCostEngine({ priceOf: () => ({ in: 1000, out: 1000 }) });          // fallback provider: priced (per-million)
+    const res = await runAgentLoop({
+      messages: [{ role: 'user', content: 'hi' }], emit, model: 'provA/model', agentId: 'a', runId: 'xprov',
+      provider: rateLimitedProvider(), cost: primaryCost,
+      fallbacks: [{ provider: okProvider('done'), model: 'provB/model', cost: fbCost, credKey: 'B' }]
+    });
+    A.eq(res.reason, 'done', 'cross-provider failover completes');
+    const cost = seq.filter(e => e.name === 'agent.cost').pop();
+    A.ok(cost && cost.payload.usd > 0, 'spend is priced by the FALLBACK provider cost engine, not the free primary');
+    A.eq(cost.payload.model, 'provB/model', 'the reconciled cost carries the switched-to model');
+    const fb = seq.filter(e => e.name === 'provider.fallback').pop();
+    A.eq(fb.payload.toModel, 'provB/model', 'telemetry records the cross-provider target model');
   }
 
   A.report('credrotate.test');

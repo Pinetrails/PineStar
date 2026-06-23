@@ -49,6 +49,12 @@
     'agent.run.error': obj(['agentId', 'runId', 'message', 'transient'], {
       agentId: str, runId: str, message: str, transient: bool
     }),
+    // the loop advanced its failover chain mid-run: a fallback to an alternate model and/or a credential
+    // rotation (P0.2/P3.1). Observable telemetry — the only prior signal was the switched agent.cost.model.
+    'provider.fallback': obj(['agentId', 'runId', 'fromModel', 'toModel', 'reason'], {
+      agentId: str, runId: str, fromModel: str, toModel: str, reason: str,
+      fromProvider: str, toProvider: str, rotate: bool
+    }),
     'run.cancel': obj(['runId'], { runId: str }),
     // context was compacted mid-run (Hermes-style cache-aware compaction): tokens before/after + items removed.
     'agent.compact': obj(['agentId', 'runId'], {

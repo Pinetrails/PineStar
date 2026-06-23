@@ -25,6 +25,7 @@ const cases = [
   ['tool.args.repaired', { agentId: 'a', runId: 'r', callId: 'c1', name: 'fs_write', before: '{', after: '{}' }, { agentId: 'a', runId: 'r', callId: 'c1' }],
   ['agent.cost', { agentId: 'a', runId: 'r', usd: 0.1, reconciled: true }, { agentId: 'a', runId: 'r', usd: 0.1, reconciled: false }],
   ['agent.run.end', { agentId: 'a', runId: 'r', reason: 'done', turns: 2, usd: 0.2 }, { agentId: 'a', runId: 'r', reason: 'whoops', turns: 2, usd: 0.2 }],
+  ['provider.fallback', { agentId: 'a', runId: 'r', fromModel: 'm1', toModel: 'm2', reason: 'rate_limit', rotate: true }, { agentId: 'a', runId: 'r', fromModel: 'm1', toModel: 'm2' }],
   ['budget.threshold', { scope: 'run', usd: 1, cap: 5 }, { scope: 'weekly', usd: 1, cap: 5 }],
   ['permission.response', { promptId: 'p', decision: 'once' }, { promptId: 'p', decision: 'maybe' }],
   ['memory.recall', { agentId: 'a', runId: 'r', count: 3, chars: 120 }, { agentId: 'a', runId: 'r', count: 'three' }],
