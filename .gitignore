@@ -38,3 +38,7 @@ src-tauri/binaries/
 .matest-workspaces/
 # skin-generation working files (pixellab scratch; the committed sprite sets + _preset recipe stay tracked)
 frontend/assets/sprites/_clawd_work/
+# scripts/devverify.mjs --smoke chrome profile dirs (self-cleaned after each run; this is belt-and-suspenders)
+.devverify-chrome-*/
+# scripts/board.mjs --write output (a regenerated snapshot; the live board is `node scripts/board.mjs`)
+scripts/STATUS.generated.md

@@ -26,9 +26,9 @@
 //
 // Exit 0 = trustworthy PASS, 1 = FAIL (with the reason).
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -74,8 +74,8 @@ const cleanups = [];
 function killTree(pid) {
   if (!pid) return;
   try {
-    if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
-    else process.kill(-pid, 'SIGKILL');
+    if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });   // SYNC: the tree is reaped before we process.exit (no orphan holding the port)
+    else { try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch {} } }            // group kill, fall back to the bare pid
   } catch {}
 }
 
@@ -105,17 +105,18 @@ async function main() {
     await sleep(500);
   }
   if (!up) { fail('sidecar did not become ready on :' + port); return; }
+  if (childDead) { fail('our sidecar exited just as :' + port + ' answered — a FOREIGN process likely holds the port; aborting (do not read a stranger)'); return; }
   ok('our sidecar (pid ' + child.pid + ') is serving :' + port);
 
   // 4) THE IDENTITY CHECK — served bytes must equal this worktree's on-disk file
   const diskBuf = await readFile(join(FRONTEND, SENTINEL));
   const served = await fetch('http://127.0.0.1:' + port + '/' + SENTINEL);
   const servedBuf = Buffer.from(await served.arrayBuffer());
-  if (servedBuf.length !== diskBuf.length) {
-    fail('IDENTITY MISMATCH on ' + SENTINEL + ': served ' + servedBuf.length + 'B vs on-disk ' + diskBuf.length + 'B → reading a DIFFERENT checkout. Aborting (this is the false-PASS guard).');
+  if (servedBuf.length !== diskBuf.length || !servedBuf.equals(diskBuf)) {
+    fail('IDENTITY MISMATCH on ' + SENTINEL + ': served ' + servedBuf.length + 'B vs on-disk ' + diskBuf.length + 'B (byte content differs) → reading a DIFFERENT checkout. Aborting (this is the false-PASS guard).');
     return;
   }
-  ok('identity verified: served ' + SENTINEL + ' (' + servedBuf.length + 'B) == on-disk');
+  ok('identity verified: served ' + SENTINEL + ' (' + servedBuf.length + 'B) is byte-identical to on-disk');
 
   if (!SMOKE) { ok('boot + identity PASS (no --smoke requested)'); return; }
 
@@ -131,19 +132,26 @@ async function cdpSmoke(appPort) {
   ].filter(Boolean).find((p) => existsSync(p));
   if (!CHROME) { fail('--smoke requested but no Chrome found (set SKYNET_CHROME)'); return; }
 
-  const cdpPort = await findFreePort(appPort + 100);
-  const userDir = join(ROOT, '.devverify-chrome-' + cdpPort);
-  const ch = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-first-run',
-    '--remote-debugging-port=' + cdpPort, '--user-data-dir=' + userDir, '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
-  cleanups.push(() => killTree(ch.pid));
-
-  // connect CDP
-  let target;
-  for (let i = 0; i < 40; i++) {
-    try { const r = await fetch('http://127.0.0.1:' + cdpPort + '/json/list'); const t = await r.json(); target = t.find((x) => x.type === 'page'); if (target?.webSocketDebuggerUrl) break; } catch {}
-    await sleep(300);
+  // Launch Chrome with a small retry: a CDP-port TOCTOU race or an early Chrome exit is HARNESS
+  // infra, not the app under test — so detect it, retry on a fresh port, and label it as infra (never
+  // report a healthy app as FAIL because of a Chrome port collision on this busy box).
+  let target = null, lastErr = '';
+  for (let attempt = 0; attempt < 2 && !target; attempt++) {
+    const cdpPort = await findFreePort(appPort + 100 + attempt * 11);
+    const userDir = join(ROOT, '.devverify-chrome-' + cdpPort);
+    const ch = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-first-run',
+      '--remote-debugging-port=' + cdpPort, '--user-data-dir=' + userDir, '--window-size=1440,900', 'about:blank'],
+      { stdio: 'ignore', detached: process.platform !== 'win32' });   // detached so the POSIX group-kill reaps Chrome's renderer/zygote children
+    let chromeDead = false; ch.once('exit', () => { chromeDead = true; });
+    cleanups.push(() => { killTree(ch.pid); try { rmSync(userDir, { recursive: true, force: true }); } catch {} });   // also DELETE the profile dir — never leak/commit it
+    for (let i = 0; i < 40 && !target; i++) {
+      if (chromeDead) { lastErr = 'Chrome exited early (port race on :' + cdpPort + '?)'; break; }
+      try { const r = await fetch('http://127.0.0.1:' + cdpPort + '/json/list'); const pg = (await r.json()).find((x) => x.type === 'page'); if (pg?.webSocketDebuggerUrl) { target = pg; break; } } catch {}
+      await sleep(300);
+    }
+    if (!target && !lastErr) lastErr = 'CDP did not attach on :' + cdpPort;
   }
-  if (!target?.webSocketDebuggerUrl) { fail('could not attach Chrome CDP on :' + cdpPort); return; }
+  if (!target?.webSocketDebuggerUrl) { fail('[INFRA, not the app under test] could not attach headless Chrome after 2 tries — ' + lastErr); return; }
 
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.addEventListener('open', res, { once: true }); ws.addEventListener('error', rej, { once: true }); });
@@ -174,7 +182,9 @@ async function cdpSmoke(appPort) {
     else fail('assert FAILED: ' + expr + ' → ' + JSON.stringify(val) + ' (wanted ' + expected + ')');
   }
 
-  const realErrors = errors.filter((e) => !/favicon/.test(e));   // favicon 404 is a known benign trunk-wide non-issue
+  // drop ONLY the benign favicon.ico resource-load 404 (narrow: a real error that merely mentions
+  // 'favicon' in a stack/URL must NOT be swallowed). Match favicon.ico + a load-failure signal.
+  const realErrors = errors.filter((e) => !(/favicon\.ico/.test(e) && /(404|Failed to load resource|ERR_|net::)/.test(e)));
   if (realErrors.length) { realErrors.slice(0, 12).forEach((e) => fail('runtime: ' + e)); }
   else ok('headless load clean (no console errors/exceptions beyond benign favicon)');
 }
