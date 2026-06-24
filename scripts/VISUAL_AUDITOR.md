@@ -53,22 +53,35 @@ sibling of the **Overseer+** loop (L1, git/board) which runs in the orchestrator
    > `#screen-game.active` (reloading if needed) before capturing. Panels are driven by STABLE
    > `id`/`[data-term]` selectors (re-derived from `index.html`/`navdock.js`), not drifting text.
 
-2. **Read each PNG** and judge it against the incoherence rubric:
-   - **Overlap** — panels/layers stacking so content is buried or competes.
-   - **Off-center / dead space** — a lone panel shoved to a corner; >40% empty.
-   - **Clash** — two paradigms fighting (translucent floating box next to a full-bleed
-     overlay), inconsistent panel widths/chrome, bright live floor bleeding through text.
-   - **Disconnected** — a panel that ignores its neighbors (COMMS lit + undimmed beside a modal).
-   - **Unpolished** — truncation, misalignment, default/placeholder styling, jagged spacing.
-   - **Truthfulness** (carry-over from QA): does any panel claim state the harness can't prove?
+2. **Triage with golden diffing — read ONLY what changed (don't re-judge every frame each cycle):**
+   ```
+   npm run golden        # captures + diffs every state vs scripts/goldens.json
+   ```
+   - **Exit 0 (GOLDEN PASS)** → no frame moved beyond the animation-noise floor; there is nothing
+     new to look at. Skip straight to the behavioral audit (step 3). This is the unattended path.
+   - **Exit 3 (CHANGED)** → read ONLY the flagged frames listed in `.uigolden/golden-report.json`
+     (a newly-merged branch changed them). Judge each against the incoherence rubric:
+     - **Overlap** — panels/layers stacking so content is buried or competes.
+     - **Off-center / dead space** — a lone panel shoved to a corner; >40% empty.
+     - **Clash** — two paradigms fighting (translucent floating box next to a full-bleed
+       overlay), inconsistent panel widths/chrome, bright live floor bleeding through text.
+     - **Disconnected** — a panel that ignores its neighbors (COMMS lit + undimmed beside a modal).
+     - **Unpolished** — truncation, misalignment, default/placeholder styling, jagged spacing.
+     - **Truthfulness** — does any panel claim state the harness can't prove?
+   - If a flagged change is a legitimate, coherent improvement → **re-bless** (`npm run golden:bless`)
+     so it becomes the new baseline. If it's a regression → file + fix (step 4).
 
-3. **File + fix.** Append concrete findings to `SESSIONS.md` (state name + what's wrong +
-   owning dept). Fix small/cross-cutting issues directly in the **live-polish** worktree and
-   **re-shoot to confirm** (detect→fix→verify must close — a verbal "fixed" counts for zero).
-   Route larger structural fixes to UI-SHELL (panels/CSS) or WORLD-GAME (floor/canvas).
+3. **Behavioral + truthfulness audit (auto, no eyeballing):**
+   ```
+   npm run audit         # PASS/FAIL: in-zone idle · gaze-only awareness · summon · place-prop=cap · HUD truthful
+   ```
+   Nonzero exit = a real behavioral/telemetry regression; the failing frame is in `.uiaudit/`.
 
-4. **Re-run** next cycle. Diff against the prior `.uishots-trunk/` to catch regressions a
-   newly-merged branch introduced (parallel-agent breakage is recurring).
+4. **File + fix.** Append concrete findings to `SESSIONS.md` (state name + what's wrong + owning
+   dept). Fix small/cross-cutting issues directly in the **live-polish** worktree and **re-verify**
+   (`npm run golden` / `npm run audit` must go green — a verbal "fixed" counts for zero). Route
+   larger structural fixes to UI-SHELL (panels/CSS) or WORLD-GAME (floor/canvas). Then **re-run**
+   next cycle — golden diffing makes parallel-agent breakage (a recurring failure mode) visible.
 
 ## Baseline (known good — regression tripwires)
 - **VA-1 FIXED + re-confirmed on trunk `a37b0e0`/`927b2fe` (pass 2, 06-22):** every `#terms`

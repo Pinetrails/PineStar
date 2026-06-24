@@ -16,6 +16,8 @@
     "dev:seed:keep": "node dev/seed.js --keep",
     "shoot": "node scripts/shoot.mjs",
     "audit": "node scripts/audit.mjs",
+    "golden": "node scripts/golden.mjs",
+    "golden:bless": "node scripts/golden.mjs --bless",
     "serve": "node scripts/serve-ui-only.js",
     "serve:ui-only": "node scripts/serve-ui-only.js",
     "tauri": "tauri",
