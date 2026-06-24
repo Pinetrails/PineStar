@@ -535,7 +535,7 @@ transient-retry path end-to-end.
     files already in `test:fast`). No `shared/events.js`/`shared/schema.js` edit; no NEW event emitted.
     `git log feat/harness-backend..agent/parity-finish -- shared/*` stays empty.
 
-### G4.5 — One-shot fire-claim idempotency (explicit, tested policy)  ·  STATUS: TODO
+### G4.5 — One-shot fire-claim idempotency (explicit, tested policy)  ·  STATUS: DONE
 One-line task: stamp a `fireClaim`/`lastFireAttemptAt` on a one-shot at fire time
 (advance-before-run analog); `planTick` treats a one-shot with a FRESH claim (< `maxRunMs`,
 no settlement) as not-due so a crash-restart inside the run window does NOT re-fire, while a
@@ -551,6 +551,51 @@ zombie past the ceiling does (analog of `claim_job_for_fire`, `jobs.py:1226-1271
 - **Files:** `sidecar/cron-store.js` (edit, low — additive `fireClaim` in `makeJob`/`markRun`);
   `test/cron.durability.test.js` or a sibling (extend). 
 - **Notes:** Document the chosen at-most-once-within-window policy in the `cron.js` header.
+- **DONE (2026-06-23, commit 7201d32).** A one-shot now fires AT MOST ONCE within its run window even across a
+  crash-restart. Recurring jobs are protected by advance-before-run (persist the advanced `nextRunAt` before
+  launch); a one-shot has no next fire to advance, so it gets the analog — a FIRE-CLAIM stamped + persisted
+  BEFORE launch and cleared on settlement.
+  - **`cron-store.js`** — `makeJob` gains the additive `fireClaim`/`lastFireAttemptAt` fields (both `null` on a
+    fresh job; cron records are PLAIN internal objects, NOT governed by `shared/schema.js` — confirmed by grep —
+    so this is a pure additive field, no memory-cortex request). NEW pure reducer `claimOnceFire(jobs, id, {now})`
+    stamps `fireClaim = now` (the fire-instant ms) + `lastFireAttemptAt = iso(now)`. **`markRun` CLEARS `fireClaim`
+    on EVERY settlement** — success, terminal failure, AND transient failure (set before both return paths) — so
+    the not-due guard suppresses re-fire ONLY while the run is genuinely in flight. Stays determinism-clean (no
+    `Date.now`/`new Date()`/`Math.random`; `now` injected).
+  - **`cron.js` `planTick`** — a one-shot carrying a FRESH claim (`0 <= now-fireClaim < maxRunMs`, no `lastRunAt`)
+    is treated as NOT due → no re-fire (a crash-restart INSIDE the window does not double-fire). A ZOMBIE claim
+    (`age >= maxRunMs`, a crashed holder) falls through and re-fires (reclaim). `maxRunMs` injected via `opts`
+    (default 8min). The SETTLED guard (`lastRunAt` set → ineligible) is unchanged. **The critic case:** a
+    transient failure clears the claim and re-arms via the existing backoff `nextRunAt` — it is NOT suppressed by
+    a stale claim (claim cleared + `lastRunAt` still null → fires at the backoff time). Policy documented in the
+    `cron.js` header next to the G4.1 DST policy note.
+  - **`cron-driver.js`** — threads `maxRunMs` into `planTick`; in the advance-before-run write (step 3) it also
+    stamps the one-shot fire-claim via `cronStore.claimOnceFire` and persists it in the SAME `setJobs` (so the
+    claim lands under the G4.3 cron-lock + G4.2 durable write, before launch). A deferred (G4.4 cap) or
+    already-leased one-shot is NOT claimed this tick. A no-capability one-shot still gets a claim → a bounded
+    ~`maxRunMs` backoff (not per-tick hammering), recovered by the zombie reclaim — intentional + documented.
+    No `index.js` edit needed: `applyTick` (boot reconcile + timer) is the sole fire path and already persists via
+    `setJobs` under the lock; the `/api/cron/preview` route is display-only.
+  - **Verified RED→GREEN** (`test/cron.oneshot.test.js`, NEW, 51 assertions). RED on the unmodified tree: **13
+    failures** — `fireClaim`/`lastFireAttemptAt` undefined, a fresh-claimed one-shot RE-FIRES inside the window
+    (the bug), `markRun` does not clear the claim (real exit 1). GREEN after: `OK (51 assertions)`. Cases: (0)
+    makeJob fields null; (1) planTick PURE — unclaimed-due fires, fresh-claim suppressed, zombie-claim reclaimed,
+    settled never re-fires; (2) CRASH-IN-WINDOW end-to-end via the REAL driver + durable persistence — claim
+    persisted before the never-settling run, a NEW driver over the same on-disk store INSIDE the window fires
+    ZERO, a NEW driver PAST the ceiling re-fires (zombie); (3) IN-FLIGHT vs SETTLED at the reducer — `markRun`
+    clears the claim for transient / terminal-success / terminal-failure, and the transient case re-arms via
+    backoff; (4) end-to-end transient re-arm through the driver (fire → transient settle clears claim → re-fire
+    at the backoff time → success finalizes); (4b) no-capability bounded-backoff + zombie recovery; (5)
+    interval-job REGRESSION unaffected. Full `npm run test:fast` GREEN (EXIT 0 — no cron/cron.tick/cron.dst/
+    cron.durability/cron.lock regressions; lint-emits + lint-determinism GREEN, 75 files). `npm run test:http`
+    GREEN (EXIT 0 — cron.api 56 assertions round-trip the additive fields through the real CRUD routes). **LIVE
+    boot smoke** (`SKYNET_CRON_ENABLED=1`, free port :8847, temp WORKSPACES): boots clean — "cron enabled — 1
+    routine(s); running boot reconcile", "cron tick armed (60s)", no errors.
+  - **Files:** `sidecar/cron-store.js` (fields + `claimOnceFire` + `markRun` clear + header), `sidecar/cron.js`
+    (`planTick` claim guard + header policy), `sidecar/cron-driver.js` (thread `maxRunMs` + stamp claim in the
+    advance-before-run write), `test/cron.oneshot.test.js` (NEW), `package.json` (append the test after
+    `cron.lock`). No `shared/events.js`/`shared/schema.js` edit (`git log feat/harness-backend..agent/parity-finish
+    -- shared/*` stays empty); no NEW event emitted (the claim is internal job state, not an event).
 
 ### G4.6 — Honest disabled-state + one-click enable  ·  STATUS: TODO
 One-line task: when the scheduler is OFF, show a one-click ENABLE control that arms the timer
@@ -823,3 +868,23 @@ merge in small increments.
   tick armed, no errors. No `shared/events.js`/`shared/schema.js` edit; no NEW event emitted (added the 4
   items to the Pending events batch section). Files: `sidecar/cron-driver.js`, `sidecar/index.js`,
   `test/cron.tick.test.js`. Next: **G4.5** (one-shot fire-claim idempotency).
+- 2026-06-23 — **G4.5 One-shot fire-claim idempotency: DONE (commit 7201d32).** A one-shot (non-recurring) routine
+  now fires AT MOST ONCE within its run window even across a crash-restart. The advance-before-run trick has no
+  analog for a one-shot (no next fire to advance), so it gets a FIRE-CLAIM: the driver stamps `fireClaim` (=
+  fire-instant ms) + `lastFireAttemptAt` via the new `cronStore.claimOnceFire` reducer and persists it in the SAME
+  advance-before-run write (under the G4.3 lock + G4.2 durable write), BEFORE launch. `planTick` then treats a
+  one-shot with a FRESH claim (`age < maxRunMs`, no `lastRunAt`) as NOT due — a crash-restart inside the window
+  does not re-fire — while a ZOMBIE claim (`age >= maxRunMs`) is reclaimed and re-fires. **Critic case handled:**
+  `markRun` CLEARS `fireClaim` on EVERY settlement (success / terminal failure / transient failure), so the guard
+  suppresses re-fire ONLY while in flight; a transient-failed one-shot clears its claim and re-arms via the normal
+  backoff `nextRunAt` (NOT suppressed by a stale claim). Policy documented in the `cron.js` header next to the DST
+  note. Additive-only: `fireClaim`/`lastFireAttemptAt` are plain internal record fields — cron records are NOT
+  governed by `shared/schema.js` (grep-confirmed), so no memory-cortex request; no new event (internal job state).
+  RED→GREEN proven (`test/cron.oneshot.test.js`, NEW, 51 assertions: 13 fails on the unmodified tree — fields
+  absent, fresh claim re-fires, markRun doesn't clear — → `OK (51)`); cases cover pure-planTick fresh/zombie/
+  settled suppression, CRASH-IN-WINDOW + zombie reclaim end-to-end via the real driver + durable persistence,
+  in-flight-vs-settled claim-clear for transient/terminal-success/terminal-failure, end-to-end transient re-arm
+  through the driver, no-capability bounded-backoff, and an interval-job regression. Full `test:fast` GREEN (EXIT 0,
+  no cron-suite regressions, lint-determinism/lint-emits GREEN); `test:http` GREEN (cron.api 56 assertions
+  round-trip the additive fields); LIVE boot smoke (cron enabled, free port :8847) boots clean. No `shared/*` edit.
+  Next: **G4.6** (honest disabled-state + one-click enable).
