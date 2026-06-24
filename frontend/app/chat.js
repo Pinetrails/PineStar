@@ -630,7 +630,12 @@ const Chat = (() => {
   // question uses this so a chip seeds "what i'm building: …" instead of committing a half-empty answer).
   function prefill(t) {
     if (!input) return;
-    input.value = String(t == null ? '' : t);
+    const add = String(t == null ? '' : t);
+    const cur = input.value;
+    // APPEND, never replace: tapping a 2nd facet chip must not wipe what the 1st started (or what the Commander
+    // already typed). Separate with "; " unless the line already ends on a separator or is empty.
+    if (cur.trim()) input.value = /[;:,]\s*$/.test(cur) ? cur.replace(/\s+$/, '') + ' ' + add : cur.replace(/\s+$/, '') + '; ' + add;
+    else input.value = add;
     input.focus();
     try { const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
   }

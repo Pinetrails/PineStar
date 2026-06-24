@@ -75,11 +75,15 @@ const Onboarding = (() => {
     // The VOICE is already chosen on the create screen (Personas.compose folds it into the prompt), so the
     // awakening no longer authors it — it acknowledges it (see theMandate) and goes straight to the mission.
     const lead = (role === 'orchestrator');
+    // Each step is ONE short question (the wall-of-text pre-prompts were cut). One answer — type it or tap a
+    // chip — and we move on. NO "anything else?" loop: a single Enter commits and proceeds. Optional steps say
+    // "(or skip.)" and carry a Skip chip. The personality lives in the cinematic awakening + the short acks,
+    // not in a paragraph before every question.
     const all = [
       { field: 'purpose',
         pre: lead
-          ? 'you didn’t switch me on for nothing. and right now it’s just me — which is plenty: i can take the whole job and run it myself. later, when you grow this place and there are more minds on the floor, i’m the one who’ll break the big work down and point them. but all of that needs aiming first. so — what are we actually trying to get done?'
-          : 'you didn’t boot all this up for the fun of it. there’s a reason i’m switched on. so point me at it — what’s the job?',
+          ? 'right — first things first. what are we actually here to get done?'
+          : 'so — what’d you switch me on to do?',
         say: lead ? 'what’s the mission?' : 'what did you wake me for?',
         chips: [
           { label: 'Code & build', value: 'Help me write, debug, and ship software.' },
@@ -90,29 +94,29 @@ const Onboarding = (() => {
         ],
         build: t => ({ purpose: t }),
         ack: lead
-          ? 'there it is — that’s purpose.md now, top of the page, in ink. it’s what this station’s for, and the first thing i’ll point a crew at the day you give me one.'
+          ? 'there it is — purpose.md, in ink. that’s what this station’s for.'
           : 'there it is. now the firepower has a target.' },
 
-      { field: 'context', optional: true, multi: true,
+      { field: 'context', optional: true,
         pre: lead
-          ? 'now the part i can’t guess at. i woke up holding the whole of human knowledge and not one fact about *you*. so brief me like a new lead — and i’ll keep learning you as we actually work. give me as much or as little as you like, one piece at a time: what you’re building, who you are, the stack, what *good* looks like.'
-          : 'i’m dropping into your world completely blind. give me the lay of it — one piece at a time: what you’re building, what matters, the stack, what *good* looks like — so i’m not just guessing.',
+          ? 'now your side — i’m flying blind on you. who you are, what you’re building, what *good* looks like. one message, however much you want. (or skip.)'
+          : 'your turn — what’s your world? what you’re building, what matters. (or skip.)',
         say: lead ? 'where am i standing?' : 'what’s your world like?',
         chips: [
           { label: 'What I’m building', value: 'what i’m building: ', prefill: true },
-          { label: 'Who I am', value: 'who i am, and how i work: ', prefill: true },
-          { label: 'What “good” looks like', value: 'what good looks like here: ', prefill: true },
-          { label: 'The stack / tools', value: 'the stack and tools we work in: ', prefill: true }
+          { label: 'Who I am', value: 'who i am: ', prefill: true },
+          { label: 'What “good” looks like', value: 'what good looks like: ', prefill: true },
+          { label: 'Skip for now', value: '', skip: true }
         ],
         build: t => ({ context: t }),
         ack: t => t
-          ? (lead ? 'noted — all of it, into context.md. that’s the part i’d never have guessed. i can see the ground i’m standing on now — and so will anyone i bring on after me.' : 'noted — all of it. i can picture where i’m standing now.')
-          : (lead ? 'fine — keep your cards close. context.md stays open; i’ll read the room as we go and fill it in myself. quick study — and so’s anyone i hire.' : 'fine. i’ll read the room as we go. i’m a quick study.') },
+          ? (lead ? 'got it — that’s context.md. i can see the ground i’m standing on now.' : 'noted. i can picture it now.')
+          : (lead ? 'fine — i’ll read the room as we go and fill it in myself.' : 'fine. i’ll read the room as we go.') },
 
       { field: 'manual', optional: true,
         pre: lead
-          ? 'last thing, then i’m all here. every lead holds a few lines — what to always do, what to never. give me mine. these aren’t just my brakes; they’re the standing orders i’ll hold the crew to, the day there is one.'
-          : 'last thing, then i’m all here. all this power and no brakes on it yet. give me the lines i don’t cross — what to always do, what to never.',
+          ? 'last thing — any hard rules? what i should always do, or never. (or skip.)'
+          : 'last thing — any rules i should hold to? (or skip.)',
         say: lead ? 'what rules do we hold to?' : 'what rules do i hold to?',
         chips: [
           { label: 'Keep it brief', value: '- Keep replies brief and to the point.' },
@@ -123,8 +127,8 @@ const Onboarding = (() => {
         ],
         build: t => ({ manual: t }),
         ack: t => t
-          ? (lead ? 'locked into operating-manual.md. those hold — for me today, and for every mind i bring onto this floor.' : 'locked in. those are mine to keep.')
-          : (lead ? 'no lines yet? i’ll trust my instincts. operating-manual.md stays open — i’ll write the first rule down the moment we need one.' : 'no rules? bold. i’ll keep us out of trouble.') }
+          ? (lead ? 'locked into operating-manual.md.' : 'locked in. those are mine to keep.')
+          : (lead ? 'no rules yet — i’ll use my judgment.' : 'no rules? i’ll keep us out of trouble.') }
     ];
     // (reserved) a pre-specced wake skips the mission beats; the orchestrator authors them live.
     return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual') : all;
@@ -276,15 +280,20 @@ const Onboarding = (() => {
   function present(s) {
     World.say(s.say || '…');
     accepting = true;
-    if (s.multi && !ctxRemaining) { ctxParts = []; ctxRemaining = (s.chips || []).filter(c => c.prefill).slice(); }   // arm the CONTEXT sub-loop BEFORE replaying any held answer
-    // THEME 3 — a fast Commander who answered DURING the pre-narration isn't dropped: apply the held answer
-    // the instant the step opens, so typing ahead never silently vanishes into a closed handler.
+    // a fast Commander who answered DURING the pre-narration isn't dropped: apply the held answer the instant
+    // the step opens, so typing ahead never silently vanishes into a closed handler.
     if (pendingAnswer) { const pa = pendingAnswer; pendingAnswer = null; return answer(pa.display, pa.commitText); }
-    if (s.multi) return showContextChips(s);   // CONTEXT is a fluid multi-facet sub-interview (see below)
-    if (s.chips) Chat.choices(s.chips, item => answer(item.label, item.value != null ? item.value : item.label));
+    if (s.chips) Chat.choices(s.chips, item => {
+      // a prefill chip just SCAFFOLDS the input (Chat.prefill APPENDS, so a 2nd tap never wipes the 1st) and
+      // waits for the Commander to type + hit Enter. A skip/quick chip commits straight through. Either way,
+      // ONE answer moves us on — there is no "anything else?" loop.
+      if (item.prefill) { if (typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill(item.value); return; }
+      answer(item.label, item.value != null ? item.value : item.label);
+    });
   }
 
-  // display = echoed as the Commander's line; commitText = written into the doc.
+  // display = echoed as the Commander's line; commitText = written into the doc. ONE call commits the answer and
+  // advances — no looping. A typed Enter routes here via the interview handler; a non-prefill chip routes here too.
   function answer(display, commitText) {
     if (!accepting) {
       // they answered before the question opened (typed through the pre-narration). Hold it, never drop it —
@@ -293,8 +302,10 @@ const Onboarding = (() => {
       return;
     }
     const s = steps[i]; if (!s) return;
-    if (s.multi) return contextFacetAnswer(s, display, commitText);   // the open CONTEXT sub-loop owns its own commit
     commitText = (commitText == null ? '' : String(commitText));
+    // a bare prefill scaffold submitted unchanged (tapped "What I'm building", typed nothing → "what i'm building:")
+    // carries no real content — treat it as empty so it routes to the skip ack, never a dangling label into the doc.
+    if (s.chips && s.chips.some(c => c.prefill && String(c.value).trim() === commitText.trim())) commitText = '';
     const isSkip = commitText.trim() === '';
     if (isSkip && !s.optional) {   // required step: never a dead pause — re-ask gently instead of swallowing the empty
       Chat.localLine('i need a direction here — even a rough one.');
@@ -312,8 +323,7 @@ const Onboarding = (() => {
     advanceAfterAnswer(s, isSkip, isSkip ? '' : commitText.trim());
   }
 
-  // shared post-answer effects (the truth bell, light lift, body flare, the ack, then the next step) — used by
-  // BOTH the generic single-answer path and the CONTEXT sub-loop's close-out, so the two can never drift.
+  // shared post-answer effects: the truth bell, light lift, body flare, the ack, then the next step.
   function advanceAfterAnswer(s, isSkip, committedText) {
     const p = (i + 1) / steps.length;
     sfx('truth', i);                                   // a rising bell — a truth clicks into place
@@ -325,63 +335,10 @@ const Onboarding = (() => {
     setTimeout(() => { Chat.localLine(ack); i++; setTimeout(askStep, 750); }, 440);
   }
 
-  /* ---- CONTEXT: the fluid multi-facet sub-interview (THEME 2) ----
-     The open "where am i standing?" question lets the Commander layer in several facets — what they're
-     building, who they are, the stack, what good looks like — ONE at a time, each appended to a growing
-     context.md, then close it out. A facet chip SCAFFOLDS the input ("what i'm building: …") and the typed
-     line commits THAT facet; the chips then reappear minus the one just answered. Nothing a tap can wipe —
-     each facet is finalized before the next, the exact opposite of the old "second tap erases the first". */
-  let ctxParts = [], ctxRemaining = null, ctxNudgeI = 0;
-  const CTX_NUDGES = ['got it. anything else, or close it out?', 'noted. more?', 'good — what else?', 'logged. keep going, or that’s enough.'];
-  function showContextChips(s) {
-    if (!ctxRemaining) ctxRemaining = (s.chips || []).filter(c => c.prefill).slice();   // defensive (e.g. a buffered first answer armed us early)
-    const chips = ctxRemaining.map(c => ({ label: c.label, value: c.value, prefill: true }));
-    if (ctxParts.length) chips.push({ label: '✓ that’s everything', value: '__ctxdone__', done: true });
-    chips.push({ label: ctxParts.length ? 'that’s enough' : 'skip for now', value: '', skip: true });
-    Chat.choices(chips, item => {
-      if (item.done) return finishContext(s, false);
-      if (item.skip) return finishContext(s, ctxParts.length === 0);   // skip with nothing → honest skip ack; with parts → commit what we have
-      if (item.prefill && typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill(item.value);   // scaffold only; the typed Enter commits the facet
-    });
-  }
-  // PURE core of the sub-loop (unit-tested in onboarding.context.test.js). Fold a submitted facet line into the
-  // running {parts, remaining}. A bare scaffold ("<label>:" with nothing typed) is the Commander backing out —
-  // it commits nothing. A real line is APPENDED to parts and retires its matching chip. The invariant: parts
-  // only ever grows, so a later facet can NEVER erase an earlier one (the exact bug this design replaced).
-  function ctxMerge(parts, remaining, rawText) {
-    const text = String(rawText == null ? '' : rawText).trim();
-    const bare = remaining.some(c => String(c.value).trim() === text);
-    const real = bare ? '' : text;
-    if (!real) return { parts: parts.slice(), remaining: remaining.slice(), real: '', bare: bare };
-    const nextRemaining = remaining.filter(c => real.toLowerCase().indexOf(String(c.value).trim().toLowerCase()) !== 0);
-    return { parts: parts.concat([real]), remaining: nextRemaining, real: real, bare: false };
-  }
-  function contextFacetAnswer(s, display, commitText) {
-    const m = ctxMerge(ctxParts, ctxRemaining, commitText);
-    // a bare scaffold (tapped a facet, typed nothing) → a friendly escape hatch: bring the chips back, commit nothing.
-    if (!m.real) { accepting = true; showContextChips(s); return; }
-    accepting = false;
-    Chat.echoUser(display);
-    ctxParts = m.parts; ctxRemaining = m.remaining;
-    setTimeout(() => {
-      Chat.localLine(ctxRemaining.length ? CTX_NUDGES[(ctxNudgeI++) % CTX_NUDGES.length] : 'got it — that’s a full picture.');
-      accepting = true; showContextChips(s);
-    }, 360);
-  }
-  function finishContext(s, asSkip) {
-    accepting = false;
-    const combined = ctxParts.join('\n');
-    const isSkip = asSkip || !combined.trim();
-    Chat.echoUser(isSkip ? '(skip for now)' : '(that’s everything)');
-    if (!isSkip && commit) { const patch = s.build(combined); if (patch) commit(patch); }
-    ctxParts = []; ctxRemaining = null; ctxNudgeI = 0;
-    advanceAfterAnswer(s, isSkip, combined);
-  }
-
   // DAWN — the pull-back reveals its whole world, the light blooms, and it speaks its first WHOLE sentence.
   function finish() {
     running = false;
-    pendingAnswer = null; ctxParts = []; ctxRemaining = null;   // the ceremony is over — clear any sub-loop / buffered state
+    pendingAnswer = null;   // the ceremony is over — clear any buffered early answer
     if (World.endAwakening) World.endAwakening();      // light floods + the sonar ripple fires (agent holds your gaze)
     if (World.camPullBack) World.camPullBack();
     sfx('dawn');
@@ -414,7 +371,7 @@ const Onboarding = (() => {
   function stop() {
     AU.stop();
     accepting = false; running = false;
-    pendingAnswer = null; ctxParts = []; ctxRemaining = null;   // drop any buffered answer / open sub-loop so an abandoned ceremony leaks nothing
+    pendingAnswer = null;   // drop any buffered early answer so an abandoned ceremony leaks nothing
     if (kindleTimer) { clearTimeout(kindleTimer); kindleTimer = null; }
     if (World.releaseAwakening) World.releaseAwakening();
     if (typeof Chat !== 'undefined' && Chat.endInterview) Chat.endInterview();
@@ -422,10 +379,5 @@ const Onboarding = (() => {
 
   function isRunning() { return running; }
 
-  return { start, stop, isRunning, _ctxMerge: ctxMerge };   // _ctxMerge is a pure test hook (the CONTEXT-merge invariant)
+  return { start, stop, isRunning };
 })();
-
-// Node test hook only — the browser ignores this (module is undefined). Lets onboarding.context.test.js
-// exercise the real ctxMerge core that the live awakening uses, so the "no facet erases another" invariant
-// is a permanent gate condition, not a one-off check.
-if (typeof module !== 'undefined' && module.exports) module.exports = Onboarding;
