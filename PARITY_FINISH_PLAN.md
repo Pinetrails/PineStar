@@ -196,7 +196,7 @@ fallback so the tool degrades instead of failing to load.
 
 ---
 
-## GOAL G2 — MCP stdio transport  ·  STATUS: TODO
+## GOAL G2 — MCP stdio transport  ·  STATUS: DONE (single item G2.1)
 > Today the StarNet MCP client is HTTP-only (`makeTransport: makeHttpTransport`,
 > `index.js:647-650`/`:58`). The seam is `makeTransport` in `manager.js:56-64`; the contract is
 > `client.js:19-22` — `send(message)->Promise`, optional `onMessage(cb)`, optional `close()`.
@@ -206,7 +206,7 @@ fallback so the tool degrades instead of failing to load.
 > it needs MORE than the HTTP URL guard: a spawn-time command allowlist + the existing
 > per-connector consent/enable gate.
 
-### G2.1 — `transport.stdio.js` (newline-framed JSON-RPC over a child process)  ·  STATUS: TODO
+### G2.1 — `transport.stdio.js` (newline-framed JSON-RPC over a child process)  ·  STATUS: DONE
 One-line task: add `sidecar/mcp/transport.stdio.js` exporting `makeStdioTransport(deps)` with
 the same `{send, onMessage, close}` duplex shape, spawn injected for testability; reuse
 `client.js`/`translate.js` unchanged.
@@ -258,6 +258,77 @@ the same `{send, onMessage, close}` duplex shape, spawn injected for testability
   E-STOP. Reap the process GROUP (npx spawns a node grandchild) or an orphan leaks. NO new events
   needed (translate.js emits the frozen `agent.tool_call`/`tool_result`). Run `test:http` (route
   touched).
+- **DONE (2026-06-24, commit e888c14).** Local stdio MCP servers now launch — the MCP client is no longer
+  HTTP-only. NEW `sidecar/mcp/transport.stdio.js` (`makeStdioTransport(deps)`, spawn INJECTED) exposes the SAME
+  `{send,onMessage,close}` duplex contract as `transport.http.js`, so `client.js`/`translate.js`/the manager
+  projection are reused VERBATIM — only the byte edge differs. The child spawns EAGERLY at construction (boots,
+  then `initialize` is the first send) so stdout/exit handlers are wired before any request and an exit can't be
+  missed.
+  - **FRAMING = newline-delimited JSON-RPC** (one message per line — the MCP stdio framing, verified NOT to be
+    LSP Content-Length): an inbound `stdoutBuf` carries a partial line across chunks; concatenated lines in one
+    chunk split into N messages; CRLF tolerated; a non-JSON stdout line (a server's stray log) is SKIPPED without
+    crashing routing (parity with the HTTP transport's `parseSse` tolerance); **stderr is never routed** (drained
+    to a no-op, off the message path).
+  - **LIFECYCLE/KILL/CRASH:** every written request id is tracked in `inflight`; on child `error`/`exit`/`close`
+    `failAllInflight` synthesizes a per-id JSON-RPC error → the client rejects PROMPTLY (ENOENT → 'spawn …'/'exited';
+    a crash mid-request → 'exited (code 1)', NOT a timeout — proven with a 60s client timeout so a timeout can't
+    masquerade). A reply clears its id first (in `deliver`) so an answered request is never double-failed. The
+    client's own request timeout still fires when the child accepts a line but never replies. **`close()` tree-kills**
+    — `child.kill('SIGKILL')` + (Windows) `taskkill /pid <pid> /T /F` via an injected `killSpawn`, or (POSIX)
+    `processKill(-pid,'SIGKILL')` to signal the whole GROUP (npx's node grandchild is reaped, not just the direct
+    child; POSIX spawn is `detached:true` to lead the group) — and is idempotent.
+  - **WINDOWS .cmd:** `npx`/`uvx`/etc. are resolved to `npx.cmd` and spawned `shell:false` with UN-MANGLED argv
+    (shell:true would turn args into a shell string and weaken the allowlist); `node` is left un-suffixed.
+  - **ALLOWLIST + npx-aware parser (the security core):** spawn is gated by `defaultIsAllowed` — only bare
+    `node/npx/npm/pnpm/pnpx/bun/bunx/deno/uv/uvx/python[3]` (a pathed command is rejected outright). For the
+    npx-family the package spec is parsed: `--package`/`-p`/`--registry`/`--userconfig`/`-c`/`--node-arg` are
+    rejected by name, a URL/tarball/git/file spec fails the `SAFE_PKG_SPEC` registry-name regex, and any unknown
+    flag is DEFAULT-DENIED (only `-y/--yes/-q/--quiet/--no-install/--prefer-*` pass). A blocked command sets a
+    permanent `permError` and **NEVER spawns** — `command='npx' args=['--package','evil','@…/server-x']` is
+    rejected with no spawn, while `npx -y @modelcontextprotocol/server-filesystem /tmp` passes. Verified live.
+  - **`manager.js` (additive):** `makeTransport` now accepts a fn-OR-MAP (`{http,stdio}`) via
+    `resolveTransportFactory` — the legacy FUNCTION form is preserved verbatim (regression test green). The
+    connector record gains `transport`(kind)/`command`/`args`/`env`/`cwd`; `connect()` threads them into the
+    resolved factory; `configure()` requires `command` for a stdio connector (vs `url` for http), defaulting an
+    existing `{url}` connector to `transport:'http'` (back-compat). **`summary()` REDACTS env** — exposes only
+    `hasEnv` (bool), never the env object or its values; `command/args/cwd` (Commander-typed config, not secrets)
+    are surfaced.
+  - **`index.js` (minimal additive):** import `makeStdioTransport`; manager built with `makeTransport` as a
+    `{http: makeHttpTransport, stdio: cfg => makeStdioTransport({spawn: childSpawn, …})}` map (real
+    `child_process.spawn` injected at the composition root); `/api/connectors` upsert branches on `transport` —
+    a stdio connector collects `command/args/env/cwd`, persists env to the protected sibling file but **never
+    echoes it** (response carries only `hasEnv`); **`handleHalt` adds `connectors.close()`** as a sibling line
+    next to `shellBg.killAll()` and the G4.3 `cronLock.release()`, so E-STOP tree-kills every stdio child.
+  - **SAME DISPATCH BOUNDARY:** a stdio connector's tools, projected via `toolDefsForObjects` and dispatched
+    through the REAL registry, are capability-gated (`mcp:<conn>`), consent-gated for mutating tools, and
+    `network:true` — byte-identical projection to an HTTP connector (asserted end-to-end).
+  - **Verified RED→GREEN** (`test/mcp.stdio.test.js`, NEW, 50 assertions). RED on the pre-impl tree:
+    `Cannot find module '../sidecar/mcp/transport.stdio.js'` (no stdio support). GREEN after: `OK (50 assertions)`.
+    Coverage = every acceptance bullet, incl. a REAL spawned `node -e` echo child (initialize→serverInfo +
+    `notifications/initialized` written to its stdin; `listTools` paginates 2 pages via `nextCursor`; `callTool`
+    returns content; `isError:true` THROWS through `translate.js` `run()`); framing (concatenated/split/non-JSON/
+    stderr-off-path); lifecycle (ENOENT, crash→'exited' not timeout, close tree-kill + idempotent, posix
+    group-kill, client timeout still fires); Windows .cmd; allowlist incl. the flag-injection case; same dispatch
+    boundary; env redaction (no value in `summary()`/`list()`/events); function-form regression.
+  - **Gates:** `npm run test:fast` GREEN (EXIT 0 — `mcp.transport.test` 40 unchanged [regression intact],
+    `mcp.client.test` 34, `mcp.stdio.test` 50 new; **`lint-determinism: scanned 76 file(s); OK`** — the new module
+    is in the scanned `sidecar/mcp/` root and is determinism-clean: no `Date.now`/`Math.random`/`new Date()`,
+    spawn/kill/clock injected; `lint-emits` OK). `npm run test:http` GREEN (EXIT 0 — `sidecar.http`/`cron.api`/
+    etc. boot the real sidecar, which now constructs the manager with the map-form `makeTransport` and serves the
+    branched `/api/connectors` route). **LIVE-WATCHED** (`npm start`, free port :8893, temp WORKSPACES,
+    `SKYNET_API_TOKEN` set): boots clean; a stdio connector pointing at a real `node` echo MCP server with a
+    SECRET env connects to **`state:"up"`, `toolCount:1`, `tools:["ping"]`** (real spawn + handshake + tools/list
+    over newline-JSON-RPC); the `/api/connectors` response carries **`hasEnv:true` with NO `env` field and zero
+    occurrences of the secret value**; `rm -rf` → error "not on the allowlist" (no spawn); `npx --package evil …`
+    → error "package spec rejected" (no spawn); **E-STOP `/api/halt` drops the live `node.exe` count 3→2** —
+    the spawned stdio child is tree-killed by `connectors.close()`.
+  - **Files:** `sidecar/mcp/transport.stdio.js` (NEW — the stdio transport + allowlist + npx parser),
+    `sidecar/mcp/manager.js` (fn-or-map `makeTransport`, stdio record fields, env-redacting `summary()`),
+    `sidecar/index.js` (import + map-form manager + `/api/connectors` stdio branch + `handleHalt` reap),
+    `test/mcp.stdio.test.js` (NEW), `package.json` (append `mcp.stdio.test` after `mcp.transport.test` in
+    `test:fast`). NO `shared/events.js`/`shared/schema.js` edit (`git log feat/harness-backend..agent/parity-finish
+    -- shared/*` stays empty); no NEW event (translate.js emits the frozen `agent.tool_call`/`tool_result`).
+    **G2 (single item G2.1) is COMPLETE.**
 
 ---
 
@@ -971,3 +1042,28 @@ merge in small increments.
   state in `GET /api/cron` is sufficient). **G4 cron 100%-reliability is now fully closed (G4.1 tz/DST · G4.2 durable
   persistence · G4.3 exactly-once lock · G4.4 cap+retry · G4.5 one-shot fire-claim · G4.6 honest enable).** Next per
   the autonomy-first order: **G2.1** (MCP stdio transport — `sidecar/mcp/transport.stdio.js`).
+- 2026-06-24 — **G2.1 MCP stdio transport: DONE (commit e888c14). G2 COMPLETE.** The MCP client is no longer
+  HTTP-only — local stdio MCP servers (`npx @modelcontextprotocol/server-*`, `uvx …`, `node …`) now launch. NEW
+  `sidecar/mcp/transport.stdio.js` (`makeStdioTransport`, spawn INJECTED) exposes the SAME `{send,onMessage,close}`
+  duplex as the HTTP transport, so `client.js`/`translate.js`/manager projection are reused VERBATIM. Framing =
+  newline-delimited JSON-RPC (verified NOT LSP Content-Length): partial-line buffering across chunks, concatenated
+  lines → N msgs, non-JSON stdout log line skipped, stderr off the message path. Lifecycle: inflight ids fail
+  PROMPTLY on ENOENT/crash ('exited' not timeout), `close()` tree-kills (taskkill /T on win / kill the process GROUP
+  on posix — npx's node grandchild reaped) + idempotent, client request timeout still fires. Windows .cmd resolved,
+  shell:false, un-mangled argv. SECURITY: spawn gated by a command allowlist + an npx-AWARE spec parser — rejects
+  `--package`/`-p`/`--registry`/URL/tarball/git + default-denies unknown flags; `npx --package evil <spec>` NEVER
+  spawns, `npx @modelcontextprotocol/server-*` passes. `manager.js` (additive): `makeTransport` accepts a fn-OR-MAP
+  (function form preserved — regression green), record gains `transport/command/args/env/cwd`, `summary()` REDACTS
+  env (only `hasEnv`). `index.js` (minimal additive): import + `{http,stdio}` map manager (real `childSpawn`
+  injected) + `/api/connectors` stdio branch (env persisted, never echoed) + `handleHalt` `connectors.close()` reap
+  beside `shellBg.killAll()`/`cronLock.release()`. RED→GREEN proven (`test/mcp.stdio.test.js`, NEW, 50 assertions:
+  module-not-found pre-impl → `OK (50)`; ≥1 REAL spawned `node -e` child) covering STUB-ECHO (initialize→serverInfo
+  + initialized written, listTools 2-page nextCursor, callTool content, isError THROWS through translate), framing,
+  lifecycle/kill/crash, Windows .cmd, allowlist incl. flag-injection, same dispatch boundary, env redaction,
+  function-form regression. `npm run test:fast` GREEN (EXIT 0 — mcp.transport 40 unchanged; lint-determinism GREEN
+  over 76 files, the new module is determinism-clean); `npm run test:http` GREEN (EXIT 0 — real sidecar boots with
+  the map-form manager + branched route). LIVE-WATCHED (`npm start`, :8893): a stdio connector to a real `node` echo
+  MCP server with a SECRET env → `state:"up"`, `toolCount:1`, `tools:["ping"]`, response carries `hasEnv:true` + zero
+  secret leak; `rm -rf` / `npx --package evil` → error, no spawn; E-STOP drops live node.exe 3→2 (child reaped). No
+  `shared/*` edit; no new event. Next per the autonomy-first order: **G5.1** (fs V4A patch parser + fuzzy matcher —
+  `sidecar/tools/builtin/patchparse.js` + `fuzzymatch.js`).
