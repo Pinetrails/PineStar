@@ -745,7 +745,7 @@ ORs with `SKYNET_CRON_ENABLED`, NOT runtime `process.env` mutation), then re-ren
 
 ---
 
-## GOAL G5 — fs multi-hunk patch (V4A, validate-then-apply, atomic)  ·  STATUS: TODO
+## GOAL G5 — fs multi-hunk patch (V4A, validate-then-apply, atomic)  ·  STATUS: DONE (both items)
 > PARITY TARGET: Hermes' V4A patch tool — multi-hunk, two-phase (validate ALL before any write),
 > all-or-nothing, with a fuzzy matcher (`fuzzy_match.py`). StarNet's `fs.edit`
 > (`fs.js:137-158`) is a single global `split().join()` find/replace — no hunks, no context, no
@@ -803,7 +803,7 @@ reindent-on-non-exact into `fuzzymatch.js`. Both UMD-shaped like `fs.js`.
   - **Files:** `sidecar/tools/builtin/patchparse.js` (NEW), `sidecar/tools/builtin/fuzzymatch.js` (NEW),
     `test/fs.patch.test.js` (NEW), `package.json` (append `fs.patch.test` after `fs.jail.test` in `test:fast`).
 
-### G5.2 — `fs.patch` tool (jailed, two-phase, buffer-then-flush atomic)  ·  STATUS: TODO
+### G5.2 — `fs.patch` tool (jailed, two-phase, buffer-then-flush atomic)  ·  STATUS: DONE
 One-line task: add `fs.patch` (`capability:'cabinet'`, `scope:'write'`, `requiresConsent:true`,
 schema `{patch:string}`) to `makeFsTools` + the register list (`fs.js:319-323`); jail every op
 path AND MOVE dst via `resolveInside` (`fs.js:46`); PHASE-1 validate all hunks in order against a
@@ -828,6 +828,55 @@ fails).
   the honest atomicity primitive. Multi-file mid-flush is a theoretical partial-write window
   (no cross-file fsync transaction) — acceptable for a workspace jail, single-file patches fully
   atomic; note it. NO new events.
+- **DONE (2026-06-24, commit aac2079).** `fs.patch` now applies a Hermes-style V4A multi-hunk patch as a
+  single all-or-nothing operation. It is a NEW tool ALONGSIDE `fs.edit` — `fs.edit`'s `{path,find,replace}`
+  schema + "replace every occurrence" semantics are byte-identical and untouched (asserted: name, schema
+  `required`, 1-replacement count, disk apply, find-absent error; `fs.jail.test.js:64-72` still green).
+  Tool def: `name:'fs.patch'`, `capability:'cabinet'`, `scope:'write'`, `requiresConsent:true`, schema
+  `{patch:string}`, added to `makeFsTools` + the `register()` list. `_internals` ADDITIVELY exposes
+  `{ parsePatch, fuzzyFind }` for tests (the pre-existing `resolveInside`/`workspaceRoot`/etc. keys are
+  preserved — the two other `makeFsTools(...)._internals` consumers at `index.js:355` + `image.js:97` are
+  unaffected). The G5.1 `patchparse.js` + `fuzzymatch.js` are loaded the same UMD way `image.js` loads
+  `fs.js` (require in Node, SK-namespace fallback).
+  - **JAIL (security spine, never weakened):** every op's target path AND a MOVE's dst path goes through the
+    existing `resolveInside` BEFORE any disk read/write. A `../escape` / `../../etc/passwd` / absolute
+    `/abs/unix.txt` / drive-letter `C:\…` / `sub/../../up.txt` / NUL-byte path is rejected before touching
+    disk; a MOVE whose dst escapes the jail rejects with the src left untouched. Asserted no escaping file is
+    ever created above the workspace root.
+  - **TWO-PHASE validate-then-apply:** PHASE-1 jail-resolves every path then validates ALL ops/hunks in order
+    against an IN-MEMORY simulated buffer (UPDATE/MOVE read current content; each hunk's `old block` =
+    context+removed, `new block` = context+added, matched via the G5.1 fuzzy ladder) with ZERO writes — any
+    hunk miss / missing file / no-op delete throws and the whole patch aborts writing NOTHING. PHASE-2
+    enforces `WRITE_BYTES` on EVERY buffered result in a separate pass (an oversize file late in the patch
+    can't slip in after earlier files flushed), then flushes the buffered results to disk. An error before the
+    first `writeFile` leaves every file byte-identical (all-or-nothing). Honest caveat documented in the
+    tool header: a MULTI-FILE flush has no cross-file fsync transaction (theoretical mid-flush partial-write
+    window) — acceptable for a workspace jail; single-file patches are fully atomic. No git recovery.
+  - **Fail-closed extras (self-review findings, fixed + tested):** a SAME-PATH collision guard rejects a patch
+    that targets one absolute path in two ops (vs a silent last-write-wins that would drop the earlier op's
+    edit); DELETE/MOVE-src are existence-validated in phase 1; an UPDATE on a missing file is a clean error.
+  - **Verified RED→GREEN** (`test/fs.patch.test.js` PART 3, NEW, real temp dir; 130 assertions total incl. the
+    G5.1 82). RED on the pre-impl tree: `patchTool` undefined → the first new assertion FAILs and the suite
+    crashes (no `A.report`, EXIT 1) — captured. The ATOMIC-ROLLBACK case proven NON-VACUOUS by isolating the
+    matcher: hunk-1 matches (count 1), hunk-2 genuinely misses (count 0) → it is the two-phase abort, not a
+    double-miss, that keeps the file byte-identical. GREEN after: `OK (130 assertions)`, EXIT 0. Cases: tool
+    metadata + register-list + `_internals` exposure; MULTI-HUNK (both hunks apply, read-back proves both);
+    ATOMIC ROLLBACK (1st matches/2nd misses → file byte-identical + reject); JAIL (escape/abs/drive/NUL +
+    MOVE-dst rejected, files untouched, nothing above root); fs.edit UNCHANGED; ADD/DELETE/MOVE across files;
+    SAME-PATH collision; malformed (zero-hunk UPDATE / no-header / empty) → reject, target untouched; missing
+    file; WRITE_BYTES cap (oversize ADD rejects, file never written).
+  - **Gates:** `npm run test:fast` GREEN (EXIT 0 — no fs/jail/tools/capgate regressions; `fs.jail.test` 52,
+    `tools.test` 48, `capgate.test` 45 all green; `lint-emits` OK; **`lint-determinism: scanned 78 file(s);
+    OK`** — the patch code is clock/rng-free). No `/api/*` route added → `test:http` not required (tool reached
+    via registry + capgate). **LIVE-WATCHED:** an in-process drive through `register()` shows the tool lands
+    with the right metadata and a real apply+read-back rewrites the file; `npm start` on free port :8894 boots
+    clean (no errors in the log) with the fs tools — incl. `fs.patch` — registered at boot. No
+    `shared/events.js`/`shared/schema.js` edit (`git log feat/harness-backend..agent/parity-finish -- shared/*`
+    stays empty); NO new event.
+  - **Files:** `sidecar/tools/builtin/fs.js` (add `patchTool` + `patchHunkBlocks`/`applyHunks` helpers +
+    UMD load of patchparse/fuzzymatch + register-list + additive `_internals`), `test/fs.patch.test.js`
+    (PART 3 — the tool). `package.json` UNCHANGED — `fs.patch.test` was already appended after `fs.jail.test`
+    in `test:fast` by G5.1. **G5 (both items G5.1 + G5.2) is COMPLETE.**
 
 ---
 
@@ -1128,3 +1177,32 @@ merge in small increments.
   `sidecar/tools/builtin/patchparse.js` (NEW), `sidecar/tools/builtin/fuzzymatch.js` (NEW), `test/fs.patch.test.js`
   (NEW), `package.json` (append `fs.patch.test` after `fs.jail.test` in `test:fast`). Next: **G5.2** (the `fs.patch`
   tool — jailed via `resolveInside`, two-phase validate-then-apply, buffer-then-flush atomic, wired into `fs.js`).
+- 2026-06-24 — **G5.2 `fs.patch` tool: DONE (commit aac2079). G5 (both items) COMPLETE.** Wired the G5.1 parser+matcher
+  into a NEW `fs.patch` tool in `fs.js`, ALONGSIDE `fs.edit` (whose `{path,find,replace}` schema + "replace every
+  occurrence" semantics are byte-identical and untouched — asserted; `fs.jail.test.js:64-72` still green). Tool def:
+  `name:'fs.patch'`, `capability:'cabinet'`, `scope:'write'`, `requiresConsent:true`, schema `{patch:string}`, added
+  to `makeFsTools` + the `register()` list; `_internals` ADDITIVELY exposes `{ parsePatch, fuzzyFind }` (pre-existing
+  `resolveInside`/etc. keys preserved → the `index.js:355` + `image.js:97` `_internals` consumers unaffected).
+  **JAIL:** every op target path AND a MOVE dst goes through the existing `resolveInside` BEFORE any I/O — `../escape`/
+  absolute/drive-letter/`sub/../../up`/NUL rejected before touching disk; a MOVE with an escaping dst rejects with src
+  untouched; no file ever created above the root. **TWO-PHASE:** PHASE-1 jail-resolves then validates ALL ops/hunks in
+  order against an IN-MEMORY simulated buffer (UPDATE/MOVE read current content; hunk old-block=context+removed,
+  new-block=context+added, matched via the fuzzy ladder) with ZERO writes — any miss/missing-file/no-op-delete aborts,
+  writing NOTHING. PHASE-2 enforces `WRITE_BYTES` on every buffered result in a separate pass, then flushes; an error
+  before the first `writeFile` leaves every file byte-identical (all-or-nothing). Multi-file flush has no cross-file
+  fsync transaction (documented theoretical mid-flush window; single-file fully atomic; no git recovery). **Self-review
+  finds fixed + tested:** a SAME-PATH collision guard rejects a patch targeting one path in two ops (vs silent
+  last-write-wins). **TESTS-FIRST RED→GREEN** (`test/fs.patch.test.js` PART 3, NEW, real temp dir; 130 total incl. G5.1
+  82): RED — `patchTool` undefined → first new assertion fails + suite crashes (no `A.report`, EXIT 1, captured); the
+  ATOMIC-ROLLBACK case proven NON-VACUOUS (isolated matcher: hunk-1 count 1, hunk-2 count 0 → the two-phase abort, not
+  a double-miss, keeps the file byte-identical) → GREEN `OK (130)`, EXIT 0. Cases: metadata+register+`_internals`;
+  MULTI-HUNK (both apply, read-back proves both); ATOMIC ROLLBACK (1st matches/2nd misses → byte-identical + reject);
+  JAIL (escape/abs/drive/NUL + MOVE-dst); fs.edit UNCHANGED; ADD/DELETE/MOVE; SAME-PATH collision; malformed; missing
+  file; WRITE_BYTES cap. Full `npm run test:fast` GREEN (EXIT 0 — no fs/jail/tools/capgate regressions;
+  `lint-determinism: scanned 78 file(s); OK`; `lint-emits` OK). No `/api/*` route → `test:http` not required.
+  LIVE-WATCHED: in-process `register()` drive shows the tool lands with the right metadata + a real apply/read-back
+  rewrites the file; `npm start` (free port :8894) boots clean (no log errors) with fs.patch registered. No
+  `shared/events.js`/`shared/schema.js` edit (`git log feat/harness-backend..agent/parity-finish -- shared/*` stays
+  empty); NO new event. Files: `sidecar/tools/builtin/fs.js`, `test/fs.patch.test.js` (`package.json` already carried
+  `fs.patch.test` from G5.1). Next per the autonomy-first order: **G6.1** (book a real model + consistent usd on every
+  path).
