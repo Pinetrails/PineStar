@@ -190,5 +190,16 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(gpt.messages[0].content, 'S', 'stream() leaves the system content a plain string for non-anthropic');
   }
 
+  // M. reasoning effort is wired into the OpenRouter body and aliases "extra" to xhigh.
+  {
+    let body = null;
+    const f = async (url, opts) => {
+      body = JSON.parse(opts.body);
+      return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    await collect(makeOpenRouterProvider({ fetch: f, key: 'k', reasoningEffort: 'extra' }), { model: 'openai/gpt-5', messages: [] });
+    A.eq(body.reasoning, { effort: 'xhigh' }, 'reasoning effort sent to OpenRouter');
+  }
+
   A.report('provider.openrouter.test');
 })();

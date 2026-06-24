@@ -70,6 +70,19 @@
     out[idx] = { role: 'system', content: [{ type: 'text', text: messages[idx].content, cache_control: { type: 'ephemeral' } }] };
     return out;
   }
+  function normalizeReasoningEffort(value) {
+    const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const map = {
+      off: 'none', none: 'none', no: 'none', disabled: 'none',
+      min: 'minimal', minimal: 'minimal',
+      low: 'low',
+      med: 'medium', mid: 'medium', medium: 'medium',
+      high: 'high',
+      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh',
+      max: 'max'
+    };
+    return map[key] || 'medium';
+  }
 
   function makeOpenRouterProvider(opts) {
     opts = opts || {};
@@ -78,12 +91,13 @@
     const key = opts.key;
     const baseUrl = opts.baseUrl || BASE;
     const referer = opts.referer || 'http://127.0.0.1';
+    const reasoningEffort = normalizeReasoningEffort(opts.reasoningEffort || 'medium');
 
     async function* stream(req) {
       // usage.include asks OpenRouter to return the real billed `cost` in the final usage chunk (opt-in for
       // streaming). Without it tokens still tally but usd stays 0 unless priceOf(model) resolves — so SPEND
       // reads $0 for any custom/uncatalogued slug. cost.js then takes this authoritative cost over the estimate.
-      const body = { model: req.model, messages: applyCacheControl(req.messages, req.model), stream: true, usage: { include: true } };
+      const body = { model: req.model, messages: applyCacheControl(req.messages, req.model), stream: true, usage: { include: true }, reasoning: { effort: normalizeReasoningEffort(req.reasoningEffort || reasoningEffort) } };
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
         body.tool_choice = 'auto';

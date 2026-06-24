@@ -163,10 +163,43 @@ const App = (() => {
     const a = agents.get(id) || agents.get('agent');
     if (!a) return;
     agent = a;
+    if (a.model && typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(a.model);
     if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);   // runs carry the FOCUSED agent's identity
     const gtA = el('gt-agent'); if (gtA) gtA.textContent = a.name;
     const gtM = el('gt-model'); if (gtM) gtM.textContent = a.model;
     if (typeof World !== 'undefined' && World.focusBody) World.focusBody(a.id);   // Phase C: reframe the camera onto this body
+    if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+  }
+  function shortModelLabel(model) {
+    const s = String(model || '').split('/').pop().replace(/[-_]+/g, ' ').trim();
+    return (s || 'model').slice(0, 34).toUpperCase();
+  }
+  function effortLabel(effort) {
+    const e = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) ? Harness.normalizeReasoningEffort(effort) : String(effort || 'medium');
+    return ({ none: 'OFF', minimal: 'MIN', low: 'LOW', medium: 'MED', high: 'HIGH', xhigh: 'XHIGH' })[e] || 'MED';
+  }
+  function applyQuickModel(sel) {
+    if (!agent || !sel) return;
+    const model = String(sel.model || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '') || '').trim();
+    const effort = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) ? Harness.normalizeReasoningEffort(sel.effort) : String(sel.effort || 'medium');
+    if (effort && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
+    if (model) {
+      if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(model);
+      agent.model = model;
+      const stored = agents.get(agent.id);
+      if (stored) stored.model = model;
+      const gtM = el('gt-model'); if (gtM) gtM.textContent = model;
+      syncChannels();
+      pushRoster();
+    }
+    persist();
+    if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+    if (typeof StationUI !== 'undefined' && StationUI.notify) {
+      const msg = sel.reason === 'effort'
+        ? 'REASONING: ' + effortLabel(effort)
+        : 'MODEL: ' + shortModelLabel(model) + ' / ' + effortLabel(effort);
+      StationUI.notify(msg, 'good');
+    }
   }
   // the persisted shape of a crew member (systemPrompt is derived, recomposed on rehydrate).
   function serializeAgentLite(a) {
@@ -311,12 +344,14 @@ const App = (() => {
       if (!agent) return;
       const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
       const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const reasoningEffort = (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : 'medium';
       const body = {
         agentId: (ws && ws.agentId) || 'agent',
         system: agent.systemPrompt || '',
         agentName: agent.name || '',
         model: (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '',
-        provider
+        provider,
+        reasoningEffort
       };
       const key = (typeof Harness !== 'undefined' && Harness.getKey) ? Harness.getKey() : '';
       if (key) body.key = key;
@@ -351,10 +386,11 @@ const App = (() => {
     const hero = agents.get('agent') || agent;
     const stationStats = (typeof XpStore !== 'undefined') ? XpStore.stationStats() : undefined;
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
+    const reasoningEffort = (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : undefined;
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
     const roster = liveAgents();
     const dossier = (typeof DossierStore !== 'undefined') ? DossierStore.serialize() : undefined;   // the station-wide Commander model
-    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, station: station ? station.serialize() : undefined, stationStats, profile, dossier }, Workstreams.serialize()));
+    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, dossier }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
@@ -839,6 +875,7 @@ const App = (() => {
     registerHero(agent);                           // found the registry with the hero…
     rehydrateRoster(saved.agents);                 // …then restore any summoned crew (older saves: no-op)
     if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);   // keep the provider with the agent (codex vs openrouter)
+    if (saved.reasoningEffort && Harness.setReasoningEffort) Harness.setReasoningEffort(saved.reasoningEffort);
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
@@ -941,6 +978,7 @@ const App = (() => {
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
+    if (typeof ModelDock !== 'undefined') ModelDock.init({ apply: applyQuickModel });
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity
     pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
@@ -1067,6 +1105,7 @@ const App = (() => {
     // restore the provider BEFORE the credential check so a codex agent (tokens server-side) jumps straight
     // in after a wipe/origin-reset instead of being misrouted to an OpenRouter key prompt.
     if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
+    if (saved && saved.reasoningEffort && Harness.setReasoningEffort) Harness.setReasoningEffort(saved.reasoningEffort);
     if (saved && saved.agent) {
       // auto-resume on refresh: an OpenRouter key in hand, the desktop keychain holds one (configured),
       // OR the Codex provider (which holds its OAuth tokens server-side — a missing/expired token surfaces

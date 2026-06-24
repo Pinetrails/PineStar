@@ -111,9 +111,30 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.body.instructions, 'You are X.', 'system message lifted into instructions');
     A.eq(captured.body.store, false, 'store:false (no server-side persistence)');
     A.eq(captured.body.stream, true, 'stream:true');
+    A.eq(captured.body.reasoning, { effort: 'medium', summary: 'auto' }, 'default reasoning effort is medium');
+    A.eq(captured.body.include, ['reasoning.encrypted_content'], 'encrypted reasoning included when reasoning is enabled');
     A.eq(captured.body.input[0], { role: 'user', content: [{ type: 'input_text', text: 'hi' }] }, 'user turn -> input_text part');
     A.eq(captured.body.tools[0], { type: 'function', name: 'fetch', description: 'd', strict: false, parameters: { type: 'object' } }, 'chat tool -> Responses function tool');
     A.eq(captured.body.tool_choice, 'auto', 'tool_choice auto when tools present');
+  }
+
+  // C1. Codex reasoning effort follows Hermes behavior: minimal clamps to low; none disables encrypted echo.
+  {
+    const grab = async (reasoningEffort) => {
+      let body = null;
+      const f = async (url, init) => {
+        body = JSON.parse(init.body);
+        return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      };
+      await collect(makeCodexProvider({ fetch: f, token: 'ACCESS', reasoningEffort }), { model: 'gpt-5.3-codex', messages: [] });
+      return body;
+    };
+    const min = await grab('minimal');
+    A.eq(min.reasoning, { effort: 'low', summary: 'auto' }, 'minimal clamps to low for Codex');
+    A.eq(min.include, ['reasoning.encrypted_content'], 'low reasoning keeps encrypted echo');
+    const off = await grab('none');
+    A.eq(off.reasoning, { effort: 'none', summary: 'auto' }, 'none is passed through for Codex');
+    A.eq('include' in off, false, 'none omits encrypted reasoning echo');
   }
 
   // C2. input conversion internals: assistant text + tool_calls, and a tool result message

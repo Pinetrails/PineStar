@@ -4,10 +4,11 @@
    synthesize. CONTRACT-FREE: no shared/events.js change — children emit the SAME frozen agent.run.* events,
    forwarded (lifecycle + cost only) onto the lead's bus so the floor can ANIMATE the handoff.
 
-   makeOrchestrationTools({ runOnce, roster, key, model, provider, perWorker, newId, maxWorkers })
+   makeOrchestrationTools({ runOnce, roster, key, model, provider, reasoningEffort, perWorker, newId, maxWorkers })
      runOnce   : the SAME run host the browser/cron use (injected to avoid a require cycle) — async (o) -> result
      roster    : () -> Map(agentId -> { system, name, model }) — the live crew identities (pushed by the browser)
      key       : this run's API key (per-run)        model : the lead's model (worker fallback)
+     reasoningEffort: the lead's active reasoning effort, inherited by worker runs
      perWorker : per-WORKER USD ceiling (a runaway worker can't blow the lead's per-run cap)
      newId     : () -> a fresh runId for each child (crypto.randomUUID, injected so this UMD stays dep-free)
      maxWorkers: hard cap on workers per dispatch (defensive)
@@ -47,6 +48,7 @@
     const key = deps.key;
     const model = deps.model;
     const provider = deps.provider || null;
+    const reasoningEffort = deps.reasoningEffort || 'medium';
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
@@ -105,6 +107,7 @@
             result = await runOnce({
               key, provider,
               model: (job.ident && job.ident.model) || model,
+              reasoningEffort,
               system: (job.ident && job.ident.system) || '',
               messages: [{ role: 'user', content: job.prompt }],
               agentId: job.agentId, isTask: true,

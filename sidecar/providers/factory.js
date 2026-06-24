@@ -22,7 +22,7 @@
     if (id === 'codex' || id === 'openai-codex') {
       return codex.makeCodexProvider({ fetch: opts.fetch, token: opts.token, baseUrl: opts.baseUrl, reasoningEffort: opts.reasoningEffort });
     }
-    return openrouter.makeOpenRouterProvider({ fetch: opts.fetch, key: opts.key, baseUrl: opts.baseUrl, referer: opts.referer });
+    return openrouter.makeOpenRouterProvider({ fetch: opts.fetch, key: opts.key, baseUrl: opts.baseUrl, referer: opts.referer, reasoningEffort: opts.reasoningEffort });
   }
 
   return { selectProvider, PROVIDER_IDS };

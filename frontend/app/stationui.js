@@ -1114,6 +1114,7 @@ const StationUI = (() => {
       const key = (typeof Harness !== 'undefined' && Harness.getKey()) || '';
       const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
       const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
+      const reasoningEffort = (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : 'medium';
       if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); msgEl.textContent = 'connect your agent (provider + model) on the title screen first'; return; }
       // hand the sidecar the REAL agent identity so Telegram is the SAME agent: the agentId the app uses for runs
       // (shared notebook/memory/workspace) + the composed system prompt (identity.md/purpose.md/manual.md).
@@ -1124,7 +1125,7 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       msgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, agentId, system, agentName }) });
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, reasoningEffort, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }

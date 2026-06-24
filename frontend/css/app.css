@@ -475,7 +475,7 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .fnv-custom-back { font-family: inherit; font-size: 14px; color: var(--ph-dim); background: transparent; border: 2px solid var(--ph-dim); padding: 6px 10px; cursor: pointer; }
 .fnv-custom-back:hover { color: var(--ph); border-color: var(--ph); }
 
-#chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
+#chat-inputrow { position: relative; display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
 #chat-inputrow .prompt { color: var(--ph); }
 #chat-input { flex: 1; width: auto; min-width: 0; border: none; background: transparent; padding: 4px 2px; }
 #chat-input:focus { box-shadow: none; }
@@ -483,7 +483,7 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 /* ---------- voice controls: a matched set of bordered phosphor chips in the COMMS input row.
    Defined dark boxes (not bare glyphs) so they punctuate the amber UI and read as real controls;
    active states invert/recolor so the live one stands out at a glance. ---------- */
-.mic-btn, .voice-toggle {
+.mic-btn, .voice-toggle, .model-dock-toggle {
   flex: 0 0 auto; font-size: 17px; line-height: 0; color: var(--ph);
   background: var(--panel2); border: 2px solid var(--ph-dim);
   padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
@@ -491,7 +491,104 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
   transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
 }
 .mic-btn svg, .voice-toggle svg { width: 1em; height: 1em; display: block; pointer-events: none; }
-.mic-btn:hover, .voice-toggle:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+.mic-btn:hover, .voice-toggle:hover, .model-dock-toggle:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+
+.model-dock-toggle {
+  width: 54px; min-width: 54px; height: 33px; padding: 0 6px; gap: 4px;
+  font-size: 13px; line-height: 1; letter-spacing: 0; text-shadow: 0 0 5px var(--ph-glow2);
+}
+.model-dock-toggle.on {
+  color: var(--ink); background: var(--ph); border-color: var(--ph);
+  box-shadow: 0 0 11px var(--ph-glow);
+}
+.model-dock-sigil {
+  display: inline-grid; place-items: center; width: 16px; height: 16px;
+  border: 1px solid currentColor; font-size: 11px; font-weight: 800;
+}
+.model-dock-effort-chip {
+  display: inline-block; max-width: 26px; overflow: hidden; text-overflow: clip;
+  font-size: 10px; font-weight: 800;
+}
+.model-dock {
+  position: absolute; right: 8px; bottom: calc(100% + 8px); z-index: 80;
+  width: min(322px, calc(100vw - 34px)); max-height: min(70vh, 414px);
+  display: flex; flex-direction: column; gap: 7px; padding: 9px;
+  color: var(--ph); background: var(--panel);
+  border: 2px solid var(--ph); border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--ink), 0 0 22px var(--ph-glow2);
+}
+.model-dock[hidden] { display: none !important; }
+.model-dock-head {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center;
+  border-bottom: 1px solid var(--ph-dim); padding-bottom: 6px; min-width: 0;
+}
+.model-dock-provider {
+  color: var(--gold); font-size: 11px; font-weight: 800; white-space: nowrap;
+}
+.model-dock-current-model {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ph-bright); font-size: 13px; text-align: right;
+}
+.model-dock-search {
+  width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px;
+  color: var(--ph-bright); background: var(--ink); border: 2px solid var(--ph-dim);
+  border-radius: 3px; outline: none; font: inherit;
+}
+.model-dock-search:focus { border-color: var(--ph); box-shadow: 0 0 9px var(--ph-glow2); }
+.model-dock-search::placeholder { color: var(--ph-dim); opacity: 1; }
+.model-dock-efforts {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px;
+}
+.model-dock-effort {
+  min-width: 0; height: 28px; padding: 0 3px; cursor: pointer;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim);
+  border-radius: 3px; font: inherit; font-size: 10px; font-weight: 800;
+  overflow: hidden; text-overflow: clip; white-space: nowrap;
+}
+.model-dock-effort:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+.model-dock-effort.sel { color: var(--ink); background: var(--ph); border-color: var(--ph); }
+.model-dock-list {
+  min-height: 126px; max-height: 236px; overflow: auto; padding-right: 2px;
+  border-top: 1px solid var(--ph-faint); border-bottom: 1px solid var(--ph-faint);
+}
+.model-dock-group {
+  color: var(--gold); font-size: 11px; font-weight: 800; padding: 8px 3px 3px;
+  border-bottom: 1px solid var(--ph-faint);
+}
+.model-dock-row {
+  width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px; align-items: center; padding: 7px 6px; cursor: pointer; text-align: left;
+  color: var(--ph); background: transparent; border: 0; border-bottom: 1px solid var(--ph-faint);
+  font: inherit;
+}
+.model-dock-row:hover { color: var(--ph-bright); background: var(--ph-faint); }
+.model-dock-row.sel { color: var(--ink); background: var(--ph); }
+.model-dock-row-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px;
+}
+.model-dock-row-effort {
+  min-width: 38px; text-align: right; font-size: 10px; font-weight: 800;
+}
+.model-dock-empty {
+  padding: 18px 6px; color: var(--ph-dim); text-align: center; font-size: 13px;
+}
+.model-dock-foot {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+}
+.model-dock-foot button {
+  min-width: 0; padding: 6px 4px; cursor: pointer;
+  color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-dim);
+  border-radius: 3px; font: inherit; font-size: 11px; font-weight: 800;
+}
+.model-dock-foot button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+
+@media (max-width: 780px) {
+  .model-dock-toggle { width: 44px; min-width: 44px; padding: 0 4px; gap: 3px; }
+  .model-dock-sigil { width: 14px; height: 14px; font-size: 10px; }
+  .model-dock-effort-chip { max-width: 20px; font-size: 9px; }
+  .model-dock { position: fixed; left: 8px; right: 8px; bottom: 120px; width: auto; max-height: min(62vh, 410px); }
+  .model-dock-list { max-height: 220px; }
+}
 
 /* mic listening: red border + glow pulse so it's unmistakable the mic is hot */
 .mic-btn.rec { color: var(--bad); border-color: var(--bad); animation: mic-pulse 1s infinite; }

@@ -8,7 +8,7 @@
 'use strict';
 
 const Harness = (() => {
-  const LS = { key: 'skynet.byok.key', model: 'skynet.byok.model', prov: 'skynet.byok.prov' };
+  const LS = { key: 'skynet.byok.key', model: 'skynet.byok.model', prov: 'skynet.byok.prov', effort: 'skynet.byok.reasoningEffort' };
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
@@ -90,6 +90,20 @@ const Harness = (() => {
   const setModel = m => localStorage.setItem(LS.model, m || '');
   const getProv = () => localStorage.getItem(LS.prov) || 'openrouter';
   const setProv = p => localStorage.setItem(LS.prov, p || 'openrouter');
+  function normalizeReasoningEffort(value) {
+    const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const map = {
+      off: 'none', none: 'none', no: 'none', disabled: 'none',
+      min: 'minimal', minimal: 'minimal',
+      low: 'low',
+      med: 'medium', mid: 'medium', medium: 'medium',
+      high: 'high',
+      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh', max: 'xhigh'
+    };
+    return map[key] || 'medium';
+  }
+  const getReasoningEffort = () => normalizeReasoningEffort(localStorage.getItem(LS.effort) || 'medium');
+  const setReasoningEffort = e => localStorage.setItem(LS.effort, normalizeReasoningEffort(e));
 
   /* per-million pricing for a model id, if known from the catalog */
   function priceOf(id) {
@@ -139,7 +153,7 @@ const Harness = (() => {
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
   async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal, streamId, workbench, placed }) {
-    const key = getKey(), model = getModel(), provider = getProv();
+    const key = getKey(), model = getModel(), provider = getProv(), reasoningEffort = getReasoningEffort();
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
     if (provider !== 'codex' && !DESKTOP && !DEVMODE && !key) throw new Error('no API key set');
@@ -147,7 +161,7 @@ const Harness = (() => {
 
     let res;
     try {
-      const reqBody = { model, provider, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
+      const reqBody = { model, provider, reasoningEffort, system, messages, agentId: agentId || 'agent', isTask: !!isTask };
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
       // THE MOAT (FLOOR-REAL): send the agent's REAL placed capability objects so the sidecar grants exactly what's
       // on the floor (dish→web · cabinet→files · workbench→terminal · …). `placed` supersedes the legacy `workbench`
@@ -286,7 +300,7 @@ const Harness = (() => {
   const memoryForget = o => memoryMutate('forget', o);
 
   return {
-    getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
+    getKey, setKey, getModel, setModel, getProv, setProv, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
     memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
     apiToken: () => apiToken,
