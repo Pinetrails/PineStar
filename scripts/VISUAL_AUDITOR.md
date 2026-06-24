@@ -31,14 +31,27 @@ sibling of the **Overseer+** loop (L1, git/board) which runs in the orchestrator
 
 ## One cycle (what each loop iteration does)
 
-1. **Capture every state** (auto-boots a SKYNET_DEV sidecar from cwd if none is up):
+1. **Capture every state** (auto-boots a SEEDED, pre-onboarded sidecar if none is up, so it
+   lands on the live floor — NOT the title screen — and waits until it's verifiably in-game
+   before shooting):
    ```
-   SKYNET_SHOT_PORT=8930 SKYNET_SHOT_DIR=.uishots-trunk node scripts/uishoot.mjs --boot
+   SKYNET_SHOT_PORT=8930 SKYNET_SHOT_DIR=.uishots-trunk npm run shoot
    ```
-   Output → `.uishots-trunk/*.png` (ingame, crew-*, work-*, build-*, sys-*). ~40s full sweep.
+   Output → `.uishots-trunk/*.png` (ingame, crew-*, work-*, build-*, sys-*) **plus a
+   `manifest.json`** recording which selector opened each panel, frame sizes, the active screen,
+   and any page console errors/exceptions. Exits NONZERO if a panel failed to open or the boot
+   never reached the floor (CI/loop-grade). ~40s full sweep. The same engine backs the legacy
+   `node scripts/uishoot.mjs --boot` (kept as an alias). One panel: `npm run shoot -- --only ingame`.
    (Pick a free `SKYNET_SHOT_PORT`/`SKYNET_CDP_PORT` so you don't collide with a dev sidecar
    another loop already booted.) Interactive/transition coverage:
    `node scripts/uiplay.mjs`, `node scripts/uiresidue.mjs`, `node scripts/uisummon.mjs`.
+
+   > **Why seeded:** a raw `SKYNET_DEV=1 sidecar` has no agent → the page sits on the title
+   > screen (`dev=false`), useless for UI testing. `npm run shoot` materializes the golden agent
+   > fixture so the frontend auto-resumes onto the floor. A cold sidecar's *first* page load can
+   > still flash the title screen transiently, so the shooter polls `window.__SKYNET_DEV__` +
+   > `#screen-game.active` (reloading if needed) before capturing. Panels are driven by STABLE
+   > `id`/`[data-term]` selectors (re-derived from `index.html`/`navdock.js`), not drifting text.
 
 2. **Read each PNG** and judge it against the incoherence rubric:
    - **Overlap** — panels/layers stacking so content is buried or competes.
