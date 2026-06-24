@@ -35,30 +35,13 @@
   --s-1: 4px;    --s-2: 8px;    --s-3: 12px;   --s-4: 16px;   --s-5: 24px;
   --r-sm: 3px;   --r: 7px;      --r-lg: 11px;
 
-  /* ---- PREMIUM CRT SURFACE: the shared depth recipe (windows + panels) ----
-     A molded-bezel monitor, outside-in: outer phosphor ring → black casing
-     line → bloom → drop shadow → deep inner vignette → top edge highlight.
-     One light source (top-left) so every raised surface agrees. */
-  --bezel:
-    0 0 0 2px var(--ph),
-    0 0 0 3.5px rgba(0, 0, 0, 0.9),
-    0 0 22px var(--ph-glow2),
-    0 12px 34px rgba(0, 0, 0, 0.85),
-    inset 0 0 56px rgba(0, 0, 0, 0.85),
-    inset 0 1px 0 rgba(255, 228, 180, 0.07);
-  /* recessed control well — values glow up out of a dark inset floor */
-  --well:
-    inset 0 2px 7px rgba(0, 0, 0, 0.92),
-    inset 0 0 0 1px var(--ph-dim),
-    inset 0 -1px 0 rgba(255, 228, 180, 0.05);
-  /* curved-glass overlay — corner vignette + top-left specular + faint glare */
-  --glass:
-    radial-gradient(ellipse 52% 32% at 25% 9%, rgba(255, 242, 214, 0.07), transparent 60%),
-    radial-gradient(ellipse 108% 96% at 50% 46%, transparent 60%, rgba(0, 0, 0, 0.52) 100%),
-    linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
-  /* raised tile — a card lifted off the window surface by the one top light:
-     thin top edge highlight + a soft contact shadow below. */
-  --raise: inset 0 1px 0 rgba(255, 228, 180, 0.07), 0 2px 5px rgba(0, 0, 0, 0.5);
+  /* NOTE: the composite depth recipes (--bezel/--well/--glass/--raise) are
+     declared on `body`, NOT here. They reference the themeable phosphor tokens
+     (--ph, --ph-glow2, --ph-dim), and a var() inside a custom property resolves
+     against the element where that custom property is DECLARED. The theme is
+     swapped by a `body.theme-*` class, so these recipes MUST be declared at the
+     body level (or below) — otherwise their var(--ph) bakes to the :root amber
+     and the bezel "borders" stay amber no matter which theme is picked. */
 }
 body.theme-amber {
   --ph: #ffaa33; --ph-bright: #ffd9a3; --ph-dim: #b9791c; --ph-faint: #1e1404;
@@ -83,6 +66,37 @@ body.theme-white {
   --ink: #0c0f0c; --ph-glow: rgba(232, 240, 232, 0.35); --ph-glow2: rgba(232,240,232,0.10);
   --bg: #030403; --panel: rgba(10, 12, 10, 0.92); --panel2: #131713; --text: #d2dcd2;
   --cam-grade: saturate(0.7) contrast(1.06) brightness(0.92);
+}
+
+/* ---- PREMIUM CRT SURFACE: the shared depth recipe (windows + panels) ----
+   A molded-bezel monitor, outside-in: outer phosphor ring → black casing
+   line → bloom → drop shadow → deep inner vignette → top edge highlight.
+   One light source (top-left) so every raised surface agrees.
+   DECLARED ON body (not :root) on purpose — the var(--ph)/var(--ph-glow2)/
+   var(--ph-dim) below resolve against body's themed phosphor tokens, so the
+   bezel "borders" re-tint when a body.theme-* class swaps the palette. Moving
+   these up to :root re-breaks the colour selector (borders stick on amber). */
+body {
+  --bezel:
+    0 0 0 2px var(--ph),
+    0 0 0 3.5px rgba(0, 0, 0, 0.9),
+    0 0 22px var(--ph-glow2),
+    0 12px 34px rgba(0, 0, 0, 0.85),
+    inset 0 0 56px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 228, 180, 0.07);
+  /* recessed control well — values glow up out of a dark inset floor */
+  --well:
+    inset 0 2px 7px rgba(0, 0, 0, 0.92),
+    inset 0 0 0 1px var(--ph-dim),
+    inset 0 -1px 0 rgba(255, 228, 180, 0.05);
+  /* curved-glass overlay — corner vignette + top-left specular + faint glare */
+  --glass:
+    radial-gradient(ellipse 52% 32% at 25% 9%, rgba(255, 242, 214, 0.07), transparent 60%),
+    radial-gradient(ellipse 108% 96% at 50% 46%, transparent 60%, rgba(0, 0, 0, 0.52) 100%),
+    linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
+  /* raised tile — a card lifted off the window surface by the one top light:
+     thin top edge highlight + a soft contact shadow below. */
+  --raise: inset 0 1px 0 rgba(255, 228, 180, 0.07), 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
