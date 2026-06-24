@@ -372,8 +372,41 @@ const App = (() => {
     updateHint();
   }
 
+  /* ---------- recommended-model quick picks (OpenRouter) ----------
+     One-tap slugs for newcomers who don't know what to type — directly serves the "easier than Hermes
+     for beginners" moat. These are SUGGESTIONS, not a claim of availability: a chip only prefills
+     #in-model, which the live catalog (updateHint → priceOf) then prices or flags. The slugs match the
+     curated FALLBACK list loadModels() already ships, so nothing new is fabricated. Codex hides them —
+     its menu is discovered live per-account (loadCodexModels), so a static list there could mislead. */
+  const MODEL_PICKS = Object.freeze([
+    { label: 'Opus 4.8', id: 'anthropic/claude-opus-4.8', tag: 'deepest' },
+    { label: 'Sonnet 4.6', id: 'anthropic/claude-sonnet-4.6', tag: 'balanced' },
+    { label: 'GPT-5', id: 'openai/gpt-5', tag: '' },
+    { label: 'Gemini 2.5 Pro', id: 'google/gemini-2.5-pro', tag: '' }
+  ]);
+  function buildModelPicks() {
+    const wrap = el('model-picks'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (pickedProvider === 'codex') return;   // discovered live; no static menu
+    MODEL_PICKS.forEach(m => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'mp-chip'; b.dataset.id = m.id; b.title = m.id;
+      b.appendChild(document.createTextNode(m.label));
+      if (m.tag) { const t = document.createElement('b'); t.textContent = ' · ' + m.tag; b.appendChild(t); }
+      b.onclick = () => { el('in-model').value = m.id; SFX.click(); updateHint(); };
+      wrap.appendChild(b);
+    });
+    syncModelPicks();
+  }
+  function syncModelPicks() {
+    const wrap = el('model-picks'); if (!wrap) return;
+    const cur = el('in-model').value.trim();
+    [...wrap.children].forEach(b => b.classList.toggle('sel', b.dataset.id === cur));
+  }
+
   function updateHint() {
     const id = el('in-model').value.trim(), hint = el('model-hint');
+    syncModelPicks();   // keep the recommended-chip highlight in lockstep with whatever's in the field
     if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription — no per-token cost'; return; }
     const p = Harness.priceOf(id);
     if (p) hint.innerHTML = 'pricing: <b>$' + p.in.toFixed(2) + '</b> /1M in · <b>$' + p.out.toFixed(2) + '</b> /1M out';
@@ -402,6 +435,7 @@ const App = (() => {
       stopCodexPoll(); codexFlow = null;
       loadModels();
     }
+    buildModelPicks();        // recommended chips (OpenRouter only; clears itself on the codex path)
   }
 
   // Populate the model datalist with EXACTLY the slugs the connected account's Codex backend accepts, so the

@@ -36,79 +36,110 @@
 </section>
 
 <!-- ============ CONNECT / CREATE ============ -->
+<!-- Desktop COMMISSION CONSOLE — a wide two-column terminal: BRAIN+IDENTITY on the left, VOICE on the
+     right, framed in ASCII chrome. Every id/handler below is preserved verbatim from the old single
+     column so app.js wiring (loadModels, buildSkins, buildVoice, onWake, codex sign-in) is untouched. -->
 <section id="screen-connect" class="screen">
   <div class="panel connect-panel">
-    <h2>▮ COMMISSION YOUR ORCHESTRATOR</h2>
+    <!-- corner brackets reuse the in-game cam-HUD idiom so the create screen feels like the same machine -->
+    <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
+    <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
+
+    <!-- ===== ASCII console header ===== -->
+    <header class="cc-console-head">
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">COMMISSION CONSOLE</span><span class="cc-tb-rec">● REC</span></div>
+      <pre class="cc-ascii" aria-hidden="true">   ▟█▙   ┌─────────────────────────────┐
+  ▟███▙  │  A G E N T — 0 1 :: LEAD MIND │
+   ▜█▛   └─────────────────────────────┘</pre>
+      <div class="cc-title-row">
+        <h2>▮ COMMISSION YOUR ORCHESTRATOR</h2>
+        <span class="cc-stamp">STATUS: <b>AWAITING COMMISSION</b><span class="cc-cursor">█</span></span>
+      </div>
+    </header>
     <div class="lead-banner"><b>AGENT 01 · ORCHESTRATOR</b> — your station's founding mind. Today it does the work itself; recruit specialists and it becomes the one that directs them. You start with one lead, and everything branches out from here.</div>
 
-    <!-- ===== THE BRAIN — provider + model ===== -->
-    <div class="cc-head">▸ THE BRAIN <span class="dim">— the mind powering your agent</span></div>
-    <label>PROVIDER</label>
-    <div class="provider-row">
-      <button class="prov sel" data-prov="openrouter">OPENROUTER</button>
-      <button class="prov" data-prov="codex">CHATGPT SUB</button>
-    </div>
+    <!-- ===== two-column console body ===== -->
+    <div class="cc-grid">
 
-    <div id="key-block">
-      <label>API KEY <span class="dim">— openrouter.ai/keys</span></label>
-      <input id="in-key" type="password" placeholder="sk-or-..." autocomplete="off" spellcheck="false">
-    </div>
-
-    <div id="codex-block" class="hidden">
-      <label>CHATGPT SIGN-IN <span class="dim">— run agents on your existing ChatGPT plan</span></label>
-      <div class="codex-signin">
-        <div id="codex-status" class="codex-status">checking…</div>
-        <div id="codex-code" class="codex-code hidden"></div>
-        <div class="codex-actions">
-          <button type="button" id="btn-codex-signin" class="btn">⏼ SIGN IN WITH CHATGPT ▸</button>
-          <button type="button" id="btn-codex-open" class="btn hidden">↗ OPEN PAGE</button>
-          <button type="button" id="btn-codex-logout" class="btn hidden">✕ DISCONNECT</button>
+      <!-- LEFT COLUMN — the machinery: which mind, and how you pay for it -->
+      <div class="cc-col cc-col-core">
+        <!-- ===== THE BRAIN — provider + model ===== -->
+        <div class="cc-head">▸ THE BRAIN <span class="dim">— the mind powering your agent</span></div>
+        <label>PROVIDER</label>
+        <div class="provider-row">
+          <button class="prov sel" data-prov="openrouter">OPENROUTER</button>
+          <button class="prov" data-prov="codex">CHATGPT SUB</button>
         </div>
-        <div class="dim hint">no per-token cost — uses your existing ChatGPT subscription</div>
+
+        <div id="key-block">
+          <label>API KEY <span class="dim">— openrouter.ai/keys</span></label>
+          <input id="in-key" type="password" placeholder="sk-or-..." autocomplete="off" spellcheck="false">
+        </div>
+
+        <div id="codex-block" class="hidden">
+          <label>CHATGPT SIGN-IN <span class="dim">— run agents on your existing ChatGPT plan</span></label>
+          <div class="codex-signin">
+            <div id="codex-status" class="codex-status">checking…</div>
+            <div id="codex-code" class="codex-code hidden"></div>
+            <div class="codex-actions">
+              <button type="button" id="btn-codex-signin" class="btn">⏼ SIGN IN WITH CHATGPT ▸</button>
+              <button type="button" id="btn-codex-open" class="btn hidden">↗ OPEN PAGE</button>
+              <button type="button" id="btn-codex-logout" class="btn hidden">✕ DISCONNECT</button>
+            </div>
+            <div class="dim hint">no per-token cost — uses your existing ChatGPT subscription</div>
+          </div>
+        </div>
+
+        <label>MODEL <span class="dim" id="model-count"></span></label>
+        <input id="in-model" list="model-list" placeholder="loading models…" autocomplete="off" spellcheck="false">
+        <datalist id="model-list"></datalist>
+        <!-- one-tap recommended slugs for newcomers who don't know what to type (OpenRouter only). Pure
+             convenience: each chip just prefills #in-model, which the live catalog hint then prices. -->
+        <div id="model-picks" class="model-picks" aria-label="Recommended models"></div>
+        <div id="model-hint" class="dim hint">—</div>
+        <p id="byok-note" class="muted byok-note">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
+
+        <!-- ===== IDENTITY — name + look ===== -->
+        <div class="cc-head">▸ IDENTITY <span class="dim">— who it is, and what it looks like</span></div>
+        <label>AGENT NAME</label>
+        <input id="in-name" maxlength="18" placeholder="name your orchestrator" autocomplete="off" spellcheck="false">
+
+        <label>SKIN <span class="dim">— the character your agent wears on the floor</span></label>
+        <div class="skin-section">
+          <div id="skin-picker" class="skin-picker"></div>
+          <figure class="skin-stage" aria-live="polite">
+            <div class="skin-stage-frame"><img id="skin-stage-img" alt="" draggable="false"></div>
+            <figcaption id="skin-stage-name" class="skin-stage-name"></figcaption>
+          </figure>
+        </div>
       </div>
-    </div>
 
-    <label>MODEL <span class="dim" id="model-count"></span></label>
-    <input id="in-model" list="model-list" placeholder="loading models…" autocomplete="off" spellcheck="false">
-    <datalist id="model-list"></datalist>
-    <div id="model-hint" class="dim hint">—</div>
-    <p id="byok-note" class="muted byok-note">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
+      <!-- RIGHT COLUMN — the soul: how it talks -->
+      <div class="cc-col cc-col-voice">
+        <!-- ===== VOICE & MANNER — the new personality system ===== -->
+        <div class="cc-head">▸ VOICE &amp; MANNER <span class="dim">— how it talks (you can change it later)</span></div>
+        <label>PICK A VOICE</label>
+        <div id="voice-archetypes" class="archetype-grid"></div>
+        <div id="voice-preview" class="voice-preview"></div>
 
-    <!-- ===== IDENTITY — name + look ===== -->
-    <div class="cc-head">▸ IDENTITY <span class="dim">— who it is, and what it looks like</span></div>
-    <label>AGENT NAME</label>
-    <input id="in-name" maxlength="18" placeholder="name your orchestrator" autocomplete="off" spellcheck="false">
-
-    <label>SKIN <span class="dim">— the character your agent wears on the floor</span></label>
-    <div class="skin-section">
-      <div id="skin-picker" class="skin-picker"></div>
-      <figure class="skin-stage" aria-live="polite">
-        <div class="skin-stage-frame"><img id="skin-stage-img" alt="" draggable="false"></div>
-        <figcaption id="skin-stage-name" class="skin-stage-name"></figcaption>
-      </figure>
-    </div>
-
-    <!-- ===== VOICE & MANNER — the new personality system ===== -->
-    <div class="cc-head">▸ VOICE &amp; MANNER <span class="dim">— how it talks (you can change it later)</span></div>
-    <label>PICK A VOICE</label>
-    <div id="voice-archetypes" class="archetype-grid"></div>
-    <div id="voice-preview" class="voice-preview"></div>
-
-    <!-- FINE-TUNE: trait dials + a free-text voice note, behind a reveal so casual players just pick a card.
-         All inputs stay in the DOM so onWake() reads them whether the section is open or closed. -->
-    <button type="button" id="adv-toggle" class="adv-toggle" aria-expanded="false" aria-controls="adv-body">
-      <span class="adv-caret">▸</span> FINE-TUNE THE VOICE <span class="dim">— dials &amp; your own words (optional)</span>
-    </button>
-    <div id="adv-body" class="adv-body" hidden>
-      <div id="voice-traits" class="voice-traits"></div>
-      <label>EXTRAS</label>
-      <div id="voice-toggles" class="voice-toggles"></div>
-      <label>IN YOUR OWN WORDS <span class="dim">— optional; this overrides the preset where they conflict</span></label>
-      <textarea id="voice-custom" class="voice-custom" rows="2" placeholder="e.g. talks like a calm senior engineer — concise, a little dry, no hype" spellcheck="false"></textarea>
+        <!-- FINE-TUNE: trait dials + a free-text voice note, behind a reveal so casual players just pick a card.
+             All inputs stay in the DOM so onWake() reads them whether the section is open or closed. -->
+        <button type="button" id="adv-toggle" class="adv-toggle" aria-expanded="false" aria-controls="adv-body">
+          <span class="adv-caret">▸</span> FINE-TUNE THE VOICE <span class="dim">— dials &amp; your own words (optional)</span>
+        </button>
+        <div id="adv-body" class="adv-body" hidden>
+          <div id="voice-traits" class="voice-traits"></div>
+          <label>EXTRAS</label>
+          <div id="voice-toggles" class="voice-toggles"></div>
+          <label>IN YOUR OWN WORDS <span class="dim">— optional; this overrides the preset where they conflict</span></label>
+          <textarea id="voice-custom" class="voice-custom" rows="2" placeholder="e.g. talks like a calm senior engineer — concise, a little dry, no hype" spellcheck="false"></textarea>
+        </div>
+      </div>
     </div>
 
     <div id="connect-msg" class="msg"></div>
     <div class="connect-actions">
+      <span class="cc-actions-ascii" aria-hidden="true">└─▸</span>
       <button id="btn-back" class="btn">‹ BACK</button>
       <button id="btn-wake" class="btn-xl">⏼ WAKE THE ORCHESTRATOR ▸</button>
     </div>
