@@ -1222,6 +1222,12 @@ const World = (() => {
     const dur = U.irnd(900, 1500);                      // a HELD beat (longer than an ambient flick) — they regard each other, then break
     glanceAt(self, other, dur, now);                   // self looks at the neighbor (self===self -> setGlance)
     glanceAt(other, self, dur, now);                   // the neighbor looks back — glanceAt's DIRECT .glance write (K2: only its glance)
+    // Protect the partner's held look-back the same way decideIdle protects the INITIATOR (idleUntil at the call site):
+    // bodyIsIdle ignores idleUntil, so `other` may be at/past its idle hold and re-decide via decideIdle before `dur`
+    // elapses — standStill (62%)/lookAround/wander would then stomp other.glance, degrading C-Beat2 to one-sided. Hold
+    // its idle past the glance so the mutual beat survives, then ends cleanly by the glance timeout (K4: still self-
+    // terminating, no movement — idleUntil/glance/cooldown only, never a path/target/goal — K1/K2 intact).
+    other.idleUntil = Math.max(other.idleUntil || 0, now + dur + U.irnd(200, 600));
     other.neighborGlanceCd = now + U.irnd(14000, 26000);   // arm the partner's cooldown too so it doesn't immediately re-initiate
     return true;
   }
