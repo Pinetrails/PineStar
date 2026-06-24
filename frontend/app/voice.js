@@ -56,7 +56,7 @@ const Voice = (() => {
   // ---- UI handles (wired in init) -----------------------------------------
   let micBtn = null, toggleBtn = null, modeBtn = null, inputEl = null, statusEl = null;
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
-  let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'confidant';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
+  let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'professional';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
   let listening = false, speaking = false, savedStatus = '';
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open

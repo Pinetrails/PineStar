@@ -11,7 +11,7 @@ const S = require('../frontend/app/specialties.js');
 /* personas.js is a browser IIFE (a module-scoped `Personas` const, exports nothing under node), so we
    can't require its id set here. Mirror it explicitly: a specialty that references a persona NOT in
    this set is a typo / dangling ref and fails the gate. Keep in sync with personas.js PRESETS. */
-const PERSONA_IDS = ['confidant', 'straight-shooter', 'dry-wit', 'veteran', 'spark', 'maverick'];
+const PERSONA_IDS = ['professional', 'friendly', 'direct', 'witty', 'calm'];
 
 /* ---------- catalog integrity ---------- */
 const builtins = S.builtins();

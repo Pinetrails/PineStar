@@ -13,9 +13,10 @@ const App = (() => {
   const ORCH_COLOR = '#ffd34a';   // the Orchestrator's suit tint — gold marks the lead (same gold as SUITS' last entry). No color picker any more (skins are the visual identity); summoned crew cycle SUITS.
   let pickedColor = ORCH_COLOR;
   let pickedSkin = (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) || 'bear';   // the sprite set the new agent will wear
-  let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'confidant';
+  let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'professional';
   let pickedTraits = {};        // the VOICE & MANNER fine-tune dials (warmth/humor/formality/length + emoji/blunt) — only set keys contribute prompt text
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
+  let pickedMandate = null;     // the REQUIRED mandate — the domain the Overseer runs (shapes its prompt + nameplate); null until picked
   let pickedProvider = 'openrouter';   // 'openrouter' (BYO API key) | 'codex' (personal ChatGPT subscription via OAuth)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
   let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
@@ -67,7 +68,7 @@ const App = (() => {
     // later (the team.dispatch tool only exists once a crew does). It must never speak in the present as if it already
     // commands a crew — that would be the app-lie the awakening + tutorial are careful to avoid.
     if (role === 'orchestrator') {
-      s += ' You are this station\'s ORCHESTRATOR — its first agent and its lead, and right now its only agent. For now '
+      s += ' You are this station\'s OVERSEER — its orchestrating lead, its first agent, and right now its only agent. For now '
         + 'you simply do the work yourself. As the Commander recruits specialists over time, you grow into the one who '
         + 'breaks a big job into pieces and hands them out — you gain a team.dispatch tool to delegate the moment there '
         + 'is a crew to delegate to, and not before. Until then, never speak as if you command a crew you do not yet have; '
@@ -94,17 +95,29 @@ const App = (() => {
       a.docs.identity = id.split(/\n+VOICE & MANNER:/)[0].trimEnd();
     }
   }
-  // assemble the real system prompt from the config docs: identity + PERSONALITY + mission + standing orders.
+  // the MANDATE clause folded into the system prompt — the DOMAIN the Overseer runs (chosen at create), honest
+  // and structured, and deliberately distinct from the specific mission (purpose.md, authored at the awakening).
+  function mandateClause(a) {
+    const md = a && a.mandate ? mandateById(a.mandate) : null;
+    if (!md) return '';
+    if (md.id === 'open') return '\n\nYOUR MANDATE: open — no fixed domain. Your Commander steers you across whatever comes up.';
+    return '\n\nYOUR MANDATE: you are the Overseer of this station, running ' + md.label + ' — ' + md.desc + '. That is the domain you own for the Commander; the specific mission within it you author together.';
+  }
+  // assemble the real system prompt from the config docs: identity + PERSONALITY + MANDATE + mission + standing orders.
   function composeSystemPrompt(a) {
     const d = agentDocs(a);
     let p = (d.identity || '').trim() || baseIdentity(a.name, a.role);
     // personality sits AFTER identity (keeps the REAL-tools clause) and BEFORE purpose, so it colours the
     // agent's tone without ever displacing capability or the mission. Personas.compose folds the chosen
-    // archetype + the Commander's fine-tune dials + their free-text voice note into one block. Default: confidant.
+    // archetype + the Commander's fine-tune dials + their free-text voice note into one block. Default: professional.
     if (typeof Personas !== 'undefined' && Personas.compose) {
       const voice = Personas.compose(a.personaId || Personas.DEFAULT_ID, a.voiceTraits, a.customVoice);
       if (voice) p += '\n\n' + voice;
     }
+    // the MANDATE (the domain it runs) sits after personality, before the specific mission — so the agent knows
+    // its lane even before the awakening authors the exact purpose.
+    const mc = mandateClause(a);
+    if (mc) p += mc;
     const purpose = (d.purpose || '').trim();
     if (purpose) p += '\n\nYOUR PURPOSE (purpose.md):\n' + purpose;
     else p += '\n\nYou have not yet been given a purpose — you are eager for your Commander to assign one.';
@@ -159,7 +172,7 @@ const App = (() => {
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
-             purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
+             mandate: a.mandate || null, purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
   // DATA only — world bodies are spawned in enterGame once World.init has run.
@@ -169,7 +182,7 @@ const App = (() => {
       if (!s || !s.id || s.id === 'agent' || agents.has(s.id)) continue;   // hero already registered; skip dups (so the 'specialist' default below is always correct here — the orchestrator never routes through this path)
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
-                  purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  mandate: s.mandate || null, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   docs: s.docs, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
       a.systemPrompt = composeSystemPrompt(a);
@@ -390,6 +403,19 @@ const App = (() => {
      it — picking a swatch recolours live AND writes through StationUI.setTheme so it survives enterGame
      and stays in lockstep with the in-game Settings panel. No new state, no fakery. */
   const PHOSPHOR = Object.freeze([['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['white', '#e8f0e8']]);
+  // THE MANDATE — the crucial new pick: the DOMAIN the Overseer runs. It's REQUIRED (gates WAKE), shapes the
+  // nameplate ("running ENGINEERING"), seeds the day-one affinity profile, and folds a real clause into the
+  // system prompt (mandateClause). It is NOT the mission — the specific job is still authored live in the
+  // awakening; the mandate is the lane that mission lives in. `tag` maps to classify.js lanes for ProfileStore.
+  const MANDATES = Object.freeze([
+    Object.freeze({ id: 'personal',    label: 'PERSONAL OPS', icon: '⌂', desc: 'mail, calendar, day-to-day',     tag: 'general'  }),
+    Object.freeze({ id: 'research',    label: 'RESEARCH',     icon: '◉', desc: 'gather, analyze, report',        tag: 'research' }),
+    Object.freeze({ id: 'engineering', label: 'ENGINEERING',  icon: '⚙', desc: 'code, build, automate',          tag: 'code'     }),
+    Object.freeze({ id: 'content',     label: 'CONTENT',      icon: '✎', desc: 'write, media, publish',          tag: 'general'  }),
+    Object.freeze({ id: 'growth',      label: 'GROWTH',       icon: '↗', desc: 'outreach, ops, business',        tag: 'general'  }),
+    Object.freeze({ id: 'open',        label: 'OPEN',         icon: '✶', desc: 'no fixed mandate — you steer',    tag: 'general'  })
+  ]);
+  const mandateById = id => MANDATES.find(m => m.id === id) || null;
   function applyTheme(t) {
     document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-white');
     document.body.classList.add('theme-' + t);
@@ -412,6 +438,60 @@ const App = (() => {
       };
       wrap.appendChild(b);
     });
+  }
+
+  // THE MANDATE PICKER — the required domain cards. Picking one lights the nameplate and clears the validation
+  // nudge; onWake refuses to proceed until one is chosen.
+  function buildMandates() {
+    const wrap = el('mandate-picker'); if (!wrap) return;
+    wrap.innerHTML = '';
+    MANDATES.forEach(m => {
+      const c = document.createElement('button'); c.type = 'button';
+      c.className = 'ov-card' + (pickedMandate === m.id ? ' sel' : '');
+      c.dataset.m = m.id; c.title = m.desc; c.setAttribute('aria-pressed', String(pickedMandate === m.id));
+      const pk = document.createElement('span'); pk.className = 'ov-card-pick'; pk.textContent = '◆';
+      const ic = document.createElement('div'); ic.className = 'ov-card-ic'; ic.textContent = m.icon;
+      const nm = document.createElement('div'); nm.className = 'ov-card-nm'; nm.textContent = m.label;
+      const ds = document.createElement('div'); ds.className = 'ov-card-ds'; ds.textContent = m.desc;
+      c.appendChild(pk); c.appendChild(ic); c.appendChild(nm); c.appendChild(ds);
+      c.onclick = () => {
+        pickedMandate = m.id;
+        [...wrap.children].forEach(x => { const on = x === c; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
+        SFX.click(); updateNameplate();
+        const msg = el('connect-msg'); if (msg) msg.textContent = '';
+      };
+      wrap.appendChild(c);
+    });
+    updateNameplate();
+  }
+
+  // THE SUIT TINT — small swatch row under the agent; gold (the lead's mark) leads, then the crew tints. Sets
+  // pickedColor, which rides onto agent.color (the sprite's body tint). Skins are the character; suit is the accent.
+  function buildSuits() {
+    const wrap = el('suit-swatches'); if (!wrap) return;
+    wrap.innerHTML = '';
+    const palette = [ORCH_COLOR, ...SUITS.filter(c => c !== ORCH_COLOR)];
+    if (!palette.includes(pickedColor)) pickedColor = ORCH_COLOR;
+    palette.forEach(c => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'ov-suit' + (c === pickedColor ? ' sel' : '');
+      b.style.background = c; b.title = 'suit tint'; b.setAttribute('aria-label', 'suit tint ' + c); b.setAttribute('aria-pressed', String(c === pickedColor));
+      b.onclick = () => {
+        pickedColor = c;
+        [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
+        SFX.click();
+      };
+      wrap.appendChild(b);
+    });
+  }
+
+  // the live nameplate under the agent: NAME (from the input) + the mandate readout ("running ENGINEERING").
+  function updateNameplate() {
+    const np = el('np-name'); if (np) np.textContent = ((el('in-name') && el('in-name').value.trim()) || 'OVERSEER').toUpperCase();
+    const nm = el('np-mandate'); if (nm) {
+      const m = mandateById(pickedMandate);
+      nm.textContent = m ? (m.id === 'open' ? 'OPEN mandate' : 'running ' + m.label) : 'awaiting mandate';
+    }
   }
 
   function buildModelPicks() {
@@ -601,19 +681,18 @@ const App = (() => {
     pickedPersona = Personas.resolve(pickedPersona);   // collapse any legacy id to its grounded archetype
     wrap.innerHTML = '';
     Personas.list().forEach(p => {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'archetype' + (p.id === pickedPersona ? ' sel' : '');
-      card.title = p.vibe;
-      const nm = document.createElement('span'); nm.className = 'arch-name'; nm.textContent = p.name;
-      const ln = document.createElement('span'); ln.className = 'arch-line'; ln.textContent = '“' + p.cardLine + '”';
-      card.appendChild(nm); card.appendChild(ln);
-      card.onclick = () => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ov-vchip' + (p.id === pickedPersona ? ' sel' : '');
+      chip.title = p.vibe;
+      chip.textContent = p.name;
+      chip.setAttribute('aria-pressed', String(p.id === pickedPersona));
+      chip.onclick = () => {
         pickedPersona = p.id;
-        [...wrap.children].forEach(x => x.classList.remove('sel')); card.classList.add('sel');
+        [...wrap.children].forEach(x => { const on = x === chip; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
         SFX.click(); renderVoicePreview();
       };
-      wrap.appendChild(card);
+      wrap.appendChild(chip);
     });
     buildVoiceTuning();
     renderVoicePreview();
@@ -697,10 +776,16 @@ const App = (() => {
     if (prefillName) el('in-name').value = prefillName;
     // a fresh create screen carries no stale voice picks — reset the module-level state so fine-tune
     // dials / a custom-voice note from an abandoned create session never ride onto the next agent.
-    pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'confidant';
+    pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'professional';
+    pickedMandate = null; pickedColor = ORCH_COLOR;   // a fresh create screen carries no stale mandate / suit tint from an abandoned session
     buildPhosphor();
     buildSkins();
+    buildSuits();
     buildVoice();
+    buildMandates();
+    // the hero nameplate tracks the name field live; picking a mandate updates the second line.
+    if (el('in-name')) el('in-name').oninput = updateNameplate;
+    updateNameplate();
     el('btn-back').onclick = () => { SFX.click(); stopCodexPoll(); codexFlow = null; showTitle(); };
     el('btn-wake').onclick = onWake;
     // Enter commits from ANY of the core text fields (name / key / model), not just the name — so a Commander
@@ -757,13 +842,18 @@ const App = (() => {
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
-    // the FIRST agent is always the station's ORCHESTRATOR — the lead the Commander commissions before any
-    // specialist. Its voice is the archetype + fine-tune dials + free-text note picked on this screen; its
-    // mission/context/standing-orders are authored in the awakening that follows.
+    // MANDATE is REQUIRED for a NEW Overseer (the resume path above skips this) — it's the domain it will run.
+    if (!pickedMandate) { msg.textContent = 'pick a MANDATE — what your Overseer runs.'; return; }
+
+    // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
+    // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its MANDATE (the domain it
+    // runs) is folded into the prompt here, while the specific mission/context/orders are authored in the awakening.
     agent = { id: 'agent', name, role: 'orchestrator', color: pickedColor, skin: pickedSkin || DATA.DEFAULT_SKIN, model,
               personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
-              purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
-    agentDocs(agent);                              // seed identity.md (orchestrator-aware) / purpose.md / operating-manual.md
+              mandate: pickedMandate, purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
+    agentDocs(agent);                              // seed identity.md (overseer-aware) / purpose.md / operating-manual.md
+    // seed the day-one affinity profile from the mandate's lane so suggestions aren't blank (real usage overwrites it).
+    { const md = mandateById(pickedMandate); if (md && typeof ProfileStore !== 'undefined' && ProfileStore.seed) ProfileStore.seed(md.tag); }
     agent.systemPrompt = composeSystemPrompt(agent);
     registerHero(agent);   // found the multi-agent registry with the hero
     Harness.resetTotals();
