@@ -94,6 +94,13 @@ function station(objsByRoom, assignedRoom) {
   const withCab = officeReach({ surface: 'interactive', extraObjects: [{ objectType: 'cabinet' }] });
   A.ok(withCab.tools.indexOf('fs.read') >= 0 && withCab.tools.indexOf('fs.write') >= 0, 'F3: placing a CABINET unlocks files');
   A.eq(withCab.approvalRules['fs.write'].requiresConsent, true, 'F3: file WRITE is consent-gated');
+  // F3b (regression): fs.patch must reach the model AND be consent-gated through the REAL dispatch boundary —
+  // i.e. resolveTools/CAP_REGISTRY, not just the tool object's own requiresConsent. Without a cabinet grant row
+  // the patch tool ships dead (never offered to the wire; a forged call is capdenied).
+  A.ok(withCab.tools.indexOf('fs.patch') >= 0, 'F3b: placing a CABINET also unlocks fs.patch (registry grant, reachable through dispatch)');
+  A.eq(withCab.approvalRules['fs.patch'].requiresConsent, true, 'F3b: fs.patch is consent-gated at the dispatch boundary (autonomous run cannot patch without consent)');
+  A.eq(withCab.approvalRules['fs.patch'].scope, 'write', 'F3b: fs.patch grant scope is write');
+  A.ok(canAgentUse(withCab, 'fs.patch').ok, 'F3b: canAgentUse allows fs.patch once a cabinet is placed');
   const withWb = officeReach({ surface: 'interactive', extraObjects: [{ objectType: 'workbench' }] });
   A.ok(withWb.tools.indexOf('shell.exec') >= 0 && withWb.tools.indexOf('verify.run') >= 0, 'F3: placing a WORKBENCH unlocks the terminal');
 

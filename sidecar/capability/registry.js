@@ -35,7 +35,8 @@
       { capId: 'cabinet', tool: 'fs.search', scope: 'read', requiresConsent: false, network: false },
       { capId: 'cabinet', tool: 'fs.write', scope: 'write', requiresConsent: true, network: false },
       { capId: 'cabinet', tool: 'fs.append', scope: 'write', requiresConsent: true, network: false },
-      { capId: 'cabinet', tool: 'fs.edit', scope: 'write', requiresConsent: true, network: false }
+      { capId: 'cabinet', tool: 'fs.edit', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'cabinet', tool: 'fs.patch', scope: 'write', requiresConsent: true, network: false }   // multi-hunk apply (V4A-style); consent-gated like every cabinet write so an autonomous run can't patch off a cached grant
     ],
     dish: [
       { capId: 'web', tool: 'web_search', scope: 'read', requiresConsent: false, network: true },

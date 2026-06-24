@@ -94,7 +94,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['web_search', 'web_fetch', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.list', 'skill.view', 'todo'];
+  const EXPECTED = ['web_search', 'web_fetch', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.list', 'skill.view', 'todo'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 

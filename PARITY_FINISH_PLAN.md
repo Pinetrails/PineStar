@@ -803,7 +803,7 @@ reindent-on-non-exact into `fuzzymatch.js`. Both UMD-shaped like `fs.js`.
   - **Files:** `sidecar/tools/builtin/patchparse.js` (NEW), `sidecar/tools/builtin/fuzzymatch.js` (NEW),
     `test/fs.patch.test.js` (NEW), `package.json` (append `fs.patch.test` after `fs.jail.test` in `test:fast`).
 
-### G5.2 — `fs.patch` tool (jailed, two-phase, buffer-then-flush atomic)  ·  STATUS: DONE
+### G5.2 — `fs.patch` tool (jailed, two-phase, buffer-then-flush atomic)  ·  STATUS: DONE (hardened — dispatch-boundary grant added 2026-06-24, see progress log)
 One-line task: add `fs.patch` (`capability:'cabinet'`, `scope:'write'`, `requiresConsent:true`,
 schema `{patch:string}`) to `makeFsTools` + the register list (`fs.js:319-323`); jail every op
 path AND MOVE dst via `resolveInside` (`fs.js:46`); PHASE-1 validate all hunks in order against a
@@ -1206,3 +1206,25 @@ merge in small increments.
   empty); NO new event. Files: `sidecar/tools/builtin/fs.js`, `test/fs.patch.test.js` (`package.json` already carried
   `fs.patch.test` from G5.1). Next per the autonomy-first order: **G6.1** (book a real model + consistent usd on every
   path).
+- 2026-06-24 — **G5.2 FIX (adversarial review — DEAD-FEATURE wiring gap closed; this commit).** Independent
+  review found the G5.2 "wired/gated through the real dispatch boundary" acceptance was asserted but NOT proven: the
+  `fs.patch` tool was defined in `fs.js` (`capability:'cabinet'`) and registered into the runtime registry, but the
+  **CAP_REGISTRY `cabinet` grant list (`sidecar/capability/registry.js`) never enumerated `fs.patch`.** Since
+  `resolveTools` (`resolve.js:32-43`) builds an agent's `tools[]`/`approvalRules{}` PURELY from CAP_REGISTRY,
+  `fs.patch` was never projected into any agent's resolved set → (a) never sent to the wire (`index.js:1921` ships
+  only `registry.list(resolved.tools)`), and (b) any forged call denied by `capGate.canAgentUse`. The tool's own
+  `requiresConsent:true` was inert at the boundary (consent is driven by the GRANT, not the tool object). Net: a
+  cabinet-equipped agent got every other `fs.*` tool but could NOT use `fs.patch` — the feature shipped DEAD, and the
+  "autonomous cannot patch without consent" claim was true only vacuously (this commit). **BOTH findings CONFIRMED REAL** (one root
+  cause; the finding's grep claim of "zero matches" in the test was slightly off — there is 1 import line — but the
+  substance held: no test exercised resolveTools/CAP_REGISTRY/capGate for fs.patch). **FIX (additive, contract-safe):**
+  added one grant row `{ capId:'cabinet', tool:'fs.patch', scope:'write', requiresConsent:true, network:false }` —
+  identical gating to the sibling `fs.write`/`fs.append`/`fs.edit` writes, so whatever consent enforcement binds those
+  binds patch. **REGRESSION TESTS (RED→GREEN, exercise the REAL boundary, not the tool object):** `test/capgate.test.js`
+  F3b — `officeReach({surface:'interactive', extraObjects:[{cabinet}]})` now asserts `resolved.tools` includes
+  `fs.patch`, `approvalRules['fs.patch'].requiresConsent===true` + `.scope==='write'`, and `canAgentUse(...,'fs.patch').ok`;
+  `test/harness.integration.test.js` drift-guard `EXPECTED` gains `fs.patch` (proves it resolves through the FULL default
+  office AND serializes to the wire via `registry.wireFormat(registry.list(...))`). RED confirmed: F3b threw
+  `Cannot read properties of undefined (reading 'requiresConsent')` pre-fix (EXIT 1); GREEN post-fix. Full
+  `npm run test:fast` GREEN (EXIT 0). Files: `sidecar/capability/registry.js`, `test/capgate.test.js`,
+  `test/harness.integration.test.js`. No `shared/*` edit; no new event.
