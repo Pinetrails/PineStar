@@ -59,6 +59,7 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
@@ -664,7 +665,8 @@ const connectors = makeConnectorManager({
 
 /* ---- cron / scheduled routines store + tick driver (CRON Commit 4b). The job DEFINITIONS persist in a
    PROTECTED sibling of the fs jail (WORKSPACES/cron.jobs.json, the allowlist idiom above: versioned envelope,
-   atomic temp+rename, load→corrupt→empty fail-closed) so the agent's own fs.* tools can neither read nor rewrite
+   atomic + DURABLE temp→fsync→rename (G4.2 — no double-fire on a crash in the advance-before-run window),
+   load→corrupt→empty fail-closed) so the agent's own fs.* tools can neither read nor rewrite
    its own schedule. The cron-math + lifecycle reducer are pure (cron.js / cron-store.js); the timer, the
    now-source, id minting and this fs are the ambient half that lives ONLY here. The driver is constructed
    unconditionally (cheap, no I/O), but it only ever runs when the boot block below arms the timer behind the
@@ -676,9 +678,13 @@ function loadCronJobs() {
 }
 let cronJobs = loadCronJobs();
 function saveCronJobs() {   // throws on failure (the CRUD routes let it surface); the driver's setJobs catches+logs
-  const tmp = CRON_FILE + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(cronStore.toEnvelope(cronJobs)));
-  fs.renameSync(tmp, CRON_FILE);   // atomic replace
+  // G4.2: crash-SAFE persistence. The advance-before-run window (cron-driver persists the ADVANCED nextRunAt
+  // BEFORE launching a fire) is the one place a lost/zero-length write would DOUBLE-FIRE a routine on restart,
+  // so we don't just rename — we fsync the temp file's bytes to stable storage BEFORE the rename (per-pid+random
+  // tmp so concurrent writers never collide), then best-effort fsync the directory after (Windows-safe). Same
+  // durability the ledger/runs appends already get; happy-path behavior (versioned envelope, atomic replace) is
+  // identical to the old temp+rename.
+  writeFileDurable({ fs: fs, path: path }, CRON_FILE, JSON.stringify(cronStore.toEnvelope(cronJobs)));
 }
 // validated + redacted cron telemetry -> the sidecar console AND the live station HUD (the SAME SSE bridge the
 // channel/work-item events ride). No secret is ever on a cron.* payload; redact() runs as a second backstop.

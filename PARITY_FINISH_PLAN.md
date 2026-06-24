@@ -328,7 +328,7 @@ constant); add the offset-drift repair branch (parity `jobs.py:1364-1385`).
     a fire's resolved zone / a DST recompute; built the tz logic WITHOUT new events as instructed.
     No `shared/events.js`/`shared/schema.js` edits (`git log feat/harness-backend.. -- shared/*` empty).
 
-### G4.2 — Durable + atomic persistence (no double-fire on crash)  ·  STATUS: TODO
+### G4.2 — Durable + atomic persistence (no double-fire on crash)  ·  STATUS: DONE
 One-line task: make `saveCronJobs` (`index.js:665-668`) fsync the temp file BEFORE rename
 (currently temp-write→rename with NO fsync — a crash in the advance-before-run window can lose
 the rename / leave a zero-length file → double-fire), matching the ledger idiom
@@ -345,6 +345,45 @@ the rename / leave a zero-length file → double-fire), matching the ledger idio
 - **Files:** `sidecar/index.js` (edit, HIGH — confine to the `saveCronJobs` block);
   `test/cron.durability.test.js` (NEW, low); `package.json` (edit, med — append test).
 - **Notes:** Fail-closed. Single-file `writeFile` is the common atomic case.
+- **DONE (2026-06-23, commit c2e284e..HEAD this lane).** `saveCronJobs` is now crash-SAFE: temp→**fsync**→rename
+  instead of temp→rename. The durable-write primitive was FACTORED OUT into a new importable module
+  `sidecar/durable-write.js` (`writeFileDurable({fs,path}, file, data)`) so the test exercises the ACTUAL
+  implementation, not a re-implementation — `index.js` self-boots an HTTP server and cannot be `require`d by a unit
+  test, so its closure-private `saveCronJobs` was un-testable in isolation; the helper is the testable seam.
+  `saveCronJobs` now just delegates to it. The helper mirrors `savestore.js:writeAtomic` + the ledger/runs append
+  idiom (`index.js:224-230`): open(tmp,'w')→writeSync→**fsyncSync BEFORE renameSync**→close, per-PID+random tmp
+  suffix (`<file>.<pid>.<6-byte-hex>.tmp`) so concurrent writers / a CRUD save racing an advance never collide on
+  the temp name, then a **best-effort POSIX directory fsync** after rename (open(dirname,'r')→fsync) wrapped so it
+  NEVER throws on Windows (EISDIR/EPERM swallowed). fsync is capability-guarded — an in-memory test fs lacking
+  `fsyncSync` degrades to `writeFileSync`→rename (still atomic). Happy-path behavior is identical to the old
+  temp+rename (versioned envelope, atomic replace); the throw-on-failure contract the CRUD routes rely on is
+  preserved (only the dir-fsync is swallowed). The nonce rng is INJECTED (`randomTmpId?`) defaulting to lazy
+  `node:crypto.randomBytes` — no `Date.now`/`new Date()`/`Math.random` literal, so lint-determinism stays GREEN
+  (74 files scanned, OK) even though the new module is in the scanned `sidecar/` root.
+  - **loadCronJobs fail-closed — confirmed, no hardening needed.** `loadCronJobs` (`index.js`) reads ONLY the real
+    `CRON_FILE` path and hands the string to `cronStore.loadEnvelope`, which JSON-parses inside try/catch and
+    returns the last good `{version,jobs}` (or empty) on garbage/truncation/non-array (`cron-store.js:204-210`). A
+    leftover `.tmp` is NEVER read by the load path (it only ever reads the canonical name), so a stale/partial
+    `.tmp` cannot corrupt load. Tested all three: stale leftover `.tmp` beside a good file → good envelope (1 job);
+    truncated real jobs file → empty (no half-record); non-array `jobs` → empty.
+  - **Verified RED→GREEN** (`test/cron.durability.test.js`, NEW, 31 assertions). RED captured against a non-durable
+    stub (plain temp+rename) with the corrected fs spy: **6 failures** — fsync absent, fsync-before-rename absent,
+    no per-pid/random suffix, no POSIX dir-fsync (EXIT 1). GREEN after the real helper: `OK (31 assertions)` (EXIT 0).
+    The 5 cases: (1) ATOMIC — an ordered fs-call spy over the REAL helper asserts `fsyncSync(tmpFd)` PRECEDES
+    `renameSync`, the fsync targets the temp fd, the rename moves `*.tmp`→real path, and the real file is never
+    observable zero-length; (2) per-pid+random suffix → two writes pick DISTINCT temp names both carrying the pid;
+    (3) a throwing dir-fsync (simulated Windows EISDIR) does NOT fail the write; (4) FAIL-CLOSED LOAD — the three
+    cases above; (5) CRASH-AT-FIRE-BOUNDARY — the REAL cron driver fires a due interval job, persists the ADVANCED
+    `nextRunAt` through the actual durable write to a real file BEFORE the (never-settling) run, then a NEW driver
+    over the SAME on-disk store at the SAME `now` fires ZERO (`r2.fired===0`), and the post-fsync envelope
+    round-trips to the advanced `nextRunAt` (exactly one period out). Full `npm run test:fast` GREEN (EXIT 0, incl.
+    the unchanged cron/cron-store/cron.tick/cron.dst suites — no regressions — + lint-emits + lint-determinism).
+    `npm run test:http` GREEN (EXIT 0): `cron.api.test` (56 assertions) exercises the real cron CRUD routes →
+    `saveCronJobs` → `writeFileDurable` on real `node:fs` end-to-end, confirming the happy path is byte-identical
+    to callers. No route added; no `shared/events.js`/`shared/schema.js` edit; no new event emitted.
+  - **Files:** `sidecar/durable-write.js` (NEW — the durable-write primitive), `sidecar/index.js` (`saveCronJobs`
+    delegates to it + header comment), `test/cron.durability.test.js` (NEW), `package.json` (append the test after
+    `cron.dst`).
 
 ### G4.3 — Cross-process / reentrancy exactly-once lock  ·  STATUS: TODO
 One-line task: add (a) an in-process `tickInFlight` reentrancy guard in `cron-driver.applyTick`
@@ -596,3 +635,22 @@ merge in small increments.
   smoke returns `tz`+`localNext` ("9:00 AM EDT"). No shared-contract edits; no new events emitted
   (noted `cron.fire.tz` / `cron.skipped:tz-recompute` for the later batch). Next: **G4.2** (durable +
   atomic cron persistence — fsync-before-rename in `saveCronJobs`).
+- 2026-06-23 — **G4.2 Durable + atomic cron persistence: DONE.** `saveCronJobs` is now crash-SAFE —
+  temp→**fsync→rename** instead of temp→rename, so a crash in the advance-before-run window can no longer
+  lose the rename or leave a zero-length jobs file (→ double-fire). Factored the durable-write primitive into
+  a NEW importable module `sidecar/durable-write.js` (`writeFileDurable({fs,path}, file, data)`) so the test
+  exercises the ACTUAL code path (index.js self-boots a server and can't be required); `saveCronJobs`
+  delegates to it. Mirrors `savestore.js:writeAtomic`+the ledger append idiom: open(tmp,'w')→writeSync→
+  fsyncSync(tmpFd) **before** renameSync→close, per-PID+random tmp suffix (no concurrent-writer collision),
+  best-effort POSIX dir-fsync after rename (Windows-safe, swallowed). fsync capability-guarded (in-memory fs
+  degrades to writeFileSync→rename, still atomic); nonce rng INJECTED defaulting to lazy `node:crypto` →
+  lint-determinism stays GREEN. Confirmed `loadCronJobs`/`loadEnvelope` already fail-closed (reads only the
+  real path; a stale `.tmp`/truncated/non-array → last good or empty; no hardening needed). RED→GREEN proven
+  (`test/cron.durability.test.js`, NEW, 31 assertions: 6 fails vs a non-durable stub → `OK (31)`); cases =
+  fsync-precedes-rename via an ordered fs spy over the REAL helper, no zero-length window, per-pid suffix,
+  Windows dir-fsync swallow, fail-closed load, and CRASH-AT-FIRE-BOUNDARY (driver advances+persists durably,
+  then a fresh driver over the same on-disk store at the same `now` fires ZERO; envelope round-trips to the
+  advanced nextRunAt). Full `npm run test:fast` GREEN (EXIT 0, no cron/cron.tick/cron-store/cron.dst
+  regressions, lint-determinism/lint-emits GREEN); `npm run test:http` GREEN (cron.api 56 assertions exercise
+  the real CRUD routes → durable save end-to-end). No route added; no `shared/*` edits; no new event emitted.
+  Next: **G4.3** (cross-process / reentrancy exactly-once lock — `tickInFlight` + `WORKSPACES/cron.lock`).
