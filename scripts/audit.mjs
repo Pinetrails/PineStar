@@ -23,6 +23,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from './lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from './lib/seed.mjs';
+import { closeOnly } from './lib/states.mjs';
 
 const PORT = process.env.SKYNET_AUDIT_PORT || '8934';
 const CDP_PORT = Number(process.env.SKYNET_AUDIT_CDP || 9334);
@@ -43,11 +44,36 @@ async function waitTestReady(cdp, tries = 24) {
   return false;
 }
 
-// tiny assertion recorder
+// tiny assertion recorder. A SOFT assertion is reported but never fails the build (used for signals
+// that depend on the test ENVIRONMENT — e.g. a real model run — rather than a product invariant).
 function makeAsserter() {
   const results = [];
-  const ok = (name, pass, detail) => { results.push({ name, pass: !!pass, detail: detail || '' }); console.log(`  ${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); return !!pass; };
+  const ok = (name, pass, detail, soft) => {
+    results.push({ name, pass: !!pass, detail: detail || '', soft: !!soft });
+    const tag = pass ? 'PASS' : (soft ? 'soft' : 'FAIL');
+    console.log(`  ${tag}  ${name}${detail ? '  — ' + detail : ''}`);
+    return !!pass;
+  };
   return { ok, results };
+}
+
+// ---- CDP driving helpers (synthetic clicks/typing in the page) ----
+const J = (v) => JSON.stringify(v);
+const clickSel = (cdp, sel) => evalJS(cdp, `(() => { const el = document.querySelector(${J(sel)}); if (!el) return 'NOTFOUND'; el.click(); return 'clicked'; })()`).catch((e) => 'ERR:' + e.message);
+async function waitSel(cdp, sel, tries = 25) {
+  for (let i = 0; i < tries; i++) { const ok = await evalJS(cdp, `!!document.querySelector(${J(sel)})`).catch(() => false); if (ok) return true; await sleep(200); }
+  return false;
+}
+const sendChat = (cdp, msg) => evalJS(cdp, `(() => { const i = document.getElementById('chat-input'); if (!i) return 'NO_INPUT'; i.focus(); i.value = ${J(msg)}; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); return 'sent'; })()`).catch((e) => 'ERR:' + e.message);
+const getBodies = (cdp) => evalJS(cdp, 'window.__SKYNET_TEST__.bodies()').catch(() => []);
+const tk = (t) => (t ? `${t.x},${t.y}` : '');
+// containment + gaze-only over a body snapshot (the Tier A/C invariants, reused across scenarios).
+function assertFloorInvariants(A, prefix, list) {
+  const escaped = (list || []).filter((b) => b.zone && b.inOwnZone === false);   // only bodies that HAVE a zone may violate it
+  A.ok(`${prefix}/zoned-bodies-contained`, escaped.length === 0, escaped.length ? escaped.map((b) => `${b.name}@(${b.tile.x},${b.tile.y})`).join('; ') : `${list.length} bodies, none roaming outside its zone`);
+  const occ = new Set((list || []).map((b) => tk(b.tile)));
+  const chasing = (list || []).filter((b) => b.moving && b.target && occ.has(tk(b.target.tile)) && tk(b.target.tile) !== tk(b.tile));
+  A.ok(`${prefix}/awareness-gaze-only`, chasing.length === 0, chasing.length ? chasing.map((b) => `${b.name} → ${tk(b.target.tile)}`).join('; ') : 'no body walking onto another');
 }
 
 // SCENARIO: the seeded floor at rest — the P1 invariants.
@@ -55,21 +81,11 @@ async function scenarioFloorRest(cdp, A) {
   const api = await evalJS(cdp, 'window.__SKYNET_TEST__ ? { dev: window.__SKYNET_TEST__.dev, version: window.__SKYNET_TEST__.version } : null').catch(() => null);
   A.ok('testapi/present', api && api.dev === true, api ? ('v' + api.version) : 'window.__SKYNET_TEST__ missing');
 
-  const bodies = await evalJS(cdp, 'window.__SKYNET_TEST__.bodies()').catch(() => []);
-  A.ok('bodies/nonempty', Array.isArray(bodies) && bodies.length >= 1, `${(bodies || []).length} bodies`);
+  const list = await getBodies(cdp);
+  A.ok('bodies/nonempty', Array.isArray(list) && list.length >= 1, `${(list || []).length} bodies`);
 
-  const placed = (bodies || []).filter((b) => !b.unplaced);
-  // Tier A — every placed body idles inside its own zone.
-  const outOfZone = placed.filter((b) => b.inOwnZone === false);
-  A.ok('tierA/idle-in-own-zone', outOfZone.length === 0,
-    outOfZone.length ? outOfZone.map((b) => `${b.name}@(${b.tile.x},${b.tile.y}) zone=${b.zone ? b.zone.kind : 'null'}`).join('; ') : `${placed.length} placed bodies all in-zone`);
-
-  // Tier C — awareness is gaze-only: no body is WALKING toward another body's current tile.
-  const tileKey = (t) => t ? `${t.x},${t.y}` : '';
-  const occupied = new Set(placed.map((b) => tileKey(b.tile)));
-  const chasing = placed.filter((b) => b.moving && b.target && occupied.has(tileKey(b.target.tile)) && tileKey(b.target.tile) !== tileKey(b.tile));
-  A.ok('tierC/awareness-gaze-only', chasing.length === 0,
-    chasing.length ? chasing.map((b) => `${b.name} → ${tileKey(b.target.tile)}`).join('; ') : 'no body walking onto another body');
+  // Tier A (containment) + Tier C (gaze-only awareness).
+  assertFloorInvariants(A, 'floor', list);
 
   // Truthful telemetry — displayed HUD numbers equal the reduction over the frozen U.bus log.
   const hud = await evalJS(cdp, 'window.__SKYNET_TEST__.hud()').catch(() => null);
@@ -85,7 +101,64 @@ async function scenarioFloorRest(cdp, A) {
   const n = await evalJS(cdp, 'window.__SKYNET_TEST__.eventCount()').catch(() => -1);
   A.ok('log/frozen-bus', typeof n === 'number' && n >= 0, `${n} events captured`);
 
-  return { bodies, hud };
+  return { bodies: list, hud };
+}
+
+// SCENARIO: RUN A TASK — send a chat directive and prove a run is dispatched + the floor reacts.
+// Model-free: setActivity('task') fires client-side at send, and the sidecar emits agent.run.* before
+// the placeholder key 401s. (run-dispatched is SOFT — it depends on the sidecar reaching the provider.)
+async function scenarioTask(cdp, A) {
+  await evalJS(cdp, closeOnly).catch(() => {});
+  const before = (await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run').length").catch(() => 0)) || 0;
+  const sent = await sendChat(cdp, 'list 3 prime numbers, one per line, then stop');
+  A.ok('task/sent', sent === 'sent', sent);
+
+  // Tight initial poll: the work pose (activity='task') is set at send but reverts the instant the
+  // placeholder key 401s (<1s), so we latch it fast. The frozen log is permanent, so the run-* events
+  // are the RELIABLE proof a run was dispatched + ran its lifecycle.
+  let sawActivity = false, kinds = {};
+  for (let i = 0; i < 30; i++) {
+    const act = await evalJS(cdp, "(typeof World!=='undefined'&&World.getActivity)?World.getActivity():null").catch(() => null);
+    if (act === 'task' || act === 'thinking') sawActivity = true;          // latch
+    const runs = await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run').map(e=>e.name)").catch(() => []);
+    kinds = {}; for (const k of (runs || [])) kinds[k] = (kinds[k] || 0) + 1;
+    if ((kinds['agent.run.end'] || 0) > 0) break;                          // run resolved (done or errored)
+    await sleep(200);
+  }
+  const total = Object.values(kinds).reduce((a, b) => a + b, 0);
+  A.ok('task/run-dispatched', total > before && (kinds['agent.run.start'] || 0) > 0, `agent.run.* seen: ${Object.keys(kinds).join(', ') || 'none'}`);
+  A.ok('task/run-lifecycle', (kinds['agent.run.start'] || 0) > 0 && (kinds['agent.run.end'] || 0) > 0, `start=${kinds['agent.run.start'] || 0} end=${kinds['agent.run.end'] || 0} err=${kinds['agent.run.error'] || 0} (error expected on placeholder key)`);
+  A.ok('task/work-pose-engaged', sawActivity, sawActivity ? 'caught World activity=task' : 'work pose too brief to latch (run 401s fast on placeholder key) — visual capture covers it', /*soft*/ true);
+}
+
+// SCENARIO: SUMMON a new agent via the real Recruitment Bay, and prove the new body is well-behaved.
+async function scenarioSummon(cdp, A) {
+  await evalJS(cdp, closeOnly).catch(() => {});
+  const before = (await getBodies(cdp)).length;
+  await clickSel(cdp, '#bb-summon');
+  const bayUp = await waitSel(cdp, '.mkt-primary', 30);                    // bay opens after an /api/limits fetch
+  A.ok('summon/bay-open', bayUp, bayUp ? 'recruitment bay shown' : '.mkt-primary never appeared');
+  if (bayUp) {
+    const rec = await evalJS(cdp, "(() => { const b = document.querySelector('.mkt-primary'); if (!b) return 'NONE'; const id = b.dataset.id || ''; b.click(); return 'recruited:' + id; })()").catch((e) => 'ERR:' + e.message);
+    await sleep(2200);                                                     // spawn + materialize + first stroll beat
+    const list = await getBodies(cdp);
+    A.ok('summon/body-spawned', list.length === before + 1, `${before} → ${list.length} (${rec})`);
+    assertFloorInvariants(A, 'summon', list);                             // the new body must stay contained + gaze-only
+  }
+  await evalJS(cdp, closeOnly).catch(() => {});                            // close the bay for the frame
+  await sleep(700);
+}
+
+// SCENARIO: THE MOAT — object=capability. Read the hero's placed capability set and check it is sane.
+async function scenarioMoat(cdp, A) {
+  await evalJS(cdp, closeOnly).catch(() => {});
+  const caps = await evalJS(cdp, "(typeof World!=='undefined'&&World.heroCaps)?World.heroCaps('agent'):null").catch(() => null);
+  A.ok('moat/heroCaps-readable', Array.isArray(caps), Array.isArray(caps) ? `caps=[${caps.map((c) => c.objectType).join(', ') || 'none placed'}]` : 'heroCaps() not callable');
+  if (Array.isArray(caps)) {
+    const KNOWN = new Set(['web', 'files', 'terminal', 'memory', 'image', 'spotify']);
+    const bad = caps.filter((c) => !KNOWN.has(c && c.objectType));
+    A.ok('moat/caps-well-formed', bad.length === 0, bad.length ? 'unexpected: ' + bad.map((c) => c && c.objectType).join(',') : 'every placed object maps to a known capability');
+  }
 }
 
 async function main() {
@@ -122,13 +195,24 @@ async function main() {
       await capture(cdp, OUT_DIR, '_FAILED-ready');
       exitCode = 2;
     } else {
-      console.log('\nscenario: floor-rest');
-      const A = makeAsserter();
-      const data = await scenarioFloorRest(cdp, A);
-      const passed = A.results.every((r) => r.pass);
-      await capture(cdp, OUT_DIR, passed ? 'floor-rest' : '_FAIL-floor-rest');
-      report.scenarios.push({ name: 'floor-rest', passed, assertions: A.results, bodies: data.bodies, hud: data.hud });
-      if (!passed) exitCode = 3;
+      // Run the scenarios in order. Earlier ones MUTATE state for later ones (task → working,
+      // summon → +1 body), so the order is deliberate: rest (clean) → task (hero) → summon → moat.
+      const SCENARIOS = [
+        { name: 'floor-rest', fn: scenarioFloorRest },
+        { name: 'task',       fn: scenarioTask },
+        { name: 'summon',     fn: scenarioSummon },
+        { name: 'moat',       fn: scenarioMoat },
+      ];
+      for (const sc of SCENARIOS) {
+        console.log(`\nscenario: ${sc.name}`);
+        const A = makeAsserter();
+        let data = null;
+        try { data = await sc.fn(cdp, A); } catch (e) { A.ok(`${sc.name}/ran`, false, 'threw: ' + e.message); }
+        const hardFail = A.results.some((r) => !r.pass && !r.soft);   // SOFT failures never fail the build
+        await capture(cdp, OUT_DIR, hardFail ? `_FAIL-${sc.name}` : sc.name);
+        report.scenarios.push({ name: sc.name, passed: !hardFail, assertions: A.results, data: data || null });
+        if (hardFail) exitCode = 3;
+      }
     }
     report.console = diag.consoleMsgs.slice(0, 30);
     report.exceptions = diag.exceptions.slice(0, 20);
@@ -141,9 +225,11 @@ async function main() {
     if (!KEEP) { try { rmSync(SCRATCH, { recursive: true, force: true }); } catch {} }
   }
 
-  const total = report.scenarios.reduce((n, s) => n + s.assertions.length, 0);
-  const failed = report.scenarios.reduce((n, s) => n + s.assertions.filter((a) => !a.pass).length, 0);
-  console.log(`\n${exitCode === 0 ? 'AUDIT PASS' : 'AUDIT FAIL (exit ' + exitCode + ')'} — ${total - failed}/${total} assertions passed → ${OUT_DIR}`);
+  const all = report.scenarios.flatMap((s) => s.assertions);
+  const total = all.length;
+  const passed = all.filter((a) => a.pass).length;
+  const softFails = all.filter((a) => !a.pass && a.soft).length;
+  console.log(`\n${exitCode === 0 ? 'AUDIT PASS' : 'AUDIT FAIL (exit ' + exitCode + ')'} — ${passed}/${total} assertions passed${softFails ? ` (${softFails} soft skip${softFails > 1 ? 's' : ''})` : ''} → ${OUT_DIR}`);
   process.exit(exitCode);
 }
 
