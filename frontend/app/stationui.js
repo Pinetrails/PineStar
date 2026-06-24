@@ -1296,9 +1296,27 @@ const StationUI = (() => {
       try {
         const j = await (await fetch('/api/cron')).json();
         const jobs = (j && j.jobs) || [];
+        // HONEST disabled-state + one-click ENABLE (G4.6): when the scheduler is OFF, say plainly that routines
+        // will NOT fire and offer a one-click ENABLE that arms the live timer (no env edit / restart). When ON,
+        // show the armed state + a DISABLE control. `enabled` comes straight from GET /api/cron (the live
+        // cronArmed), so the badge reflects a runtime arm/disarm immediately.
         gateEl.innerHTML = j && j.enabled
-          ? '<span style="color:var(--gold)">● scheduler armed — routines fire automatically.</span>'
-          : '<span class="dim">○ scheduler is OFF (set SKYNET_CRON_ENABLED=1 to fire automatically). You can still ▶ RUN NOW any routine.</span>';
+          ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span> ' +
+            '<button class="bb xs" id="rt-arm" data-arm="0">⏸ DISABLE SCHEDULING</button>'
+          : '<span style="color:var(--bad)">○ scheduling is OFF — routines will <b>NOT</b> fire.</span> ' +
+            '<span class="dim">Your routines are saved but dormant until you enable the scheduler.</span> ' +
+            '<button class="bb xs" id="rt-arm" data-arm="1">▶ ENABLE SCHEDULING</button>';
+        const armBtn = gateEl.querySelector('#rt-arm');
+        if (armBtn) armBtn.addEventListener('click', async () => {
+          const want = armBtn.dataset.arm === '1';
+          armBtn.disabled = true; armBtn.textContent = want ? '… enabling' : '… disabling';
+          try {
+            const r = await (await post('/api/cron/arm', { enabled: want })).json();
+            if (r && r.ok) { notify(want ? 'scheduling enabled — routines will now fire' : 'scheduling disabled', want ? 'good' : 'warn'); sfx('click'); }
+            else { notify((r && r.error) || 'could not change scheduling', 'warn'); sfx('bad'); }
+          } catch (_) { notify('could not reach the sidecar', 'warn'); sfx('bad'); }
+          refresh();   // re-render the badge from the authoritative GET /api/cron enabled
+        });
         listEl.innerHTML = jobs.length ? jobs.map(row).join('')
           : '<div class="fb-empty">NO ROUTINES YET.<br><span>Add one below to put your agent to work on a schedule.</span></div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage routines.</div>'; }

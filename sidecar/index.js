@@ -694,6 +694,30 @@ function saveCronJobs() {   // throws on failure (the CRUD routes let it surface
   writeFileDurable({ fs: fs, path: path }, CRON_FILE, JSON.stringify(cronStore.toEnvelope(cronJobs)));
 }
 
+/* ---- G4.6: persisted "is the scheduler armed?" flag, so a one-click ENABLE in the UI arms the timer WITHOUT
+   an env edit + restart. The whole subsystem stays INERT unless armed: the boot block ORs SKYNET_CRON_ENABLED
+   with this persisted flag to decide the INITIAL armed state, and a live arm/disarm route flips an IN-MEMORY
+   `cronArmed` + (re)starts/clears the tick timer NOW. We do NOT mutate process.env at runtime — that would be
+   a hidden lie about the boot-frozen gate; the persisted flag is the durable record, the in-memory bool the
+   live state. The flag lives in the PROTECTED WORKSPACES dir (sibling of the fs jail, like cron.jobs.json) and
+   is written through the SAME durable temp→fsync→rename helper (G4.2), so a crash never leaves a torn flag.
+   INERT-WHEN-OFF guarantee: a user who never enables cron has no cron.armed.json (load fails closed to false),
+   no SKYNET_CRON_ENABLED, so cronArmed=false at boot, no timer is armed, and the off-path is byte-identical. ---- */
+const CRON_ARMED_FILE = path.join(WORKSPACES, 'cron.armed.json');
+function loadCronArmed() {
+  // fail-closed: missing/corrupt/non-boolean -> false (an unreadable flag must never silently ARM the scheduler).
+  try {
+    const env = JSON.parse(fs.readFileSync(CRON_ARMED_FILE, 'utf8'));
+    return !!(env && env.armed === true);
+  } catch (_) { return false; }
+}
+function saveCronArmed(armed) {   // durable like the jobs file; throws on a real write failure so the route surfaces it
+  writeFileDurable({ fs: fs, path: path }, CRON_ARMED_FILE, JSON.stringify({ version: 1, armed: armed === true }));
+}
+// the LIVE armed state: SKYNET_CRON_ENABLED (env, boot-frozen) OR the persisted runtime flag. Mutated only by
+// armCron()/disarmCron() (below) — never via process.env. GET /api/cron reports THIS so the panel is honest.
+let cronArmed = CRON_ENABLED || loadCronArmed();
+
 /* ---- G4.3: cross-process / reentrancy EXACTLY-ONCE lock. Two sidecars sharing one WORKSPACES dir (or a
    second sidecar's boot-resume reconcile racing the first's timer tick, or a CRUD save racing an advance)
    would otherwise BOTH read the same due store and BOTH fire, and a CRUD write can clobber an advance
@@ -775,6 +799,33 @@ const cronDriver = makeCronDriver({
   persona: (agentId) => cronSystemFor(agentId)
 });
 let cronTimer = null;
+
+/* ---- G4.6: arm/disarm the live scheduler tick. armCron() runs ONE immediate reconcile tick (catching up any
+   fires missed while the timer was off — at-most-one within grace, else fast-forward+skip, never a backlog)
+   UNDER the cross-process lock (G4.3), then arms the interval; it is IDEMPOTENT (a no-op when a timer already
+   runs). disarmCron() clears the interval so no further ticks fire. Both are called at boot (behind the
+   cronArmed gate) AND at runtime by POST /api/cron/arm — arming starts a due job firing within ONE tick with
+   NO restart, disarming stops it immediately. The lock re-enters cleanly through applyTick -> setJobs ->
+   saveCronJobs. ---- */
+function armCron() {
+  if (cronTimer) return false;   // already armed — idempotent (a second arm must not stack two timers)
+  console.log('  · cron enabled — ' + cronJobs.length + ' routine(s); running boot reconcile');
+  // G4.3: wrap BOTH the resume reconcile and every timer tick in the cross-process lock so two sidecars (or
+  // this reconcile racing the first timer tick) can never both fire — whoever holds the lock ticks, the other
+  // no-ops this pass. The reconcile runs BEFORE the interval arms so a catch-up never overlaps the first tick.
+  try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
+  cronTimer = setInterval(() => { try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
+  if (cronTimer.unref) cronTimer.unref();   // the http server keeps the process alive; the ticker alone shouldn't
+  console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
+  return true;
+}
+function disarmCron() {
+  if (!cronTimer) return false;
+  try { clearInterval(cronTimer); } catch (_) {}
+  cronTimer = null;
+  console.log('  · cron tick DISARMED — no routine will fire until re-enabled');
+  return true;
+}
 
 /* ---- execution spine: the checkpoint rollback net (Commit 1). A per-agent shadow-git store under
    WORKSPACES/.checkpoints/<agentId>/ — a SIBLING of the fs jail, so the agent's own fs.* and shell tools can
@@ -1005,6 +1056,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
+  if (req.method === 'POST' && req.url === '/api/cron/arm') return handleCronArm(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
@@ -1074,20 +1126,13 @@ server.listen(PORT, '127.0.0.1', () => {
     for (const c of connectorConfigs) { if (c && c.enabled !== false && c.url) connectors.configure(c.id, c).catch(() => {}); }
     if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
-  // cron (OPT-IN via SKYNET_CRON_ENABLED): RESUME by running ONE immediate reconcile tick — catching up any
-  // fires missed while the host was down (at-most-one within grace, else fast-forward+skip; never a backlog) —
-  // BEFORE arming the interval. Inert when off: no timer, no fire, the browser path is byte-identical.
+  // cron (OPT-IN): the scheduler arms iff SKYNET_CRON_ENABLED OR the persisted runtime cronArmed flag is set
+  // (G4.6 — `cronArmed` is that OR, computed at the store). armCron() RESUMES by running ONE immediate reconcile
+  // tick — catching up any fires missed while the host was down (at-most-one within grace, else fast-forward+
+  // skip; never a backlog) — BEFORE arming the interval. Inert when off: no timer, no fire, the browser path is
+  // byte-identical for a user who never enables cron (no env var, no cron.armed.json -> cronArmed=false).
   try {
-    if (CRON_ENABLED) {
-      console.log('  · cron enabled — ' + cronJobs.length + ' routine(s); running boot reconcile');
-      // G4.3: wrap BOTH the boot reconcile and every timer tick in the cross-process lock so two sidecars (or
-      // this boot reconcile racing the first timer tick) can never both fire — whoever holds the lock ticks,
-      // the other no-ops this pass. The lock re-enters cleanly through applyTick -> setJobs -> saveCronJobs.
-      cronLock.withLock(() => cronDriver.applyTick(Date.now()));         // resume reconcile BEFORE the timer arms
-      cronTimer = setInterval(() => { try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
-      if (cronTimer.unref) cronTimer.unref();                            // the http server keeps the process alive; the ticker alone shouldn't
-      console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
-    }
+    if (cronArmed) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
 });
 
@@ -1299,10 +1344,32 @@ function parseCronProviderOr400(value) {
 }
 
 // GET /api/cron — the job snapshot the panel renders from (no secrets in a CronJob). `enabled` = is the tick
-// driver actually armed (SKYNET_CRON_ENABLED) so the panel can honestly say whether routines will fire.
+// driver actually armed (the LIVE cronArmed = SKYNET_CRON_ENABLED OR the persisted runtime flag, G4.6) so the
+// panel can honestly say whether routines will fire — and reflects a runtime arm/disarm WITHOUT a restart.
 function handleCronList(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ jobs: cronJobs, enabled: CRON_ENABLED, tickMs: CRON_TICK_MS }));
+  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS }));
+}
+
+// POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
+// Privileged: this route is behind the SAME x-skynet-token gate as the cron CRUD routes (rejectBadApiToken
+// runs before dispatch for every /api/* POST except /api/session|/api/key|/api/save), so a browser-driven
+// cross-site call can't arm the autonomous scheduler. It (a) PERSISTS the cronArmed flag durably and (b)
+// ACTUALLY arms/disarms the live timer NOW — arming fires a due job within ONE tick with no restart; the
+// honest GET /api/cron `enabled` flips immediately. We do NOT touch process.env (the boot-frozen gate stays
+// truthful); the persisted flag is the durable record OR'd at the next boot.
+function handleCronArm(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    if (typeof body.enabled !== 'boolean') return json(400, { error: 'enabled (boolean) is required' });
+    const want = body.enabled;
+    try { saveCronArmed(want); }                       // durable persist FIRST so a crash can't drop the user's intent
+    catch (e) { return json(500, { error: 'could not persist the arm flag: ' + ((e && e.message) || e) }); }
+    cronArmed = want;                                  // live in-memory state (GET /api/cron reflects this)
+    if (want) armCron(); else disarmCron();            // start/stop the live tick NOW — a due job fires within one tick
+    json(200, { ok: true, enabled: cronArmed, tickMs: CRON_TICK_MS });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
 // POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, provider?, deliver?, enabled?, repeat? }
