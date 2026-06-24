@@ -364,6 +364,8 @@ const World = (() => {
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       // awareness & curiosity: head-turn glance (drawBody reads agent.glance), study/observe dwell, fidget + notice cooldowns
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
+      summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory so a summon-glance fires once per event, not every frame (runtime-only)
+      neighborGlanceCd: 0, // Tier C / C-Beat2: per-body cooldown so two idle neighbors don't re-roll a mutual glance the instant the last lapses (runtime-only)
       // INNER LIFE: a fixed temperament + three slow-draining needs that drive WHICH goal it pursues
       pers: makePersonality(a.id),
       needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
@@ -1123,6 +1125,118 @@ const World = (() => {
 
   function setGlance(dir, ms, now) { if (self) self.glance = { dir, until: now + ms }; }
 
+  /* ================= Tier C (cross-agent awareness) — C0 plumbing =================
+     INVIOLABLE RULE: perceive across zones, ACT (move) only within your own. These two helpers are the
+     GAZE-ONLY foundation — they READ neighbor positions and turn a head; they NEVER introduce a path,
+     target, goal, or any movement (K1). Wired to NO trigger in C0 — this phase changes zero behavior. */
+
+  // Every body = the hero `agent` + the crew[] array. Bounded O(N) (hero + a handful of crew).
+  const allBodies = () => (agent ? [agent].concat(crew) : crew.slice());
+
+  // neighborsOf — READ-ONLY. Returns the OTHER bodies within `radius` tiles of `body` AND in a basic
+  // sightline (same zone — the containment-aware "can see" test; reads px/py/tile only, mutates NOTHING).
+  // Skips: itself, unplaced bodies. N is tiny, so an O(N) scan gated to the idle cadence is cheap (K4).
+  function neighborsOf(body, radius) {
+    const out = [];
+    if (!body || body.unplaced) return out;
+    const rPx = radius * T;                       // compare in pixels (px/py are the canonical coords)
+    const zone = zoneFor(body);                   // basic sightline = the observer's own zone (read-only)
+    for (const other of allBodies()) {
+      if (other === body || !other || other.unplaced) continue;
+      if (Math.hypot(other.px - body.px, other.py - body.py) > rPx) continue;   // proximity (deterministic)
+      const ot = tileOf(other.px, other.py);      // logical tile (seated bodies still carry px/py here)
+      if (!tileInZone(zone, ot.x, ot.y)) continue;   // sightline: neighbor stands within the observer's zone
+      out.push(other);
+    }
+    return out;
+  }
+
+  // glanceAt — turn `self` to FACE otherBody for `dur` ms. Calls ONLY setGlance (head-turn, auto-reverts at
+  // render via assets.js). It mutates ONLY self's own glance state — never a path/target/goal/position (K1),
+  // never another body (K2). MUST run with `self` pointing at the GLANCING body (Tier B self discipline).
+  function glanceAt(self_, otherBody, dur, now) {
+    if (!self_ || !otherBody) return;
+    const dir = dirToward(self_.px, self_.py, otherBody.px, otherBody.py);
+    if (self_ === self) { setGlance(dir, dur, now); return; }   // current actor: reuse setGlance (writes self.glance)
+    self_.glance = { dir, until: now + dur };                   // non-current body: direct glance write (no self repoint)
+  }
+
+  // bodyIsIdle — READ-ONLY: is `b` free to notice (not tasked, not walking, no active goal)? The hero's busy
+  // flag is the module-scope `activity` (HERO-ONLY); crew busyness is per-body (b.working/b.workUntil), and only
+  // SUMMONED crew have the inner life (stepCrew gates the engine on b.summoned). Reads only — mutates nothing.
+  function bodyIsIdle(b, now) {
+    if (!b || b.unplaced || b.state === 'walk' || b.working || b.goal != null) return false;
+    if (agent && b === agent) return activity === 'idle';                 // hero: the single module-scope busy flag
+    return !!b.summoned && b.workUntil <= now;                            // crew: only summoned bodies are alive; not mid-run
+  }
+
+  /* ================= Tier C — C-Beat1: SUMMON GLANCE =================
+     When a body is summoned to a task, each OTHER body that is currently IDLE and within sight has a 50% chance
+     to turn its head toward the summoned body for a brief beat, then resume. GAZE-ONLY (glanceAt → setGlance/direct
+     .glance write — no path/target/goal/movement, K1). Fires off the summon EVENT only (never off another body's
+     glance, K4 no cascade). A short per-observer refractory makes it fire ONCE per event, not every frame. The
+     glance is ADDITIVE and NEVER delays the summon — this runs AFTER the work-seize (K3 summon-wins). The summoned
+     body itself does NOT glance (it's tasked, excluded as the scan target). Determinism: U.chance(0.5) + U.irnd (K5).
+     CRITICAL self-discipline (K2): this runs OUTSIDE the per-body engine loop (from setActivityFor/handoff/bus where
+     `self` points at the hero or a stale body), so it writes each observer's glance via glanceAt's DIRECT path —
+     it enumerates bodies explicitly and never re-points the module `self`. */
+  const SUMMON_GAZE_RADIUS = 7;   // tiles — same zone + within sight; neighborsOf already caps to the observer's zone
+  function summonGlance(summonedBody, now) {
+    if (!summonedBody) return;
+    for (const obs of neighborsOf(summonedBody, SUMMON_GAZE_RADIUS)) {
+      if (obs === summonedBody) continue;            // the tasked body goes to work, never glances (defensive; neighborsOf already excludes self)
+      if (!bodyIsIdle(obs, now)) continue;           // only free bodies notice (a busy/walking body keeps its task — K3)
+      if (now < (obs.summonGlanceCd || 0)) continue; // per-observer refractory: once per summon event, not every frame
+      obs.summonGlanceCd = now + U.irnd(1600, 2800); // arm refractory whether or not the roll lands (no re-roll storm)
+      if (!U.chance(0.5)) continue;                  // 50% — half notice, half stay absorbed
+      glanceAt(obs, summonedBody, U.irnd(650, 1050), now);   // brief head-turn toward the summoned, auto-reverts at render
+    }
+  }
+
+  /* ================= Tier C — C-Beat2: MUTUAL IDLE GLANCE =================
+     When `self` (the deciding idle body) has a neighbor that is ALSO idle within sight, occasionally — rarity-gated
+     behind a long PER-BODY cooldown (self.neighborGlanceCd) — both bodies turn their heads toward each other for a
+     held beat, then the normal glance timeout ENDS it. A quiet, silent "they noticed each other." GAZE-ONLY: glanceAt
+     calls setGlance / writes .glance only — no path/target/goal/movement (K1). Each body mutates ONLY its OWN glance
+     state — self via setGlance, the neighbor via glanceAt's DIRECT .glance write — never any other field (K2).
+     K4 no deadlock: the mutual glance self-terminates by `until` at render (assets.js); nothing re-arms it until the
+     cooldown elapses, so two facing idle bodies can't lock into a sustained stare. K4 no cascade: this fires off
+     both-idle PROXIMITY + the cooldown ONLY — it reads neighbor px/py/idle-state, NEVER neighbor.glance, so A glancing
+     can't make B glance. Called from decideIdle (idle-cadence gated, NOT every frame) with self set to the deciding
+     body, so hero (self===agent) and crew (self===b) behave uniformly. Returns true iff a mutual glance was struck.
+     Determinism: U.chance / U.irnd / U.pick only (K5). */
+  const MUTUAL_GAZE_RADIUS = 4;   // tiles — a near neighbor; neighborsOf already caps to the deciding body's zone
+  function maybeMutualGlance(now) {
+    if (!self || self.stilling) return false;          // never interrupt a deliberate stilling hold (eerie calm wins — K8)
+    if (now < (self.neighborGlanceCd || 0)) return false;   // long per-body cooldown so it's occasional, not busy (K8/K4)
+    const cands = [];
+    for (const other of neighborsOf(self, MUTUAL_GAZE_RADIUS)) {
+      if (!bodyIsIdle(other, now)) continue;           // only a free neighbor can lock eyes back (read-only idle test)
+      if (other.stilling) continue;                    // respect the neighbor's deliberate hold too (don't yank it out)
+      cands.push(other);
+    }
+    if (!cands.length) { self.neighborGlanceCd = now + U.irnd(8000, 16000); return false; }   // arm a short re-scan gap even on a miss (no per-frame rescans)
+    self.neighborGlanceCd = now + U.irnd(14000, 26000);   // arm the cooldown whether or not the roll lands (no re-roll storm)
+    if (!U.chance(0.18)) return false;                 // rare — a quiet noticing, not a constant swivel (K8 eerie restraint)
+    const other = U.pick(cands);
+    const dur = U.irnd(900, 1500);                      // a HELD beat (longer than an ambient flick) — they regard each other, then break
+    glanceAt(self, other, dur, now);                   // self looks at the neighbor (self===self -> setGlance)
+    glanceAt(other, self, dur, now);                   // the neighbor looks back — glanceAt's DIRECT .glance write (K2: only its glance)
+    // Protect the partner's held look-back the same way decideIdle protects the INITIATOR (idleUntil at the call site):
+    // bodyIsIdle ignores idleUntil, so `other` may be at/past its idle hold and re-decide via decideIdle before `dur`
+    // elapses — standStill (62%)/lookAround/wander would then stomp other.glance, degrading C-Beat2 to one-sided. Hold
+    // its idle past the glance so the mutual beat survives, then ends cleanly by the glance timeout (K4: still self-
+    // terminating, no movement — idleUntil/glance/cooldown only, never a path/target/goal — K1/K2 intact).
+    other.idleUntil = Math.max(other.idleUntil || 0, now + dur + U.irnd(200, 600));
+    other.neighborGlanceCd = now + U.irnd(14000, 26000);   // arm the partner's cooldown too so it doesn't immediately re-initiate
+    // Protect the INITIATOR's held glance symmetrically: bodyIsIdle ignores idleUntil, so if self's idle hold expired
+    // mid-glance the crew/hero engine would re-enter decideIdle and standStill(62%)/lookAround/wander could stomp self's
+    // own still-live glance (degrading C-Beat2 to one-sided on the initiator side). Hold self's idle past dur the same
+    // way the partner is held — gaze/timer-only, no path/target/goal (K1/K2 intact, K4 still self-terminating).
+    self.idleUntil = Math.max(self.idleUntil || 0, now + dur + U.irnd(200, 600));
+    return true;
+  }
+
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
   // Petz "it knows where you are" (continuous tracking, NOT the rare dramatic look-up). Falls back to a
   // random cardinal when the cursor's gone quiet, so it never reads as locked-on.
@@ -1531,6 +1645,7 @@ const World = (() => {
     const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
+      if (maybeMutualGlance(now)) return;  // C-Beat2: a quiet noticing between two idle neighbors — gaze-only; maybeMutualGlance holds self.idleUntil past its own glance so the beat stays two-sided, then ends by timeout
       if (U.chance(0.10) && maybeRevisit(now)) return;                                 //   occasionally drift back to its favorite spot
       const r = U.irnd(0, 99);
       if (r < 62) standStill(now);                                                      //   62% just stand and be here
@@ -2289,6 +2404,8 @@ const World = (() => {
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
+      summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
+      neighborGlanceCd: 0, // Tier C / C-Beat2: per-body mutual-glance cooldown (mirrors the hero literal) — runtime-only
       wakeAt: 0, workUntil: 0,
       // B0 — FULL ENGINE STATE SHAPE (additive, runtime-only): mirror the hero literal (spawn ~346-367) so a
       // crew body reads real meters/temperament when Tier B2 routes the sentience engine through it (stepCrew →
@@ -2375,15 +2492,21 @@ const World = (() => {
   // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
   // body lights + takes the working pose while its run is live, and extinguishes when it ends.
   function setActivityFor(agentId, kind) {
-    if (!agentId || (agent && agentId === agent.id)) { setActivity(kind); return; }
+    const now0 = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    if (!agentId || (agent && agentId === agent.id)) {
+      setActivity(kind);                                                  // HERO: byte-identical single-agent path (the seize itself is in tick)
+      if (kind === 'task' || kind === 'thinking') summonGlance(agent, now0);   // C-Beat1: AFTER the activity flips to task — observers (crew) may glance at the summoned hero (K3 never blocks the seize)
+      return;
+    }
     const b = crew.find(x => x.agentId === agentId);
     if (!b) return;                                                       // not yet spawned (e.g. summon mid-flight) — nothing to animate
     const working = (kind === 'task' || kind === 'thinking');
     b.working = working; b.sitting = false; b.dir = working ? 'north' : 'south';   // face away = "at work"; stepCrew seats it at its desk if it has one, else it stands here
     if (working) { b.target = null; b.pathPts = null; seizeFromIdle(b); }   // drop any in-flight stroll AND any couch/leisure latch so stepCrew re-paths straight to the chair (J4)
-    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    const now = now0;
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
+    if (working) summonGlance(b, now);   // C-Beat1: AFTER the work-seize (K3 summon-wins) — OTHER idle in-sight bodies 50% glance at the newly-summoned `b`
   }
 
   // the WATCHABLE HANDOFF: the lead delegated to worker `toId`. 'spawned' lights the worker (chat.js does NOT
@@ -2399,6 +2522,7 @@ const World = (() => {
     sayAt(to, 'on it…');
     const from = bodyForAgent(fromId) || agent;
     if (from && from !== to) handoffBoxes.push({ fromX: from.px, fromY: from.py - 6, toX: to.px, toY: to.py - 6, t0: now, color: to.color || '#5ad0ff' });
+    summonGlance(to, now);   // C-Beat1: a delegated worker just started — OTHER idle in-sight bodies 50% glance at it (AFTER its seize, K3)
   }
   // draw the in-flight handoff boxes (world space, over the entities). A small arced lerp that self-expires.
   function drawHandoffBoxes(now) {
