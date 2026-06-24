@@ -56,6 +56,7 @@ const { makeSseHub } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
+const { makeStdioTransport } = require('./mcp/transport.stdio.js');   // G2.1: launch local stdio MCP servers (npx @modelcontextprotocol/server-*)
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
@@ -666,7 +667,15 @@ function saveConnectorConfigs() {
   } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
 }
 const connectors = makeConnectorManager({
-  makeTransport: makeHttpTransport, clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  // G2.1: makeTransport is now a KIND map — `http` (the Streamable-HTTP edge) and `stdio` (a local child MCP
+  // server). The stdio factory gets the real child_process.spawn injected here at the composition root; the
+  // command allowlist + the npx-aware spec parser live inside the transport (default isAllowed) so a stdio
+  // server can only be `node`/`npx @modelcontextprotocol/server-*`/`uvx …`, never an arbitrary local command.
+  makeTransport: {
+    http: makeHttpTransport,
+    stdio: (cfg) => makeStdioTransport({ spawn: childSpawn, command: cfg.command, args: cfg.args, env: cfg.env, cwd: cfg.cwd })
+  },
+  clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
@@ -1205,15 +1214,35 @@ async function handleConnectorUpsert(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const id = String(body.id || '').trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return json(400, { error: 'connector id must be 1-40 chars of [A-Za-z0-9_-]' });
-  const url = String(body.url || '').trim();
-  if (!url) return json(400, { error: 'a server URL is required' });
   const prev = connectorConfigs.find(c => c.id === id) || {};
-  const cfg = {
-    id: id, url: url,
-    token: ('token' in body && body.token !== '') ? String(body.token) : (prev.token || ''),   // a blank token keeps the saved one
-    label: String(body.label || prev.label || id),
-    enabled: body.enabled !== false
-  };
+  const transport = String(body.transport || prev.transport || 'http').toLowerCase();
+  if (transport !== 'http' && transport !== 'stdio') return json(400, { error: 'transport must be "http" or "stdio"' });
+  let cfg;
+  if (transport === 'stdio') {
+    // G2.1: a local stdio MCP server (e.g. `npx @modelcontextprotocol/server-filesystem /path`). The spawn-time
+    // command allowlist + npx-aware spec parser live in the transport, so the route just collects config; the
+    // env (which may carry secrets) is PERSISTED to the protected sibling file and NEVER echoed back (summary
+    // exposes only `hasEnv`). A non-allowlisted command yields a connect 'error' state, never a spawn.
+    const command = String(body.command || prev.command || '').trim();
+    if (!command) return json(400, { error: 'a command is required for a stdio connector' });
+    cfg = {
+      id: id, transport: 'stdio', command: command,
+      args: Array.isArray(body.args) ? body.args.map(a => String(a)) : (Array.isArray(prev.args) ? prev.args : []),
+      env: ('env' in body && body.env && typeof body.env === 'object') ? body.env : (prev.env || null),
+      cwd: ('cwd' in body) ? String(body.cwd || '') : (prev.cwd || ''),
+      label: String(body.label || prev.label || id),
+      enabled: body.enabled !== false
+    };
+  } else {
+    const url = String(body.url || '').trim();
+    if (!url) return json(400, { error: 'a server URL is required' });
+    cfg = {
+      id: id, transport: 'http', url: url,
+      token: ('token' in body && body.token !== '') ? String(body.token) : (prev.token || ''),   // a blank token keeps the saved one
+      label: String(body.label || prev.label || id),
+      enabled: body.enabled !== false
+    };
+  }
   connectorConfigs = connectorConfigs.filter(c => c.id !== id).concat([cfg]);
   saveConnectorConfigs();
   let result; try { result = await connectors.configure(id, cfg); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'configure failed' }; }
@@ -2089,7 +2118,8 @@ function handleHalt(req, res) {
   const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
   const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
   try { shellBg.killAll(); } catch (_) {}   // H2.2: E-STOP also reaps every background process (no orphaned dev servers)
-  try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
+  try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick
+  try { connectors.close(); } catch (_) {}  // G2.1: E-STOP tree-kills every stdio MCP child (taskkill /T on win / kill the group on posix) so a runaway local server's spend/CPU dies with the halt — npx's node grandchild is reaped via the process group, not just the direct child
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ halted }));
 }

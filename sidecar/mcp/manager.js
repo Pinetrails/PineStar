@@ -6,7 +6,8 @@
    with fakes and stays free of ambient time/randomness (clock injected).
 
    makeConnectorManager({ makeTransport, makeClient?, makeToolDef?, clock?, timeoutMs?, onEvent? }) -> {
-     configure(id, { url, token?, label?, enabled? }) -> Promise<{ ok, state, toolCount, error? }>,
+     configure(id, { url, token?, label?, enabled? }                  // an HTTP connector, OR
+                  | { transport:'stdio', command, args?, env?, cwd?, label?, enabled? }) -> Promise<{ ok, state, toolCount, error? }>,
      remove(id) -> Promise, refresh(id) -> Promise<...>, close() -> Promise,
      status(id) -> summary | null, list() -> summary[],            // summaries NEVER include the token
      has(id), ids(),
@@ -32,17 +33,30 @@
     return id ? String(id) : null;
   }
 
+  // resolve the transport factory for a connector: makeTransport may be the legacy FUNCTION form (one factory,
+  // historically the HTTP edge) OR a MAP keyed by transport kind ({ http, stdio }) so a stdio connector launches
+  // a local child instead. The function form is preserved verbatim — a fn is always called as before.
+  function resolveTransportFactory(makeTransport, kind) {
+    if (typeof makeTransport === 'function') return makeTransport;
+    if (makeTransport && typeof makeTransport === 'object') {
+      const f = makeTransport[kind] || makeTransport.http;   // default to http when a connector omits transport
+      if (typeof f === 'function') return f;
+    }
+    return null;
+  }
+
   function makeConnectorManager(deps) {
     deps = deps || {};
     const makeTransport = deps.makeTransport;
-    if (typeof makeTransport !== 'function') throw new Error('makeConnectorManager: makeTransport is required (the network edge)');
+    if (typeof makeTransport !== 'function' && !(makeTransport && typeof makeTransport === 'object'))
+      throw new Error('makeConnectorManager: makeTransport is required (the network edge; a factory fn or a { http, stdio } map)');
     const makeClient = deps.makeClient || (clientMod && clientMod.makeMcpClient);
     const makeToolDef = deps.makeToolDef || (translateMod && translateMod.makeMcpToolDef);
     const clock = deps.clock || { now: () => 0 };
     const timeoutMs = deps.timeoutMs || 30000;
     const onEvent = typeof deps.onEvent === 'function' ? deps.onEvent : function () {};
 
-    const conns = new Map();   // id -> { id, url, token, label, enabled, state, detail, tools[], client, transport, ts }
+    const conns = new Map();   // id -> { id, transport:'http'|'stdio', url, token, command, args, env, cwd, label, enabled, state, detail, tools[], client, transportImpl, ts }
 
     function setState(c, state, detail) {
       c.state = state; c.detail = detail || ''; c.ts = clock.now();
@@ -50,14 +64,18 @@
     }
     function teardown(c) {
       if (c && c.client) { try { c.client.close('reconfigured'); } catch (e) {} }
-      if (c) { c.client = null; c.transport = null; }
+      if (c) { c.client = null; c.transportImpl = null; }   // the live transport instance; c.transport is the KIND string and is preserved
     }
 
     async function connect(c) {
       setState(c, 'connecting');
       try {
-        c.transport = makeTransport({ url: c.url, token: c.token, timeoutMs: timeoutMs });
-        c.client = makeClient({ transport: c.transport, timeoutMs: timeoutMs });
+        const factory = resolveTransportFactory(makeTransport, c.transport);
+        if (!factory) throw new Error('no transport factory for kind "' + c.transport + '"');
+        // pass BOTH the HTTP fields and the stdio fields; each transport reads the ones it needs (the HTTP
+        // factory ignores command/args/env/cwd, the stdio factory ignores url/token).
+        c.transportImpl = factory({ url: c.url, token: c.token, timeoutMs: timeoutMs, command: c.command, args: c.args, env: c.env, cwd: c.cwd, transport: c.transport });
+        c.client = makeClient({ transport: c.transportImpl, timeoutMs: timeoutMs });
         await c.client.initialize();
         c.tools = await c.client.listTools() || [];
         setState(c, 'up');
@@ -76,16 +94,27 @@
       cfg = cfg || {};
       const prev = conns.get(id);
       if (prev) teardown(prev);
+      // the transport KIND: explicit cfg.transport wins; else carry the previous kind; else default 'http'
+      // (back-compat — an existing { url } connector with no `transport` field stays HTTP, byte-identical).
+      const transport = String(cfg.transport || (prev && prev.transport) || 'http').toLowerCase();
       const c = {
         id: id,
+        transport: transport,
         url: String(cfg.url || (prev && prev.url) || ''),
         token: ('token' in cfg) ? (cfg.token || '') : (prev ? prev.token : ''),
+        // stdio fields (additive; ignored by the HTTP transport): the local command + argv + env + cwd.
+        command: String(cfg.command || (prev && prev.command) || ''),
+        args: Array.isArray(cfg.args) ? cfg.args.slice() : ((prev && Array.isArray(prev.args)) ? prev.args.slice() : []),
+        env: ('env' in cfg) ? (cfg.env && typeof cfg.env === 'object' ? Object.assign({}, cfg.env) : null) : ((prev && prev.env) ? Object.assign({}, prev.env) : null),
+        cwd: ('cwd' in cfg) ? (cfg.cwd || '') : ((prev && prev.cwd) || ''),
         label: String(cfg.label || (prev && prev.label) || id),
         enabled: cfg.enabled !== false,
-        state: 'down', detail: '', tools: [], client: null, transport: null, ts: clock.now()
+        state: 'down', detail: '', tools: [], client: null, transportImpl: null, ts: clock.now()
       };
       conns.set(id, c);
-      if (!c.url) { setState(c, 'error', 'no server URL configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
+      // a stdio connector needs a command; an http connector needs a URL.
+      if (transport === 'stdio') { if (!c.command) { setState(c, 'error', 'no command configured for the stdio connector'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; } }
+      else if (!c.url) { setState(c, 'error', 'no server URL configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
       if (!c.enabled) { setState(c, 'down'); return { ok: true, state: 'down', toolCount: 0 }; }
       return connect(c);
     }
@@ -93,7 +122,8 @@
     function refresh(id) {
       const c = conns.get(String(id));
       if (!c) return Promise.resolve({ ok: false, state: 'down', toolCount: 0, error: 'unknown connector' });
-      if (!c.enabled || !c.url) return Promise.resolve({ ok: false, state: c.state, toolCount: 0 });
+      const hasEdge = (c.transport === 'stdio') ? !!c.command : !!c.url;
+      if (!c.enabled || !hasEdge) return Promise.resolve({ ok: false, state: c.state, toolCount: 0 });
       return connect(c);
     }
 
@@ -103,9 +133,17 @@
       return Promise.resolve({ ok: true });
     }
 
-    // a summary safe to log / return over HTTP: the token is NEVER included (only whether one is set).
+    // a summary safe to log / return over HTTP: the token is NEVER included (only whether one is set), and a
+    // stdio connector's env is NEVER included — only `hasEnv` (a secret-bearing env must never leak via the
+    // /api/connectors response or a bus event). command/args/cwd are config the Commander typed, not secrets.
     function summary(c) {
-      return { id: c.id, label: c.label, url: c.url, enabled: c.enabled, state: c.state, detail: c.detail, hasToken: !!c.token, toolCount: (c.tools || []).length, tools: (c.tools || []).map(t => t.name) };
+      return {
+        id: c.id, label: c.label, transport: c.transport || 'http', url: c.url, enabled: c.enabled,
+        state: c.state, detail: c.detail, hasToken: !!c.token,
+        command: c.command || '', args: (c.args || []).slice(), cwd: c.cwd || '',
+        hasEnv: !!(c.env && Object.keys(c.env).length),
+        toolCount: (c.tools || []).length, tools: (c.tools || []).map(t => t.name)
+      };
     }
     function status(id) { const c = conns.get(String(id)); return c ? summary(c) : null; }
     function list() { const out = []; for (const c of conns.values()) out.push(summary(c)); return out; }
