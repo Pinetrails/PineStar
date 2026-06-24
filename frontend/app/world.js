@@ -345,6 +345,10 @@ const World = (() => {
     // Safe for RESUME: enterGame re-derives plan crew (syncCrewFromPlan) and re-spawns the rehydrated
     // summoned crew (spawnAgent loop) immediately after this call, so a resumed crew is rebuilt, not lost.
     crew = [];
+    occupiedSeats.clear();   // W5: couch-cushion CLAIMS live in this module-level Set, NOT on the body objects we just
+                             // dropped — so without this a body lounging at switch time leaks its seatKey forever, and a
+                             // reissued prop id (worldmodel _nid reseeds low on a fresh station) collides → a brand-new
+                             // couch reads "full" over a physically EMPTY cushion. spawn()-only, same rationale as below.
     // …and with it every other scrap of the PREVIOUS agent's session that lives on this page. These reset
     // here (the per-agent hero (re)spawn), NOT in loadStation — loadStation also runs on a same-agent REFIT,
     // where the running economy/belts MUST persist. spawn() runs only on wake/resume, so a refit is untouched.
