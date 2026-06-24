@@ -1972,7 +1972,7 @@ const World = (() => {
     drawDeskGauge(now);   // the context-window memory core at the workstation (world-space, above the lightmap)
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
-    if (agent && !agent.unplaced && hoverAgent) drawNameTag();
+    if (agent && !agent.unplaced && hoverAgent) drawNameplate(now);
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
     drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
@@ -2195,26 +2195,59 @@ const World = (() => {
     else { ctx.fillRect(x - 3 + (step ? 1 : 0), y - 2, 2, 2); ctx.fillRect(x + 1 - (step ? 1 : 0), y - 2, 2, 2); }
   }
 
-  function drawNameTag() {
-    ctx.save();
-    ctx.font = '9px monospace';
-    const label = agent.name;
-    const tw = ctx.measureText(label).width, bw = tw + 8, bh = 11;
-    const rx = rposX(), ry = rposY();
-    const bx = Math.round(rx - bw / 2), by = Math.round(ry - 30);
-    ctx.fillStyle = 'rgba(4,3,2,0.88)'; ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = agent.color; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = agent.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(label, rx, by + bh / 2);
-    // a small gold "Lv N" chip riding just right of the name tag (the hero's earned seasoning at a glance)
-    if (xpAgent && xpAgent.level) {
-      const lv = 'Lv ' + xpAgent.level;
-      const lw = ctx.measureText(lv).width, cw = lw + 6, cx = bx + bw + 2;
-      ctx.fillStyle = 'rgba(4,3,2,0.88)'; ctx.fillRect(cx, by, cw, bh);
-      ctx.strokeStyle = '#ffd45a'; ctx.lineWidth = 1; ctx.strokeRect(cx + 0.5, by + 0.5, cw - 1, bh - 1);
-      ctx.fillStyle = '#ffd45a'; ctx.fillText(lv, cx + cw / 2, by + bh / 2);
+  /* ---------- hover nameplate: a compact terminal tag for the agent under the cursor ----------
+     Screen-space (always sharp — not the zoom-blurred world-space sliver it replaced): a slim CRT
+     plate in the station's own VT323 face (the same font stack the DOM uses, so it matches whether
+     VT323 is loaded or falls back to Courier), with a faint phosphor glow + scanlines. Codename,
+     level, and the 1px XP-to-next sliver along the bottom all share the suit color — one tiny extra.
+     Anchored just above the head, clamped to the viewport. Intentionally small: a glance, not a window. */
+  const PLATE_FONT = '"VT323","Courier New",monospace';   // the station terminal face (mirrors the body font stack)
+  function drawNameplate(now) {
+    if (!cache) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const Wc = cv.width / dpr, Hc = cv.height / dpr;
+    const suit = agent.color || '#ffaa33';
+    const name = String(agent.name || '');
+    const lvl = (xpAgent && xpAgent.level) ? ('Lv ' + xpAgent.level) : null;
+    const frac = (xpAgent && typeof xpAgent.frac === 'number') ? Math.max(0, Math.min(1, xpAgent.frac)) : 0;
+
+    const nameSz = 17, lvlSz = 16;
+    ctx.font = nameSz + 'px ' + PLATE_FONT; const nameW = ctx.measureText(name).width;
+    ctx.font = lvlSz + 'px ' + PLATE_FONT;  const lvlW = lvl ? ctx.measureText(lvl).width : 0;
+    const padX = 8, gap = lvl ? 9 : 0, h = 21, barH = 2;
+    const w = Math.round(padX * 2 + nameW + gap + lvlW);
+
+    // anchor centered just above the head, crisp + clamped to the canvas
+    const ax = (rposX() * scale + panX) / dpr, ay = (rposY() * scale + panY) / dpr;
+    const spriteH = 15 * scale / dpr;
+    const x = Math.round(Math.max(4, Math.min(Wc - w - 4, ax - w / 2)));
+    const y = Math.round(Math.max(4, Math.min(Hc - h - 4, ay - spriteH - 9 - h)));
+
+    // plate: dark CRT glass + scanlines + an amber structural frame with a suit accent along the top
+    ctx.fillStyle = 'rgba(6,5,4,0.92)'; ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = 0.13; ctx.fillStyle = '#000';
+    for (let sy = y + 2; sy < y + h - 1; sy += 3) ctx.fillRect(x + 1, sy, w - 2, 1);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#b9791c'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.globalAlpha = 0.6; ctx.fillStyle = suit; ctx.fillRect(x + 1, y, w - 2, 1); ctx.globalAlpha = 1;
+
+    // codename (suit) + level (gold) in VT323, with a faint phosphor bloom (mirrors the DOM text-shadow)
+    const tcy = y + Math.round((h - barH) / 2) + 1;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.shadowBlur = 4; ctx.shadowColor = suit;
+    ctx.font = nameSz + 'px ' + PLATE_FONT; ctx.fillStyle = suit; ctx.fillText(name, x + padX, tcy);
+    if (lvl) {
+      ctx.font = lvlSz + 'px ' + PLATE_FONT; ctx.fillStyle = suit; ctx.fillText(lvl, x + padX + nameW + gap, tcy);
     }
-    ctx.restore();
+    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+    // the one tiny useful extra: a hairline XP-to-next bar along the bottom inside edge (honest — hidden at 0)
+    if (frac > 0) {
+      const bx0 = x + 1, bw0 = w - 2, byb = y + h - barH - 1;
+      ctx.fillStyle = '#140c03'; ctx.fillRect(bx0, byb, bw0, barH);
+      ctx.fillStyle = suit; ctx.fillRect(bx0, byb, Math.max(1, Math.round(bw0 * frac)), barH);
+    }
   }
 
   function drawBubble(now, who) {
