@@ -468,7 +468,7 @@ mirror clobber).
     cron.durability). No `shared/events.js`/`shared/schema.js` edit; no NEW event (the lock is
     internal). `git log feat/harness-backend..agent/parity-finish -- shared/*` stays empty.
 
-### G4.4 — Retry proof + global concurrency cap  ·  STATUS: TODO
+### G4.4 — Retry proof + global concurrency cap  ·  STATUS: DONE
 One-line task: add `SKYNET_CRON_MAX_PARALLEL` (default 4); in `applyTick`, if firing would
 exceed the cap, DEFER the extra due jobs to the next tick (emit `cron.skipped` reason
 `at-capacity`) WITHOUT advancing their `nextRunAt` (so they stay due); prove the existing
@@ -485,6 +485,55 @@ transient-retry path end-to-end.
   (edit, low); existing `test/cron.tick.test.js`/`cron.test.js` (extend). 
 - **Notes:** Event additive: `cron.skipped` reason `at-capacity`, `cron.tick` optional `deferred`
   int — batched request.
+- **DONE (2026-06-23, this lane commit 686c46c).** Global concurrency cap + transient-retry proof. The
+  BEHAVIOR is proven and live; the at-capacity/deferred EMIT is PENDING the memory-cortex events batch (see
+  the Pending events batch section) — proven via the return value instead this iteration.
+  - **CAP (new behavior, RED→GREEN):** `SKYNET_CRON_MAX_PARALLEL` (default 4) is injected into the driver as
+    `maxParallel` — NOT read from `process.env` in the pure `cron-driver.js`; threaded exactly like
+    `maxRunMs`/`defaultTz` so the driver stays determinism-clean (lint-determinism GREEN over the 75 scanned
+    `sidecar/` files; no `Date.now`/`Math.random`/`new Date()` added). In `applyTickInner`, BEFORE the
+    advance-before-run write, `plan.fire` is partitioned by available slots = `maxParallel - leases.size`
+    (currently-in-flight cron runs): each non-leased candidate reserves a slot in plan order; once slots are
+    exhausted the remaining due jobs are DEFERRED. A deferred job is (a) NOT advanced — step 3 skips it via a
+    `deferredSet`, so its `nextRunAt` stays put and it remains DUE; (b) NOT fired — step 5 skips it; (c)
+    reported via the APPLYTICK RETURN VALUE: `{ fired, skipped, planned, deferred:[jobId,…] }`. An
+    already-leased job is neither attempted nor deferred (it advances + reports `already-running` exactly as
+    before). The deferred set drains `maxParallel` at a time over successive ticks as slots free — a burst of
+    simultaneously-due routines never floods the run host / spend all at once.
+  - **TRANSIENT RETRY (existing path, VERIFIED end-to-end, not rebuilt):** drove the real driver fire→settle
+    loop with an injected `runOnce` that emits `agent.run.error{transient:true}` once then succeeds. The
+    driver's sink books `state.transient`; `finishFire`→`cronStore.markRun` applies the EXISTING transient
+    backoff: `nextRunAt = now + backoffMs (90s)`, `retryCount` 0→1, `lastRunAt` stays null (occurrence NOT
+    finalized), `state:'error'` but `enabled` stays true (recurring never silently disabled). On the
+    backed-off fire it succeeds → `retryCount` resets to 0, `lastRunAt` stamped, `lastStatus:'ok'`. All
+    asserted, not assumed.
+  - **CATCH-UP REGRESSION (unchanged):** the existing `cron.tick.test.js` cases 5/6 (10m-interval 200s-late
+    `<grace` fires exactly ONE catch-up; ~83m-late `>>grace` fast-forwards + `caught-up` + fires ZERO) and
+    `cron.test.js` cases 8/9 stay GREEN after the cap change.
+  - **Return-shape note:** `applyTick` now ALWAYS returns a `deferred` array (`[]` when nothing deferred),
+    including the reentrancy-guard early return. The 4 existing exact-equality `A.eq(summary,{…})` assertions
+    in `cron.tick.test.js` were updated to include `deferred:[]` (reflecting the genuinely-new always-present
+    field — counts unchanged, not a weakening). The `cron.tick` EMIT shape is UNCHANGED (`{fired,skipped,
+    planned}`) — the `deferred` field is return-value-only this iteration (the emit field is pending the batch).
+  - **Verified RED→GREEN** (`test/cron.tick.test.js`, extended to 89 assertions). RED on the pre-fix tree:
+    `cap=1 -> exactly one fires — expected 1, got 3` (no cap), `summary.deferred is an array` (undefined →
+    TypeError) — captured. GREEN after: `cron.tick: OK (89 assertions)`. Cases: (1) CAP=1 with 3 due → 1
+    fires, `summary.deferred.length===2`, both deferred keep their old `nextRunAt` (still due), next tick
+    fires 0 more while the run is in-flight; (2) CAP=2 headroom → 2 fire / 1 deferred, after the leases
+    release the deferred job fires on the next tick and only THEN advances (deferral is a HOLD, not a drop);
+    (3) transient-then-ok retry as above. Full `npm run test:fast` GREEN (EXIT 0 — no cron/cron-store/
+    cron.tick/cron.dst/cron.durability/cron.lock regressions; lint-emits + lint-determinism GREEN). `npm run
+    test:http` GREEN (EXIT 0 — the real sidecar boots and constructs the driver with the new `maxParallel`
+    dep; cron.api 56 assertions). LIVE boot smoke (`SKYNET_CRON_ENABLED=1 SKYNET_CRON_MAX_PARALLEL=1`, free
+    port :8861): boots clean, boot reconcile runs under the lock (stale routine → `caught-up`, no burst),
+    tick armed, no errors — the new env var integrates without breaking boot.
+  - **Files:** `sidecar/cron-driver.js` (inject `maxParallel`; cap partition + conditional advance + deferral
+    in `applyTickInner`; `deferred` in both return paths), `sidecar/index.js` (`CRON_MAX_PARALLEL` env const
+    + thread `maxParallel` into `makeCronDriver`), `test/cron.tick.test.js` (extend: cap + headroom + transient
+    retry cases; `maxParallel` in the `setup` helper; `deferred:[]` on the 4 exact-eq return assertions). NOT
+    `cron-store.js` (the transient path already existed — VERIFIED, not edited). NOT `package.json` (both test
+    files already in `test:fast`). No `shared/events.js`/`shared/schema.js` edit; no NEW event emitted.
+    `git log feat/harness-backend..agent/parity-finish -- shared/*` stays empty.
 
 ### G4.5 — One-shot fire-claim idempotency (explicit, tested policy)  ·  STATUS: TODO
 One-line task: stamp a `fireClaim`/`lastFireAttemptAt` on a one-shot at fire time
@@ -681,6 +730,31 @@ lane adds the same path. `board.mjs` only sees uncommitted/ahead-of-trunk state 
 `git log -1 -- <file>` recency for the full picture. Keep the lane SHORT, land NEW files first,
 merge in small increments.
 
+### Pending events batch (to agent/memory-cortex)
+
+> ADDITIVE-only `shared/events.js`/`shared/schema.js` requests accumulated by this lane. They are
+> NOT self-edited (CLAUDE.md/plan rule 6) — they go to the memory-cortex owner in ONE batched
+> round-trip, merge to trunk FIRST, then this lane syncs and starts emitting them. Until then the
+> corresponding behavior is proven via return values/state, never by emitting an un-widened
+> enum/field (which would fail `validate()` at the bus boundary and `test/lint-emits.js`). Each item
+> below is back-compat: a NEW enum value or a NEW optional field, never a rename/removal.
+
+- **`cron.fire` — add optional `tz` field** (string). _Source: G4.1._ Lets the HUD show a fire's
+  resolved IANA zone. Current `cron.fire` = `obj(['jobId','runId'], { jobId, runId, scheduledFor })`
+  → add `tz: str` (optional). NOT emitted yet.
+- **`cron.skipped` — widen `reason` enum with `tz-recompute`.** _Source: G4.1._ Marks a DST-driven
+  next-fire recompute. Current enum =
+  `['already-running','disabled','caught-up','no-capability','stale-lock-reclaimed']`. NOT emitted yet.
+- **`cron.skipped` — widen `reason` enum with `at-capacity`.** _Source: G4.4._ Marks a due job DEFERRED
+  because the live in-flight cron-run count is at `SKYNET_CRON_MAX_PARALLEL`. Same enum as above. The
+  reason is currently ENUM-GOVERNED, so emitting `at-capacity` today would fail the validator/lint —
+  the deferral is reported via the `applyTick` return value (`{…, deferred:[jobId,…]}`) until this
+  widening lands. NOT emitted yet.
+- **`cron.tick` — add optional `deferred` field** (int). _Source: G4.4._ The per-tick count of
+  at-capacity deferrals, for the war-room pulse. Current `cron.tick` =
+  `obj(['fired','skipped'], { fired, skipped, planned })` → add `deferred: int` (optional). The driver
+  computes it but keeps it off the EMIT (return-value only) until this lands. NOT emitted yet.
+
 ## Progress Log
 - _(the loop appends one dated line per iteration here)_
 - 2026-06-23 — **G4.1 Timezone/DST correctness: DONE.** Added optional IANA `tz` to cron schedules;
@@ -728,3 +802,24 @@ merge in small increments.
   56 assertions through the real CRUD routes → lock → durable save). LIVE `npm start` smoke (cron enabled, free
   port): boots clean, reconcile + ticks run under the lock, advance persisted, lockfile released between ticks.
   No `shared/*` edit; no new event. Next: **G4.4** (retry proof + global concurrency cap — `SKYNET_CRON_MAX_PARALLEL`).
+- 2026-06-23 — **G4.4 Retry proof + global concurrency cap: DONE (commit 686c46c).** Added
+  `SKYNET_CRON_MAX_PARALLEL` (default 4), INJECTED into the cron driver as `maxParallel` (not read from
+  `process.env` in the pure `cron-driver.js` — threaded like `maxRunMs`/`defaultTz`, so lint-determinism stays
+  GREEN). In `applyTickInner`, when the due set would push the live in-flight cron-run count (`leases.size`)
+  over the cap, the extra due jobs are DEFERRED to the next tick WITHOUT advancing their `nextRunAt` (they stay
+  DUE and drain `maxParallel` at a time over successive ticks). The deferral is OBSERVABLE via the `applyTick`
+  RETURN VALUE — `{ fired, skipped, planned, deferred:[jobId,…] }` — so it is testable without a new event; the
+  additive at-capacity EMIT (`cron.skipped` reason `at-capacity` + a `cron.tick.deferred` int) is PENDING the
+  memory-cortex events batch because the `reason` enum is governed (emitting it would fail the validator /
+  lint-emits). Also PROVED the EXISTING transient-retry path end-to-end through the real driver fire→settle
+  loop (verified, not rebuilt): transient-once-then-ok → `nextRunAt` backs off (now+90s), `retryCount` 0→1, no
+  `lastRunAt` advance, stays enabled; the backed-off retry then succeeds → `retryCount` resets, `lastRunAt`
+  stamped, `lastStatus:'ok'`. Catch-up regressions (within-grace fires one; beyond-grace fast-forwards zero)
+  kept GREEN. RED→GREEN proven (`test/cron.tick.test.js`, extended to 89 assertions: pre-fix RED `cap=1 →
+  expected 1 got 3` + `summary.deferred` undefined; post-fix `OK (89)`). Full `npm run test:fast` GREEN (EXIT 0,
+  no cron-suite regressions, lint-emits + lint-determinism GREEN); `npm run test:http` GREEN (EXIT 0, the real
+  sidecar boots + constructs the driver with the new dep, cron.api 56 assertions). LIVE boot smoke
+  (`SKYNET_CRON_ENABLED=1 SKYNET_CRON_MAX_PARALLEL=1`, free port :8861): boots clean, reconcile under the lock,
+  tick armed, no errors. No `shared/events.js`/`shared/schema.js` edit; no NEW event emitted (added the 4
+  items to the Pending events batch section). Files: `sidecar/cron-driver.js`, `sidecar/index.js`,
+  `test/cron.tick.test.js`. Next: **G4.5** (one-shot fire-claim idempotency).
