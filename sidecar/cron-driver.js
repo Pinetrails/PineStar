@@ -71,6 +71,15 @@
     const personaOf = typeof d.persona === 'function' ? d.persona : function () { return d.persona || ''; };
     const placeWorkitem = typeof d.placeWorkitem === 'function' ? d.placeWorkitem : function () {};
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
+    // G4.4 global concurrency cap: at most `maxParallel` cron runs may be IN-FLIGHT at once. When a tick's due
+    // set would push the live-lease count over this, the EXTRA due jobs are DEFERRED to the next tick WITHOUT
+    // advancing their nextRunAt (they stay due), so a burst of simultaneously-due routines never floods the run
+    // host / blows the spend budget all at once — they drain `maxParallel` at a time over successive ticks. An
+    // INJECTED int (host threads SKYNET_CRON_MAX_PARALLEL), so this file stays determinism-clean. Default 4.
+    const maxParallel = (function () {
+      const n = parseInt(d.maxParallel, 10);
+      return (Number.isFinite(n) && n > 0) ? n : 4;
+    })();
     // injected host tz (G4.1): a tz-LESS cron schedule is planned on this LOCAL wall-clock; a schedule's
     // own tz always wins. A string dep — the pure cron-math owns the Intl formatting, so this stays clean.
     const defaultTz = d.defaultTz != null ? d.defaultTz : null;
@@ -165,7 +174,7 @@
       nowMs = nowMs || now();
       // G4.3: re-entrant tick at the same instant is a no-op (see tickInFlight above). The guard wraps
       // the WHOLE pass — set on entry, cleared in a finally so a thrown plan/emit never wedges the flag.
-      if (tickInFlight) return { fired: 0, skipped: 0, planned: 0, reentered: true };
+      if (tickInFlight) return { fired: 0, skipped: 0, planned: 0, deferred: [], reentered: true };
       tickInFlight = true;
       try {
         return applyTickInner(nowMs);
@@ -192,12 +201,33 @@
       //    defaultTz makes a tz-less schedule plan on the host's local wall-clock (G4.1).
       const plan = cron.planTick(getJobs(), nowMs, { defaultTz: defaultTz });
 
-      // 3. ADVANCE-BEFORE-RUN: persist the advanced nextRunAt for every planned job (fired AND fast-forwarded)
+      // 2b. GLOBAL CONCURRENCY CAP (G4.4): partition plan.fire into the jobs we'll ATTEMPT this tick and the
+      //     ones DEFERRED past the cap. A job already holding a lease is neither attempted nor deferred — it
+      //     advances + reports already-running below exactly as before (drop the occurrence, never re-queue).
+      //     Slots = maxParallel - currently-in-flight; reserve one per attempt in plan order. A deferred job is
+      //     NOT advanced (step 3 skips it), so its nextRunAt stays put and it remains DUE next tick — it drains
+      //     when a slot frees. NOTE: the at-capacity deferral is reported via the RETURN VALUE only this
+      //     iteration — the additive `cron.skipped` reason `at-capacity` / `cron.tick.deferred` field are
+      //     pending the memory-cortex events batch (the reason enum is governed; emitting it would fail lint).
+      let slotsLeft = maxParallel - leases.size;
+      const deferred = [];
+      const deferredSet = new Set();
+      for (const f of plan.fire) {
+        const job = cronStore.getJob(getJobs(), f.jobId);
+        if (!job) continue;
+        if (leases.has(job.id)) continue;                  // already-running: not attempted, not deferred (advances)
+        if (slotsLeft > 0) { slotsLeft--; }                // reserve a concurrency slot for this attempt
+        else { deferred.push(job.id); deferredSet.add(job.id); }   // over the cap -> defer (stays due, not advanced)
+      }
+
+      // 3. ADVANCE-BEFORE-RUN: persist the advanced nextRunAt for every planned job EXCEPT a deferred one,
       //    BEFORE launching, so a crash mid-run never double-fires on restart. A fire later skipped by its lease
-      //    still keeps this advance (drop the occurrence, never re-queue it).
+      //    still keeps this advance (drop the occurrence, never re-queue it); a DEFERRED job keeps its OLD
+      //    nextRunAt so it stays due and fires on a later tick when a concurrency slot frees.
       if (plan.next.length) {
         let jobs = getJobs();
         for (const nx of plan.next) {
+          if (deferredSet.has(nx.jobId)) continue;         // do NOT advance a deferred job — it must stay due
           jobs = jobs.map(function (j) { return (j && j.id === nx.jobId) ? Object.assign({}, j, { nextRunAt: iso(nx.nextAt) }) : j; });
         }
         setJobs(jobs);
@@ -206,20 +236,23 @@
       // 4. stale recurring runs that were fast-forwarded (no backlog burst) -> a structured skip per job.
       for (const sk of plan.skipped) { try { emit('cron.skipped', { jobId: sk.jobId, reason: sk.reason }); } catch (_) {} skips++; }
 
-      // 5. fire each due job — lease-guarded (one in-flight per job) and capability-guarded — through the run host.
+      // 5. fire each due job — lease-guarded (one in-flight per job), CAP-guarded, and capability-guarded.
       for (const f of plan.fire) {
         const job = cronStore.getJob(getJobs(), f.jobId);
         if (!job) continue;
         if (leases.has(job.id)) { try { emit('cron.skipped', { jobId: job.id, reason: 'already-running' }); } catch (_) {} skips++; continue; }
+        if (deferredSet.has(job.id)) continue;             // over the cap: held back (counted in `deferred`), no advance, no event this iteration
         if (fireJob(job, f.scheduledFor, nowMs)) fires++; else skips++;   // false = no-capability (already emitted)
       }
 
       // 6. the war-room pulse — emitted ONLY when something happened, so an idle/empty-store tick stays silent
-      //    (the no-op invariant: an empty schedule incurs no event, no console line, no cost).
+      //    (the no-op invariant: an empty schedule incurs no event, no console line, no cost). A tick that only
+      //    DEFERRED still pulses (deferred ⊆ plan.fire, so plan.fire.length covers it — something WAS due). The
+      //    `deferred` count is NOT on the emit yet (the additive cron.tick.deferred field is pending the batch).
       if (fires || skips || plan.fire.length) {
         try { emit('cron.tick', { fired: fires, skipped: skips, planned: plan.fire.length }); } catch (_) {}
       }
-      return { fired: fires, skipped: skips, planned: plan.fire.length };
+      return { fired: fires, skipped: skips, planned: plan.fire.length, deferred: deferred };
     }
 
     return { applyTick: applyTick, leases: leases, _internals: { fireJob: fireJob, finishFire: finishFire } };

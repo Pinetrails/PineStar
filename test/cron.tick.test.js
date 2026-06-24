@@ -48,7 +48,8 @@ function setup(jobs, runOnceFake, opts) {
     defaultModel: opts.defaultModel !== undefined ? opts.defaultModel : 'test/model',
     identityForAgent: opts.identityForAgent,
     persona: 'PERSONA',
-    maxRunMs: opts.maxRunMs || 480000
+    maxRunMs: opts.maxRunMs || 480000,
+    maxParallel: opts.maxParallel        // G4.4: undefined -> driver default (4); a number caps in-flight fires
   });
   return { driver, clock, events, runs, placed, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id) };
 }
@@ -82,7 +83,7 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const s = setup([j], okRun());
     s.clock.set(T0 + 60000);                                  // now the interval is due
     const summary = s.driver.applyTick(s.clock.now());
-    A.eq(summary, { fired: 1, skipped: 0, planned: 1 }, 'one job planned + fired');
+    A.eq(summary, { fired: 1, skipped: 0, planned: 1, deferred: [] }, 'one job planned + fired (nothing deferred)');
     A.eq(s.runs.length, 1, 'runOnce called exactly once');
     A.eq(s.runs[0].surface, 'autonomous', 'fire passes surface:autonomous (the unattended-consent keystone)');
     A.eq(s.runs[0].trigger, 'schedule', 'fire passes trigger:schedule');
@@ -104,7 +105,7 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const s = setup([j], okRun(), { t0: base });
     s.clock.set(due);
     const summary = s.driver.applyTick(s.clock.now());
-    A.eq(summary, { fired: 1, skipped: 0, planned: 1 }, 'one cron job planned + fired');
+    A.eq(summary, { fired: 1, skipped: 0, planned: 1, deferred: [] }, 'one cron job planned + fired (nothing deferred)');
     A.eq(s.runs[0].agentId, 'cron_cj1', 'cron fire runs as the job agent');
     A.eq(s.getJob('cj1').nextRunAt, cron._internals.iso(Date.parse('2026-06-20T09:00:00Z')), 'cron nextRunAt advanced before launch');
   }
@@ -217,7 +218,7 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     });
     s.clock.set(T0 + 60000);
     const summary = s.driver.applyTick(s.clock.now());
-    A.eq(summary, { fired: 1, skipped: 0, planned: 1 }, 'codex oauth cron fires without an OpenRouter key');
+    A.eq(summary, { fired: 1, skipped: 0, planned: 1, deferred: [] }, 'codex oauth cron fires without an OpenRouter key');
     A.eq(s.runs[0].provider, 'codex', 'cron passes the inherited provider to runOnce');
     A.eq(s.runs[0].key, '', 'codex cron does not fabricate a BYOK key');
   }
@@ -242,7 +243,7 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
   {
     const empty = setup([], okRun());
     const summary = empty.driver.applyTick(empty.clock.now());
-    A.eq(summary, { fired: 0, skipped: 0, planned: 0 }, 'empty store -> a pure no-op');
+    A.eq(summary, { fired: 0, skipped: 0, planned: 0, deferred: [] }, 'empty store -> a pure no-op');
     A.eq(empty.events.length, 0, 'an idle tick emits no events (no cron.tick heartbeat)');
 
     // a not-yet-due job is also a silent no-op (nextRunAt in the future).
@@ -307,6 +308,103 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const summary = s.driver.applyTick(s.clock.now());
     A.eq(summary.fired, 0, 'no run fires without capability');
     A.eq(s.placed.length, 0, 'and no conveyor box rides — the floor never shows phantom work');
+  }
+
+  // ---- G4.4 CAP: maxParallel caps in-flight fires; the excess due jobs DEFER (stay due next tick) ----
+  {
+    // 3 interval jobs all due at the same instant, but only ONE may fire (cap=1). The other two are
+    // DEFERRED — observable via the return value (summary.deferred) — and MUST stay due (nextRunAt NOT
+    // advanced) so the next tick fires them. The deferral does NOT emit a new event this iteration (the
+    // cron.skipped 'at-capacity' reason is enum-governed and pending the memory-cortex events batch).
+    const a = intervalJob('ca', 'every 1m');
+    const b = intervalJob('cb', 'every 1m');
+    const c = intervalJob('cc', 'every 1m');
+    // never-settling runs so the fired job HOLDS its lease (a real in-flight run counts against the cap).
+    const s = setup([a, b, c], () => new Promise(() => {}), { maxParallel: 1 });
+    s.clock.set(T0 + 60000);                                // all three are due
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary.fired, 1, 'cap=1 -> exactly one due job fires');
+    A.eq(s.runs.length, 1, 'runOnce launched exactly once (the cap held the rest back)');
+    A.ok(Array.isArray(summary.deferred), 'summary.deferred is an array (the observable deferral signal)');
+    A.eq(summary.deferred.length, 2, 'the two over-cap jobs are reported deferred via the return value');
+    A.eq(summary.fired + summary.deferred.length, 3, 'every due job is accounted for: fired + deferred = 3');
+    // the fired job advanced (advance-before-run); the two DEFERRED jobs did NOT — they remain due.
+    const firedId = s.runs[0].agentId.replace('cron_', '');
+    for (const id of ['ca', 'cb', 'cc']) {
+      const job = s.getJob(id);
+      if (id === firedId) {
+        A.eq(job.nextRunAt, cron._internals.iso(T0 + 120000), 'the FIRED job advanced one period (advance-before-run)');
+      } else {
+        A.ok(summary.deferred.indexOf(id) >= 0, 'the over-cap job ' + id + ' is in summary.deferred');
+        A.eq(job.nextRunAt, cron._internals.iso(T0 + 60000), 'a DEFERRED job keeps its old nextRunAt (still DUE)');
+      }
+    }
+    // next tick at the SAME instant: the one freed slot is taken by a deferred job (cap still 1, still in-flight).
+    const summary2 = s.driver.applyTick(s.clock.now());
+    A.eq(summary2.fired, 0, 'cap=1 and the first run is still in-flight -> nothing new fires next tick');
+    A.eq(summary2.deferred.length, 2, 'both deferred jobs still due and still over the cap');
+  }
+
+  // ---- G4.4 CAP: with headroom the deferred jobs fire on a later tick once a slot frees ----
+  {
+    // cap=2, 3 due jobs whose runs settle immediately: 2 fire this tick (deferring 1), and after the leases
+    // release the deferred job fires on the next tick — proving deferral is a HOLD, not a drop.
+    const a = intervalJob('da', 'every 5m');
+    const b = intervalJob('db', 'every 5m');
+    const c = intervalJob('dc', 'every 5m');
+    const s = setup([a, b, c], okRun(), { maxParallel: 2 });
+    s.clock.set(T0 + 300000);                               // all three due (period 5m)
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary.fired, 2, 'cap=2 -> two fire this tick');
+    A.eq(summary.deferred.length, 1, 'the third is deferred');
+    const deferredId = summary.deferred[0];
+    A.eq(s.getJob(deferredId).nextRunAt, cron._internals.iso(T0 + 300000), 'the deferred job is still due (nextRunAt unchanged)');
+    await flush();                                          // the two fired runs settle -> leases release
+    const summary2 = s.driver.applyTick(s.clock.now());     // same instant, slots now free
+    A.eq(summary2.fired, 1, 'the previously-deferred job fires once a slot frees');
+    A.eq(s.runs[s.runs.length - 1].agentId, 'cron_' + deferredId, 'the freed slot ran the deferred job');
+    A.eq(s.getJob(deferredId).nextRunAt, cron._internals.iso(T0 + 300000 + 300000), 'now it has advanced (it actually fired)');
+  }
+
+  // ---- G4.4 TRANSIENT RETRY (proven end-to-end): transient-once-then-ok backs off, retryCount++, no lastRunAt advance, then succeeds ----
+  {
+    // The EXISTING retry path (markRun transient backoff) is proven through the REAL driver fire->settle
+    // path: the first fire's run reports a TRANSIENT error -> nextRunAt backs off (now+backoffMs),
+    // retryCount becomes 1, lastRunAt stays null (occurrence not finalized). The backed-off fire then
+    // succeeds -> retryCount resets to 0, lastRunAt stamped, lastStatus ok.
+    const BACKOFF = 90000;                                  // cron-store default backoffMs
+    let attempt = 0;
+    const flaky = (o) => {
+      attempt++;
+      if (attempt === 1) {
+        // a transient run error (the loop signals transient:true; the driver's sink books state.transient)
+        o.emit('agent.run.error', { agentId: 'a', runId: o.runId, message: 'rate limited', transient: true });
+        o.emit('agent.run.end', { agentId: 'a', runId: o.runId, reason: 'error', turns: 1, usd: 0 });
+        return;
+      }
+      okRun('recovered')(o);                                // second attempt succeeds
+    };
+    const j = intervalJob('rj', 'every 10m');               // period 600000; armed at T0+600000
+    const s = setup([j], flaky);
+    s.clock.set(T0 + 600000);                               // due
+    s.driver.applyTick(s.clock.now());                      // fire #1
+    await flush();                                          // settle -> markRun(transient)
+    const afterFail = s.getJob('rj');
+    A.eq(afterFail.retryCount, 1, 'transient failure incremented retryCount');
+    A.eq(afterFail.lastRunAt, null, 'transient failure did NOT advance lastRunAt (occurrence not finalized)');
+    A.eq(afterFail.lastStatus, 'error', 'transient failure recorded lastStatus error (failing-and-retrying)');
+    A.eq(afterFail.state, 'error', 'state error while retrying, but still scheduled');
+    A.eq(afterFail.nextRunAt, cron._internals.iso(T0 + 600000 + BACKOFF), 'nextRunAt backed off by backoffMs (now + 90s)');
+    A.ok(afterFail.enabled !== false, 'a transiently-failing recurring job stays enabled');
+    // advance to the backed-off fire time and tick again -> the retry succeeds.
+    s.clock.set(T0 + 600000 + BACKOFF);
+    s.driver.applyTick(s.clock.now());                      // fire #2 (the retry)
+    await flush();
+    const afterOk = s.getJob('rj');
+    A.eq(attempt, 2, 'the run was attempted exactly twice (one transient, one success)');
+    A.eq(afterOk.retryCount, 0, 'a successful retry resets retryCount');
+    A.ok(afterOk.lastRunAt != null, 'the successful retry finalized the occurrence (lastRunAt stamped)');
+    A.eq(afterOk.lastStatus, 'ok', 'lastStatus ok after the retry succeeds');
   }
 
   A.report('cron.tick');

@@ -185,6 +185,12 @@ const CRON_HOST_TZ = (function () {
   return cron.isValidTz(candidate) ? (candidate || 'UTC') : 'UTC';
 })();
 const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
+// G4.4 global concurrency cap: at most this many cron runs may be IN-FLIGHT across all routines at once.
+// A tick whose due set would exceed it DEFERS the extra jobs to the next tick (without advancing their
+// nextRunAt, so they stay due) — a burst of simultaneously-due routines drains `maxParallel` at a time
+// rather than flooding the run host / spend all at once. Threaded as an INJECTED int so the cron driver
+// stays determinism-clean (it never reads process.env itself). Default 4.
+const CRON_MAX_PARALLEL = num(process.env.SKYNET_CRON_MAX_PARALLEL, 4);
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
 // fast-tool timeout (CAPS.toolTimeoutMs) or it always times out before a real worker returns. Give it the same
 // ≈8-min single-run worst-case bound; env-tunable. Per-worker spend is still capped by ORCH_PER_WORKER.
@@ -751,6 +757,7 @@ const cronDriver = makeCronDriver({
   providerForJob: (job) => cronProviderFor(job),
   hasCredential: (provider, key) => cronHasCredential(provider, key),
   defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
+  maxParallel: CRON_MAX_PARALLEL,                          // G4.4 global concurrency cap: at most N cron runs in-flight; the rest defer
   defaultTz: CRON_HOST_TZ,                                 // boot-frozen host tz: a tz-less schedule fires on LOCAL wall-clock (G4.1)
   identityForAgent: (agentId) => cronIdentityFor(agentId),
   // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
