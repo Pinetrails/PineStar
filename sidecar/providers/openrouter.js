@@ -33,6 +33,9 @@
   }
 
   const RETRY_DELAYS = [400, 1200];   // up to 2 retries (no jitter -> determinism); retryability comes from classifyApiError
+  const GPT_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+  const BASIC_REASONING_EFFORTS = ['none', 'low'];
+  const OFF_ONLY_EFFORTS = ['none'];
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
   function delay(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -84,6 +87,54 @@
     return map[key] || 'medium';
   }
 
+  function modelFamily(model, meta) {
+    const id = String((meta && meta.id) || model || '').toLowerCase();
+    const name = String((meta && meta.name) || '').toLowerCase();
+    if (/^(openai|openai-internal)\//.test(id) || /\bgpt[-\s]?\d|\bgpt\b|codex/.test(id + ' ' + name)) return 'gpt';
+    if (/^anthropic\//.test(id) || /claude/.test(id + ' ' + name)) return 'anthropic';
+    if (/^google\//.test(id) || /gemini/.test(id + ' ' + name)) return 'google';
+    return 'other';
+  }
+
+  function normalizeEffortList(list) {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set(), out = [];
+    for (const v of list) {
+      const effort = normalizeReasoningEffort(v);
+      if (!seen.has(effort)) { seen.add(effort); out.push(effort); }
+    }
+    return out;
+  }
+
+  function modelSupportsReasoning(model, meta) {
+    if (meta && meta.supportsReasoning != null) return !!meta.supportsReasoning;
+    const params = meta && meta.supported_parameters;
+    if (Array.isArray(params)) {
+      const set = new Set(params.map(p => String(p).toLowerCase()));
+      return set.has('reasoning') || set.has('reasoning_effort') || set.has('include_reasoning');
+    }
+    const family = modelFamily(model, meta);
+    return family === 'gpt' || family === 'anthropic' || family === 'google';
+  }
+
+  function reasoningEffortsForModel(model, meta) {
+    const declared = normalizeEffortList(meta && (meta.reasoningEfforts || meta.reasoning_efforts || meta.supportedReasoningEfforts || meta.supported_reasoning_efforts));
+    if (declared.length) return declared;
+    if (modelFamily(model, meta) === 'gpt') return GPT_EFFORTS.slice();
+    if (!modelSupportsReasoning(model, meta)) return OFF_ONLY_EFFORTS.slice();
+    return BASIC_REASONING_EFFORTS.slice();
+  }
+
+  function clampReasoningEffortForModel(model, effort, meta) {
+    const allowed = reasoningEffortsForModel(model, meta);
+    const normalized = normalizeReasoningEffort(effort);
+    if (allowed.indexOf(normalized) >= 0) return normalized;
+    if (normalized === 'max' && allowed.indexOf('xhigh') >= 0) return 'xhigh';
+    if ((normalized === 'max' || normalized === 'xhigh' || normalized === 'high' || normalized === 'medium') && allowed.indexOf('low') >= 0) return 'low';
+    if (normalized === 'minimal' && allowed.indexOf('low') >= 0) return 'low';
+    return allowed[0] || 'none';
+  }
+
   function makeOpenRouterProvider(opts) {
     opts = opts || {};
     const doFetch = opts.fetch || (typeof fetch !== 'undefined' ? fetch : null);
@@ -97,7 +148,10 @@
       // usage.include asks OpenRouter to return the real billed `cost` in the final usage chunk (opt-in for
       // streaming). Without it tokens still tally but usd stays 0 unless priceOf(model) resolves — so SPEND
       // reads $0 for any custom/uncatalogued slug. cost.js then takes this authoritative cost over the estimate.
-      const body = { model: req.model, messages: applyCacheControl(req.messages, req.model), stream: true, usage: { include: true }, reasoning: { effort: normalizeReasoningEffort(req.reasoningEffort || reasoningEffort) } };
+      const meta = findModel(req.model);
+      const effort = clampReasoningEffortForModel(req.model, req.reasoningEffort || reasoningEffort, meta);
+      const body = { model: req.model, messages: applyCacheControl(req.messages, req.model), stream: true, usage: { include: true } };
+      if (effort !== 'none' || reasoningEffortsForModel(req.model, meta).length > 1) body.reasoning = { effort };
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
         body.tool_choice = 'auto';
@@ -183,7 +237,10 @@
               context_length: m.context_length || 0,
               max_completion_tokens: (m.top_provider && m.top_provider.max_completion_tokens) || null,
               pricing: m.pricing,
-              supportsTools: !!(m.supported_parameters && m.supported_parameters.indexOf('tools') >= 0)
+              supported_parameters: Array.isArray(m.supported_parameters) ? m.supported_parameters.slice() : [],
+              supportsTools: !!(m.supported_parameters && m.supported_parameters.indexOf('tools') >= 0),
+              supportsReasoning: !!(m.supported_parameters && (m.supported_parameters.indexOf('reasoning') >= 0 || m.supported_parameters.indexOf('reasoning_effort') >= 0 || m.supported_parameters.indexOf('include_reasoning') >= 0)),
+              reasoningEfforts: normalizeEffortList(m.reasoningEfforts || m.reasoning_efforts || m.supportedReasoningEfforts || m.supported_reasoning_efforts)
             }));
           } catch (e) { return []; }
         })();
@@ -205,6 +262,7 @@
     }
     // true/false once the catalog is warm; null = unknown (cold catalog) so callers don't false-refuse.
     function supportsTools(id) { const m = findModel(id); return m ? !!m.supportsTools : null; }
+    function reasoningEfforts(id) { return reasoningEffortsForModel(id, findModel(id)); }
 
     // POST the chat request, retrying transient failures (429/5xx + network resets) BEFORE the stream
     // starts — safe because no tokens have been emitted yet. Aborts propagate at once. Returns an ok Response.
@@ -237,8 +295,8 @@
       }
     }
 
-    return { stream, listModels, contextLimit, priceOf, supportsTools };
+    return { stream, listModels, contextLimit, priceOf, supportsTools, reasoningEfforts };
   }
 
-  return { makeOpenRouterProvider, applyCacheControl };
+  return { makeOpenRouterProvider, applyCacheControl, _internals: { normalizeReasoningEffort, reasoningEffortsForModel, clampReasoningEffortForModel } };
 });

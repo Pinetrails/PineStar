@@ -122,6 +122,7 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(p.supportsTools('tooly'), true, 'tool-capable model -> true');
     A.eq(p.supportsTools('plain'), false, 'non-tool model -> false');
     A.eq(p.supportsTools('unknown-xyz'), null, 'unknown model -> null (do not false-refuse)');
+    A.eq(p.reasoningEfforts('tooly'), ['none'], 'cataloged model without reasoning support exposes only OFF');
   }
 
   // J. REGRESSION LOCK: a cancel during the PRE-STREAM request (POST / retry backoff) ends cleanly as a
@@ -199,6 +200,31 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     };
     await collect(makeOpenRouterProvider({ fetch: f, key: 'k', reasoningEffort: 'extra' }), { model: 'openai/gpt-5', messages: [] });
     A.eq(body.reasoning, { effort: 'xhigh' }, 'reasoning effort sent to OpenRouter');
+  }
+
+  // N. model-specific effort clamp: GPT keeps the full range; non-GPT models never inherit GPT-only xhigh.
+  {
+    let body = null;
+    const f = async (url, opts) => {
+      body = JSON.parse(opts.body);
+      return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    await collect(makeOpenRouterProvider({ fetch: f, key: 'k', reasoningEffort: 'xhigh' }), { model: 'anthropic/claude-opus-4.8', messages: [] });
+    A.eq(body.reasoning, { effort: 'low' }, 'non-GPT reasoning model clamps stale xhigh to low');
+  }
+
+  // O. cataloged non-reasoning models omit the reasoning object entirely, even if local state is stale.
+  {
+    const fetches = [];
+    const f = async (url, opts) => {
+      fetches.push({ url, opts });
+      return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const p = makeOpenRouterProvider({ fetch: f, key: 'k', reasoningEffort: 'high' });
+    await collect(p, { model: 'plain', messages: [] });
+    const chat = fetches.find(x => /\/chat\/completions$/.test(x.url));
+    const body = JSON.parse(chat.opts.body);
+    A.eq('reasoning' in body, false, 'non-reasoning model omits reasoning payload');
   }
 
   A.report('provider.openrouter.test');

@@ -176,7 +176,7 @@ const App = (() => {
   }
   function effortLabel(effort) {
     const e = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) ? Harness.normalizeReasoningEffort(effort) : String(effort || 'medium');
-    return ({ none: 'OFF', minimal: 'MIN', low: 'LOW', medium: 'MED', high: 'HIGH', xhigh: 'XHIGH' })[e] || 'MED';
+    return ({ none: 'OFF', minimal: 'MIN', low: 'LOW', medium: 'MED', high: 'HIGH', xhigh: 'XHIGH', max: 'MAX' })[e] || 'MED';
   }
   function providerLabel(provider) {
     return (provider === 'codex' || provider === 'openai-codex') ? 'GPT' : 'OPENROUTER';

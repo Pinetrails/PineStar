@@ -2294,7 +2294,10 @@ async function handleOpenRouterModels(req, res) {
       name: m.name || m.id,
       context_length: m.context_length || 0,
       pricing: m.pricing || null,
-      supportsTools: m.supportsTools !== false
+      supportsTools: m.supportsTools !== false,
+      supportsReasoning: !!m.supportsReasoning,
+      supported_parameters: Array.isArray(m.supported_parameters) ? m.supported_parameters : [],
+      reasoningEfforts: Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : []
     })) });
   } catch (e) {
     json(200, { models: [], error: (e && e.message) || 'OpenRouter catalog unavailable' });

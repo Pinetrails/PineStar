@@ -537,7 +537,7 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .model-dock-search:focus { border-color: var(--ph); box-shadow: 0 0 9px var(--ph-glow2); }
 .model-dock-search::placeholder { color: var(--ph-dim); opacity: 1; }
 .model-dock-efforts {
-  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(42px, 1fr)); gap: 4px;
 }
 .model-dock-effort {
   min-width: 0; height: 28px; padding: 0 3px; cursor: pointer;

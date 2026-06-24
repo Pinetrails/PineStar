@@ -17,8 +17,12 @@ const ModelDock = (() => {
     { id: 'low', label: 'LOW', title: 'Low reasoning' },
     { id: 'medium', label: 'MED', title: 'Medium reasoning' },
     { id: 'high', label: 'HIGH', title: 'High reasoning' },
-    { id: 'xhigh', label: 'XHIGH', title: 'Extra-high reasoning' }
+    { id: 'xhigh', label: 'XHIGH', title: 'Extra-high reasoning' },
+    { id: 'max', label: 'MAX', title: 'Maximum reasoning' }
   ];
+  const GPT_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+  const BASIC_REASONING_EFFORTS = ['none', 'low'];
+  const OFF_ONLY_EFFORTS = ['none'];
   const GROUP_NAMES = {
     anthropic: 'ANTHROPIC',
     openai: 'OPENAI',
@@ -59,7 +63,8 @@ const ModelDock = (() => {
       low: 'low',
       med: 'medium', mid: 'medium', medium: 'medium',
       high: 'high',
-      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh', max: 'xhigh'
+      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh',
+      max: 'max'
     };
     return map[key] || 'medium';
   }
@@ -72,6 +77,11 @@ const ModelDock = (() => {
     id = normalizeEffort(id);
     const e = EFFORTS.find(x => x.id === id);
     return e ? e.label : 'MED';
+  }
+
+  function effortDef(id) {
+    id = normalizeEffort(id);
+    return EFFORTS.find(x => x.id === id) || EFFORTS[3];
   }
 
   function getModel() {
@@ -90,7 +100,14 @@ const ModelDock = (() => {
 
   function asModel(item, p) {
     if (typeof item === 'string') return { id: item, name: item, provider: normalizeProvider(p) };
-    return { id: String((item && item.id) || ''), name: (item && item.name) || String((item && item.id) || ''), provider: normalizeProvider(p) };
+    const out = { id: String((item && item.id) || ''), name: (item && item.name) || String((item && item.id) || ''), provider: normalizeProvider(p) };
+    const params = (item && (item.supported_parameters || item.supportedParameters)) || null;
+    const efforts = (item && (item.reasoningEfforts || item.reasoning_efforts || item.supportedReasoningEfforts || item.supported_reasoning_efforts)) || null;
+    if (Array.isArray(params)) out.supported_parameters = params.slice();
+    if (Array.isArray(efforts)) out.reasoningEfforts = efforts.slice();
+    if (item && item.supportsReasoning != null) out.supportsReasoning = !!item.supportsReasoning;
+    if (item && item.supportsTools != null) out.supportsTools = !!item.supportsTools;
+    return out;
   }
 
   function mergeCurrent(list) {
@@ -124,6 +141,76 @@ const ModelDock = (() => {
     const id = String((item && item.id) || '');
     const head = id.indexOf('/') >= 0 ? id.split('/')[0].toLowerCase() : 'custom';
     return GROUP_NAMES[head] || head.toUpperCase();
+  }
+
+  function modelFamily(item) {
+    const p = normalizeProvider((item && item.provider) || provider());
+    const id = String((item && item.id) || '').toLowerCase();
+    const name = String((item && item.name) || '').toLowerCase();
+    if (p === 'codex') return 'gpt';
+    if (/^(openai|openai-internal)\//.test(id) || /\bgpt[-\s]?\d|\bgpt\b|codex/.test(id + ' ' + name)) return 'gpt';
+    if (/^anthropic\//.test(id) || /claude/.test(id + ' ' + name)) return 'anthropic';
+    if (/^google\//.test(id) || /gemini/.test(id + ' ' + name)) return 'google';
+    return 'other';
+  }
+
+  function declaredEfforts(item) {
+    const raw = item && (item.reasoningEfforts || item.reasoning_efforts || item.supportedReasoningEfforts || item.supported_reasoning_efforts);
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set(), out = [];
+    for (const v of raw) {
+      const e = normalizeEffort(v);
+      if (!seen.has(e)) { seen.add(e); out.push(e); }
+    }
+    return out.length ? out : [];
+  }
+
+  function supportsReasoning(item) {
+    if (normalizeProvider((item && item.provider) || provider()) === 'codex') return true;
+    if (item && item.supportsReasoning != null) return !!item.supportsReasoning;
+    const params = item && (item.supported_parameters || item.supportedParameters);
+    if (Array.isArray(params)) {
+      const set = new Set(params.map(x => String(x).toLowerCase()));
+      return set.has('reasoning') || set.has('reasoning_effort') || set.has('include_reasoning');
+    }
+    const fam = modelFamily(item);
+    return fam === 'gpt' || fam === 'anthropic' || fam === 'google';
+  }
+
+  function effortOptionsFor(item) {
+    const declared = declaredEfforts(item);
+    if (declared.length) return declared;
+    if (modelFamily(item) === 'gpt') return GPT_EFFORTS.slice();
+    if (!supportsReasoning(item)) return OFF_ONLY_EFFORTS.slice();
+    return BASIC_REASONING_EFFORTS.slice();
+  }
+
+  function currentModelItem() {
+    const id = getModel();
+    const p = provider();
+    return models.find(m => m.id === id && normalizeProvider(m.provider) === p) || { id, name: id, provider: p };
+  }
+
+  function clampEffortForModel(value, item) {
+    const opts = effortOptionsFor(item);
+    let effort = normalizeEffort(value);
+    if (opts.indexOf(effort) >= 0) return effort;
+    if (effort === 'max' && opts.indexOf('xhigh') >= 0) return 'xhigh';
+    if ((effort === 'max' || effort === 'xhigh' || effort === 'high' || effort === 'medium') && opts.indexOf('low') >= 0) return 'low';
+    if (effort === 'minimal' && opts.indexOf('low') >= 0) return 'low';
+    return opts[0] || 'none';
+  }
+
+  function effectiveEffort(item) {
+    return clampEffortForModel(currentEffort(), item || currentModelItem());
+  }
+
+  function ensureCurrentEffort() {
+    const item = currentModelItem();
+    const raw = currentEffort();
+    const effort = clampEffortForModel(raw, item);
+    if (effort !== raw && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
+    return effort;
   }
 
   async function fetchProviderModels(p, force) {
@@ -184,8 +271,10 @@ const ModelDock = (() => {
     const wrap = el('model-dock-efforts');
     if (!wrap) return;
     wrap.innerHTML = '';
-    const selected = currentEffort();
-    for (const e of EFFORTS) {
+    const item = currentModelItem();
+    const selected = ensureCurrentEffort();
+    const available = effortOptionsFor(item).map(effortDef);
+    for (const e of available) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'model-dock-effort' + (e.id === selected ? ' sel' : '');
@@ -246,7 +335,7 @@ const ModelDock = (() => {
       name.textContent = modelLabel(m);
       const eff = document.createElement('span');
       eff.className = 'model-dock-row-effort';
-      eff.textContent = effortLabel(currentEffort());
+      eff.textContent = effortLabel(effectiveEffort(m));
       row.appendChild(name);
       row.appendChild(eff);
       row.addEventListener('click', () => applyModel(m));
@@ -260,16 +349,18 @@ const ModelDock = (() => {
     const id = String(picked.id || '').trim();
     const pickedProvider = normalizeProvider(picked.provider || provider());
     if (!id) return;
+    const effort = clampEffortForModel(currentEffort(), picked);
     if (typeof Harness !== 'undefined' && Harness.setProv) Harness.setProv(pickedProvider);
     if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(id);
-    if (opts.apply) opts.apply({ model: id, provider: pickedProvider, effort: currentEffort(), reason: 'model' });
+    if (typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
+    if (opts.apply) opts.apply({ model: id, provider: pickedProvider, effort: effort, reason: 'model' });
     reflect();
     renderList();
     closeDock();
   }
 
   function applyEffort(id) {
-    const effort = normalizeEffort(id);
+    const effort = clampEffortForModel(id, currentModelItem());
     if (typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
     if (opts.apply) opts.apply({ model: getModel(), provider: provider(), effort: effort, reason: 'effort' });
     reflect();
@@ -285,7 +376,8 @@ const ModelDock = (() => {
     const chip = el('model-dock-effort-chip');
     if (providerEl) providerEl.textContent = providerLabel(p);
     if (currentEl) currentEl.textContent = current ? modelLabel({ id: current }) : 'NO MODEL';
-    if (chip) chip.textContent = effortLabel(currentEffort());
+    const effort = ensureCurrentEffort();
+    if (chip) chip.textContent = effortLabel(effort);
     renderEfforts();
   }
 
@@ -353,6 +445,7 @@ const ModelDock = (() => {
     refresh: () => fetchModels(true),
     reflect,
     close: closeDock,
-    normalizeEffort
+    normalizeEffort,
+    _internals: { effortOptionsFor, clampEffortForModel, modelFamily, supportsReasoning }
   };
 })();

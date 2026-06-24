@@ -98,7 +98,8 @@ const Harness = (() => {
       low: 'low',
       med: 'medium', mid: 'medium', medium: 'medium',
       high: 'high',
-      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh', max: 'xhigh'
+      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh',
+      max: 'max'
     };
     return map[key] || 'medium';
   }
