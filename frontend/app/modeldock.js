@@ -20,8 +20,8 @@ const ModelDock = (() => {
     { id: 'xhigh', label: 'XHIGH', title: 'Extra-high reasoning' },
     { id: 'max', label: 'MAX', title: 'Maximum reasoning' }
   ];
-  const GPT_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-  const BASIC_REASONING_EFFORTS = ['none', 'low'];
+  const CODEX_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'];
+  const OPENROUTER_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   const OFF_ONLY_EFFORTS = ['none'];
   const GROUP_NAMES = {
     anthropic: 'ANTHROPIC',
@@ -180,9 +180,9 @@ const ModelDock = (() => {
   function effortOptionsFor(item) {
     const declared = declaredEfforts(item);
     if (declared.length) return declared;
-    if (modelFamily(item) === 'gpt') return GPT_EFFORTS.slice();
+    if (normalizeProvider((item && item.provider) || provider()) === 'codex') return CODEX_EFFORTS.slice();
     if (!supportsReasoning(item)) return OFF_ONLY_EFFORTS.slice();
-    return BASIC_REASONING_EFFORTS.slice();
+    return OPENROUTER_REASONING_EFFORTS.slice();
   }
 
   function currentModelItem() {

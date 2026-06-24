@@ -33,8 +33,7 @@
   }
 
   const RETRY_DELAYS = [400, 1200];   // up to 2 retries (no jitter -> determinism); retryability comes from classifyApiError
-  const GPT_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-  const BASIC_REASONING_EFFORTS = ['none', 'low'];
+  const OPENROUTER_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   const OFF_ONLY_EFFORTS = ['none'];
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
   function delay(ms, signal) {
@@ -120,9 +119,8 @@
   function reasoningEffortsForModel(model, meta) {
     const declared = normalizeEffortList(meta && (meta.reasoningEfforts || meta.reasoning_efforts || meta.supportedReasoningEfforts || meta.supported_reasoning_efforts));
     if (declared.length) return declared;
-    if (modelFamily(model, meta) === 'gpt') return GPT_EFFORTS.slice();
     if (!modelSupportsReasoning(model, meta)) return OFF_ONLY_EFFORTS.slice();
-    return BASIC_REASONING_EFFORTS.slice();
+    return OPENROUTER_REASONING_EFFORTS.slice();
   }
 
   function clampReasoningEffortForModel(model, effort, meta) {

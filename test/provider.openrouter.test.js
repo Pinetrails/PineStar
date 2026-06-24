@@ -202,7 +202,7 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(body.reasoning, { effort: 'xhigh' }, 'reasoning effort sent to OpenRouter');
   }
 
-  // N. model-specific effort clamp: GPT keeps the full range; non-GPT models never inherit GPT-only xhigh.
+  // N. OpenRouter reasoning models can use the full OpenRouter effort scale, including xhigh/max.
   {
     let body = null;
     const f = async (url, opts) => {
@@ -210,7 +210,9 @@ async function collect(provider, req) { const out = []; for await (const e of pr
       return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
     };
     await collect(makeOpenRouterProvider({ fetch: f, key: 'k', reasoningEffort: 'xhigh' }), { model: 'anthropic/claude-opus-4.8', messages: [] });
-    A.eq(body.reasoning, { effort: 'low' }, 'non-GPT reasoning model clamps stale xhigh to low');
+    A.eq(body.reasoning, { effort: 'xhigh' }, 'non-GPT reasoning model preserves xhigh when reasoning-capable');
+    await collect(makeOpenRouterProvider({ fetch: f, key: 'k', reasoningEffort: 'max' }), { model: 'anthropic/claude-opus-4.8', messages: [] });
+    A.eq(body.reasoning, { effort: 'max' }, 'non-GPT reasoning model preserves max when reasoning-capable');
   }
 
   // O. cataloged non-reasoning models omit the reasoning object entirely, even if local state is stale.
