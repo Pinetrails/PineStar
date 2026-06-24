@@ -178,12 +178,18 @@ const App = (() => {
     const e = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) ? Harness.normalizeReasoningEffort(effort) : String(effort || 'medium');
     return ({ none: 'OFF', minimal: 'MIN', low: 'LOW', medium: 'MED', high: 'HIGH', xhigh: 'XHIGH' })[e] || 'MED';
   }
+  function providerLabel(provider) {
+    return (provider === 'codex' || provider === 'openai-codex') ? 'GPT' : 'OPENROUTER';
+  }
   function applyQuickModel(sel) {
     if (!agent || !sel) return;
     const model = String(sel.model || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '') || '').trim();
+    const provider = (sel.provider === 'codex' || sel.provider === 'openai-codex') ? 'codex'
+      : ((typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter');
     const effort = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) ? Harness.normalizeReasoningEffort(sel.effort) : String(sel.effort || 'medium');
     if (effort && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
     if (model) {
+      if (typeof Harness !== 'undefined' && Harness.setProv) Harness.setProv(provider);
       if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(model);
       agent.model = model;
       const stored = agents.get(agent.id);
@@ -197,7 +203,7 @@ const App = (() => {
     if (typeof StationUI !== 'undefined' && StationUI.notify) {
       const msg = sel.reason === 'effort'
         ? 'REASONING: ' + effortLabel(effort)
-        : 'MODEL: ' + shortModelLabel(model) + ' / ' + effortLabel(effort);
+        : 'MODEL: ' + providerLabel(provider) + ' / ' + shortModelLabel(model) + ' / ' + effortLabel(effort);
       StationUI.notify(msg, 'good');
     }
   }

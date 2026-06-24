@@ -43,6 +43,12 @@ const ModelDock = (() => {
     const p = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
     return p === 'codex' || p === 'openai-codex' ? 'codex' : 'openrouter';
   }
+  function providerLabel(p) {
+    return (p === 'codex' || p === 'openai-codex') ? 'GPT / CODEX' : 'OPENROUTER';
+  }
+  function normalizeProvider(p) {
+    return (p === 'codex' || p === 'openai-codex') ? 'codex' : 'openrouter';
+  }
 
   function normalizeEffort(value) {
     if (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) return Harness.normalizeReasoningEffort(value);
@@ -79,45 +85,95 @@ const ModelDock = (() => {
   }
 
   function groupOf(item) {
-    if (provider() === 'codex') return 'OPENAI CODEX';
+    return providerLabel((item && item.provider) || provider());
+  }
+
+  function asModel(item, p) {
+    if (typeof item === 'string') return { id: item, name: item, provider: normalizeProvider(p) };
+    return { id: String((item && item.id) || ''), name: (item && item.name) || String((item && item.id) || ''), provider: normalizeProvider(p) };
+  }
+
+  function mergeCurrent(list) {
+    const current = getModel();
+    const p = provider();
+    if (current && !list.some(m => m.id === current && normalizeProvider(m.provider) === p)) list.unshift({ id: current, name: current, provider: p });
+    return list.filter(m => m && m.id);
+  }
+
+  function openRouterEnabled() {
+    if (provider() === 'openrouter') return true;
+    try {
+      if (typeof Harness !== 'undefined' && Harness.getKey && Harness.getKey()) return true;
+      if (typeof Harness !== 'undefined' && Harness.configured && Harness.configured()) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  async function codexEnabled() {
+    if (provider() === 'codex') return true;
+    try {
+      const r = await fetch('/api/auth/codex/status', { cache: 'no-store' });
+      const j = await r.json();
+      return !!(j && j.connected);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function openRouterGroupName(item) {
     const id = String((item && item.id) || '');
     const head = id.indexOf('/') >= 0 ? id.split('/')[0].toLowerCase() : 'custom';
     return GROUP_NAMES[head] || head.toUpperCase();
   }
 
-  function asModel(item) {
-    if (typeof item === 'string') return { id: item, name: item };
-    return { id: String((item && item.id) || ''), name: (item && item.name) || String((item && item.id) || '') };
-  }
-
-  function mergeCurrent(list) {
-    const current = getModel();
-    if (current && !list.some(m => m.id === current)) list.unshift({ id: current, name: current });
-    return list.filter(m => m && m.id);
-  }
-
-  async function fetchModels(force) {
-    const p = provider();
+  async function fetchProviderModels(p, force) {
+    p = normalizeProvider(p);
     if (!force && cache[p] && cache[p].length) {
-      models = mergeCurrent(cache[p].slice());
-      return models;
+      return cache[p].slice();
     }
-    loading = true;
-    renderList();
     let list = [];
     try {
       if (p === 'codex') {
+        if (!(await codexEnabled())) { cache[p] = []; return []; }
         const r = await fetch('/api/auth/codex/models', { cache: 'no-store' });
         const j = await r.json();
-        if (Array.isArray(j.models)) list = j.models.map(asModel);
+        if (Array.isArray(j.models)) list = j.models.map(m => asModel(m, p));
       } else if (typeof Harness !== 'undefined' && Harness.listModels) {
-        list = (await Harness.listModels()).map(asModel);
+        if (!openRouterEnabled()) { cache[p] = []; return []; }
+        try {
+          const r = await fetch('/api/models/openrouter', { cache: 'no-store' });
+          const j = await r.json();
+          if (Array.isArray(j.models) && j.models.length) list = j.models.map(m => asModel(m, p));
+        } catch (_) {}
+        if (!list.length) list = (await Harness.listModels()).map(m => asModel(m, p));
       }
     } catch (_) {}
-    if (!list.length) list = (p === 'codex' ? CODEX_MODELS : OPENROUTER_FALLBACK).map(asModel);
-    list.sort((a, b) => groupOf(a).localeCompare(groupOf(b)) || modelLabel(a).localeCompare(modelLabel(b)) || a.id.localeCompare(b.id));
+    if (!list.length) list = (p === 'codex' ? CODEX_MODELS : OPENROUTER_FALLBACK).map(m => asModel(m, p));
+    list.sort((a, b) => {
+      if (p === 'openrouter') {
+        const ga = openRouterGroupName(a), gb = openRouterGroupName(b);
+        if (ga !== gb) return ga.localeCompare(gb);
+      }
+      return modelLabel(a).localeCompare(modelLabel(b)) || a.id.localeCompare(b.id);
+    });
     cache[p] = list.slice();
-    models = mergeCurrent(list.slice());
+    return list;
+  }
+
+  async function fetchModels(force) {
+    loading = true;
+    renderList();
+    const parts = await Promise.all([fetchProviderModels('codex', force), fetchProviderModels('openrouter', force)]);
+    models = mergeCurrent(parts[0].concat(parts[1]));
+    models.sort((a, b) => {
+      const pa = normalizeProvider(a.provider), pb = normalizeProvider(b.provider);
+      if (pa !== pb) return (pa === 'codex' ? 0 : 1) - (pb === 'codex' ? 0 : 1);
+      if (pa === 'openrouter') {
+        const ga = openRouterGroupName(a), gb = openRouterGroupName(b);
+        if (ga !== gb) return ga.localeCompare(gb);
+      }
+      return modelLabel(a).localeCompare(modelLabel(b)) || a.id.localeCompare(b.id);
+    });
     loading = false;
     renderList();
     reflect();
@@ -155,9 +211,10 @@ const ModelDock = (() => {
     }
     const q = String((el('model-dock-search') && el('model-dock-search').value) || '').trim().toLowerCase();
     const current = getModel();
+    const activeProvider = provider();
     const list = models.filter(m => {
       if (!q) return true;
-      return (m.id + ' ' + modelLabel(m) + ' ' + groupOf(m)).toLowerCase().indexOf(q) >= 0;
+      return (m.id + ' ' + modelLabel(m) + ' ' + groupOf(m) + ' ' + openRouterGroupName(m)).toLowerCase().indexOf(q) >= 0;
     });
     if (!list.length) {
       const div = document.createElement('div');
@@ -179,10 +236,11 @@ const ModelDock = (() => {
       }
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'model-dock-row' + (m.id === current ? ' sel' : '');
+      row.className = 'model-dock-row' + (m.id === current && normalizeProvider(m.provider) === activeProvider ? ' sel' : '');
       row.title = m.id;
+      row.dataset.provider = normalizeProvider(m.provider);
       row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', String(m.id === current));
+      row.setAttribute('aria-selected', String(m.id === current && normalizeProvider(m.provider) === activeProvider));
       const name = document.createElement('span');
       name.className = 'model-dock-row-name';
       name.textContent = modelLabel(m);
@@ -191,17 +249,20 @@ const ModelDock = (() => {
       eff.textContent = effortLabel(currentEffort());
       row.appendChild(name);
       row.appendChild(eff);
-      row.addEventListener('click', () => applyModel(m.id));
+      row.addEventListener('click', () => applyModel(m));
       frag.appendChild(row);
     }
     wrap.appendChild(frag);
   }
 
-  function applyModel(id) {
-    id = String(id || '').trim();
+  function applyModel(item) {
+    const picked = typeof item === 'string' ? { id: item, provider: provider() } : (item || {});
+    const id = String(picked.id || '').trim();
+    const pickedProvider = normalizeProvider(picked.provider || provider());
     if (!id) return;
+    if (typeof Harness !== 'undefined' && Harness.setProv) Harness.setProv(pickedProvider);
     if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(id);
-    if (opts.apply) opts.apply({ model: id, effort: currentEffort(), reason: 'model' });
+    if (opts.apply) opts.apply({ model: id, provider: pickedProvider, effort: currentEffort(), reason: 'model' });
     reflect();
     renderList();
     closeDock();
@@ -210,7 +271,7 @@ const ModelDock = (() => {
   function applyEffort(id) {
     const effort = normalizeEffort(id);
     if (typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
-    if (opts.apply) opts.apply({ model: getModel(), effort: effort, reason: 'effort' });
+    if (opts.apply) opts.apply({ model: getModel(), provider: provider(), effort: effort, reason: 'effort' });
     reflect();
     renderEfforts();
     renderList();
@@ -222,7 +283,7 @@ const ModelDock = (() => {
     const providerEl = el('model-dock-provider');
     const currentEl = el('model-dock-current-model');
     const chip = el('model-dock-effort-chip');
-    if (providerEl) providerEl.textContent = p === 'codex' ? 'OPENAI CODEX' : 'OPENROUTER';
+    if (providerEl) providerEl.textContent = providerLabel(p);
     if (currentEl) currentEl.textContent = current ? modelLabel({ id: current }) : 'NO MODEL';
     if (chip) chip.textContent = effortLabel(currentEffort());
     renderEfforts();

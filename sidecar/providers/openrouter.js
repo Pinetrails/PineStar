@@ -179,6 +179,7 @@
             const j = await res.json();
             return (j.data || []).map(m => ({
               id: m.id,
+              name: m.name || m.id,
               context_length: m.context_length || 0,
               max_completion_tokens: (m.top_provider && m.top_provider.max_completion_tokens) || null,
               pricing: m.pricing,

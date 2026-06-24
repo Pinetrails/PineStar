@@ -1079,6 +1079,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
+  if (req.method === 'GET' && req.url === '/api/models/openrouter') return handleOpenRouterModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
@@ -2279,6 +2280,25 @@ async function handleCodexPoll(req, res) {
 function handleCodexStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '' }));
+}
+
+// GET /api/models/openrouter — same-origin proxy for the public OpenRouter catalog. The browser path can be
+// blocked by CORS/network policy in embedded shells, so the model selector asks the sidecar first.
+async function handleOpenRouterModels(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: OPENROUTER_BASE });
+    const models = await provider.listModels();
+    json(200, { models: models.map(m => ({
+      id: m.id,
+      name: m.name || m.id,
+      context_length: m.context_length || 0,
+      pricing: m.pricing || null,
+      supportsTools: m.supportsTools !== false
+    })) });
+  } catch (e) {
+    json(200, { models: [], error: (e && e.message) || 'OpenRouter catalog unavailable' });
+  }
 }
 
 // GET /api/auth/codex/models — the ACCOUNT's real Codex model list (live-discovered with a fresh token), so
