@@ -403,7 +403,8 @@ const StationUI = (() => {
         '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
-      '<p class="sk-note">Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS.</p>';
+      '<p class="sk-note">Capabilities follow the objects at the workstation. Only <b>file writes</b> pause for one-click approval in COMMS. ' +
+      'Browse &amp; toggle pre-installed <b>skill recipes</b> in the <b>SKILLS</b> panel (BUILD dock).</p>';
   }
 
   function fileCard(a, f) {
@@ -637,11 +638,12 @@ const StationUI = (() => {
     return SKILLS.map(s => ({ ...s, on: s.cap === null || caps.indexOf(s.cap) !== -1 }));
   }
   function buildSkills(body) {
-    const agentId = (present[sel] && present[sel].id) || 'agent';
+    const a = present[sel];
+    const agentId = (a && a.id) || 'agent';
     const skills = skillsFor(agentId);
     const on = skills.filter(s => s.on).length;
     body.innerHTML =
-      '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
+      '<h4 class="ms-h">CAPABILITIES — ' + on + ' LIVE</h4>' +
       '<div class="perk-grid">' +
       skills.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
         '<div class="perk-icon">' + s.icon + '</div>' +
@@ -650,13 +652,79 @@ const StationUI = (() => {
         '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
         (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
       '</div>' +
-      '<p class="sk-note">Skills follow your <b>WORKSTATION</b> — each object you place grants a capability ' +
-      '(<b>computer</b> → compute · <b>dish</b> → web · <b>cabinet</b> → files · <b>notebook</b> → memory · ' +
-      '<b>workbench</b> → terminal), so the room layout IS the permission system. Read-only skills run freely, and ' +
-      'the agent\'s own private <b>notebook memory</b> saves without asking; <b>writing to your files</b> and ' +
-      '<b>running commands</b> pause for a one-click approval in COMMS before they run. Place a <b>WORKBENCH</b> ' +
-      '(BUILD → WORK) to grant TERMINAL — run tests/builds/scripts &amp; verify the result; every command auto-saves ' +
-      'a restore point first, and unattended (scheduled) runs can never run commands on their own.</p>';
+      '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
+      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
+      '<b>notebook</b> saves freely.</p>' +
+      '<h4 class="ms-h">SKILL LIBRARY</h4>' +
+      '<p class="sk-note sk-lib-intro">Pre-installed <b>recipes</b> your agents follow when a task matches. Each one ' +
+      'rides on the capabilities above — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
+      'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
+      '<div id="sk-lib" class="sk-lib"><div class="sk-loading">Loading the skill library…</div></div>';
+    loadSkillLibrary(agentId);
+  }
+
+  // async: fetch the bundled recipe catalog (with THIS agent's placed objects, so the active/locked readout is
+  // truthful) and render it into #sk-lib. Mirrors loadMemoryCore — re-query the host after the await so a panel
+  // that was closed mid-fetch is a safe no-op. The global fetch wrapper (harness.js) attaches the API token.
+  function loadSkillLibrary(agentId) {
+    const host = $('#sk-lib'); if (!host) return;
+    let placed = [];
+    try { placed = (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(agentId).map(c => c.objectType) : []; } catch (e) {}
+    fetch('/api/skills?placed=' + encodeURIComponent(placed.join(',')))
+      .then(r => r.ok ? r.json() : { skills: [] })
+      .then(d => { const h = $('#sk-lib'); if (h) renderSkillLibrary(h, (d && d.skills) || [], agentId, placed); })
+      .catch(() => { const h = $('#sk-lib'); if (h) h.innerHTML = '<div class="sk-loading">Could not load the skill library — is the sidecar running?</div>'; });
+  }
+
+  const SK_OBJ_NAME = { cabinet: 'CABINET', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
+  function renderSkillLibrary(host, skills, agentId, placed) {
+    if (!skills.length) { host.innerHTML = '<div class="sk-loading">No skills in the library yet.</div>'; return; }
+    const placedSet = {}; (placed || []).forEach(p => placedSet[p] = true);
+    const objLabel = (r) => SK_OBJ_NAME[r] || String(r).toUpperCase();
+    const active = skills.filter(s => s.enabled && s.available).length;
+    const cats = [], byCat = {};
+    for (const s of skills) { if (!byCat[s.category]) { byCat[s.category] = []; cats.push(s.category); } byCat[s.category].push(s); }
+    let html = '<div class="sk-lib-sum">' + skills.length + ' recipe' + (skills.length === 1 ? '' : 's') +
+      ' · <b>' + active + '</b> active for ' + esc((present[sel] && present[sel].name) || agentId) + '</div>';
+    for (const cat of cats) {
+      html += '<div class="sk-cat">' + esc(cat) + '</div>';
+      for (const s of byCat[cat]) {
+        const missing = (s.requires || []).filter(r => !placedSet[r]);
+        const state = s.enabled ? (s.available ? 'on' : 'want') : 'off';
+        const stat = s.enabled ? (s.available ? '● ACTIVE' : '● ON · needs ' + missing.map(objLabel).join(' + ')) : '○ OFF';
+        const reqs = (s.requires || []).length
+          ? s.requires.map(r => '<span class="sk-badge ' + (placedSet[r] ? 'have' : 'miss') + '">' + objLabel(r) + '</span>').join('')
+          : '<span class="sk-badge free">no gear needed</span>';
+        html +=
+          '<div class="sk-card ' + state + '">' +
+            '<div class="sk-card-head">' +
+              '<button class="sk-toggle" data-toggle="' + esc(s.slug) + '" data-enabled="' + (s.enabled ? 'true' : 'false') + '" title="' + (s.enabled ? 'Disable' : 'Enable') + ' this skill">' + (s.enabled ? '◉' : '○') + '</button>' +
+              '<div class="sk-card-main">' +
+                '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span><span class="sk-reqs">' + reqs + '</span></div>' +
+                '<div class="sk-desc">' + esc(s.description) + '</div>' +
+                '<div class="sk-stat ' + state + '">' + stat + '</div>' +
+              '</div>' +
+              '<button class="sk-expand" data-expand="' + esc(s.slug) + '" title="Read the recipe">▸</button>' +
+            '</div>' +
+            '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' +
+              (s.author ? '<div class="sk-attr">Ported from ' + esc(s.author) + (s.license ? ' · ' + esc(s.license) : '') + '</div>' : '') +
+            '</div>' +
+          '</div>';
+      }
+    }
+    host.innerHTML = html;
+    host.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', () => {
+      const slug = btn.dataset.toggle, next = btn.dataset.enabled !== 'true';
+      btn.classList.add('busy');
+      fetch('/api/skills/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug: slug, enabled: next }) })
+        .then(r => r.ok ? r.json() : null)
+        .then(res => { if (res && res.ok) { sfx('click'); loadSkillLibrary(agentId); } else { btn.classList.remove('busy'); } })
+        .catch(() => btn.classList.remove('busy'));
+    }));
+    host.querySelectorAll('[data-expand]').forEach(btn => btn.addEventListener('click', () => {
+      const card = btn.closest('.sk-card'); if (!card) return;
+      const opened = card.classList.toggle('open'); btn.textContent = opened ? '▾' : '▸'; sfx('click');
+    }));
   }
 
   /* ============== TASKS — the project-board view of WORKSTREAMS (card ≡ workstream) ==============
@@ -1679,7 +1747,7 @@ const StationUI = (() => {
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
-    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '520px' }],
+    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '680px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],

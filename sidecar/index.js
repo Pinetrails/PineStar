@@ -62,6 +62,8 @@ const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tic
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
+const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
+const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/disable choices for the recipe library
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
@@ -305,6 +307,26 @@ const skillsIo = {
   }
 };
 const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact });
+
+// BUNDLED SKILL LIBRARY (capability-gated recipe packs shipped WITH StarNet — distinct from skillStore above,
+// which holds what the agent SAVES at runtime). Loaded once from sidecar/skills/library/*.md; the user's
+// enable/disable choices persist append-only (same fsync discipline as skillStore). Injected into each run's
+// system prompt below, gated by requires ⊆ the agent's placed objects (object = capability — the moat).
+const SKILL_LIBRARY = skillsCatalog.loadDir(path.join(__dirname, 'skills', 'library'), fs, path);
+const SKILL_PREFS_FILE = path.join(WORKSPACES, 'skillprefs.jsonl');
+const skillPrefsIo = {
+  readAll() {
+    try { return fs.readFileSync(SKILL_PREFS_FILE, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean); }
+    catch (e) { return []; }
+  },
+  append(entry) {
+    let fd = null;
+    try { fd = fs.openSync(SKILL_PREFS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
+    catch (e) { console.warn('[skills] prefs append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+  }
+};
+const skillPrefs = makeSkillPrefs({ io: skillPrefsIo, clock: { now: () => Date.now() } });
 
 // credential pool (P0.2): orders the primary OpenRouter key + alternates and cools a key that just hit a
 // rotate-reason failure (rate_limit/auth/billing) so it isn't retried first next run. In-memory only; never
@@ -1047,6 +1069,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'POST' && req.url === '/api/skills/toggle') return handleSkillToggle(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/skills') === 0) return serveSkills(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/auth/start') return handleSpotifyStart(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/spotify/callback') === 0) return handleSpotifyCallback(req, res);
   if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
@@ -1579,6 +1603,30 @@ async function handleDossier(req, res) {
   res.end(JSON.stringify({ ok: true, chars: commanderDossier.get().length }));
 }
 
+// GET /api/skills?placed=cabinet,workbench — the bundled recipe library + per-workstation flags for the SKILLS
+// panel. `placed` (the selected agent's real floor objects, from World.heroCaps) drives the available/locked
+// readout; the enabled flag is the station-wide choice. Bodies are included so the panel can expand without a
+// second fetch (what the user reads == what the run is told — no divergence).
+function serveSkills(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const placedTypes = String(u.searchParams.get('placed') || '').split(',').map(s => s.trim()).filter(Boolean);
+    json(200, { skills: skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes }) });
+  } catch (e) { json(200, { skills: [] }); }
+}
+// POST /api/skills/toggle { slug, enabled } — persist a station-wide enable/disable choice for a library recipe.
+// Station-wide by design: per-AGENT reach stays the capability gate (the placed objects), not a per-agent toggle.
+async function handleSkillToggle(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const slug = String(body.slug || '').trim();
+  if (!slug) return json(400, { error: 'slug required' });
+  const r = skillPrefs.set(slug, !!body.enabled);
+  if (!r.ok) return json(400, { error: r.error || 'could not save' });
+  json(200, { ok: true, slug: r.slug, enabled: r.enabled });
+}
+
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
@@ -1950,7 +1998,17 @@ async function runOnce(o) {
     if (lines.length) teamNote = '\n\n[YOUR CREW] You can delegate subtasks to these specialist agents with the team.dispatch tool — '
       + 'call it with workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
   }
-  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface });   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  // INSTALLED SKILLS (bundled recipe library): inject the bodies of the recipes the Commander ENABLED whose
+  // required objects are actually on THIS agent's floor (object = capability — the same gate the tools use). Empty
+  // when none qualify → byte-identical to a skill-less prompt. Riding the ONE place the final system prompt is
+  // assembled means it covers every surface (browser chat, cron, delegated worker) with no per-path change.
+  let skillBlock = '';
+  try {
+    const sRoom = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
+    const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
+    skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes });
+  } catch (_) { /* a skill-injection hiccup must never break a run */ }
+  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
