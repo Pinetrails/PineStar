@@ -88,6 +88,19 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .cc-tb-rule { flex: 1; height: 0; border-top: 1px dashed var(--ph-faint); }
 .cc-tb-mode { color: var(--ph); letter-spacing: 3px; }
 .cc-tb-rec { color: var(--bad); letter-spacing: 2px; animation: cc-blink 1.4s steps(1) infinite; }
+/* PHOSPHOR tint selector — lives in the titlebar as console hardware (zero added panel height). Each
+   swatch recolours the WHOLE station live and persists (app.js → StationUI.setTheme). */
+.cc-tb-phosphor { display: flex; align-items: center; gap: 7px; }
+.cc-tb-plabel { color: var(--ph-dim); letter-spacing: 2px; }
+.phosphor-swatches { display: flex; gap: 5px; }
+.phosphor-swatches .swatch {
+  width: 14px; height: 14px; padding: 0; cursor: pointer; border-radius: 50%;
+  background: var(--sw); border: 1px solid rgba(0,0,0,.6);
+  box-shadow: 0 0 5px var(--sw); opacity: .6; transition: none;
+}
+.phosphor-swatches .swatch:hover { opacity: 1; }
+.phosphor-swatches .swatch.sel { opacity: 1; outline: 1px solid var(--ph-bright); outline-offset: 2px; box-shadow: 0 0 9px var(--sw); }
+.phosphor-swatches .swatch:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
 .cc-ascii {
   margin: 6px 0 2px; font-family: inherit; font-size: 14px; line-height: 1.05;
   color: var(--ph); white-space: pre; letter-spacing: 0;
@@ -110,6 +123,13 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .cc-col-core { padding-right: 22px; border-right: 1px solid var(--ph-faint); }   /* a hairline spine splits the two halves */
 .cc-col-voice { padding-left: 22px; display: flex; flex-direction: column; }
 .cc-col .cc-head:first-child { margin-top: 4px; }
+/* the orchestration-lattice emblem fills the voice column's slack (it's shorter than core) — pushed to
+   the bottom so the two columns end flush instead of leaving the right side hanging in dead space. */
+.cc-emblem {
+  margin: auto 0 2px; font-family: inherit; font-size: 13px; line-height: 1.12;
+  color: var(--ph-dim); white-space: pre; text-align: center; align-self: center;
+  text-shadow: 0 0 8px var(--ph-glow2); opacity: .72; letter-spacing: 1px; pointer-events: none;
+}
 
 /* recommended-model quick picks (OpenRouter): one-tap slugs for newcomers — premium + beginner-friendly */
 .model-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }

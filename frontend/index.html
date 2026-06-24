@@ -47,7 +47,7 @@
 
     <!-- ===== ASCII console header ===== -->
     <header class="cc-console-head">
-      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">COMMISSION CONSOLE</span><span class="cc-tb-rec">● REC</span></div>
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">COMMISSION CONSOLE</span><span class="cc-tb-phosphor"><span class="cc-tb-plabel">PHOSPHOR</span><span id="phosphor-swatches" class="phosphor-swatches" role="group" aria-label="Console phosphor tint"></span></span><span class="cc-tb-rec">● REC</span></div>
       <pre class="cc-ascii" aria-hidden="true">   ▟█▙   ┌─────────────────────────────┐
   ▟███▙  │  A G E N T — 0 1 :: LEAD MIND │
    ▜█▛   └─────────────────────────────┘</pre>
@@ -134,6 +134,14 @@
           <label>IN YOUR OWN WORDS <span class="dim">— optional; this overrides the preset where they conflict</span></label>
           <textarea id="voice-custom" class="voice-custom" rows="2" placeholder="e.g. talks like a calm senior engineer — concise, a little dry, no hype" spellcheck="false"></textarea>
         </div>
+        <!-- decorative emblem anchored to the bottom of the (shorter) voice column — fills the asymmetry
+             with ASCII instead of dead space; the hub-and-spoke = the lead pointing a future crew. -->
+        <pre class="cc-emblem" aria-hidden="true">      ◇       ◇
+       ╲     ╱
+    ◇───◉───◇
+       ╱     ╲
+      ◇       ◇
+ ◂ ORCHESTRATION LATTICE · AGENT-01 ▸</pre>
       </div>
     </div>
 

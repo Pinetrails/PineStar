@@ -1757,5 +1757,15 @@ const StationUI = (() => {
     runningAgents.clear();   // a disconnect abandons in-flight streams (their run.end won't arrive) — reset
   }
 
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks') };
+  /* the phosphor theme picked on the COMMISSION CONSOLE writes through HERE so it survives enterGame:
+     StationUI captures `store` once at module-load, so a bare localStorage write would be clobbered by the
+     stale in-memory copy when applySettings() runs on enter. Routing through the live store + save() keeps
+     the create-screen pick and the in-game Settings panel as one source of truth. */
+  function setTheme(t) {
+    const ok = THEMES.some(([name]) => name === t); if (!ok) return;
+    store.settings.theme = t; applySettings(); save();
+  }
+  function getTheme() { return store.settings.theme; }
+
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
 })();

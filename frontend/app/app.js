@@ -384,6 +384,36 @@ const App = (() => {
     { label: 'GPT-5', id: 'openai/gpt-5', tag: '' },
     { label: 'Gemini 2.5 Pro', id: 'google/gemini-2.5-pro', tag: '' }
   ]);
+  /* ---------- PHOSPHOR tint picker (the console-wide theme, surfaced at commission) ----------
+     The station already ships four CRT phosphors (style.css body.theme-*) persisted by StationUI. We
+     surface that choice up-front so the Commander sets the whole station's colour the moment they build
+     it — picking a swatch recolours live AND writes through StationUI.setTheme so it survives enterGame
+     and stays in lockstep with the in-game Settings panel. No new state, no fakery. */
+  const PHOSPHOR = Object.freeze([['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['white', '#e8f0e8']]);
+  function applyTheme(t) {
+    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-white');
+    document.body.classList.add('theme-' + t);
+  }
+  function buildPhosphor() {
+    const wrap = el('phosphor-swatches'); if (!wrap) return;
+    let cur = 'amber';
+    try { if (typeof StationUI !== 'undefined' && StationUI.getTheme) cur = StationUI.getTheme() || 'amber'; } catch (_) {}
+    applyTheme(cur);   // reflect a previously-saved tint on the create screen too (StationUI hasn't entered yet)
+    wrap.innerHTML = '';
+    PHOSPHOR.forEach(([t, c]) => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'swatch' + (t === cur ? ' sel' : ''); b.dataset.t = t;
+      b.style.setProperty('--sw', c); b.title = t.toUpperCase() + ' phosphor'; b.setAttribute('aria-label', t + ' phosphor');
+      b.onclick = () => {
+        applyTheme(t);
+        try { if (typeof StationUI !== 'undefined' && StationUI.setTheme) StationUI.setTheme(t); } catch (_) {}   // persist + keep Settings in sync
+        SFX.click();
+        [...wrap.children].forEach(x => x.classList.toggle('sel', x === b));
+      };
+      wrap.appendChild(b);
+    });
+  }
+
   function buildModelPicks() {
     const wrap = el('model-picks'); if (!wrap) return;
     wrap.innerHTML = '';
@@ -668,6 +698,7 @@ const App = (() => {
     // a fresh create screen carries no stale voice picks — reset the module-level state so fine-tune
     // dials / a custom-voice note from an abandoned create session never ride onto the next agent.
     pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'confidant';
+    buildPhosphor();
     buildSkins();
     buildVoice();
     el('btn-back').onclick = () => { SFX.click(); stopCodexPoll(); codexFlow = null; showTitle(); };
