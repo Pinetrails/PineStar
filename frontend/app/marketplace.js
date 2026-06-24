@@ -27,6 +27,7 @@ const Marketplace = (() => {
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
   let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'
   let query = '';
+  let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
 
   const hasRecipes = () => typeof Recipes !== 'undefined';
   const hasIcons = () => typeof ClassIcons !== 'undefined';
@@ -181,11 +182,13 @@ const Marketplace = (() => {
   /* ---------- stage: two-pane (roster + dossier) OR a full-width form ---------- */
   function renderStage() {
     const stage = root && root.querySelector('#mkt-stage'); if (!stage) return;
-    if (view === 'save' || view === 'recipesave' || view === 'launch') {
+    if (view === 'save' || view === 'recipesave' || view === 'launch' || view === 'build') {
       stage.className = 'mkt-stage form';
-      stage.innerHTML = view === 'save' ? saveFormHTML() : view === 'recipesave' ? recipeSaveFormHTML() : launchFormHTML();
+      stage.innerHTML = view === 'save' ? saveFormHTML() : view === 'recipesave' ? recipeSaveFormHTML()
+        : view === 'build' ? buildFormHTML() : launchFormHTML();
       if (view === 'save') wireSaveForm(stage);
       else if (view === 'recipesave') wireRecipeSaveForm(stage);
+      else if (view === 'build') wireBuildForm(stage);
       else wireLaunchForm(stage);
       return;
     }
@@ -235,9 +238,12 @@ const Marketplace = (() => {
     html += '<div class="mkt-sect-h">▮ CLASS ROSTER</div>';
     html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no classes match your filter.</div>';
+    // the build tile (＋) is always available at the bottom — author a brand-new class however you want
+    const buildTile = '<button class="mkt-build" type="button" aria-label="build a custom class">' +
+      '<span class="mkt-build-plus" aria-hidden="true">＋</span><span class="mkt-build-lbl">BUILD A CUSTOM CLASS</span></button>';
     html += '<div class="mkt-sect-h">▮ YOUR SPECIALISTS</div>';
-    html += customs.length ? '<div class="mkt-grid">' + customs.map(cardHTML).join('') + '</div>'
-      : '<div class="mkt-empty">no saved specialists yet — ' + (deploy ? 'hit “＋ save this agent as a specialty” above' : 'save an agent as a specialty in-game') + ' to grow your own roster.</div>';
+    if (!customs.length) html += '<p class="mkt-hint mkt-yours-hint">none yet — build one from scratch below' + (deploy ? ', or save the live agent as a specialty above' : '') + '.</p>';
+    html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
     return html;
   }
   function recipesRosterHTML() {
@@ -490,6 +496,8 @@ const Marketplace = (() => {
 
     const saveas = stage.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; renderStage(); });
+    const build = stage.querySelector('.mkt-build');
+    if (build) build.addEventListener('click', () => { sfx('click'); buildAccent = '#ffaa33'; buildModel = 'balanced'; view = 'build'; renderStage(); });
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
 
@@ -745,6 +753,67 @@ const Marketplace = (() => {
     });
     const nameIn = stage.querySelector('#mkt-f-name');
     if (nameIn) { nameIn.focus(); nameIn.setSelectionRange(nameIn.value.length, nameIn.value.length); }
+  }
+
+  /* ---------- build a custom class from scratch (the ＋ tile) ----------
+     A full authoring form: icon, name, accent (the seal colour), tagline, clearance tier, purpose +
+     standing orders — saved straight to YOUR SPECIALISTS via Specialties.saveCustom (tags auto-derive
+     from the text, so the new class ranks in the feed and deploys/recruits like any built-in). */
+  const BUILD_ACCENTS = ['#ffaa33', '#7df0a0', '#46c8ff', '#e6a0ff', '#ff8f8f', '#6cd0ff', '#ffd34a', '#5fd0e0', '#c8efff'];
+  function buildFormHTML() {
+    const sw = BUILD_ACCENTS.map(c => '<button type="button" class="mkt-sw' + (c === buildAccent ? ' sel' : '') +
+      '" data-acc="' + c + '" style="background:' + c + '" aria-label="accent ' + c + '"></button>').join('');
+    const seg = (m, l) => '<button type="button" class="mkt-seg' + (buildModel === m ? ' sel' : '') + '" data-model="' + m + '">' + l + '</button>';
+    return '<div class="mkt-save mkt-build-form">' +
+      '<div class="mkt-save-h">BUILD A CUSTOM CLASS</div>' +
+      '<p class="mkt-hint">define your own class — its job, its standing orders, its look. it joins <b>YOUR SPECIALISTS</b>, ready to deploy or recruit.</p>' +
+      '<div class="mkt-build-preview"><div class="mkt-coin" id="mkt-build-coin" style="--accent:' + esc(buildAccent) + '">' +
+        '<span class="mkt-coin-emoji" id="mkt-build-emoji">✦</span></div><span class="mkt-hint">live preview — your class seal</span></div>' +
+      '<div class="mkt-save-row"><label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-b-emoji" maxlength="2" value="✦"></label>' +
+        '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-b-name" maxlength="28" placeholder="e.g. Growth Hacker"></label></div>' +
+      '<label class="mkt-lbl">ACCENT</label><div class="mkt-swatches" id="mkt-b-acc">' + sw + '</div>' +
+      '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-b-tag" maxlength="48" placeholder="one line — what it’s for"></label>' +
+      '<label class="mkt-lbl">CLEARANCE</label><div class="mkt-segs" id="mkt-b-model">' +
+        seg('reasoning', '◆◆◆ DEEP') + seg('balanced', '◆◆ BALANCED') + seg('fast', '◆ FAST') + '</div>' +
+      '<label class="mkt-lbl">PURPOSE<textarea class="mkt-in mkt-b-area" id="mkt-b-purpose" rows="3" placeholder="what this class is FOR — its job, in its own words."></textarea></label>' +
+      '<label class="mkt-lbl">STANDING ORDERS<textarea class="mkt-in mkt-b-area" id="mkt-b-manual" rows="4" placeholder="- the rules it always follows\n- one per line"></textarea></label>' +
+      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-build">✓ CREATE CLASS</button></div></div>';
+  }
+  function wireBuildForm(stage) {
+    const back = stage.querySelector('.mkt-cancel');
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; renderStage(); });
+    // live seal preview: icon + accent
+    const emojiIn = stage.querySelector('#mkt-b-emoji'), coinEmoji = stage.querySelector('#mkt-build-emoji'), coin = stage.querySelector('#mkt-build-coin');
+    if (emojiIn) emojiIn.addEventListener('input', () => { if (coinEmoji) coinEmoji.textContent = (emojiIn.value || '✦').trim() || '✦'; });
+    stage.querySelectorAll('#mkt-b-acc .mkt-sw').forEach(b => b.addEventListener('click', () => {
+      buildAccent = b.dataset.acc;
+      stage.querySelectorAll('#mkt-b-acc .mkt-sw').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+      if (coin) coin.style.setProperty('--accent', buildAccent); sfx('click');
+    }));
+    stage.querySelectorAll('#mkt-b-model .mkt-seg').forEach(b => b.addEventListener('click', () => {
+      buildModel = b.dataset.model;
+      stage.querySelectorAll('#mkt-b-model .mkt-seg').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); sfx('click');
+    }));
+    const create = stage.querySelector('.mkt-do-build');
+    if (create) create.addEventListener('click', () => {
+      const name = (stage.querySelector('#mkt-b-name').value || '').trim();
+      if (!name) { sfx('bad'); note('give your class a name', 'bad'); stage.querySelector('#mkt-b-name').focus(); return; }
+      const spec = {
+        name,
+        emoji: (stage.querySelector('#mkt-b-emoji').value || '✦').trim() || '✦',
+        accent: buildAccent, model: buildModel,
+        tagline: (stage.querySelector('#mkt-b-tag').value || '').trim(),
+        purpose: (stage.querySelector('#mkt-b-purpose').value || '').trim(),
+        manual: (stage.querySelector('#mkt-b-manual').value || '').trim()
+      };
+      try {
+        const saved = Specialties.saveCustom(spec);
+        focusAgent = saved.id; view = 'grid';
+        sfx('click'); note('created class: ' + saved.name, 'good');
+        renderStage();
+      } catch (e) { sfx('bad'); note((e && e.message) || 'could not save', 'bad'); }
+    });
+    const nameIn = stage.querySelector('#mkt-b-name'); if (nameIn) nameIn.focus();
   }
 
   return { open, close };
