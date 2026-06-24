@@ -2855,6 +2855,27 @@ const World = (() => {
     },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer } },
+    // read-only body snapshot for the DEV test harness (window.__SKYNET_TEST__) — the Tier A/B/C substrate.
+    // Pure read, no side effects: the hero + every crew body, each with tile/zone/glance/goal/moving so the
+    // floor invariants (idle stays in-zone · awareness is gaze-only · summoned walks to its OWN workstation)
+    // can be auto-asserted instead of eyeballed. Mirrors dbg()'s clock (fnow) and helpers (tileOf/zoneFor).
+    bodies: () => {
+      const snap = (b, hero) => {
+        if (!b) return null;
+        const t = tileOf(b.px, b.py);
+        const z = zoneFor(b);
+        return {
+          id: b.id, name: b.name, hero: !!hero,
+          tile: t, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
+          goal: b.goal || null, moving: !!b.target, working: !!b.working, sitting: !!b.sitting,
+          seated: !!b.seated, unplaced: !!b.unplaced,
+          target: b.target ? { tile: tileOf(b.target.x, b.target.y), x: Math.round(b.target.x), y: Math.round(b.target.y) } : null,
+          glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
+          zone: z, inOwnZone: tileInZone(z, t.x, t.y)
+        };
+      };
+      return [snap(agent, true), ...crew.map((b) => snap(b, false))].filter(Boolean);
+    },
     // does this agent have a WORKBENCH placed (-> shell.exec + verify.run)? An equipped BAY governs; with no bay
     // (simple single-agent floor) any placed workbench grants it. The run client sends this so the hero's run
     // gains shell ADDITIVELY on top of its default office (the room layout is the permission system, for the hero too).
