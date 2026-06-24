@@ -86,6 +86,25 @@
 }
 .tut-ring.no-anim { animation: none; }
 
+/* ---- kit-out spotlight: the coach bubble is PINNED to a safe zone so it never covers the dock controls it
+   points at (the old bug: the bubble flipping onto the MODE row). The pulsing .tut-ring does the pointing.
+   A fixed width + margin centering avoids the entrance animation's transform fighting the horizontal centre. ---- */
+.tut-coach.kit {
+  left: 50%;
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  margin-left: -230px;
+  animation: tutCoachFade .2s ease both;
+}
+.tut-coach.kit.no-anim { animation: none; }
+.tut-coach.kit.kit-top { top: 60px; }        /* inside REFIT: just under the ▮ REFIT MODE bar, clear of the dock */
+.tut-coach.kit.kit-bottom { bottom: 70px; }  /* outside REFIT: floating just above the bottom bar */
+.tut-coach.kit .tut-coach-body { font-size: 19px; }
+@media (max-width: 540px) {
+  .tut-coach.kit { left: 16px; right: 16px; width: auto; margin-left: 0; max-width: none; }
+}
+@keyframes tutCoachFade { from { opacity: 0; } to { opacity: 1; } }
+
 @keyframes tutCoachIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 /* pulse the blur at the active theme's glow colour (the colour token is constant per theme; only the spread animates) */
 @keyframes tutRingPulse {
