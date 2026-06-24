@@ -40,6 +40,25 @@
     scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN', liaison: 'LIA'
   };
 
+  // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
+  // Custom missions (no built-in art) fall back to their chosen emoji, exactly like custom classes.
+  const MISSION_ICONS = {
+    'morning-brief': '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 7 a5 5 0 0 1 5 5 H7 a5 5 0 0 1 5-5 Z"/><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2.5 16 H21.5"/><path d="M5 19.5 H19"/><path d="M12 3.4 V5.2"/><path d="M5.8 5.8 L7 7"/><path d="M18.2 5.8 L17 7"/></g></svg>',
+    'deep-research': '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="8" fill="currentColor"/><path fill="currentColor" d="M16 14.2 L22 20.2 L20.2 22 L14.2 16 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8.5 L10.5 12 L14 8.5"/><path d="M7 11.8 L10.5 15.3 L14 11.8"/></g></svg>',
+    'fact-check': '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 L20 5 V11 C20 16 16.5 19.4 12 21.4 C7.5 19.4 4 16 4 11 V5 Z"/><path fill="none" stroke="' + D + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M8.2 11.4 L11 14.2 L16 8.6"/></svg>',
+    'fix-bug': '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.7 2.6 a6 6 0 0 0 -5.2 9 L3.3 19.7 a2.3 2.3 0 0 0 3.2 3.2 l8.1-8.1 a6 6 0 0 0 7.4-7.7 l-3 3 -2.9-.8 -.8-2.9 Z"/><circle cx="5.2" cy="18.8" r="1.1" fill="' + D + '"/></svg>',
+    'code-review': '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="8" fill="currentColor"/><path fill="currentColor" d="M16 14.2 L22 20.2 L20.2 22 L14.2 16 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.8 7.8 L6 10.5 L8.8 13.2"/><path d="M12.2 7.8 L15 10.5 L12.2 13.2"/></g></svg>',
+    'ship-feature': '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3.3" y="3.3" width="8" height="8" rx="1.4"/><rect x="12.7" y="3.3" width="8" height="8" rx="1.4"/><rect x="3.3" y="12.7" width="8" height="8" rx="1.4"/><path d="M16.7 13.2 v3 h3 v2 h-3 v3 h-2 v-3 h-3 v-2 h3 v-3 Z"/></svg>',
+    'draft-reply': '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 5.6 a2 2 0 0 1 2-2 h14 a2 2 0 0 1 2 2 v8.8 a2 2 0 0 1 -2 2 H9.5 L5 20 v-3.6 a2 2 0 0 1 -2-2 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.7" stroke-linecap="round"><path d="M7 8.6 H15"/><path d="M7 11.6 H12"/></g></svg>',
+    'tighten-writing': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6.2" r="2.6"/><circle cx="6" cy="17.8" r="2.6"/><path d="M8.3 7.7 L19.5 16.8"/><path d="M8.3 16.3 L19.5 7.2"/></svg>',
+    'plan-project': '<svg viewBox="0 0 24 24"><rect x="4.5" y="3.6" width="15" height="16.8" rx="2" fill="currentColor"/><rect x="9" y="2" width="6" height="3.4" rx="1.2" fill="currentColor" stroke="' + D + '" stroke-width="1.2"/><g fill="none" stroke="' + D + '" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.4 10 L8.5 11.1 L10.1 9.2"/><path d="M12 10.2 H16.4"/><path d="M7.4 14.6 L8.5 15.7 L10.1 13.8"/><path d="M12 14.8 H16.4"/></g></svg>',
+    'summarize': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 5.5 H20"/><path d="M4 9.7 H20"/><path d="M4 13.9 H14"/><path d="M4 18.1 H9"/></svg>'
+  };
+  const MISSION_CODE = {
+    'morning-brief': 'BRF', 'deep-research': 'DIG', 'fact-check': 'CHK', 'fix-bug': 'FIX', 'code-review': 'CRV',
+    'ship-feature': 'BLD', 'draft-reply': 'RPL', 'tighten-writing': 'CUT', 'plan-project': 'PLN', 'summarize': 'TLD'
+  };
+
   const LANE_LABEL = { code: 'CODE', research: 'RESEARCH', general: 'OPS' };
   const TIER_PIPS = { reasoning: 3, balanced: 2, fast: 1 };
   const TIER_LABEL = { reasoning: 'DEEP REASONING', balanced: 'BALANCED', fast: 'FAST & CHEAP' };
@@ -47,12 +66,13 @@
   // the bespoke emblem for a spec id, or null when there's no built-in art (a custom → caller draws its emoji).
   function svg(idOrSpec) {
     const id = typeof idOrSpec === 'string' ? idOrSpec : (idOrSpec && idOrSpec.id);
-    return ICONS[id] || null;
+    return ICONS[id] || MISSION_ICONS[id] || null;
   }
   // a stamped 3-letter class code: the canon code for built-ins, else derived from the spec name.
   function code(idOrSpec) {
     const id = typeof idOrSpec === 'string' ? idOrSpec : (idOrSpec && idOrSpec.id);
     if (CODE[id]) return CODE[id];
+    if (MISSION_CODE[id]) return MISSION_CODE[id];
     const name = (typeof idOrSpec === 'object' && idOrSpec && idOrSpec.name) || String(id || '');
     const letters = name.replace(/[^a-z0-9]/gi, '').toUpperCase();
     return (letters.slice(0, 3) || 'CLS').padEnd(3, '·');
