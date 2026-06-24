@@ -79,6 +79,12 @@
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
 
     const leases = new Map();   // jobId -> { runId, startedAt, ac } — the one-run-per-job in-flight lock
+    // G4.3 in-process reentrancy guard: a tick re-entered at the SAME instant (e.g. the boot resume
+    // reconcile racing the first timer tick, or a fire's run host synchronously re-entering applyTick)
+    // must be a NO-OP — the outer pass has not yet persisted its advance, so a re-entrant pass would
+    // see the same jobs still due and double-fire. The cross-process file lock (cron-lock.js) handles
+    // the two-sidecars case; this flag closes the single-process re-entrancy hole the lock cannot see.
+    let tickInFlight = false;
 
     /* finishFire — record a fired run's outcome once it settles: markRun (the reducer owns the transient-backoff
        / one-shot-finalize math) → persist → cron.result → release the lease (only if it is still ours). */
@@ -157,6 +163,18 @@
        in try/catch, but the body also guards each emit so a single bad payload never aborts the pass. */
     function applyTick(nowMs) {
       nowMs = nowMs || now();
+      // G4.3: re-entrant tick at the same instant is a no-op (see tickInFlight above). The guard wraps
+      // the WHOLE pass — set on entry, cleared in a finally so a thrown plan/emit never wedges the flag.
+      if (tickInFlight) return { fired: 0, skipped: 0, planned: 0, reentered: true };
+      tickInFlight = true;
+      try {
+        return applyTickInner(nowMs);
+      } finally {
+        tickInFlight = false;
+      }
+    }
+
+    function applyTickInner(nowMs) {
       let skips = 0, fires = 0;
 
       // 1. SELF-HEALING LEASE: reclaim any run older than the ceiling — abort it and free the job to re-fire.

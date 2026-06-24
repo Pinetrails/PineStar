@@ -385,7 +385,7 @@ the rename / leave a zero-length file → double-fire), matching the ledger idio
     delegates to it + header comment), `test/cron.durability.test.js` (NEW), `package.json` (append the test after
     `cron.dst`).
 
-### G4.3 — Cross-process / reentrancy exactly-once lock  ·  STATUS: TODO
+### G4.3 — Cross-process / reentrancy exactly-once lock  ·  STATUS: DONE
 One-line task: add (a) an in-process `tickInFlight` reentrancy guard in `cron-driver.applyTick`
 and (b) a cross-process advisory lock (`WORKSPACES/cron.lock`) wrapping `applyTick` AND every
 CRUD `saveCronJobs`/`setJobs` write, so two sidecars / a boot-reconcile racing the first tick /
@@ -409,6 +409,64 @@ mirror clobber).
 - **Notes:** Windows has no flock — use the portable O_EXCL+pid+nonce+read-back path with a
   `maxRunMs`-based stale break (mirror the existing lease reclaim) so a crashed holder never
   wedges cron forever. Avoid a new dep unless package policy allows.
+- **DONE (2026-06-23, this lane after d45da9f).** Cron now fires EXACTLY ONCE across re-entrancy,
+  two sidecars, a boot-reconcile racing the first tick, and a CRUD save racing an advance — three
+  layers, all headless-proven RED→GREEN, no new dep, determinism-lint still GREEN.
+  - **(a) In-process reentrancy guard** — a `tickInFlight` flag wraps the WHOLE `applyTick`
+    (`cron-driver.js`): a re-entrant tick at the same instant returns `{fired:0,reentered:true}` and
+    NEVER walks the plan/advance/fire-loop. Set on entry, cleared in a `finally` so a thrown
+    plan/emit can't wedge the flag. (The existing lease already suppressed a duplicate *fire*, so the
+    test asserts the guard's DISTINCT signal — `reentered:true` + ZERO second `cron.tick` — not a
+    vacuous fired-count.)
+  - **(b) Cross-process advisory lock** — NEW importable module `sidecar/cron-lock.js`
+    (`makeCronLock({fs,path,lockfile,now,maxRunMs,pid?,nonce?}) -> {withLock,release,_internals}`),
+    the testable seam (same pattern as `durable-write.js`). Portable **O_EXCL** (`open(lockfile,'wx')`)
+    write `pid:nonce` → **READ-BACK-VERIFY** it's byte-for-byte ours (no flock — Windows can't). A
+    `maxRunMs` **stale break** (mtime vs injected `now`) reclaims a crashed holder; a LIVE holder is
+    respected (no premature reclaim). **ATOMIC RECLAIM (the TOCTOU fix):** the single mutual-exclusion
+    step is `renameSync(lockfile -> lockfile.<pid>.<nonce>.reclaim)` — exactly ONE racer can move the
+    ORIGINAL stale inode; every other racer's rename of that same source gets ENOENT and **no-ops**.
+    Only the rename winner then O_EXCL-creates the fresh lock. **Re-entrant within one process**
+    (depth-counted) so `applyTick(lock) -> setJobs -> saveCronJobs(lock)` nests without dropping the
+    lock mid-tick; `release` only unlinks at depth 0 and only if the file still carries OUR stamp.
+    Determinism-clean: `now`+`nonce`+`pid` injected (nonce defaults to lazy `node:crypto`), NO
+    `Date.now`/`new Date()`/`Math.random` literal.
+  - **(c) Lock wraps applyTick AND every CRUD write; setJobs/CRUD re-read-modify-write under the lock**
+    (`index.js`): boot reconcile + every timer tick are `cronLock.withLock(() => applyTick(...))` (two
+    sidecars / boot-vs-timer can't both fire — the non-holder no-ops). A new `withCronWrite(mutate)`
+    helper does the **re-read-from-disk → apply mutate → durable save UNDER the lock** for all four
+    CRUD sites (create/update+pause-resume/remove/run-now markRun) — fixing the last-write-wins
+    clobber where a CRUD save on a STALE in-memory snapshot reverts an advance (→ double-fire). The
+    driver's `setJobs` also persists under the lock (re-entrant nested in-tick; a bounded ~50ms spin +
+    local-save fallback for the rare settle-after-tick cross-process contention so a run outcome is
+    never silently lost). E-STOP `handleHalt` adds a standalone `cronLock.release()` (additive — G2
+    will add `connectors.close` to the SAME block) so an E-STOP mid-tick never wedges the next tick.
+  - **Verified RED→GREEN** (`test/cron.lock.test.js`, NEW, 27 assertions; each property shown to FAIL
+    on a deliberately-broken tree then PASS): (1) reentrancy — RED with the `tickInFlight` guard
+    disabled (`reentered` absent), GREEN with; (2) STALE-RECLAIM RACE — two distinct holders (pid:nonce
+    101:AAA / 202:BBB) BOTH pass the stale check then BOTH attempt the atomic claim → RED with a
+    non-atomic check-then-unlink-then-write claim (both "win", A=true B=true), GREEN with the atomic
+    rename (exactly one moves the original, the loser ENOENTs); (3) end-to-end stale-reclaim via two
+    real driver passes over one due store → exactly ONE `cron.fire` total; (4) CRUD serialization — a
+    tick advances+persists under the lock, then a CRUD add done as re-read-modify-write under the lock
+    keeps BOTH the advanced job and the new job (a control proves a naive stale-snapshot save WOULD
+    revert the advance); (5) fresh-lock-not-reclaimed; (6) re-entrant nested withLock holds the lock
+    through the inner release. Module-not-found was the initial RED before the file existed.
+  - **Gates:** full `npm run test:fast` GREEN (EXIT 0 — no regressions to cron/cron.tick/cron-store/
+    cron.dst/cron.durability; lint-emits + lint-determinism GREEN, 75 files scanned incl. the new
+    `cron-lock.js`). `npm run test:http` GREEN (EXIT 0 — cron.api 56 assertions drive the real CRUD
+    routes → `withCronWrite` → lock → durable save end-to-end on real `node:fs`). **LIVE smoke**
+    (`npm start`, free port :8849/:8850, `SKYNET_CRON_ENABLED=1`, temp WORKSPACES): app boots clean,
+    boot reconcile runs UNDER the lock (years-late routine → `cron.skipped reason "caught-up"`,
+    no backlog burst), a due routine is planned+fired through the lock to the capability gate, the
+    advance-before-run nextRunAt is persisted under the lock, and the lockfile is released cleanly
+    between ticks (no wedge).
+  - **Files:** `sidecar/cron-lock.js` (NEW — the advisory lock primitive), `sidecar/cron-driver.js`
+    (`tickInFlight` reentrancy guard, `applyTick`→`applyTickInner` split), `sidecar/index.js`
+    (`makeCronLock` import + construct + `withCronWrite` + lock-wrapped applyTick/setJobs + 4 CRUD
+    sites + halt release), `test/cron.lock.test.js` (NEW), `package.json` (append cron.lock after
+    cron.durability). No `shared/events.js`/`shared/schema.js` edit; no NEW event (the lock is
+    internal). `git log feat/harness-backend..agent/parity-finish -- shared/*` stays empty.
 
 ### G4.4 — Retry proof + global concurrency cap  ·  STATUS: TODO
 One-line task: add `SKYNET_CRON_MAX_PARALLEL` (default 4); in `applyTick`, if firing would
@@ -654,3 +712,19 @@ merge in small increments.
   regressions, lint-determinism/lint-emits GREEN); `npm run test:http` GREEN (cron.api 56 assertions exercise
   the real CRUD routes → durable save end-to-end). No route added; no `shared/*` edits; no new event emitted.
   Next: **G4.3** (cross-process / reentrancy exactly-once lock — `tickInFlight` + `WORKSPACES/cron.lock`).
+- 2026-06-23 — **G4.3 Cross-process / reentrancy exactly-once lock: DONE.** Cron now fires EXACTLY ONCE across
+  (a) in-process re-entrancy — a `tickInFlight` guard wraps the whole `applyTick` (re-entrant tick → no-op,
+  `reentered:true`); (b) two sidecars / boot-reconcile-racing-the-timer — a NEW portable advisory lock
+  `sidecar/cron-lock.js` (O_EXCL `pid:nonce` + read-back-verify, no flock; `maxRunMs` stale break;
+  **ATOMIC stale reclaim = a single `renameSync` of the original stale inode, the loser ENOENTs and no-ops** —
+  the TOCTOU fix; re-entrant depth-counted so applyTick→setJobs→saveCronJobs nests); (c) a CRUD save racing an
+  advance — `withCronWrite(mutate)` does a re-read-from-disk → apply → durable-save UNDER the lock for all four
+  CRUD sites + the lock wraps boot reconcile + every timer tick + the driver's `setJobs`, killing the
+  last-write-wins clobber that reverted an advance (→ double-fire). E-STOP `handleHalt` gets a standalone
+  additive `cronLock.release()` (G2 will add `connectors.close` to the same block). RED→GREEN proven per
+  property (`test/cron.lock.test.js`, NEW, 27 assertions: reentrancy-guard-off RED; non-atomic-reclaim RED with
+  both holders winning A=true/B=true; CRUD-clobber control). Full `test:fast` GREEN (EXIT 0, no cron-suite
+  regressions, lint-determinism GREEN over 75 files incl. the new module); `test:http` GREEN (EXIT 0, cron.api
+  56 assertions through the real CRUD routes → lock → durable save). LIVE `npm start` smoke (cron enabled, free
+  port): boots clean, reconcile + ticks run under the lock, advance persisted, lockfile released between ticks.
+  No `shared/*` edit; no new event. Next: **G4.4** (retry proof + global concurrency cap — `SKYNET_CRON_MAX_PARALLEL`).

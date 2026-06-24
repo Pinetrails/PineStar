@@ -60,6 +60,7 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
+const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
@@ -686,6 +687,36 @@ function saveCronJobs() {   // throws on failure (the CRUD routes let it surface
   // identical to the old temp+rename.
   writeFileDurable({ fs: fs, path: path }, CRON_FILE, JSON.stringify(cronStore.toEnvelope(cronJobs)));
 }
+
+/* ---- G4.3: cross-process / reentrancy EXACTLY-ONCE lock. Two sidecars sharing one WORKSPACES dir (or a
+   second sidecar's boot-resume reconcile racing the first's timer tick, or a CRUD save racing an advance)
+   would otherwise BOTH read the same due store and BOTH fire, and a CRUD write can clobber an advance
+   (last-write-wins on the jobs mirror). One advisory lockfile (WORKSPACES/cron.lock) serializes every cron
+   WRITE — applyTick AND each CRUD save — so at most one writer is ever in the critical section. The lock is
+   the portable O_EXCL+pid:nonce+read-back path (Windows has no flock) with a maxRunMs stale break so a
+   crashed holder never wedges cron forever; reclaim of a stale lock is a SINGLE atomic rename (the loser
+   no-ops). It is re-entrant within this process, so applyTick(lock) -> setJobs -> saveCronJobs(lock) nests
+   safely. now() uses the same Date.now the driver does (the staleness comparison is the only clock read). ---- */
+const CRON_LOCK_FILE = path.join(WORKSPACES, 'cron.lock');
+const cronLock = makeCronLock({ fs: fs, path: path, lockfile: CRON_LOCK_FILE, now: () => Date.now(), maxRunMs: CRON_MAX_RUN_MS });
+
+// withCronWrite — run a cron mutation as a re-read-modify-write UNDER the lock: re-load the freshest store
+// from disk (so a concurrent process's advance is visible), apply `mutate(jobs)` to it, mirror + persist
+// durably. This is the fix for the last-write-wins clobber: a CRUD save no longer operates on a STALE
+// in-memory snapshot taken before an advance — it re-reads first, so the advance survives. If the lock is
+// held by a LIVE other process we briefly spin (the critical section is one file write, sub-ms); if still
+// contended we fall back to a best-effort local save (a human-paced CRUD edit must not be silently dropped).
+function withCronWrite(mutate) {
+  const run = () => { cronJobs = mutate(loadCronJobs()); saveCronJobs(); };   // re-read -> apply -> persist
+  for (let i = 0; i < 50; i++) {                      // ~50ms bounded spin for a live cross-process holder
+    const r = cronLock.withLock(run);
+    if (r.ran) return;
+    const until = Date.now() + 1; while (Date.now() < until) { /* 1ms busy-wait between acquire attempts */ }
+  }
+  // contended beyond the spin budget (a wedged peer the stale break hasn't reclaimed yet): persist locally so
+  // the user's edit is never lost. The advance/clobber race this guards is cron-internal, not CRUD-vs-CRUD.
+  cronJobs = mutate(loadCronJobs()); saveCronJobs();
+}
 // validated + redacted cron telemetry -> the sidecar console AND the live station HUD (the SAME SSE bridge the
 // channel/work-item events ride). No secret is ever on a cron.* payload; redact() runs as a second backstop.
 const cronBus = { emit: (name, payload) => {
@@ -698,7 +729,22 @@ const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redac
 // (timer/now/id/fs/provider credentials).
 const cronDriver = makeCronDriver({
   getJobs: () => cronJobs,
-  setJobs: (jobs) => { cronJobs = jobs; try { saveCronJobs(); } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); } },
+  // setJobs persists the driver's computed store UNDER the lock (G4.3). Inside a lock-wrapped applyTick this
+  // is a re-entrant nested acquire (no double-take, no premature release), so the ADVANCE-before-run write is
+  // always serialized with the fire. A direct call (finishFire settling after the tick released the lock)
+  // takes the lock fresh; if a live peer holds it we briefly spin, then fall back to a local persist so a
+  // settled run's outcome record is never silently lost. The driver hands a fully-computed array (mirror +
+  // persist only) — the re-read-modify-write that prevents the CRUD clobber lives in withCronWrite.
+  setJobs: (jobs) => {
+    try {
+      for (let i = 0; i < 50; i++) {
+        const r = cronLock.withLock(() => { cronJobs = jobs; saveCronJobs(); });
+        if (r.ran) return;
+        const until = Date.now() + 1; while (Date.now() < until) { /* 1ms between attempts */ }
+      }
+      cronJobs = jobs; saveCronJobs();   // contended beyond budget: persist locally (advance already serialized in-tick)
+    } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); }
+  },
   runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
   emit: cronEmit, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
   getKey: (provider) => cronKeyFor(provider),
@@ -1027,8 +1073,11 @@ server.listen(PORT, '127.0.0.1', () => {
   try {
     if (CRON_ENABLED) {
       console.log('  · cron enabled — ' + cronJobs.length + ' routine(s); running boot reconcile');
-      cronDriver.applyTick(Date.now());                                  // resume reconcile BEFORE the timer arms
-      cronTimer = setInterval(() => { try { cronDriver.applyTick(Date.now()); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
+      // G4.3: wrap BOTH the boot reconcile and every timer tick in the cross-process lock so two sidecars (or
+      // this boot reconcile racing the first timer tick) can never both fire — whoever holds the lock ticks,
+      // the other no-ops this pass. The lock re-enters cleanly through applyTick -> setJobs -> saveCronJobs.
+      cronLock.withLock(() => cronDriver.applyTick(Date.now()));         // resume reconcile BEFORE the timer arms
+      cronTimer = setInterval(() => { try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
       if (cronTimer.unref) cronTimer.unref();                            // the http server keeps the process alive; the ticker alone shouldn't
       console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
     }
@@ -1259,12 +1308,12 @@ function handleCronCreate(req, res) {
     let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
     const id = crypto.randomUUID();
     try {
-      cronJobs = cronStore.createJob(cronJobs, {
+      // G4.3: re-read-modify-write UNDER the cron lock so a concurrent advance/CRUD save is not clobbered.
+      withCronWrite(jobs => cronStore.createJob(jobs, {
         id: id, name: body.name, prompt: body.prompt, schedule: schedule,
         agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
         enabled: body.enabled, repeat: body.repeat
-      }, { id: id, now: Date.now() });
-      saveCronJobs();
+      }, { id: id, now: Date.now() }));
     } catch (e) { return json(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
     json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
@@ -1290,10 +1339,14 @@ function handleCronUpdate(req, res) {
     // pause/resume is not an EDITABLE field on updateJob — pull it out and apply via the dedicated reducers.
     let enabled; if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) { enabled = patch.enabled !== false; delete patch.enabled; }
     try {
-      cronJobs = cronStore.updateJob(cronJobs, id, patch, { now: Date.now() });
-      if (enabled === true) cronJobs = cronStore.resumeJob(cronJobs, id, { now: Date.now() });
-      else if (enabled === false) cronJobs = cronStore.pauseJob(cronJobs, id);
-      saveCronJobs();
+      // G4.3: the full edit (updateJob + optional pause/resume) is ONE re-read-modify-write under the lock,
+      // so it cannot clobber a concurrent advance and the pause/resume sees the just-updated job.
+      withCronWrite(jobs => {
+        let next = cronStore.updateJob(jobs, id, patch, { now: Date.now() });
+        if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now() });
+        else if (enabled === false) next = cronStore.pauseJob(next, id);
+        return next;
+      });
     } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
@@ -1305,7 +1358,7 @@ function handleCronRemove(req, res) {
   readBody(req, 4096).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
-    try { cronJobs = cronStore.removeJob(cronJobs, id); saveCronJobs(); }
+    try { withCronWrite(jobs => cronStore.removeJob(jobs, id)); }   // G4.3: re-read-modify-write under the lock
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     json(200, { ok: true });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
@@ -1390,8 +1443,9 @@ async function handleCronRun(req, res) {
     runs.delete(runId);
     const ok = !state.errMsg;
     try {
-      cronJobs = cronStore.markRun(cronJobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() });
-      saveCronJobs();
+      // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
+      // concurrent advance/CRUD save with a stale in-memory snapshot).
+      withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     try { res.end(); } catch (_) {}
@@ -1961,6 +2015,7 @@ function handleHalt(req, res) {
   const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
   const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
   try { shellBg.killAll(); } catch (_) {}   // H2.2: E-STOP also reaps every background process (no orphaned dev servers)
+  try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ halted }));
 }
