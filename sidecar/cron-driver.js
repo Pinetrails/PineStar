@@ -71,6 +71,9 @@
     const personaOf = typeof d.persona === 'function' ? d.persona : function () { return d.persona || ''; };
     const placeWorkitem = typeof d.placeWorkitem === 'function' ? d.placeWorkitem : function () {};
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
+    // injected host tz (G4.1): a tz-LESS cron schedule is planned on this LOCAL wall-clock; a schedule's
+    // own tz always wins. A string dep — the pure cron-math owns the Intl formatting, so this stays clean.
+    const defaultTz = d.defaultTz != null ? d.defaultTz : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
@@ -168,7 +171,8 @@
       }
 
       // 2. the PURE plan: which jobs fire / are fast-forward-skipped, and the advanced next-fires to persist.
-      const plan = cron.planTick(getJobs(), nowMs);
+      //    defaultTz makes a tz-less schedule plan on the host's local wall-clock (G4.1).
+      const plan = cron.planTick(getJobs(), nowMs, { defaultTz: defaultTz });
 
       // 3. ADVANCE-BEFORE-RUN: persist the advanced nextRunAt for every planned job (fired AND fast-forwarded)
       //    BEFORE launching, so a crash mid-run never double-fires on restart. A fire later skipped by its lease

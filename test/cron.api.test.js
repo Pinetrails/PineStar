@@ -120,6 +120,16 @@ function boot(port, workspaces, attemptsLeft) {
     const pvBad = await j('POST', '/api/cron/preview', { schedule: 'nonsense!!' });
     A.eq(pvBad.status, 400, 'preview of garbage -> 400');
 
+    // ---- preview: a tz-aware cron schedule returns its IANA tz + a human LOCAL-time string per fire (G4.1) ----
+    const pvTz = await j('POST', '/api/cron/preview', { schedule: '0 9 * * *', tz: 'America/New_York' });
+    A.eq(pvTz.status, 200, 'preview of a tz cron -> 200');
+    A.eq(pvTz.body.tz, 'America/New_York', 'preview echoes the resolved IANA tz');
+    A.ok(Array.isArray(pvTz.body.localNext) && pvTz.body.localNext.length === 5, 'preview returns a local-time string per fire');
+    A.ok(/\b(9:00\s*AM|09:00)\b/i.test(pvTz.body.localNext[0]) && /(EST|EDT)/.test(pvTz.body.localNext[0]), 'the local-time string reads 9:00 AM in EST/EDT, not UTC');
+    // a typo'd tz fails the parse (400) — never a silent UTC fallback (the lie this guards against).
+    const pvTzBad = await j('POST', '/api/cron/preview', { schedule: '0 9 * * *', tz: 'America/New_Yrok' });
+    A.eq(pvTzBad.status, 400, 'a tz typo -> 400 (no silent UTC fallback)');
+
     // ---- update: rename + pause, then resume ----
     const upd = await j('POST', '/api/cron/update', { id, patch: { name: 'Renamed brief', enabled: false } });
     A.eq(upd.status, 200, 'update -> 200');

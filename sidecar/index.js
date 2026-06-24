@@ -169,6 +169,19 @@ const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered
 // ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
 const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CRON_ENABLED || '').trim());
 const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
+// Host IANA timezone, captured ONCE at boot as a boot-frozen constant (G4.1). A cron schedule with no
+// explicit tz fires on this LOCAL wall-clock (so "0 9 * * *" means 09:00 here and shifts across DST),
+// while the pure cron-math (sidecar/cron.js) stays determinism-clean by receiving this as an INJECTED
+// defaultTz rather than reading the ambient clock itself. Override with SKYNET_CRON_TZ (e.g. for a
+// headless server that should run routines in a specific zone); an invalid value falls back to UTC so a
+// typo never wedges the scheduler. A schedule's OWN tz always wins over this default.
+const CRON_HOST_TZ = (function () {
+  const override = String(process.env.SKYNET_CRON_TZ || '').trim();
+  const candidate = override || (function () {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { return 'UTC'; }
+  })();
+  return cron.isValidTz(candidate) ? (candidate || 'UTC') : 'UTC';
+})();
 const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
 // fast-tool timeout (CAPS.toolTimeoutMs) or it always times out before a real worker returns. Give it the same
@@ -686,6 +699,7 @@ const cronDriver = makeCronDriver({
   providerForJob: (job) => cronProviderFor(job),
   hasCredential: (provider, key) => cronHasCredential(provider, key),
   defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
+  defaultTz: CRON_HOST_TZ,                                 // boot-frozen host tz: a tz-less schedule fires on LOCAL wall-clock (G4.1)
   identityForAgent: (agentId) => cronIdentityFor(agentId),
   // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
   // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
@@ -1197,10 +1211,17 @@ async function handleSpotifyDisconnect(req, res) {
    the pure scheduler can compute their next fire. 127.0.0.1-bound like every other route. */
 
 // parse a user-supplied schedule string into a stored schedule, or throw a 400-able Error. Rejects an
-// unparseable string (including impossible cron dates) before it can be persisted.
-function parseCronScheduleOr400(str, now) {
-  const sched = cron.parseSchedule(String(str == null ? '' : str), now);
-  if (!sched) { const e = new Error("couldn't read that schedule — try \"every 30m\", \"in 2h\", \"0 9 * * *\", or an ISO timestamp like 2026-07-01T09:00"); e.code = 400; throw e; }
+// unparseable string (including impossible cron dates, AND an invalid IANA tz) before it can be persisted —
+// a typo'd tz fails the parse rather than silently firing on UTC (G4.1).
+function parseCronScheduleOr400(str, now, tz) {
+  const opts = (tz != null && tz !== '') ? { tz: String(tz) } : undefined;
+  const sched = cron.parseSchedule(String(str == null ? '' : str), now, opts);
+  if (!sched) {
+    const why = (opts && !cron.isValidTz(opts.tz))
+      ? ('unknown timezone "' + opts.tz + '" — use an IANA zone like America/New_York')
+      : "couldn't read that schedule — try \"every 30m\", \"in 2h\", \"0 9 * * *\", or an ISO timestamp like 2026-07-01T09:00";
+    const e = new Error(why); e.code = 400; throw e;
+  }
   return sched;
 }
 function parseCronAgentIdOr400(value) {
@@ -1285,21 +1306,35 @@ function handleCronRemove(req, res) {
 }
 
 // POST /api/cron/preview — validate a schedule string + return the next up-to-5 fire times (the injected clock,
-// never bare Date.now in the math). Net-new GUI value Hermes lacks entirely. body: { schedule:<string> }
+// never bare Date.now in the math). Net-new GUI value Hermes lacks entirely. A tz-less cron schedule previews
+// (and fires) on the host's LOCAL wall-clock (CRON_HOST_TZ); the response carries the resolved tz + a
+// human-readable LOCAL time per fire (e.g. "9:00 AM EDT") so the GUI shows when a routine actually runs (G4.1).
+// body: { schedule:<string>, tz?:<IANA string> }
 function handleCronPreview(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   readBody(req, 4096).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const now = Date.now();
-    let sched; try { sched = parseCronScheduleOr400(body.schedule, now); } catch (e) { return json(e.code || 400, { ok: false, error: e.message }); }
-    const next = [];
-    let t = cron.nextFireAt(sched, null, now);
+    let sched; try { sched = parseCronScheduleOr400(body.schedule, now, body.tz); } catch (e) { return json(e.code || 400, { ok: false, error: e.message }); }
+    // a cron schedule resolves under its own tz, else the host tz; interval/once are absolute-ms (UTC display).
+    const tz = sched.kind === 'cron' ? cron._internals.tzFor(sched, CRON_HOST_TZ) : 'UTC';
+    const localFmt = (ms) => {
+      try {
+        return new Intl.DateTimeFormat('en-US', {
+          timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true,
+          weekday: 'short', month: 'short', day: 'numeric', timeZoneName: 'short'
+        }).format(ms);
+      } catch (_) { return cron._internals.iso(ms); }
+    };
+    const next = [], localNext = [];
+    let t = cron.nextFireAt(sched, null, now, { defaultTz: CRON_HOST_TZ });
     for (let i = 0; i < 5 && t != null && !isNaN(t); i++) {
       next.push(cron._internals.iso(t));
+      localNext.push(localFmt(t));
       if (sched.kind === 'once') break;                                 // a one-shot has exactly one fire
-      t = cron.nextFireAt(sched, cron._internals.iso(t), t);           // advance one period from the last
+      t = cron.nextFireAt(sched, cron._internals.iso(t), t, { defaultTz: CRON_HOST_TZ });   // advance one period
     }
-    json(200, { ok: true, kind: sched.kind, display: sched.display, next: next });
+    json(200, { ok: true, kind: sched.kind, display: sched.display, tz: tz, next: next, localNext: localNext });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 

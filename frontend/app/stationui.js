@@ -1314,7 +1314,18 @@ const StationUI = (() => {
       pvTimer = setTimeout(async () => {
         try {
           const r = await (await post('/api/cron/preview', { schedule: v })).json();
-          if (r && r.ok) pvEl.innerHTML = '✓ ' + esc(r.display) + ' → next: ' + r.next.slice(0, 3).map(t => esc(fmtRel(t))).join(', ');
+          if (r && r.ok) {
+            // show the LOCAL wall-clock time the routine fires (with its tz), not just a relative delta, so a
+            // cron schedule reads honestly across DST (e.g. "next: 9:00 AM EDT (in 3h)"). Falls back to the
+            // relative-only line when the server didn't supply a localNext (interval/once).
+            const ln = Array.isArray(r.localNext) ? r.localNext : [];
+            const tzNote = (r.kind === 'cron' && r.tz && r.tz !== 'UTC') ? ' <span class="dim">[' + esc(r.tz) + ']</span>' : '';
+            const nxt = r.next.slice(0, 3).map((t, i) => {
+              const local = ln[i] ? esc(ln[i]) : '';
+              return local ? (local + ' <span class="dim">(' + esc(fmtRel(t)) + ')</span>') : esc(fmtRel(t));
+            }).join(', ');
+            pvEl.innerHTML = '✓ ' + esc(r.display) + tzNote + ' → next: ' + nxt;
+          }
           else pvEl.innerHTML = '<span style="color:var(--bad)">' + esc((r && r.error) || 'unrecognized schedule') + '</span>';
         } catch (_) {}
       }, 300);

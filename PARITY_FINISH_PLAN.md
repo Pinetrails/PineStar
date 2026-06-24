@@ -270,7 +270,7 @@ the same `{send, onMessage, close}` duplex shape, spawn injected for testability
 > clock; `Intl.DateTimeFormat` with an explicit timeZone is pure given ms and is NOT banned by
 > `lint-determinism.js` — confirm + a focused test).
 
-### G4.1 — Timezone / DST correctness (highest value)  ·  STATUS: TODO
+### G4.1 — Timezone / DST correctness (highest value)  ·  STATUS: DONE
 One-line task: add an optional IANA tz to cron schedules; match on local wall-clock via
 `Intl.DateTimeFormat` (replacing `getUTCHours/getUTCMinutes`, `cron.js:154-167`) so `0 9 * * *`
 fires 09:00 LOCAL and shifts across DST; default tz = host tz captured once at boot (injected
@@ -297,6 +297,36 @@ constant); add the offset-drift repair branch (parity `jobs.py:1364-1385`).
 - **Notes:** Document the nonexistent/ambiguous policy in the `cron.js` header. Event additive:
   `cron.skipped` reason `tz-recompute`, `cron.fire` optional `tz` — batched request to
   memory-cortex.
+- **DONE (2026-06-23).** Optional IANA `tz` added to cron schedules, additive + back-compat (default
+  UTC = byte-identical old behavior; no signature break). Local wall-clock matching via a PURE
+  `Intl.DateTimeFormat(en-US,{timeZone})` minute-scan (lint-determinism stays GREEN — no
+  `Date.now`/`new Date()`/`Math.random` added; the only `new Date(ms)` is the lint-allowed
+  arg-form fallback in `localDow`). Host tz captured ONCE at boot as the injected `CRON_HOST_TZ`
+  constant (override `SKYNET_CRON_TZ`; invalid → UTC) and threaded as `defaultTz` into the driver's
+  `planTick` + the preview route — the cron-math never reads the ambient clock. A tz TYPO fails
+  parse (parseSchedule → null → 400 with a clear message); NO silent UTC fallback.
+  - **DST policy (documented in the `cron.js` header + tested):** NONEXISTENT spring-forward local
+    time fires EXACTLY ONCE at the post-transition equivalent (02:30 → 03:30 local), via the
+    offset-drift repair branch that detects the forward gap. AMBIGUOUS fall-back local time fires
+    EXACTLY ONCE at the FIRST occurrence, via a repeat-band suppressor that drops the doubled hour.
+  - **Verified:** `test/cron.dst.test.js` (NEW, 29 assertions) — RED before the fix (22 failures on
+    the unmodified tree), GREEN after; spring `0 9 * * *` NY = 23h day (14:00Z→13:00Z), fall = 25h
+    (13:00Z→14:00Z). Full `npm run test:fast` GREEN (incl. cron/cron.tick/cron-store regressions +
+    lint-emits + lint-determinism). `npm run test:http` GREEN (cron.api.test extended with the tz
+    preview + typo-400 assertions). Year-long + southern-hemisphere (Sydney) walk confirmed
+    365 fires, zero wrong-local / zero dupes / zero skips. LIVE smoke on a free port (:8842,
+    SKYNET_CRON_TZ=America/New_York): `/api/cron/preview` returns `tz` + `localNext` (e.g.
+    "Wed, Jun 24, 9:00 AM EDT"); tz-less uses host tz; explicit tz:UTC preserves 09:00Z; a typo'd
+    tz → HTTP 400.
+  - **Files:** `sidecar/cron.js` (tz-aware match + DST repair, header policy), `sidecar/index.js`
+    (`CRON_HOST_TZ` const + tz-aware preview returning `tz`/`localNext`, `parseCronScheduleOr400`
+    tz-arg + reject), `sidecar/cron-driver.js` (inject + thread `defaultTz` into `planTick`),
+    `frontend/app/stationui.js` (preview shows local time + tz tag), `test/cron.dst.test.js` (NEW),
+    `test/cron.api.test.js` (extended), `package.json` (append cron.dst test).
+  - **Coordination/event note (NOT emitted this iteration — for the batched memory-cortex request):**
+    `cron.fire` optional `tz` field and a `cron.skipped` reason `tz-recompute` would let the HUD show
+    a fire's resolved zone / a DST recompute; built the tz logic WITHOUT new events as instructed.
+    No `shared/events.js`/`shared/schema.js` edits (`git log feat/harness-backend.. -- shared/*` empty).
 
 ### G4.2 — Durable + atomic persistence (no double-fire on crash)  ·  STATUS: TODO
 One-line task: make `saveCronJobs` (`index.js:665-668`) fsync the temp file BEFORE rename
@@ -556,3 +586,13 @@ merge in small increments.
 
 ## Progress Log
 - _(the loop appends one dated line per iteration here)_
+- 2026-06-23 — **G4.1 Timezone/DST correctness: DONE.** Added optional IANA `tz` to cron schedules;
+  local wall-clock matching via a pure `Intl.DateTimeFormat` minute-scan with an offset-drift repair
+  branch (spring-forward NONEXISTENT → fire once at the post-transition equivalent; fall-back
+  AMBIGUOUS → fire once at the first occurrence). Host tz captured once at boot (`CRON_HOST_TZ`,
+  injected `defaultTz`); tz typo → 400 (no silent UTC fallback); default UTC keeps old behavior
+  byte-identical. RED→GREEN proven (`test/cron.dst.test.js`, 22 fails pre-fix → 29 pass post-fix);
+  full `test:fast` + `test:http` GREEN; lint-determinism/lint-emits GREEN; live `/api/cron/preview`
+  smoke returns `tz`+`localNext` ("9:00 AM EDT"). No shared-contract edits; no new events emitted
+  (noted `cron.fire.tz` / `cron.skipped:tz-recompute` for the later batch). Next: **G4.2** (durable +
+  atomic cron persistence — fsync-before-rename in `saveCronJobs`).

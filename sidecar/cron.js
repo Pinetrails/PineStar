@@ -8,20 +8,47 @@
    docs/CRON_INTEGRATION_PLAN.md §3.1.
 
    Scope (andro, 2026-06-18): `interval`, `once`, and a deterministic 5-field cron subset:
-   numeric fields with *, lists, ranges, and steps. Cron matching is UTC-based and zero-dep; it is
-   intentionally not a full croniter port (no named months/days, seconds/year fields, or IANA tz).
+   numeric fields with *, lists, ranges, and steps. It is intentionally not a full croniter port
+   (no named months/days, seconds/year fields).
 
-   Surface:
-     parseSchedule(str, now)               -> schedule | null     // "every 30m" / "in 2h" / ISO / cron
-     nextFireAt(schedule, lastRunIso, now) -> int ms | null       // the single next fire after the anchor
-     planTick(jobs, now)                   -> { fire[], skipped[], next[] }   // the whole tick as DATA
-     dueJobs(jobs, now)                    -> { fire[], advanced[] }          // the no-backlog pair (fire + advance)
-     computeGraceMs(schedule)              -> int ms               // catch-up tolerance window
+   --- TIMEZONE / DST (G4.1, 2026-06-23) ---------------------------------------------------------
+   A `cron` schedule may carry an optional IANA `tz` (e.g. "America/New_York"). When present, cron
+   fields are matched on LOCAL WALL-CLOCK time in that zone, so `0 9 * * *` fires at 09:00 LOCAL and
+   shifts correctly across DST (09:00 EST = 14:00Z in winter, 09:00 EDT = 13:00Z in summer). The
+   matcher stays PURE: `Intl.DateTimeFormat(en-US, { timeZone, ... })` is a pure function of the
+   candidate ms + the tz string, so there is NO Date.now/new Date()/Math.random here and this file
+   still passes lint-determinism.js. The host's real tz is NOT read from the ambient clock inside
+   this module — it is INJECTED as `opts.defaultTz` by the host (sidecar/index.js), so a tz-less
+   schedule resolves under a caller-supplied default while the module stays deterministic.
+
+   Default tz = UTC: a tz-less schedule (or tz:'UTC') matches on UTC exactly as before this change —
+   no signature break, no behavior change for existing callers/tests. An INVALID IANA tz string is
+   REJECTED at parse time (parseSchedule -> null) so a typo can NEVER silently fall back to UTC and
+   re-introduce a lie about when a routine fires.
+
+   The two hard DST cases have an EXPLICIT, TESTED policy (test/cron.dst.test.js):
+     · NONEXISTENT local time (spring-forward skipped hour — e.g. 02:30 on a US spring-forward day,
+       when the local clock jumps 01:59 -> 03:00): fires EXACTLY ONCE at the POST-TRANSITION instant
+       (the requested wall time shifted forward across the gap; 02:30 -> 03:30 local). Never silently
+       skipped, never double-fired. Implemented by the offset-drift repair branch in nextCronFireAt.
+     · AMBIGUOUS local time (fall-back doubled hour — e.g. 01:30 on a US fall-back day, which occurs
+       twice): fires EXACTLY ONCE at the FIRST occurrence (the earlier UTC instant). The minute-by-
+       minute forward scan naturally returns the first matching instant; advancing strictly after it
+       skips the second occurrence, so it never double-fires.
+   -----------------------------------------------------------------------------------------------
+
+   Surface (all `now`/`tz` are PARAMETERS — never ambient):
+     parseSchedule(str, now, opts?)              -> schedule | null   // opts.tz = optional IANA tz for cron
+     nextFireAt(schedule, lastRunIso, now, opts?)-> int ms | null     // opts.defaultTz applied to tz-less cron
+     planTick(jobs, now, opts?)                  -> { fire[], skipped[], next[] }   // opts.defaultTz
+     dueJobs(jobs, now, opts?)                   -> { fire[], advanced[] }          // opts.defaultTz
+     computeGraceMs(schedule, anchor, opts?)     -> int ms
 
    A `schedule` is one of:
      { kind:'interval', minutes:int, display:str }
      { kind:'once', runAt:int(ms epoch), display:str }
-     { kind:'cron', expr:str, fields:{...}, dayOfMonthWildcard:bool, dayOfWeekWildcard:bool, display:str } */
+     { kind:'cron', expr:str, fields:{...}, dayOfMonthWildcard:bool, dayOfWeekWildcard:bool,
+       tz?:str(IANA), display:str } */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -33,6 +60,68 @@
   const MIN = 60000, HOUR = 3600000, DAY = 86400000;
   const CRON_SEARCH_LIMIT_MS = 5 * 366 * DAY;       // enough to cover leap-day schedules
   const UNIT_MS = { s: 1000, m: MIN, h: HOUR, d: DAY };
+
+  // ---- timezone support (pure: Intl.DateTimeFormat is deterministic given the ms epoch + tz) ----
+
+  // true iff `tz` is a usable IANA zone (UTC, or any zone Intl accepts). A typo throws -> false, so
+  // an invalid tz is rejected at parse time rather than silently treated as UTC.
+  function isValidTz(tz) {
+    if (tz == null || tz === '') return true;          // absent tz means "UTC default" — valid
+    if (typeof tz !== 'string') return false;
+    if (tz === 'UTC') return true;
+    try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; }
+    catch (_) { return false; }
+  }
+
+  // a tiny per-(tz) formatter cache so a long minute-by-minute scan doesn't rebuild the formatter each step.
+  const _fmtCache = Object.create(null);
+  function localFmt(tz) {
+    const key = tz || 'UTC';
+    let f = _fmtCache[key];
+    if (!f) {
+      f = new Intl.DateTimeFormat('en-US', {
+        timeZone: key, hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      _fmtCache[key] = f;
+    }
+    return f;
+  }
+
+  // local wall-clock fields of an instant in a tz: { year, month(1-12), day, hour(0-23), minute, minOfDay }.
+  // Pure in (ms, tz). `hour:'2-digit', hour12:false` yields "24" at local midnight in some engines — fold to 0.
+  function localFieldsOf(ms, tz) {
+    const parts = localFmt(tz).formatToParts(ms);
+    const g = {};
+    for (const p of parts) if (p.type !== 'literal') g[p.type] = p.value;
+    let hour = parseInt(g.hour, 10); if (hour === 24) hour = 0;
+    const minute = parseInt(g.minute, 10);
+    return {
+      year: parseInt(g.year, 10),
+      month: parseInt(g.month, 10),
+      day: parseInt(g.day, 10),
+      hour: hour,
+      minute: minute,
+      minOfDay: hour * 60 + minute
+    };
+  }
+
+  // day-of-week (0=Sun..6=Sat) of an instant in a tz. Pure in (ms, tz).
+  const _dowCache = Object.create(null);
+  function localDow(ms, tz) {
+    const key = tz || 'UTC';
+    let f = _dowCache[key];
+    if (!f) { f = new Intl.DateTimeFormat('en-US', { timeZone: key, weekday: 'short' }); _dowCache[key] = f; }
+    const wd = f.format(ms);
+    const idx = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[wd];
+    return idx == null ? new Date(ms).getUTCDay() : idx;
+  }
+
+  // resolve the effective tz for a cron schedule: its own tz, else the injected default, else UTC.
+  function tzFor(schedule, defaultTz) {
+    const t = schedule && schedule.tz != null ? schedule.tz : defaultTz;
+    return t == null || t === '' ? 'UTC' : t;
+  }
 
   // normalize a unit token to one of s/m/h/d, or null if unrecognised.
   function normalizeUnit(u) {
@@ -151,27 +240,86 @@
 
   function has(values, value) { return values.indexOf(value) >= 0; }
 
-  function cronMatchesSpec(spec, ms) {
-    const d = new Date(ms);
+  // does the cron spec match the LOCAL wall-clock of `ms` in `tz`? (tz='UTC' reproduces the old UTC match.)
+  function cronMatchesSpec(spec, ms, tz) {
     const f = spec.fields;
-    if (!has(f.minute, d.getUTCMinutes())) return false;
-    if (!has(f.hour, d.getUTCHours())) return false;
-    if (!has(f.month, d.getUTCMonth() + 1)) return false;
+    const lf = localFieldsOf(ms, tz);
+    if (!has(f.minute, lf.minute)) return false;
+    if (!has(f.hour, lf.hour)) return false;
+    if (!has(f.month, lf.month)) return false;
 
-    const dom = has(f.dayOfMonth, d.getUTCDate());
-    const dow = has(f.dayOfWeek, d.getUTCDay());
+    const dom = has(f.dayOfMonth, lf.day);
+    const dow = has(f.dayOfWeek, localDow(ms, tz));
     // Vixie/croniter-style day semantics: if both DOM and DOW are restricted, either may match.
     // If one is wildcard/full-range, the restricted field controls through ordinary AND matching.
     if (!spec.dayOfMonthWildcard && !spec.dayOfWeekWildcard) return dom || dow;
     return dom && dow;
   }
 
-  function nextCronFireAt(schedule, anchorMs) {
+  // does a cron spec match a SYNTHETIC local time (the skipped wall-time inside a spring-forward gap)?
+  // Reuses the local calendar date of the post-transition instant `ms` (the gap never crosses a date in
+  // the IANA zones we support) but substitutes the skipped hour/minute. dow uses the post-transition dow,
+  // which is identical across the gap (the gap is sub-day). Pure: no clock read.
+  function cronMatchesLocalHM(spec, ms, tz, hour, minute) {
+    const f = spec.fields;
+    const lf = localFieldsOf(ms, tz);
+    if (!has(f.minute, minute)) return false;
+    if (!has(f.hour, hour)) return false;
+    if (!has(f.month, lf.month)) return false;
+    const dom = has(f.dayOfMonth, lf.day);
+    const dow = has(f.dayOfWeek, localDow(ms, tz));
+    if (!spec.dayOfMonthWildcard && !spec.dayOfWeekWildcard) return dom || dow;
+    return dom && dow;
+  }
+
+  /* nextCronFireAt(schedule, anchorMs, tz) — the first instant strictly after the anchor whose LOCAL
+     wall-clock (in `tz`) matches the cron fields, scanning minute-by-minute. Two DST subtleties handled
+     by an OFFSET-DRIFT detector that watches the local minute-of-day move between adjacent UTC minutes:
+       · NONEXISTENT (spring-forward gap): the local clock jumps FORWARD (e.g. 01:59 -> 03:00), so the
+         requested wall minute (02:30) never appears in the scan and would be skipped forever. POLICY:
+         fire EXACTLY ONCE at the POST-TRANSITION EQUIVALENT — the requested time shifted forward across
+         the gap (02:30 -> 03:30). We compute that equivalent and fire when the (real) local clock reaches
+         it, so a skipped local time is neither dropped nor doubled.
+       · AMBIGUOUS (fall-back repeat): the local clock jumps BACKWARD (e.g. 01:59 EDT -> 01:00 EST), so a
+         matching wall minute (01:30) occurs TWICE. POLICY: fire EXACTLY ONCE at the FIRST occurrence. The
+         forward scan reaches the first occurrence first; the SECOND occurrence is in a repeated band, which
+         we SUPPRESS until the local clock climbs back past the fall-back point (leaving the ambiguous hour).
+     tz defaults to UTC, reproducing the original UTC matcher byte-for-byte (no transitions -> no drift). */
+  function nextCronFireAt(schedule, anchorMs, tz) {
     const spec = cronSpec(schedule);
     if (!spec) return null;
+    const zone = tz == null || tz === '' ? 'UTC' : tz;
     let t = Math.floor((anchorMs || 0) / MIN) * MIN + MIN;  // strictly after the anchor, minute-granular
     const stop = t + CRON_SEARCH_LIMIT_MS;
-    for (; t <= stop; t += MIN) if (cronMatchesSpec(spec, t)) return t;
+    let prev = localFieldsOf(t - MIN, zone);
+    // when a fall-back repeats an hour, suppress matches whose local minute-of-day is <= this watermark
+    // on the day the repeat began, until the clock climbs past it (we've exited the doubled window).
+    let repeatBand = -1, repeatDay = -1;
+    for (; t <= stop; t += MIN) {
+      const lf = localFieldsOf(t, zone);
+      if (zone !== 'UTC') {
+        if (lf.minOfDay > prev.minOfDay + 1) {
+          // SPRING-FORWARD gap (prev.minOfDay+1 .. lf.minOfDay-1 are skipped). Fire any matching skipped
+          // wall time at its post-transition equivalent (skipped minute + gap size = this side of the gap).
+          const gap = lf.minOfDay - prev.minOfDay - 1;
+          for (let m = prev.minOfDay + 1; m < lf.minOfDay; m++) {
+            if (cronMatchesLocalHM(spec, t, zone, Math.floor(m / 60) % 24, m % 60)) {
+              return t + (m + gap - lf.minOfDay) * MIN;       // the instant whose local clock reads m+gap
+            }
+          }
+        } else if (lf.minOfDay < prev.minOfDay && lf.day === prev.day) {
+          // FALL-BACK repeat began: the hour [lf.minOfDay .. prev.minOfDay] is being replayed this day.
+          repeatBand = prev.minOfDay; repeatDay = lf.year * 10000 + lf.month * 100 + lf.day;
+        }
+        if (repeatBand >= 0) {
+          const curDay = lf.year * 10000 + lf.month * 100 + lf.day;
+          if (curDay !== repeatDay || lf.minOfDay > repeatBand) { repeatBand = -1; repeatDay = -1; }
+        }
+      }
+      const inRepeat = repeatBand >= 0 && lf.minOfDay <= repeatBand;
+      if (!inRepeat && cronMatchesSpec(spec, t, zone)) return t;
+      prev = lf;
+    }
     return null;
   }
 
@@ -183,20 +331,26 @@
     return !!(schedule && (schedule.kind === 'interval' || schedule.kind === 'cron'));
   }
 
-  function nextRecurringAt(schedule, now) {
+  function nextRecurringAt(schedule, now, defaultTz) {
     if (!schedule) return null;
     if (schedule.kind === 'interval') return now + periodMs(schedule);
-    if (schedule.kind === 'cron') return nextCronFireAt(schedule, now);
+    if (schedule.kind === 'cron') return nextCronFireAt(schedule, now, tzFor(schedule, defaultTz));
     return null;
   }
 
-  /* parseSchedule(str, now) — turn a human string into a tagged schedule, or null if unparseable.
+  /* parseSchedule(str, now, opts?) — turn a human string into a tagged schedule, or null if unparseable.
      `now` is used ONLY to resolve a relative duration ("in 2h") into an absolute runAt; it is a
-     parameter so the result is reproducible. Match order: interval -> once-duration -> ISO -> cron. */
-  function parseSchedule(str, now) {
+     parameter so the result is reproducible. Match order: interval -> once-duration -> ISO -> cron.
+     opts.tz (optional IANA string) is attached to a CRON schedule so it matches on local wall-clock;
+     an INVALID tz returns null (never a silent UTC fallback). tz is ignored for interval/once (which
+     are absolute-ms by construction and have no wall-clock ambiguity). */
+  function parseSchedule(str, now, opts) {
     const raw = String(str == null ? '' : str).trim();
     if (!raw) return null;
     now = now || 0;
+    opts = opts || {};
+    const tz = opts.tz != null && opts.tz !== '' ? String(opts.tz) : null;
+    if (tz != null && !isValidTz(tz)) return null;          // a typo'd tz is rejected, never silently UTC
     const lower = raw.toLowerCase();
 
     // 1. INTERVAL — "every <N> <unit>" (N optional => 1, e.g. "every hour"). Minute-granular: m/h/d only.
@@ -228,17 +382,22 @@
 
     // 4. CRON — deterministic 5-field subset: numeric fields with *, lists, ranges, and steps.
     const cron = parseCronExpression(raw);
-    if (cron && nextCronFireAt(cron, now) != null) return cron;
+    if (cron) {
+      if (tz != null) cron.tz = tz;                         // attach the (already-validated) IANA tz
+      if (nextCronFireAt(cron, now, tzFor(cron, null)) != null) return cron;
+    }
 
     return null;
   }
 
-  /* nextFireAt(schedule, lastRunIso, now) — the SINGLE next fire time strictly after the anchor
+  /* nextFireAt(schedule, lastRunIso, now, opts?) — the SINGLE next fire time strictly after the anchor
      (the last run if present, else now). Returns null when there is no future fire (a once-job that
-     has already run, or an invalid cron schedule). Pure: no clock read. */
-  function nextFireAt(schedule, lastRunIso, now) {
+     has already run, or an invalid cron schedule). opts.defaultTz is applied to a tz-LESS cron schedule
+     (the host injects its real tz here) — a schedule's own tz always wins. Pure: no clock read. */
+  function nextFireAt(schedule, lastRunIso, now, opts) {
     if (!schedule) return null;
     now = now || 0;
+    const defaultTz = opts && opts.defaultTz != null ? opts.defaultTz : null;
     if (schedule.kind === 'once') {
       if (lastRunIso) return null;            // one-shot already ran -> permanently ineligible
       return schedule.runAt;
@@ -253,41 +412,46 @@
     if (schedule.kind === 'cron') {
       const parsed = lastRunIso ? Date.parse(lastRunIso) : NaN;
       const anchor = isNaN(parsed) ? now : parsed;
-      return nextCronFireAt(schedule, anchor);
+      return nextCronFireAt(schedule, anchor, tzFor(schedule, defaultTz));
     }
     return null;
   }
 
-  /* computeGraceMs(schedule) — how late a recurring fire may be and still run once (vs being declared a
-     stale missed run and fast-forwarded). Mirrors Hermes's half-period clamped 2min..2h. */
-  function computeGraceMs(schedule, anchor) {
+  /* computeGraceMs(schedule, anchor, defaultTz?) — how late a recurring fire may be and still run once
+     (vs being declared a stale missed run and fast-forwarded). Mirrors Hermes's half-period clamped
+     2min..2h. The cron branch measures the inter-fire gap in the schedule's tz so a DST-stretched day
+     still yields a sane grace. */
+  function computeGraceMs(schedule, anchor, defaultTz) {
     if (schedule && schedule.kind === 'interval') {
       return Math.max(2 * MIN, Math.min(2 * HOUR, periodMs(schedule) / 2));
     }
     if (schedule && schedule.kind === 'cron') {
       const base = anchor || 0;
-      const first = nextCronFireAt(schedule, base);
-      const second = first != null ? nextCronFireAt(schedule, first) : null;
+      const zone = tzFor(schedule, defaultTz);
+      const first = nextCronFireAt(schedule, base, zone);
+      const second = first != null ? nextCronFireAt(schedule, first, zone) : null;
       if (first != null && second != null) return Math.max(2 * MIN, Math.min(2 * HOUR, (second - first) / 2));
     }
     return 5 * MIN;                            // unused for once-jobs (they fire whenever first noticed)
   }
 
   // current due time for a job: the persisted nextRunAt if present, else freshly computed. ms | null.
-  function dueAtOf(job, now) {
+  function dueAtOf(job, now, defaultTz) {
     if (job && job.nextRunAt) { const t = Date.parse(job.nextRunAt); return isNaN(t) ? null : t; }
-    return nextFireAt(job && job.schedule, job && job.lastRunAt, now);
+    return nextFireAt(job && job.schedule, job && job.lastRunAt, now, { defaultTz: defaultTz });
   }
 
-  /* planTick(jobs, now) — the entire scheduler tick expressed as DATA (no side effects). For each
+  /* planTick(jobs, now, opts?) — the entire scheduler tick expressed as DATA (no side effects). For each
      ENABLED job it decides: fire now / skip-as-caught-up / leave alone, and what next-fire to persist.
        fire    : [{ jobId, scheduledFor }]               the jobs to launch this tick
        skipped : [{ jobId, reason, scheduledFor }]       stale recurring jobs fast-forwarded (no backlog)
        next    : [{ jobId, nextAt, prevAt }]             the advanced next-fire to persist (advance-before-run)
      The host (index.js) applies this: persist `next`, then launch `fire`, emitting cron.* events.
+     opts.defaultTz is the host's injected tz, applied to any tz-LESS cron schedule.
      Disabled/invalid schedules are ignored entirely (no skip noise). */
-  function planTick(jobs, now) {
+  function planTick(jobs, now, opts) {
     now = now || 0;
+    const defaultTz = opts && opts.defaultTz != null ? opts.defaultTz : null;
     const fire = [], skipped = [], next = [];
     for (const job of (jobs || [])) {
       if (!job || job.enabled === false) continue;
@@ -295,7 +459,7 @@
       if (!isFireable(sched)) continue;
       if (sched.kind === 'once' && job.lastRunAt) continue;     // one-shot already ran
 
-      const dueAt = dueAtOf(job, now);
+      const dueAt = dueAtOf(job, now, defaultTz);
       if (dueAt == null || isNaN(dueAt) || dueAt > now) continue;   // not due yet (or no computable fire)
 
       if (sched.kind === 'once') {
@@ -307,8 +471,8 @@
 
       // recurring (interval or cron)
       const lateness = now - dueAt;
-      if (lateness <= computeGraceMs(sched, dueAt)) {
-        const nextAt = nextRecurringAt(sched, now);
+      if (lateness <= computeGraceMs(sched, dueAt, defaultTz)) {
+        const nextAt = nextRecurringAt(sched, now, defaultTz);
         if (nextAt == null) continue;
         fire.push({ jobId: job.id, scheduledFor: dueAt });
         next.push({ jobId: job.id, nextAt: nextAt, prevAt: dueAt });
@@ -322,7 +486,7 @@
           const periods = Math.floor(lateness / p) + 1;        // smallest k with dueAt + k*p > now
           nextAt = dueAt + periods * p;
         } else if (isRecurring(sched)) {
-          nextAt = nextRecurringAt(sched, now);
+          nextAt = nextRecurringAt(sched, now, defaultTz);
         }
         if (nextAt == null) continue;
         next.push({ jobId: job.id, nextAt: nextAt, prevAt: dueAt });
@@ -332,10 +496,10 @@
     return { fire: fire, skipped: skipped, next: next };
   }
 
-  /* dueJobs(jobs, now) — the no-backlog PAIR: the fire set AND the advanced next-fire that must be
+  /* dueJobs(jobs, now, opts?) — the no-backlog PAIR: the fire set AND the advanced next-fire that must be
      persisted together (advancing nextFireAt without the planTick fast-forward loses the guarantee). */
-  function dueJobs(jobs, now) {
-    const r = planTick(jobs, now);
+  function dueJobs(jobs, now, opts) {
+    const r = planTick(jobs, now, opts);
     return { fire: r.fire, advanced: r.next };
   }
 
@@ -346,13 +510,17 @@
     dueJobs: dueJobs,
     computeGraceMs: computeGraceMs,
     periodMs: periodMs,
+    isValidTz: isValidTz,
     _internals: {
       normalizeUnit: normalizeUnit,
       humanDuration: humanDuration,
       iso: iso,
       dueAtOf: dueAtOf,
       parseCronExpression: parseCronExpression,
-      nextCronFireAt: nextCronFireAt
+      nextCronFireAt: nextCronFireAt,
+      isValidTz: isValidTz,
+      localFieldsOf: localFieldsOf,
+      tzFor: tzFor
     }
   };
 });
