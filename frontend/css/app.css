@@ -334,6 +334,52 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 }
 .choice:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 
+/* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
+   Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
+   line, selectable options, and a custom-text box — typed input is captured deterministically. */
+#chat-panel.fnv-host { position: relative; }
+.fnv-dialogue {
+  position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column;
+  padding: 18px 18px 16px; gap: 12px; box-sizing: border-box;
+  background:
+    radial-gradient(ellipse 130% 90% at 50% 0%, var(--ph-glow2), transparent 55%),
+    linear-gradient(180deg, rgba(0,0,0,.94), rgba(0,0,0,.97));
+  border-left: 2px solid var(--ph-dim);
+  opacity: 0; transition: opacity .35s ease;
+}
+.fnv-dialogue.show { opacity: 1; }
+.fnv-dialogue.no-anim { transition: none; }
+.fnv-floating { position: fixed; right: 18px; bottom: 18px; width: min(440px, 92vw); height: auto; max-height: 70vh; border: 2px solid var(--ph-dim); border-radius: var(--r-lg); }
+.fnv-speaker {
+  color: var(--ph-bright); font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
+  text-shadow: 0 0 8px var(--ph-glow2); padding-bottom: 8px; border-bottom: 1px solid var(--ph-dim); flex: 0 0 auto;
+}
+.fnv-line {
+  flex: 1 1 auto; overflow-y: auto; color: var(--ph-bright); font-size: 18px; line-height: 1.5;
+  text-shadow: 0 0 6px var(--ph-glow2); white-space: pre-wrap; min-height: 2.4em;
+  display: flex; align-items: center;
+}
+.fnv-opts { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; }
+.fnv-opt {
+  display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
+  font: inherit; font-size: 16px; letter-spacing: 0.4px; cursor: pointer;
+  color: var(--ph); background: transparent; border: 2px solid var(--ph-dim);
+  padding: 8px 12px; border-radius: 3px; text-shadow: 0 0 5px var(--ph-glow2);
+  transition: background .1s, color .1s, border-color .1s;
+}
+.fnv-opt:hover, .fnv-opt:focus-visible { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); outline: none; }
+.fnv-opt .fnv-num { color: var(--ph-dim); font-size: 14px; flex: 0 0 auto; min-width: 16px; }
+.fnv-opt:hover .fnv-num { color: var(--ph); }
+.fnv-opt.custom { border-style: dashed; }
+.fnv-opt.skip { color: var(--ph-dim); }
+.fnv-opt.skip:hover { color: var(--ph); }
+.fnv-custom { display: flex; align-items: center; gap: 6px; }
+.fnv-custom-in { flex: 1 1 auto; width: auto; min-width: 0; font-size: 16px; }
+.fnv-custom-send { font-family: inherit; font-size: 18px; color: var(--ink); background: var(--ph); border: 2px solid var(--ph); padding: 6px 12px; cursor: pointer; }
+.fnv-custom-send:hover { background: var(--ph-bright); border-color: var(--ph-bright); }
+.fnv-custom-back { font-family: inherit; font-size: 14px; color: var(--ph-dim); background: transparent; border: 2px solid var(--ph-dim); padding: 6px 10px; cursor: pointer; }
+.fnv-custom-back:hover { color: var(--ph); border-color: var(--ph); }
+
 #chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
 #chat-inputrow .prompt { color: var(--ph); }
 #chat-input { flex: 1; width: auto; min-width: 0; border: none; background: transparent; padding: 4px 2px; }

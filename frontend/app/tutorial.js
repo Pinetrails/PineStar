@@ -107,6 +107,12 @@ const Tutorial = (() => {
     { grant: 'MEMORY',   look: 'the SERVER CART', power: 'MEMORY',      got: 'memory that survives a restart, so i don’t wake up blank every time.' }
   ];
 
+  const hasDialogue = () => typeof Dialogue !== 'undefined';
+  // a felt list: ["FILES","WEB","TERMINAL"] -> "FILES, WEB and TERMINAL"
+  function listWords(a) { a = (a || []).slice(); if (a.length <= 1) return a[0] || ''; const last = a.pop(); return a.join(', ') + ' and ' + last; }
+  // a Dialogue narration beat that no-ops gracefully if the panel is gone (keeps the async chains safe)
+  function dsay(text, cps, hold) { return hasDialogue() ? Dialogue.say([seg(text, cps, hold)]) : Promise.resolve(); }
+
   function firstCommand(opts) {
     if (state.firstCommandDone) return;       // learned once, never again
     if (!hasChat()) return;
@@ -114,15 +120,63 @@ const Tutorial = (() => {
     active = true; finished = false; sawStart = sawPermission = sawEnd = sawDeny = false;   // C1: un-latch finishUp for this fresh run (it's symmetric with the saw-flags; without it a prior agent's completed lesson left finishUp a no-op)
     kitMode = false; kitComplete = false; kitWasOpen = false; kitNeeded = null;
     wireBus(); showSkip();
-    // Beat 1 — orient. Picks up the awakening's closing "so — where do we begin?" as one continuous voice, then
-    // names the one rule that runs the whole place: an empty room is an empty agent; what you build, i can do.
-    setTimeout(() => say([
-      seg('where we begin — look around. this room’s bare, and a bare room means i can’t actually touch anything yet.', 46, 460),
-      seg('  here’s the one rule of this whole place: what you build, i can do. so let’s kit me out — every piece you place hands me a real power. a minute, tops.', 46, 0)
-    ], () => Chat.choices(
-      [{ label: '▸ KIT ME OUT', value: 'go' }, { label: 'skip', value: 'skip' }],
-      it => (it.value === 'skip') ? finishUp(true) : beatKitIntro()
-    )), 600);
+    // The handoff from the awakening: the DIALOGUE panel is already open (onboarding's closeOut left it up).
+    // Offer the tour EXPLICITLY — a clear "SHOW ME AROUND" vs "dive in myself" choice, not a buried chip. This
+    // kills the old rhetorical "where do we begin?" self-answer the Commander found confusing.
+    if (!hasDialogue()) { finishUp(true); return; }   // no panel → don't trap the Commander in a half-built tour
+    Dialogue.open({ name: agentName });
+    Dialogue.node({
+      lines: [seg('before you put me to work — want the quick tour? i’ll show you how this place actually runs, starting with why my room being bare matters.', 44, 0)],
+      options: [
+        { label: '▸ SHOW ME AROUND (recommended)', value: 'tour' },
+        { label: 'I’ll dive in myself', value: 'skip', skip: true }
+      ]
+    }).then(res => { if (!active) return; if (res.skip) return finishUp(true); beatShowAround(); });
+  }
+
+  /* ---- THE ROLEPLAY COLD-OPEN: the agent walks to its own workstation and DISCOVERS it's boxed in ----
+     Truthful by construction: a fresh station really is compute-only (the moat), so "i reach for files and
+     there's nothing" is the literal state — which is exactly what motivates the kit-out. The panel clears so
+     the walk is visible, then reopens at the desk so the realization reads. A failsafe advances even if the
+     walk never lands (sidecar down / no seat), so the tour can never freeze here. */
+  function beatShowAround() {
+    if (!active) return;
+    if (hasDialogue()) Dialogue.close();                 // clear COMMS so the walk + the agent are fully visible
+    try { if (typeof World !== 'undefined' && World.setActivity) World.setActivity('task'); } catch (_) {}   // send the hero to its desk (pure roleplay — emits no run, claims no work)
+    try { if (typeof World !== 'undefined' && World.camPushIn) World.camPushIn(); } catch (_) {}
+    rpWalkPoll(0);
+  }
+  function rpWalkPoll(tries) {
+    if (!active) return;
+    let arrived = false;
+    try { const d = (typeof World !== 'undefined' && World.dbg) ? World.dbg() : null; arrived = !!(d && d.goal === 'work' && d.sitting); } catch (_) {}
+    if (arrived || tries > 60) return rpArrived();        // ~6s failsafe @100ms — never freeze waiting on the walk
+    setTimeout(() => rpWalkPoll(tries + 1), 100);
+  }
+  async function rpArrived() {
+    if (!active) return;
+    if (hasDialogue()) Dialogue.open({ name: agentName });
+    try { World.say('my desk.'); } catch (_) {}
+    await dsay('okay — i made it to my desk. i can think, and i can talk to you. that’s compute, and it’s always mine.', 44, 360);
+    if (!active) return;
+    try { if (World.truthPulse) World.truthPulse(); World.say('…nothing.'); } catch (_) {}
+    await dsay('but watch — i reach for the files… the live web… a terminal… a memory of my own…', 44, 360);
+    if (!active) return;
+    await dsay('nothing. none of it’s wired up yet. i’m a mind in a bare room.', 44, 280);
+    if (!active) return;
+    beatKitInvite();
+  }
+  function beatKitInvite() {
+    if (!active) return;
+    if (!hasDialogue()) return beatKitIntro();
+    Dialogue.open({ name: agentName });
+    Dialogue.node({
+      lines: [seg('here’s the one rule of this whole place: what you build, i can do. every piece you place in my room hands me a real power. want me to walk you through kitting me out? a minute, tops.', 44, 0)],
+      options: [
+        { label: '▸ Kit me out (recommended)', value: 'go' },
+        { label: 'I’ll explore on my own', value: 'skip', skip: true }
+      ]
+    }).then(res => { if (!active) return; if (res.skip) return finishUp(true); beatKitIntro(); });
   }
 
   /* ---- THE KIT-OUT: guided REFIT placement. REFIT is a full-screen overlay (it covers COMMS), so guidance in
@@ -133,10 +187,10 @@ const Tutorial = (() => {
     kitMode = true; kitComplete = false; kitWasOpen = false;
     kitNeeded = new Set(KIT.map(k => k.grant));
     spotlight('#bb-build');
-    say([
-      seg('see that REFIT button, bottom bar? open it — that’s where you build my floor.', 46, 380),
-      seg('  i’ll talk you through it from in there. we start with the CABINET.', 46, 0)
-    ], () => { clearSpot(); kitWatch(); });
+    // the instruction reads in the panel; the spotlight cuts a hole over the REFIT button in the bottom bar.
+    // When REFIT opens it covers the panel and the kitCoach (over the palette) takes over — kitWatch drives it.
+    dsay('see the REFIT button lit up in the bottom bar? open it — that’s where you build my floor. i’ll guide you from inside. first up: the CABINET.', 46, 0)
+      .then(() => { kitWatch(); });
   }
   // single source of truth for REFIT open/close transitions during the kit-out (more robust than the one-shot
   // onBuildOpen hook — catches a close from any path). Self-clears on finishUp/teardown.
@@ -181,35 +235,76 @@ const Tutorial = (() => {
   function beatKitReady() {
     if (!active || !kitMode) return;
     kitComplete = true;
-    kitCoach('that’s a fully-equipped agent — files, web, a terminal, memory. hit ✓ DONE up top to close REFIT, and i’ll prove it on a real job.');
-    // kitWatch sees the close → kitClosedDuringPlace → beatCommand
+    kitCoach('that’s the whole kit — files, web, a terminal, memory. hit ✓ DONE up top to close REFIT and step back out.');
+    // kitWatch sees the close → kitClosedDuringPlace → (all placed) → beatFullyEquipped
   }
-  // REFIT closed during the kit-out (complete, or early). With FILES placed we can run the honest file demo; with
-  // nothing placed there are genuinely no tools to demo, so we say so plainly and finish the shape in words.
+  // REFIT closed during the kit-out. The tutorial's COMPLETION CONDITION is "every capability prop placed" —
+  // when that's met we celebrate + offer an optional real-job demo, then END. If they closed early we never
+  // dead-end (Theme 3): name what's wired vs still dark and offer to keep going or stop here. The Commander's
+  // floor, always.
   function kitClosedDuringPlace() {
     if (!active) return;
-    kitMode = false; clearCoach();
+    clearCoach();
     if (kitPollTimer) { clearTimeout(kitPollTimer); kitPollTimer = null; }
-    const hasFiles = kitNeeded && !kitNeeded.has('FILES');
-    if (hasFiles) return beatCommand();
-    say([
-      seg('closed up early — your call, it’s your floor. but straight with you: with nothing placed i can’t actually do much yet. an empty room is an empty agent.', 44, 460),
-      seg('  drop a cabinet in REFIT whenever you like and i’ll show you the real loop. here’s the rest of the shape for now:', 44, 0)
-    ], beatGauge);
+    const allPlaced = kitComplete || (kitNeeded && kitNeeded.size === 0);
+    if (allPlaced) { kitMode = false; return beatFullyEquipped(); }
+    // closed before the kit is complete — honest accounting, then a path forward (never a trap)
+    kitMode = false;
+    const placed = KIT.filter(k => kitNeeded && !kitNeeded.has(k.grant)).map(k => k.grant);
+    const left = KIT.filter(k => kitNeeded && kitNeeded.has(k.grant)).map(k => k.grant);
+    const have = placed.length ? 'you’ve wired me ' + listWords(placed) + ' so far. ' : 'nothing placed yet — an empty room is an empty agent. ';
+    const dark = left.length ? 'still dark: ' + listWords(left) + '.' : '';
+    if (!hasDialogue()) return placed.length ? beatEquippedPartial() : finishUp(true);
+    Dialogue.open({ name: agentName });
+    Dialogue.node({
+      lines: [seg(have + dark + ' want to finish kitting me out?', 44, 0)],
+      options: [
+        { label: '▸ Keep kitting me out', value: 'go' },
+        { label: placed.length ? 'That’s enough for now' : 'Skip for now', value: 'skip', skip: true }
+      ]
+    }).then(res => {
+      if (!active) return;
+      if (res.skip) return placed.length ? beatEquippedPartial() : finishUp(true);
+      kitMode = true; kitWasOpen = false;                  // re-arm and point them back into REFIT
+      spotlight('#bb-build');
+      dsay('good — open REFIT again from the bottom bar and i’ll pick up right where we left off.', 46, 0).then(() => kitWatch());
+    });
   }
 
-  // Beat 2 — the real command, now that the agent is genuinely equipped. COMMS is lit; one real-task chip.
+  // FULLY EQUIPPED — the completion beat. Every capability prop is placed; the agent is whole. Offer the
+  // optional "watch me actually use it" demo, then hand the Commander the free station. This is where the
+  // tutorial ENDS (the user's bar: end the tour when full capability is placed).
+  function beatFullyEquipped() {
+    if (!active) return;
+    sfx('level');
+    if (!hasDialogue()) return beatCommand();
+    Dialogue.open({ name: agentName });
+    Dialogue.node({
+      lines: [seg('look at that — files, the web, a terminal, and a memory of my own. that’s a whole agent. the room isn’t bare anymore, and neither am i.', 44, 460)],
+      options: [
+        { label: '▸ Watch me use it on a real job', value: 'demo' },
+        { label: 'I’ve got it from here', value: 'done', skip: true }
+      ]
+    }).then(res => { if (!active) return; if (res.value === 'demo') return beatCommand(); finishUp(false); });
+  }
+  // they stopped with SOME gear placed — a real, partial agent. Acknowledge honestly and bow out (no nag).
+  function beatEquippedPartial() {
+    if (!active) return;
+    dsay('fair. i’ll work with what you’ve given me — wire the rest in REFIT whenever you like. you’re in control.', 44, 320).then(() => finishUp(false));
+  }
+
+  // THE OPTIONAL DEMO — the real fs.write + fs.read loop, now that the agent is genuinely equipped. The panel
+  // CLOSES so the real run (the consent gate, the tool lines) is visible in COMMS; the bus-timed beats narrate
+  // the genuine run, never a sim. Reached only from beatFullyEquipped, so the Commander already opted in — no
+  // extra chip, straight to the run.
   function beatCommand() {
     if (!active) return;
+    if (hasDialogue()) Dialogue.close();                 // reveal COMMS so the real loop is watchable
     spotlight('#chat-panel');
     say([
-      seg('now the real thing. you’ve been talking to me here in COMMS the whole time — but watch what happens when i get an actual job, now that i’ve got hands.', 46, 420),
-      seg('  i’ll use the files you just gave me: write a line, read it back. tap it — and watch me stop to ask before i touch anything.', 46, 0)
-    ], () => Chat.choices([{ label: '▸ write & read a file', value: 'run' }], () => {
-      clearSpot();
-      say([seg('watch the floor — heading to my station, and i’ll ask before i write anything.', 44, 0)],
-        () => { if (typeof Chat.send === 'function') Chat.send(TASK); armStall(); });   // hand off to the REAL loop (+ a failsafe if it never reaches the bus)
-    }));
+      seg('watch, then. i’ll use the files you just gave me — write a line, read it back — right here on your machine.', 46, 380),
+      seg('  and watch me stop to ask before i touch anything. heading to my station now.', 46, 0)
+    ], () => { clearSpot(); if (typeof Chat.send === 'function') Chat.send(TASK); armStall(); });   // hand off to the REAL loop (+ a failsafe if it never reaches the bus)
   }
   // the floating coach bubble used INSIDE REFIT (which covers COMMS). Reuses the coachmark placement machinery,
   // but without the one-shot/seen guards — it's a live, replaceable prompt that re-anchors each kit step and
@@ -323,6 +418,10 @@ const Tutorial = (() => {
     if (finished) return; finished = true;        // idempotent: a late START-COMMANDING click after a skip can't re-run this
     active = false; kitMode = false; clearStall(); clearSpot(); clearCoach(); hideSkip();
     if (kitPollTimer) { clearTimeout(kitPollTimer); kitPollTimer = null; }   // drop the kit-out REFIT poll if they bailed mid-placement
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();   // reveal COMMS — the tour is over
+    // release the roleplay sit (the tour walked the hero to its desk via setActivity('task')); only when no
+    // REAL run drove it (a demo's post-run state is owned by the harness — don't yank it).
+    if (!sawStart) { try { if (typeof World !== 'undefined' && World.setActivity) World.setActivity('idle'); } catch (_) {} }
     state.firstCommandDone = true;
     if (skipped) state.briefDismissed = true;     // opting out of the tour opts out of the nag — reopen in 📖 MANUAL
     save();
@@ -613,6 +712,7 @@ const Tutorial = (() => {
     active = false; kitMode = false; clearStall();
     if (kitPollTimer) { clearTimeout(kitPollTimer); kitPollTimer = null; }
     clearCoach(); clearSpot(); hideSkip(); hideBrief();
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
   }
 
   return {
