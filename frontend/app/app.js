@@ -496,6 +496,44 @@ const App = (() => {
 
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
   // id rides on agent.skin and is read by the sprite engine (assets.js drawBody → DATA.SKINS).
+  // A live preview STAGE on the right plays the picked (or hovered) skin's real walk cycle big
+  // enough to actually read — a 40px still of a chunky sprite is unidentifiable.
+  let _skinManifest = null;     // cached sprite manifest (frame lists keyed "<set>.<state>.<dir>")
+  let _skinFrames = [];         // preloaded <img>s for whatever skin is on the stage right now
+  let _skinFrameIx = 0, _skinAnimLast = 0, _skinAnimStarted = false;
+
+  // the frames to play for a set: prefer the south-facing walk cycle, fall back to the idle
+  // rotation, then the bare still — straight from the manifest, so the demo matches the floor.
+  function skinFrameList(set) {
+    const m = _skinManifest && _skinManifest.sprites;
+    const walk = m && m[set + '.walk.south'];
+    const rot  = m && m[set + '.rot.south'];
+    const list = (walk && walk.length) ? walk : ((rot && rot.length) ? rot : [set + '/rot_south.png']);
+    return list.map(p => 'assets/sprites/' + p);
+  }
+
+  function showSkinOnStage(id) {
+    const sk = DATA.SKINS[id]; if (!sk) return;
+    _skinFrameIx = 0;
+    _skinFrames = skinFrameList(sk.set).map(src => { const im = new Image(); im.src = src; return im; });
+    const nameEl = el('skin-stage-name'); if (nameEl) nameEl.textContent = sk.name || id;
+    const imgEl = el('skin-stage-img');
+    if (imgEl && _skinFrames[0]) imgEl.src = _skinFrames[0].src;
+  }
+
+  // one rAF loop, started once: advances the walk cycle at ~8fps, but only while the create
+  // panel is actually on screen (offsetParent === null when hidden), so it idles for free.
+  function skinStageTick(now) {
+    const imgEl = el('skin-stage-img');
+    if (imgEl && imgEl.offsetParent && _skinFrames.length > 1 && now - _skinAnimLast > 120) {
+      _skinAnimLast = now;
+      _skinFrameIx = (_skinFrameIx + 1) % _skinFrames.length;
+      const f = _skinFrames[_skinFrameIx];
+      if (f && f.complete) imgEl.src = f.src;
+    }
+    requestAnimationFrame(skinStageTick);
+  }
+
   function buildSkins() {
     const wrap = el('skin-picker'); if (!wrap || typeof DATA === 'undefined' || !DATA.SKINS) return;
     wrap.innerHTML = '';
@@ -513,10 +551,24 @@ const App = (() => {
       b.onclick = () => {
         pickedSkin = id;
         [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        showSkinOnStage(id);
         SFX.click();
       };
+      // hover scrubs the stage so you can compare without committing; leaving snaps back to the pick
+      b.onmouseenter = () => showSkinOnStage(id);
       wrap.appendChild(b);
     });
+    wrap.onmouseleave = () => showSkinOnStage(pickedSkin);
+
+    // load the manifest once, then put the current pick on the stage and start the walk loop
+    const start = () => {
+      showSkinOnStage(pickedSkin);
+      if (!_skinAnimStarted) { _skinAnimStarted = true; requestAnimationFrame(skinStageTick); }
+    };
+    if (_skinManifest) start();
+    else fetch('assets/sprites/manifest.json', { cache: 'no-store' })
+      .then(r => r.json()).then(j => { _skinManifest = j; start(); })
+      .catch(() => { _skinManifest = { sprites: {} }; start(); });
   }
 
   /* ---------- VOICE & MANNER (the create-screen personality system) ----------
