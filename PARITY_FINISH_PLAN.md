@@ -261,7 +261,7 @@ the same `{send, onMessage, close}` duplex shape, spawn injected for testability
 
 ---
 
-## GOAL G4 — Cron 100% reliability (the critical one)  ·  STATUS: TODO
+## GOAL G4 — Cron 100% reliability (the critical one)  ·  STATUS: DONE (all 6 items)
 > PARITY TARGET: Hermes cron guarantees tz/DST-correct next-fire, at-most-once across crash
 > (advance-before-run), no-backlog catch-up, cross-process exactly-once (two file locks),
 > atomic+durable persistence, recurring-never-silently-disabled. StarNet's determinism split
@@ -597,7 +597,7 @@ zombie past the ceiling does (analog of `claim_job_for_fire`, `jobs.py:1226-1271
     `cron.lock`). No `shared/events.js`/`shared/schema.js` edit (`git log feat/harness-backend..agent/parity-finish
     -- shared/*` stays empty); no NEW event emitted (the claim is internal job state, not an event).
 
-### G4.6 — Honest disabled-state + one-click enable  ·  STATUS: TODO
+### G4.6 — Honest disabled-state + one-click enable  ·  STATUS: DONE
 One-line task: when the scheduler is OFF, show a one-click ENABLE control that arms the timer
 WITHOUT a manual env edit + restart (prefer a persisted app-data `cronArmed` flag the boot block
 ORs with `SKYNET_CRON_ENABLED`, NOT runtime `process.env` mutation), then re-render
@@ -614,6 +614,63 @@ ORs with `SKYNET_CRON_ENABLED`, NOT runtime `process.env` mutation), then re-ren
   → run `test:http`). 
 - **Notes:** A persisted `cronArmed` flag OR'd at boot is cleaner than mutating `process.env` and
   preserves the documented boot-frozen gate semantics.
+- **DONE (2026-06-23, commit cfa45b4).** The scheduler can now be enabled with ONE click in the UI —
+  no env edit, no restart — while staying fully INERT for a user who never enables it. **G4 (all 6
+  items) is COMPLETE.**
+  - **Persisted arm flag** — `WORKSPACES/cron.armed.json` (`{version:1, armed:bool}`), written through the
+    G4.2 `writeFileDurable` helper (durable temp→fsync→rename, protected sibling of the fs jail like
+    `cron.jobs.json`); `loadCronArmed()` is FAIL-CLOSED (missing/corrupt/non-boolean → false, so an unreadable
+    flag never silently arms). The boot block computes the initial armed state as
+    `cronArmed = CRON_ENABLED || loadCronArmed()` — the env var still wins (boot-frozen master switch), the
+    persisted flag adds the runtime path. **`process.env` is NEVER mutated at runtime** (the anti-pattern the
+    plan calls out): the persisted file is the durable record, an in-memory `cronArmed` bool the live state.
+  - **Runtime arm/disarm** — the boot arming was refactored into idempotent `armCron()` (run ONE immediate
+    reconcile UNDER the G4.3 cross-process lock — catching up missed fires at-most-once-within-grace, no
+    backlog — then arm the interval; no-op if a timer already runs) / `disarmCron()` (clear the interval). New
+    privileged route **`POST /api/cron/arm {enabled:bool}`** persists the flag durably FIRST, sets the live
+    `cronArmed`, then `armCron()`/`disarmCron()` so a due job fires within ONE tick of enabling with NO restart
+    and disabling stops the timer immediately. **Guarded by the SAME `x-skynet-token` gate as the cron CRUD
+    routes** — `rejectBadApiToken` runs before dispatch for every `/api/*` POST except
+    `/api/session|/api/key|/api/save`, so a cross-site browser call can't arm the autonomous scheduler (NOT a
+    weaker hand-rolled guard). The frontend `fetch` is already token-hardened (`harness.js` monkey-patch
+    auto-injects `X-Skynet-Token`), so no UI token plumbing was needed.
+  - **GET /api/cron `enabled`** now reports the live `cronArmed` (was boot-frozen `CRON_ENABLED`) so the panel
+    reflects a runtime arm/disarm immediately. The cron.api.test `enabled:false` assertion still holds (cron
+    off → `cronArmed` false).
+  - **Honest UI** (`stationui.js` `buildRoutines.refresh`) — OFF shows a RED `○ scheduling is OFF — routines
+    will NOT fire.` badge + a one-click `▶ ENABLE SCHEDULING` button (posts the arm route, then re-renders from
+    the authoritative GET); ON shows `● scheduler armed` + a `⏸ DISABLE SCHEDULING` control. Replaced the old
+    dim "set SKYNET_CRON_ENABLED=1" hint (which told the user to edit env + restart — the lie this closes).
+  - **INERT-WHEN-OFF preserved (the must-not-regress invariant):** no env var + no `cron.armed.json` →
+    `cronArmed=false` → `if (cronArmed) armCron()` no-ops → no timer armed, the off-path is byte-identical for
+    a user who never enables cron. Asserted directly (no "cron tick armed" / no `[cron] cron.tick` log over a
+    multi-tick window with cron off).
+  - **Verified RED→GREEN** (`test/cron.arm.test.js`, NEW, 25 assertions, in `test:http`). RED on the pre-fix
+    tree (stashed `index.js`): `POST /api/cron/arm -> 404`, `enabled` never flips, no `cron.armed.json`
+    persisted (exit 1); the inert-when-off + token-guard 403 assertions PASSED even pre-fix (the invariants
+    that must not regress — and don't). GREEN after: `OK (25 assertions)`. Cases: (1) INERT-WHEN-OFF — boot OFF
+    → `enabled:false`, no flag file, no timer armed, a due routine never ticks over a multi-tick window;
+    (2) TOKEN GUARD — arm without `X-Skynet-Token` → 403, enabled unchanged; (3) RUNTIME ARM — arm flips
+    `enabled:true`, persists `armed:true`, and the LIVE timer ticks a DUE one-shot within one tick (the
+    non-mockable `[cron] cron.tick` signal — no key → no-capability path → zero spend); (4) RUNTIME DISARM —
+    flips off, persists `armed:false`, no further ticks run; (5) ARM-AT-BOOT — a persisted `armed:true` arms
+    the scheduler at boot (enabled:true + "cron tick armed") with NO `SKYNET_CRON_ENABLED`. Full `npm run
+    test:fast` GREEN (EXIT 0 — no cron-suite/lint regressions, lint-determinism/lint-emits GREEN over 75
+    files; `index.js` is the lint-exempt composition root). `npm run test:http` GREEN (EXIT 0 — cron.api 56
+    assertions unchanged + cron.arm 25). **LIVE-WATCHED** (`npm start`, free port :8873, temp WORKSPACES,
+    cron OFF): boot prints no "cron tick armed" (inert); `GET /api/cron` → `enabled:false`; the served
+    `stationui.js` carries the new OFF-badge + ENABLE control; arm route → `{ok:true,enabled:true}`, GET flips
+    `enabled:true`, the boot-reconcile ticks the due past one-shot within one tick
+    (`[cron] cron.tick {fired:0,skipped:1,planned:1}` + `cron.skipped no-capability` — zero spend),
+    `cron.armed.json` = `{"version":1,"armed":true}`; disarm → `enabled:false`, `cron tick DISARMED`,
+    `armed:false`; a bad body (no `enabled`) → 400; arm without token → 403. The honest OFF badge + ENABLE
+    button also rendered in a real Chromium DOM.
+  - **Files:** `sidecar/index.js` (persisted `cronArmed` store + `armCron`/`disarmCron` + boot-OR + `POST
+    /api/cron/arm` route + GET reports live `cronArmed`), `frontend/app/stationui.js` (`buildRoutines` honest
+    OFF/ON badge + one-click enable/disable), `test/cron.arm.test.js` (NEW), `package.json` (append
+    `cron.arm.test` to `test:http`). No `shared/events.js`/`shared/schema.js` edit
+    (`git log feat/harness-backend..agent/parity-finish -- shared/*` stays empty); no new event emitted (the
+    arm state in `GET /api/cron` is sufficient — no `cron.armed` telemetry event was added or emitted).
 
 ---
 
@@ -888,3 +945,29 @@ merge in small increments.
   no cron-suite regressions, lint-determinism/lint-emits GREEN); `test:http` GREEN (cron.api 56 assertions
   round-trip the additive fields); LIVE boot smoke (cron enabled, free port :8847) boots clean. No `shared/*` edit.
   Next: **G4.6** (honest disabled-state + one-click enable).
+- 2026-06-23 — **G4.6 Honest disabled-state + one-click enable: DONE (commit cfa45b4). G4 (all 6 items) COMPLETE.**
+  The cron scheduler was INERT unless `SKYNET_CRON_ENABLED` was set at boot, so a user could create routines that
+  SILENTLY never fire (the "app lies" trap) with no in-app way to enable. Added a PERSISTED `cronArmed` flag
+  (`WORKSPACES/cron.armed.json`, written via the G4.2 `writeFileDurable` helper, load fail-closed) that the boot
+  block ORs with the env var (`cronArmed = CRON_ENABLED || loadCronArmed()`) — `process.env` is NEVER mutated at
+  runtime (the persisted file is the durable record, an in-memory bool the live state). New privileged route
+  **`POST /api/cron/arm {enabled:bool}`** persists the flag durably FIRST, sets the live `cronArmed`, then actually
+  arms/disarms the live timer NOW via idempotent `armCron()` (one immediate reconcile under the G4.3 lock + arm the
+  interval) / `disarmCron()` (clear it) — so a due job fires within ONE tick of enabling with NO restart. Guarded by
+  the SAME `x-skynet-token` gate as the cron CRUD routes (`rejectBadApiToken` before dispatch), not a weaker
+  hand-rolled guard. `GET /api/cron enabled` now reports the live `cronArmed` (reflects a runtime arm/disarm
+  immediately). UI (`stationui buildRoutines`): OFF shows a red "scheduling is OFF — routines will NOT fire" badge +
+  one-click ENABLE SCHEDULING; ON shows armed + DISABLE. INERT-WHEN-OFF preserved (no env + no flag → cronArmed=false
+  → boot no-ops → byte-identical off-path). RED→GREEN proven (`test/cron.arm.test.js`, NEW, 25 assertions in
+  `test:http`: pre-fix RED — arm route 404s, enabled never flips, no flag persisted; the inert-when-off + token-guard
+  403 assertions passed even pre-fix → don't regress; GREEN after `OK (25)`). Cases: inert-when-off, runtime
+  arm/disarm flip+persist+live-tick, arm-at-boot from the persisted flag with no env var, token-guard 403, bad-body
+  400. Full `npm run test:fast` GREEN (EXIT 0, no regressions, lint-determinism/lint-emits GREEN); `npm run test:http`
+  GREEN (EXIT 0, cron.api 56 + cron.arm 25). LIVE-WATCHED (`npm start`, free port :8873, cron OFF): boot inert (no
+  "cron tick armed"), GET enabled:false, served UI carries the OFF badge + ENABLE control; arm route → enabled:true,
+  the due past one-shot ticks within one tick (`[cron] cron.tick` + no-capability, zero spend), `cron.armed.json`
+  persists armed:true; disarm → enabled:false + "cron tick DISARMED" + armed:false; honest OFF badge + ENABLE button
+  also rendered in a real Chromium DOM. No `shared/events.js`/`shared/schema.js` edit; no new event emitted (the arm
+  state in `GET /api/cron` is sufficient). **G4 cron 100%-reliability is now fully closed (G4.1 tz/DST · G4.2 durable
+  persistence · G4.3 exactly-once lock · G4.4 cap+retry · G4.5 one-shot fire-claim · G4.6 honest enable).** Next per
+  the autonomy-first order: **G2.1** (MCP stdio transport — `sidecar/mcp/transport.stdio.js`).
