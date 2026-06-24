@@ -351,7 +351,8 @@ function replaceAgentRoster(list) {
       name: String((a && a.name) || id).slice(0, 40),
       model: (a && a.model) ? String(a.model) : null,
       provider: normalizeProviderId((a && a.provider) || ''),
-      role: String((a && a.role) || '').slice(0, 120)
+      role: String((a && a.role) || '').slice(0, 120),
+      approvalMode: ((a && a.approvalMode) === 'full') ? 'full' : 'ask'   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
     });
   }
 }
@@ -1831,8 +1832,11 @@ async function runOnce(o) {
   // P1.5: the real informed-consent broker. surface:'interactive' + prompt ⇒ ungranted mutations ask live;
   // surface:'autonomous' (no one watching, e.g. a Telegram chat) ⇒ default-deny on any ungranted mutation
   // (silence is not consent). Read-only/non-network auto-allows; the hardline floor sits below Full Access.
+  // per-agent FULL ACCESS (chosen at create / in the dossier) bypasses the gate too — same effect as the global
+  // SKYNET_FULL_ACCESS env, but scoped to this agent. The hardline floor still applies below it.
+  const agentFullAccess = ((agentRoster.get(agentId) || {}).approvalMode === 'full');
   const consent = makeConsentBroker({
-    bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: runId,
+    bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
     networkOf: (call) => !!resolved.networkCaps[call.name],
     surface: surface, prompt: prompt
