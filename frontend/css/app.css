@@ -294,6 +294,13 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .cmsg.deliverable .body { color: var(--ph); }
 .deliverable-link { color: var(--gold); text-decoration: underline; cursor: pointer; }
 .deliverable-link:hover { color: var(--ph-bright); }
+/* an inline image the agent generated: a small clickable thumbnail; click opens the full image in a new tab */
+.deliverable-thumb { display: inline-block; vertical-align: middle; margin-top: 4px; line-height: 0; border: 1px solid var(--gold); border-radius: 4px; overflow: hidden; cursor: pointer; }
+.deliverable-thumb img { display: block; max-width: 168px; max-height: 128px; }
+.deliverable-thumb:hover { border-color: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); }
+/* a clickable URL the agent typed in its prose — match the gold deliverable-link affordance */
+.cmsg.agent .body a { color: var(--gold); text-decoration: underline; }
+.cmsg.agent .body a:hover { color: var(--ph-bright); }
 
 /* live consent prompt — the agent paused for approval, INLINE in the flow where it happened (this
    replaced the always-on top APPROVALS panel). A clear gold frame so it reads as "act on me now". */

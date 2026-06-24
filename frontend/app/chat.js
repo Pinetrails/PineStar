@@ -67,6 +67,37 @@ const Chat = (() => {
 
   const KIND_TAG = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
 
+  // LINKIFY (XSS-safe): model output is untrusted, so we NEVER assign raw model text to innerHTML. Instead we
+  // HTML-escape the WHOLE string first, then wrap only matched http(s) URL substrings in anchors. Escaping before
+  // matching means the resulting markup can contain nothing the model authored as live HTML — only our own <a>
+  // tags around escaped text. Used identically for live-streamed tokens, the final reply, and replayed history.
+  const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => HTML_ESC[c]); }
+  function linkify(text) {
+    const s = String(text == null ? '' : text);
+    const re = /https?:\/\/[^\s<>"']+/g;   // a run of non-space, non-markup chars after the scheme
+    let out = '', last = 0, m;
+    while ((m = re.exec(s)) !== null) {
+      let url = m[0];
+      const trail = /[.,;:!?'")\]}>]+$/.exec(url);   // don't swallow sentence punctuation trailing the URL
+      if (trail) url = url.slice(0, url.length - trail[0].length);
+      if (!url) continue;                            // pathological match (scheme only) — let escape handle it
+      out += escapeHtml(s.slice(last, m.index));     // escaped text before the URL
+      const safe = escapeHtml(url);                  // escape the URL too (its href + visible text are both safe)
+      out += '<a href="' + safe + '" target="_blank" rel="noopener">' + safe + '</a>';
+      last = m.index + url.length;                   // trailing punctuation (if trimmed) re-enters as escaped text
+    }
+    out += escapeHtml(s.slice(last));
+    return out;
+  }
+  // render agent prose into a body span: fast textContent path when no URL is possible, else escaped+linkified
+  // innerHTML. The fast path keeps the common (URL-free) streamed token cheap — no per-token HTML reparse.
+  function renderProse(bodyEl, raw) {
+    if (!bodyEl) return;
+    if (String(raw).indexOf('http') === -1) bodyEl.textContent = raw;
+    else bodyEl.innerHTML = linkify(raw);
+  }
+
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
@@ -157,6 +188,24 @@ const Chat = (() => {
     a.textContent = String(title).split(/[\\/]/).pop() || title;   // show the filename, not the whole path
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
+    r.body.appendChild(a);
+    autoscroll();
+  }
+  // an image the agent generated (image_generate / the `studio` capability) — render it INLINE as a small
+  // thumbnail (src = the sidecar's jailed /api/file viewer URL, served with an image content-type); clicking
+  // opens the full image in a new tab. Built with DOM nodes (never innerHTML) so the title can't inject markup.
+  function imageDeliverableLine(title, agentId) {
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable'); r.d.classList.add('image');
+    const url = '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
+    r.body.appendChild(document.createTextNode('▤ made '));
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank'; a.rel = 'noopener';
+    a.className = 'deliverable-thumb';
+    a.title = title;                                               // full path on hover
+    const img = document.createElement('img');
+    img.src = url; img.loading = 'lazy';
+    img.alt = String(title).split(/[\\/]/).pop() || title;
+    a.appendChild(img);
     r.body.appendChild(a);
     autoscroll();
   }
@@ -364,7 +413,7 @@ const Chat = (() => {
       if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
       const r = row('agent');   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
-      r.body.textContent = m.content;
+      renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
     }
   }
 
@@ -390,22 +439,22 @@ const Chat = (() => {
   // paragraph so the action row lands BELOW it, and the next tokens open a fresh paragraph under the action —
   // so a turn reads top-to-bottom as "said this → did that → said this", classic-harness style.
   function streamingAgent() {
-    let seg = null, caret = null;   // seg: the currently-open agent text row; null ⇒ next token opens a new one
+    let seg = null, caret = null, raw = '';   // seg: the currently-open agent row; raw: its accumulated prose (so URLs can be linkified as they complete)
     function open() {
-      seg = row('agent');
+      seg = row('agent'); raw = '';
       caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
-      seg.d.appendChild(caret);
+      seg.d.appendChild(caret);   // caret is a sibling of .body, so re-rendering .body's content never disturbs it
     }
     function closeSeg() {   // drop the caret, discard an empty stub, and arm the next token to start fresh
       if (caret) { caret.remove(); caret = null; }
       if (seg && !seg.body.textContent.trim()) seg.d.remove();
-      seg = null;
+      seg = null; raw = '';
     }
     return {
-      append(t) { if (!t) return; if (!seg) open(); seg.body.textContent += t; autoscroll(); },
+      append(t) { if (!t) return; if (!seg) open(); raw += t; renderProse(seg.body, raw); autoscroll(); },
       breakSeg() { closeSeg(); },   // an inline action is about to render below — end this paragraph
       done() { closeSeg(); },
-      error(m) { if (!seg) open(); seg.d.classList.add('err'); seg.body.textContent += (seg.body.textContent ? '\n' : '') + '⚠ ' + m; if (caret) { caret.remove(); caret = null; } seg = null; }
+      error(m) { if (!seg) open(); seg.d.classList.add('err'); raw += (raw ? '\n' : '') + '⚠ ' + m; renderProse(seg.body, raw); if (caret) { caret.remove(); caret = null; } seg = null; raw = ''; }
     };
   }
   // close the live paragraph (if any) so the action about to render lands BELOW the prose, in order
@@ -525,11 +574,14 @@ const Chat = (() => {
         onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) { breakLive(); toolLine(t, ev.isError); } },
         onDeliverable: ev => {
-          if (ev.kind === 'file' && !seenDeliv[ev.title]) {
-            seenDeliv[ev.title] = true; if (isActiveWs(ws)) { breakLive(); deliverableLine(ev.title, ev.agentId); }
+          // image_generate emits kind:'image' (a real PNG in the agent's workspace); fs.write emits kind:'file'.
+          // Both are openable products — render inline (thumbnail vs clickable row) and record in the workstream.
+          if ((ev.kind === 'file' || ev.kind === 'image') && !seenDeliv[ev.title]) {
+            seenDeliv[ev.title] = true;
+            if (isActiveWs(ws)) { breakLive(); if (ev.kind === 'image') imageDeliverableLine(ev.title, ev.agentId); else deliverableLine(ev.title, ev.agentId); }
             // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock
             if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: ev.kind, runId: Channels.runIdOf(ws.id), t: Date.now() });
-            if (typeof StationUI !== 'undefined') StationUI.notify('saved ' + ev.title, 'gold');
+            if (typeof StationUI !== 'undefined') StationUI.notify((ev.kind === 'image' ? 'made ' : 'saved ') + ev.title, 'gold');
           }
         },
         onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } }
