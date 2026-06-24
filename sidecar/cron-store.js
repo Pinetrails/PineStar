@@ -16,7 +16,8 @@
      updateJob(jobs, id, patch, { now })         -> jobs'           // patch editable fields (id is immutable)
      pauseJob(jobs, id)                          -> jobs'           // disable (state:'paused')
      resumeJob(jobs, id, { now })                -> jobs'           // enable + re-anchor nextRunAt at now
-     markRun(jobs, id, result, { now, ... })     -> jobs'           // record an outcome (+ transient backoff)
+     claimOnceFire(jobs, id, { now })            -> jobs'           // G4.5: stamp a one-shot fire-claim (advance-before-run analog)
+     markRun(jobs, id, result, { now, ... })     -> jobs'           // record an outcome (+ transient backoff; clears the fire-claim)
      removeJob(jobs, id)                         -> jobs'           // delete
      getJob(jobs, id)                            -> CronJob | null
      loadEnvelope(rawObjOrString)               -> { version, jobs } // tolerant, fail-closed
@@ -27,7 +28,20 @@
      { id, name, prompt, schedule, scheduleDisplay, agentId, model, provider, deliver, enabled,
        state:'scheduled'|'paused'|'completed'|'error', repeat:{times,completed},
        createdAt, nextRunAt, lastRunAt, lastRunId, lastStatus, lastError, lastReason, retryCount,
-       skills, script, workdir, contextFrom }                         // last row = record-the-field, defer-the-consumer */
+       fireClaim, lastFireAttemptAt,                                   // G4.5: one-shot at-most-once-within-window claim
+       skills, script, workdir, contextFrom }                         // last row = record-the-field, defer-the-consumer
+
+   G4.5 — ONE-SHOT FIRE-CLAIM (at-most-once-within-window). A recurring job is protected from a
+   crash-restart double-fire by advance-before-run (planTick persists the ADVANCED nextRunAt before the
+   run launches), but a one-shot has no "next" fire to advance. Instead the host stamps a FIRE-CLAIM
+   (claimOnceFire: fireClaim = the fire-instant ms, lastFireAttemptAt = its ISO) and persists it BEFORE
+   launching the run; cron.planTick then treats a one-shot carrying a FRESH claim (claim age < maxRunMs
+   and no settlement) as NOT due, so a crash-restart INSIDE the run window does not re-fire it. A ZOMBIE
+   claim past the maxRunMs ceiling (a crashed holder) IS reclaimed and re-fires. CRITICALLY, markRun
+   CLEARS fireClaim on EVERY settlement — success, terminal failure, AND transient failure — so the
+   not-due guard only suppresses re-fire while the run is ACTUALLY in flight: a transient failure clears
+   the claim and re-arms via the normal backoff path (NOT suppressed by a stale claim); a terminal
+   settlement clears the claim and the (now-set) lastRunAt makes the one-shot permanently ineligible. */
 'use strict';
 (function (root, factory) {
   const api = factory(typeof require === 'function' ? require('./cron.js') : (root.SK && root.SK.cron));
@@ -94,6 +108,9 @@
       nextRunAt: (enabled && fireable) ? armAt(schedule, null, now) : null,
       lastRunAt: null, lastRunId: null, lastStatus: null, lastError: null, lastReason: null,
       retryCount: 0,
+      // G4.5 one-shot fire-claim: stamped at fire time (claimOnceFire), cleared on settlement (markRun).
+      // null on a fresh job; only ever non-null while a one-shot run is in flight (or a zombie past maxRunMs).
+      fireClaim: null, lastFireAttemptAt: null,
       // ---- record-the-field, defer-the-consumer (no v1 runtime consumer; stored so a later commit wires it) ----
       skills: Array.isArray(spec.skills) ? spec.skills.slice() : [],
       script: spec.script != null ? String(spec.script) : null,
@@ -142,6 +159,17 @@
 
   function removeJob(jobs, id) { return (jobs || []).filter(j => !(j && j.id === id)); }
 
+  /* claimOnceFire — G4.5: stamp a one-shot's FIRE-CLAIM at fire time (the advance-before-run analog for a
+     non-recurring job). The host calls this for each due one-shot it is about to launch and PERSISTS the
+     result BEFORE launching, so a crash-restart inside the run window sees the claim and does not re-fire
+     (planTick suppresses a fresh-claimed one-shot; a zombie claim past maxRunMs is reclaimed). `now` is the
+     fire instant ms (injected). No-op shape on a non-once job (still records the attempt timestamp). The
+     claim is cleared by markRun on settlement, so it only ever marks an in-flight run. */
+  function claimOnceFire(jobs, id, ctx) {
+    const now = (ctx && ctx.now) || 0;
+    return mapJob(jobs, id, (job) => Object.assign({}, job, { fireClaim: now, lastFireAttemptAt: iso(now) }));
+  }
+
   /* markRun — record the outcome of a fired run. `result = { runId, status:'ok'|'error', reason, error, transient }`.
      ctx = { now, maxRetries=3, backoffMs=90000 }.
 
@@ -166,6 +194,11 @@
       next.lastReason = result.reason != null ? String(result.reason) : null;
       next.lastStatus = ok ? 'ok' : 'error';
       next.lastError = ok ? null : (result.error != null ? String(result.error) : 'error');
+      // G4.5: ANY settlement (success, terminal failure, OR transient failure) means the run is no longer
+      // in flight, so CLEAR the one-shot fire-claim. The not-due guard must only suppress re-fire WHILE
+      // actually running — a transient settlement clears the claim so the backoff path below can re-arm
+      // the one-shot without being suppressed by a stale claim. (lastFireAttemptAt is left as the audit trail.)
+      next.fireClaim = null;
 
       // transient failure with retries left: back off, stay eligible, do NOT finalize the occurrence.
       if (!ok && result.transient && (job.retryCount || 0) < maxRetries) {
@@ -217,6 +250,7 @@
     updateJob: updateJob,
     pauseJob: pauseJob,
     resumeJob: resumeJob,
+    claimOnceFire: claimOnceFire,
     markRun: markRun,
     removeJob: removeJob,
     getJob: getJob,

@@ -37,6 +37,24 @@
        skips the second occurrence, so it never double-fires.
    -----------------------------------------------------------------------------------------------
 
+   --- ONE-SHOT FIRE-CLAIM / at-most-once-within-window (G4.5, 2026-06-23) -----------------------
+   A recurring job is protected from a crash-restart double-fire by ADVANCE-BEFORE-RUN: planTick
+   emits the advanced nextRunAt and the host persists it BEFORE the run launches, so a restart sees
+   the advanced time and does not re-fire. A one-shot (kind:'once') has no "next" fire to advance, so
+   it needs the analog: a FIRE-CLAIM. The host stamps a one-shot's `fireClaim` (= the fire-instant ms)
+   at fire time and persists it BEFORE launching (cron-store.claimOnceFire). planTick then enforces an
+   AT-MOST-ONCE-WITHIN-WINDOW policy on a one-shot:
+     · FRESH claim (claim age = now - fireClaim, 0 <= age < maxRunMs): the run is in flight → NOT due,
+       suppress re-fire. A crash-restart INSIDE the run window therefore does NOT re-fire the one-shot.
+     · ZOMBIE claim (age >= maxRunMs): the holder crashed and never settled within the lease ceiling →
+       the claim is reclaimed and the one-shot re-fires (it never stays wedged forever).
+     · SETTLED (lastRunAt set): permanently ineligible (the pre-existing guard), independent of claim.
+   markRun CLEARS fireClaim on EVERY settlement (success / terminal failure / transient failure), so
+   the not-due guard suppresses re-fire ONLY while the run is genuinely in flight. A TRANSIENT failure
+   clears the claim and re-arms via the normal backoff nextRunAt — it is NOT suppressed by a stale
+   claim. `maxRunMs` is injected via opts (the host's lease ceiling); default 8min if absent.
+   -----------------------------------------------------------------------------------------------
+
    Surface (all `now`/`tz` are PARAMETERS — never ambient):
      parseSchedule(str, now, opts?)              -> schedule | null   // opts.tz = optional IANA tz for cron
      nextFireAt(schedule, lastRunIso, now, opts?)-> int ms | null     // opts.defaultTz applied to tz-less cron
@@ -452,19 +470,35 @@
   function planTick(jobs, now, opts) {
     now = now || 0;
     const defaultTz = opts && opts.defaultTz != null ? opts.defaultTz : null;
+    // G4.5: the one-shot fire-claim ceiling. A one-shot with a claim younger than this is treated as
+    // in-flight (NOT due → no re-fire); a claim AT/PAST this age is a zombie (a crashed holder) → reclaimed.
+    // Injected by the host (the same lease ceiling cron-driver uses). Defaults to 8min if not supplied.
+    const maxRunMs = opts && opts.maxRunMs != null ? opts.maxRunMs : (8 * 60 * 1000);
     const fire = [], skipped = [], next = [];
     for (const job of (jobs || [])) {
       if (!job || job.enabled === false) continue;
       const sched = job.schedule;
       if (!isFireable(sched)) continue;
-      if (sched.kind === 'once' && job.lastRunAt) continue;     // one-shot already ran
+      if (sched.kind === 'once' && job.lastRunAt) continue;     // one-shot already ran (settled)
+
+      // G4.5 ONE-SHOT FIRE-CLAIM: a one-shot carrying a FRESH claim has a run in flight — suppress re-fire
+      // so a crash-restart inside the window does NOT double-fire. A ZOMBIE claim (age >= maxRunMs, a crashed
+      // holder) falls through and re-fires. markRun clears the claim on settlement, so a transient-failed
+      // one-shot (claim cleared, lastRunAt still null) re-arms via its backoff nextRunAt rather than being
+      // suppressed here.
+      if (sched.kind === 'once' && job.fireClaim != null) {
+        const claimAge = now - job.fireClaim;
+        if (claimAge >= 0 && claimAge < maxRunMs) continue;     // fresh claim → in-flight → not due
+        // else: zombie claim → fall through and re-fire (reclaim)
+      }
 
       const dueAt = dueAtOf(job, now, defaultTz);
       if (dueAt == null || isNaN(dueAt) || dueAt > now) continue;   // not due yet (or no computable fire)
 
       if (sched.kind === 'once') {
         // fire a one-shot whenever we first notice it is due — never silently drop a scheduled run.
-        // markRun (the store reducer) sets lastRunAt afterward, making it permanently ineligible.
+        // The host stamps a fire-claim (claimOnceFire) and persists it BEFORE launching; markRun then sets
+        // lastRunAt on settlement, making it permanently ineligible.
         fire.push({ jobId: job.id, scheduledFor: dueAt });
         continue;                                              // one-shots don't recur -> no `next`
       }

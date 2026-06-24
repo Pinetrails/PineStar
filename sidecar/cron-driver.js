@@ -198,8 +198,10 @@
       }
 
       // 2. the PURE plan: which jobs fire / are fast-forward-skipped, and the advanced next-fires to persist.
-      //    defaultTz makes a tz-less schedule plan on the host's local wall-clock (G4.1).
-      const plan = cron.planTick(getJobs(), nowMs, { defaultTz: defaultTz });
+      //    defaultTz makes a tz-less schedule plan on the host's local wall-clock (G4.1). maxRunMs is the
+      //    one-shot fire-claim ceiling (G4.5): planTick suppresses a one-shot with a FRESH claim (in flight)
+      //    and reclaims a ZOMBIE claim past this age — the SAME ceiling the lease sweep above uses.
+      const plan = cron.planTick(getJobs(), nowMs, { defaultTz: defaultTz, maxRunMs: maxRunMs });
 
       // 2b. GLOBAL CONCURRENCY CAP (G4.4): partition plan.fire into the jobs we'll ATTEMPT this tick and the
       //     ones DEFERRED past the cap. A job already holding a lease is neither attempted nor deferred — it
@@ -220,17 +222,37 @@
         else { deferred.push(job.id); deferredSet.add(job.id); }   // over the cap -> defer (stays due, not advanced)
       }
 
-      // 3. ADVANCE-BEFORE-RUN: persist the advanced nextRunAt for every planned job EXCEPT a deferred one,
-      //    BEFORE launching, so a crash mid-run never double-fires on restart. A fire later skipped by its lease
-      //    still keeps this advance (drop the occurrence, never re-queue it); a DEFERRED job keeps its OLD
-      //    nextRunAt so it stays due and fires on a later tick when a concurrency slot frees.
-      if (plan.next.length) {
-        let jobs = getJobs();
-        for (const nx of plan.next) {
-          if (deferredSet.has(nx.jobId)) continue;         // do NOT advance a deferred job — it must stay due
-          jobs = jobs.map(function (j) { return (j && j.id === nx.jobId) ? Object.assign({}, j, { nextRunAt: iso(nx.nextAt) }) : j; });
+      // 3. ADVANCE-BEFORE-RUN: persist the advanced nextRunAt for every planned RECURRING job EXCEPT a
+      //    deferred one, BEFORE launching, so a crash mid-run never double-fires on restart. A fire later
+      //    skipped by its lease still keeps this advance (drop the occurrence, never re-queue it); a DEFERRED
+      //    job keeps its OLD nextRunAt so it stays due and fires on a later tick when a concurrency slot frees.
+      //
+      //    G4.5 ONE-SHOT FIRE-CLAIM: a one-shot has no advanced nextRunAt to persist (it doesn't recur), so its
+      //    crash-restart protection is a fire-CLAIM stamped here and persisted in the SAME write, BEFORE launch.
+      //    cron.planTick then suppresses a one-shot carrying a fresh claim (in flight) and reclaims a zombie one
+      //    past maxRunMs. A deferred or already-leased one-shot is NOT claimed this tick (it isn't firing yet).
+      {
+        const advanceById = Object.create(null);
+        for (const nx of plan.next) { if (!deferredSet.has(nx.jobId)) advanceById[nx.jobId] = nx.nextAt; }
+        // which one-shots will actually fire this tick (in plan.fire, not deferred, not already leased)?
+        const claimOnce = new Set();
+        for (const f of plan.fire) {
+          if (deferredSet.has(f.jobId) || leases.has(f.jobId)) continue;
+          const job = cronStore.getJob(getJobs(), f.jobId);
+          if (job && job.schedule && job.schedule.kind === 'once') claimOnce.add(f.jobId);
         }
-        setJobs(jobs);
+        // NOTE: a one-shot that turns out NO-CAPABILITY in step 5 (fireJob returns false → no run launched)
+        // still carries this claim. That is intentional and safe: it converts per-tick re-attempts into a
+        // bounded ~maxRunMs backoff, after which the zombie reclaim retries — a non-firing one-shot either way.
+        if (Object.keys(advanceById).length || claimOnce.size) {
+          let jobs = getJobs();
+          for (const id in advanceById) {
+            jobs = jobs.map(function (j) { return (j && j.id === id) ? Object.assign({}, j, { nextRunAt: iso(advanceById[id]) }) : j; });
+          }
+          // stamp + persist the one-shot fire-claim through the store reducer (keeps the claim shape in one place).
+          for (const id of claimOnce) { jobs = cronStore.claimOnceFire(jobs, id, { now: nowMs }); }
+          setJobs(jobs);
+        }
       }
 
       // 4. stale recurring runs that were fast-forwarded (no backlog burst) -> a structured skip per job.
