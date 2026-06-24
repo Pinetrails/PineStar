@@ -316,5 +316,234 @@ function ffr(content, oldS, newS, all) { return fuzzyFindAndReplace(content, old
     A.ok(r.content.indexOf('compute(2)') >= 0, 'block_anchor: replacement applied');
   }
 
+  // NOTE: do NOT A.report() here — PART 3 (the fs.patch TOOL) runs in the async IIFE below and
+  // calls A.report() last so the shared pass/fail counters cover both halves.
+})();
+
+// =====================================================================
+// PART 3 — the fs.patch TOOL (G5.2): jailed, two-phase validate-then-apply,
+// buffer-then-flush atomic. Real temp dir so the jail + atomicity are proven
+// against the actual filesystem (incl. Windows-specific path inputs).
+// =====================================================================
+const fsp = require('fs/promises');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
+
+const ROOT = path.join(os.tmpdir(), 'skynet-fspatch-test-' + process.pid);
+const tools = makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 1 << 20, readReturn: 200000 } });
+const { writeTool, readTool, patchTool, editTool, _internals } = tools;
+
+async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' — did NOT reject'); } catch (e) { A.ok(true, msg); } }
+function wrap(body) { return ['*** Begin Patch', body, '*** End Patch'].join('\n'); }
+
+(async () => {
+  // ---- the tool is registered with the right capability/scope/consent + schema ----
+  {
+    A.ok(patchTool, 'fs.patch tool exists on makeFsTools()');
+    A.eq(patchTool.name, 'fs.patch', 'fs.patch: tool name');
+    A.eq(patchTool.capability, 'cabinet', 'fs.patch: capability cabinet');
+    A.eq(patchTool.scope, 'write', 'fs.patch: scope write');
+    A.eq(patchTool.requiresConsent, true, 'fs.patch: requiresConsent true');
+    A.ok(patchTool.schema && patchTool.schema.properties && patchTool.schema.properties.patch && patchTool.schema.properties.patch.type === 'string', 'fs.patch: schema { patch: string }');
+    A.ok(Array.isArray(patchTool.schema.required) && patchTool.schema.required.indexOf('patch') >= 0, 'fs.patch: patch is required');
+    // the register list includes patchTool
+    const registered = [];
+    tools.register({ register: t => registered.push(t.name) });
+    A.ok(registered.indexOf('fs.patch') >= 0, 'fs.patch: present in the register() list');
+    A.ok(registered.indexOf('fs.edit') >= 0 && registered.indexOf('fs.write') >= 0, 'register list still carries the existing fs.* tools');
+    // _internals exposes the parser + matcher for tests
+    A.ok(_internals && typeof _internals.parsePatch === 'function', '_internals.parsePatch exposed');
+    A.ok(typeof _internals.fuzzyFind === 'function', '_internals.fuzzyFind exposed');
+    A.ok(typeof _internals.resolveInside === 'function', '_internals.resolveInside still exposed (additive, not clobbered)');
+  }
+
+  // ---- MULTI-HUNK: two hunks in ONE file both apply; read-back proves BOTH edits ----
+  {
+    const ctx = { agentId: 'mh' };
+    const original = [
+      'function alpha() {',
+      '  return 1;',
+      '}',
+      '',
+      'function beta() {',
+      '  return 2;',
+      '}',
+      '',
+    ].join('\n');
+    await writeTool.run({ path: 'multi.js', content: original }, ctx);
+
+    const patch = wrap([
+      '*** Update File: multi.js',
+      '@@ function alpha @@',
+      ' function alpha() {',
+      '-  return 1;',
+      '+  return 100;',
+      ' }',
+      '@@ function beta @@',
+      ' function beta() {',
+      '-  return 2;',
+      '+  return 200;',
+      ' }',
+    ].join('\n'));
+
+    const res = await patchTool.run({ patch }, ctx);
+    A.ok(res && /multi\.js/.test(res.content || ''), 'multi-hunk: result mentions the patched file');
+    const after = (await readTool.run({ path: 'multi.js' }, ctx)).content;
+    A.ok(after.indexOf('return 100;') >= 0, 'multi-hunk: FIRST hunk applied (return 100)');
+    A.ok(after.indexOf('return 200;') >= 0, 'multi-hunk: SECOND hunk applied (return 200)');
+    A.ok(after.indexOf('return 1;') < 0 && after.indexOf('return 2;') < 0, 'multi-hunk: old lines gone');
+  }
+
+  // ---- ATOMIC ROLLBACK: 1st hunk matches but 2nd does NOT -> file BYTE-IDENTICAL, error, no partial write ----
+  {
+    const ctx = { agentId: 'roll' };
+    const original = [
+      'function alpha() {',
+      '  return 1;',
+      '}',
+      '',
+      'function beta() {',
+      '  return 2;',
+      '}',
+      '',
+    ].join('\n');
+    await writeTool.run({ path: 'roll.js', content: original }, ctx);
+    const before = (await readTool.run({ path: 'roll.js' }, ctx)).content;
+
+    const patch = wrap([
+      '*** Update File: roll.js',
+      '@@ first @@',
+      ' function alpha() {',
+      '-  return 1;',
+      '+  return 999;',
+      ' }',
+      '@@ second @@',
+      ' function beta() {',
+      '-  return THIS_LINE_DOES_NOT_EXIST;',
+      '+  return 888;',
+      ' }',
+    ].join('\n'));
+
+    await rejects(patchTool.run({ patch }, ctx), 'atomic rollback: a patch whose 2nd hunk misses REJECTS');
+    const after = (await readTool.run({ path: 'roll.js' }, ctx)).content;
+    A.eq(after, before, 'atomic rollback: file is BYTE-IDENTICAL to before (no partial write of the 1st hunk)');
+    A.ok(after.indexOf('return 999;') < 0, 'atomic rollback: the 1st hunk\'s change was NOT written');
+  }
+
+  // ---- JAIL: ../escape / absolute / drive-letter / NUL rejected BEFORE any I/O; file untouched ----
+  {
+    const ctx = { agentId: 'jail' };
+    // seed a sibling file we will prove is never touched
+    await writeTool.run({ path: 'keep.txt', content: 'ORIGINAL' }, ctx);
+
+    for (const badPath of ['../escape.txt', '../../etc/passwd', '/abs/unix.txt', 'C:\\windows\\x.txt', 'sub/../../up.txt']) {
+      const patch = wrap([
+        '*** Update File: ' + badPath,
+        '@@ @@',
+        '-anything',
+        '+evil',
+      ].join('\n'));
+      await rejects(patchTool.run({ patch }, ctx), 'jail: escaping op path rejected (' + badPath + ')');
+    }
+    // a NUL byte in the path is rejected
+    {
+      const patch = wrap(['*** Update File: bad name.txt', '@@ @@', '-x', '+y'].join('\n'));
+      await rejects(patchTool.run({ patch }, ctx), 'jail: NUL-byte op path rejected');
+    }
+    // a MOVE whose DST escapes the jail is rejected (dst goes through resolveInside too)
+    {
+      await writeTool.run({ path: 'movable.txt', content: 'M' }, ctx);
+      const patch = wrap(['*** Move File: movable.txt -> ../escaped.txt'].join('\n'));
+      await rejects(patchTool.run({ patch }, ctx), 'jail: MOVE dst escaping the jail rejected');
+      // src still present, untouched
+      A.eq((await readTool.run({ path: 'movable.txt' }, ctx)).content, 'M', 'jail: MOVE-with-bad-dst leaves src untouched');
+    }
+    // the sibling file is byte-identical — no escaping write ever landed
+    A.eq((await readTool.run({ path: 'keep.txt' }, ctx)).content, 'ORIGINAL', 'jail: no escape attempt touched any file');
+    // and nothing escaped the workspace root onto disk
+    A.ok(!fs.existsSync(path.join(ROOT, '..', 'escape.txt')), 'jail: ../escape.txt was never created above the root');
+    A.ok(!fs.existsSync(path.join(ROOT, '..', 'escaped.txt')), 'jail: ../escaped.txt (MOVE) was never created above the root');
+  }
+
+  // ---- fs.edit UNCHANGED: schema + semantics preserved (mirrors fs.jail.test.js:64-72) ----
+  {
+    const ctx = { agentId: 'editchk' };
+    A.eq(editTool.name, 'fs.edit', 'fs.edit: name unchanged');
+    A.eq(JSON.stringify(editTool.schema.required), JSON.stringify(['path', 'find', 'replace']), 'fs.edit: schema required unchanged {path,find,replace}');
+    await writeTool.run({ path: 'e.txt', content: 'foo bar' }, ctx);
+    const e = await editTool.run({ path: 'e.txt', find: 'foo', replace: 'baz' }, ctx);
+    A.ok(/1 replacement/.test(e.content), 'fs.edit: still reports the replacement count');
+    A.eq((await readTool.run({ path: 'e.txt' }, ctx)).content, 'baz bar', 'fs.edit: still applies exact replace to disk');
+    await rejects(editTool.run({ path: 'e.txt', find: 'nope', replace: 'x' }, ctx), 'fs.edit: still errors when "find" is absent');
+  }
+
+  // ---- ADD / DELETE / MOVE ops in one patch, two-phase + atomic across files ----
+  {
+    const ctx = { agentId: 'admove' };
+    await writeTool.run({ path: 'old.txt', content: 'to be moved' }, ctx);
+    await writeTool.run({ path: 'gone.txt', content: 'to be deleted' }, ctx);
+    const patch = wrap([
+      '*** Add File: created.txt',
+      '+brand new',
+      '+second line',
+      '*** Delete File: gone.txt',
+      '*** Move File: old.txt -> moved/new.txt',
+    ].join('\n'));
+    await patchTool.run({ patch }, ctx);
+    A.eq((await readTool.run({ path: 'created.txt' }, ctx)).content, 'brand new\nsecond line', 'add: new file created with the + content');
+    await rejects(readTool.run({ path: 'gone.txt' }, ctx), 'delete: deleted file is gone');
+    await rejects(readTool.run({ path: 'old.txt' }, ctx), 'move: src no longer exists');
+    A.eq((await readTool.run({ path: 'moved/new.txt' }, ctx)).content, 'to be moved', 'move: dst has the src content');
+  }
+
+  // ---- MALFORMED patch -> clean error, NO write ----
+  {
+    const ctx = { agentId: 'malf' };
+    await writeTool.run({ path: 'm.txt', content: 'untouched' }, ctx);
+    await rejects(patchTool.run({ patch: wrap('*** Update File: m.txt') }, ctx), 'malformed: UPDATE with zero hunks rejected');
+    await rejects(patchTool.run({ patch: wrap('just some text, no header') }, ctx), 'malformed: no file-op header rejected');
+    await rejects(patchTool.run({ patch: '' }, ctx), 'malformed: empty patch rejected (no ops to apply)');
+    A.eq((await readTool.run({ path: 'm.txt' }, ctx)).content, 'untouched', 'malformed: target file untouched');
+  }
+
+  // ---- SAME-PATH collision guard: two ops on one path reject (no silent last-write-wins) ----
+  {
+    const ctx = { agentId: 'collide' };
+    await writeTool.run({ path: 'twice.txt', content: 'a\nb\nc' }, ctx);
+    const before = (await readTool.run({ path: 'twice.txt' }, ctx)).content;
+    const patch = wrap([
+      '*** Update File: twice.txt',
+      '@@ @@',
+      '-a',
+      '+A',
+      '*** Update File: twice.txt',
+      '@@ @@',
+      '-c',
+      '+C',
+    ].join('\n'));
+    await rejects(patchTool.run({ patch }, ctx), 'collision: two ops on the same path reject');
+    A.eq((await readTool.run({ path: 'twice.txt' }, ctx)).content, before, 'collision: file untouched (no partial last-write-wins)');
+  }
+
+  // ---- UPDATE on a missing file -> clean error, never throws an opaque crash ----
+  {
+    const ctx = { agentId: 'miss' };
+    const patch = wrap(['*** Update File: ghost.txt', '@@ @@', '-x', '+y'].join('\n'));
+    await rejects(patchTool.run({ patch }, ctx), 'update on a missing file -> clean error');
+  }
+
+  // ---- WRITE_BYTES cap enforced in PHASE-2 (an ADD that exceeds the cap rejects, no write) ----
+  {
+    const small = makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 64, readReturn: 1000 } });
+    const ctx = { agentId: 'cap' };
+    const big = 'x'.repeat(200);
+    const patch = wrap(['*** Add File: toobig.txt', '+' + big].join('\n'));
+    await rejects(small.patchTool.run({ patch }, ctx), 'cap: an ADD exceeding WRITE_BYTES rejects');
+    A.ok(!fs.existsSync(path.join(ROOT, 'cap', 'toobig.txt')), 'cap: the oversize file was never written');
+  }
+
+  try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('fs.patch.test');
 })();
