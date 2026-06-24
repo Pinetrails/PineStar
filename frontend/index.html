@@ -80,7 +80,13 @@
     <input id="in-name" maxlength="18" placeholder="name your orchestrator" autocomplete="off" spellcheck="false">
 
     <label>SKIN <span class="dim">— the character your agent wears on the floor</span></label>
-    <div id="skin-picker" class="skin-picker"></div>
+    <div class="skin-section">
+      <div id="skin-picker" class="skin-picker"></div>
+      <figure class="skin-stage" aria-live="polite">
+        <div class="skin-stage-frame"><img id="skin-stage-img" alt="" draggable="false"></div>
+        <figcaption id="skin-stage-name" class="skin-stage-name"></figcaption>
+      </figure>
+    </div>
 
     <!-- ===== VOICE & MANNER — the new personality system ===== -->
     <div class="cc-head">▸ VOICE &amp; MANNER <span class="dim">— how it talks (you can change it later)</span></div>
@@ -224,6 +230,7 @@
 <script src="app/pipeline.js"></script>
 <script src="app/propanchor.js"></script>
 <script src="app/data-shim.js"></script>
+<script src="app/skinstage.js"></script>
 <script src="js/assets.js"></script>
 <script src="app/harness.js"></script>
 <script src="app/ctxgauge.js"></script>

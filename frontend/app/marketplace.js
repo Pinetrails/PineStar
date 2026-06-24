@@ -175,8 +175,15 @@ const Marketplace = (() => {
         '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '">' +
         '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
     }).join('');
+    const cur = DATA.SKINS[pickedSummonSkin];
     return '<div class="mkt-skinbar"><label class="mkt-skinlabel">SKIN <span class="mkt-hint">— which character this agent wears</span></label>' +
-      '<div class="skin-picker" id="mkt-skin-picker">' + thumbs + '</div></div>';
+      '<div class="skin-section mkt-skin-section">' +
+        '<div class="skin-picker" id="mkt-skin-picker">' + thumbs + '</div>' +
+        '<figure class="skin-stage" aria-live="polite">' +
+          '<div class="skin-stage-frame"><img id="mkt-skin-stage-img" alt="" draggable="false"></div>' +
+          '<figcaption id="mkt-skin-stage-name" class="skin-stage-name">' + esc(cur.name || pickedSummonSkin) + '</figcaption>' +
+        '</figure>' +
+      '</div></div>';
   }
 
   // the AGENTS tab — the specialty catalog (the bay's original content) + its affinity-ranked shelf
@@ -442,13 +449,25 @@ const Marketplace = (() => {
     const saveas = body.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; render(); });
 
-    // SUMMON skin picker — set the chosen skin (applied to whichever specialty is RECRUITed)
+    // SUMMON skin picker — set the chosen skin (applied to whichever specialty is RECRUITed) and
+    // drive the shared live preview stage so you can read the character before recruiting it.
     const skinWrap = body.querySelector('#mkt-skin-picker');
-    if (skinWrap) skinWrap.querySelectorAll('.skin-thumb').forEach(b => b.addEventListener('click', () => {
-      pickedSummonSkin = b.dataset.skin;
-      skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
-      b.classList.add('sel'); sfx('click');
-    }));
+    if (skinWrap) {
+      const stageImg = body.querySelector('#mkt-skin-stage-img');
+      const stageName = body.querySelector('#mkt-skin-stage-name');
+      if (typeof SkinStage !== 'undefined' && stageImg) SkinStage.mount(stageImg, stageName, pickedSummonSkin);
+      skinWrap.querySelectorAll('.skin-thumb').forEach(b => {
+        b.addEventListener('click', () => {
+          pickedSummonSkin = b.dataset.skin;
+          skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
+          b.classList.add('sel'); sfx('click');
+          if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin);
+        });
+        // hover scrubs the stage; leaving snaps back to the committed pick
+        b.addEventListener('mouseenter', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(b.dataset.skin); });
+      });
+      skinWrap.addEventListener('mouseleave', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin); });
+    }
 
     // PREVIEW toggles IN PLACE (no full re-render) so it animates and keeps keyboard focus on the button
     body.querySelectorAll('.mkt-prev').forEach(b => b.addEventListener('click', () => {

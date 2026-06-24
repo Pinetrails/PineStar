@@ -496,6 +496,8 @@ const App = (() => {
 
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
   // id rides on agent.skin and is read by the sprite engine (assets.js drawBody → DATA.SKINS).
+  // A live preview STAGE on the right (shared SkinStage) plays the picked (or hovered) skin's real
+  // walk cycle big enough to actually read — a 40px still of a chunky sprite is unidentifiable.
   function buildSkins() {
     const wrap = el('skin-picker'); if (!wrap || typeof DATA === 'undefined' || !DATA.SKINS) return;
     wrap.innerHTML = '';
@@ -513,10 +515,15 @@ const App = (() => {
       b.onclick = () => {
         pickedSkin = id;
         [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        if (typeof SkinStage !== 'undefined') SkinStage.show(id);
         SFX.click();
       };
+      // hover scrubs the stage so you can compare without committing; leaving snaps back to the pick
+      b.onmouseenter = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(id); };
       wrap.appendChild(b);
     });
+    wrap.onmouseleave = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSkin); };
+    if (typeof SkinStage !== 'undefined') SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
   }
 
   /* ---------- VOICE & MANNER (the create-screen personality system) ----------
