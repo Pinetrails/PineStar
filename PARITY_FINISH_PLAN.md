@@ -754,7 +754,7 @@ ORs with `SKYNET_CRON_ENABLED`, NOT runtime `process.env` mutation), then re-ren
 > existing callers/tests; overloading risks regressing the simple path and confusing tool-choice).
 > Mirrors Hermes keeping `patch_replace` separate from V4A.
 
-### G5.1 — `patchparse.js` + `fuzzymatch.js` (V4A parser + strategy ladder)  ·  STATUS: TODO
+### G5.1 — `patchparse.js` + `fuzzymatch.js` (V4A parser + strategy ladder)  ·  STATUS: DONE
 One-line task: port `parse_v4a_patch` (the exact V4A format: `*** Begin/End Patch`,
 `*** Update/Add/Delete/Move File:`, `@@ context @@`, ` `/`-`/`+` prefixes) into a new
 `patchparse.js`, and a pure-Node `fuzzy_find_and_replace` subset (exact → line_trimmed →
@@ -771,6 +771,37 @@ reindent-on-non-exact into `fuzzymatch.js`. Both UMD-shaped like `fs.js`.
 - **Notes:** Defer unicode/escape-drift strategies (noted parity gap — they salvage LLM
   serialization artifacts; fail-closed is safer than silent corruption). Keep Hermes' conservative
   thresholds (0.50 unique / 0.70 multi).
+- **DONE (2026-06-24, commit cf11b38).** Two NEW pure, dependency-free, UMD-shaped modules — the parser+matcher
+  half of `fs.patch`. `fs.js` is UNTOUCHED this iteration (G5.2 wires the tool).
+  - **`patchparse.js`** — `parseV4APatch(text) -> {ops, error}`. Faithful JS port of `parse_v4a_patch`: parses
+    `*** Begin/End Patch`, `*** Update/Add/Delete/Move File:` (MOVE with `-> dst`), `@@ context @@` hunk headers,
+    ` `/`-`/`+` line prefixes (1-char prefix stripped, content indentation preserved) into a structured op list
+    (`{operation, filePath, newPath?, hunks:[{contextHint, lines:[{prefix, content}]}]}`). PURE; NEVER throws
+    (non-string coerced); returns `{ops:[], error:'Parse error: …'}` on malformed input. Rejects per the
+    acceptance: a marked patch with NO file-op header, an UPDATE with ZERO hunks, a MOVE without `-> dst` (a
+    `*** Move File:` header that fails the arrow regex is caught explicitly, not silently dropped). Tolerates
+    no-space `***Begin/End Patch`, ignores preamble/trailer outside the markers, treats a prefix-less non-empty
+    line as implicit context; an EMPTY string (no markers) is NOT an error (caller decides).
+  - **`fuzzymatch.js`** — `fuzzyFindAndReplace(content, old, new, replaceAll) -> {content, count, strategy, error}`.
+    Conservative strategy LADDER `exact → line_trimmed → whitespace_normalized → indentation_flexible →
+    block_anchor`, tried in order (exact preferred; falls through deterministically). `block_anchor` keeps Hermes'
+    0.50-unique / 0.70-multi similarity thresholds via a faithful JS port of difflib `SequenceMatcher.ratio`
+    (longest-matching-block recursion). KEEPS the UNIQUENESS guard (>1 match && !replaceAll → "provide more
+    context" error, count 0, content unchanged) and REINDENT-on-non-exact (a fuzzily-matched replacement is
+    re-indented so its base anchors to the FILE's indentation, not the patch's). DEFERS the unicode/escape-drift
+    salvage strategies + the `\t`/`\'` unescape heuristics (noted parity gap; fail-closed > silent corruption).
+    A strategy that throws can't crash the ladder (per-strategy try/catch → treated as no-match).
+  - **Verified RED→GREEN** (`test/fs.patch.test.js`, NEW, 82 assertions). RED #1: module-not-found pre-impl. RED
+    #2 (proving non-vacuity): against a loadable guard-less matcher stub, **9 content assertions FAIL** (ladder
+    fallthrough, reindent-to-file-indent, the uniqueness guard, block_anchor). GREEN: `OK (82)`. Coverage =
+    malformed rejection (no-header / UPDATE-zero-hunks / MOVE-no-dst → clear error, returns, NO ops; null/number
+    never throw), whitespace/fuzzy tolerance + reindent (2-space patch → file's 4-space base / 8-space body),
+    uniqueness guard + replaceAll, deterministic ladder order, block_anchor.
+  - **Gates:** `npm run test:fast` GREEN (EXIT 0 — no regressions; **`lint-determinism: scanned 78 file(s); OK`** —
+    both new modules in the scanned `sidecar/` tree are clock/rng-free, no `Date.now`/`Math.random`/`new Date()`;
+    `lint-emits` OK). No route → no `test:http` needed. No `shared/events.js`/`shared/schema.js` edit; no new event.
+  - **Files:** `sidecar/tools/builtin/patchparse.js` (NEW), `sidecar/tools/builtin/fuzzymatch.js` (NEW),
+    `test/fs.patch.test.js` (NEW), `package.json` (append `fs.patch.test` after `fs.jail.test` in `test:fast`).
 
 ### G5.2 — `fs.patch` tool (jailed, two-phase, buffer-then-flush atomic)  ·  STATUS: TODO
 One-line task: add `fs.patch` (`capability:'cabinet'`, `scope:'write'`, `requiresConsent:true`,
@@ -1067,3 +1098,33 @@ merge in small increments.
   secret leak; `rm -rf` / `npx --package evil` → error, no spawn; E-STOP drops live node.exe 3→2 (child reaped). No
   `shared/*` edit; no new event. Next per the autonomy-first order: **G5.1** (fs V4A patch parser + fuzzy matcher —
   `sidecar/tools/builtin/patchparse.js` + `fuzzymatch.js`).
+- 2026-06-24 — **G5.1 V4A patch parser + fuzzy matcher: DONE (commit cf11b38).** Ported Hermes' V4A patch format +
+  fuzzy find-and-replace into TWO new pure, dependency-free, UMD-shaped modules (the parser+matcher half of the
+  future `fs.patch` tool; G5.2 wires the tool next — `fs.js` UNTOUCHED this iteration). `patchparse.js`:
+  `parseV4APatch(text) -> {ops, error}` parses `*** Begin/End Patch`, `*** Update/Add/Delete/Move File:` (MOVE with
+  `-> dst`), `@@ context @@` hunk headers, and ` `/`-`/`+` line prefixes into a structured op list; PURE, NEVER
+  throws, returns a clear error on malformed input (no file-op header inside a marked patch / UPDATE with zero
+  hunks / MOVE without `-> dst` → error + ZERO ops). Faithful to `parse_v4a_patch`: no-space markers tolerated,
+  preamble/trailer outside markers ignored, implicit (prefix-less) context lines, empty patch = no error.
+  `fuzzymatch.js`: `fuzzyFindAndReplace(content, old, new, replaceAll) -> {content, count, strategy, error}` with
+  the conservative strategy LADDER `exact → line_trimmed → whitespace_normalized → indentation_flexible →
+  block_anchor` (Hermes' 0.50-unique / 0.70-multi block-anchor thresholds, via a faithful JS port of difflib's
+  `SequenceMatcher.ratio`). KEEPS the two Hermes guards: the UNIQUENESS guard (>1 match && !replaceAll → error
+  "provide more context", NO write, content unchanged) and REINDENT-on-non-exact (a fuzzily-matched replacement is
+  re-indented so its base anchors to the FILE's indentation, not the patch's — a 2-space-shallow patch on a
+  4-space file writes 4-space code). DEFERS the unicode/escape-drift salvage strategies (escape_normalized /
+  unicode_normalized / trimmed_boundary / context_aware + the `\t`/`\'` salvage heuristics) — noted parity gap;
+  fail-closed (clear no-match error → model re-reads) is safer than silently writing salvaged text. **TESTS-FIRST,
+  RED→GREEN proven** (`test/fs.patch.test.js`, NEW, 82 assertions): RED on the pre-impl tree (module-not-found);
+  and a second decisive RED — against a loadable-but-guard-less matcher stub, **9 content assertions FAIL** (ladder
+  fallthrough, reindent-to-file-indent, the uniqueness guard, block_anchor) — proving the assertions are
+  load-bearing, not vacuous → `OK (82)` with the real impl. Coverage = MALFORMED rejection (no header / UPDATE
+  zero-hunks / MOVE no-dst → error, returns, no ops; garbage/non-string never throws), WHITESPACE/FUZZY tolerance
+  + REINDENT, the uniqueness guard, replaceAll, deterministic ladder order (exact preferred, falls through), and
+  block_anchor. Full `npm run test:fast` GREEN (EXIT 0 — no regressions; **`lint-determinism: scanned 78 file(s);
+  OK`** — both new modules are in the scanned `sidecar/` tree and clock/rng-free, no `Date.now`/`Math.random`/
+  `new Date()`; `lint-emits` OK). No route → no `test:http` this iteration. No `shared/events.js`/`shared/schema.js`
+  edit (`git log feat/harness-backend..agent/parity-finish -- shared/*` stays empty); no new event. Files:
+  `sidecar/tools/builtin/patchparse.js` (NEW), `sidecar/tools/builtin/fuzzymatch.js` (NEW), `test/fs.patch.test.js`
+  (NEW), `package.json` (append `fs.patch.test` after `fs.jail.test` in `test:fast`). Next: **G5.2** (the `fs.patch`
+  tool — jailed via `resolveInside`, two-phase validate-then-apply, buffer-then-flush atomic, wired into `fs.js`).
