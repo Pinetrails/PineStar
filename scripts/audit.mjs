@@ -149,16 +149,37 @@ async function scenarioSummon(cdp, A) {
   await sleep(700);
 }
 
-// SCENARIO: THE MOAT — object=capability. Read the hero's placed capability set and check it is sane.
+// SCENARIO: THE MOAT — object=capability. Enter BUILD, place a `dish`, and prove the WEB capability
+// comes online (placed object ⇒ earned reach). Placement goes through the real station.addProp path via
+// a DEV-only Build.__test__ hook (canvas-drag pixel math is private), then we read World.heroCaps.
+const capList = (caps) => (Array.isArray(caps) ? caps.map((c) => c && c.objectType) : []);
 async function scenarioMoat(cdp, A) {
   await evalJS(cdp, closeOnly).catch(() => {});
-  const caps = await evalJS(cdp, "(typeof World!=='undefined'&&World.heroCaps)?World.heroCaps('agent'):null").catch(() => null);
-  A.ok('moat/heroCaps-readable', Array.isArray(caps), Array.isArray(caps) ? `caps=[${caps.map((c) => c.objectType).join(', ') || 'none placed'}]` : 'heroCaps() not callable');
-  if (Array.isArray(caps)) {
-    const KNOWN = new Set(['web', 'files', 'terminal', 'memory', 'image', 'spotify']);
-    const bad = caps.filter((c) => !KNOWN.has(c && c.objectType));
-    A.ok('moat/caps-well-formed', bad.length === 0, bad.length ? 'unexpected: ' + bad.map((c) => c && c.objectType).join(',') : 'every placed object maps to a known capability');
+  const rawBefore = await evalJS(cdp, "(typeof World!=='undefined'&&World.heroCaps)?World.heroCaps('agent'):null").catch(() => null);
+  const before = capList(rawBefore);
+  A.ok('moat/heroCaps-readable', Array.isArray(rawBefore), `before=[${before.join(', ') || 'none'}]`);
+
+  // enter BUILD and wait for the dev test hook
+  await clickSel(cdp, '#bb-build');
+  let built = false;
+  for (let i = 0; i < 20; i++) { built = await evalJS(cdp, "!!(typeof Build!=='undefined' && Build.__test__ && Build.__test__.isOpen())").catch(() => false); if (built) break; await sleep(200); }
+  A.ok('moat/build-mode', built, built ? 'REFIT open + dev hook present' : 'Build.__test__ not available');
+
+  let placed = null;
+  if (built) {
+    placed = await evalJS(cdp, "Build.__test__.placeCapProp('workbench')").catch((e) => ({ ok: false, reason: e.message }));
+    A.ok('moat/place-prop', !!(placed && placed.ok), placed && placed.ok ? `workbench @ (${placed.tile.tx},${placed.tile.ty})` : `placement failed: ${placed && placed.reason}`);
+    await clickSel(cdp, '#refit-done');                 // exit build → re-bake
+    await evalJS(cdp, closeOnly).catch(() => {});
+    await sleep(900);
   }
+
+  // object=capability: a placed workbench ⇒ the TERMINAL capability (objectType 'workbench') comes online.
+  const after = capList(await evalJS(cdp, "(typeof World!=='undefined'&&World.heroCaps)?World.heroCaps('agent'):null").catch(() => null));
+  A.ok('moat/capability-online', after.includes('workbench') && !before.includes('workbench'), `after=[${after.join(', ') || 'none'}] (workbench ⇒ terminal)`);
+  const KNOWN = new Set(['cabinet', 'dish', 'notebook', 'workbench']);   // heroCaps objectTypes (computer/connector excluded by design)
+  const bad = after.filter((c) => !KNOWN.has(c));
+  A.ok('moat/caps-well-formed', bad.length === 0, bad.length ? 'unexpected: ' + bad.join(',') : 'every placed object maps to a known capability');
 }
 
 async function main() {
