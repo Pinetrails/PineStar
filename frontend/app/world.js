@@ -1229,6 +1229,11 @@ const World = (() => {
     // terminating, no movement — idleUntil/glance/cooldown only, never a path/target/goal — K1/K2 intact).
     other.idleUntil = Math.max(other.idleUntil || 0, now + dur + U.irnd(200, 600));
     other.neighborGlanceCd = now + U.irnd(14000, 26000);   // arm the partner's cooldown too so it doesn't immediately re-initiate
+    // Protect the INITIATOR's held glance symmetrically: bodyIsIdle ignores idleUntil, so if self's idle hold expired
+    // mid-glance the crew/hero engine would re-enter decideIdle and standStill(62%)/lookAround/wander could stomp self's
+    // own still-live glance (degrading C-Beat2 to one-sided on the initiator side). Hold self's idle past dur the same
+    // way the partner is held — gaze/timer-only, no path/target/goal (K1/K2 intact, K4 still self-terminating).
+    self.idleUntil = Math.max(self.idleUntil || 0, now + dur + U.irnd(200, 600));
     return true;
   }
 
@@ -1640,7 +1645,7 @@ const World = (() => {
     const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
-      if (maybeMutualGlance(now)) { self.idleUntil = now + U.irnd(1400, 3000); return; }  // C-Beat2: a quiet noticing between two idle neighbors — gaze-only, ends by timeout
+      if (maybeMutualGlance(now)) return;  // C-Beat2: a quiet noticing between two idle neighbors — gaze-only; maybeMutualGlance holds self.idleUntil past its own glance so the beat stays two-sided, then ends by timeout
       if (U.chance(0.10) && maybeRevisit(now)) return;                                 //   occasionally drift back to its favorite spot
       const r = U.irnd(0, 99);
       if (r < 62) standStill(now);                                                      //   62% just stand and be here
