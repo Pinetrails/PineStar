@@ -52,9 +52,42 @@
       }
     };
 
+    const sessionSearchTool = {
+      name: 'session_search', capability: 'memory', scope: 'read', requiresConsent: false,
+      description: 'Search and browse your durable conversation sessions. With no args, browse recent sessions. ' +
+        'With `query`, discover matching sessions across transcript history with match windows and bookends. With ' +
+        '`sessionId`, read a bounded session. With `sessionId` + `aroundMessageId`, scroll around a stable message id. ' +
+        'This is stronger than recall_conversation: it searches across sessions/streams and returns structured JSON.',
+      schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'words or phrase to discover matching sessions' },
+          sessionId: { type: 'string', description: 'stream/session id to read or scroll' },
+          aroundMessageId: { type: 'integer', description: 'stable message id to center a scroll window around' },
+          window: { type: 'integer', description: 'messages before/after the anchor or match (default 5)' },
+          limit: { type: 'integer', description: 'max sessions to return (default 3)' }
+        }
+      },
+      run: async (args, ctx) => {
+        if (!transcriptStore || typeof transcriptStore.sessionSearch !== 'function') return { content: 'Session search is unavailable.', summary: 'unavailable' };
+        let out;
+        try { out = transcriptStore.sessionSearch(args || {}, { streamId: ctx && ctx.streamId ? String(ctx.streamId) : null }); }
+        catch (e) { out = { success: false, error: (e && e.message) || 'session search failed' }; }
+        const mode = (out && out.mode) || 'error';
+        const count = out && typeof out.count === 'number' ? out.count : (Array.isArray(out && out.messages) ? out.messages.length : 0);
+        return { content: JSON.stringify(out, null, 2), summary: mode + ' ' + count };
+      }
+    };
+
     return {
-      recallTool,
-      register(registry) { if (registry && typeof registry.register === 'function') registry.register(recallTool); return this; }
+      recallTool, sessionSearchTool,
+      register(registry) {
+        if (registry && typeof registry.register === 'function') {
+          registry.register(recallTool);
+          registry.register(sessionSearchTool);
+        }
+        return this;
+      }
     };
   }
 

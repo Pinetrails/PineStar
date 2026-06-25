@@ -62,5 +62,57 @@ let clk = 1000; const clock = { now: () => clk };
     A.ok(/unavailable/i.test(r.content), 'missing transcriptStore -> graceful "unavailable"');
   }
 
+  // ---- F. sessionSearch(): Hermes-like browse/discover/read/scroll over stable message ids ----
+  {
+    const s = makeTranscriptStore({ io: memIo(), clock });
+    clk = 2000;
+    s.append({ streamId: 'alpha', role: 'user', content: 'start alpha project brief' });
+    s.append({ streamId: 'alpha', role: 'assistant', content: 'alpha kickoff acknowledged' });
+    const anchor = s.append({ streamId: 'alpha', role: 'user', content: 'the quarterly budget reconciliation plan needs an airlock review' });
+    s.append({ streamId: 'alpha', role: 'assistant', content: 'airlock budget reconciliation noted' });
+    s.append({ streamId: 'alpha', role: 'user', content: 'wrap alpha' });
+    clk = 3000;
+    s.append({ streamId: 'beta', role: 'user', content: 'beta launch notes mention quarterly budget only once' });
+    s.append({ streamId: 'beta', role: 'assistant', content: 'beta response' });
+
+    const browse = s.sessionSearch({ limit: 5 }, { streamId: 'alpha' });
+    A.eq(browse.mode, 'browse', 'sessionSearch no args -> browse mode');
+    A.ok(browse.results.some(x => x.sessionId === 'beta'), 'browse lists other recent sessions');
+    A.ok(!browse.results.some(x => x.sessionId === 'alpha'), 'browse excludes the active session lineage');
+
+    const found = s.sessionSearch({ query: 'quarterly budget reconciliation airlock', limit: 5, window: 1 }, { streamId: 'gamma' });
+    A.eq(found.mode, 'discover', 'query -> discover mode');
+    A.eq(found.results[0].sessionId, 'alpha', 'discover dedupes and ranks the best matching session first');
+    A.eq(found.results[0].matchMessageId, anchor.id, 'discover exposes a stable message anchor');
+    A.ok(found.results[0].messages.some(m => m.anchor), 'discover returns an anchored match window');
+    A.ok(found.results[0].bookendStart.length > 0 && found.results[0].bookendEnd.length > 0, 'discover includes session bookends');
+
+    const read = s.sessionSearch({ sessionId: 'alpha', head: 2, tail: 1 });
+    A.eq(read.mode, 'read', 'sessionId -> read mode');
+    A.eq(read.truncated, true, 'read bounds long sessions with head+tail');
+    A.eq(read.messages.length, 3, 'read returns bounded first+last messages');
+
+    const scroll = s.sessionSearch({ sessionId: 'alpha', aroundMessageId: anchor.id, window: 1 });
+    A.eq(scroll.mode, 'scroll', 'sessionId+aroundMessageId -> scroll mode');
+    A.ok(scroll.messages.some(m => m.id === anchor.id && m.anchor), 'scroll centers and marks the anchor message');
+    A.eq(scroll.messages.length, 3, 'scroll returns +/- window around the anchor');
+  }
+
+  // ---- G. session_search tool returns structured JSON and degrades gracefully ----
+  {
+    const s = makeTranscriptStore({ io: memIo(), clock });
+    s.append({ streamId: 's_tool', role: 'user', content: 'remember the graphite gasket audit trail' });
+    const { sessionSearchTool } = makeRecallTool({ transcriptStore: s });
+    A.eq(sessionSearchTool.name, 'session_search', 'session_search tool name');
+    A.eq(sessionSearchTool.capability, 'memory', 'session_search joins the memory capability');
+    const r = await sessionSearchTool.run({ query: 'graphite gasket', limit: 3 }, { streamId: 'other' });
+    const parsed = JSON.parse(r.content);
+    A.eq(parsed.mode, 'discover', 'tool query returns discover JSON');
+    A.eq(parsed.results[0].sessionId, 's_tool', 'tool surfaces the matching session');
+    const noStore = makeRecallTool({}).sessionSearchTool;
+    const missing = await noStore.run({ query: 'x' }, {});
+    A.ok(/unavailable/i.test(missing.content), 'missing session search store -> graceful unavailable');
+  }
+
   A.report('recall.test');
 })();
