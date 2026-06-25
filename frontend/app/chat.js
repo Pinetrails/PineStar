@@ -301,6 +301,7 @@ const Chat = (() => {
   function actionPhrase(ev) {
     const t = ev.tool || 'act';
     if (/notebook/.test(t)) return 'save a note to its memory';
+    if (/summon/.test(t)) return 'summon a new agent onto the crew' + (ev.argsSummary ? ' (' + ev.argsSummary + ')' : '');
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
   }

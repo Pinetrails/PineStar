@@ -2043,15 +2043,21 @@ async function runOnce(o) {
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
       + 'final report of what you found/did and which files you saved.'
     : '';
-  // Stage 2: a LEAD run is told who its WORKER crew is (agentId + role) so it can address them via team.dispatch.
-  // Built FRESH from the roster the browser pushed (/api/roster); empty for a non-lead run or a solo station, so
-  // a single-agent run is byte-identical. Only the lead receives this (and the orchestrator tool above).
+  // Stage 2/3: a LEAD run is told it can DELEGATE to existing crew (team.dispatch, listed FRESH from the roster
+  // the browser pushed via /api/roster) AND SUMMON new specialists (team.summon). Only the lead gets this (it alone
+  // gets the orchestrator object above); a non-lead worker stays byte-identical (empty) so it can never re-delegate.
   let teamNote = '';
-  if (o.lead && agentRoster.size >= 2) {
+  if (o.lead) {
+    teamNote = '\n\n[ORCHESTRATION] You are the lead orchestrator. You can build and direct a crew for the Commander:';
     const lines = [];
     for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
-    if (lines.length) teamNote = '\n\n[YOUR CREW] You can delegate subtasks to these specialist agents with the team.dispatch tool — '
-      + 'call it with workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+    if (lines.length) teamNote += '\n• DELEGATE to your existing specialist crew with team.dispatch — call it with '
+      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+    teamNote += '\n• SUMMON a NEW specialist with team.summon when the Commander wants an agent you don\'t have yet '
+      + '(e.g. "create a research agent for me"): pass a class via specId (researcher, engineer, operator, scribe, '
+      + 'analyst, reviewer, scout, archivist, designer, chief, liaison) or a custom name + purpose. It returns the new '
+      + 'agentId, which you can immediately hand work to with team.dispatch. When the Commander asks you to create or '
+      + 'summon an agent, actually DO it with team.summon — don\'t just describe it or claim you cannot.';
   }
   // INSTALLED SKILLS (bundled recipe library): inject the bodies of the recipes the Commander ENABLED whose
   // required objects are actually on THIS agent's floor (object = capability — the same gate the tools use). Empty
