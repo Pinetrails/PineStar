@@ -1540,7 +1540,7 @@ const World = (() => {
   /* ---------- power-down: in the deep wind-down mood it goes dormant where it stands (the eerie "is it off?") ---------- */
   function sleep(now) {
     self.goal = 'sleep'; self.usingProp = null; self.studyKey = null; self.quirkKind = null;
-    self.sitting = true; self.working = false; self.state = 'idle';
+    self.sitting = false; self.working = false; self.state = 'idle';   // dormant STANDING where it stands — never seated: a sit pose on a chairless tile reads as "sitting on air"; the sit anim is reserved for an actual seat (desk/couch)
     self.glance = null;                                      // frozen: maybeGlance skips goal==='sleep', so no lingering cooldown to leak
     self.studyUntil = now + U.irnd(20000, 55000);
     curiositySay(SLEEP_LINE, 0.3, now);
