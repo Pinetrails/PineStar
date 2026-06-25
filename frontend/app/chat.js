@@ -34,6 +34,9 @@ const Chat = (() => {
   // Channels (channels.js) so streams are isolated and survive a switch — chat.js is the DOM view over it. The
   // one thing that can't live in the pure model is the live AbortController (not serializable), so it stays here.
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
+  const interrupted = new Set();   // wsIds the Commander deliberately STOPPED this turn — send()'s catch reads this as a
+                                   // graceful stop (keep the partial reply, log no error) rather than a disconnect. Consumed in finally.
+  const queued = new Map();        // TYPE-AHEAD: wsId -> [text,…] follow-ups typed while the stream was busy; auto-sent in order as it frees
   let activeLiveRow = null;     // streaming text controller for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
                                 // CLASSIC HARNESS FLOW: prose and the agent's actions (tool ▶/◀ lines, deliverables, approval
                                 // prompts) render CHRONOLOGICALLY — newest at the bottom — instead of pinning one reply block to
@@ -132,7 +135,7 @@ const Chat = (() => {
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
-    proposalRunsSeen.clear(); wiQDepth.clear();   // C2: per-session run-tracking + the queue gauge start clean for each agent (listeners stay once-registered)
+    proposalRunsSeen.clear(); wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
     input.value = '';
@@ -141,10 +144,17 @@ const Chat = (() => {
     load(opts.ws);
     input.onkeydown = e => {
       if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
         const t = input.value.trim();
-        if (t) { input.value = ''; send(t); }
+        if (!t) return;
+        input.value = '';
+        if (isBusy()) enqueue(t); else send(t);   // TYPE-AHEAD: queue a follow-up rather than dropping it while the stream is busy
+      } else if (e.key === 'Escape' && isBusy()) {
+        e.preventDefault(); e.stopPropagation();   // INTERRUPT: beat navdock's global Esc-closes-menus while a run is live
+        stopActive();
       }
     };
+    const stopBtn = el('chat-stop'); if (stopBtn) stopBtn.onclick = stopActive;
   }
 
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
@@ -157,8 +167,9 @@ const Chat = (() => {
     stick = true;   // a freshly-loaded / switched-to stream starts pinned to its latest line
     renderHistory();
     replayChannel();   // re-render an in-flight stream we left running: tool lines / partial reply / pending approval
-    syncStatus();
+    syncStatus();      // also paints the Stop control + this stream's queued pills (updateControls)
     maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
+    if (activeWs) flushQueued(activeWs.id);   // returned to an idle stream that has a queued follow-up → send it now
   }
 
   function setSystem(s) { system = s; }
@@ -175,6 +186,7 @@ const Chat = (() => {
     // keep the elapsed readout matched to the DISPLAYED stream — switching to a busy stream picks up its
     // live count, switching to an idle one clears it. (send() also starts it the instant a run begins.)
     if (isBusy()) ensureElapsedTimer(); else stopElapsedTimer();
+    updateControls();   // Stop button visibility + queued pills follow the displayed stream too
   }
   function clearEmptyState() { const e = log && log.querySelector('.cmsg-empty'); if (e) e.remove(); }
   // first-run state: an empty + idle + non-interview stream shows a single dim hint instead of a black void.
@@ -506,6 +518,66 @@ const Chat = (() => {
   function wiBump(aid, d) { const n = Math.max(0, (wiQDepth.get(aid) || 0) + d); wiQDepth.set(aid, n); return n; }
   function wiEmit(name, payload) { try { if (typeof U !== 'undefined' && U.bus) U.bus.emit(name, payload); } catch (_) {} }
 
+  /* ---------- TURN CONTROLS (harness-standard): interrupt + type-ahead ---------- */
+  // INTERRUPT — a gentle, per-stream stop, distinct from safety.js's Alt+H "halt EVERYTHING + alarm". It cancels
+  // only the DISPLAYED stream's in-flight run; the plumbing already exists (each stream owns an AbortController
+  // here + a server runId) so this just exposes a ⏹ button / Esc for it. Flag the stream interrupted so send()'s
+  // catch keeps what already streamed instead of logging an error, and drop that stream's type-ahead queue — a
+  // deliberate stop means "I'm taking over", not "now run my backlog".
+  function stopActive() {
+    if (!activeWs || !isBusy()) return;
+    const id = activeWs.id;
+    interrupted.add(id);
+    queued.delete(id);
+    if (typeof Channels !== 'undefined' && Channels.clearPending) Channels.clearPending(id);   // a pending approval is moot once stopped
+    const ac = aborters.get(id); if (ac) { try { ac.abort(); } catch (_) {} }   // aborts the fetch → reader throws → send()'s catch
+    const rid = (typeof Channels !== 'undefined') ? Channels.runIdOf(id) : null;
+    if (rid && typeof Harness !== 'undefined' && Harness.cancel) Harness.cancel(rid);   // server-side kill (belt-and-suspenders)
+    status('stopping…'); updateControls();
+    if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+  }
+
+  // TYPE-AHEAD — a message typed while the stream is busy is QUEUED, not dropped, and auto-sent in order as the
+  // stream frees. (A concurrent run on a DIFFERENT stream is still one switch away — this is the same-stream
+  // follow-up case.) The pills above the input show what's pending; ✕ cancels one before it sends.
+  function enqueue(text) {
+    if (!activeWs) return;
+    const id = activeWs.id;
+    const arr = queued.get(id) || []; arr.push(text); queued.set(id, arr);
+    renderQueued();
+    if (typeof SFX !== 'undefined' && SFX.type) SFX.type();
+  }
+  function renderQueued() {
+    const strip = el('chat-queued'); if (!strip) return;
+    const arr = (activeWs && queued.get(activeWs.id)) || [];
+    strip.innerHTML = '';
+    arr.forEach((t, i) => {
+      const pill = document.createElement('span'); pill.className = 'queued-pill'; pill.title = t;
+      const label = document.createElement('span'); label.className = 'queued-text'; label.textContent = t;
+      const x = document.createElement('button'); x.className = 'queued-x'; x.type = 'button'; x.textContent = '✕';
+      x.setAttribute('aria-label', 'Cancel queued message');
+      x.onclick = () => { const a = queued.get(activeWs.id) || []; a.splice(i, 1); a.length ? queued.set(activeWs.id, a) : queued.delete(activeWs.id); renderQueued(); };
+      pill.appendChild(document.createTextNode('⤷ ')); pill.appendChild(label); pill.appendChild(x);
+      strip.appendChild(pill);
+    });
+  }
+  // a stream just freed (or was switched back to while idle) — send its next queued follow-up. Guarded to the
+  // DISPLAYED stream so send()'s DOM writes always target the visible log; a backgrounded queue waits for return.
+  function flushQueued(id) {
+    if (!id || !activeWs || activeWs.id !== id) return;
+    if (isBusy()) return;
+    const arr = queued.get(id); if (!arr || !arr.length) return;
+    const next = arr.shift(); arr.length ? queued.set(id, arr) : queued.delete(id);
+    renderQueued();
+    send(next);
+  }
+  // show the Stop control + the queued pills for whatever stream is on screen. Called from syncStatus (covers
+  // switch + turn-end) and at send() start (status goes 'thinking…' without a syncStatus).
+  function updateControls() {
+    const stop = el('chat-stop'); if (stop) stop.hidden = !isBusy();
+    renderQueued();
+  }
+
   async function send(text) {
     if (interview) { interview(text); return; }   // THE AWAKENING owns the input: route the answer to onboarding, no model call
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
@@ -561,6 +633,7 @@ const Chat = (() => {
     if (!isTask && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
     status('thinking…');
     ensureElapsedTimer();   // start the live wall-clock the instant the turn begins (before the first token)
+    updateControls();       // reveal the ⏹ Stop control for this run
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
     // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
     // wins on format; it's never baked into the saved prompt.
@@ -638,7 +711,7 @@ const Chat = (() => {
         if (endReason && endReason !== 'done') {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? 'reached this run\'s cost limit'
-            : endReason === 'cancelled' ? 'run cancelled'
+            : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
             : 'stopped (' + endReason + ')'));
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         }
@@ -654,14 +727,23 @@ const Chat = (() => {
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
-      if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
-      if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
+      const stopped = interrupted.has(ws.id);   // the Commander pressed Stop on THIS stream — a graceful interrupt, not a fault
+      if (stopped) {
+        // keep whatever already streamed, mark it stopped, and log NO error (the stop was intentional).
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); }
+        if (acc.trim()) ws.history.push({ role: 'assistant', content: acc });   // the partial reply survives a switch
+        if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
+      } else {
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
+        if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
+      }
       // a THROWN teardown (abort/cancel/disconnect/network drop) means agent.run.end was LOST on the bus, so the
       // crew HUD would stick at WORKING — clear this run's count here. Normal + in-band-error completions deliver
       // run.end (decremented by the bus listener), so we must NOT clear there or a concurrent sibling under-counts.
       if (typeof StationUI !== 'undefined' && StationUI.clearRunning) StationUI.clearRunning(ws.agentId || 'agent');
     } finally {
       aborters.delete(ws.id);
+      interrupted.delete(ws.id);   // consume the stop flag (whether or not it fired)
       Channels.end(ws.id);
       // P1: drain this directive from the QUEUE gauge on ANY teardown (shipped, in-band error, or abort) —
       // the backlog is "runs in flight", independent of whether the work shipped.
@@ -690,6 +772,8 @@ const Chat = (() => {
       if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
       // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
       if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
+      // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).
+      setTimeout(() => flushQueued(ws.id), 0);
     }
   }
 

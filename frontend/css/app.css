@@ -480,6 +480,36 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 #chat-input { flex: 1; width: auto; min-width: 0; border: none; background: transparent; padding: 4px 2px; }
 #chat-input:focus { box-shadow: none; }
 
+/* TYPE-AHEAD queue — follow-ups typed while the agent is working, shown as pills above the input row and
+   auto-sent in order as the stream frees. The strip collapses (no padding) when nothing is queued. */
+.chat-queued { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 8px; }
+.chat-queued:empty { display: none; }
+.chat-queued:not(:empty) { padding-top: 7px; }
+.queued-pill {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  font-size: 13px; color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: 4px; padding: 2px 5px 2px 7px;
+}
+.queued-pill .queued-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; opacity: .9; }
+.queued-x { flex: 0 0 auto; border: none; background: transparent; color: var(--ph-dim); font-size: 12px; line-height: 1; padding: 0 2px; cursor: pointer; border-radius: 3px; }
+.queued-x:hover { color: var(--bad); }
+
+/* INTERRUPT — the ⏹ Stop chip: matched to the voice chips but red, with a soft pulse so the live-stop reads
+   at a glance. Shown only while the displayed stream is running (chat.js toggles [hidden] via updateControls). */
+.chat-stop {
+  flex: 0 0 auto; font-size: 17px; line-height: 0; color: var(--bad);
+  background: var(--panel2); border: 2px solid var(--bad);
+  padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
+  animation: stop-pulse 1.2s ease-in-out infinite;
+}
+.chat-stop[hidden] { display: none; }
+.chat-stop svg { width: 1em; height: 1em; display: block; pointer-events: none; }
+.chat-stop:hover { background: var(--bad); color: var(--ink); }
+@keyframes stop-pulse { 0%, 100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 11px var(--bad); } }
+@media (prefers-reduced-motion: reduce) { .chat-stop { animation: none; } }
+
 /* ---------- voice controls: a matched set of bordered phosphor chips in the COMMS input row.
    Defined dark boxes (not bare glyphs) so they punctuate the amber UI and read as real controls;
    active states invert/recolor so the live one stands out at a glance. ---------- */
