@@ -103,10 +103,30 @@ const App = (() => {
     if (full) return '\n\nAPPROVAL — FULL ACCESS: the Commander has granted you full access. You may run your tools — including file writes and shell commands — without stopping to ask each time. A hard safety floor still blocks the most dangerous actions; use judgment and flag anything truly irreversible before you do it.';
     return '\n\nAPPROVAL — ASK FIRST: before any action that writes a file, runs a command, or reaches out over the network, you STOP and ask the Commander for approval, then wait for their go-ahead. Reasoning over what you already have does not need approval.';
   }
-  // assemble the real system prompt from the config docs: identity + PERSONALITY + APPROVAL + mission + standing orders.
+  // an always-appended SYSTEM truth: what the agent ACTUALLY runs on. Mirrors approvalClause — derived fresh each
+  // compose, never stored in the editable identity.md (so it can't be edited away and never drifts stale). Fixes the
+  // "I'm a Hermes agent" misread AND the sibling "I'm a Skynet agent" one: when the agent introspects (env/pwd) it may
+  // still meet two legacy names — "Skynet" (the project's former name; renamed to StarNet, but some paths/env survive as
+  // back-compat aliases) and "Hermes" (the open-source harness StarNet's backend was ported from). Without this grounding
+  // it guesses one of those. Truthful-telemetry law: state only what's true (StarNet harness, Commander's own model), don't guess.
+  function foundationClause() {
+    return '\n\nYOUR FOUNDATION: You run on the StarNet harness — a local-first agent runtime on the Commander\'s own '
+      + 'machine, not a hosted service. Your reasoning comes from whichever model the Commander has connected through '
+      + 'their own API key or account. As you look around your environment you may still meet two legacy names, and '
+      + 'neither changes what you are: (1) StarNet was previously called "Skynet" — it has been renamed, but some file '
+      + 'paths, environment variables, and config keys may still carry the old "Skynet"/"SKYNET_" name as a back-compat '
+      + 'alias. (2) StarNet\'s harness was built by porting parts of the open-source Hermes agent harness, so some code, '
+      + 'comments, and tool names mention "Hermes". You are a StarNet agent on the StarNet harness — not a Skynet agent '
+      + 'and not a Hermes agent. Do not guess at your own foundation from ambiguous signals in the environment; report '
+      + 'only what you can actually verify, and say plainly when you are not sure.';
+  }
+  // assemble the real system prompt from the config docs: identity + FOUNDATION + PERSONALITY + APPROVAL + mission + standing orders.
   function composeSystemPrompt(a) {
     const d = agentDocs(a);
     let p = (d.identity || '').trim() || baseIdentity(a.name, a.role);
+    // FOUNDATION sits right after identity (before personality) — a constant system truth that grounds "what you are"
+    // so the agent never mistakes StarNet's Hermes-derived internals for being a Hermes agent. Kept out of the docs.
+    p += foundationClause();
     // personality sits AFTER identity (keeps the REAL-tools clause) and BEFORE purpose, so it colours the
     // agent's tone without ever displacing capability or the mission. Personas.compose folds the chosen
     // archetype + the Commander's fine-tune dials + their free-text voice note into one block. Default: professional.
