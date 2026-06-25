@@ -43,7 +43,7 @@ Condition is met when StarNet has a local-first provider interface comparable to
 
 ### 3. Hardened Notebook Persistence
 
-Status: TODO
+Status: DONE
 
 Condition is met when notebook memory is safer than Hermes' `MEMORY.md` / `USER.md` store:
 
@@ -87,3 +87,6 @@ Condition is met when the learning loop is broader than Hermes while preserving 
 - 2026-06-25: Item 2 DONE. Added a first-class MemoryProvider lifecycle manager, local Cortex provider adapter,
   one-external-provider guard, provider tool hooks, queued background sync/flush, provider-backed recall and
   compaction, and notebook write notifications. `npm.cmd run test:fast` green.
+- 2026-06-25: Item 3 DONE. Replaced ad hoc notebook JSON writes with a hardened store: durable atomic writes,
+  CAS drift detection, hard budgets, atomic mutate/batch operations, near-duplicate suppression for notebook
+  writes and proposal keeps, and regression coverage. `npm.cmd run test:fast` green.

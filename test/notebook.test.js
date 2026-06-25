@@ -14,6 +14,7 @@ const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { canAgentUse, makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
+const memcore = require('../sidecar/memcore.js');
 const { redact, rank } = require('../sidecar/context.js');
 
 function memStore() { const m = {}; return { get: k => m[k], set: (k, v) => { m[k] = v; } }; }
@@ -57,6 +58,18 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     r = await reg.dispatch(dcall('notebook.write', { title: 'only title' }), { agentId: 'ag', consent: async () => ({ allow: true }) });
     A.eq(r.isError, true, 'missing body rejected by schema');
     A.eq(store.get('notebook:ag').length, 1, 'rejected write did not persist');
+  }
+
+  // ============ A1a. near-duplicate writes are skipped before they clutter durable memory ============
+  {
+    const store = memStore();
+    const reg = makeRegistry();
+    makeNotebookTools({ store, clock: makeClock(1000), findSimilar: memcore.findSimilar }).register(reg);
+    let r = await reg.dispatch(dcall('notebook.write', { title: 'preference', body: 'user prefers terse answers' }), { agentId: 'ag' });
+    A.eq(r.ok, true, 'first memory write lands');
+    r = await reg.dispatch(dcall('notebook.write', { title: 'style', body: 'the user prefers terse answers' }), { agentId: 'ag' });
+    A.ok(r.content.indexOf('Skipped duplicate memory') >= 0, 'near-duplicate write is reported as skipped');
+    A.eq(store.get('notebook:ag').length, 1, 'near-duplicate write did not grow the notebook');
   }
 
   // ============ A1b. injected rank() reorders an explicit read by relevance (same brain as auto-recall) ============

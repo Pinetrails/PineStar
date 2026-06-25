@@ -30,6 +30,7 @@
     // Optional MemoryProvider lifecycle hook. The notebook remains the source of truth; this is a fail-open
     // notification path for providers that mirror/index/learn from local memory writes.
     const onMemoryWrite = typeof deps.onMemoryWrite === 'function' ? deps.onMemoryWrite : null;
+    const findSimilar = typeof deps.findSimilar === 'function' ? deps.findSimilar : null;
     // injected trust fold (memcore.nextTrust) for notebook.feedback's rating nudge; inline fallback keeps the
     // tool standalone. clamp + step (delta*0.15) MUST match memcore.nextTrust — kept in sync.
     const nextTrust = typeof deps.nextTrust === 'function' ? deps.nextTrust : (prev, delta) => {
@@ -76,18 +77,33 @@
         const runId = ctx && ctx.runId ? String(ctx.runId) : null;   // provenance source (B1 Cortex seam)
         const streamId = ctx && ctx.streamId ? String(ctx.streamId) : null;   // M-mem.2b: the run's workstream
         const scope = streamId ? 'stream' : 'global';                         // a note jotted in a stream is its working memory
-        const list = notesOf(aid);
         const now = clock.now();
+        const title = redact(String(args.title));
+        const body = redact(String(args.body));
         // §5.2 record: title/body/ts kept (back-compat + recall); sourceRunId is the moat (drill any fact ->
         // the run that earned it). useCount/lastUsedAt move with memory.used; trust with memory.feedback.
-        const note = {
+        const build = list => ({
           id: nextId(list), kind: 'note',
-          title: redact(String(args.title)), body: redact(String(args.body)),   // §5.6: scrub secrets before they persist
+          title: title, body: body,   // §5.6: scrub secrets before they persist
           scope: scope, streamId: streamId, sourceRunId: runId,
           createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
-        };
-        list.push(note);
-        store.set(KEY(aid), list);
+        });
+        let note, duplicate;
+        if (store && typeof store.mutate === 'function') {
+          const out = store.mutate(KEY(aid), list => {
+            const dupe = findSimilar ? findSimilar(list, title + ' ' + body, { threshold: 0.6 }) : null;
+            if (dupe) return { records: list, value: { duplicate: dupe }, skipWrite: true };
+            const n = build(list);
+            return { records: list.concat([n]), value: { note: n } };
+          });
+          note = out.value && out.value.note;
+          duplicate = out.value && out.value.duplicate;
+        } else {
+          const list = notesOf(aid);
+          duplicate = findSimilar ? findSimilar(list, title + ' ' + body, { threshold: 0.6 }) : null;
+          if (!duplicate) { note = build(list); list.push(note); store.set(KEY(aid), list); }
+        }
+        if (duplicate) return { content: 'Skipped duplicate memory; similar entry already exists (' + duplicate.id + ').', summary: 'duplicate ' + duplicate.id };
         if (onMemoryWrite) { try { onMemoryWrite('write', KEY(aid), note, ctx || {}); } catch (_) {} }
         if (ctx && typeof ctx.emit === 'function') {
           // memory.write — the durable-memory rung (feeds useCount/trust + the dossier's archivist track). The

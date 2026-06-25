@@ -36,6 +36,7 @@ const { makeRunStore } = require('./runstore.js');
 const { makeTranscriptStore } = require('./transcriptstore.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeMemoryManager, makeLocalCortexProvider } = require('./memoryprovider.js');
+const { makeNotebookStore } = require('./notebookstore.js');
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
@@ -388,24 +389,10 @@ const spotifyPending = new Map();
 // PERSISTENT notebook (memory) — JSON file per agent, atomic write, survives sidecar restarts. Stored as a
 // SIBLING of the agent's workspace dir (WORKSPACES/<aid>.notebook.json), OUTSIDE the fs-jailed
 // WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. Sync get/set to
-// match the notebook tool's store contract.
-function notebookFile(key) {
-  const aid = String(key).replace(/^notebook:/, '') || 'agent';
-  if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('bad notebook agentId');
-  return path.join(WORKSPACES, aid + '.notebook.json');
-}
-const notebookStore = {
-  get(key) { try { return JSON.parse(fs.readFileSync(notebookFile(key), 'utf8')); } catch (e) { return undefined; } },
-  set(key, value) {
-    try {
-      const f = notebookFile(key);
-      fs.mkdirSync(path.dirname(f), { recursive: true });
-      const tmp = f + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(value));
-      fs.renameSync(tmp, f);   // atomic replace
-    } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
-  }
-};
+// match the notebook tool's store contract; the store itself adds budgets, CAS drift detection, and mutate/batch.
+const notebookStore = makeNotebookStore({
+  fs, pathMod: path, root: WORKSPACES, clock: { now: () => Date.now() }, writeFileDurable
+});
 
 // PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
 // browser (POST /api/dossier) and folded into server-composed autonomous personas (cron) so an unattended
@@ -1791,7 +1778,7 @@ async function runOnce(o) {
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({
-    store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust,
+    store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar,
     onMemoryWrite: (action, target, content, ctx) => memoryManager.onMemoryWrite(action, target, content, Object.assign({ agentId, runId, streamId, surface }, ctx || {}))
   }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -2519,11 +2506,11 @@ async function handleNotebookRestore(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
   const incoming = Array.isArray(body.notes) ? body.notes : [];
   try {
-    const prev = notebookStore.get('notebook:' + agent);
-    const existing = Array.isArray(prev) ? prev : [];
-    const merged = mergeNotes(existing, incoming);
-    notebookStore.set('notebook:' + agent, merged);
-    json(200, { ok: true, total: merged.length, added: merged.length - existing.length });
+    const r = notebookStore.mutate('notebook:' + agent, existing => {
+      const merged = mergeNotes(existing, incoming);
+      return { records: merged, value: { total: merged.length, added: merged.length - existing.length } };
+    });
+    json(200, { ok: true, total: r.value.total, added: r.value.added });
   } catch (e) { json(400, { error: (e && e.message) || 'restore failed' }); }
 }
 
@@ -2644,13 +2631,22 @@ async function handleMemoryTurnin(req, res) {
   }
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
   if (!content) return json(400, { error: 'a kept memory cannot be empty' });
-  const stored = notebookStore.get('notebook:' + agentId);
-  const list = Array.isArray(stored) ? stored : [];
-  writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
-  const rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
-  rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
-  list.push(rec);
-  notebookStore.set('notebook:' + agentId, list);
+  let rec = null, duplicate = null;
+  const saved = notebookStore.mutate('notebook:' + agentId, list => {
+    const dupe = memcore.findSimilar(list, content, { threshold: 0.6 });
+    if (dupe) return { records: list, value: { duplicate: dupe }, skipWrite: true };
+    writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
+    rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
+    rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
+    return { records: list.concat([rec]), value: { rec } };
+  });
+  duplicate = saved.value && saved.value.duplicate;
+  if (duplicate) {
+    chanEmit('memory.feedback', { agentId, id: duplicate.id, delta: fb.delta, reason: fb.reason });
+    return json(200, { ok: true, verdict, id: duplicate.id, duplicate: true, kind: duplicate.kind || 'note' });
+  }
+  rec = saved.value && saved.value.rec;
+  writtenId = rec && rec.id;
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
   json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
@@ -2683,12 +2679,19 @@ async function handleMemoryMutate(req, res, op) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   if (!String(body.id || '')) return json(400, { error: 'id required' });
   const key = 'notebook:' + agentId;
-  const stored = notebookStore.get(key);
-  const list = Array.isArray(stored) ? stored : [];
-  const r = op(list, body, agentId);
-  if (r.error) return json(400, { error: r.error });
+  let r;
+  try {
+    const saved = notebookStore.mutate(key, list => {
+      const out = op(list, body, agentId);
+      if (out.error) throw new Error(out.error);
+      if (!out.found) return { records: list, value: { result: out }, skipWrite: true };
+      return { records: out.records, value: { result: out } };
+    });
+    r = saved.value && saved.value.result;
+  } catch (e) {
+    return json(400, { error: (e && e.message) || 'memory mutation failed' });
+  }
   if (!r.found) return json(404, { error: 'no such memory' });
-  notebookStore.set(key, r.records);
   if (r.emit) { try { chanEmit(r.emit.name, r.emit.payload); } catch (_) {} }
   return json(200, Object.assign({ ok: true, id: String(body.id) }, r.extra || {}));
 }
