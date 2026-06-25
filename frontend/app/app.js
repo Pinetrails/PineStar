@@ -356,12 +356,39 @@ const App = (() => {
     if (spec) return String(spec.tagline || spec.name || '').slice(0, 120);
     return String(a.purpose || 'general specialist').slice(0, 120);
   }
+  // the most recent /api/roster POST. A backend-initiated summon must AWAIT this before acking, so the lead's
+  // immediate team.dispatch sees the new worker in agentRoster (the POST is otherwise fire-and-forget → a race).
+  let lastRosterPush = Promise.resolve();
   function pushRoster() {
     try {
       const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask') }));
-      fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
-    } catch (_) {}
+      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
+      return lastRosterPush;
+    } catch (_) { return Promise.resolve(); }
+  }
+
+  // BACKEND-INITIATED SUMMON (crew.summon.request): the orchestrator's team.summon tool asked the station to
+  // create a worker for the Commander. Run the SAME summonAgent() the Recruitment Bay uses (single source of
+  // truth — sprite, workstream, system prompt, roster push), resolving the new id ONLY AFTER the roster POST
+  // lands so the lead's immediate team.dispatch finds the worker. Returns null if it couldn't summon.
+  async function summonForRequest(ev) {
+    ev = ev || {};
+    // a known built-in class id (researcher/engineer/…) seeds the full specialty (purpose + manual + skin); a
+    // freeform name makes a custom specialist. Event fields always win over the class defaults.
+    let base = (ev.specId && typeof Specialties !== 'undefined' && Specialties.get) ? Specialties.get(ev.specId) : null;
+    const spec = Object.assign({}, base || {}, {
+      id: ev.specId || (base && base.id) || undefined,
+      name: ev.name || (base && base.name) || undefined,
+      skin: ev.skin || (base && base.skin) || undefined,
+      persona: ev.persona || (base && base.persona) || undefined,
+      purpose: ev.purpose || (base && base.purpose) || undefined
+    });
+    let a = null;
+    try { a = summonAgent(spec); } catch (_) { a = null; }
+    if (!a) return null;
+    try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
+    return a.id;
   }
 
   function persist() {
@@ -1101,5 +1128,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail };
+  return { show, refreshUsage, persist, refreshRail: renderRail, summonAgent, summonForRequest };
 })();

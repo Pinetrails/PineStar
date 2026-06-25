@@ -176,6 +176,13 @@ function boot(port, workspaces, attemptsLeft) {
 
     const escape = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('../../etc/passwd'));
     A.ok(escape.status === 403 || escape.status === 404, 'a jail-escape path is refused (403/404), never served');
+
+    // ---- /api/summon/ack: the team.summon round-trip's reply leg. A stale runId/requestId is a harmless 200
+    //      no-op (the run already ended or auto-settled), exactly like /api/consent; malformed JSON 400s. ----
+    const ackStale = await j('POST', '/api/summon/ack', { runId: 'nope', requestId: 'nope', agentId: 'researcher-2' });
+    A.eq(ackStale.status, 200, 'POST /api/summon/ack with an unknown run -> 200 no-op');
+    const ackBadJson = await fetch(B + '/api/summon/ack', { method: 'POST', headers: { 'X-StarNet-Token': apiToken }, body: '{not json' });
+    A.eq(ackBadJson.status, 400, 'POST /api/summon/ack with malformed JSON -> 400');
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);
