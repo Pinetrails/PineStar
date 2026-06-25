@@ -249,6 +249,15 @@
       </div>
     </div>
     <div class="bb-right">
+      <!-- CONTEXT-WINDOW gauge, engraved into the bar (replaces the per-desk memory core).
+           Fills toward the current agent's REAL context ceiling: latest prompt tokens /
+           the model's catalog max context length. Painted by StationUI.tick via CtxGauge. -->
+      <span id="ctx-gauge" class="ctx-gauge" data-level="unknown" title="CONTEXT — the current agent's context window">
+        <span class="ctx-lbl">CTX</span>
+        <span class="ctx-track"><i class="ctx-fill"></i></span>
+        <b class="ctx-num">—</b>
+        <span class="ctx-cap"></span>
+      </span>
       <span id="sig" title="local sidecar uplink">UPLINK <b>▂▄▆█</b></span>
       <span id="save-dot" title="autosave">●</span>
       <span id="status-pill">ONLINE</span>
