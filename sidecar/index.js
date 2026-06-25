@@ -65,7 +65,10 @@ const { withDossier } = require('./dossierinject.js');     // Phase C: fold the 
 const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
 const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/disable choices for the recipe library
 const runtimeSkills = require('./skills/runtime.js');       // runtime-created skill index (metadata only)
+const skillPackages = require('./skills/package.js');       // package-backed SKILL.md mirror for runtime skills
+const skillGuard = require('./skills/guard.js');            // guard scanner for runtime/external skill packages
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
+const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
@@ -308,7 +311,9 @@ const skillsIo = {
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
   }
 };
-const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact });
+const SKILL_PACKAGES_DIR = path.join(WORKSPACES, 'skill-packages');
+const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR });
+const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard });
 
 // BUNDLED SKILL LIBRARY (capability-gated recipe packs shipped WITH StarNet — distinct from skillStore above,
 // which holds what the agent SAVES at runtime). Loaded once from sidecar/skills/library/*.md; the user's
@@ -544,8 +549,11 @@ async function runReflection(o) {
 
 const SKILL_REVIEW_TIMEOUT_MS = num(process.env.SKYNET_SKILL_REVIEW_TIMEOUT_MS, 45000);
 const SKILL_REVIEW_MAX_COST_USD = num(process.env.SKYNET_SKILL_REVIEW_MAX_USD, 0.08);
+const SKILL_CURATOR_INTERVAL_MS = num(process.env.SKYNET_SKILL_CURATOR_INTERVAL_MS, 24 * 60 * 60 * 1000);
+const SKILL_CURATOR_MAX_COST_USD = num(process.env.SKYNET_SKILL_CURATOR_MAX_USD, 0.12);
+const skillCuratorLastRun = new Map();
 async function runBackgroundSkillReview(o) {
-  const { agentId, runId, messages, provider, model, cost } = o || {};
+  const { agentId, runId, messages, provider, model, cost, loadedSkills, managedSkills } = o || {};
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SKILL_REVIEW_TIMEOUT_MS);
   const reviewRunId = String(runId || 'run') + '_skill_review';
@@ -570,13 +578,21 @@ async function runBackgroundSkillReview(o) {
       emit: chanEmit,
       timeoutMs: CAPS.toolTimeoutMs,
       runId: reviewRunId,
-      signal: ac.signal
+      signal: ac.signal,
+      skillReview: true,
+      createdBy: 'background-review'
     });
     const dispatch = async (c, ctx) => {
       if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });
       return registry.dispatch(c, ctx);
     };
-    const prompt = skillReview.buildPrompt({ agentId, runId, messages, skills: skillStore.list(agentId, { includeArchived: true }) });
+    const prompt = skillReview.buildPrompt({
+      agentId, runId, messages,
+      loadedSkills: loadedSkills || [],
+      managedSkills: managedSkills || [],
+      memories: Array.isArray(notebookStore.get('notebook:' + agentId)) ? notebookStore.get('notebook:' + agentId).slice(-12) : [],
+      skills: skillStore.list(agentId, { includeArchived: true })
+    });
     result = await runAgentLoop({
       messages: [
         { role: 'system', content: 'You are a quiet StarNet skillbase maintenance worker. Use only skill tools, then stop.' },
@@ -592,6 +608,50 @@ async function runBackgroundSkillReview(o) {
     clearTimeout(timer);
     if (result && result.usd) {
       try { ledger.record({ runId: reviewRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0 }); } catch (_) {}
+    }
+  }
+}
+
+async function runSkillCurator(o) {
+  const { agentId, runId, provider, model, cost } = o || {};
+  const nowMs = Date.now();
+  if (SKILL_CURATOR_INTERVAL_MS > 0 && (nowMs - (skillCuratorLastRun.get(agentId) || 0)) < SKILL_CURATOR_INTERVAL_MS) return;
+  const all = skillStore.list(agentId, { includeArchived: true });
+  skillStore.curate(agentId, { now: nowMs });
+  if (process.env.SKYNET_SKILL_CURATOR_LLM !== '1' || !skillCurator.shouldCurate(all)) {
+    skillCuratorLastRun.set(agentId, nowMs);
+    return;
+  }
+  skillCuratorLastRun.set(agentId, nowMs);
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SKILL_REVIEW_TIMEOUT_MS);
+  const curatorRunId = String(runId || 'run') + '_skill_curator';
+  let result = null;
+  try {
+    const registry = makeRegistry();
+    makeSkillTools({ store: skillStore }).register(registry);
+    const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
+    const resolved = { agentId, room: 'skill-curator', hasCompute: true, tools: allowed.slice(), approvalRules: {}, networkCaps: {} };
+    const toolDefs = registry.wireFormat(registry.list(new Set(allowed)));
+    const fromWire = new Map();
+    for (const d of toolDefs) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
+    const capCtx = makeCapCtx(resolved, { emit: chanEmit, timeoutMs: CAPS.toolTimeoutMs, runId: curatorRunId, signal: ac.signal, createdBy: 'curator' });
+    const dispatch = async (c, ctx) => { if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) }); return registry.dispatch(c, ctx); };
+    result = await runAgentLoop({
+      messages: [
+        { role: 'system', content: 'You are a quiet StarNet skill curator. Use only skill tools, then stop.' },
+        { role: 'user', content: skillCurator.buildPrompt({ skills: all }) }
+      ],
+      provider, emit: () => {}, cost, tools: toolDefs, dispatch, capCtx,
+      limits: { maxIters: 10, maxCostUsd: SKILL_CURATOR_MAX_COST_USD, grace: false },
+      signal: ac.signal, clock: { now: () => Date.now() },
+      agentId, runId: curatorRunId, model, trigger: 'event'
+    });
+  } catch (e) { console.warn('[skills] curator failed:', (e && e.message) || e); }
+  finally {
+    clearTimeout(timer);
+    if (result && result.usd) {
+      try { ledger.record({ runId: curatorRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0 }); } catch (_) {}
     }
   }
 }
@@ -1723,6 +1783,7 @@ async function handleRun(req, res) {
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
+  const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
@@ -1799,6 +1860,7 @@ async function handleRun(req, res) {
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent,
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
+      preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
@@ -1864,11 +1926,24 @@ async function runOnce(o) {
 
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
+  const loadedSkills = [];
+  const managedSkills = [];
+  const seenLoadedSkills = new Set();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
-  makeSkillTools({ store: skillStore }).register(registry);   // H4: skill.write/list/view — the agent's reusable procedure library (memory capability)
+  makeSkillTools({
+    store: skillStore,
+    onView: (skill) => {
+      if (!skill || seenLoadedSkills.has(skill.id)) return;
+      seenLoadedSkills.add(skill.id);
+      loadedSkills.push({ id: skill.id, name: skill.name, summary: skill.summary, state: skill.state });
+    },
+    onManage: (skill, ctx, action) => {
+      if (skill) managedSkills.push({ id: skill.id, name: skill.name, action: action || 'manage' });
+    }
+  }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
   // STUDIO (media skills): image_generate / image_analyze ride the SAME BYOK OpenRouter key + key the run uses.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
@@ -2097,6 +2172,7 @@ async function runOnce(o) {
   // assembled means it covers every surface (browser chat, cron, delegated worker) with no per-path change.
   let skillBlock = '';
   let runtimeSkillBlock = '';
+  let preloadedSkillBlock = '';
   try {
     const sRoom = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
     const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
@@ -2106,13 +2182,34 @@ async function runOnce(o) {
     if (resolved.tools.indexOf('skill.view') >= 0) {
       const rs = runtimeSkills.composeIndex(skillStore.list(agentId), {
         budget: 6000,
+        platform: process.platform,
         canManage: resolved.tools.indexOf('skill.manage') >= 0
       });
       runtimeSkillBlock = rs.text || '';
       if (rs.ids && rs.ids.length && typeof skillStore.markUsed === 'function') skillStore.markUsed(agentId, rs.ids);
     }
   } catch (_) { /* runtime skill indexing must never break a run */ }
-  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  try {
+    if (resolved.tools.indexOf('skill.view') >= 0) {
+      const names = (Array.isArray(o.preloadSkills) ? o.preloadSkills : []).concat(runtimeSkills.extractInvocations(messages));
+      const seenNames = new Set();
+      const loaded = [];
+      for (const name of names) {
+        const key = String(name || '').toLowerCase();
+        if (!key || seenNames.has(key)) continue;
+        seenNames.add(key);
+        const v = skillStore.view(agentId, name);
+        if (!v) continue;
+        loaded.push(v);
+        if (!seenLoadedSkills.has(v.id)) {
+          seenLoadedSkills.add(v.id);
+          loadedSkills.push({ id: v.id, name: v.name, summary: v.summary, state: v.state });
+        }
+      }
+      preloadedSkillBlock = runtimeSkills.composeLoaded(loaded);
+    }
+  } catch (_) { /* explicit skill preload must never break a run */ }
+  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -2215,7 +2312,10 @@ async function runOnce(o) {
     runReflection({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
   }
   if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && !signal.aborted && skillReview.shouldReviewRun(result)) {
-    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
+    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills }).catch(() => {});
+  }
+  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && !signal.aborted) {
+    runSkillCurator({ agentId, runId, provider, model, cost }).catch(() => {});
   }
   return result;
 

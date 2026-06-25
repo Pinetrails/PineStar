@@ -53,19 +53,39 @@
   function buildPrompt(input) {
     input = input || {};
     const skills = Array.isArray(input.skills) ? input.skills : [];
+    const loaded = Array.isArray(input.loadedSkills) ? input.loadedSkills : [];
+    const managed = Array.isArray(input.managedSkills) ? input.managedSkills : [];
+    const memories = Array.isArray(input.memories) ? input.memories : [];
     const skillLines = skills.length ? skills.map(s => '- ' + s.name + (s.summary ? ' -- ' + s.summary : '') + ' [' + (s.state || 'active') + ']').join('\n') : '(none)';
+    const loadedLines = loaded.length ? loaded.map(s => '- ' + s.name + (s.summary ? ' -- ' + s.summary : '')).join('\n') : '(none)';
+    const managedLines = managed.length ? managed.map(s => '- ' + s.name + ' (' + s.action + ')').join('\n') : '(none)';
+    const memoryLines = memories.length ? memories.map(m => '- ' + (m.kind || 'note') + ': ' + str(m.content || m.body || '').replace(/\s+/g, ' ').slice(0, 220)).join('\n') : '(none)';
     return [
       'You are StarNet background skill review. Improve the agent skillbase after a completed run.',
       '',
       'Rules:',
-      '- Most useful reviews update an existing skill; create a new skill only when no existing umbrella skill fits.',
-      '- Prefer this order: patch loaded/relevant skill, patch an existing umbrella skill, add a support file, create a new class-level skill.',
-      '- Skills are reusable procedures, user workflow/style corrections, or stable domain techniques.',
-      '- Do not capture one-off facts, transient failures, random command output, or negative claims about tools.',
+      '- Be active: most substantial sessions should produce at least one skill update, but never invent a lesson.',
+      '- Target class-level umbrella skills with rich SKILL.md bodies plus references/, templates/, scripts/, or assets/ support files.',
+      '- Most useful reviews update an existing skill; prefer patching over creating duplicates.',
+      '- Preference order: 1) patch a loaded skill, 2) patch an existing umbrella, 3) add a support file under an umbrella, 4) create a new class-level umbrella.',
+      '- create a new skill only when no existing umbrella skill fits.',
+      '- Skills capture how to do this class of task for this user. Memory captures facts/preferences/state.',
+      '- Do not capture one-off facts, transient setup failures, random command output, or negative claims like "tool X is broken". Capture the fix or retry pattern instead.',
+      '- If a loaded skill was wrong, missing a step, or stale, patch it now.',
+      '- If two skills overlap, prefer widening one umbrella and archiving the narrow sibling.',
       '- Use skill.list, skill.view, and skill.manage. Do not answer the user; only maintain skills.',
+      '',
+      'Loaded skills this run, patch these first when relevant:',
+      loadedLines,
+      '',
+      'Skills already managed this run:',
+      managedLines,
       '',
       'Existing skills:',
       skillLines,
+      '',
+      'Recent durable memory context; do not duplicate this into skills unless it changes procedure:',
+      memoryLines,
       '',
       'Completed run transcript:',
       transcript(input.messages, input.cap || 12000)

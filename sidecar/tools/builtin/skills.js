@@ -23,6 +23,8 @@
 
   function makeSkillTools(deps) {
     const store = deps && deps.store;
+    const onView = deps && deps.onView;
+    const onManage = deps && deps.onManage;
 
     const writeTool = {
       name: 'skill.write', capability: 'memory', scope: 'write', requiresConsent: false,
@@ -32,8 +34,11 @@
         properties: {
           name: { type: 'string', description: 'a short title, e.g. "Deploy the site"' },
           summary: { type: 'string', description: 'one line: what this skill does and when to use it' },
+          description: { type: 'string', description: 'short package description' },
           body: { type: 'string', description: 'the full multi-step procedure' },
-          category: { type: 'string' }
+          category: { type: 'string' },
+          setup: { type: 'string', description: 'setup notes, prerequisites, or environment details' },
+          platforms: { type: 'array', items: { type: 'string' } }
         }
       },
       run: (args, ctx) => {
@@ -41,10 +46,12 @@
         const aid = (ctx && ctx.agentId) || 'agent';
         const r = store.write({
           agentId: aid, name: args && args.name, summary: args && args.summary, body: args && args.body,
-          category: args && args.category, createdBy: 'agent', sourceRunId: ctx && ctx.runId
+          description: args && args.description, category: args && args.category, setup: args && args.setup,
+          platforms: args && args.platforms, createdBy: (ctx && ctx.createdBy) || (ctx && ctx.skillReview ? 'background-review' : 'agent'), sourceRunId: ctx && ctx.runId
         });
         if (!r.ok) return { content: 'Could not save the skill: ' + r.error, summary: 'not saved' };
         emitSkill(ctx, r.skill);
+        if (typeof onManage === 'function') { try { onManage(r.skill, ctx, r.edited ? 'edit' : 'create'); } catch (_) {} }
         return { content: (r.edited ? 'Updated' : 'Saved') + ' skill "' + r.skill.name + '". Reload it anytime with skill.view.', summary: r.edited ? 'edited' : 'saved' };
       }
     };
@@ -60,8 +67,11 @@
           id: { type: 'string' },
           name: { type: 'string', description: 'skill name for create, or lookup fallback for existing actions' },
           summary: { type: 'string' },
+          description: { type: 'string' },
           body: { type: 'string' },
           category: { type: 'string' },
+          setup: { type: 'string' },
+          platforms: { type: 'array', items: { type: 'string' } },
           requires: { type: 'array', items: { type: 'string' } },
           find: { type: 'string', description: 'text to find when action=patch' },
           replace: { type: 'string', description: 'replacement text when action=patch' },
@@ -73,9 +83,10 @@
       run: (args, ctx) => {
         if (!store || typeof store.manage !== 'function') return { content: 'The skill manager is unavailable.', summary: 'unavailable' };
         const aid = (ctx && ctx.agentId) || 'agent';
-        const r = store.manage(Object.assign({}, args || {}, { agentId: aid, createdBy: 'agent', sourceRunId: ctx && ctx.runId }));
+        const r = store.manage(Object.assign({}, args || {}, { agentId: aid, createdBy: (ctx && ctx.createdBy) || (ctx && ctx.skillReview ? 'background-review' : 'agent'), sourceRunId: ctx && ctx.runId }));
         if (!r.ok) return { content: 'Could not manage the skill: ' + r.error, summary: 'not saved' };
         emitSkill(ctx, r.skill);
+        if (typeof onManage === 'function') { try { onManage(r.skill, ctx, r.action || (args && args.action) || 'manage'); } catch (_) {} }
         const action = r.action || (args && args.action) || 'updated';
         const path = r.path ? (' (' + r.path + ')') : '';
         return { content: 'Skill "' + r.skill.name + '" ' + action.replace(/_/g, ' ') + ' complete' + path + '.', summary: action };
@@ -105,10 +116,12 @@
         if (!store) return { content: 'The skill library is unavailable.', summary: 'unavailable' };
         const v = store.view((ctx && ctx.agentId) || 'agent', args && args.name);
         if (!v) return { content: 'No skill named "' + (args && args.name) + '". Use skill.list to see what you have.', summary: 'not found' };
+        if (typeof onView === 'function') { try { onView(v, ctx); } catch (_) {} }
         const files = v.files && v.files.length
           ? '\n\nSupport files:\n' + v.files.map(f => '- ' + f.path + (f.content ? '\n' + f.content : '')).join('\n')
           : '';
-        return { content: '# ' + v.name + (v.summary ? '\n' + v.summary : '') + '\n\n' + v.body + files, summary: 'loaded ' + v.name };
+        const setup = v.setup ? '\n\nSetup:\n' + v.setup : '';
+        return { content: '# ' + v.name + (v.summary ? '\n' + v.summary : '') + setup + '\n\n' + v.body + files, summary: 'loaded ' + v.name };
       }
     };
 

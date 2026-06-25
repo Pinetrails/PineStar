@@ -5,9 +5,15 @@
    and secrets are redacted on write. Pure + deterministic (in-memory io + injected clock). */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { makeSkillStore } = require('../sidecar/skillstore.js');
 const runtimeSkills = require('../sidecar/skills/runtime.js');
 const skillReview = require('../sidecar/skillreview.js');
+const skillGuard = require('../sidecar/skills/guard.js');
+const skillCurator = require('../sidecar/skillcurator.js');
+const { makePackageStore } = require('../sidecar/skills/package.js');
 
 function memIo() { const lines = []; return { lines, readAll() { return lines.slice(); }, append(e) { lines.push(e); } }; }
 let clk = 1000; const clock = { now: () => clk };
@@ -136,6 +142,10 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(out.text.indexOf('SECRET BODY') === -1, 'index does not inject skill body');
   A.ok(/skill.view/.test(out.text) && /skill.manage/.test(out.text), 'index instructs view-before-use and manage-on-learning');
   A.eq(out.ids.length, 1, 'compose returns ids for use-count bumping');
+  const hidden = runtimeSkills.composeIndex([{ id: 'w', name: 'Windows only', summary: 'x', platforms: ['windows'], state: 'active' }], { platform: 'linux' });
+  A.eq(hidden.text, '', 'platform filters hide incompatible skills from the prompt index');
+  A.eq(runtimeSkills.extractInvocations([{ role: 'user', content: '/skill Deploy\ncontinue' }])[0], 'Deploy', 'slash /skill invocation is parsed');
+  A.ok(/PRELOADED SKILLS/.test(runtimeSkills.composeLoaded([s.view('a', 'Deploy', { bump: false })])), 'explicit preload composes full skill bodies');
 }
 
 // ---- J. background skill review helpers: complex-run trigger + class-level prompt ----
@@ -149,6 +159,43 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.eq(skillReview.shouldReviewRun(complex), true, 'tool-heavy completed run triggers skill review');
   const prompt = skillReview.buildPrompt({ messages: complex.messages, skills: [{ name: 'Existing', summary: 'umbrella', state: 'active' }] });
   A.ok(/update an existing skill/.test(prompt) && /create a new skill only/.test(prompt), 'review prompt prefers patching existing umbrella skills');
+  const prompt2 = skillReview.buildPrompt({ messages: complex.messages, loadedSkills: [{ name: 'Loaded Skill', summary: 'was used' }], memories: [{ kind: 'profile', content: 'prefers short answers' }] });
+  A.ok(/Loaded Skill/.test(prompt2) && /Recent durable memory context/.test(prompt2), 'review prompt includes loaded skill and memory context');
+}
+
+// ---- K. package-backed skills: SKILL.md, support files, setup/platform metadata, guard scan ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-skills-'));
+  const packages = makePackageStore({ fs, pathMod: path, root });
+  const s = makeSkillStore({ io: memIo(), clock, redact, packageStore: packages, guard: skillGuard });
+  const r = s.manage({
+    agentId: 'a', action: 'create', name: 'Package Demo', summary: 'package test',
+    description: 'writes a package', setup: 'Install deps first.', platforms: ['windows'],
+    body: 'Use the package safely.'
+  });
+  A.ok(r.ok && r.skill.packagePath, 'package-backed create returns a package path');
+  A.ok(fs.existsSync(path.join(r.skill.packagePath, 'SKILL.md')), 'SKILL.md is written to disk');
+  s.manage({ agentId: 'a', action: 'write_file', target: 'Package Demo', path: 'references/notes.md', content: 'linked detail' });
+  const viewed = s.view('a', 'Package Demo', { bump: false });
+  A.ok(viewed.files.some(f => f.path === 'references/notes.md' && /linked detail/.test(f.content)), 'view hydrates linked support files');
+  A.ok(/Install deps/.test(fs.readFileSync(path.join(viewed.packagePath, 'SKILL.md'), 'utf8')), 'setup notes are rendered into SKILL.md');
+  A.eq(viewed.scan.verdict, 'safe', 'safe package records a guard verdict');
+  s.manage({ agentId: 'a', action: 'patch', target: 'Package Demo', find: 'safely', replace: 'with curl ${API_TOKEN}' });
+  A.eq(s.view('a', 'Package Demo', { bump: false }).scan.verdict, 'dangerous', 'guard scan flags exfiltration-shaped content');
+}
+
+// ---- L. curator helpers: agent-created clusters only, pinned/protected filtered out ----
+{
+  const skills = [
+    { name: 'deploy-api', summary: 'x', state: 'active', createdBy: 'agent' },
+    { name: 'deploy-ui', summary: 'x', state: 'active', createdBy: 'background-review' },
+    { name: 'research-news', summary: 'x', state: 'active', createdBy: 'agent', pinned: true },
+    { name: 'bundled-plan', summary: 'x', state: 'active', createdBy: 'builtin' }
+  ];
+  const cls = skillCurator.clusters(skills);
+  A.eq(cls.length, 1, 'curator clusters unpinned agent-created siblings');
+  A.eq(cls[0].key, 'deploy', 'cluster key comes from skill prefix');
+  A.ok(/deploy-api/.test(skillCurator.buildPrompt({ skills })), 'curator prompt includes candidate skills');
 }
 
 A.report('skills.test');

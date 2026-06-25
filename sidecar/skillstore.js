@@ -100,9 +100,12 @@
       agentId: str(r.agentId) || 'agent',
       name: n.name,
       summary: str(r.summary).slice(0, SUMMARY_MAX),
+      description: str(r.description || r.summary).slice(0, SUMMARY_MAX),
       body: str(r.body).slice(0, BODY_MAX),
+      setup: str(r.setup).slice(0, BODY_MAX),
       category: cleanCategory(r.category),
       requires: arr(r.requires),
+      platforms: arr(r.platforms),
       state: stateOf(r.state),
       pinned: bool(r.pinned),
       createdBy: str(r.createdBy || 'agent'),
@@ -113,6 +116,9 @@
       viewCount: num(r.viewCount),
       useCount: num(r.useCount),
       patchCount: num(r.patchCount),
+      packagePath: r.packagePath ? str(r.packagePath) : '',
+      scan: r.scan || null,
+      guardAction: r.guardAction || '',
       files: normFiles(r.files)
     };
   }
@@ -125,11 +131,13 @@
   function projectSkill(s, includeBody) {
     const files = Object.keys(s.files || {}).sort().map(p => projectFile(s.files[p], !!includeBody));
     const out = {
-      id: s.id, agentId: s.agentId, name: s.name, summary: s.summary, category: s.category,
-      requires: (s.requires || []).slice(), state: s.state, pinned: !!s.pinned,
+      id: s.id, agentId: s.agentId, name: s.name, summary: s.summary, description: s.description || s.summary || '',
+      category: s.category, setup: s.setup || '',
+      requires: (s.requires || []).slice(), platforms: (s.platforms || []).slice(), state: s.state, pinned: !!s.pinned,
       createdBy: s.createdBy, sourceRunId: s.sourceRunId || null,
       createdAt: s.createdAt || 0, updatedAt: s.updatedAt || 0, lastUsedAt: s.lastUsedAt || null,
       viewCount: s.viewCount || 0, useCount: s.useCount || 0, patchCount: s.patchCount || 0,
+      packagePath: s.packagePath || '', scan: s.scan || null, guardAction: s.guardAction || '',
       files
     };
     if (includeBody) out.body = s.body || '';
@@ -144,6 +152,8 @@
     const maxPerAgent = opts.maxPerAgent || DEFAULT_MAX_PER_AGENT;
     const bodyMax = opts.bodyMax || BODY_MAX;
     const supportFileMax = opts.supportFileMax || SUPPORT_FILE_MAX;
+    const packageStore = opts.packageStore || opts.packages || null;
+    const guard = opts.guard || null;
 
     const latest = new Map();
     try {
@@ -161,6 +171,22 @@
       return v;
     }
     function persist(entry) {
+      try {
+        if (guard && typeof guard.scanSkillRecord === 'function') {
+          const scan = guard.scanSkillRecord(projectSkill(entry, true), { source: entry.createdBy === 'user' ? 'trusted' : 'agent-created' });
+          entry.scan = scan;
+          if (guard && typeof guard.shouldAllow === 'function') {
+            const policy = guard.shouldAllow(scan, { allowAsk: true });
+            entry.guardAction = policy.action || '';
+          }
+        }
+      } catch (_) {}
+      try {
+        if (packageStore && typeof packageStore.writePackage === 'function') {
+          const dir = packageStore.writePackage(projectSkill(entry, true));
+          if (dir) entry.packagePath = dir;
+        }
+      } catch (_) {}
       latest.set(keyOf(entry.agentId, entry.name), clone(entry));
       try { io.append(clone(entry)); } catch (_) { /* persistence failure must never crash a run */ }
       return entry;
@@ -203,9 +229,12 @@
         agentId: str(e.agentId || (existing && existing.agentId) || 'agent'),
         name: n.name,
         summary: e.summary != null ? red(e.summary, SUMMARY_MAX) : (existing ? existing.summary : ''),
+        description: e.description != null ? red(e.description, SUMMARY_MAX) : (existing ? (existing.description || existing.summary) : red(e.summary, SUMMARY_MAX)),
         body,
+        setup: e.setup != null ? red(e.setup, bodyMax) : (existing ? existing.setup || '' : ''),
         category: cleanCategory(e.category != null ? e.category : (existing && existing.category)),
         requires: e.requires != null ? arr(e.requires) : (existing ? (existing.requires || []).slice() : []),
+        platforms: e.platforms != null ? arr(e.platforms) : (existing ? (existing.platforms || []).slice() : []),
         state: stateOf(e.state || (existing && existing.state) || 'active'),
         pinned: e.pinned != null ? !!e.pinned : !!(existing && existing.pinned),
         createdBy: str(e.createdBy || (existing && existing.createdBy) || 'agent'),
@@ -216,6 +245,9 @@
         viewCount: existing ? existing.viewCount || 0 : 0,
         useCount: existing ? existing.useCount || 0 : 0,
         patchCount: existing ? existing.patchCount || 0 : 0,
+        packagePath: existing ? existing.packagePath || '' : '',
+        scan: existing ? existing.scan || null : null,
+        guardAction: existing ? existing.guardAction || '' : '',
         files: existing ? clone(existing.files || {}) : {}
       } };
     }
@@ -335,8 +367,18 @@
       const s = find(agentId, idOrName, { includeArchived: !!opts2.includeArchived });
       if (!s) return null;
       let out = s;
+      if (packageStore && typeof packageStore.hydrate === 'function' && opts2.hydrate !== false) {
+        try {
+          const h = packageStore.hydrate(projectSkill(s, true));
+          if (h) out = Object.assign(clone(s), {
+            body: h.body != null ? h.body : s.body,
+            files: normFiles(h.files || s.files),
+            packagePath: h.packagePath || s.packagePath || ''
+          });
+        } catch (_) {}
+      }
       if (opts2.bump !== false) {
-        out = clone(s);
+        out = clone(out);
         out.viewCount = (out.viewCount || 0) + 1;
         out.useCount = (out.useCount || 0) + 1;
         out.lastUsedAt = now();

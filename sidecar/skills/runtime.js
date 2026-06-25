@@ -14,13 +14,19 @@
   'use strict';
 
   function str(v) { return v == null ? '' : String(v); }
-  function isLive(s) { return s && s.state !== 'archived'; }
+  function platformOk(s, platform) {
+    const ps = Array.isArray(s && s.platforms) ? s.platforms.map(x => str(x).toLowerCase()) : [];
+    if (!ps.length || !platform) return true;
+    const p = str(platform).toLowerCase();
+    return ps.indexOf(p) >= 0 || (p === 'win32' && ps.indexOf('windows') >= 0) || (p === 'darwin' && ps.indexOf('macos') >= 0);
+  }
+  function isLive(s, platform) { return s && s.state !== 'archived' && platformOk(s, platform); }
   function cleanLine(s) { return str(s).replace(/\s+/g, ' ').trim(); }
 
   function composeIndex(skills, opts) {
     opts = opts || {};
     const budget = opts.budget > 0 ? opts.budget : 6000;
-    const live = (Array.isArray(skills) ? skills : []).filter(isLive);
+    const live = (Array.isArray(skills) ? skills : []).filter(s => isLive(s, opts.platform));
     if (!live.length) return { text: '', ids: [], omitted: 0 };
 
     const canManage = opts.canManage !== false;
@@ -35,6 +41,7 @@
       if (s.category) meta.push(cleanLine(s.category));
       if (s.state && s.state !== 'active') meta.push(cleanLine(s.state));
       if (s.pinned) meta.push('pinned');
+      if (s.platforms && s.platforms.length) meta.push('platforms: ' + s.platforms.join('/'));
       if (s.files && s.files.length) meta.push(String(s.files.length) + ' support file' + (s.files.length === 1 ? '' : 's'));
       if (meta.length) bits.push(' [' + meta.join(', ') + ']');
       if (s.id) bits.push(' (id: ' + cleanLine(s.id) + ')');
@@ -54,5 +61,30 @@
     return { text: head + parts.join('\n') + tail, ids, omitted };
   }
 
-  return { composeIndex };
+  function extractInvocations(messages) {
+    const out = [];
+    for (const m of (Array.isArray(messages) ? messages : [])) {
+      if (!m || m.role !== 'user' || typeof m.content !== 'string') continue;
+      for (const line of m.content.split(/\r?\n/)) {
+        let mm = line.match(/^\s*\/skill\s+(.+?)\s*$/i);
+        if (mm) { out.push(mm[1].trim()); continue; }
+        mm = line.match(/^\s*\/skill-([A-Za-z0-9._ -]{1,80})\s*$/i);
+        if (mm) out.push(mm[1].trim().replace(/-/g, ' '));
+      }
+    }
+    return out.filter(Boolean);
+  }
+
+  function composeLoaded(skills) {
+    const live = (Array.isArray(skills) ? skills : []).filter(s => s && s.body && s.state !== 'archived');
+    if (!live.length) return '';
+    return '\n\n## PRELOADED SKILLS\n'
+      + 'The Commander explicitly loaded these skills for this run. Follow them where applicable.\n\n'
+      + live.map(s => '### ' + cleanLine(s.name || s.id || 'Skill') + (s.summary ? ' -- ' + cleanLine(s.summary) : '') + '\n'
+        + (s.setup ? 'Setup:\n' + s.setup + '\n\n' : '') + s.body
+        + (s.files && s.files.length ? '\n\nSupport files:\n' + s.files.map(f => '- ' + f.path + (f.content ? '\n' + f.content : '')).join('\n') : '')
+      ).join('\n\n');
+  }
+
+  return { composeIndex, extractInvocations, composeLoaded };
 });
