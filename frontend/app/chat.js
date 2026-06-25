@@ -49,6 +49,37 @@ const Chat = (() => {
   function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
   function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; }
 
+  /* COMMS PROCESSING TIMER — a live wall-clock readout in the header (▸ thinking · 3s) that counts how long
+     the DISPLAYED stream's turn has been running. The start instant lives on the channel (Channels.startedAt),
+     so the count is per-stream and survives a switch: jump to a background run and the timer shows ITS elapsed,
+     not a reset. Honest by construction — it reads real wall-clock, never a fabricated number, and is empty
+     (→ hidden) the moment the shown stream isn't running. */
+  let elapsedTimer = 0;
+  function fmtElapsed(ms) {
+    const s = Math.floor((ms < 0 ? 0 : ms) / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60), r = s % 60;
+    return m + ':' + (r < 10 ? '0' : '') + r;   // 3s · 42s · 1:05 · 12:30
+  }
+  function renderElapsed() {
+    const ce = el('chat-elapsed'); if (!ce) return;
+    const started = (activeWs && typeof Channels !== 'undefined') ? Channels.startedAtOf(activeWs.id) : 0;
+    if (!isBusy() || !started) { if (ce.firstChild) ce.textContent = ''; return; }   // empty → CSS hides it
+    const txt = fmtElapsed(Date.now() - started);
+    let num = ce.querySelector('.ce-num');
+    if (!num) { ce.textContent = ''; num = document.createElement('span'); num.className = 'ce-num'; ce.appendChild(num); }
+    if (num.textContent !== txt) num.textContent = txt;   // only the digits change → the pulsing dot never restarts
+  }
+  function ensureElapsedTimer() {
+    renderElapsed();
+    if (elapsedTimer) return;
+    elapsedTimer = setInterval(() => { renderElapsed(); if (!isBusy()) stopElapsedTimer(); }, 250);   // sub-second tick so seconds land on time
+  }
+  function stopElapsedTimer() {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = 0; }
+    const ce = el('chat-elapsed'); if (ce && ce.firstChild) ce.textContent = '';
+  }
+
   // RETIRE A SETTLED BEAT: a decided memory card / answered nudge fades + collapses, then drops out of the
   // DOM so the feed never accumulates dead cards (the "discarded cards don't disappear" bug). Pure view —
   // the decision was already committed by the caller. onGone fires once, after removal. Resilient: a missed
@@ -138,9 +169,12 @@ const Chat = (() => {
   // derive the DISPLAYED stream's status from real state, so a low-priority write (a finishing turn) can't
   // clobber the high-priority 'awaiting your approval…' after a switch-back. One source of truth.
   function syncStatus() {
-    if (interview) { status('waking…'); return; }
+    if (interview) { status('waking…'); stopElapsedTimer(); return; }
     const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
     status(p ? 'awaiting your approval…' : (isBusy() ? 'working…' : 'online'));
+    // keep the elapsed readout matched to the DISPLAYED stream — switching to a busy stream picks up its
+    // live count, switching to an idle one clears it. (send() also starts it the instant a run begins.)
+    if (isBusy()) ensureElapsedTimer(); else stopElapsedTimer();
   }
   function clearEmptyState() { const e = log && log.querySelector('.cmsg-empty'); if (e) e.remove(); }
   // first-run state: an empty + idle + non-interview stream shows a single dim hint instead of a black void.
@@ -477,7 +511,7 @@ const Chat = (() => {
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
-    Channels.begin(ws.id);
+    Channels.begin(ws.id, Date.now());   // stamp the run start so the COMMS elapsed timer counts real wall-clock
     // P1: drop this directive's INTAKE ore box on the belt + start its DWELL clock (mirrors the Telegram
     // admit shape). queueId === agentId so the box routes to the hero / bound desk in world.js.
     const wiAid = ws.agentId || 'agent';
@@ -526,6 +560,7 @@ const Chat = (() => {
     if (World.setActivityFor) World.setActivityFor(turnAgentId, 'talk'); else World.setActivity('talk');
     if (!isTask && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
     status('thinking…');
+    ensureElapsedTimer();   // start the live wall-clock the instant the turn begins (before the first token)
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
     // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
     // wins on format; it's never baked into the saved prompt.
