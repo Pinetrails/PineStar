@@ -68,7 +68,7 @@ Condition is met when agent-authored skills are more than JSON note bodies:
 
 ### 5. Background Review / Turn-In Learning
 
-Status: TODO
+Status: DONE
 
 Condition is met when the learning loop is broader than Hermes while preserving StarNet's consent model:
 
@@ -93,3 +93,7 @@ Condition is met when the learning loop is broader than Hermes while preserving 
 - 2026-06-25: Item 4 DONE. Upgraded owned skills from body-only records to package-style skills with `SKILL.md`,
   support files under `references/`, `templates/`, `scripts/`, and `assets/`, patch/write/remove/archive modes,
   metadata-only search/list, on-demand file viewing, and relevant summary injection. `npm.cmd run test:fast` green.
+- 2026-06-25: Item 5 DONE. Added a bounded review queue with timeout/drain/accounting, enabled post-run review
+  across browser, cron, channel, and delegated surfaces, preserved consent-first proposal turn-in by default,
+  added explicit auto-keep support, routed skill proposals to package skills, and expanded turn-in API/UI with
+  snooze and bulk resolve. `npm.cmd run test:fast` green.

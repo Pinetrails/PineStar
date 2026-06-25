@@ -275,6 +275,18 @@ const Chat = (() => {
     let remaining = n;
     // a card is settled → it fades out; when the last one goes, the whole header retires with it (no empty husk).
     function onItemGone() { if (--remaining <= 0) vanish(head.d); }
+    const bulkBtns = document.createElement('span'); bulkBtns.className = 'consent-btns';
+    function bulkBtn(label, cls, verdict) {
+      const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = label;
+      b.onclick = async () => {
+        const r = await Harness.memoryTurninBulk({ agentId: batch.agentId, runId: batch.runId, verdict });
+        if (r && r.ok) vanish(head.d);
+        else if (typeof StationUI !== 'undefined') StationUI.notify('could not resolve those memories', 'warn');
+      };
+      bulkBtns.appendChild(b);
+    }
+    bulkBtn('Keep all', '', 'keep'); bulkBtn('Discard all', 'deny', 'discard');
+    head.body.appendChild(bulkBtns);
 
     for (const prop of batch.proposals) {
       const item = document.createElement('div'); item.className = 'turnin-item';
@@ -304,6 +316,7 @@ const Chat = (() => {
         btns.innerHTML = '';
         mkBtn('Keep', '', () => submit('keep', null, '✓ kept in memory', false));
         mkBtn('Edit', '', enterEdit);
+        mkBtn('Snooze', '', () => submit('snooze', null, 'snoozed', false));
         mkBtn('Discard', 'deny', () => submit('discard', null, '✕ discarded', true));
       }
       // inline edit: swap the belief into an input; Save commits the edited text (verdict 'edit'), Cancel restores.

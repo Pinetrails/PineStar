@@ -37,6 +37,7 @@ const { makeTranscriptStore } = require('./transcriptstore.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeMemoryManager, makeLocalCortexProvider } = require('./memoryprovider.js');
 const { makeNotebookStore } = require('./notebookstore.js');
+const { makeReviewQueue } = require('./reviewqueue.js');
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
@@ -481,12 +482,40 @@ const saveStore = makeSaveStore({ fs, pathMod: path, root: WORKSPACES, clock: { 
    events ride the always-on SSE bus (chanEmit) -> the browser U.bus -> XP + the dossier. */
 const REFLECT_TIMEOUT_MS = 30000;
 const PROPOSALS_CAP = 64;
+const AUTO_KEEP_MEMORY = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_MEMORY_AUTO_KEEP || '').trim());
 const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, proposals:[{id,kind,content,scope}] }
 const latestProposalRun = new Map();   // agentId -> newest pending runId (fetch fallback when the runId is unknown)
 function stashProposals(agentId, runId, proposals) {
   proposalsByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
   latestProposalRun.set(agentId, runId);
   while (proposalsByRun.size > PROPOSALS_CAP) { const k = proposalsByRun.keys().next().value; proposalsByRun.delete(k); }
+}
+function skillNameFromProposal(content) {
+  const one = String(content || '').replace(/\s+/g, ' ').trim().slice(0, 56);
+  return one ? ('Learned: ' + one) : 'Learned skill';
+}
+function commitProposalArtifact(agentId, runId, prop, content, fb) {
+  content = String(content || '').trim();
+  if (!content) throw new Error('a kept memory cannot be empty');
+  if (prop && prop.kind === 'skill') {
+    const name = skillNameFromProposal(content);
+    const r = skillStore.write({ agentId, name, summary: content.slice(0, 180), body: content });
+    if (!r.ok) throw new Error(r.error || 'skill write failed');
+    return { id: r.skill.id, kind: 'skill', scope: 'global', duplicate: false };
+  }
+  let rec = null, duplicate = null;
+  const saved = notebookStore.mutate('notebook:' + agentId, list => {
+    const dupe = memcore.findSimilar(list, content, { threshold: 0.6 });
+    if (dupe) return { records: list, value: { duplicate: dupe }, skipWrite: true };
+    const writtenId = memcore.nextNoteId(list);
+    rec = recordFromProposal(prop, { now: Date.now(), runId: runId || (prop && prop.sourceRunId), id: writtenId, content });
+    rec.trust = memcore.nextTrust(rec.trust, fb && fb.delta);
+    return { records: list.concat([rec]), value: { rec } };
+  });
+  duplicate = saved.value && saved.value.duplicate;
+  if (duplicate) return { id: duplicate.id, kind: duplicate.kind || 'note', scope: duplicate.scope || 'global', duplicate: true };
+  rec = saved.value && saved.value.rec;
+  return { id: rec.id, kind: rec.kind, scope: rec.scope || 'global', duplicate: false };
 }
 // fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
 async function runReflection(o) {
@@ -516,9 +545,19 @@ async function runReflection(o) {
     const out = await reflect({ agentId, runId, messages }, { propose, redact, existing, clock: { now: () => Date.now() }, max: 5 });
     const proposals = (out && out.proposals) || [];
     if (proposals.length) {
-      stashProposals(agentId, runId, proposals.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' })));
-      for (const p of proposals) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
+      if (o && o.autoKeep) {
+        const fb = feedbackFor('keep');
+        for (const p of proposals) {
+          const saved = commitProposalArtifact(agentId, runId, p, p.content, fb);
+          chanEmit('memory.write', { agentId, runId: runId || saved.id, id: saved.id, kind: saved.kind, scope: saved.scope });
+          chanEmit('memory.feedback', { agentId, id: saved.id, delta: fb.delta, reason: 'auto-kept' });
+        }
+      } else {
+        stashProposals(agentId, runId, proposals.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global', sourceRunId: p.sourceRunId || runId })));
+        for (const p of proposals) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
+      }
     }
+    return { usd, tokens, proposals: proposals.length };
   } catch (e) { console.warn('[cortex] reflection failed:', (e && e.message) || e); }
   finally {
     clearTimeout(timer);
@@ -526,7 +565,17 @@ async function runReflection(o) {
     // already booked the loop's spend before this fired). A second entry for the same runId just sums.
     if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens }); } catch (_) {} }
   }
+  return { usd, tokens, proposals: 0 };
 }
+
+const reviewQueue = makeReviewQueue({
+  maxQueued: Number(process.env.SKYNET_REVIEW_QUEUE_MAX || 32) || 32,
+  timeoutMs: REFLECT_TIMEOUT_MS + 1000,
+  worker: runReflection,
+  onEvent: (type, job) => {
+    if (type === 'error') console.warn('[cortex] review queue failed:', job && job.error);
+  }
+});
 
 /* ---- consent (P1.5): the four-tier broker's host-side state ----
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
@@ -1088,6 +1137,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/transcript') === 0) return serveTranscript(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
+  if (req.method === 'POST' && req.url === '/api/memory/turnin/bulk') return handleMemoryTurninBulk(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/records') === 0) return serveMemoryRecords(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/pin') return handleMemoryPin(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/edit') return handleMemoryEdit(req, res);
@@ -2128,12 +2178,10 @@ async function runOnce(o) {
     budget.clearLive(runId);
   }
 
-  // Cortex M-mem.5b: post-run reflection (browser runs only; the hub omits o.reflect). Fire-and-forget so the
-  // reply has no added latency and the input isn't held — proposals arrive a beat later over the SSE bus as a
-  // Keep/Edit/Discard turn-in. Gated to a COMPLETED run with a substantive exchange; reflect() dedups vs the
-  // store and never auto-writes (§5.6). result.messages is the live conversation (the agent's replies included).
-  if (o.reflect && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)) {
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
+  // Cortex M-mem.5b: queued post-run review for browser, cron, channel, and delegated runs. Fire-and-forget so
+  // the reply has no added latency; proposals arrive later over SSE unless explicit auto-keep is enabled.
+  if (o.reflect !== false && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)) {
+    reviewQueue.enqueue({ agentId, runId, messages: result.messages.slice(), provider, model, cost, surface, trigger, autoKeep: AUTO_KEEP_MEMORY || o.autoKeepMemory === true });
   }
   return result;
 
@@ -2603,7 +2651,8 @@ function serveProposals(req, res) {
     let batch = runId && proposalsByRun.get(runId);
     if (!batch) { const lr = latestProposalRun.get(agent); batch = lr && proposalsByRun.get(lr); }
     if (!batch || batch.agentId !== agent) return json(200, { runId: runId || null, agentId: agent, proposals: [] });
-    json(200, { runId: batch.runId, agentId: agent, proposals: batch.proposals });
+    const now = Date.now();
+    json(200, { runId: batch.runId, agentId: agent, proposals: batch.proposals.filter(p => !p.snoozedUntil || p.snoozedUntil <= now) });
   } catch (e) { json(200, { proposals: [] }); }
 }
 
@@ -2614,6 +2663,8 @@ function serveProposals(req, res) {
 async function handleMemoryTurnin(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  try { return json(200, resolveTurnin(body)); }
+  catch (e) { return json((e && e.status) || 400, { error: (e && e.message) || 'turn-in failed' }); }
   const agentId = String(body.agentId || 'agent');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   const runId = String(body.runId || '');
@@ -2656,6 +2707,55 @@ async function handleMemoryTurnin(req, res) {
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
   json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
+}
+
+async function handleMemoryTurninBulk(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  const runId = String(body.runId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const batch = proposalsByRun.get(runId);
+  if (!batch || batch.agentId !== agentId) return json(404, { error: 'no pending proposals' });
+  const ids = Array.isArray(body.ids) && body.ids.length ? body.ids.map(String) : batch.proposals.map(p => p.id);
+  const results = [];
+  for (const id of ids) {
+    try { results.push(resolveTurnin(Object.assign({}, body, { id }))); }
+    catch (e) { results.push({ ok: false, id, error: (e && e.message) || 'failed' }); }
+  }
+  return json(200, { ok: true, results });
+}
+
+function resolveTurnin(body) {
+  body = body || {};
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { const e = new Error('forbidden'); e.status = 403; throw e; }
+  const runId = String(body.runId || '');
+  const id = String(body.id || '');
+  const verdict = String(body.verdict || '');
+  if (verdict === 'snooze') {
+    const batch = proposalsByRun.get(runId);
+    const prop = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
+    if (!prop) { const e = new Error('no such proposal (it may have expired)'); e.status = 404; throw e; }
+    prop.snoozedUntil = Date.now() + Math.max(60000, Math.min(86400000, Number(body.snoozeMs) || 3600000));
+    return { ok: true, verdict, id: prop.id, snoozedUntil: prop.snoozedUntil };
+  }
+  const fb = feedbackFor(verdict);
+  if (!fb) throw new Error('verdict must be keep, edit, discard, or snooze');
+  const batch = proposalsByRun.get(runId);
+  const prop = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
+  if (!prop) { const e = new Error('no such proposal (it may have expired)'); e.status = 404; throw e; }
+  batch.proposals = batch.proposals.filter(p => p.id !== id);
+  if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }
+  if (verdict === 'discard') {
+    chanEmit('memory.feedback', { agentId, id: prop.id, delta: fb.delta, reason: fb.reason });
+    return { ok: true, verdict, id: null };
+  }
+  const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
+  const saved = commitProposalArtifact(agentId, runId, prop, content, fb);
+  chanEmit('memory.write', { agentId, runId: runId || saved.id, id: saved.id, kind: saved.kind, scope: saved.scope });
+  chanEmit('memory.feedback', { agentId, id: saved.id, delta: fb.delta, reason: fb.reason });
+  return { ok: true, verdict, id: saved.id, duplicate: !!saved.duplicate, kind: saved.kind };
 }
 
 // GET /api/memory/records?agent=<id> — the FULL §5.2 records for the Memory Core panel (the /api/notebook

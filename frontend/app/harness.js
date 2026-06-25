@@ -265,6 +265,12 @@ const Harness = (() => {
       return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
     } catch (e) { return { ok: false }; }
   }
+  async function memoryTurninBulk(o) {
+    try {
+      const r = await fetch('/api/memory/turnin/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
+      return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
+    } catch (e) { return { ok: false }; }
+  }
 
   // Cortex (M-mem.6) — the Memory Core: the FULL provenance-bearing §5.2 records (kind/sourceRunId/useCount/
   // trust/pinned/timestamps), which the slim /api/notebook view drops. [] on any failure.
@@ -288,7 +294,7 @@ const Harness = (() => {
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
-    memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
+    memoryProposals, memoryTurnin, memoryTurninBulk, memoryRecords, memoryPin, memoryEdit, memoryForget,
     apiToken: () => apiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,
