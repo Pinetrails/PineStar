@@ -21,17 +21,23 @@ all agents get the knowledge.
   boots the REAL sidecar against a mock OpenRouter, makes the lead call `team.summon`, acts as the browser,
   and asserts the new id flows back into the model's next request. No real model/browser/spend.
 
-## Open / blocked on a decision
+- **M4 — Workers = same access as the orchestrator** (Andrew's call). CONSTRAINT (permissions.js:88-97): an
+  *autonomous* run is hard-blocked from shell (exec lockout) and writes (silence-isn't-consent) unless Full
+  Access. Fix: each delegated/summoned worker now SHARES the lead's consent broker (`runOnce`:
+  `const consent = o.consent || makeConsentBroker(...)`) and is handed the `workbench`. Full-auto lead →
+  workers act freely; APPROVAL lead → a worker's write/shell prompts the WATCHED lead; headless cron lead →
+  workers inherit autonomous default-deny (no self-approved shell). Workers still don't get the orchestrator
+  object (no nested re-delegation; depth stays 1). Proof: `test/e2e.worker-access.test.js` — a full-access
+  lead's worker performs a consent-gated `fs.write` that lands on disk.
 
-- **M4 — Equip-functional.** CONSTRAINT (permissions.js:88-97): a delegated worker runs *autonomous*, so
-  StarNet blocks it from shell (exec lockout) and file-writes (silence-isn't-consent) unless Full Access.
-  Workers therefore **already** do web + file-read + memory; granting `workbench` is inert. Making workers
-  do write/shell work safely needs either (a) Full-Access summoned workers, or (b) forwarding worker consent
-  to the watched lead. **Pending Andrew's call.**
+Branch is rebased onto trunk (absorbed the COMMS interrupt/inline-media work) and green on `test:fast` +
+`test:http`. **Ready to merge.**
+
+## Open
+
 - **M5 — Equip-visual.** Show the summoned worker's capability props on its floor (object=capability truth).
   Touches `world.js`/`worldmodel.js` — the repo's most contended files (summon-fixes / world-game /
-  workstation-ui are live there). **Coordinate with that lane; do not duplicate.** Depends on M4's outcome
-  (what to show).
+  workstation-ui are live there). **Coordinate with that lane; do not duplicate.**
 
 ## Coordination
 
