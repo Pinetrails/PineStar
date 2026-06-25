@@ -1796,12 +1796,13 @@ const World = (() => {
     if (agent.state === 'walk' && !agent.target && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) {
       agent.state = 'idle'; agent.idleUntil = 0;
     }
-    // THE DESK-TRIP INVARIANT (chat.js sets activity='task' for the WHOLE duration of a task run): a task
-    // ALWAYS seizes the agent here — this block runs ABOVE every idle/leisure branch in the tick ladder, and
-    // all of those branches are gated on activity==='idle', so while a task runs the agent walks to the
-    // workstation and STAYS seated working there until the run ends (then the activity!=='task' branch below
-    // stands it up). Never add a branch that moves the body while activity==='task'. Stance is locked in
-    // classify.js (stanceFor) + classify.test.js; this is the world half of the same promise.
+    // THE DESK-TRIP INVARIANT: while activity==='task' the agent is seized HERE — this block runs ABOVE every
+    // idle/leisure branch in the tick ladder, and all of those are gated on activity==='idle', so the agent
+    // walks to the workstation and STAYS seated working until activity flips off 'task' (the branch below then
+    // stands it up). Never add a branch that moves the body while activity==='task'. NOTE: chat.js now ARMS
+    // 'task' REACTIVELY — the moment a run makes its first real tool call (walkToDesk), not the instant the
+    // Commander sends a message — so a question answered from memory never triggers this. Once armed it holds
+    // for the rest of the run. The talk/task mapping still lives in classify.js (stanceFor) + classify.test.js.
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
       if (agent.goal !== 'summon' && agent.goal !== 'fetch') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }

@@ -500,32 +500,37 @@ const Chat = (() => {
     if (isTask && typeof ProfileStore !== 'undefined') ProfileStore.observeMessage(text);
     if (isTask && typeof MintStore !== 'undefined') MintStore.observe(text);   // notice recurring jobs → propose minting them as one-tap missions
     // VOICE: the speaker toggle (🔊) controls whether the agent SPEAKS its reply (and in the short,
-    // spoken style — voiceModeRules appended below). It does NOT control the desk trip: a real TASK is
-    // real work, so it ALWAYS walks to the workstation and works there until done (the signature visible
-    // loop), speaker on or off. When voice is on, a task's result is also spoken — it's just no longer
-    // answered "on the spot" in place of the desk trip.
+    // spoken style — voiceModeRules appended below). It does NOT control the desk trip: the walk is driven
+    // by REAL tool use (walkToDesk, below), so the speaker setting can't suppress it. When voice is on, a
+    // task's result is also spoken — it's just no longer answered "on the spot" in place of the desk trip.
     // VOICE OWNERSHIP: ONLY the orchestrator (the hero, id 'agent') speaks aloud. A summoned/secondary agent
     // exists for the orchestrator to DELEGATE to — the Commander talks to the orchestrator, not to a crowd of
     // agents — so a summoned agent's replies are never voiced (and never get the short spoken-style prompt).
     const isOrchestrator = !ws.agentId || ws.agentId === 'agent';
     const willSpeak = isOrchestrator && typeof Voice !== 'undefined' && Voice.isOn && Voice.isOn();
-    // A TASK -> walk to the workstation + work there until the run completes (visible desk trip), whatever
-    // the speaker setting. A CHAT (no task) -> face the Commander one-on-one (framed below when voice is on).
-    // The decision lives in Classify.stanceFor, which takes ONLY isTask BY DESIGN: voice/speaker/UI state
-    // can NEVER suppress a task's desk trip (the exact regression we fixed). Locked by classify.test.js.
-    const stance = Classify.stanceFor(isTask);
-    // per-agent: the HERO routes to setActivity (single-agent path unchanged); a summoned crew agent lights
-    // ITS own body at ITS station, so tasking a summoned agent never moves the hero.
-    if (World.setActivityFor) World.setActivityFor(ws.agentId || 'agent', stance); else World.setActivity(stance);
-    // a spoken CHAT gently frames the agent one-on-one so you can see who you're talking to; a TASK is at
-    // the desk instead (no-op if already comfortably on-screen; self-cancels the moment you pan/zoom).
-    if (stance === 'talk' && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
-    status(stance === 'task' ? 'working…' : 'thinking…');
+    // REACTIVE DESK TRIP — the honest signal. We no longer pre-commit the walk on the classifier's GUESS:
+    // every turn the agent first turns to face the Commander (listen), and it only gets up and walks to its
+    // workstation the instant it ACTUALLY reaches for a tool (web / files / terminal) — see walkToDesk(),
+    // fired from onToolCall / onPermission below. So a basic question, an opinion, or a one-word answer the
+    // agent handles from its own knowledge NEVER runs to the PC; the desk trip now means "real tool-work is
+    // happening", not "the Commander typed something". isTask still gates TOOL AVAILABILITY (so a genuine
+    // task is never left tool-less) — it just no longer forces the walk. Voice/speaker state can't touch it.
+    const turnAgentId = ws.agentId || 'agent';
+    let walkedToDesk = false;
+    function walkToDesk() {   // idempotent: the FIRST real tool action of the turn sends THIS agent to its station
+      if (walkedToDesk) return; walkedToDesk = true;
+      if (World.setActivityFor) World.setActivityFor(turnAgentId, 'task'); else World.setActivity('task');
+      if (isActiveWs(ws)) status('working…');
+    }
+    // turn to face the Commander and listen (no camera yank); a spoken CHAT also softly frames the agent.
+    if (World.setActivityFor) World.setActivityFor(turnAgentId, 'talk'); else World.setActivity('talk');
+    if (!isTask && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
+    status('thinking…');
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
     // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
     // wins on format; it's never baked into the saved prompt.
     const sys = system
-      + (isTask ? ' The Commander has just assigned you a task — carry it out as best you can and report the result clearly.' : '')
+      + (isTask ? ' If this needs real work — searching the web, reading or writing files, running a tool — do it and report the result clearly. If you can answer it directly from what you already know, just answer; don\'t reach for tools you don\'t need.' : '')
       + (willSpeak ? voiceModeRules() : '');
 
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton) so the per-stream diff is real
@@ -571,7 +576,7 @@ const Chat = (() => {
         onRunId: id => { Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) { breakLive(); toolLine(t, ev.isError); } },
         onDeliverable: ev => {
           // image_generate emits kind:'image' (a real PNG in the agent's workspace); fs.write emits kind:'file'.
@@ -584,7 +589,7 @@ const Chat = (() => {
             if (typeof StationUI !== 'undefined') StationUI.notify((ev.kind === 'image' ? 'made ' : 'saved ') + ev.title, 'gold');
           }
         },
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } }
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } }
       });
       if (error) {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }

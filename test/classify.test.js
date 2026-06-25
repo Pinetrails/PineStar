@@ -1,6 +1,8 @@
-/* node test/classify.test.js — the TASK-vs-CHAT classifier that gates the entire tool-delivery path.
-   A missed task leaves the agent tool-less ("I can't reach the web"), so the bias is toward TASK and
-   courtesy-wrapped missions MUST classify as tasks. This table is the guardrail for that promise. */
+/* node test/classify.test.js — the TASK-vs-CHAT classifier that gates TOOL AVAILABILITY (the sidecar wires
+   tools only when isTask). A missed task leaves the agent tool-less ("I can't reach the web"), so the bias is
+   toward TASK and courtesy-wrapped missions MUST classify as tasks. (The visible desk trip is NOT gated here
+   anymore — it's reactive, fired by a real tool call in chat.js — so a question handed unused tools simply
+   never walks.) This table is the guardrail for the tool-delivery promise. */
 'use strict';
 const A = require('./_assert.js');
 const { isTaskDirective, getTag, stanceFor } = require('../frontend/app/classify.js');
@@ -24,12 +26,18 @@ const TASKS = [
   'investigate why sales dropped in Q2'
 ];
 
-// pure small-talk / questions about the agent -> MUST be chat (no tools, quick reply)
+// pure small-talk / questions about the agent / bare acknowledgements -> MUST be chat (no tools, quick reply)
 const CHATS = [
   'hi', 'hey there', 'hello!', 'yo', 'how are you?', "how's it going",
   'who are you', 'what is your name', 'what are you', 'are you alive?',
   'thanks!', 'thank you', 'ty', 'nice', 'cool', 'good job', 'well done',
-  'ok', 'okay', 'lol', 'nvm', 'bye', 'see ya'
+  'ok', 'okay', 'lol', 'nvm', 'bye', 'see ya',
+  // broadened: self-questions with a trailing word, and plain acknowledgements / answers ("an answer to
+  // something") — these are replies, not missions, so they stay tool-free and never trigger the desk trip
+  'how are you today', 'how are you doing today?', 'what are you up to', 'are you busy', 'are you free',
+  'yes', 'yeah', 'yep', 'nope', 'nah', 'sure', 'fine', 'correct',
+  'sounds good', 'sound good', 'got it', 'will do', 'makes sense', 'perfect', 'exactly', 'agreed',
+  'good idea', 'nice one'
 ];
 
 for (const t of TASKS) A.ok(isTaskDirective(t) === true, 'TASK: ' + JSON.stringify(t));
@@ -80,19 +88,20 @@ A.eq(getTag(null), 'general', 'null -> general (default lane, never throws)');
 A.eq(getTag('   '), 'general', 'whitespace -> general');
 A.eq(getTag('Build the API'), getTag('build the api'), 'case-insensitive + deterministic (replay-stable)');
 
-/* ---------- stanceFor — THE HARD INVARIANT: a task ALWAYS commands the desk trip ----------
-   The bug we shipped a fix for: the speaker/voice toggle leaked into the stance, so an on-speaker task was
-   answered one-on-one in place and the agent never walked to its workstation. These assertions make that
-   regression impossible to reintroduce silently — a task is a task is a desk trip, no matter what. */
-A.eq(stanceFor(true), 'task', 'a TASK always -> task stance (walk to the workstation + stay seated until done)');
+/* ---------- stanceFor — the canonical task->stance mapping (+ regression guard) ----------
+   stanceFor maps a turn's task-ness to its BASELINE stance. The live desk trip is now reactive (chat.js fires
+   it on a real tool call), so stanceFor no longer drives the walk preemptively — but it stays locked as the
+   contract and as a guard against the old regression: the speaker/voice toggle once leaked into the stance, so
+   an on-speaker task was answered one-on-one. These assertions keep stanceFor reading NOTHING but isTask. */
+A.eq(stanceFor(true), 'task', 'a TASK -> task stance (its baseline work pose)');
 A.eq(stanceFor(false), 'talk', 'a non-task -> talk stance (face the Commander one-on-one)');
 // structural guarantee: stanceFor reads NOTHING but isTask, so no voice/speaker/mic/UI state can ever turn a
 // task into a one-on-one chat. Any extra argument is ignored — the desk trip cannot be suppressed.
 A.eq(stanceFor(true, { voiceOn: true }), 'task', 'voice ON must NOT change a task (extra args ignored)');
 A.eq(stanceFor(true, true, 'anything'), 'task', 'no other input can suppress a task’s desk trip');
 A.eq(stanceFor(false, { voiceOn: true }), 'talk', 'voice ON must NOT promote a chat into a desk trip');
-// every real mission classifies as a task AND therefore takes the desk trip (end-to-end through the classifier)
-for (const t of TASKS) A.eq(stanceFor(isTaskDirective(t)), 'task', 'mission -> desk trip: ' + JSON.stringify(t));
+// every real mission classifies as a task (baseline stance 'task'); small talk maps to 'talk' — end-to-end
+for (const t of TASKS) A.eq(stanceFor(isTaskDirective(t)), 'task', 'mission -> task stance: ' + JSON.stringify(t));
 for (const c of CHATS) A.eq(stanceFor(isTaskDirective(c)), 'talk', 'small talk -> one-on-one: ' + JSON.stringify(c));
 
 A.report('classify.test');
