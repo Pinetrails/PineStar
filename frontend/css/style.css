@@ -407,6 +407,46 @@ body.no-scan .crt-scan { display: none; }
 #save-dot { color: var(--ph-faint); font-size: 13px; transition: color 0.3s; }
 #save-dot.flash { color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
 
+/* ---- CONTEXT-WINDOW gauge: engraved into the bottom bar ----
+   The agent's live context occupancy, moved off the desk and recessed into the
+   chrome so it reads at a glance no matter where the camera is. A milled groove
+   (inset shadow) holds a phosphor fill that climbs toward the model's REAL ceiling;
+   amber at 75%, red + a slow pulse near the top. Honest by construction: an unknown
+   model limit shows an empty groove + "—" (calibrating), never a fabricated fill. */
+.ctx-gauge { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: 1px; color: var(--ph-dim); user-select: none; }
+.ctx-gauge .ctx-lbl { letter-spacing: 2px; }
+.ctx-gauge .ctx-track {
+  position: relative; width: 84px; height: 9px; border-radius: 2px; overflow: hidden;
+  background: rgba(0,0,0,0.55);
+  /* the engraving: a dark groove with a top inner-shadow + a faint lower lip */
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.9), inset 0 -1px 0 rgba(255,255,255,0.05), 0 1px 0 rgba(255,255,255,0.04);
+}
+.ctx-gauge .ctx-fill {
+  display: block; height: 100%; width: 0%;
+  /* green→amber→red escalation (the desk core's proven palette), kept theme-independent so
+     the warn/crit step is always visible — even when the chrome itself is amber. */
+  background: #3fd07c; box-shadow: 0 0 8px rgba(63,208,124,0.5);
+  transition: width 0.45s ease, background 0.3s;
+}
+.ctx-gauge .ctx-num { color: #3fd07c; font-weight: normal; min-width: 30px; text-shadow: 0 0 6px rgba(63,208,124,0.45); }
+.ctx-gauge .ctx-cap { color: var(--ph-dim); font-size: 11px; }
+/* calibrating / idle: groove sits dark, readout dimmed — no glow it can't justify */
+.ctx-gauge[data-level="unknown"] .ctx-fill,
+.ctx-gauge[data-level="idle"] .ctx-fill { box-shadow: none; }
+.ctx-gauge[data-level="unknown"] .ctx-num,
+.ctx-gauge[data-level="idle"] .ctx-num { color: var(--ph-dim); text-shadow: none; }
+.ctx-gauge[data-level="warn"] .ctx-fill { background: #ffb24a; box-shadow: 0 0 8px rgba(255,178,74,0.55); }
+.ctx-gauge[data-level="warn"] .ctx-num { color: #ffb24a; text-shadow: 0 0 6px rgba(255,178,74,0.5); }
+.ctx-gauge[data-level="crit"] .ctx-fill { background: #ff5a4a; box-shadow: 0 0 9px rgba(255,90,74,0.65); animation: ctx-crit 1.1s ease-in-out infinite; }
+.ctx-gauge[data-level="crit"] .ctx-num { color: #ff5a4a; text-shadow: 0 0 6px rgba(255,90,74,0.55); }
+@keyframes ctx-crit { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+/* COMPACTION beat: a brief mint flash on the groove when the loop folded old context away */
+.ctx-gauge.compact .ctx-track { box-shadow: inset 0 0 0 1px rgba(158,255,196,0.85), inset 0 1px 2px rgba(0,0,0,0.9), 0 0 9px rgba(158,255,196,0.4); }
+.ctx-gauge.compact .ctx-cap { color: #9effc4; }
+@media (prefers-reduced-motion: reduce) { .ctx-gauge[data-level="crit"] .ctx-fill { animation: none; } }
+/* narrow windows: drop the wordy bits, keep the bar + percent */
+@media (max-width: 1180px) { .ctx-gauge .ctx-cap, .ctx-gauge .ctx-lbl { display: none; } }
+
 /* ================= TERMINAL WINDOWS (floating) =================
    The shared window shell. Every floating window (dossier, settings,
    kanban, prop consoles…) is built from the same molded-CRT material as

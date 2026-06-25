@@ -1049,8 +1049,36 @@ const StationUI = (() => {
   }
 
   /* ============== periodic + save dot ============== */
+  // CONTEXT-WINDOW gauge in the bottom bar — paint the engraved groove from REAL data
+  // (latest prompt tokens / the model's catalog max context) via the same CtxGauge model
+  // the desk core used. Honest: an unknown limit paints empty + "—" (calibrating).
+  function ctxTick() {
+    const g = $('#ctx-gauge'); if (!g) return;
+    if (typeof Harness === 'undefined' || !Harness.contextState || typeof CtxGauge === 'undefined') return;
+    const cs = Harness.contextState();
+    const s = CtxGauge.compute(cs.used, cs.limit);
+    g.dataset.level = s.level;
+    const fill = g.querySelector('.ctx-fill'); if (fill) fill.style.width = (s.known ? s.pct : 0) + '%';
+    const num = g.querySelector('.ctx-num'); if (num) num.textContent = s.pctLabel;
+    const cap = g.querySelector('.ctx-cap'); if (cap) cap.textContent = s.label;
+    g.title = 'CONTEXT — ' + (s.known ? s.label + '  ·  ' + s.pctLabel + ' of the model’s max context'
+                                       : 'calibrating (the model’s max context length is still unknown)');
+  }
+  let compactWired = false;
+  function wireCompactBeat() {
+    if (compactWired || typeof U === 'undefined' || !U.bus) return;
+    compactWired = true;
+    // M-mem.4: a real auto-compaction fired — flash the engraved groove mint for ~1.2s. The
+    // "🧠 context compacted" notify is raised elsewhere; this is the bottom-bar's visual echo.
+    U.bus.on('agent.compact', () => {
+      const g = $('#ctx-gauge'); if (!g) return;
+      g.classList.add('compact');
+      setTimeout(() => g.classList.remove('compact'), 1200);
+    });
+  }
   function tick() {
     crewTick();
+    ctxTick();
     const [txt, cls] = pillFor(activity());
     const p = $('#status-pill');
     if (p) { p.textContent = txt; p.className = cls; }
@@ -1799,6 +1827,7 @@ const StationUI = (() => {
     sel = 0;
     importLegacyTasks();
     crewRender();
+    wireCompactBeat();
     tick();
     if (!started) { started = true; tickTimer = setInterval(tick, 1000); }
   }
