@@ -495,8 +495,23 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .fnv-custom-back { font-family: inherit; font-size: 14px; color: var(--ph-dim); background: transparent; border: 2px solid var(--ph-dim); padding: 6px 10px; cursor: pointer; }
 .fnv-custom-back:hover { color: var(--ph); border-color: var(--ph); }
 
-#chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); }
+#chat-inputrow { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 2px solid var(--ph-dim); position: relative; }   /* position anchors the slash palette above the row */
 #chat-inputrow .prompt { color: var(--ph); }
+
+/* SLASH COMMANDS — a filterable palette floating directly above the input. Phosphor list, selected row lit. */
+.chat-slash {
+  position: absolute; left: 6px; right: 6px; bottom: calc(100% + 4px); z-index: 30;
+  max-height: 244px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--ph); border-radius: 6px;
+  box-shadow: 0 -6px 20px rgba(0,0,0,.6), 0 0 0 2px rgba(0,0,0,.5);
+}
+.chat-slash[hidden] { display: none; }
+.slash-head { padding: 4px 10px; color: var(--ph-dim); font-size: 11px; letter-spacing: 1.5px; border-bottom: 1px solid var(--ph-faint); position: sticky; top: 0; background: var(--panel); }
+.slash-item { display: flex; align-items: baseline; gap: 9px; padding: 5px 10px; cursor: pointer; }
+.slash-item .slash-name { color: var(--ph-bright); font-weight: bold; white-space: nowrap; flex: 0 0 auto; }
+.slash-item .slash-desc { color: var(--ph-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.slash-item.sel { background: var(--ph-faint); }
+.slash-item.sel .slash-desc { color: var(--ph); }
 #chat-input { flex: 1; width: auto; min-width: 0; border: none; background: transparent; padding: 4px 2px; }
 #chat-input:focus { box-shadow: none; }
 

@@ -202,6 +202,8 @@
     <!-- TYPE-AHEAD: follow-ups typed while the agent is working queue here as pills, auto-sent in order (chat.js) -->
     <div id="chat-queued" class="chat-queued" aria-live="polite"></div>
     <div id="chat-inputrow">
+      <!-- SLASH COMMANDS: a leading "/" opens this filterable palette of turn controls + the recipe library (chat.js) -->
+      <div id="chat-slash" class="chat-slash" role="listbox" aria-label="Commands" hidden></div>
       <span class="prompt">&gt;</span>
       <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off" aria-label="Message your agent">
       <!-- INTERRUPT: cancel just the active stream's run (also bound to Esc while COMMS is focused); hidden unless busy -->

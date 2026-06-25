@@ -177,17 +177,27 @@ const Chat = (() => {
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     load(opts.ws);
     input.onkeydown = e => {
+      // SLASH PALETTE owns the nav keys while open (a "/command" menu over the input)
+      if (isSlashOpen()) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); moveSlash(1); return; }
+        if (e.key === 'ArrowUp') { e.preventDefault(); moveSlash(-1); return; }
+        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); runSlash(slashItems[slashSel]); return; }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSlash(); return; }
+        // any other key falls through to normal typing → the 'input' listener re-filters the palette
+      }
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
         const t = input.value.trim();
         if (!t) return;
-        input.value = '';
+        input.value = ''; closeSlash();
         if (isBusy()) enqueue(t); else send(t);   // TYPE-AHEAD: queue a follow-up rather than dropping it while the stream is busy
       } else if (e.key === 'Escape' && isBusy()) {
         e.preventDefault(); e.stopPropagation();   // INTERRUPT: beat navdock's global Esc-closes-menus while a run is live
         stopActive();
       }
     };
+    // SLASH PALETTE: a leading "/" opens the command menu and filters it live as you type past it.
+    input.addEventListener('input', () => { const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });
     const stopBtn = el('chat-stop'); if (stopBtn) stopBtn.onclick = stopActive;
   }
 
@@ -674,6 +684,92 @@ const Chat = (() => {
   function updateControls() {
     const stop = el('chat-stop'); if (stop) stop.hidden = !isBusy();
     renderQueued();
+  }
+
+  /* ---------- SLASH COMMANDS: a "/command" palette over the input (harness-standard) ----------
+     A leading "/" opens a filterable menu of built-in turn-control commands PLUS the whole recipe
+     library — so the missions that live in the dock are one keystroke away in chat too. Selecting a
+     recipe drops its directive into the input (first {blank} pre-selected) to fill + send; a built-in
+     runs immediately. ↑/↓ move, Enter/Tab run, Esc closes. */
+  let slashItems = [], slashSel = 0;
+  function isSlashOpen() { const p = el('chat-slash'); return !!(p && !p.hidden); }
+  function copyLastReply() {
+    if (!activeWs) return;
+    const h = activeWs.history;
+    for (let i = h.length - 1; i >= 0; i--) {
+      if (h[i].role === 'assistant' && !h[i].error && (h[i].content || '').trim()) {
+        copyText(h[i].content).then(ok => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? 'copied the last reply' : 'copy failed', ok ? 'good' : 'warn'); });
+        return;
+      }
+    }
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('no reply to copy yet', '');
+  }
+  function showHelp() { localLine('Commands — /retry · /stop · /copy · /help, and /<recipe> to drop a mission into the box. Type “/” to browse.'); }
+  // drop a recipe's directive into the input: apply each OPTIONAL param's default, but leave REQUIRED blanks
+  // visible as {tokens} so the Commander can see what to fill — and pre-select the first one to type over.
+  function insertRecipe(r) {
+    if (!input) return;
+    let directive = (r && r.task) || (r && r.name) || '';
+    for (const p of (r && r.params) || []) {
+      if (p && p.key && p.default != null && p.default !== '') directive = directive.split('{' + p.key + '}').join(p.default);
+    }
+    input.value = directive; input.focus();
+    const m = /\{[^}]+\}/.exec(directive);   // select the first remaining blank to type over (else cursor at end)
+    try { if (m) input.setSelectionRange(m.index, m.index + m[0].length); else input.setSelectionRange(directive.length, directive.length); } catch (_) {}
+  }
+  function buildCommands() {
+    const cmds = [
+      { name: 'retry', desc: 're-run the last turn', run: retryLast },
+      { name: 'stop', desc: 'interrupt the running turn', run: stopActive },
+      { name: 'copy', desc: 'copy the agent’s last reply', run: copyLastReply },
+      { name: 'help', desc: 'list these commands', run: showHelp }
+    ];
+    if (typeof Recipes !== 'undefined' && Recipes.list) {
+      for (const r of Recipes.list()) cmds.push({ name: r.id, desc: (r.emoji ? r.emoji + ' ' : '') + (r.name || r.id) + (r.tagline ? ' — ' + r.tagline : ''), run: () => insertRecipe(r) });
+    }
+    return cmds;
+  }
+  function matchCommands(q) {
+    q = (q || '').toLowerCase().trim();
+    const all = buildCommands();
+    if (!q) return all.slice(0, 8);
+    const pref = [], sub = [];
+    for (const c of all) {
+      const n = c.name.toLowerCase();
+      if (n.indexOf(q) === 0) pref.push(c);
+      else if (n.indexOf(q) >= 0 || (c.desc || '').toLowerCase().indexOf(q) >= 0) sub.push(c);
+    }
+    return pref.concat(sub).slice(0, 8);
+  }
+  function openSlash(query) {
+    const pop = el('chat-slash'); if (!pop) return;
+    slashItems = matchCommands(query);
+    if (!slashItems.length) { closeSlash(); return; }
+    if (slashSel >= slashItems.length) slashSel = 0;
+    renderSlash(); pop.hidden = false;
+  }
+  function closeSlash() { const pop = el('chat-slash'); if (pop) pop.hidden = true; slashItems = []; slashSel = 0; }
+  function moveSlash(d) { if (!slashItems.length) return; slashSel = (slashSel + d + slashItems.length) % slashItems.length; renderSlash(); }
+  function renderSlash() {
+    const pop = el('chat-slash'); if (!pop) return;
+    pop.innerHTML = '';
+    const head = document.createElement('div'); head.className = 'slash-head'; head.textContent = '/ COMMANDS';
+    pop.appendChild(head);
+    slashItems.forEach((c, i) => {
+      const it = document.createElement('div'); it.className = 'slash-item' + (i === slashSel ? ' sel' : ''); it.setAttribute('role', 'option');
+      const nm = document.createElement('span'); nm.className = 'slash-name'; nm.textContent = '/' + c.name;
+      const ds = document.createElement('span'); ds.className = 'slash-desc'; ds.textContent = c.desc || '';
+      it.appendChild(nm); it.appendChild(ds);
+      it.onmouseenter = () => { slashSel = i; renderSlash(); };
+      it.onmousedown = e => { e.preventDefault(); runSlash(c); };   // mousedown keeps input focus
+      pop.appendChild(it);
+    });
+  }
+  function runSlash(item) {
+    if (!item) { closeSlash(); return; }
+    input.value = ''; closeSlash();   // consume the "/query"; a recipe's run() then refills the input
+    if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+    try { item.run(); } catch (_) {}
   }
 
   async function send(text, opts) {
