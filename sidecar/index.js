@@ -40,6 +40,7 @@ const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
+const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
@@ -2025,7 +2026,11 @@ async function runOnce(o) {
     const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
     skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes });
   } catch (_) { /* a skill-injection hiccup must never break a run */ }
-  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  // STARNET OPERATOR MANUAL: how the station works, so the agent can guide a stuck Commander. Interactive
+  // only (same gate as capsummary — a Commander is present to help and the build UI exists). Sits right
+  // BEFORE the authoritative <capabilities_ground_truth>, which it defers to, so the two never disagree.
+  const manualBlock = (surface === 'interactive') ? starnetManual() : '';
+  const sys = (system || '') + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
