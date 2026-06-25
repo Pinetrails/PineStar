@@ -16,6 +16,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -28,6 +29,17 @@
       "../sidecar": "sidecar",
       "../frontend": "frontend",
       "../shared": "shared"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZGN0UzMkRCMjIyMTNGOEMKUldTTVB5RWkyekorLzlDdS90THkxSTNlVk1CVlFaSVErY2lJVlNESDFtR1Uva2tlS1J6WDZCL1UK",
+      "endpoints": [
+        "https://updates.starnet.app/desktop/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

@@ -996,6 +996,7 @@ const StationUI = (() => {
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO</label>' +
       '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>' +
+      ((typeof Updates !== 'undefined' && Updates.settingsHtml) ? Updates.settingsHtml() : '') +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
@@ -1007,6 +1008,7 @@ const StationUI = (() => {
     }));
     const bind = (id, key) => body.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
     bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
+    if (typeof Updates !== 'undefined' && Updates.wireSettings) Updates.wireSettings(body);
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
     const clr = body.querySelector('#set-clear');
     clr.addEventListener('click', () => {
@@ -1022,6 +1024,10 @@ const StationUI = (() => {
     if (store.notifs.length > 60) store.notifs = store.notifs.slice(-60);
     save(); badges();
     if (open.notifs) rerender('notifs');
+  }
+  function buildUpdates(body) {
+    if (typeof Updates !== 'undefined' && Updates.render) Updates.render(body);
+    else body.innerHTML = '<div class="fb-empty">UPDATE CENTER UNAVAILABLE.<br><span>Restart the desktop app and try again.</span></div>';
   }
   function buildNotifs(body) {
     if (!store.notifs.length) {
@@ -1749,6 +1755,7 @@ const StationUI = (() => {
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
     skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '680px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
+    updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
     connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
