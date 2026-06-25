@@ -14,6 +14,7 @@
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -32,6 +33,9 @@ struct AppState {
     root: PathBuf,
     startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
+    // Flipped true the instant the app starts exiting, so the guardian thread stops
+    // respawning the sidecar during an intentional quit.
+    shutting_down: AtomicBool,
 }
 
 impl AppState {
@@ -306,6 +310,121 @@ fn spawn_sidecar(state: &AppState) -> bool {
     false
 }
 
+// ---- stay-alive: keep cron firing while the window is open ----
+//
+// Two small guards so "leave StarNet open and it runs 24/7" is actually true:
+//   * WAKE-LOCK — while the scheduler is armed AND has at least one routine, hold off
+//     SYSTEM sleep (ES_SYSTEM_REQUIRED) so an idle overnight PC keeps ticking. We do NOT
+//     pass ES_DISPLAY_REQUIRED, so the screen is still free to sleep — only the machine
+//     stays awake. Released the moment cron is disarmed or has no jobs.
+//   * WATCHDOG — if the sidecar process exits unexpectedly (crash, OOM), respawn it on
+//     the same loopback port so the open page can reconnect, instead of silently dying.
+//
+// Both live in ONE long-lived guardian thread: the wake-lock must be (re)set from a stable
+// thread — the ES_CONTINUOUS requirement is cleared if its setting thread exits — and sharing
+// the thread keeps the watchdog and the cron poll on one cheap timer.
+
+/// Hold off (true) or release (false) system sleep. No-op away from Windows. MUST be called
+/// from the long-lived guardian thread (ES_CONTINUOUS persists only while its thread lives).
+#[cfg(windows)]
+fn set_wakelock(on: bool) {
+    // kernel32 — declared inline so we pull in no extra crate.
+    extern "system" {
+        fn SetThreadExecutionState(es_flags: u32) -> u32;
+    }
+    const ES_CONTINUOUS: u32 = 0x8000_0000;
+    const ES_SYSTEM_REQUIRED: u32 = 0x0000_0001;
+    let flags = if on {
+        ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+    } else {
+        ES_CONTINUOUS
+    };
+    unsafe {
+        SetThreadExecutionState(flags);
+    }
+}
+
+#[cfg(not(windows))]
+fn set_wakelock(_on: bool) {}
+
+/// One raw-HTTP GET against the loopback sidecar; returns the response body (headers stripped).
+fn http_get_local(port: u16, path: &str) -> Option<String> {
+    use std::io::{Read, Write};
+    let mut s = TcpStream::connect(("127.0.0.1", port)).ok()?;
+    let _ = s.set_read_timeout(Some(Duration::from_secs(4)));
+    let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    s.write_all(req.as_bytes()).ok()?;
+    s.flush().ok()?;
+    let mut buf = Vec::new();
+    s.read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let idx = text.find("\r\n\r\n")?;
+    Some(text[idx + 4..].to_string())
+}
+
+/// Ask the sidecar whether sleep should be held off: Some(true) iff the scheduler is armed
+/// AND at least one routine exists, Some(false) otherwise, None if the sidecar can't be
+/// reached (the caller keeps the previous state rather than flapping the lock).
+fn cron_wants_wakelock(port: u16) -> Option<bool> {
+    let body = http_get_local(port, "/api/cron")?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let armed = v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
+    let has_jobs = v
+        .get("jobs")
+        .and_then(|x| x.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    Some(armed && has_jobs)
+}
+
+/// The guardian loop: watchdog every ~3s, wake-lock reconcile every ~21s. Runs until the app
+/// signals shutdown, then releases the wake-lock and exits.
+fn spawn_guardian(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut lock_held = false;
+        let mut ticks: u64 = 0;
+        loop {
+            std::thread::sleep(Duration::from_secs(3));
+            let Some(state) = app.try_state::<AppState>() else {
+                continue;
+            };
+            let st: &AppState = state.inner();
+            if st.shutting_down.load(Ordering::SeqCst) {
+                set_wakelock(false);
+                break;
+            }
+
+            // WATCHDOG: respawn the sidecar if it exited unexpectedly. Don't hold the lock
+            // across the respawn — spawn_sidecar takes it itself.
+            let mut needs_respawn = false;
+            if let Ok(mut guard) = st.sidecar.lock() {
+                if let Some(Ok(Some(_status))) = guard.as_mut().map(|c| c.try_wait()) {
+                    needs_respawn = true;
+                }
+            }
+            if needs_respawn {
+                log_startup(&st.startup_log, "watchdog: sidecar exited — respawning");
+                let _ = spawn_sidecar(st);
+            }
+
+            // WAKE-LOCK: reconcile against the live cron state every ~21s (≪ any sleep timer).
+            ticks += 1;
+            if ticks % 7 == 1 {
+                if let Some(want) = cron_wants_wakelock(st.port) {
+                    if want != lock_held {
+                        set_wakelock(want);
+                        lock_held = want;
+                        log_startup(
+                            &st.startup_log,
+                            format!("wakelock {}", if want { "engaged" } else { "released" }),
+                        );
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// Push the live BYOK key to the already-running sidecar (no restart). The raw key is
 /// the request body, authenticated by the per-launch IPC token. Blocks until the
 /// sidecar acks, so the key is live before the caller proceeds to a run.
@@ -529,10 +648,15 @@ fn main() {
                 root,
                 startup_log,
                 sidecar: Mutex::new(None),
+                shutting_down: AtomicBool::new(false),
             };
             let _ = spawn_sidecar(&state);
             app.manage(state);
             app.manage(PendingUpdate(Mutex::new(None)));
+
+            // Keep the agent alive while the window is open: respawn a crashed sidecar and
+            // hold off system sleep whenever the scheduler is armed (see spawn_guardian).
+            spawn_guardian(app.handle().clone());
 
             // The frontend is served LOCALLY (bundled via frontendDist), NOT from the sidecar's
             // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
@@ -561,6 +685,7 @@ fn main() {
         .run(|app, event| {
             if let RunEvent::ExitRequested { .. } = event {
                 if let Some(state) = app.try_state::<AppState>() {
+                    state.shutting_down.store(true, Ordering::SeqCst);
                     state.kill_sidecar();
                 }
             }
