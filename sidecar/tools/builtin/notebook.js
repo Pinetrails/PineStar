@@ -27,6 +27,9 @@
     // host injects it so an explicit notebook.read query orders its matches the way recall does; standalone (no
     // injection) the tool falls back to store order, staying dependency-free for the browser build + tests.
     const rank = typeof deps.rank === 'function' ? deps.rank : null;
+    // Optional MemoryProvider lifecycle hook. The notebook remains the source of truth; this is a fail-open
+    // notification path for providers that mirror/index/learn from local memory writes.
+    const onMemoryWrite = typeof deps.onMemoryWrite === 'function' ? deps.onMemoryWrite : null;
     // injected trust fold (memcore.nextTrust) for notebook.feedback's rating nudge; inline fallback keeps the
     // tool standalone. clamp + step (delta*0.15) MUST match memcore.nextTrust — kept in sync.
     const nextTrust = typeof deps.nextTrust === 'function' ? deps.nextTrust : (prev, delta) => {
@@ -85,6 +88,7 @@
         };
         list.push(note);
         store.set(KEY(aid), list);
+        if (onMemoryWrite) { try { onMemoryWrite('write', KEY(aid), note, ctx || {}); } catch (_) {} }
         if (ctx && typeof ctx.emit === 'function') {
           // memory.write — the durable-memory rung (feeds useCount/trust + the dossier's archivist track). The
           // frozen contract requires runId, so emit only on a real run (some test fixtures carry no runId).
@@ -170,6 +174,7 @@
         const now = clock.now();
         const next = Object.assign({}, rec, { trust: nextTrust(rec.trust, delta), lastFeedbackAt: now });
         const out = list.slice(); out[idx] = next; store.set(KEY(aid), out);
+        if (onMemoryWrite) { try { onMemoryWrite('feedback', KEY(aid), next, ctx || {}); } catch (_) {} }
         // memory.feedback rung — telemetry/bus only (the trust fold already happened above; nobody re-folds it,
         // mirroring how the turn-in writer applies trust directly then emits). reason carries the rating verb.
         if (ctx && typeof ctx.emit === 'function') ctx.emit('memory.feedback', { agentId: aid, id: rec.id, delta: delta, reason: rating });

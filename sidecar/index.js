@@ -35,6 +35,7 @@ const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
 const { makeTranscriptStore } = require('./transcriptstore.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
+const { makeMemoryManager, makeLocalCortexProvider } = require('./memoryprovider.js');
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
@@ -1775,9 +1776,24 @@ async function runOnce(o) {
 
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
+  const memoryManager = makeMemoryManager();
+  try {
+    memoryManager.addProvider(makeLocalCortexProvider({
+      store: notebookStore,
+      clock: { now: () => Date.now() },
+      rank, renderRecall, compactionMemoryBlock
+    }));
+    const injected = [];
+    if (o.memoryProvider) injected.push(o.memoryProvider);
+    if (Array.isArray(o.memoryProviders)) { for (const p of o.memoryProviders) injected.push(p); }
+    for (const p of injected) { try { memoryManager.addProvider(p); } catch (e) { console.warn('[memory] provider rejected:', (e && e.message) || e); } }
+  } catch (e) { console.warn('[memory] provider setup failed:', (e && e.message) || e); }
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
-  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
+  makeNotebookTools({
+    store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust,
+    onMemoryWrite: (action, target, content, ctx) => memoryManager.onMemoryWrite(action, target, content, Object.assign({ agentId, runId, streamId, surface }, ctx || {}))
+  }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({ store: skillStore }).register(registry);   // H4: skill.write/list/view — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
@@ -1800,6 +1816,7 @@ async function runOnce(o) {
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
   }).register(registry);
+  memoryManager.registerTools(registry, { agentId, runId, streamId, surface });
   throttleSearch(registry);
 
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
@@ -1906,8 +1923,7 @@ async function runOnce(o) {
     // (prepend nothing → byte-identical compaction). Fail-open: a memory hiccup must never block the summary.
     let memBlock = '';
     try {
-      const recs = notebookStore.get('notebook:' + agentId);
-      if (Array.isArray(recs) && recs.length) memBlock = compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
+      memBlock = memoryManager.onPreCompress(older, { agentId, runId, streamId: o.streamId || null, now: Date.now(), text: transcript, k: 5, limit: 800 });
     } catch (_) {}
     const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
     const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
@@ -2012,7 +2028,9 @@ async function runOnce(o) {
     const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
     skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes });
   } catch (_) { /* a skill-injection hiccup must never break a run */ }
-  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  let memoryPromptBlock = '';
+  try { memoryPromptBlock = memoryManager.buildSystemPrompt({ agentId, runId, streamId, surface }); } catch (_) {}
+  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock + (memoryPromptBlock ? '\n\n' + memoryPromptBlock : '');   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -2031,12 +2049,10 @@ async function runOnce(o) {
   // floor keeps recent notes recallable on an off-topic turn (no M-mem.1 regression). Empty notebook =>
   // nothing injected (byte-identical to a memoryless run). Never fails the run.
   try {
-    const stored = notebookStore.get('notebook:' + agentId);
-    const recs = Array.isArray(stored) ? stored : [];
     let q = '';
     for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { q = messages[i].content; break; } }
-    const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
-    const recall = renderRecall(ranked, { limit: 1500 });
+    memoryManager.onTurnStart(0, { role: 'user', content: q }, { agentId, runId, streamId, surface });
+    const recall = await memoryManager.prefetchAll(q, { agentId, runId, streamId, surface, messages, now: Date.now(), limit: 1500 });
     if (recall.text) {
       msgs = injectRecall(msgs, redact(recall.text));   // §5.6 belt-and-suspenders: a legacy plaintext note can't reach the provider verbatim
       emit('memory.recall', { agentId, runId, count: recall.count, chars: recall.chars });
@@ -2048,6 +2064,8 @@ async function runOnce(o) {
       // record never gains useCount/recency (which would otherwise make it a sticky slot-squatter), and the
       // old positional ranked[i] aliasing is gone.
       if (runId && recall.usedIds && recall.usedIds.length) {
+        const stored = notebookStore.get('notebook:' + agentId);
+        const recs = Array.isArray(stored) ? stored : [];
         const usedAt = Date.now();
         let updated = recs;
         for (const id of recall.usedIds) {
@@ -2103,6 +2121,16 @@ async function runOnce(o) {
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
       if (result && Array.isArray(result.messages)) transcriptStore.appendTurns(o.streamId, agentId, result.messages, _txStart);
+      const memoryCtx = { agentId, runId, streamId: o.streamId || null, surface, reason: (result && result.reason) || 'done', messages: (result && result.messages) || [] };
+      try { memoryManager.onSessionEnd(memoryCtx.messages, memoryCtx); } catch (_) {}
+      let assistantText = '';
+      if (result && Array.isArray(result.messages)) {
+        for (let i = result.messages.length - 1; i >= 0; i--) {
+          const m = result.messages[i];
+          if (m && m.role === 'assistant' && typeof m.content === 'string' && m.content) { assistantText = m.content; break; }
+        }
+      }
+      if (title || assistantText) memoryManager.syncTurnAll(title, assistantText, memoryCtx);
     } catch (_) {}
     budget.clearLive(runId);
   }

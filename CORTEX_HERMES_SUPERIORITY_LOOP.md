@@ -31,7 +31,7 @@ Condition is met when StarNet has an agent-callable session search that beats He
 
 ### 2. Memory-Provider Lifecycle
 
-Status: TODO
+Status: DONE
 
 Condition is met when StarNet has a local-first provider interface comparable to Hermes' `MemoryProvider`, with:
 
@@ -84,3 +84,6 @@ Condition is met when the learning loop is broader than Hermes while preserving 
 - 2026-06-25: Item 1 DONE. Added stable transcript message ids, local full-text session discovery,
   browse/read/scroll modes, match windows, bookends, `session_search`, and regression coverage. `npm.cmd run
   test:fast` green.
+- 2026-06-25: Item 2 DONE. Added a first-class MemoryProvider lifecycle manager, local Cortex provider adapter,
+  one-external-provider guard, provider tool hooks, queued background sync/flush, provider-backed recall and
+  compaction, and notebook write notifications. `npm.cmd run test:fast` green.
