@@ -245,9 +245,24 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
    left, Commander on the right. The LIVE reply stays the lit headline pinned at the bottom; past
    turns render as plain grouped messages (chat.js renderHistory no longer tags them .reply).
    No per-message timestamps — the stored history carries none, and we don't fabricate them. */
-.cmsg { font-size: 16px; line-height: 1.4; min-width: 0; max-width: 100%; }   /* min-width:0 lets long tokens wrap instead of stretching the column */
+.cmsg { font-size: 16px; line-height: 1.4; min-width: 0; max-width: 100%; position: relative; }   /* min-width:0 lets long tokens wrap instead of stretching the column; position anchors the copy button */
 .cmsg .who { font-size: 12px; letter-spacing: 1.5px; color: var(--ph-dim); display: block; margin: 9px 0 3px; text-transform: uppercase; font-weight: bold; }
 .cmsg .body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+
+/* COPY — a hover-revealed ⧉ button at the top-right of an agent MESSAGE row (CSS keeps it off the work-log
+   beats, which aren't prose). Flashes to ✓ on a successful copy. Touch/keyboard-focus reveal it too. */
+.cmsg-copy {
+  position: absolute; top: 1px; right: 0; z-index: 1;
+  border: 1px solid var(--ph-dim); background: var(--panel2); color: var(--ph-dim);
+  font-size: 12px; line-height: 1; padding: 2px 5px; border-radius: 4px; cursor: pointer;
+  opacity: 0; transition: opacity .12s, color .12s, border-color .12s;
+}
+.cmsg.agent:hover > .cmsg-copy, .cmsg-copy:focus-visible { opacity: .85; }
+.cmsg-copy:hover { color: var(--ph-bright); border-color: var(--ph); opacity: 1; }
+.cmsg-copy.copied { color: var(--ph); border-color: var(--ph); opacity: 1; }
+/* the work-log beats are not "messages" → no copy button */
+.cmsg.tool > .cmsg-copy, .cmsg.consent > .cmsg-copy, .cmsg.turnin > .cmsg-copy,
+.cmsg.nudge > .cmsg-copy, .cmsg.deliverable > .cmsg-copy { display: none; }
 
 /* the agent: a left rail + phosphor name */
 .cmsg.agent { align-self: stretch; border-left: 2px solid var(--ph-faint); padding-left: 11px; }

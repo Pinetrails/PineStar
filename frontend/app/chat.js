@@ -132,12 +132,46 @@ const Chat = (() => {
     else bodyEl.innerHTML = linkify(raw);
   }
 
+  // COPY-TO-CLIPBOARD: the async Clipboard API (works on localhost, a secure context), with a hidden-textarea
+  // execCommand fallback for any context where it's unavailable. Resolves true on success so the button can confirm.
+  function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true, () => fallbackCopy(text));
+    } catch (_) {}
+    return Promise.resolve(fallbackCopy(text));
+  }
+  function fallbackCopy(text) {
+    try {
+      const ta = document.createElement('textarea'); ta.value = text;
+      ta.style.position = 'fixed'; ta.style.top = '-9999px'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand('copy'); ta.remove(); return ok;
+    } catch (_) { return false; }
+  }
+
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
     proposalRunsSeen.clear(); wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
+    // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
+    // row's prose, then flashes a ✓ confirm. Wired once per log element so a re-init can't stack handlers.
+    if (log && !log.__copyWired) {
+      log.__copyWired = true;
+      log.addEventListener('click', e => {
+        const btn = e.target.closest('.cmsg-copy'); if (!btn) return;
+        const bodyEl = btn.closest('.cmsg') && btn.closest('.cmsg').querySelector('.body');
+        const txt = bodyEl ? bodyEl.textContent : '';
+        if (!txt) return;
+        copyText(txt).then(ok => {
+          if (!ok) return;
+          btn.classList.add('copied'); btn.textContent = '✓';
+          if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+          setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '⧉'; }, 1100);
+        });
+      });
+    }
     input.value = '';
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
@@ -211,6 +245,14 @@ const Chat = (() => {
     who.textContent = role === 'user' ? 'COMMANDER' : name;
     const body = document.createElement('span'); body.className = 'body';
     d.appendChild(who); d.appendChild(body);
+    // COPY: a hover-revealed copy button on the agent's MESSAGE rows. CSS hides it on the work-log beats
+    // (tool / consent / turn-in / nudge / deliverable) — those aren't prose to copy. One delegated handler
+    // in init() reads the row's .body text, so a streamed reply gains the button the moment its row exists.
+    if (role === 'agent') {
+      const cp = document.createElement('button'); cp.className = 'cmsg-copy'; cp.type = 'button';
+      cp.title = 'copy message'; cp.setAttribute('aria-label', 'Copy message'); cp.textContent = '⧉';
+      d.appendChild(cp);
+    }
     log.appendChild(d);   // CHRONOLOGICAL: every row lands at the bottom, in the order it happened (classic chat)
     autoscroll();
     return { d, body };
@@ -612,6 +654,21 @@ const Chat = (() => {
     renderQueued();
     send(next);
   }
+  // RETRY — re-run the last turn after an outage / connection drop / in-band error. Discard the trailing failed
+  // reply, re-render the thread (dropping the ⚠ row), then resend the last user message WITHOUT echoing it again.
+  function retryLast() {
+    if (!activeWs || isBusy()) return;
+    const h = activeWs.history;
+    if (h.length && h[h.length - 1].role === 'assistant' && h[h.length - 1].error) h.pop();   // drop the failed reply
+    let text = null;
+    for (let i = h.length - 1; i >= 0; i--) { if (h[i].role === 'user') { text = h[i].content; break; } }
+    if (text == null) return;
+    load(activeWs);                 // re-render the thread cleanly (the popped ⚠ row is gone)
+    send(text, { retry: true });    // re-run it; the user turn is already present, so don't echo it
+  }
+  // a one-tap "↻ retry" chip dropped under a failed turn (reuses the suggestion-pill row, which self-removes on tap).
+  function offerRetry() { if (log) choices([{ label: '↻ retry', value: 'retry' }], () => retryLast()); }
+
   // show the Stop control + the queued pills for whatever stream is on screen. Called from syncStatus (covers
   // switch + turn-end) and at send() start (status goes 'thinking…' without a syncStatus).
   function updateControls() {
@@ -619,7 +676,8 @@ const Chat = (() => {
     renderQueued();
   }
 
-  async function send(text) {
+  async function send(text, opts) {
+    const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
     if (interview) { interview(text); return; }   // THE AWAKENING owns the input: route the answer to onboarding, no model call
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
@@ -634,7 +692,7 @@ const Chat = (() => {
       wiEmit('workitem.placed', { workitemId: wiId, queueId: wiAid, agentId: wiAid, kind: 'directive', preview: String(text || '').replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: wiPlacedTs });
       wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
-    addUser(text); ws.history.push({ role: 'user', content: text });
+    if (!retry) { addUser(text); ws.history.push({ role: 'user', content: text }); }   // on RETRY the user turn is already in the thread + on screen
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
@@ -762,6 +820,7 @@ const Chat = (() => {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + error, error: true });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
+        if (isActiveWs(ws)) offerRetry();   // RETRY: one tap re-runs the failed turn
       } else {
         const replyText = reply || acc;
         finalReply = replyText;
@@ -795,6 +854,7 @@ const Chat = (() => {
       } else {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
         if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
+        if (isActiveWs(ws) && !aborted) offerRetry();   // RETRY: a network/connection failure (not a deliberate teardown) gets a re-run chip
       }
       // a THROWN teardown (abort/cancel/disconnect/network drop) means agent.run.end was LOST on the bus, so the
       // crew HUD would stick at WORKING — clear this run's count here. Normal + in-band-error completions deliver
