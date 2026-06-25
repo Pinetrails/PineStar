@@ -1,4 +1,4 @@
-/* SKYNET — slaglog.js : the SLAG post-mortem — wasted-spend, turned into a lesson.
+/* STARNET — slaglog.js : the SLAG post-mortem — wasted-spend, turned into a lesson.
 
    The standout teaching mechanic of the floor economy. Every run that burns real dollars
    without producing a deliverable (agent.run.end reason ∈ max_iters | budget | error |

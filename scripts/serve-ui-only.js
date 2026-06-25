@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* scripts/serve-ui-only.js — serve frontend/ as STATIC FILES ONLY (no agent engine).
-   This is the footgun guard: the static server hands you the SKYNET UI but NOTHING behind
+   This is the footgun guard: the static server hands you the STARNET UI but NOTHING behind
    it works — no agents, no web_search, no /api/*, no tools — because the engine isn't here.
    It exists only for pure UI/CSS iteration. For the real product run `npm start`, which
    serves the UI *and* the agent runtime together on http://127.0.0.1:8787.

@@ -55,7 +55,7 @@ function boot(port, ws, attemptsLeft) {
 
 // POST /api/run and fold the NDJSON event stream into a compact summary.
 async function run(B, body, apiToken) {
-  const res = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': apiToken }, body: JSON.stringify(body) });
+  const res = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': apiToken }, body: JSON.stringify(body) });
   const text = await res.text();
   const evs = text.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
   const names = evs.map(e => e.name);

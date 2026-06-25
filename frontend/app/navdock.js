@@ -1,4 +1,4 @@
-/* SKYNET — navdock.js : the grouped bottom-bar navigation.
+/* STARNET — navdock.js : the grouped bottom-bar navigation.
    The 13 station panels were a flat, undifferentiated row of cryptic glyphs. They're now
    regrouped (in index.html) into 4 labelled docks — CREW / WORK / BUILD / SYSTEM — each a
    .bb-grp trigger that opens a .bb-menu popover of its items. The item buttons keep their
@@ -36,7 +36,7 @@
      The interaction model changed (flat buttons -> dock popovers), so a brand-new station
      gets one dismissible hint pointing at the docks. Shown on first game-screen view, then
      retired permanently the moment the Commander opens any dock or taps ✕. */
-  const COACH_KEY = 'skynet.navcoach.seen';
+  const COACH_KEY = 'starnet.navcoach.seen';
   const coach = document.getElementById('nav-coach');
   let coachTimer = 0;
   function dismissCoach(persist) {

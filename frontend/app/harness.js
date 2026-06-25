@@ -1,4 +1,4 @@
-/* SKYNET — harness.js : the REAL agent harness (BYOK).
+/* STARNET — harness.js : the REAL agent harness (BYOK).
    Owns the model connection + streaming + token/cost accounting.
 
    For this prototype the call goes browser -> OpenRouter directly (CORS-friendly,
@@ -8,7 +8,7 @@
 'use strict';
 
 const Harness = (() => {
-  const LS = { key: 'skynet.byok.key', model: 'skynet.byok.model', prov: 'skynet.byok.prov' };
+  const LS = { key: 'starnet.byok.key', model: 'starnet.byok.model', prov: 'starnet.byok.prov' };
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
@@ -25,19 +25,19 @@ const Harness = (() => {
   const DESKTOP = !!TAURI;
   const invoke = (cmd, args) => TAURI.invoke(cmd, args);
   // DEV fast-path (sidecar started with SKYNET_DEV=1, e.g. `npm run dev:seed`): the host injects
-  // window.__SKYNET_DEV__ = {model, prov} and holds the API key in its own env (runtimeKey). We treat dev
+  // window.__STARNET_DEV__ = {model, prov} and holds the API key in its own env (runtimeKey). We treat dev
   // like the desktop "server holds the key" seam — no key in the page, configured() is true, and a fresh
   // origin (a new worktree port) auto-resumes the server-seeded save with no connect screen / awakening.
-  const DEV = (typeof window !== 'undefined' && window.__SKYNET_DEV__ && typeof window.__SKYNET_DEV__ === 'object') ? window.__SKYNET_DEV__ : null;
+  const DEV = (typeof window !== 'undefined' && window.__STARNET_DEV__ && typeof window.__STARNET_DEV__ === 'object') ? window.__STARNET_DEV__ : null;
   const DEVMODE = !!DEV;
   if (DEVMODE) {
     try {
-      if (DEV.model) localStorage.setItem('skynet.byok.model', String(DEV.model));
-      localStorage.setItem('skynet.byok.prov', String(DEV.prov || 'openrouter'));
+      if (DEV.model) localStorage.setItem('starnet.byok.model', String(DEV.model));
+      localStorage.setItem('starnet.byok.prov', String(DEV.prov || 'openrouter'));
     } catch (_) {}
   }
   let _configured = false;   // desktop: cached "is a key stored?" (loaded by init())
-  let apiToken = (typeof window !== 'undefined' && window.__SKYNET_API_TOKEN__) ? String(window.__SKYNET_API_TOKEN__) : '';
+  let apiToken = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
 
   function isApiUrl(u) {
@@ -47,7 +47,7 @@ const Harness = (() => {
   function withApiToken(init, token) {
     init = Object.assign({}, init || {});
     const headers = new Headers(init.headers || {});
-    if (token) headers.set('X-Skynet-Token', token);
+    if (token) headers.set('X-StarNet-Token', token);
     init.headers = headers;
     return init;
   }
@@ -61,13 +61,13 @@ const Harness = (() => {
       .then(t => { apiTokenPromise = null; return t; });
     return apiTokenPromise;
   }
-  if (typeof window !== 'undefined' && window.fetch && !window.__SKYNET_FETCH_HARDENED__) {
+  if (typeof window !== 'undefined' && window.fetch && !window.__STARNET_FETCH_HARDENED__) {
     const rawFetch = window.fetch.bind(window);
     window.fetch = function (u, init) {
       if (!isApiUrl(u) || String(u) === '/api/session') return rawFetch(u, init);
       return ensureApiToken().then(t => rawFetch(u, withApiToken(init, t)));
     };
-    window.__SKYNET_FETCH_HARDENED__ = true;
+    window.__STARNET_FETCH_HARDENED__ = true;
   }
 
   /* desktop: load the keychain "configured?" flag once at boot, before the connect screen reads it */

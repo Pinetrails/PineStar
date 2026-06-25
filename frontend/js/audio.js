@@ -1,5 +1,5 @@
 /* ============================================================================
-   SKYNET — audio.js : generative adaptive music + the colony "Director".
+   STARNET — audio.js : generative adaptive music + the colony "Director".
 
    There are no music files. The score is synthesised live on the SAME Web-Audio
    master bus that SFX uses (see util.js), so music and sound effects share one

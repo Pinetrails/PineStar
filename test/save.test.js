@@ -24,7 +24,7 @@ let clk = 1000;
 const clock = { now: () => clk };
 const ROOT = '/ws';
 const mk = (fs) => makeSaveStore({ fs, pathMod, root: ROOT, clock });
-const envelope = (over) => Object.assign({ schema: 'skynet.save', version: 3, updatedAt: 100, agent: { id: 'agent', name: 'NOVA', stats: { xp: 42, level: 3 } } }, over || {});
+const envelope = (over) => Object.assign({ schema: 'starnet.save', version: 3, updatedAt: 100, agent: { id: 'agent', name: 'NOVA', stats: { xp: 42, level: 3 } } }, over || {});
 
 // ---- A. construction guards ----
 {
@@ -93,7 +93,7 @@ const envelope = (over) => Object.assign({ schema: 'skynet.save', version: 3, up
 {
   const fs = memFs();
   const s = mk(fs);
-  A.eq(s.save('agent', { schema: 'skynet.save', agent: { id: 'agent' } }).ok, true, 'first write with no updatedAt lands');
+  A.eq(s.save('agent', { schema: 'starnet.save', agent: { id: 'agent' } }).ok, true, 'first write with no updatedAt lands');
   A.eq(s.save('agent', envelope({ updatedAt: 5 })).ok, true, 'a stamped save supersedes the unstamped one');
   A.eq(s.load('agent').agent.name, 'NOVA', 'stamped save won');
 }

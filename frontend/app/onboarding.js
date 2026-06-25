@@ -1,4 +1,4 @@
-/* SKYNET — onboarding.js : THE AWAKENING (the first-meeting), master cut.
+/* STARNET — onboarding.js : THE AWAKENING (the first-meeting), master cut.
 
    A breathtaking, witnessed birth. Your agent catches fire in the dark and finds its first dry, quick
    words in front of you; THE FLOOD then pours every page it knows into its mind — overwhelming, then

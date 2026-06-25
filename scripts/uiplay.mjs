@@ -116,7 +116,7 @@ async function main() {
     await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
     await cdp.send('Page.navigate', { url: APP_URL });
     await sleep(9000);
-    console.log(`title=${await ev(cdp,'document.title')} dev=${await ev(cdp,'!!window.__SKYNET_DEV__')}`);
+    console.log(`title=${await ev(cdp,'document.title')} dev=${await ev(cdp,'!!window.__STARNET_DEV__')}`);
 
     // baseline stacking (before any interaction) + the resting frame
     await frame(cdp, '00-rest');

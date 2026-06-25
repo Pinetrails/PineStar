@@ -1,4 +1,4 @@
-/* SKYNET — ui.js : pip-boy interface layer */
+/* STARNET — ui.js : pip-boy interface layer */
 'use strict';
 
 const UI = (() => {

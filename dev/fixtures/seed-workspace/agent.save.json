@@ -4,7 +4,7 @@
   "updatedAt": 1700000000000,
   "savedAt": 1700000000000,
   "doc": {
-    "schema": "skynet.save",
+    "schema": "starnet.save",
     "version": 5,
     "updatedAt": 1700000000000,
     "agent": {

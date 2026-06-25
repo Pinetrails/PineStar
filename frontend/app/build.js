@@ -1,4 +1,4 @@
-/* SKYNET — build.js : the diegetic full-screen REFIT (build) mode.
+/* STARNET — build.js : the diegetic full-screen REFIT (build) mode.
 
    Toggled from the dock. Dims the live sim and drops the Commander into an in-fiction
    station-editor over the SAME procedural art: pan/zoom camera, phosphor build grid,
@@ -20,7 +20,7 @@ const Build = (() => {
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
     { id: 'belt', key: '7', label: '⇶ BELT', hint: 'drag to lay a conveyor — boxes flow the way you drag', cursor: 'crosshair' },
   ];
-  const SEEN_KEY = 'skynet.refit.seen';
+  const SEEN_KEY = 'starnet.refit.seen';
 
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;

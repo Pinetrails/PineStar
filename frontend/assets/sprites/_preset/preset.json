@@ -1,5 +1,5 @@
 {
-  "name": "skynet-chibi-character",
+  "name": "starnet-chibi-character",
   "version": 1,
   "description": "Locked recipe for generating diverse but format-identical agent characters (cute chibi, high-top-down). Only the character `description` changes between characters; everything else is fixed so every character is the same size, proportions, view and animation set.",
   "pixellab_create_character": {

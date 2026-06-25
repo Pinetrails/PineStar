@@ -1,4 +1,4 @@
-/* SKYNET — cloudsave.js : write the agent through to the durable sidecar, and pull it back on boot.
+/* STARNET — cloudsave.js : write the agent through to the durable sidecar, and pull it back on boot.
 
    localStorage is a fast CACHE that a browser wipe can erase. The sidecar's <workspaces>/<id>.save.json is the
    DURABLE copy (app-data dir, survives a cache wipe / different browser). This module keeps them in sync:
@@ -24,7 +24,7 @@ const CloudSave = (() => {
   let pending = null;                  // newest doc awaiting a flush (older queued docs are superseded)
 
   function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
-  function isSave(d) { return !!(d && typeof d === 'object' && d.schema === 'skynet.save' && d.agent && typeof d.agent === 'object'); }
+  function isSave(d) { return !!(d && typeof d === 'object' && d.schema === 'starnet.save' && d.agent && typeof d.agent === 'object'); }
 
   // NOTE: no `keepalive` here — browsers cap a keepalive body at 64KB, and a save with workstreams + station
   // can exceed that. The normal debounced flush is a plain fetch; the unload path uses sendBeacon instead.
@@ -81,7 +81,7 @@ const CloudSave = (() => {
       // The durable mirror is designed to outlive the cache and survive app updates, so it can legitimately be
       // an OLDER schema (v1/v2) than this build. resumeInto() assumes a current-schema doc (reads .workstreams,
       // expects .agent.stats); adopting a raw v1/v2 remote would silently drop history + skip the XP seed.
-      try { localStorage.setItem('skynet.save', JSON.stringify(remote)); } catch (_) {}
+      try { localStorage.setItem('starnet.save', JSON.stringify(remote)); } catch (_) {}
       try { const migrated = (typeof Save !== 'undefined' && Save.load) ? Save.load() : null; if (migrated) return migrated; } catch (_) {}
       return remote;   // fallback only if Save is somehow unavailable — better the raw doc than nothing
     }

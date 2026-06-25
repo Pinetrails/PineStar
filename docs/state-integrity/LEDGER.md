@@ -24,7 +24,7 @@ product-call borderlines. The founding crew bug is FIXED and shipped on trunk.
 | Voice: forcedSpeak | ⚠ C3 | ⚠ C3 | ✅ | ⚠ C3 | — | — |
 | Chat: proposalRunsSeen/wiQDepth | ⚠ C2 | ⚠ C2 | ✅ | ⚠ C2 | — | — |
 | Tutorial: finished latch | ✅ | ✅ | ✅ | ⚠ C1 | — | — |
-| MintStore (skynet.mint.v1) | ⚠ S1 | ✅ | — | ⚠ S1 | — | — |
+| MintStore (starnet.mint.v1) | ⚠ S1 | ✅ | — | ⚠ S1 | — | — |
 | CuriosityStore (.curiosity.v1) | ⚠ S2 | ✅ | — | ⚠ S2 | — | — |
 | Marketplace ack / Build seen | — | — | — | ⚠ S3/S4 | — | — |
 | Workstreams / Xp / Profile / Dossier | ✅ | ✅ | ✅ | ✅ | ✅ | — |
@@ -39,12 +39,12 @@ product-call borderlines. The founding crew bug is FIXED and shipped on trunk.
 | **W2** | Med | High | **FIXED** | world.js spawn | Conveyor boxes not reset → prior agent's belt crates ride the new floor. `convey.reset()` now called in `spawn()`. |
 | **N1** | Med | High | **FIXED** | world.js + app.js | Connector poll now held in `connPollTimer`; `pauseBridge()` (on disconnect) clears it, `resumeBridge()` (on entry) restarts it. Verified live: poll true → false → true. |
 | **N2** | Med | High | **FIXED** | world.js + app.js | Channel `EventSource` now held in `chanES`; closed on disconnect, reopened on entry; `onerror` bails while paused. Verified live: es true → false → true. |
-| **S1** | Med | High | **FIXED** | mintstore.js + app.js | New `MintStore.reset()` drops `skynet.mint.v1`; called from the NEW AGENT handler. Verified live: key present → NEW AGENT → null. |
+| **S1** | Med | High | **FIXED** | mintstore.js + app.js | New `MintStore.reset()` drops `starnet.mint.v1`; called from the NEW AGENT handler. Verified live: key present → NEW AGENT → null. |
 | **V1** | High | High | **FIXED** | chat.js send | **Voice ownership (Commander rule):** only the orchestrator (hero) may speak; summoned/secondary agents must be silent. `willSpeak` now requires the active stream's agent be the orchestrator. |
 | **C4** | Med | Med | **FIXED** | voice.js init | `Voice.init()` now calls `stopSpeaking()` → prior agent's TTS + watchdog interval are cut before the next agent takes the mic. |
 | **W3** | Low | Med | **FIXED** | world.js spawn | `chanQueues` Map + `serverLit` Set never cleared → phantom backlog gauge / a body stuck "working". Cleared in `spawn()`. Verified live: queueDepth 7 → 0. |
 | **W4** | Low | Med | **FIXED** | world.js spawn | `xpAgent` + one-shot beat clocks (levelUp/compact/slag/outbox) not reset → brief stale level chip / a beat replays one frame into the new agent. Reset in `spawn()`. |
-| **S2** | Low | High | **FIXED** | curiositystore.js + app.js | New `CuriosityStore.reset()` drops `skynet.curiosity.v1`; called from the NEW AGENT handler. Verified live: key present → NEW AGENT → null. |
+| **S2** | Low | High | **FIXED** | curiositystore.js + app.js | New `CuriosityStore.reset()` drops `starnet.curiosity.v1`; called from the NEW AGENT handler. Verified live: key present → NEW AGENT → null. |
 | **C1** | Low | Med | **FIXED** | tutorial.js | `finished` now reset in `firstCommand()` (symmetric with the saw-flags). |
 | **N3** | Low | High | **FIXED** | world.js + app.js | Root cause resolved by N1/N2: the open-once bridge now has a paired pause(disconnect)/resume(entry); the once-guarded `U.bus.on` subscriptions stay put. |
 | **C2** | Low | Low | **FIXED** | chat.js init | `proposalRunsSeen` + `wiQDepth` now cleared in `init()`. |
@@ -62,7 +62,7 @@ flags stay per-user (S3/S4/C5 → no change, already correct).
 Workstreams.reset (full wipe), XpStore (explicit fresh fallback + `wired` guard),
 ProfileStore/DossierStore (pendingX null on WAKE → fresh; first-seed keys off the fresh
 slice), StationUI.enter/leave (closes terminal windows, clears runningAgents; once-guards),
-Harness fetch-hardening (`__SKYNET_FETCH_HARDENED__` guard), CloudSave.installUnloadFlush
+Harness fetch-hardening (`__STARNET_FETCH_HARDENED__` guard), CloudSave.installUnloadFlush
 (boot-once, not per-enterGame), codexPoll (cleared on every exit), World ResizeObserver
 (disconnects before re-observe), audio.js (clears its interval; self-stopping oscillators),
 `stars` (seeded once), Chat.abort (aborts every per-stream controller + stops convo),

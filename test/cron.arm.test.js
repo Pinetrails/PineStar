@@ -13,7 +13,7 @@
        clears the timer, and persists armed:false.
      - ARM AT BOOT: a persisted cronArmed:true causes the scheduler to arm at boot even with NO
        SKYNET_CRON_ENABLED env var ('cron tick armed' appears at boot; a DUE routine is ticked).
-     - TOKEN GUARD: POST /api/cron/arm WITHOUT the X-Skynet-Token header is rejected 403 (same
+     - TOKEN GUARD: POST /api/cron/arm WITHOUT the X-StarNet-Token header is rejected 403 (same
        privileged-POST gate as the cron CRUD routes), so a browser-driven cross-site call can't arm.
 
    A SHORT tick (SKYNET_CRON_TICK_MS=300) is used so "fires within one tick" resolves in well under
@@ -72,7 +72,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
   // j() sends the token (the guarded-POST contract); jNoToken() deliberately omits it (guard test).
   const j = async (m, p, body) => {
     const headers = { 'Content-Type': 'application/json', Origin: B() };
-    if (apiToken && m !== 'GET') headers['X-Skynet-Token'] = apiToken;
+    if (apiToken && m !== 'GET') headers['X-StarNet-Token'] = apiToken;
     const r = await fetch(B() + p, { method: m, headers, body: body ? JSON.stringify(body) : undefined });
     const t = await r.text(); let v; try { v = JSON.parse(t); } catch (_) { v = t; }
     return { status: r.status, body: v };
@@ -103,7 +103,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
 
     // ---- TOKEN GUARD: arm without the token is rejected (same gate as the CRUD POSTs) ----
     const armNoTok = await jNoToken('POST', '/api/cron/arm', { enabled: true });
-    A.eq(armNoTok.status, 403, 'POST /api/cron/arm without X-Skynet-Token -> 403 (privileged-POST guard)');
+    A.eq(armNoTok.status, 403, 'POST /api/cron/arm without X-StarNet-Token -> 403 (privileged-POST guard)');
     const stillOff = await j('GET', '/api/cron');
     A.eq(stillOff.body.enabled, false, 'a rejected arm did NOT flip enabled');
 

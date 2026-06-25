@@ -1,4 +1,4 @@
-/* SKYNET — stationui.js : the station-management HUD.
+/* STARNET — stationui.js : the station-management HUD.
    Ports the v7 pip-boy chrome (floating terminal windows, crew manifest,
    bottom-bar panels) but wires every readout to REAL harness data — the
    present agent, real lifetime spend/tokens from Harness, the real tool
@@ -13,7 +13,7 @@ const StationUI = (() => {
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
   const sfx = n => { try { if (typeof SFX === 'object' && SFX[n]) SFX[n](); } catch (_) {} };
 
-  const KEY = 'skynet.station.v1';
+  const KEY = 'starnet.station.v1';
   const THEMES = [['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['white', '#e8f0e8']];
 
   let present = [];          // agent objects currently on the station
@@ -1551,7 +1551,7 @@ const StationUI = (() => {
         // Tell the user what actually triggers a restore point under their current config, not an aspirational promise.
         const empty = (j && j.enabled)
           ? 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a command or edits a file at a WORKBENCH.</span>'
-          : 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a <b>shell command</b>. File-edit snapshots are off — enable them with <code>SKYNET_CHECKPOINTS=1</code>.</span>';
+          : 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a <b>shell command</b>. File-edit snapshots are off — enable them with <code>STARNET_CHECKPOINTS=1</code>.</span>';
         listEl.innerHTML = snaps.length ? snaps.map(row).join('') : '<div class="fb-empty">' + empty + '</div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage restore points.</div>'; }
     }
@@ -1806,10 +1806,10 @@ const StationUI = (() => {
   }
 
   // called when entering the game room with the live agent(s)
-  // one-shot: fold any legacy skynet.station.v1 kanban cards into real workstreams, then retire tasks[].
+  // one-shot: fold any legacy starnet.station.v1 kanban cards into real workstreams, then retire tasks[].
   // Guarded by a persisted flag so a refresh never re-imports / duplicates the cards. Runs from enter(),
   // which is called during app.js init() while `const App` is still in its TDZ — so this must NOT touch
-  // App. The imported workstreams are written to skynet.save by the trailing persist() in resumeInto/onWake
+  // App. The imported workstreams are written to starnet.save by the trailing persist() in resumeInto/onWake
   // (a direct in-scope call), which always follows enterGame; here we only update our own station store.
   function importLegacyTasks() {
     if (store.tasksImported) return;

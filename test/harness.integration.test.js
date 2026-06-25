@@ -31,7 +31,7 @@ const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
 const { renderRecall, injectRecall, rank } = require('../sidecar/context.js');
 
-const ROOT = path.join(os.tmpdir(), 'skynet-itest-' + process.pid);
+const ROOT = path.join(os.tmpdir(), 'starnet-itest-' + process.pid);
 
 // canned web: a DDG results page for search, a Jina Reader body for fetch. (No real network.)
 const DDG_HTML = '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2Farticle">Example Article</a>' +

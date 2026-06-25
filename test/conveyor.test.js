@@ -45,7 +45,7 @@ const doc = s.serialize();
 A.eq(JSON.stringify(WM.deserialize(doc).serialize()), JSON.stringify(doc), 'belts serialize round-trip identically');
 
 // migrate() drops malformed belt entries without crashing
-const mig = WM.deserialize({ schema: 'skynet.station', version: 1,
+const mig = WM.deserialize({ schema: 'starnet.station', version: 1,
   rooms: { rA: { id: 'rA', kind: 'hab', name: 'A', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } }, order: ['rA'],
   belts: { '1,1': 'E', 'bad': 'E', '2,2': 'Z', '3,3': 'N' } });
 A.eq(mig.belts().length, 2, 'migrate keeps only well-formed "int,int"->E|W|N|S belt entries');

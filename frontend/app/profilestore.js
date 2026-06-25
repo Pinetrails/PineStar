@@ -1,4 +1,4 @@
-/* SKYNET — profilestore.js : the live wiring that folds REAL signals into the user-affinity profile.
+/* STARNET — profilestore.js : the live wiring that folds REAL signals into the user-affinity profile.
 
    The browser half of the profile system (pure engine in profile.js), modelled exactly on xpstore.js:
    it captures the interest tag that classify.js already computes-and-discards on every message, plus

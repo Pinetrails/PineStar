@@ -40,7 +40,7 @@ prompts interrupt a test.
 2. **The seed fixture** (`dev/fixtures/seed-workspace/`) is a committed, already-onboarded agent:
    `agent.save.json` (identity + a filled `purpose`, which is what skips the awakening),
    `agent.roster.json` (server-side identity for cron/headless), `_commander.dossier.json`.
-3. **`SKYNET_DEV=1`** makes the sidecar inject `window.__SKYNET_DEV__ = {model, prov}` into the page.
+3. **`SKYNET_DEV=1`** makes the sidecar inject `window.__STARNET_DEV__ = {model, prov}` into the page.
    The frontend (`harness.js`) treats that like the desktop "server holds the key" seam: it reports
    `configured()` without a browser key and omits the key from run requests, so the sidecar uses its
    own env key (`runtimeKey`). The existing boot path then auto-resumes the server-seeded save.

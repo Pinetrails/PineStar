@@ -142,7 +142,7 @@ async function main() {
     await sleep(9000); // FIXED wait — beats the never-idle canvas
 
     const title = await evalJS(cdp, 'document.title').catch(() => '?');
-    const dev = await evalJS(cdp, '!!window.__SKYNET_DEV__').catch(() => false);
+    const dev = await evalJS(cdp, '!!window.__STARNET_DEV__').catch(() => false);
     console.log(`  title="${title}" dev=${dev}`);
 
     const states = buildStates();

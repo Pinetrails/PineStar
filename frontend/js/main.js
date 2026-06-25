@@ -1,8 +1,8 @@
-/* SKYNET — main.js : boot, game loop, persistence */
+/* STARNET — main.js : boot, game loop, persistence */
 'use strict';
 
 const GAME = (() => {
-  const SAVE_KEY = 'skynet_save_v1';
+  const SAVE_KEY = 'starnet_save_v1';
   const settings = { theme: 'amber', themeV2: true, scanlines: true, flicker: true, sound: true, speed: 1 };
   let running = false, lastT = 0, simAcc = 0;
 

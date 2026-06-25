@@ -3,7 +3,7 @@
 'use strict';
 
 const Updates = (() => {
-  const KEY = 'skynet.updates.v1';
+  const KEY = 'starnet.updates.v1';
   const CORE = (typeof UpdateCore !== 'undefined') ? UpdateCore : null;
   const TAURI = (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
   const invoke = (cmd, args) => TAURI.invoke(cmd, args || {});

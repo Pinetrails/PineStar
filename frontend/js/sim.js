@@ -1,4 +1,4 @@
-/* SKYNET — sim.js : simulation engine. tasks, pipelines, economy, feedback, ultron brain */
+/* STARNET — sim.js : simulation engine. tasks, pipelines, economy, feedback, ultron brain */
 'use strict';
 
 const SIM = (() => {

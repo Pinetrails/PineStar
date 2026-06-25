@@ -34,7 +34,7 @@ Dependency order: **fix → personality (text) → voice-mode split → neural e
 - Browser seam: `ttsProvider.speak` POSTs `/api/tts` → `new Audio(blob)`; on `{fallback:true}` / fetch throw / `play()` reject → existing `speechSynthesis` path. `currentAudio` so mic-open/new-reply pauses it.
 
 ### Stage 4 — Fluid hands-free conversation loop (auto-listen, barge-in)
-- New persisted **VOICE MODE** toggle (`🎙️`/`💬`, LS `skynet.voice.mode`). OFF = today's push-to-talk; ON = self-driving listen→send→speak→listen.
+- New persisted **VOICE MODE** toggle (`🎙️`/`💬`, LS `starnet.voice.mode`). OFF = today's push-to-talk; ON = self-driving listen→send→speak→listen.
 - Loop pivot: `speak()` passes a real `onReplyEnded` into `ttsProvider.speak` (today it passes `null`); on true `onend`, if `convoMode && !busy` → guarded `rearmMic()`.
 - Barge-in: a light always-on listener during `speaking`; first non-empty interim → `stopSpeaking()` + capture. Silence/endpointing via `onend→onFinal` hardened with a ~1.3s `silenceTimer`. Exit: toggle / spoken "stop voice mode" / Escape / DISCONNECT. Echo mitigation: never capture while speaking; ~300ms re-arm guard; `getUserMedia` AEC; half-duplex fallback without AEC.
 

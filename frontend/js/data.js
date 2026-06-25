@@ -1,4 +1,4 @@
-/* SKYNET — data.js : agents, rooms, models, content pools */
+/* STARNET — data.js : agents, rooms, models, content pools */
 'use strict';
 
 const DATA = {};

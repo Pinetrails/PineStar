@@ -1,4 +1,4 @@
-# Skynet — Feature Wiring Audit & Completion Plan
+# StarNet — Feature Wiring Audit & Completion Plan
 
 > **Generated 2026-06-20** by a 35-agent multi-domain audit (16 vertical-slice auditors +
 > adversarial verifiers + synthesis). For each feature it traced the full vertical
@@ -182,6 +182,6 @@ Contract changes to `shared/events.js` must be **additive only** and requested f
 
 ## How this was built (regeneration)
 
-3-phase Workflow `skynet-wiring-audit`: 16 domain auditors trace each vertical on trunk → adversarial
+3-phase Workflow `starnet-wiring-audit`: 16 domain auditors trace each vertical on trunk → adversarial
 verifiers refute high-severity gap claims → synthesis merges into this backlog. Re-run by
 re-invoking the saved workflow script. Full raw findings in the task output for run `wf_5c1c8a94-205`.

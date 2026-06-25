@@ -9,7 +9,7 @@ const path = require('path');
 const os = require('os');
 const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
 
-const ROOT = path.join(os.tmpdir(), 'skynet-fs-test-' + process.pid);
+const ROOT = path.join(os.tmpdir(), 'starnet-fs-test-' + process.pid);
 const { writeTool, readTool, listTool, appendTool, editTool, searchTool, _internals } = makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 32, readReturn: 1000 } });
 
 async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' — did NOT reject'); } catch (e) { A.ok(true, msg); } }

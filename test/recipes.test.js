@@ -181,7 +181,7 @@ R.removeCustom(garbage.id);
 const authored = R.saveCustom({ name: 'Standup', task: 'Summarize {project} progress and flag blockers.' });
 A.eq(authored.params.map(p => p.key), ['project'], 'a saved custom auto-derives its params from the template');
 A.eq(R.requiredMissing(authored.id, {}), ['project'], 'the derived param gates launch');
-A.ok(R.fillTask(authored.id, { project: 'Skynet' }).indexOf('Summarize Skynet progress') >= 0, 'the authored custom fills + launches via the same primitive');
+A.ok(R.fillTask(authored.id, { project: 'StarNet' }).indexOf('Summarize StarNet progress') >= 0, 'the authored custom fills + launches via the same primitive');
 R.removeCustom(authored.id);
 
 // explicit params still win over derivation (back-compat for an imported custom that supplies its own)

@@ -45,7 +45,7 @@
     function base(aid) {
       return ['--git-dir', gitDirFor(aid), '--work-tree', workTreeFor(aid),
         '-c', 'core.autocrlf=false', '-c', 'core.safecrlf=false',
-        '-c', 'user.email=skynet@local', '-c', 'user.name=skynet'];
+        '-c', 'user.email=starnet@local', '-c', 'user.name=starnet'];
     }
     const git = (aid, args) => runGit(base(aid).concat(args), { cwd: workTreeFor(aid) });
 

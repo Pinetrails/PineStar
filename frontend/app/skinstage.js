@@ -1,4 +1,4 @@
-/* SKYNET — skinstage.js : a shared LIVE skin preview.
+/* STARNET — skinstage.js : a shared LIVE skin preview.
    A 40px still of a chunky pixel sprite is unreadable, so wherever a player picks a skin
    (the create screen, the recruitment bay) a STAGE plays that skin's real south-facing walk
    cycle, big. Frames come straight from the sprite manifest — the same art the floor engine

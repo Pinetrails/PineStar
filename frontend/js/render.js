@@ -1,4 +1,4 @@
-/* SKYNET — render.js : canvas station renderer (baked environment + live actors) */
+/* STARNET — render.js : canvas station renderer (baked environment + live actors) */
 'use strict';
 
 const RENDER = (() => {

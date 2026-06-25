@@ -1,11 +1,13 @@
-/* SKYNET — backup.js : export/import the whole local agent as one portable JSON file.
+/* STARNET — backup.js : export/import the whole local agent as one portable JSON file.
 
    Browser localStorage is the FRAGILE store. A cache wipe, a different browser, or a different
    machine loses the agent the user built up — identity, XP/level/confidence, personalization
    (dossier docs + persona), workstreams (chat history) and the station layout all live in
-   localStorage under the `skynet.*` keys. This module is the safety net: one click bundles EVERY
-   skynet.* key plus a read-only snapshot of the agent's backend memory (notebook) into a
-   downloadable file, and import restores the local half on any browser.
+   localStorage under the `starnet.*` keys. This module is the safety net: one click bundles EVERY
+   starnet.* key plus a read-only snapshot of the agent's backend memory (notebook) into a
+   downloadable file, and import restores the local half on any browser. Back-compat: a backup
+   exported BEFORE the Skynet→StarNet rename holds `skynet.*` keys + a `skynet.backup` schema; both
+   import fine and are mapped forward to `starnet.*` on restore.
 
    v1 restores the browser-side state (which is what a wipe destroys). The notebook lives on the
    sidecar's own disk and is preserved IN the file for portability + a future restore route, but is
@@ -14,13 +16,19 @@
 'use strict';
 
 const Backup = (() => {
-  const SCHEMA = 'skynet.backup';
+  const SCHEMA = 'starnet.backup';
+  const LEGACY_SCHEMA = 'skynet.backup';   // backups exported before the Skynet→StarNet rename
   const VERSION = 1;
 
-  // every key we own lives under this prefix (skynet.save, skynet.specialties.v1, skynet.refit.seen,
+  // every key we own lives under this prefix (starnet.save, starnet.specialties.v1, starnet.refit.seen,
   // theme/CRT prefs, ...). Capturing by prefix is future-proof: new keys ride along automatically
-  // instead of needing this list kept in sync.
-  const PREFIX = 'skynet.';
+  // instead of needing this list kept in sync. LEGACY_PREFIX is the pre-rename name — still accepted on
+  // IMPORT (an old backup file) and mapped forward, never written by a fresh export.
+  const PREFIX = 'starnet.';
+  const LEGACY_PREFIX = 'skynet.';
+  const SAVE_KEY = 'starnet.save';
+  // map any captured key forward to its StarNet name (old backups hold skynet.* keys; new ones already starnet.*).
+  function toCurrentKey(k) { return (k.indexOf(LEGACY_PREFIX) === 0) ? (PREFIX + k.slice(LEGACY_PREFIX.length)) : k; }
 
   function collectStore() {
     const out = {};
@@ -35,7 +43,7 @@ const Backup = (() => {
 
   function agentName() {
     try {
-      const doc = JSON.parse(localStorage.getItem('skynet.save') || 'null');
+      const doc = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
       return (doc && doc.agent && doc.agent.name) || 'agent';
     } catch (_) { return 'agent'; }
   }
@@ -61,7 +69,7 @@ const Backup = (() => {
 
   async function build() {
     return {
-      schema: SCHEMA, version: VERSION, app: 'skynet',
+      schema: SCHEMA, version: VERSION, app: 'starnet',
       exportedAt: Date.now(),
       agentName: agentName(),
       store: collectStore(),
@@ -82,7 +90,7 @@ const Backup = (() => {
 
   async function exportAll() {
     const bundle = await build();
-    const file = 'skynet-' + slug(bundle.agentName) + '-' + stamp(new Date()) + '.json';
+    const file = 'starnet-' + slug(bundle.agentName) + '-' + stamp(new Date()) + '.json';
     const ok = triggerDownload(file, JSON.stringify(bundle, null, 2));
     return { ok, file, keys: Object.keys(bundle.store).length, notes: bundle.notebook ? bundle.notebook.length : 0 };
   }
@@ -90,9 +98,9 @@ const Backup = (() => {
   // validate a parsed bundle WITHOUT mutating anything — callers decide whether to apply.
   function validate(doc) {
     if (!doc || typeof doc !== 'object') return 'not a JSON object';
-    if (doc.schema !== SCHEMA) return 'not a STARNET backup file';
+    if (doc.schema !== SCHEMA && doc.schema !== LEGACY_SCHEMA) return 'not a StarNet backup file';
     if (!doc.store || typeof doc.store !== 'object') return 'backup has no data';
-    if (typeof doc.store['skynet.save'] !== 'string') return 'backup has no agent';
+    if (typeof doc.store[SAVE_KEY] !== 'string' && typeof doc.store['skynet.save'] !== 'string') return 'backup has no agent';
     return null;   // ok
   }
 
@@ -105,9 +113,9 @@ const Backup = (() => {
     try {
       const store = doc.store;
       for (const k in store) {
-        if (Object.prototype.hasOwnProperty.call(store, k) && k.indexOf(PREFIX) === 0 && typeof store[k] === 'string') {
-          localStorage.setItem(k, store[k]); n++;
-        }
+        if (!Object.prototype.hasOwnProperty.call(store, k) || typeof store[k] !== 'string') continue;
+        if (k.indexOf(PREFIX) !== 0 && k.indexOf(LEGACY_PREFIX) !== 0) continue;   // ours (or a legacy ours) only
+        localStorage.setItem(toCurrentKey(k), store[k]); n++;                       // map skynet.* -> starnet.* on the way in
       }
     } catch (e) { return { ok: false, error: (e && e.message) || 'write failed' }; }
     return { ok: true, keys: n, agentName: doc.agentName || agentName(), memories: Array.isArray(doc.notebook) ? doc.notebook.length : 0 };
@@ -144,10 +152,10 @@ const Backup = (() => {
       // the export-time updatedAt; without this, a boot-reconcile on a machine whose sidecar holds a NEWER save
       // would silently revert the just-imported agent. Stamping now() makes the import win the anti-clobber guard.
       try {
-        const raw = localStorage.getItem('skynet.save');
+        const raw = localStorage.getItem(SAVE_KEY);
         if (raw) {
           const d = JSON.parse(raw); d.updatedAt = Date.now();
-          localStorage.setItem('skynet.save', JSON.stringify(d));
+          localStorage.setItem(SAVE_KEY, JSON.stringify(d));
           if (typeof CloudSave !== 'undefined' && CloudSave.push) CloudSave.push(d);
         }
       } catch (_) {}

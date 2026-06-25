@@ -73,13 +73,20 @@ const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js'); 
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
-const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
-const API_TOKEN = String(process.env.SKYNET_API_TOKEN || crypto.randomBytes(32).toString('hex'));
+// ---- Skynet→StarNet env back-compat ------------------------------------------------------------
+// The project was renamed Skynet → StarNet; its env vars moved SKYNET_* → STARNET_*. ENV() reads the
+// NEW name first and falls back to the LEGACY one, so existing launch configs / shells / the desktop
+// shell keep working unchanged. Membership test (not truthiness) so a deliberately-empty STARNET_X
+// still wins over a set SKYNET_X — preserving each downstream var's exact empty-vs-unset semantics.
+function ENV(suffix) { const k = 'STARNET_' + suffix; return (k in process.env) ? process.env[k] : process.env['SKYNET_' + suffix]; }
+
+const PORT = Number(ENV('PORT') || process.env.PORT) || 8787;
+const API_TOKEN = String(ENV('API_TOKEN') || crypto.randomBytes(32).toString('hex'));
 // DEV fast-path (the `npm run dev:seed` launcher sets this): when on, the served index.html carries a small
-// boot payload (window.__SKYNET_DEV__ = {model, prov}) so a fresh browser origin auto-resumes the server-
+// boot payload (window.__STARNET_DEV__ = {model, prov}) so a fresh browser origin auto-resumes the server-
 // seeded save with no connect screen / awakening. Holds NO secret — the API key stays in runtimeKey. Never
 // set in a packaged build, so this is inert in shipping. Loopback-only like the rest of the server.
-const DEV_MODE = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_DEV || '').trim());
+const DEV_MODE = /^(1|true|yes|on)$/i.test(String(ENV('DEV') || '').trim());
 const LOOPBACK_ORIGINS = new Set(['http://127.0.0.1:' + PORT, 'http://localhost:' + PORT]);
 const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
 function isAllowedApiOrigin(origin) {
@@ -99,7 +106,7 @@ function applyApiCors(req, res) {
     res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-Skynet-Token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-StarNet-Token,X-Skynet-Token');   // accept the legacy header name too (old Tauri shell)
   res.setHeader('Access-Control-Max-Age', '600');
 }
 function rejectApi(req, res) {
@@ -108,7 +115,7 @@ function rejectApi(req, res) {
   return false;
 }
 function apiTokenOk(req) {
-  const got = String(req.headers['x-skynet-token'] || '');
+  const got = String(req.headers['x-starnet-token'] || req.headers['x-skynet-token'] || '');   // dual-accept: legacy header still honored
   if (!got || got.length !== API_TOKEN.length) return false;
   try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(API_TOKEN)); } catch (_) { return false; }
 }
@@ -124,11 +131,11 @@ function rejectBadApiToken(req, res) {
 }
 // Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
-let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
+let runtimeKey = String(ENV('OPENROUTER_KEY') || '').trim();
 // OpenRouter base URL override (env SKYNET_OPENROUTER_BASE). Default undefined -> the provider's own
 // https://openrouter.ai/api/v1. Lets a user point at an OR-compatible proxy, and lets the boot+run E2E aim
 // the provider at a local mock so the real streaming path is tested end-to-end without a live key.
-const OPENROUTER_BASE = String(process.env.SKYNET_OPENROUTER_BASE || '').trim() || undefined;
+const OPENROUTER_BASE = String(ENV('OPENROUTER_BASE') || '').trim() || undefined;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
 // the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). SKYNET_WORKSPACES
 // wins (the desktop shell + isolated tests set it); otherwise resolve a PER-USER, writable OS app-data dir.
@@ -139,12 +146,18 @@ function defaultWorkspaces() {
   const base = process.env.LOCALAPPDATA || process.env.APPDATA            // Windows: %LOCALAPPDATA% (machine-local app data)
     || process.env.XDG_DATA_HOME                                          // Linux XDG
     || path.join(os.homedir() || '.', '.local', 'share');                 // POSIX fallback
-  return path.join(base, 'Skynet', 'workspaces');
+  // Skynet→StarNet rename back-compat: prefer the NEW dir; if it doesn't exist yet but the OLD one does, keep
+  // using the old one IN PLACE (no move) so existing data is never lost and any old-code process that still
+  // looks for \Skynet\ keeps sharing the same data (no split-brain). Fresh installs land under \StarNet\.
+  const neu = path.join(base, 'StarNet', 'workspaces');
+  const old = path.join(base, 'Skynet', 'workspaces');   // legacy pre-rename location — read in place, never renamed
+  try { if (!fs.existsSync(neu) && fs.existsSync(old)) return old; } catch (_) {}
+  return neu;
 }
-const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : defaultWorkspaces();
+const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
 // maxIters: per-run tool-turn ceiling. Raised 16→40 (P0.3) so real multi-step work isn't truncated early;
 // env-overridable. Parsed inline (num() is defined below). The loop adds one grace turn on top to finish cleanly.
-const CAPS = { maxIters: (Number(process.env.SKYNET_MAX_ITERS) > 0 ? Math.floor(Number(process.env.SKYNET_MAX_ITERS)) : 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+const CAPS = { maxIters: (Number(ENV('MAX_ITERS')) > 0 ? Math.floor(Number(ENV('MAX_ITERS'))) : 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
 // can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.
@@ -152,18 +165,18 @@ const CAPS = { maxIters: (Number(process.env.SKYNET_MAX_ITERS) > 0 ? Math.floor(
 // disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
 const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
 const BUDGET_CAPS = {
-  perRun: num(process.env.SKYNET_BUDGET_PER_RUN, 3),
-  perAgent: num(process.env.SKYNET_BUDGET_PER_AGENT, 5),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned)
-  perDay: num(process.env.SKYNET_BUDGET_PER_DAY, 40),
-  global: num(process.env.SKYNET_BUDGET_GLOBAL, 100)
+  perRun: num(ENV('BUDGET_PER_RUN'), 3),
+  perAgent: num(ENV('BUDGET_PER_AGENT'), 5),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned)
+  perDay: num(ENV('BUDGET_PER_DAY'), 40),
+  global: num(ENV('BUDGET_GLOBAL'), 100)
 };
 // Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
 // (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
 // parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
-const MAX_CONCURRENT_AGENTS = num(process.env.SKYNET_MAX_CONCURRENT_AGENTS, 3);
+const MAX_CONCURRENT_AGENTS = num(ENV('MAX_CONCURRENT_AGENTS'), 3);
 // Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
 // runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
-const ORCH_PER_WORKER = num(process.env.SKYNET_BUDGET_PER_WORKER, 1);
+const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the same
@@ -171,8 +184,8 @@ const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered
 // ChatGPT OAuth token. A job with no model falls back to the selected agent model or SKYNET_DEFAULT_MODEL;
 // absent model/credentials, a due job no-capability-skips rather than firing. Cadence + the self-healing lease
 // ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
-const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CRON_ENABLED || '').trim());
-const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
+const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CRON_ENABLED') || '').trim());
+const CRON_TICK_MS = num(ENV('CRON_TICK_MS'), 60000);
 // Host IANA timezone, captured ONCE at boot as a boot-frozen constant (G4.1). A cron schedule with no
 // explicit tz fires on this LOCAL wall-clock (so "0 9 * * *" means 09:00 here and shifts across DST),
 // while the pure cron-math (sidecar/cron.js) stays determinism-clean by receiving this as an INJECTED
@@ -180,25 +193,25 @@ const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
 // headless server that should run routines in a specific zone); an invalid value falls back to UTC so a
 // typo never wedges the scheduler. A schedule's OWN tz always wins over this default.
 const CRON_HOST_TZ = (function () {
-  const override = String(process.env.SKYNET_CRON_TZ || '').trim();
+  const override = String(ENV('CRON_TZ') || '').trim();
   const candidate = override || (function () {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { return 'UTC'; }
   })();
   return cron.isValidTz(candidate) ? (candidate || 'UTC') : 'UTC';
 })();
-const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
+const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
 // G4.4 global concurrency cap: at most this many cron runs may be IN-FLIGHT across all routines at once.
 // A tick whose due set would exceed it DEFERS the extra jobs to the next tick (without advancing their
 // nextRunAt, so they stay due) — a burst of simultaneously-due routines drains `maxParallel` at a time
 // rather than flooding the run host / spend all at once. Threaded as an INJECTED int so the cron driver
 // stays determinism-clean (it never reads process.env itself). Default 4.
-const CRON_MAX_PARALLEL = num(process.env.SKYNET_CRON_MAX_PARALLEL, 4);
+const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 4);
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
 // fast-tool timeout (CAPS.toolTimeoutMs) or it always times out before a real worker returns. Give it the same
 // ≈8-min single-run worst-case bound; env-tunable. Per-worker spend is still capped by ORCH_PER_WORKER.
-const ORCH_DISPATCH_TIMEOUT_MS = num(process.env.SKYNET_DISPATCH_TIMEOUT_MS, CRON_MAX_RUN_MS);
-const CRON_DEFAULT_MODEL = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
-const CRON_PERSONA = 'You are an autonomous SKYNET station agent running a SCHEDULED routine — no human is watching. '
+const ORCH_DISPATCH_TIMEOUT_MS = num(ENV('DISPATCH_TIMEOUT_MS'), CRON_MAX_RUN_MS);
+const CRON_DEFAULT_MODEL = String(ENV('DEFAULT_MODEL') || '').trim();
+const CRON_PERSONA = 'You are an autonomous STARNET station agent running a SCHEDULED routine — no human is watching. '
   + 'Carry out the task with your REAL tools (web search/read, files, memory); ground every factual claim in what the '
   + 'tools actually return and cite sources; save any durable deliverable to your workspace with fs_write. Be concise. '
   + 'If there is genuinely nothing new or noteworthy to report this run, reply with EXACTLY "[SILENT]" and nothing else.';
@@ -543,7 +556,7 @@ async function runReflection(o) {
 /* ---- consent (P1.5): the four-tier broker's host-side state ----
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
    prompt-injection escalation path (mirrors Hermes' import-frozen YOLO flag). */
-const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_FULL_ACCESS || '').trim());
+const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(ENV('FULL_ACCESS') || '').trim());
 // permanent allowlist of danger-class keys (capability:scope) the user has blessed forever. Lives BESIDE
 // the notebook store (sibling of the fs jail) so the agent's own fs.* tools can neither read nor rewrite it.
 const ALLOWLIST_FILE = path.join(WORKSPACES, 'permissions.allow.json');
@@ -585,7 +598,7 @@ function hardlineFloor(call) {
    lone ambient-I/O edge (injected globalThis.fetch); the hub drives the SAME runOnce host with
    surface:'autonomous' (a headless chat has no browser to answer a consent prompt — ungranted writes
    default-deny and the run continues). Opt-in: nothing starts unless the Commander connects (or env is set). */
-const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the SKYNET station, reachable over Telegram. '
+const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET station, reachable over Telegram. '
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
   + 'report what you actually found; never claim you cannot act.';
@@ -856,7 +869,7 @@ function disarmCron() {
    via SKYNET_CHECKPOINTS (default OFF = the existing run path is byte-identical) and FAIL-OPEN (a git problem
    never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
    the git/fs is here, the one ambient-I/O edge. ---- */
-const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CHECKPOINTS || '').trim());
+const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
 const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(shell|verify)\./.test(name);
 function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
   return new Promise((resolve) => {
@@ -1107,8 +1120,8 @@ const server = http.createServer((req, res) => {
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
-  if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set SKYNET_PORT=<n> and retry.');
-  else if (e && e.code === 'EACCES') console.error('✗ Port ' + PORT + ' needs elevated privileges — pick a port >= 1024 via SKYNET_PORT.');
+  if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
+  else if (e && e.code === 'EACCES') console.error('✗ Port ' + PORT + ' needs elevated privileges — pick a port >= 1024 via STARNET_PORT.');
   else console.error('✗ sidecar listen error:', e);
   process.exit(1);
 });
@@ -1116,7 +1129,7 @@ server.listen(PORT, '127.0.0.1', () => {
   const url = 'http://127.0.0.1:' + PORT;
   const bar = '═'.repeat(58);
   console.log('\n' + bar);
-  console.log('  ▲ SKYNET — THE FULL APP IS RUNNING (UI + agent engine).');
+  console.log('  ▲ STARNET — THE FULL APP IS RUNNING (UI + agent engine).');
   console.log('     Open in your browser:  ' + url);
   console.log('     This one process IS the complete product — the UI you see and');
   console.log('     the agents/web-search/tools behind it are all served from here.');
@@ -1130,18 +1143,18 @@ server.listen(PORT, '127.0.0.1', () => {
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
-    const envTok = String(process.env.SKYNET_TELEGRAM_TOKEN || '').trim();
-    const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
-    const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+    const envTok = String(ENV('TELEGRAM_TOKEN') || '').trim();
+    const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
+    const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
     if (t.enabled && t.token && t.model && (providerUsesCodex(t.provider) || t.key || runtimeKey)) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider }); console.log('  · telegram auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
   try {
     const d = (channelSecrets && channelSecrets.discord) || {};
-    const envTok = String(process.env.SKYNET_DISCORD_TOKEN || '').trim();
-    const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
-    const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+    const envTok = String(ENV('DISCORD_TOKEN') || '').trim();
+    const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
+    const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
     if (d.enabled && d.token && d.model && (providerUsesCodex(d.provider) || d.key || runtimeKey)) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider }); console.log('  · discord auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startDiscord(envTok, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
   } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
@@ -1213,8 +1226,8 @@ async function handleBudgetResume(req, res) {
 /* desktop key push: the parent shell sets the live BYOK key here (token-gated), so changing the
    key never restarts the sidecar. SKYNET_IPC_TOKEN is a per-launch secret only the shell knows. */
 async function handleSetKey(req, res) {
-  const token = String(process.env.SKYNET_IPC_TOKEN || '');
-  if (!token || req.headers['x-skynet-token'] !== token) { res.writeHead(403); return res.end('forbidden'); }
+  const token = String(ENV('IPC_TOKEN') || '');
+  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
   try { runtimeKey = String(await readBody(req, 1 << 14) || '').trim(); } catch (_) {}
   res.writeHead(200); return res.end('ok');
 }
@@ -1273,7 +1286,7 @@ function spotifyHtml(res, code, title, body) {
   res.end('<!doctype html><meta charset=utf-8><title>' + spotifyEsc(title) + '</title>' +
     '<body style="font:16px/1.5 system-ui,sans-serif;background:#0b0f14;color:#bfe8d4;display:grid;place-items:center;height:90vh;text-align:center">' +
     '<div><h2 style="margin:.2em 0">' + spotifyEsc(title) + '</h2><p>' + spotifyEsc(body) + '</p>' +
-    '<p style="opacity:.55;font-size:.9em">You can close this window and return to Skynet.</p></div>');
+    '<p style="opacity:.55;font-size:.9em">You can close this window and return to StarNet.</p></div>');
 }
 
 async function handleSpotifyStart(req, res) {
@@ -1281,7 +1294,7 @@ async function handleSpotifyStart(req, res) {
   let clientId = String(body.clientId || '').trim();
   if (clientId) { try { await spotifyStore.setClientId(clientId); } catch (_) {} }
   else { try { clientId = (await spotifyStore.getClientId()) || ''; } catch (_) {} }
-  if (!clientId) clientId = String(process.env.SKYNET_SPOTIFY_CLIENT_ID || '').trim();
+  if (!clientId) clientId = String(ENV('SPOTIFY_CLIENT_ID') || '').trim();
   if (!clientId) return spotifyJson(res, 400, { error: 'A Spotify Client ID is required. Create an app at https://developer.spotify.com/dashboard, add the redirect URI ' + SPOTIFY_REDIRECT + ' to it, then send its Client ID.', redirectUri: SPOTIFY_REDIRECT });
   // prune stale pending states (> 10 min) so the map can't grow unbounded
   const cutoff = Date.now() - 600000;
@@ -1303,7 +1316,7 @@ async function handleSpotifyCallback(req, res) {
   const state = u.searchParams.get('state') || '';
   const pending = spotifyPending.get(state);
   spotifyPending.delete(state);
-  if (!code || !pending) return spotifyHtml(res, 400, 'Link expired', 'That sign-in link is no longer valid — start again from Skynet Settings.');
+  if (!code || !pending) return spotifyHtml(res, 400, 'Link expired', 'That sign-in link is no longer valid — start again from StarNet Settings.');
   try {
     const r = await globalThis.fetch(spotifyPkce.TOKEN_URL, {
       method: 'POST',
@@ -1377,7 +1390,7 @@ function handleCronList(req, res) {
 }
 
 // POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
-// Privileged: this route is behind the SAME x-skynet-token gate as the cron CRUD routes (rejectBadApiToken
+// Privileged: this route is behind the SAME x-starnet-token gate as the cron CRUD routes (rejectBadApiToken
 // runs before dispatch for every /api/* POST except /api/session|/api/key|/api/save), so a browser-driven
 // cross-site call can't arm the autonomous scheduler. It (a) PERSISTS the cronArmed flag durably and (b)
 // ACTUALLY arms/disarms the live timer NOW — arming fires a due job within ONE tick with no restart; the
@@ -1765,7 +1778,7 @@ async function runOnce(o) {
   // up-front refusal uses (Codex sign-in / non-tool model), reason 'error', transient (a slot may free up).
   if (!concurrencyGate.tryEnter(agentId)) {
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
-    emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise SKYNET_MAX_CONCURRENT_AGENTS.' });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise STARNET_MAX_CONCURRENT_AGENTS.' });
     emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
     return;
   }
@@ -1870,7 +1883,7 @@ async function runOnce(o) {
   // THIS provider object (same priceOf catalog) with an alternate model, so a fallback's spend is priced right.
   // Source: o.fallbackModels (array of slugs from the run request) or env SKYNET_FALLBACK_MODELS (comma list).
   // On overload/429/5xx/auth/billing the loop retries the turn on the next model instead of dying. Empty = off.
-  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(process.env.SKYNET_FALLBACK_MODELS || '').split(','))
+  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(ENV('FALLBACK_MODELS') || '').split(','))
     .map(s => String(s || '').trim()).filter(s => s && s !== model);
   // CREDENTIAL ROTATION (P0.2): on a rate-limit/auth/billing failure the loop rotates to an alternate KEY for the
   // SAME model BEFORE trying alternate models. Pool source: o.keyPool (array) or env SKYNET_KEY_POOL (comma list).
@@ -1879,7 +1892,7 @@ async function runOnce(o) {
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
   if (!usingCodex) {
-    const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(process.env.SKYNET_KEY_POOL || '').split(','))
+    const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== key);
     rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk, baseUrl: OPENROUTER_BASE }), model, credKey: rk }));
   }
@@ -2374,7 +2387,7 @@ async function handleTts(req, res) {
   try {
     or = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'SKYNET' },
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
       body: JSON.stringify(payload)
     });
   } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
@@ -2694,10 +2707,10 @@ async function serveStatic(req, res) {
     if (abs !== FRONTEND && abs.indexOf(FRONTEND + path.sep) !== 0) { res.writeHead(403); return res.end('forbidden'); }
     let data = await fsp.readFile(abs);
     if (abs.toLowerCase() === path.resolve(FRONTEND, 'index.html').toLowerCase()) {
-      let boot = '<script>window.__SKYNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
+      let boot = '<script>window.__STARNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
       // DEV fast-path: hand the page a model + provider hint so a fresh origin auto-resumes the seeded
       // save with no setup. No secret crosses here — the key stays server-side in runtimeKey.
-      if (DEV_MODE) boot += 'window.__SKYNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
+      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
       boot += '</script>';
       data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
     }

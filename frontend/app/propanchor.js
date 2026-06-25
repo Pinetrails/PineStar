@@ -1,4 +1,4 @@
-/* SKYNET — propanchor.js : where an agent STANDS or SITS to use a prop.
+/* STARNET — propanchor.js : where an agent STANDS or SITS to use a prop.
 
    The gen prop model (worldmodel.js) stores props as pure rectangles; a blocking
    prop's whole footprint is unwalkable, so an agent can never path ONTO a couch/

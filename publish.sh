@@ -9,7 +9,7 @@
 # request header — it is never printed. Nothing here leaves your machine except
 # the normal `git push` to your own private repo, which YOU are running.
 set -u
-REPO="${1:-skynet-harness}"
+REPO="${1:-starnet-harness}"
 
 # 1. pull the cached github.com credential (username + token) without echoing the token
 CRED=$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null)
@@ -28,7 +28,7 @@ echo "Creating repo  : $REPO (private)"
 CODE=$(curl -s -o /tmp/ghpub.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.github+json" \
   https://api.github.com/user/repos \
-  -d "{\"name\":\"$REPO\",\"private\":true,\"description\":\"SKYNET — gamified AI-agent harness desktop app (BYOK via OpenRouter)\"}")
+  -d "{\"name\":\"$REPO\",\"private\":true,\"description\":\"STARNET — gamified AI-agent harness desktop app (BYOK via OpenRouter)\"}")
 if [ "$CODE" != "201" ] && [ "$CODE" != "422" ]; then
   echo "Repo create failed (HTTP $CODE):"; cat /tmp/ghpub.json; rm -f /tmp/ghpub.json; exit 1
 fi

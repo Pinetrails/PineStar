@@ -1,4 +1,4 @@
-/* SKYNET — xp.js : the AGENT-GROWTH model — XP, Level, and a Confidence (reliability) gauge.
+/* STARNET — xp.js : the AGENT-GROWTH model — XP, Level, and a Confidence (reliability) gauge.
    Pure + testable (UMD: an `Xp` global in the browser, module.exports under node).
 
    Two HONEST meters, read off REAL run outcomes — never fabricated, mirroring ctxgauge.js:

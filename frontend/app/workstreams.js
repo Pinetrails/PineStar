@@ -1,4 +1,4 @@
-/* SKYNET — workstreams.js : the unified unit-of-work record (session organization).
+/* STARNET — workstreams.js : the unified unit-of-work record (session organization).
    A WORKSTREAM is one named conversation that simultaneously IS the Comms thread (its
    `history`), IS a kanban card (its `lane`), and OWNS its backend runs + deliverables +
    per-conversation cost. This module is the single owner of workstreams[] + activeId +
@@ -206,7 +206,7 @@
   }
 
   // ---------- migrations / imports (pure; save.js + stationui.js delegate here) ----------
-  // skynet.save v1 { agent, history, usage } -> the v2 workstreams slice. The entire legacy
+  // starnet.save v1 { agent, history, usage } -> the v2 workstreams slice. The entire legacy
   // conversation becomes a single General stream; its cost is SEEDED from the existing lifetime
   // usage so the per-stream number matches reality (nothing invented). agent + lifetime usage stay
   // at the envelope root (save.js merges this slice in) — they remain the billing source of truth.

@@ -1,4 +1,4 @@
-/* SKYNET — assets.js : PixelLab sprite loading + per-agent recoloring */
+/* STARNET — assets.js : PixelLab sprite loading + per-agent recoloring */
 'use strict';
 
 const SPRITES = (() => {

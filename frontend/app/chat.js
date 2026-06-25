@@ -1,4 +1,4 @@
-/* SKYNET — chat.js : the in-game COMMS panel.
+/* STARNET — chat.js : the in-game COMMS panel.
    Talking to your agent is a REAL streaming model call (via Harness). While a reply
    the agent walks to its workstation and types (World.setActivity('task')).
    Supports: preloaded history (resume), and an "awaiting purpose" first-message mode. */

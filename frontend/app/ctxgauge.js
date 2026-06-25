@@ -1,4 +1,4 @@
-/* SKYNET — ctxgauge.js : the CONTEXT-WINDOW gauge model. Pure + testable
+/* STARNET — ctxgauge.js : the CONTEXT-WINDOW gauge model. Pure + testable
    (UMD: a `CtxGauge` global in the browser, module.exports under node).
 
    Turns two REAL numbers into a render-agnostic gauge state:

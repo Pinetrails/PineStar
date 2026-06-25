@@ -1,4 +1,4 @@
-/* SKYNET — tutorial.js : THE FIRST COMMAND + coachmarks + Field Manual (diegetic onboarding, P0–P3).
+/* STARNET — tutorial.js : THE FIRST COMMAND + coachmarks + Field Manual (diegetic onboarding, P0–P3).
 
    The mind that just woke up (onboarding.js) keeps talking — and teaches the Commander the ONE
    real loop. It opens with the KIT-OUT: the floor is REAL, so a fresh station is compute-only and the
@@ -16,12 +16,12 @@
    (agent.run.start / permission.prompt / agent.run.end) then narrate the genuine run, never a sim.
 
    Lifecycle: fires once, right after the awakening lands (app.js passes Onboarding.start({ taught })).
-   Fully skippable; a self-owned localStorage flag (skynet.tutorial.v1) means it never repeats.
+   Fully skippable; a self-owned localStorage flag (starnet.tutorial.v1) means it never repeats.
    P2 = just-in-time coachmarks (seen()/markSeen()); P3 = the Field Manual codex + Station Briefing. */
 'use strict';
 
 const Tutorial = (() => {
-  const KEY = 'skynet.tutorial.v1';
+  const KEY = 'starnet.tutorial.v1';
   let state = load();
   let active = false, wired = false, finished = false;
   let agentName = 'AGENT';

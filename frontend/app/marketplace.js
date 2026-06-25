@@ -37,7 +37,7 @@ const Marketplace = (() => {
   const FAM_TAGS = ['code', 'research', 'general'];
   const TAG_LABEL = { code: 'CODE', research: 'RESEARCH', general: 'GENERAL OPS' };
   const BECAUSE = { code: 'matches your focus on code', research: 'matches your focus on research', general: 'fits your day-to-day ops' };
-  const ACK_KEY = 'skynet.profile.ack.v1';
+  const ACK_KEY = 'starnet.profile.ack.v1';
   const profileApi = () => (typeof ProfileStore !== 'undefined' && ProfileStore.summary) ? ProfileStore : null;
   function acked() { try { return typeof localStorage !== 'undefined' && !!localStorage.getItem(ACK_KEY); } catch (_) { return true; } }
   function setAcked() { try { if (typeof localStorage !== 'undefined') localStorage.setItem(ACK_KEY, '1'); } catch (_) {} }

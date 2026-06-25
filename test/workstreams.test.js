@@ -9,7 +9,7 @@ const W = require('../frontend/app/workstreams.js');
 
 /* ---------- migrateV1: lossless v1 -> v2 workstreams slice ---------- */
 const V1 = {
-  schema: 'skynet.save', version: 1,
+  schema: 'starnet.save', version: 1,
   agent: { id: 'agent', name: 'ULTRON', model: 'anthropic/claude-sonnet-4.5' },
   history: [
     { role: 'user', content: 'what is my purpose?' },

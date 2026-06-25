@@ -1,4 +1,4 @@
-/* SKYNET - map.js : station geometry, walkability, pathfinding
+/* STARNET - map.js : station geometry, walkability, pathfinding
    Layout v7.2 "WIDE WINGS": the v7.1 acorn-octagon skeleton on a 74-col grid,
    with both factories pushed further outboard on long hub-link corridors and
    every room corner cut for the rounded-hull render pass. */

@@ -1,4 +1,4 @@
-/* SKYNET — app.js : screen flow + wiring.
+/* STARNET — app.js : screen flow + wiring.
    title -> connect (create a character) -> game.  Auto-resumes a saved agent on refresh. */
 'use strict';
 
@@ -884,7 +884,7 @@ const App = (() => {
       Build.init({ getStation: () => station, persist: persist, world: World, agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })) });
       const bbBuild = el('bb-build');
       if (bbBuild) {
-        let seenBuild = false; try { seenBuild = !!localStorage.getItem('skynet.refit.seen'); } catch (e) {}
+        let seenBuild = false; try { seenBuild = !!localStorage.getItem('starnet.refit.seen'); } catch (e) {}
         if (!seenBuild) bbBuild.classList.add('refit-nudge');   // pulse the dock button until first opened
         bbBuild.onclick = () => { SFX.click(); bbBuild.classList.remove('refit-nudge'); Build.toggle(); if (typeof Tutorial !== 'undefined' && Tutorial.onBuildOpen && Build.isOpen && Build.isOpen()) Tutorial.onBuildOpen(); };
       }
@@ -1026,7 +1026,7 @@ const App = (() => {
     el('btn-newagent').onclick = () => {
       SFX.click(); Save.clear();
       // NEW AGENT = a clean slate: also wipe the behavioral stores that self-persist OUTSIDE the save
-      // envelope (Save.clear only removes skynet.save). Per the Commander's scope decision, learned
+      // envelope (Save.clear only removes starnet.save). Per the Commander's scope decision, learned
       // task-mining (S1) + curiosity dismissals (S2) are per-agent and reset; one-time UI/consent flags stay.
       if (typeof MintStore !== 'undefined' && MintStore.reset) MintStore.reset();
       if (typeof CuriosityStore !== 'undefined' && CuriosityStore.reset) CuriosityStore.reset();
@@ -1035,7 +1035,7 @@ const App = (() => {
     el('btn-resume').onclick = () => { const s = Save.load(); if (s) { SFX.open(); resumeInto(s); } };
 
     // data portability — the safety net for the localStorage-fragile agent. Export bundles every
-    // skynet.* key + a memory snapshot into one file; import restores it on any browser.
+    // starnet.* key + a memory snapshot into one file; import restores it on any browser.
     const dataStatus = m => { const n = el('data-status'); if (n) n.textContent = m || ''; };
     el('btn-export').onclick = async () => {
       SFX.click(); dataStatus('exporting…');

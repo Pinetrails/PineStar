@@ -148,7 +148,7 @@ const g7 = s7.projectGeometry(), hz = g7.zones[s7.spawnRoomId()];
 A.ok(g7.canStep(hz.x1, hz.y1, hz.x1 + 1, hz.y1), 'canStep true within the same zone');
 
 /* ---- migrate() is total over a partial / legacy doc ---- */
-const partial = WM.deserialize({ schema: 'skynet.station', version: 1,
+const partial = WM.deserialize({ schema: 'starnet.station', version: 1,
   rooms: { rX: { id: 'rX', kind: 'hab', name: 'X', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } } });
 A.eq(partial.rooms().length, 1, 'deserialize backfills a missing order[] from rooms{}');
 A.eq(partial.spawnRoomId(), 'rX', 'deserialize re-derives spawnRoomId for a partial doc');
@@ -184,13 +184,13 @@ A.ok(s9.addRoom({ kind: 'lab', rect: { x1: 22, y1: 0, x2: 28, y2: 6 } }).ok, 'a 
 
 /* ---- migrate() is total over corrupt docs (ghost order id / missing rects) ---- */
 A.notThrows(() => {
-  const g = WM.deserialize({ schema: 'skynet.station', version: 1,
+  const g = WM.deserialize({ schema: 'starnet.station', version: 1,
     rooms: { rA: { id: 'rA', kind: 'hab', name: 'A', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } },
     order: ['rA', 'rGHOST'], meta: { spawnRoomId: 'rGHOST' } });
   g.projectGeometry(); g.bounds(); g.canPlaceRoom([{ x1: 9, y1: 9, x2: 13, y2: 13 }], 'lab');
 }, 'a doc with a ghost order id does not crash any read path');
 A.notThrows(() => {
-  const g = WM.deserialize({ schema: 'skynet.station', version: 1,
+  const g = WM.deserialize({ schema: 'starnet.station', version: 1,
     rooms: { rB: { id: 'rB', kind: 'hab', name: 'B' } }, order: ['rB'] });   // room with no rects
   g.projectGeometry(); g.rooms();
 }, 'a room with no rects[] is repaired, not crashed');
@@ -252,7 +252,7 @@ A.eq(JSON.stringify(WM.deserialize(sd.serialize()).props()[0].block), 'false', '
 
 /* migrate(): legacy doc with no props[] and a partial prop blob is repaired, not crashed */
 A.notThrows(() => {
-  const g = WM.deserialize({ schema: 'skynet.station', version: 1,
+  const g = WM.deserialize({ schema: 'starnet.station', version: 1,
     rooms: { rP: { id: 'rP', kind: 'hab', name: 'P', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } }, order: ['rP'],
     props: [{ t: 'tv', x: 1, y: 1 }, { nope: true }] });   // one valid (no id/w/h), one junk
   const pr = g.props();
@@ -278,7 +278,7 @@ const sbDoc = sb.serialize();
 A.eq(WM.deserialize(sbDoc).propById(bayA.id).agentId, 'coder', 'prop.agentId survives serialize/deserialize');
 A.eq(JSON.stringify(WM.deserialize(sbDoc).serialize()), JSON.stringify(sbDoc), 'a doc with bound props round-trips identically');
 // an OLD save (bay with no agentId) loads UNBOUND — backward compatible
-const legacy = WM.deserialize({ schema: 'skynet.station', version: 1,
+const legacy = WM.deserialize({ schema: 'starnet.station', version: 1,
   rooms: { rH: { id: 'rH', kind: 'hab', name: 'H', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rH'],
   props: [{ id: 'p9', t: 'bay', x: 2, y: 2, w: 2, h: 2 }] });
 A.eq(legacy.propById('p9').agentId, undefined, 'a legacy bay (no agentId) loads unbound');
@@ -458,7 +458,7 @@ A.eq(tr.projectGeometry().doorDefs.length, trDoors, 'a closed airlock in the tru
 const drDoc = dr.serialize();
 A.eq(WM.deserialize(drDoc).propById(al.id).door, 'jammed', 'prop.door survives serialize/deserialize');
 A.eq(JSON.stringify(WM.deserialize(drDoc).serialize()), JSON.stringify(drDoc), 'a doc with airlocks round-trips identically');
-const legacyDoor = WM.deserialize({ schema: 'skynet.station', version: 1,
+const legacyDoor = WM.deserialize({ schema: 'starnet.station', version: 1,
   rooms: { rD: { id: 'rD', kind: 'hab', name: 'D', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rD'],
   props: [{ id: 'pA', t: 'airlock', x: 2, y: 2, w: 1, h: 1, door: 'ajar' }] });   // junk door value
 A.eq(legacyDoor.propById('pA').door, undefined, 'migrate drops an invalid door value');

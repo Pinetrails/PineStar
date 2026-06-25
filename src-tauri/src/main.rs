@@ -538,7 +538,7 @@ fn main() {
             // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
             // rewrites the frontend's root-relative /api/* fetches to the sidecar's port.
             let init = format!(
-                "window.__SKYNET_API__='http://127.0.0.1:{port}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__SKYNET_API__+u;return _sf(u,o)}};"
+                "window.__STARNET_API__='http://127.0.0.1:{port}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
             );
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

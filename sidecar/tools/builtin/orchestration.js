@@ -116,7 +116,7 @@
           } catch (e) {
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
           }
-          if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the concurrency cap (SKYNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once, or run sequentially.', usd: 0 };
+          if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the concurrency cap (STARNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once, or run sequentially.', usd: 0 };
           return {
             agentId: job.agentId,
             reason: result.reason || 'done',
