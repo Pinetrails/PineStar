@@ -255,6 +255,46 @@ const Chat = (() => {
     r.body.appendChild(a);
     autoscroll();
   }
+  // CLIENT-SIDE MEDIA KIND, keyed off the file extension (the Hermes media.ts model): the backend doesn't
+  // declare "this is a video" — we decide from the path, so any .mp4 an agent writes/downloads renders as a
+  // player with zero backend wiring. Unknown extensions fall through to 'file' (the plain clickable row).
+  const MEDIA_KIND_BY_EXT = {
+    png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image',
+    mp4: 'video', webm: 'video', mov: 'video', mkv: 'video', avi: 'video',
+    mp3: 'audio', m4a: 'audio', ogg: 'audio', wav: 'audio', flac: 'audio', opus: 'audio'
+  };
+  function mediaKindOf(title) {
+    const ext = String(title || '').split(/[?#]/, 1)[0].split('.').pop().toLowerCase();
+    return MEDIA_KIND_BY_EXT[ext] || 'file';
+  }
+  function fileUrl(title, agentId) {
+    return '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
+  }
+  // append a small "open in a new tab" fallback link — shown when an inline player can't decode the file
+  // (e.g. an .mkv/.avi the browser won't play), mirroring Hermes's OpenMediaButton.
+  function openFallback(parent, label, url, title) {
+    if (parent.querySelector('.media-fallback')) return;   // once
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.className = 'deliverable-link media-fallback';
+    a.textContent = label; a.title = title;
+    parent.appendChild(a);
+  }
+  // a media deliverable rendered INLINE as a seekable player. The src is the jailed /api/file route, which
+  // now streams with HTTP Range so <video>/<audio> can seek without loading the whole file. preload=metadata
+  // fetches just enough for a duration + scrubber. On a decode error we drop in an open-externally link.
+  function mediaPlayerLine(title, agentId, kind) {
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable'); r.d.classList.add(kind);
+    const url = fileUrl(title, agentId);
+    const name = String(title).split(/[\\/]/).pop() || title;
+    r.body.appendChild(document.createTextNode('▤ made '));
+    const cap = document.createElement('span'); cap.className = 'media-name'; cap.textContent = name; cap.title = title;
+    r.body.appendChild(cap);
+    const el = document.createElement(kind === 'audio' ? 'audio' : 'video');
+    el.controls = true; el.preload = 'metadata'; el.src = url; el.className = 'deliverable-' + kind;
+    el.addEventListener('error', () => openFallback(r.body, 'open ' + kind + ' ↗', url, title), { once: true });
+    r.body.appendChild(el);
+    autoscroll();
+  }
   // a live consent prompt: the agent wants to do something that needs approval (a file write today). The run is
   // PAUSED on the sidecar until the Commander answers — once / always (this kind) / full access (everything this
   // session) / deny. Answering resumes the stream automatically.
@@ -687,14 +727,23 @@ const Chat = (() => {
         onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
         onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) { breakLive(); toolLine(t, ev.isError); } },
         onDeliverable: ev => {
-          // image_generate emits kind:'image' (a real PNG in the agent's workspace); fs.write emits kind:'file'.
-          // Both are openable products — render inline (thumbnail vs clickable row) and record in the workstream.
+          // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
+          // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the Hermes model), not
+          // from the backend's kind — so a .mp4/.webm the agent writes becomes an inline player and a .png a
+          // thumbnail, with no backend change. Unknown extensions fall back to the plain clickable row.
           if ((ev.kind === 'file' || ev.kind === 'image') && !seenDeliv[ev.title]) {
             seenDeliv[ev.title] = true;
-            if (isActiveWs(ws)) { breakLive(); if (ev.kind === 'image') imageDeliverableLine(ev.title, ev.agentId); else deliverableLine(ev.title, ev.agentId); }
-            // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock
-            if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: ev.kind, runId: Channels.runIdOf(ws.id), t: Date.now() });
-            if (typeof StationUI !== 'undefined') StationUI.notify((ev.kind === 'image' ? 'made ' : 'saved ') + ev.title, 'gold');
+            const mk = mediaKindOf(ev.title);
+            if (isActiveWs(ws)) {
+              breakLive();
+              if (mk === 'image') imageDeliverableLine(ev.title, ev.agentId);
+              else if (mk === 'video' || mk === 'audio') mediaPlayerLine(ev.title, ev.agentId, mk);
+              else deliverableLine(ev.title, ev.agentId);
+            }
+            // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock.
+            // record the rendered media kind so a future history/replay surface can re-render the same way.
+            if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: mk === 'file' ? ev.kind : mk, runId: Channels.runIdOf(ws.id), t: Date.now() });
+            if (typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold');
           }
         },
         onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } }

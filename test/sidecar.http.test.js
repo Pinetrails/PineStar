@@ -140,6 +140,42 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(noModel.status, 400, 'POST /api/run without a model -> 400');
     const badJson = await fetch(B + '/api/run', { method: 'POST', headers: { 'X-StarNet-Token': apiToken }, body: '{not json' });
     A.eq(badJson.status, 400, 'POST /api/run with malformed JSON -> 400');
+
+    // ---- /api/file media serving: typed content-type + HTTP Range (so COMMS <video>/<audio> can seek) ----
+    // write a known-size clip into the agent's jailed workspace (<ws>/agent/clips/clip.webm)
+    const N = 1000;
+    fs.mkdirSync(path.join(ws, 'agent', 'clips'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'agent', 'clips', 'clip.webm'), Buffer.alloc(N, 7));
+    const fileUrl = B + '/api/file?agent=agent&path=' + encodeURIComponent('clips/clip.webm');
+
+    const full = await fetch(fileUrl);
+    A.eq(full.status, 200, 'GET /api/file -> 200');
+    A.eq(full.headers.get('content-type'), 'video/webm', 'webm served with a video content-type');
+    A.eq(full.headers.get('accept-ranges'), 'bytes', 'full response advertises byte-range support');
+    A.eq(full.headers.get('content-length'), String(N), 'full Content-Length is the file size');
+    A.eq((await full.arrayBuffer()).byteLength, N, 'full body is the whole file');
+
+    const ranged = await fetch(fileUrl, { headers: { Range: 'bytes=100-199' } });
+    A.eq(ranged.status, 206, 'ranged GET -> 206 Partial Content');
+    A.eq(ranged.headers.get('content-range'), 'bytes 100-199/' + N, 'Content-Range names the served slice + total');
+    A.eq(ranged.headers.get('content-length'), '100', 'partial Content-Length is the slice size');
+    A.eq((await ranged.arrayBuffer()).byteLength, 100, 'partial body is exactly the requested 100 bytes');
+
+    const suffix = await fetch(fileUrl, { headers: { Range: 'bytes=-50' } });
+    A.eq(suffix.status, 206, 'suffix range -> 206');
+    A.eq(suffix.headers.get('content-range'), 'bytes 950-999/' + N, 'suffix range resolves to the last N bytes');
+
+    const unsat = await fetch(fileUrl, { headers: { Range: 'bytes=99999-' } });
+    A.eq(unsat.status, 416, 'unsatisfiable range -> 416');
+    A.eq(unsat.headers.get('content-range'), 'bytes */' + N, '416 reports the full size');
+
+    const head = await fetch(fileUrl, { method: 'HEAD' });
+    A.eq(head.status, 200, 'HEAD /api/file -> 200');
+    A.eq(head.headers.get('content-length'), String(N), 'HEAD reports the size with no body');
+    A.eq((await head.arrayBuffer()).byteLength, 0, 'HEAD carries no body');
+
+    const escape = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('../../etc/passwd'));
+    A.ok(escape.status === 403 || escape.status === 404, 'a jail-escape path is refused (403/404), never served');
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);

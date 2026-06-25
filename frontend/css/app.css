@@ -298,6 +298,11 @@ input::placeholder { color: var(--ph-dim); opacity: .7; }
 .deliverable-thumb { display: inline-block; vertical-align: middle; margin-top: 4px; line-height: 0; border: 1px solid var(--gold); border-radius: 4px; overflow: hidden; cursor: pointer; }
 .deliverable-thumb img { display: block; max-width: 168px; max-height: 128px; }
 .deliverable-thumb:hover { border-color: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); }
+/* an inline video/audio clip the agent produced — a seekable player (Range-streamed from /api/file) */
+.media-name { display: block; color: var(--ph-dim); font-size: 12px; margin: 2px 0 4px; letter-spacing: 0.3px; }
+.deliverable-video { display: block; max-width: 340px; max-height: 240px; width: 100%; border: 1px solid var(--gold); border-radius: 5px; background: #000; }
+.deliverable-audio { display: block; max-width: 340px; width: 100%; margin-top: 2px; }
+.media-fallback { display: inline-block; margin-top: 5px; }
 /* a clickable URL the agent typed in its prose — match the gold deliverable-link affordance */
 .cmsg.agent .body a { color: var(--gold); text-decoration: underline; }
 .cmsg.agent .body a:hover { color: var(--ph-bright); }

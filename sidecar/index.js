@@ -1103,7 +1103,7 @@ const server = http.createServer((req, res) => {
   // excess parallel workers). The summon bay reads this so the ceiling is visible BEFORE a fan-out, not only
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
   if (req.method === 'GET' && req.url === '/api/limits') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); }
-  if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  if ((req.method === 'GET' || req.method === 'HEAD') && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
@@ -2448,32 +2448,86 @@ const MIME = {
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif',
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.map': 'application/json',
   '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8',
-  '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.log': 'text/plain; charset=utf-8'
+  '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.log': 'text/plain; charset=utf-8',
+  // media types so an agent-produced clip serves with the right content-type and the chat can <video>/<audio> it.
+  // Webp/jpeg already covered above (image set). mkv/avi stream fine but most browsers can't decode them — the
+  // COMMS player falls back to an "open" link in that case, mirroring Hermes's OpenMediaButton.
+  '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
 };
+
+// parse a single-range `Range: bytes=a-b` header against a known size. Returns { start, end } (inclusive,
+// clamped) or null when there's no/blank range, or { unsatisfiable: true } when the range can't be served
+// (so the caller can answer 416). We honor only the first range — enough for <video>/<audio> seeking, which
+// is exactly what FileResponse / Electron's net stack give Hermes for free.
+function parseRange(header, size) {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
+  if (!m || (m[1] === '' && m[2] === '')) return { unsatisfiable: true };
+  let start, end;
+  if (m[1] === '') {                                  // suffix range: last N bytes
+    const n = parseInt(m[2], 10);
+    if (!n) return { unsatisfiable: true };
+    start = Math.max(0, size - n); end = size - 1;
+  } else {
+    start = parseInt(m[1], 10);
+    end = m[2] === '' ? size - 1 : Math.min(parseInt(m[2], 10), size - 1);
+  }
+  if (!(start >= 0) || start > end || start >= size) return { unsatisfiable: true };
+  return { start, end };
+}
 
 // GET /api/file?agent=<id>&path=<rel> — read-only view of a file the agent produced, jailed to its
 // workspace (resolveInside proves the path can't escape WORKSPACES/<agentId>/). Lets the user OPEN a
 // deliverable from the app instead of digging through the filesystem. Served inline, never as an attachment.
+// STREAMS the bytes (createReadStream, never the whole file in memory) and honors HTTP Range so the COMMS
+// <video>/<audio> elements can seek — the Node analogue of Starlette's FileResponse in the Hermes gateway.
 async function serveWorkspaceFile(req, res) {
+  let abs;
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
     const rel = u.searchParams.get('path') || '';
-    const { abs } = await fsJail.resolveInside(agent, rel);   // throws on jail escape / bad agentId / '..'
-    const data = await fsp.readFile(abs);
-    const ext = path.extname(abs).toLowerCase();
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Content-Disposition': 'inline; filename="' + path.basename(abs).replace(/[^A-Za-z0-9_.-]/g, '_') + '"',
-      'X-Content-Type-Options': 'nosniff'
-    });
-    res.end(data);
+    ({ abs } = await fsJail.resolveInside(agent, rel));   // throws on jail escape / bad agentId / '..'
   } catch (e) {
     const msg = (e && e.message) || '';
     if (/escape|illegal|bad agentId|bad notebook/.test(msg)) { res.writeHead(403); return res.end('forbidden'); }
-    res.writeHead(404); res.end('not found');
+    res.writeHead(404); return res.end('not found');
   }
+  let st;
+  try { st = await fsp.stat(abs); } catch (_) { res.writeHead(404); return res.end('not found'); }
+  if (!st.isFile()) { res.writeHead(404); return res.end('not found'); }
+
+  const ext = path.extname(abs).toLowerCase();
+  const headers = {
+    'Content-Type': MIME[ext] || 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Disposition': 'inline; filename="' + path.basename(abs).replace(/[^A-Za-z0-9_.-]/g, '_') + '"',
+    'X-Content-Type-Options': 'nosniff',
+    'Accept-Ranges': 'bytes'   // advertise range support so the browser asks for byte ranges when seeking
+  };
+
+  const range = parseRange(req.headers && req.headers.range, st.size);
+  let start = 0, end = st.size - 1, code = 200;
+  if (range && range.unsatisfiable) {
+    res.writeHead(416, { 'Content-Range': 'bytes */' + st.size, 'Accept-Ranges': 'bytes' });
+    return res.end();
+  }
+  if (range) {
+    start = range.start; end = range.end; code = 206;
+    headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + st.size;
+  }
+  headers['Content-Length'] = (end - start + 1);
+
+  // HEAD: browsers/players probe with it before streaming — answer headers only.
+  if (req.method === 'HEAD') { res.writeHead(code, headers); return res.end(); }
+
+  res.writeHead(code, headers);
+  const stream = fs.createReadStream(abs, { start, end });
+  stream.on('error', () => { try { res.destroy(); } catch (_) {} });
+  req.on('close', () => { try { stream.destroy(); } catch (_) {} });   // client navigated away / closed the tab
+  stream.pipe(res);
 }
 // GET /api/notebook?agent=<id> — read-only JSON view of the agent's own notebook (its memory.md in the
 // dossier). The agent WRITES these notes itself via the notebook tool during runs; this route only reads
