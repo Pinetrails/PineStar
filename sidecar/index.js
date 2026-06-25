@@ -66,6 +66,7 @@ const { withDossier } = require('./dossierinject.js');     // Phase C: fold the 
 const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
 const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/disable choices for the recipe library
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
+const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
@@ -1623,10 +1624,26 @@ async function handleDossier(req, res) {
   res.end(JSON.stringify({ ok: true, chars: commanderDossier.get().length }));
 }
 
+function placedTypesFrom(v) {
+  if (Array.isArray(v)) return v.map(e => (e && typeof e === 'object') ? e.objectType : e).map(s => String(s || '').trim()).filter(Boolean);
+  return String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function slashOptions(placedTypes) {
+  const skills = skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes || [] });
+  const recipes = (Recipes && Recipes.builtins) ? Recipes.builtins() : [];
+  return { skills, recipes };
+}
+
 // GET /api/slash/catalog -- server-owned command metadata for chat palettes and future gateway surfaces.
 function serveSlashCatalog(req, res) {
+  let placedTypes = [];
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    placedTypes = placedTypesFrom(u.searchParams.get('placed') || '');
+  } catch (_) {}
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(slash.catalog()));
+  res.end(JSON.stringify(slash.catalog(slashOptions(placedTypes))));
 }
 
 // POST /api/slash/dispatch { input } -- resolve a slash command to a typed client directive. The browser
@@ -1636,7 +1653,7 @@ async function handleSlashDispatch(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
   const input = body.input != null ? body.input : ('/' + String(body.command || ''));
-  const out = slash.dispatch(input);
+  const out = slash.dispatch(input, slashOptions(placedTypesFrom(body.placed)));
   json(out.ok ? 200 : (out.status || 400), out);
 }
 

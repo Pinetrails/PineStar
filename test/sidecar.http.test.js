@@ -107,10 +107,26 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(slashCat.status, 200, 'GET /api/slash/catalog -> 200');
     A.ok(Array.isArray(slashCat.body.commands), 'slash catalog returns commands');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'retry'), 'slash catalog includes /retry');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'morning-brief'), 'slash catalog includes built-in recipe commands');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'plan' && c.source === 'skill'), 'slash catalog includes available compute-only skill commands');
+    A.ok(!slashCat.body.commands.some(c => c && c.name === 'test-driven-development'), 'slash catalog omits unavailable workbench skill without placed workbench');
+
+    const slashBench = await j('GET', '/api/slash/catalog?placed=workbench');
+    A.ok(slashBench.body.commands.some(c => c && c.name === 'test-driven-development'), 'slash catalog includes workbench skill when workbench is placed');
 
     const slashRun = await j('POST', '/api/slash/dispatch', { input: '/retry' });
     A.eq(slashRun.status, 200, 'POST /api/slash/dispatch /retry -> 200');
     A.eq(slashRun.body.directive, { type: 'client', action: 'retry', args: '' }, 'slash dispatch returns a client retry directive');
+
+    const slashRecipe = await j('POST', '/api/slash/dispatch', { input: '/summarize launch notes' });
+    A.eq(slashRecipe.status, 200, 'POST /api/slash/dispatch recipe -> 200');
+    A.eq(slashRecipe.body.directive.type, 'insert', 'recipe slash dispatch returns insert directive');
+    A.ok(String(slashRecipe.body.directive.text || '').indexOf('launch notes') >= 0, 'recipe slash dispatch carries typed args into the draft');
+
+    const slashSkill = await j('POST', '/api/slash/dispatch', { input: '/plan refactor commands' });
+    A.eq(slashSkill.status, 200, 'POST /api/slash/dispatch skill -> 200');
+    A.eq(slashSkill.body.directive.source, 'skill', 'skill slash dispatch returns a skill directive');
+    A.ok(String(slashSkill.body.directive.text || '').indexOf('refactor commands') >= 0, 'skill slash dispatch carries typed args into the task');
 
     const slashUnknown = await j('POST', '/api/slash/dispatch', { input: '/unknown' });
     A.eq(slashUnknown.status, 404, 'POST /api/slash/dispatch unknown -> 404');

@@ -693,7 +693,7 @@ const Chat = (() => {
      recipe drops its directive into the input (first {blank} pre-selected) to fill + send; a built-in
      runs immediately. ↑/↓ move, Enter/Tab run, Esc closes. */
   let slashItems = [], slashSel = 0;
-  let slashServerCommands = null, slashCatalogLoading = false, slashCatalogLoaded = false;
+  let slashServerCommands = null, slashCatalogLoading = null, slashCatalogLoaded = null;
   const FALLBACK_SLASH_COMMANDS = Object.freeze([
     Object.freeze({ name: 'retry', desc: 're-run the last turn', action: 'retry' }),
     Object.freeze({ name: 'stop', desc: 'interrupt the running turn', action: 'stop' }),
@@ -720,18 +720,37 @@ const Chat = (() => {
     const recipes = buildCommands().filter(c => c.source === 'recipe').length;
     localLine('Commands - ' + builtins.slice(0, 8).join(', ') + (recipes ? ', plus ' + recipes + ' recipe commands.' : '.') + ' Type "/" to browse.');
   }
+  function slashPlacedTypes() {
+    try {
+      if (typeof World === 'undefined' || !World.heroCaps) return [];
+      const caps = World.heroCaps((activeWs && activeWs.agentId) || 'agent') || [];
+      const out = [], seen = {};
+      for (const c of caps) {
+        const t = String((c && c.objectType) || c || '').trim();
+        if (!t || seen[t]) continue;
+        seen[t] = true; out.push(t);
+      }
+      out.sort();
+      return out;
+    } catch (_) { return []; }
+  }
+  function slashCatalogKey() {
+    return slashPlacedTypes().join(',');
+  }
   function warmSlashCatalog() {
-    if (slashCatalogLoaded || slashCatalogLoading || typeof fetch === 'undefined') return;
-    slashCatalogLoading = true;
-    fetch('/api/slash/catalog', { cache: 'no-store' })
+    const key = slashCatalogKey();
+    if (slashCatalogLoaded === key) return;
+    if (slashCatalogLoading === key || typeof fetch === 'undefined') return;
+    slashCatalogLoading = key;
+    fetch('/api/slash/catalog?placed=' + encodeURIComponent(key), { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         slashServerCommands = (j && Array.isArray(j.commands)) ? j.commands : null;
-        slashCatalogLoaded = true;
+        slashCatalogLoaded = key;
       })
-      .catch(() => { slashServerCommands = null; slashCatalogLoaded = true; })
+      .catch(() => { slashServerCommands = null; slashCatalogLoaded = key; })
       .then(() => {
-        slashCatalogLoading = false;
+        slashCatalogLoading = null;
         if (input && input.value && input.value[0] === '/') openSlash(input.value.slice(1));
       });
   }
@@ -758,7 +777,7 @@ const Chat = (() => {
       desc: c.desc || c.description || '',
       category: c.category || 'General',
       action: action,
-      source: source || c.source || 'server',
+      source: c.source || source || 'server',
       serverBacked: source === 'server',
       run: localSlashActions()[action] || null
     };
@@ -816,19 +835,33 @@ const Chat = (() => {
       pop.appendChild(it);
     });
   }
-  function applySlashDirective(directive) {
-    if (!directive || directive.type !== 'client') return false;
-    const fn = localSlashActions()[directive.action];
-    if (!fn) return false;
-    fn(directive.args || '');
+  function insertSlashText(text, select) {
+    if (!input) return false;
+    const directive = String(text || '');
+    input.value = directive; input.focus();
+    if (select === 'first-placeholder') {
+      const m = /\{[^}]+\}/.exec(directive);
+      try { if (m) input.setSelectionRange(m.index, m.index + m[0].length); else input.setSelectionRange(directive.length, directive.length); } catch (_) {}
+    }
     return true;
   }
-  async function dispatchSlash(item) {
+  function applySlashDirective(directive) {
+    if (!directive) return false;
+    if (directive.type === 'client') {
+      const fn = localSlashActions()[directive.action];
+      if (!fn) return false;
+      fn(directive.args || '');
+      return true;
+    }
+    if (directive.type === 'insert') return insertSlashText(directive.text, directive.select);
+    return false;
+  }
+  async function dispatchSlash(item, rawInput) {
     try {
       const r = await fetch('/api/slash/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: '/' + item.name })
+        body: JSON.stringify({ input: rawInput || ('/' + item.name), placed: slashPlacedTypes() })
       });
       const j = await r.json().catch(() => null);
       return !!(r.ok && j && j.ok && applySlashDirective(j.directive));
@@ -836,9 +869,10 @@ const Chat = (() => {
   }
   async function runSlash(item) {
     if (!item) { closeSlash(); return; }
+    const rawInput = input ? input.value : '';
     input.value = ''; closeSlash();   // consume the "/query"; a recipe's run() then refills the input
     if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
-    if (item.serverBacked && await dispatchSlash(item)) return;
+    if (item.serverBacked && await dispatchSlash(item, rawInput)) return;
     try { item.run(); } catch (_) {}
   }
 
