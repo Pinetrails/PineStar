@@ -30,6 +30,10 @@
   // but NOT the child's tokens/tool-calls (those would clutter the lead's COMMS). The lead reads the worker's
   // actual output from the tool RESULT, not the stream.
   const FORWARD = { 'agent.run.start': 1, 'agent.run.end': 1, 'agent.run.error': 1, 'agent.cost': 1 };
+  // a delegated worker's added kit, on top of the autonomous full office (compute/web/files/memory/studio/jukebox):
+  // the WORKBENCH (terminal). Paired with the SHARED lead consent broker, shell/writes follow the lead's APPROVAL
+  // posture — so a worker has the same reach as the orchestrator, gated by the same approvals.
+  const WORKER_KIT = [{ instanceId: 'wb_worker', objectType: 'workbench' }];
 
   function lastAssistant(messages) {
     if (!Array.isArray(messages)) return '';
@@ -111,6 +115,12 @@
               emit: childEmit,                 // lifecycle/cost ride the lead's stream -> the floor lights the worker
               signal: ctx && ctx.signal,       // cancelling the lead aborts every worker at its pre-paid guard
               runId: newId(), trigger: 'directive', surface: 'autonomous',
+              // SAME ACCESS AS THE ORCHESTRATOR: share the lead's consent broker so a worker's write/shell follows
+              // the lead's APPROVAL posture (full-auto bypass, or a prompt forwarded to the watched lead) instead of
+              // the headless default-deny — and add the WORKBENCH so the terminal is actually available to grant.
+              // (A headless lead passes an autonomous broker → its workers still can't self-approve shell. Safe.)
+              consent: ctx && ctx.consent,
+              extraObjects: WORKER_KIT,
               maxCostUsd: perWorker            // a runaway worker can't blow the lead's per-run ceiling
             });
           } catch (e) {

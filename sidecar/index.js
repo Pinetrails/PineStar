@@ -1886,7 +1886,12 @@ async function runOnce(o) {
   // per-agent FULL ACCESS (chosen at create / in the dossier) bypasses the gate too — same effect as the global
   // SKYNET_FULL_ACCESS env, but scoped to this agent. The hardline floor still applies below it.
   const agentFullAccess = ((agentRoster.get(agentId) || {}).approvalMode === 'full');
-  const consent = makeConsentBroker({
+  // A delegated/summoned worker SHARES the lead's consent broker (o.consent) so it has the SAME access the
+  // orchestrator has: the lead's APPROVAL posture (full-auto bypass, or a live prompt forwarded to the WATCHED
+  // lead's COMMS) and its session grants. A top-level run builds its own. Safe across surfaces: a headless cron
+  // lead's broker is autonomous (default-deny + exec-lockout), so its workers inherit "no self-approved shell"
+  // — only a watched, interactive lead can let a worker write/run shell, and only with a human's click.
+  const consent = o.consent || makeConsentBroker({
     bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
     networkOf: (call) => !!resolved.networkCaps[call.name],

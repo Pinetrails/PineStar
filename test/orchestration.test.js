@@ -29,7 +29,8 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'lead-model', perWorker: 1, newId: counter() });
   const signal = { aborted: false };
   const emitted = [];
-  const ctx = { agentId: 'agent', signal, emit: (name, p) => emitted.push({ name, p }) };
+  const leadBroker = { _isLeadConsent: true };   // stand-in for the lead's consent broker (ctx.consent)
+  const ctx = { agentId: 'agent', signal, emit: (name, p) => emitted.push({ name, p }), consent: leadBroker };
   const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'find X' }, { agentId: 'analyst', prompt: 'analyze Y' }] }, ctx);
 
   A.eq(ro.calls.length, 2, 'two child runs dispatched (one per worker)');
@@ -39,7 +40,11 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   A.eq(ro.calls[1].model, 'lead-model', 'child falls back to the lead model when the worker has none');
   A.ok(ro.calls[0].signal === signal, 'the parent signal is threaded into the child (abort propagation)');
   A.eq(ro.calls[0].maxCostUsd, 1, 'per-worker cost cap is passed to the child');
-  A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless (no consent prompts)');
+  A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless on the autonomous office baseline');
+  // SAME ACCESS AS THE ORCHESTRATOR: a worker shares the lead's consent broker (its APPROVAL posture + grants)
+  // and is handed the WORKBENCH, so shell/writes are available and gated by the lead's approvals — not auto-denied.
+  A.ok(ro.calls[0].consent === leadBroker, "worker shares the lead's consent broker (same access as the orchestrator)");
+  A.ok(Array.isArray(ro.calls[0].extraObjects) && ro.calls[0].extraObjects.some(o => o.objectType === 'workbench'), 'worker is equipped with the workbench (terminal) on top of the office');
   A.eq(ro.calls[0].isTask, true, 'worker run is a task (tool-capable)');
   A.ok(ro.calls[0].runId && ro.calls[0].runId !== ro.calls[1].runId, 'each child gets a distinct runId');
 
