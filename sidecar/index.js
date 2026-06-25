@@ -64,6 +64,8 @@ const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-proce
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
 const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/disable choices for the recipe library
+const runtimeSkills = require('./skills/runtime.js');       // runtime-created skill index (metadata only)
+const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
@@ -537,6 +539,60 @@ async function runReflection(o) {
     // book the reflection's own spend into the append-only ledger so the day/global pools stay honest (the run
     // already booked the loop's spend before this fired). A second entry for the same runId just sums.
     if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens }); } catch (_) {} }
+  }
+}
+
+const SKILL_REVIEW_TIMEOUT_MS = num(process.env.SKYNET_SKILL_REVIEW_TIMEOUT_MS, 45000);
+const SKILL_REVIEW_MAX_COST_USD = num(process.env.SKYNET_SKILL_REVIEW_MAX_USD, 0.08);
+async function runBackgroundSkillReview(o) {
+  const { agentId, runId, messages, provider, model, cost } = o || {};
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SKILL_REVIEW_TIMEOUT_MS);
+  const reviewRunId = String(runId || 'run') + '_skill_review';
+  let result = null;
+  try {
+    const registry = makeRegistry();
+    makeSkillTools({ store: skillStore }).register(registry);
+    const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
+    const resolved = {
+      agentId, room: 'skill-review', hasCompute: true, tools: allowed.slice(),
+      approvalRules: {}, networkCaps: {}
+    };
+    const toolDefs = registry.wireFormat(registry.list(new Set(allowed)));
+    const fromWire = new Map();
+    for (const d of toolDefs) {
+      const real = d.function.name;
+      const w = real.replace(/\./g, '_');
+      fromWire.set(w, real);
+      d.function.name = w;
+    }
+    const capCtx = makeCapCtx(resolved, {
+      emit: chanEmit,
+      timeoutMs: CAPS.toolTimeoutMs,
+      runId: reviewRunId,
+      signal: ac.signal
+    });
+    const dispatch = async (c, ctx) => {
+      if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });
+      return registry.dispatch(c, ctx);
+    };
+    const prompt = skillReview.buildPrompt({ agentId, runId, messages, skills: skillStore.list(agentId, { includeArchived: true }) });
+    result = await runAgentLoop({
+      messages: [
+        { role: 'system', content: 'You are a quiet StarNet skillbase maintenance worker. Use only skill tools, then stop.' },
+        { role: 'user', content: prompt }
+      ],
+      provider, emit: () => {}, cost, tools: toolDefs, dispatch, capCtx,
+      limits: { maxIters: 6, maxCostUsd: SKILL_REVIEW_MAX_COST_USD, grace: false },
+      signal: ac.signal, clock: { now: () => Date.now() },
+      agentId, runId: reviewRunId, model, trigger: 'event'
+    });
+  } catch (e) { console.warn('[skills] background review failed:', (e && e.message) || e); }
+  finally {
+    clearTimeout(timer);
+    if (result && result.usd) {
+      try { ledger.record({ runId: reviewRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0 }); } catch (_) {}
+    }
   }
 }
 
@@ -1071,6 +1127,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
   if (req.method === 'POST' && req.url === '/api/skills/toggle') return handleSkillToggle(req, res);
+  if (req.method === 'POST' && req.url === '/api/agent-skills/manage') return handleAgentSkillManage(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/agent-skills') === 0) return serveAgentSkills(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/skills') === 0) return serveSkills(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/auth/start') return handleSpotifyStart(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/spotify/callback') === 0) return handleSpotifyCallback(req, res);
@@ -1628,6 +1686,37 @@ async function handleSkillToggle(req, res) {
   json(200, { ok: true, slug: r.slug, enabled: r.enabled });
 }
 
+// GET /api/agent-skills?agent=<id>&archived=1&body=1 - runtime-created skills for the selected agent.
+// Distinct from /api/skills, which is the bundled recipe catalog. This endpoint is for the human-visible
+// owned skillbase; the model still sees only the prompt index and must use skill.view for bodies.
+function serveAgentSkills(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agentId = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+    const includeArchived = u.searchParams.get('archived') === '1' || u.searchParams.get('state') === 'all';
+    const includeBody = u.searchParams.get('body') === '1';
+    let skills = skillStore.list(agentId, { includeArchived });
+    if (includeBody) {
+      skills = skills.map(s => skillStore.view(agentId, s.id, { includeArchived: true, bump: false }) || s);
+    }
+    json(200, { agentId, skills });
+  } catch (e) { json(200, { skills: [] }); }
+}
+
+// POST /api/agent-skills/manage { agentId, action, ... } - user-visible runtime skill management.
+async function handleAgentSkillManage(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const r = skillStore.manage(Object.assign({}, body, { agentId, createdBy: 'user' }));
+  if (!r.ok) return json(400, { error: r.error || 'could not update skill' });
+  chanEmit('deliverable', { id: r.skill.id, agentId, kind: 'skill', title: r.skill.name });
+  json(200, { ok: true, action: r.action, skill: r.skill });
+}
+
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
@@ -2007,12 +2096,23 @@ async function runOnce(o) {
   // when none qualify → byte-identical to a skill-less prompt. Riding the ONE place the final system prompt is
   // assembled means it covers every surface (browser chat, cron, delegated worker) with no per-path change.
   let skillBlock = '';
+  let runtimeSkillBlock = '';
   try {
     const sRoom = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
     const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
     skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes });
   } catch (_) { /* a skill-injection hiccup must never break a run */ }
-  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  try {
+    if (resolved.tools.indexOf('skill.view') >= 0) {
+      const rs = runtimeSkills.composeIndex(skillStore.list(agentId), {
+        budget: 6000,
+        canManage: resolved.tools.indexOf('skill.manage') >= 0
+      });
+      runtimeSkillBlock = rs.text || '';
+      if (rs.ids && rs.ids.length && typeof skillStore.markUsed === 'function') skillStore.markUsed(agentId, rs.ids);
+    }
+  } catch (_) { /* runtime skill indexing must never break a run */ }
+  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -2113,6 +2213,9 @@ async function runOnce(o) {
   // store and never auto-writes (§5.6). result.messages is the live conversation (the agent's replies included).
   if (o.reflect && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)) {
     runReflection({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
+  }
+  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && !signal.aborted && skillReview.shouldReviewRun(result)) {
+    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
   }
   return result;
 
@@ -2590,6 +2693,12 @@ function serveProposals(req, res) {
 // Keep/Edit COMMIT a real §5.2 record (the user's click IS the consent §5.6) -> memory.write; EVERY verdict ->
 // memory.feedback (Keep/Edit positive, Discard negative) so the agent's confidence tracks proposal acceptance.
 // Events ride the SSE bus (the run stream is closed) so they reach the browser U.bus exactly once — no double-count.
+function skillNameFromReflection(content) {
+  const raw = String(content || '').trim().split(/\r?\n/)[0].replace(/^(learned|skill|procedure)\s*[:\-]\s*/i, '');
+  const first = raw.split(/[.;:]/)[0].trim() || 'Learned skill';
+  return first.replace(/[<>:"|?*\\/]/g, ' ').replace(/\s+/g, ' ').slice(0, 70) || 'Learned skill';
+}
+
 async function handleMemoryTurnin(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
@@ -2616,6 +2725,16 @@ async function handleMemoryTurnin(req, res) {
   }
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
   if (!content) return json(400, { error: 'a kept memory cannot be empty' });
+  if (prop.kind === 'skill') {
+    const skillName = String(body.skillName || body.name || skillNameFromReflection(content)).trim();
+    const skillBody = String(body.skillBody || body.body || content).trim();
+    const summary = String(body.summary || content).trim();
+    const r = skillStore.write({ agentId, name: skillName, summary, body: skillBody, createdBy: 'reflection', sourceRunId: runId || prop.sourceRunId });
+    if (!r.ok) return json(400, { error: r.error || 'could not save skill' });
+    chanEmit('deliverable', { id: r.skill.id, agentId, kind: 'skill', title: r.skill.name });
+    chanEmit('memory.feedback', { agentId, id: prop.id, delta: fb.delta, reason: fb.reason });
+    return json(200, { ok: true, verdict, id: r.skill.id, kind: 'skill' });
+  }
   const stored = notebookStore.get('notebook:' + agentId);
   const list = Array.isArray(stored) ? stored : [];
   writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)

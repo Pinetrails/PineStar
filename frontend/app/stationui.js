@@ -661,6 +661,10 @@ const StationUI = (() => {
       'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
       '<div id="sk-lib" class="sk-lib"><div class="sk-loading">Loading the skill library…</div></div>';
     loadSkillLibrary(agentId);
+    body.innerHTML += '<h4 class="ms-h">AGENT SKILLS</h4>' +
+      '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
+      '<div id="sk-agent" class="sk-lib"><div class="sk-loading">Loading agent skills...</div></div>';
+    loadAgentSkills(agentId);
   }
 
   // async: fetch the bundled recipe catalog (with THIS agent's placed objects, so the active/locked readout is
@@ -727,6 +731,85 @@ const StationUI = (() => {
     }));
   }
 
+  function loadAgentSkills(agentId) {
+    const host = $('#sk-agent'); if (!host) return;
+    if (!(typeof Harness === 'object' && Harness.agentSkills)) {
+      host.innerHTML = '<div class="sk-loading">Agent skillbase unavailable.</div>'; return;
+    }
+    Harness.agentSkills(agentId, { archived: true, body: true })
+      .then(skills => { const h = $('#sk-agent'); if (h) renderAgentSkills(h, skills || [], agentId); })
+      .catch(() => { const h = $('#sk-agent'); if (h) h.innerHTML = '<div class="sk-loading">Could not load agent skills.</div>'; });
+  }
+
+  function renderAgentSkills(host, skills, agentId) {
+    if (!skills.length) {
+      host.innerHTML = '<div class="sk-loading">No agent-created skills yet.</div>'; return;
+    }
+    const active = skills.filter(s => s.state !== 'archived').length;
+    const archived = skills.length - active;
+    const byId = {};
+    skills.forEach(s => { byId[s.id] = s; });
+    const sorted = skills.slice().sort((a, b) =>
+      (!!b.pinned - !!a.pinned) || ((a.state === 'archived') - (b.state === 'archived')) || ((b.updatedAt || 0) - (a.updatedAt || 0)));
+    let html = '<div class="sk-lib-sum">' + active + ' active' + (archived ? ' - ' + archived + ' archived' : '') + '</div>';
+    for (const s of sorted) {
+      const state = s.state === 'archived' ? 'off' : (s.state === 'stale' ? 'want' : 'on');
+      const when = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : 'unknown';
+      const files = (s.files || []).length ? '<div class="sk-attr">Support files: ' + esc((s.files || []).map(f => f.path).join(', ')) + '</div>' : '';
+      html +=
+        '<div class="sk-card ' + state + '" data-agent-skill="' + esc(s.id) + '">' +
+          '<div class="sk-card-head">' +
+            '<button class="sk-toggle" data-ag-act="pin" title="' + (s.pinned ? 'Unpin' : 'Pin') + ' this skill">' + (s.pinned ? '*' : '+') + '</button>' +
+            '<div class="sk-card-main">' +
+              '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span><span class="sk-badge free">' + esc((s.state || 'active').toUpperCase()) + '</span></div>' +
+              '<div class="sk-desc">' + esc(s.summary || '') + '</div>' +
+              '<div class="sk-stat ' + state + '">used ' + (s.useCount || 0) + 'x - viewed ' + (s.viewCount || 0) + 'x - patched ' + (s.patchCount || 0) + 'x - updated ' + esc(when) + '</div>' +
+            '</div>' +
+            '<button class="sk-expand" data-ag-act="expand" title="Read the skill">&gt;</button>' +
+          '</div>' +
+          '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' + files +
+            '<div class="consent-btns mc-acts">' +
+              '<button class="consent-btn" data-ag-act="edit">Edit</button>' +
+              '<button class="consent-btn" data-ag-act="archive">' + (s.state === 'archived' ? 'Restore' : 'Archive') + '</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+    host.innerHTML = html;
+    host.querySelectorAll('[data-ag-act]').forEach(btn => btn.addEventListener('click', async () => {
+      const card = btn.closest('[data-agent-skill]'); if (!card) return;
+      const skill = byId[card.dataset.agentSkill]; if (!skill) return;
+      const act = btn.dataset.agAct;
+      if (act === 'expand') {
+        const opened = card.classList.toggle('open'); btn.textContent = opened ? 'v' : '>'; sfx('click'); return;
+      }
+      if (act === 'edit') { editAgentSkill(card, skill, agentId); return; }
+      btn.classList.add('busy');
+      const action = act === 'pin' ? (skill.pinned ? 'unpin' : 'pin') : (skill.state === 'archived' ? 'restore' : 'archive');
+      const r = await Harness.agentSkillManage({ agentId, action, target: skill.id });
+      if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); } else btn.classList.remove('busy');
+    }));
+  }
+
+  function editAgentSkill(card, skill, agentId) {
+    const body = card.querySelector('.sk-body'); if (!body || body.dataset.editing === '1') return;
+    body.dataset.editing = '1';
+    if (!card.classList.contains('open')) card.classList.add('open');
+    const pre = body.querySelector('pre');
+    const actions = body.querySelector('.consent-btns');
+    if (!actions) return;
+    const ta = el('textarea', 'cf-ta mc-edit'); ta.value = skill.body || ''; ta.spellcheck = false;
+    if (pre) body.replaceChild(ta, pre);
+    if (actions) actions.innerHTML = '';
+    const save = el('button', 'consent-btn'); save.textContent = 'Save'; actions.appendChild(save);
+    const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; actions.appendChild(cancel);
+    save.onclick = async () => {
+      const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General' });
+      if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
+    };
+    cancel.onclick = () => loadAgentSkills(agentId);
+    ta.focus();
+  }
   /* ============== TASKS — the project-board view of WORKSTREAMS (card ≡ workstream) ==============
      One record, two views: every card here IS a workstream (the same thing you read/switch in the
      COMMS rail). The lane IS the workstream's lifecycle. HYBRID-HONEST lanes: a card auto-advances

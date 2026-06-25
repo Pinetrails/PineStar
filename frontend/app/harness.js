@@ -268,6 +268,25 @@ const Harness = (() => {
 
   // Cortex (M-mem.6) — the Memory Core: the FULL provenance-bearing §5.2 records (kind/sourceRunId/useCount/
   // trust/pinned/timestamps), which the slim /api/notebook view drops. [] on any failure.
+  async function agentSkills(agentId, opts) {
+    opts = opts || {};
+    try {
+      const q = '?agent=' + encodeURIComponent(agentId || 'agent')
+        + (opts.archived ? '&archived=1' : '')
+        + (opts.body ? '&body=1' : '');
+      const r = await fetch('/api/agent-skills' + q, { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.skills) ? j.skills : [];
+    } catch (e) { return []; }
+  }
+  async function agentSkillManage(o) {
+    try {
+      const r = await fetch('/api/agent-skills/manage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
+      return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
+    } catch (e) { return { ok: false }; }
+  }
+
   async function memoryRecords(agentId) {
     try {
       const r = await fetch('/api/memory/records?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
@@ -289,6 +308,7 @@ const Harness = (() => {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
     memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
+    agentSkills, agentSkillManage,
     apiToken: () => apiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,

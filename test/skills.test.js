@@ -6,6 +6,8 @@
 'use strict';
 const A = require('./_assert.js');
 const { makeSkillStore } = require('../sidecar/skillstore.js');
+const runtimeSkills = require('../sidecar/skills/runtime.js');
+const skillReview = require('../sidecar/skillreview.js');
 
 function memIo() { const lines = []; return { lines, readAll() { return lines.slice(); }, append(e) { lines.push(e); } }; }
 let clk = 1000; const clock = { now: () => clk };
@@ -92,6 +94,61 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(/step 2 deploy/.test(v.content), 'skill.view loads the full body');
   A.ok(/No skill named/.test(tools.viewTool.run({ name: 'ghost' }, ctx).content), 'skill.view on a missing name -> helpful message');
   A.ok(/Updated/.test(tools.writeTool.run({ name: 'Deploy', body: 'v2' }, ctx).content), 'same-name write reports edited');
+  A.eq(tools.manageTool.name, 'skill.manage', 'skill.manage is exposed');
+  A.ok(/create complete/.test(tools.manageTool.run({ action: 'create', name: 'Review PRs', summary: 'review code', body: 'inspect diff' }, ctx).content), 'skill.manage creates');
+  A.ok(/patch complete/.test(tools.manageTool.run({ action: 'patch', target: 'Review PRs', find: 'diff', replace: 'tests and diff' }, ctx).content), 'skill.manage patches');
+  A.ok(/tests and diff/.test(tools.viewTool.run({ name: 'Review PRs' }, ctx).content), 'patched body is viewable');
+}
+
+// ---- H. skill.manage lifecycle: archive/restore, support files, usage, curator ----
+{
+  const s = makeSkillStore({ io: memIo(), clock, redact });
+  clk = 2000;
+  const c = s.manage({ agentId: 'a', action: 'create', name: 'Ship App', summary: 'ship safely', body: 'run tests\nship' });
+  A.ok(c.ok, 'manage create succeeds');
+  A.ok(!('body' in s.list('a')[0]), 'manage-created skills still list as metadata only');
+  A.ok(s.manage({ agentId: 'a', action: 'write_file', target: 'Ship App', path: 'references/checklist.md', content: 'verify rollback' }).ok, 'support file writes under allowed dirs');
+  A.ok(!s.manage({ agentId: 'a', action: 'write_file', target: 'Ship App', path: '../oops.md', content: 'x' }).ok, 'unsafe support paths are rejected');
+  clk = 2001;
+  const v1 = s.view('a', 'Ship App');
+  A.eq(v1.viewCount, 1, 'skill.view increments viewCount');
+  A.eq(v1.useCount, 1, 'skill.view also counts as use');
+  s.markUsed('a', 'Ship App');
+  A.eq(s.view('a', 'Ship App', { bump: false }).useCount, 2, 'markUsed increments useCount without loading body');
+  A.ok(s.manage({ agentId: 'a', action: 'archive', target: 'Ship App' }).ok, 'archive succeeds');
+  A.eq(s.list('a').length, 0, 'archived skills are hidden from default list/prompt index');
+  A.eq(s.view('a', 'Ship App'), null, 'archived skills are hidden from default view');
+  A.ok(s.manage({ agentId: 'a', action: 'restore', target: 'Ship App' }).ok, 'restore succeeds');
+  A.eq(s.list('a').length, 1, 'restored skills return to the list');
+  clk = 10000;
+  A.ok(s.manage({ agentId: 'a', action: 'pin', target: 'Ship App' }).ok, 'pin succeeds');
+  const cur = s.curate('a', { now: 10000 + 100000, staleMs: 1, archiveMs: 2 });
+  A.eq(cur.archived, 0, 'pinned skills are not auto-archived');
+}
+
+// ---- I. runtime prompt index: metadata only, mandatory skill.view instruction, budgeted ----
+{
+  const s = makeSkillStore({ io: memIo(), clock, redact });
+  s.write({ agentId: 'a', name: 'Deploy', summary: 'ship safely', body: 'SECRET BODY SHOULD NOT LEAK' });
+  const out = runtimeSkills.composeIndex(s.list('a'), { budget: 200, canManage: true });
+  A.ok(/SAVED AGENT SKILLS/.test(out.text), 'runtime skill index has a mandatory header');
+  A.ok(/Deploy/.test(out.text) && /ship safely/.test(out.text), 'index includes skill metadata');
+  A.ok(out.text.indexOf('SECRET BODY') === -1, 'index does not inject skill body');
+  A.ok(/skill.view/.test(out.text) && /skill.manage/.test(out.text), 'index instructs view-before-use and manage-on-learning');
+  A.eq(out.ids.length, 1, 'compose returns ids for use-count bumping');
+}
+
+// ---- J. background skill review helpers: complex-run trigger + class-level prompt ----
+{
+  const simple = { reason: 'done', turns: 1, messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }] };
+  A.eq(skillReview.shouldReviewRun(simple), false, 'trivial completed run does not trigger skill review');
+  const complex = { reason: 'done', turns: 2, messages: [
+    { role: 'user', content: 'do a task' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'fs.read' } }, { function: { name: 'shell.exec' } }, { function: { name: 'verify.run' } }, { function: { name: 'fs.edit' } }] }
+  ] };
+  A.eq(skillReview.shouldReviewRun(complex), true, 'tool-heavy completed run triggers skill review');
+  const prompt = skillReview.buildPrompt({ messages: complex.messages, skills: [{ name: 'Existing', summary: 'umbrella', state: 'active' }] });
+  A.ok(/update an existing skill/.test(prompt) && /create a new skill only/.test(prompt), 'review prompt prefers patching existing umbrella skills');
 }
 
 A.report('skills.test');
