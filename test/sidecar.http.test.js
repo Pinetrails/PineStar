@@ -102,6 +102,19 @@ function boot(port, workspaces, attemptsLeft) {
     apiToken = String(sessBody.token || '');
     A.ok(apiToken.length >= 32, 'session returns a high-entropy API token');
 
+    // ---- slash command catalog + dispatch seam ----
+    const slashCat = await j('GET', '/api/slash/catalog');
+    A.eq(slashCat.status, 200, 'GET /api/slash/catalog -> 200');
+    A.ok(Array.isArray(slashCat.body.commands), 'slash catalog returns commands');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'retry'), 'slash catalog includes /retry');
+
+    const slashRun = await j('POST', '/api/slash/dispatch', { input: '/retry' });
+    A.eq(slashRun.status, 200, 'POST /api/slash/dispatch /retry -> 200');
+    A.eq(slashRun.body.directive, { type: 'client', action: 'retry', args: '' }, 'slash dispatch returns a client retry directive');
+
+    const slashUnknown = await j('POST', '/api/slash/dispatch', { input: '/unknown' });
+    A.eq(slashUnknown.status, 404, 'POST /api/slash/dispatch unknown -> 404');
+
     const noApiToken = await fetch(B + '/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ scope: 'day' }) });
     A.eq(noApiToken.status, 403, 'privileged POST without X-StarNet-Token -> 403');
 

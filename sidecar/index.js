@@ -65,6 +65,7 @@ const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-proce
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
 const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/disable choices for the recipe library
+const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
@@ -1086,6 +1087,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/slash/catalog') === 0) return serveSlashCatalog(req, res);
+  if (req.method === 'POST' && req.url === '/api/slash/dispatch') return handleSlashDispatch(req, res);
   if (req.method === 'POST' && req.url === '/api/skills/toggle') return handleSkillToggle(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/skills') === 0) return serveSkills(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/auth/start') return handleSpotifyStart(req, res);
@@ -1618,6 +1621,23 @@ async function handleDossier(req, res) {
   commanderDossier.set(body && body.block);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, chars: commanderDossier.get().length }));
+}
+
+// GET /api/slash/catalog -- server-owned command metadata for chat palettes and future gateway surfaces.
+function serveSlashCatalog(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(slash.catalog()));
+}
+
+// POST /api/slash/dispatch { input } -- resolve a slash command to a typed client directive. The browser
+// performs local UI actions for Plan 1; this endpoint establishes the shared dispatch seam without changing
+// shared bus/schema contracts.
+async function handleSlashDispatch(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
+  const input = body.input != null ? body.input : ('/' + String(body.command || ''));
+  const out = slash.dispatch(input);
+  json(out.ok ? 200 : (out.status || 400), out);
 }
 
 // GET /api/skills?placed=cabinet,workbench — the bundled recipe library + per-workstation flags for the SKILLS

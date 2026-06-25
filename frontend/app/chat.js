@@ -173,6 +173,7 @@ const Chat = (() => {
       });
     }
     input.value = '';
+    warmSlashCatalog();
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     load(opts.ws);
@@ -692,6 +693,13 @@ const Chat = (() => {
      recipe drops its directive into the input (first {blank} pre-selected) to fill + send; a built-in
      runs immediately. ↑/↓ move, Enter/Tab run, Esc closes. */
   let slashItems = [], slashSel = 0;
+  let slashServerCommands = null, slashCatalogLoading = false, slashCatalogLoaded = false;
+  const FALLBACK_SLASH_COMMANDS = Object.freeze([
+    Object.freeze({ name: 'retry', desc: 're-run the last turn', action: 'retry' }),
+    Object.freeze({ name: 'stop', desc: 'interrupt the running turn', action: 'stop' }),
+    Object.freeze({ name: 'copy', desc: "copy the agent's last reply", action: 'copy' }),
+    Object.freeze({ name: 'help', desc: 'list available commands', action: 'help' })
+  ]);
   function isSlashOpen() { const p = el('chat-slash'); return !!(p && !p.hidden); }
   function copyLastReply() {
     if (!activeWs) return;
@@ -704,7 +712,29 @@ const Chat = (() => {
     }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('no reply to copy yet', '');
   }
-  function showHelp() { localLine('Commands — /retry · /stop · /copy · /help, and /<recipe> to drop a mission into the box. Type “/” to browse.'); }
+  function localSlashActions() {
+    return { retry: retryLast, stop: stopActive, copy: copyLastReply, help: showHelp };
+  }
+  function showHelp() {
+    const builtins = buildCommands().filter(c => c.source !== 'recipe').map(c => '/' + c.name);
+    const recipes = buildCommands().filter(c => c.source === 'recipe').length;
+    localLine('Commands - ' + builtins.slice(0, 8).join(', ') + (recipes ? ', plus ' + recipes + ' recipe commands.' : '.') + ' Type "/" to browse.');
+  }
+  function warmSlashCatalog() {
+    if (slashCatalogLoaded || slashCatalogLoading || typeof fetch === 'undefined') return;
+    slashCatalogLoading = true;
+    fetch('/api/slash/catalog', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        slashServerCommands = (j && Array.isArray(j.commands)) ? j.commands : null;
+        slashCatalogLoaded = true;
+      })
+      .catch(() => { slashServerCommands = null; slashCatalogLoaded = true; })
+      .then(() => {
+        slashCatalogLoading = false;
+        if (input && input.value && input.value[0] === '/') openSlash(input.value.slice(1));
+      });
+  }
   // drop a recipe's directive into the input: apply each OPTIONAL param's default, but leave REQUIRED blanks
   // visible as {tokens} so the Commander can see what to fill — and pre-select the first one to type over.
   function insertRecipe(r) {
@@ -717,15 +747,34 @@ const Chat = (() => {
     const m = /\{[^}]+\}/.exec(directive);   // select the first remaining blank to type over (else cursor at end)
     try { if (m) input.setSelectionRange(m.index, m.index + m[0].length); else input.setSelectionRange(directive.length, directive.length); } catch (_) {}
   }
+  function normalizeSlashCommand(raw, source) {
+    const c = raw || {};
+    const name = String(c.name || '').replace(/^\//, '').trim();
+    if (!name) return null;
+    const action = String(c.action || name).trim();
+    return {
+      name: name,
+      aliases: Array.isArray(c.aliases) ? c.aliases.slice() : [],
+      desc: c.desc || c.description || '',
+      category: c.category || 'General',
+      action: action,
+      source: source || c.source || 'server',
+      serverBacked: source === 'server',
+      run: localSlashActions()[action] || null
+    };
+  }
   function buildCommands() {
-    const cmds = [
-      { name: 'retry', desc: 're-run the last turn', run: retryLast },
-      { name: 'stop', desc: 'interrupt the running turn', run: stopActive },
-      { name: 'copy', desc: 'copy the agent’s last reply', run: copyLastReply },
-      { name: 'help', desc: 'list these commands', run: showHelp }
-    ];
+    const cmds = [], seen = {};
+    const add = c => {
+      if (!c || seen[c.name]) return;
+      seen[c.name] = true; cmds.push(c);
+    };
+    if (slashServerCommands && slashServerCommands.length) {
+      for (const c of slashServerCommands) add(normalizeSlashCommand(c, 'server'));
+    }
+    for (const c of FALLBACK_SLASH_COMMANDS) add(normalizeSlashCommand(c, 'builtin'));
     if (typeof Recipes !== 'undefined' && Recipes.list) {
-      for (const r of Recipes.list()) cmds.push({ name: r.id, desc: (r.emoji ? r.emoji + ' ' : '') + (r.name || r.id) + (r.tagline ? ' — ' + r.tagline : ''), run: () => insertRecipe(r) });
+      for (const r of Recipes.list()) add({ name: r.id, aliases: [], desc: (r.emoji ? r.emoji + ' ' : '') + (r.name || r.id) + (r.tagline ? ' - ' + r.tagline : ''), source: 'recipe', run: () => insertRecipe(r) });
     }
     return cmds;
   }
@@ -736,13 +785,15 @@ const Chat = (() => {
     const pref = [], sub = [];
     for (const c of all) {
       const n = c.name.toLowerCase();
-      if (n.indexOf(q) === 0) pref.push(c);
-      else if (n.indexOf(q) >= 0 || (c.desc || '').toLowerCase().indexOf(q) >= 0) sub.push(c);
+      const aliases = (c.aliases || []).map(a => String(a || '').toLowerCase());
+      if (n.indexOf(q) === 0 || aliases.some(a => a.indexOf(q) === 0)) pref.push(c);
+      else if (n.indexOf(q) >= 0 || aliases.some(a => a.indexOf(q) >= 0) || (c.desc || '').toLowerCase().indexOf(q) >= 0) sub.push(c);
     }
     return pref.concat(sub).slice(0, 8);
   }
   function openSlash(query) {
     const pop = el('chat-slash'); if (!pop) return;
+    warmSlashCatalog();
     slashItems = matchCommands(query);
     if (!slashItems.length) { closeSlash(); return; }
     if (slashSel >= slashItems.length) slashSel = 0;
@@ -765,10 +816,29 @@ const Chat = (() => {
       pop.appendChild(it);
     });
   }
-  function runSlash(item) {
+  function applySlashDirective(directive) {
+    if (!directive || directive.type !== 'client') return false;
+    const fn = localSlashActions()[directive.action];
+    if (!fn) return false;
+    fn(directive.args || '');
+    return true;
+  }
+  async function dispatchSlash(item) {
+    try {
+      const r = await fetch('/api/slash/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: '/' + item.name })
+      });
+      const j = await r.json().catch(() => null);
+      return !!(r.ok && j && j.ok && applySlashDirective(j.directive));
+    } catch (_) { return false; }
+  }
+  async function runSlash(item) {
     if (!item) { closeSlash(); return; }
     input.value = ''; closeSlash();   // consume the "/query"; a recipe's run() then refills the input
     if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+    if (item.serverBacked && await dispatchSlash(item)) return;
     try { item.run(); } catch (_) {}
   }
 
