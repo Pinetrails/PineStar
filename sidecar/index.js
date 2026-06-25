@@ -2015,9 +2015,15 @@ async function runOnce(o) {
     const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
     skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes });
   } catch (_) { /* a skill-injection hiccup must never break a run */ }
+  let ownedSkillBlock = '';
+  try {
+    let skillQ = '';
+    for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { skillQ = messages[i].content; break; } }
+    ownedSkillBlock = skillStore.composeForPrompt(agentId, skillQ, { limit: 3, limitChars: 1200 });
+  } catch (_) { /* owned-skill recall is best-effort */ }
   let memoryPromptBlock = '';
   try { memoryPromptBlock = memoryManager.buildSystemPrompt({ agentId, runId, streamId, surface }); } catch (_) {}
-  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock + (memoryPromptBlock ? '\n\n' + memoryPromptBlock : '');   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface }) + skillBlock + (ownedSkillBlock ? '\n\n' + ownedSkillBlock : '') + (memoryPromptBlock ? '\n\n' + memoryPromptBlock : '');   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real

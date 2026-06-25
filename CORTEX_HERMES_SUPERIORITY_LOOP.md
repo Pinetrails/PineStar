@@ -56,7 +56,7 @@ Condition is met when notebook memory is safer than Hermes' `MEMORY.md` / `USER.
 
 ### 4. Package-Style Skill Memory
 
-Status: TODO
+Status: DONE
 
 Condition is met when agent-authored skills are more than JSON note bodies:
 
@@ -90,3 +90,6 @@ Condition is met when the learning loop is broader than Hermes while preserving 
 - 2026-06-25: Item 3 DONE. Replaced ad hoc notebook JSON writes with a hardened store: durable atomic writes,
   CAS drift detection, hard budgets, atomic mutate/batch operations, near-duplicate suppression for notebook
   writes and proposal keeps, and regression coverage. `npm.cmd run test:fast` green.
+- 2026-06-25: Item 4 DONE. Upgraded owned skills from body-only records to package-style skills with `SKILL.md`,
+  support files under `references/`, `templates/`, `scripts/`, and `assets/`, patch/write/remove/archive modes,
+  metadata-only search/list, on-demand file viewing, and relevant summary injection. `npm.cmd run test:fast` green.

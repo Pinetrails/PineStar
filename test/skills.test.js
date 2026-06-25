@@ -27,6 +27,28 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   const v = s.view('a', 'Deploy the site');
   A.ok(v && /npm run deploy/.test(v.body), 'view returns the full body');
   A.eq(s.view('a', list[0].id).name, 'Deploy the site', 'view also resolves by id');
+  A.ok(v.files && v.files['SKILL.md'].indexOf('npm run deploy') >= 0, 'body is stored as SKILL.md in the skill package');
+  A.ok(list[0].files.indexOf('SKILL.md') >= 0, 'list exposes file names for progressive disclosure');
+}
+
+// ---- A2. package support files, patch, search, prompt summaries, and archive ----
+{
+  const s = makeSkillStore({ io: memIo(), clock, redact });
+  s.write({ agentId: 'a', name: 'Release', summary: 'ship app releases', body: '1. build\n2. test' });
+  A.ok(s.patch({ agentId: 'a', name: 'Release', patch: '3. publish the release notes' }).ok, 'patch appends to SKILL.md');
+  A.ok(/publish the release notes/.test(s.view('a', 'Release').body), 'patch is visible in SKILL.md');
+  A.ok(s.writeFile({ agentId: 'a', name: 'Release', path: 'references/api.md', content: 'release API token docs sk-ABCDEFGH' }).ok, 'support file write works');
+  const file = s.view('a', 'Release', 'references/api.md');
+  A.ok(file.file && /release API/.test(file.file.content), 'support file can be viewed on demand');
+  A.ok(file.file.content.indexOf('sk-ABCDEFGH') === -1, 'support file content is redacted');
+  A.ok(s.search('a', 'release notes').length >= 1, 'saved skill summaries/bodies are searchable');
+  A.ok(s.composeForPrompt('a', 'release notes').indexOf('Release') >= 0, 'relevant skill summaries are injectable');
+  A.ok(s.removeFile({ agentId: 'a', name: 'Release', path: 'references/api.md' }).ok, 'support file remove works');
+  A.eq(s.view('a', 'Release', 'references/api.md'), null, 'removed support file no longer views');
+  A.ok(s.archive({ agentId: 'a', name: 'Release' }).ok, 'archive works');
+  A.eq(s.list('a').length, 0, 'archived skill hidden by default');
+  A.eq(s.list('a', { includeArchived: true }).length, 1, 'archived skill visible when requested');
+  A.ok(!s.writeFile({ agentId: 'a', name: 'Release', path: '../escape.md', content: 'x' }).ok, 'bad support paths rejected');
 }
 
 // ---- B. same-name write edits IN PLACE (no duplicate) ----
@@ -92,6 +114,12 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(/step 2 deploy/.test(v.content), 'skill.view loads the full body');
   A.ok(/No skill named/.test(tools.viewTool.run({ name: 'ghost' }, ctx).content), 'skill.view on a missing name -> helpful message');
   A.ok(/Updated/.test(tools.writeTool.run({ name: 'Deploy', body: 'v2' }, ctx).content), 'same-name write reports edited');
+  A.ok(/Updated/.test(tools.writeTool.run({ name: 'Deploy', mode: 'patch', body: 'v3 patch' }, ctx).content), 'skill.write patch mode works');
+  A.ok(/file/.test(tools.writeTool.run({ name: 'Deploy', mode: 'write_file', path: 'templates/checklist.md', content: '- verify' }, ctx).content), 'skill.write support-file mode works');
+  A.ok(/verify/.test(tools.viewTool.run({ name: 'Deploy', path: 'templates/checklist.md' }, ctx).content), 'skill.view loads support file');
+  A.ok(/Removed/.test(tools.writeTool.run({ name: 'Deploy', mode: 'remove_file', path: 'templates/checklist.md' }, ctx).content), 'skill.write support-file remove works');
+  A.ok(/Archived/.test(tools.writeTool.run({ name: 'Deploy', mode: 'archive' }, ctx).content), 'skill.write archive mode works');
+  A.ok(/Deploy/.test(tools.listTool.run({ includeArchived: true }, ctx).content), 'skill.list can include archived skills');
 }
 
 A.report('skills.test');
