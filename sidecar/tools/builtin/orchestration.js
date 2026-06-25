@@ -134,7 +134,48 @@
       }
     };
 
-    return { dispatchTool, register(reg) { reg.register(dispatchTool); return reg; } };
+    // team.summon: the LEAD creates a NEW worker on the crew, LIVE, for the Commander — the same action the
+    // Commander takes in the Recruitment Bay. CONTRACT: emits crew.summon.request down the run stream (added to
+    // shared/events.js); the browser runs the real summonAgent() and POSTs /api/summon/ack with the new agentId,
+    // which resolves ctx.summon (mirroring the consent round-trip). The new id is returned so the lead can hand it
+    // work with team.dispatch in the SAME run. consent-gated (APPROVAL beat); ctx.summon is only present on a
+    // live interactive lead run, so a headless/worker call degrades to a clear "not available" message.
+    const SPEC_IDS = 'researcher, engineer, operator, scribe, analyst, reviewer, scout, archivist, designer, chief, liaison';
+    const summonTool = {
+      // own wall-clock above the summon's 120s browser-ack backstop, so a stalled ack returns a clean "not
+      // completed" instead of tripping the 30s fast-tool default mid-wait. The happy path acks in well under a second.
+      timeoutMs: 180000,
+      name: 'team.summon', capability: 'orchestrator', scope: 'write', requiresConsent: true,
+      description: 'Summon a NEW specialist agent onto the crew for the Commander, live — the same thing they would do in the Recruitment Bay. Use this when a specialist you need does not exist yet; if it is already listed under YOUR TEAM, delegate to it with team.dispatch instead. Pick a class with specId (one of: ' + SPEC_IDS + ') or describe a custom one with name + purpose. Returns the new agentId, which you can immediately delegate to. In APPROVAL mode the Commander confirms the summon first.',
+      schema: {
+        type: 'object', required: ['name'], properties: {
+          name: { type: 'string' },        // the new agent's display name (e.g. "RESEARCHER")
+          specId: { type: 'string' },       // optional built-in class to base it on (see SPEC_IDS)
+          purpose: { type: 'string' },      // optional standing orders for a custom class
+          persona: { type: 'string' },      // optional voice/persona id
+          skin: { type: 'string' }          // optional sprite skin id
+        }
+      },
+      run: async (args, ctx) => {
+        if (!ctx || typeof ctx.summon !== 'function') return { content: 'Summoning is only available on the live station (an interactive run). Ask the Commander to summon this agent from the Recruitment Bay.', summary: 'unavailable' };
+        const a = args || {};
+        const spec = {
+          name: String(a.name || '').trim().slice(0, 40),
+          specId: String(a.specId || '').trim().slice(0, 40),
+          purpose: String(a.purpose || '').trim().slice(0, 400),
+          persona: String(a.persona || '').trim().slice(0, 40),
+          skin: String(a.skin || '').trim().slice(0, 40)
+        };
+        if (!spec.name && !spec.specId) return { content: 'Provide a name or a specId for the new agent.', summary: 'noop' };
+        let newId;
+        try { newId = await ctx.summon(spec); }
+        catch (e) { return { content: 'summon failed: ' + ((e && e.message) || e), summary: 'error' }; }
+        if (!newId) return { content: 'The summon was not completed — the Commander declined it, or the station did not respond. No agent was created.', summary: 'declined' };
+        return { content: JSON.stringify({ agentId: newId, name: spec.name || spec.specId }), summary: 'summoned ' + newId + ' — now delegate work to it with team.dispatch' };
+      }
+    };
+
+    return { dispatchTool, summonTool, register(reg) { reg.register(dispatchTool); reg.register(summonTool); return reg; } };
   }
 
   return { makeOrchestrationTools };

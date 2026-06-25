@@ -746,7 +746,16 @@ const Chat = (() => {
             if (typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold');
           }
         },
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } }
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } },
+        // the lead's team.summon tool asked the station to create a worker: run the REAL summon (App.summonForRequest
+        // → the Recruitment Bay's own summonAgent), then ack with the new id so the lead can delegate to it. The id
+        // resolves only after the roster POST lands (App awaits it), so the lead's next team.dispatch finds the worker.
+        onSummon: ev => {
+          const rid = Channels.runIdOf(ws.id);
+          Promise.resolve((typeof App !== 'undefined' && App.summonForRequest) ? App.summonForRequest(ev) : null)
+            .then(newId => Harness.summonAck(rid, ev.requestId, newId))
+            .catch(() => Harness.summonAck(rid, ev.requestId, null));
+        }
       });
       if (error) {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }

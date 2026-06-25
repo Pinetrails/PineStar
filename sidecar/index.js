@@ -584,6 +584,7 @@ function blanketSetFor(agentId) {
   return s;
 }
 const pendingByRun = new Map();            // runId -> Map(promptId -> resolve(decision)); the live consent prompts
+const pendingSummonByRun = new Map();      // runId -> Map(requestId -> resolve(newAgentId|null)); live team.summon requests awaiting the browser
 // unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
 // resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
 function hardlineFloor(call) {
@@ -1064,6 +1065,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
+  if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
@@ -1684,6 +1686,8 @@ async function handleRun(req, res) {
   runs.set(runId, ac);
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
+  const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
+  pendingSummonByRun.set(runId, pendingSummon);
   req.on('close', () => { ac.abort(); runs.delete(runId); });   // tab closed / DISCONNECT → stop spend
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
@@ -1715,6 +1719,36 @@ async function handleRun(req, res) {
     });
   }
 
+  // THE LIVE SUMMON CHANNEL (mirrors promptConsent): the orchestrator's team.summon tool calls ctx.summon(spec);
+  // this emits crew.summon.request down the SAME NDJSON stream, the browser runs the REAL summonAgent() and POSTs
+  // /api/summon/ack with the new agentId (handleSummonAck), which resolves this Promise. Fail-closed identically: a
+  // disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall settles to null (no agent created) so a forgotten request
+  // can never hold a billable run open. Settles exactly once. The new id flows back to the lead for team.dispatch.
+  function summonRequest(spec) {
+    return new Promise((resolve) => {
+      const requestId = crypto.randomUUID();
+      let settled = false, timer = null;
+      function onAbort() { finish(null); }
+      function finish(newAgentId) {
+        if (settled) return; settled = true;
+        pendingSummon.delete(requestId);
+        if (timer) clearTimeout(timer);
+        try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
+        resolve(newAgentId || null);
+      }
+      pendingSummon.set(requestId, finish);
+      if (ac.signal.aborted) return finish(null);
+      ac.signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => finish(null), CONSENT_TIMEOUT_MS);
+      const s = spec || {};
+      emit('crew.summon.request', {
+        requestId, agentId,
+        name: String(s.name || ''), specId: String(s.specId || ''),
+        persona: String(s.persona || ''), skin: String(s.skin || ''), purpose: String(s.purpose || '')
+      });
+    });
+  }
+
   // all setup + the run live inside ONE try, so any failure becomes a clean agent.run.error + closed stream
   try {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
@@ -1722,7 +1756,7 @@ async function handleRun(req, res) {
     await runOnce({
       key, model, system, messages, agentId, isTask, provider, fallbackModels,
       emit, signal: ac.signal, runId, trigger: 'directive',
-      surface: 'interactive', prompt: promptConsent,
+      surface: 'interactive', prompt: promptConsent, summon: summonRequest,   // team.summon → live summonAgent() round-trip
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
@@ -1736,6 +1770,8 @@ async function handleRun(req, res) {
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
+    const ps = pendingSummonByRun.get(runId);   // settle any summon request still open → null (no agent created)
+    if (ps) { for (const f of ps.values()) { try { f(null); } catch (_) {} } pendingSummonByRun.delete(runId); }
     try { res.end(); } catch (_) {}
   }
 }
@@ -1752,6 +1788,7 @@ async function runOnce(o) {
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
+  const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
   const trigger = o.trigger || 'directive';
   // P1 (WIRING_AUDIT slice 2): a server-initiated run (telegram/routed) has NO browser-local copy of its
   // lifecycle, so the station floor never lights for it. When a caller opts in via o.broadcast, ALSO mirror the
@@ -1857,7 +1894,7 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
-  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
+  const capCtx = makeCapCtx(resolved, { emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -2150,6 +2187,19 @@ async function handleConsent(req, res) {
   const pend = pendingByRun.get(body.runId);
   const finish = pend && pend.get(body.promptId);
   if (finish) finish(decision);
+  res.writeHead(200); res.end('ok');
+}
+
+// POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran
+// the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
+// team.summon tool. A stale runId/requestId is a harmless no-op (the run ended or the request auto-settled to null).
+async function handleSummonAck(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const pend = pendingSummonByRun.get(body.runId);
+  const finish = pend && pend.get(body.requestId);
+  const newId = (body.agentId != null && /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId))) ? String(body.agentId) : null;
+  if (finish) finish(newId);
   res.writeHead(200); res.end('ok');
 }
 

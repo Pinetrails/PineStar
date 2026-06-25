@@ -137,6 +137,73 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   A.eq(over.timeoutMs, 123456, 'deps.dispatchTimeoutMs overrides the dispatch wall-clock');
 }
 
+// ============================ team.summon (create a NEW worker live) ============================
+
+// ---- the tool's shape: lead-gated, consent-gated, and outlasts the 120s browser-ack backstop ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  A.eq(summonTool.name, 'team.summon', 'tool is team.summon');
+  A.eq(summonTool.capability, 'orchestrator', 'gated by the orchestrator object (lead-only, like team.dispatch)');
+  A.eq(summonTool.scope, 'write', 'summon is a write-scope mutation');
+  A.eq(summonTool.requiresConsent, true, 'summon IS consent-gated (the APPROVAL beat) — unlike team.dispatch');
+  A.ok(typeof summonTool.timeoutMs === 'number' && summonTool.timeoutMs > 120000, 'tool wall-clock outlasts the 120s summon ack backstop (clean null, not a tool timeout)');
+}
+
+// ---- happy path: ctx.summon resolves a new id; the spec is forwarded; the result carries the id for dispatch ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  let gotSpec = null;
+  const ctx = { agentId: 'agent', summon: async (s) => { gotSpec = s; return 'researcher-2'; } };
+  const out = await summonTool.run({ name: 'Researcher', specId: 'researcher', purpose: 'find things' }, ctx);
+  A.ok(gotSpec && gotSpec.name === 'Researcher' && gotSpec.specId === 'researcher', 'the spec (name + specId) is forwarded to ctx.summon');
+  A.eq(gotSpec.purpose, 'find things', 'a custom purpose is forwarded');
+  const parsed = JSON.parse(out.content);
+  A.eq(parsed.agentId, 'researcher-2', 'the new agentId comes back for the lead to delegate to');
+  A.ok(/team\.dispatch/.test(out.summary), 'the summary nudges the lead to delegate to the new worker');
+}
+
+// ---- declined / no browser: ctx.summon resolves null -> a clean "not completed", no crash ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const out = await summonTool.run({ name: 'Ghost' }, { agentId: 'agent', summon: async () => null });
+  A.eq(out.summary, 'declined', 'a null ack (decline/timeout/disconnect) reports declined');
+  A.ok(/No agent was created/.test(out.content), 'declined summon says plainly that nothing was created');
+}
+
+// ---- headless / worker: no ctx.summon closure -> degrades to a clear "not available" (fails closed) ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const out = await summonTool.run({ name: 'X' }, { agentId: 'worker' });   // no summon on ctx (autonomous run)
+  A.eq(out.summary, 'unavailable', 'summon without a live station is unavailable, not a crash');
+}
+
+// ---- nothing to summon: neither name nor specId -> noop, never calls ctx.summon ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  let called = false;
+  const out = await summonTool.run({ name: '   ' }, { agentId: 'agent', summon: async () => { called = true; return 'x'; } });
+  A.eq(out.summary, 'noop', 'an empty spec is a noop');
+  A.ok(!called, 'a noop never reaches ctx.summon');
+}
+
+// ---- capability gate: team.summon denied without the orchestrator grant, runs with it ----
+{
+  const reg = makeRegistry();
+  makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() }).register(reg);
+  let summoned = 0;
+  const summon = async () => { summoned++; return 'researcher-2'; };
+
+  const denyCtx = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: [], approvalRules: {} }, { emit: () => {}, summon });
+  const r1 = await reg.dispatch({ name: 'team.summon', args: { name: 'R', specId: 'researcher' } }, denyCtx);
+  A.ok(r1.isError && /capability denied/.test(r1.content), 'team.summon denied without the orchestrator object');
+  A.eq(summoned, 0, 'a denied summon never reaches ctx.summon');
+
+  const allowCtx = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: ['team.summon'], approvalRules: {} }, { emit: () => {}, summon });
+  const r2 = await reg.dispatch({ name: 'team.summon', args: { name: 'R', specId: 'researcher' } }, allowCtx);
+  A.ok(!r2.isError, 'team.summon runs when the orchestrator object is present');
+  A.eq(summoned, 1, 'a granted summon reaches ctx.summon');
+}
+
 A.report('orchestration.test');
 
 })();

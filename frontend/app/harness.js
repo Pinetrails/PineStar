@@ -138,7 +138,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal, streamId, workbench, placed }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, signal, streamId, workbench, placed }) {
     const key = getKey(), model = getModel(), provider = getProv();
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -193,6 +193,9 @@ const Harness = (() => {
           // the run is PAUSED on the sidecar awaiting this; the UI shows approve/always/full/deny and answers
           // via Harness.consent(). No more events arrive on this stream until the answer is POSTed.
           case 'permission.prompt': onPermission && onPermission(payload); break;
+          // a backend COMMAND: the orchestrator's team.summon tool asks us to create a worker. The handler runs the
+          // real summonAgent() and POSTs /api/summon/ack with the new id (Harness.summonAck), resolving the tool.
+          case 'crew.summon.request': onSummon && onSummon(payload); break;
           case 'agent.cost':
             totals.tokens += (payload.tokensIn || 0) + (payload.tokensOut || 0);
             totals.cost += payload.usd || 0;
@@ -246,6 +249,14 @@ const Harness = (() => {
     try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
   }
 
+  // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
+  // the run's awaiting team.summon tool. Separate request from the open /api/run stream — no deadlock. The summon
+  // tool has its own browser-ack timeout, so a dropped ack settles cleanly to "not completed" rather than hanging.
+  async function summonAck(runId, requestId, agentId) {
+    if (!runId || !requestId) return;
+    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, requestId, agentId: agentId || null }) }); } catch (_) {}
+  }
+
   // Cortex (M-mem.5b): after a run, reflection may PROPOSE durable memories (announced via the memory.proposed
   // SSE event). Fetch the pending candidates WITH content for the Keep/Edit/Discard turn-in beat. [] on failure.
   async function memoryProposals(runId, agentId) {
@@ -287,7 +298,7 @@ const Harness = (() => {
 
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
-    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
+    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
     apiToken: () => apiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

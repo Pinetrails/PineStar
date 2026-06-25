@@ -64,7 +64,11 @@
     // watched browser-commanded run, so a delegated worker — autonomous — never receives the tool and cannot
     // re-delegate, capping depth at one), plus the per-worker/day/global budget caps and the concurrency ceiling.
     orchestrator: [
-      { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: false, network: true }
+      { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: false, network: true },
+      // team.summon CREATES a new crew member — a stronger, outward-visible mutation than delegating to existing
+      // crew, so unlike team.dispatch it IS consent-gated (the APPROVAL-mode confirm beat). Lead-only by the same
+      // orchestrator conferral; a delegated worker never gets the orchestrator object and so can never summon.
+      { capId: 'orchestrator', tool: 'team.summon', scope: 'write', requiresConsent: true, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so
