@@ -29,6 +29,7 @@ const KEYCHAIN_ACCOUNT: &str = "openrouter";
 struct AppState {
     port: u16,
     ipc_token: String,
+    api_token: String,
     root: PathBuf,
     startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
@@ -237,6 +238,7 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     cmd.arg(entry)
         .env("SKYNET_PORT", state.port.to_string())
         .env("SKYNET_IPC_TOKEN", &state.ipc_token)
+        .env("SKYNET_API_TOKEN", &state.api_token)
         .current_dir(&state.root);
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
@@ -512,6 +514,9 @@ fn main() {
             let root = project_root(app.handle());
             let port = free_port();
             let ipc_token = uuid::Uuid::new_v4().to_string();
+            // per-launch API token: shared with the sidecar via env (it reads SKYNET_API_TOKEN) AND injected
+            // into the bundled webview below, so the desktop UI never has to fetch the token over an open route.
+            let api_token = uuid::Uuid::new_v4().to_string();
             let startup_log = startup_log_path(app.handle());
             log_startup(
                 &startup_log,
@@ -526,6 +531,7 @@ fn main() {
             let state = AppState {
                 port,
                 ipc_token,
+                api_token: api_token.clone(),
                 root,
                 startup_log,
                 sidecar: Mutex::new(None),
@@ -538,7 +544,7 @@ fn main() {
             // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
             // rewrites the frontend's root-relative /api/* fetches to the sidecar's port.
             let init = format!(
-                "window.__STARNET_API__='http://127.0.0.1:{port}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
+                "window.__STARNET_API__='http://127.0.0.1:{port}';window.__STARNET_API_TOKEN__='{api_token}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
             );
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
