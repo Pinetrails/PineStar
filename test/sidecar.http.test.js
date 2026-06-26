@@ -309,6 +309,11 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(head.headers.get('content-length'), String(N), 'HEAD reports the size with no body');
     A.eq((await head.arrayBuffer()).byteLength, 0, 'HEAD carries no body');
 
+    const nativeUrl = fileUrl + '&token=' + encodeURIComponent(apiToken);
+    const nativeMedia = await fetch(nativeUrl, { headers: { Range: 'bytes=0-9' } });
+    A.eq(nativeMedia.status, 206, 'GET /api/file with ?token supports native media loads');
+    A.eq(nativeMedia.headers.get('content-range'), 'bytes 0-9/' + N, 'query-token media load still supports Range');
+
     const escape = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('../../etc/passwd'), { headers: tok });
     A.ok(escape.status === 403 || escape.status === 404, 'a jail-escape path is refused (403/404), never served');
 
@@ -319,7 +324,9 @@ function boot(port, workspaces, attemptsLeft) {
     fs.writeFileSync(path.join(ws, 'agent', 'active', 'app.js'), 'fetch("/api/budget/status")');
     fs.writeFileSync(path.join(ws, 'agent', 'active', 'vector.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
     for (const f of ['page.html', 'app.js', 'vector.svg']) {
-      const active = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('active/' + f), { headers: tok });
+      const activeNoTok = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('active/' + f));
+      A.eq(activeNoTok.status, 403, f + ' active deliverable without token is blocked');
+      const active = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('active/' + f) + '&token=' + encodeURIComponent(apiToken));
       A.eq(active.status, 200, f + ' served for download');
       A.eq(active.headers.get('content-type'), 'application/octet-stream', f + ' loses executable content-type');
       A.ok(/^attachment\b/.test(active.headers.get('content-disposition') || ''), f + ' is an attachment, not inline');

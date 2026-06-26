@@ -5,9 +5,10 @@
    THREAT MODEL (read before changing):
    - PRIMARY (defended): a malicious WEBSITE the user visits must not drive the agent or read its data via
      fetch()/EventSource to the loopback port. Three layers stop it: (a) the Host pin defeats DNS-rebinding;
-     (b) the Origin allow-list rejects foreign origins; (c) a per-launch secret token is REQUIRED as a custom
-     header on every API call — a custom header cannot be set cross-origin without a CORS preflight the server
-     refuses, and cross-origin reads of our page/responses are opaque, so a site can neither forge nor steal it.
+     (b) the Origin allow-list rejects foreign origins; (c) a per-launch secret token is REQUIRED on every
+     API call — normally as a custom header, with documented query-token escape hatches for browser APIs that
+     cannot set headers. A custom header cannot be set cross-origin without a CORS preflight the server refuses,
+     and cross-origin reads of our page/responses are opaque, so a site can neither forge nor steal it.
    - RESIDUAL (accepted, documented): a process running as the SAME OS user can read the token (it is injected
      into the served page), the keychain, and the data files. That is inherent to a single-user loopback app —
      an OS-trust problem, not an app-layer one. We raise the bar (no free token vending; token on every route)
@@ -46,7 +47,9 @@ function pathOf(url) { const u = String(url || ''); const i = u.indexOf('?'); re
      /api/health           : liveness probe
      /api/spotify/callback : an OAuth redirect — a top-level browser navigation, no place to put a header
      /api/channels/events  : SSE — EventSource cannot set headers, so it carries a ?token= query instead,
-                             validated by queryTokenOk in the handler */
+                             validated by queryTokenOk in the handler
+     /api/file query token : not exempt; index.js accepts ?token only for GET/HEAD /api/file because native
+                             media/link loads cannot attach a custom header */
 const TOKEN_EXEMPT = new Set(['/api/key', '/api/health', '/api/spotify/callback', '/api/channels/events']);
 function requiresApiToken(req) {
   if (!req || req.method === 'OPTIONS') return false;

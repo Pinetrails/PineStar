@@ -116,9 +116,8 @@ const API_TOKEN = String(ENV('API_TOKEN') || crypto.randomBytes(32).toString('he
 const DEV_MODE = /^(1|true|yes|on)$/i.test(String(ENV('DEV') || '').trim());
 // API auth/guard DECISIONS live in the unit-tested ./apiauth.js (full threat model documented there);
 // index.js keeps only the thin res-writing wrappers below. Hardened posture: EVERY /api/* route now requires
-// the per-launch token (GET data routes included) except a small header-less set — a CSRF/exfil fence that
-// does NOT rely on Origin being present, since the token is a custom header a foreign site can neither set
-// (CORS preflight) nor read (opaque cross-origin responses).
+// the per-launch token (GET data routes included) except a small header-less set. Native media/file loads
+// can pass the same token as ?token= on /api/file only; all other fetch-driven calls use the custom header.
 const apiauth = require('./apiauth.js');
 const { isAllowedApiOrigin, isAllowedHost, requiresApiToken } = apiauth;
 function applyApiCors(req, res) {
@@ -139,6 +138,9 @@ function rejectApi(req, res) {
 function rejectBadApiToken(req, res) {
   if (!requiresApiToken(req)) return false;
   if (apiauth.apiTokenOk(req, API_TOKEN)) return false;
+  // Native browser surfaces (<img>, <video>, <audio>, and clicked links) cannot attach custom headers.
+  // Keep /api/file token-gated by accepting the same per-launch token in the query string for GET/HEAD only.
+  if ((req.method === 'GET' || req.method === 'HEAD') && apiauth.pathOf(req.url) === '/api/file' && apiauth.queryTokenOk(req, API_TOKEN)) return false;
   res.writeHead(403); res.end('forbidden token'); return true;
 }
 // Desktop build: live BYOK keys are seeded from the OS keychain via env at spawn, and updated

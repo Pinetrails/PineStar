@@ -550,7 +550,10 @@ const Chat = (() => {
     return MEDIA_KIND_BY_EXT[ext] || 'file';
   }
   function fileUrl(title, agentId) {
-    return '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
+    const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+    return '/api/file?agent=' + encodeURIComponent(agentId || 'agent') +
+      '&path=' + encodeURIComponent(title) +
+      (tok ? '&token=' + encodeURIComponent(tok) : '');
   }
   // append a small "open in a new tab" fallback link — shown when an inline player can't decode the file
   // (e.g. an .mkv/.avi the browser won't play), mirroring Hermes's OpenMediaButton.
