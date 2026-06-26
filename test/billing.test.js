@@ -142,6 +142,32 @@ function fakeLedger() {
   A.eq(ledger.rows.length, 0, 'failed authorization records no spend');
 }
 
+// ---- payment adapters that return an explicit failure also fail closed ----
+{
+  const ledger = fakeLedger();
+  const debitFalse = {
+    balance() { return 10; },
+    debit() { return { ok: false, reason: 'declined' }; },
+    credit() { return { ok: true }; }
+  };
+  const refused = makeBilling({ payment: debitFalse, ledger }).beginRun({ mode: 'managed', accountId: 'acct', runId: 'r5a', capUsd: 1 });
+  A.eq(refused.ok, false, 'false-returning debit refuses the managed run');
+  A.eq(refused.reason, 'managed_credit_unavailable', 'false-returning debit is a closed billing failure');
+  A.eq(ledger.rows.length, 0, 'false-returning debit records no spend');
+
+  const refundFalse = {
+    balance() { return 10; },
+    debit() { return { ok: true }; },
+    credit() { return { ok: false, reason: 'refund_failed' }; }
+  };
+  const billing = makeBilling({ payment: refundFalse, ledger: fakeLedger() });
+  A.eq(billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r5aa', capUsd: 3 }).ok, true, 'managed run reserves before refund failure test');
+  const settled = billing.finishRun({ runId: 'r5aa', reason: 'done', usd: 1, tokens: 10, turns: 1 });
+  A.eq(settled.ok, false, 'false-returning refund refuses managed finalization');
+  A.eq(settled.reason, 'managed_credit_unavailable', 'false-returning refund is a closed billing failure');
+  A.eq((billing.status('r5aa') || {}).settled, false, 'false-returning refund leaves finalization retryable');
+}
+
 // ---- cap kill: reconciled managed spend cannot exceed the reserved cap ----
 {
   const payment = fakePayment({ acct: 5 });

@@ -15,6 +15,7 @@
   function num(v) { return (typeof v === 'number' && isFinite(v) && v > 0) ? v : 0; }
   function str(v) { return v == null ? '' : String(v); }
   function isManaged(mode) { return String(mode || '').toLowerCase() === 'managed'; }
+  function failedResult(v) { return v && typeof v === 'object' && v.ok === false; }
 
   function makeBilling(opts) {
     opts = opts || {};
@@ -67,10 +68,11 @@
       }
 
       try {
-        payment.debit(accountId, capUsd, {
+        const debited = payment.debit(accountId, capUsd, {
           kind: 'managed.reserve', accountId, runId,
           agentId: str(o.agentId), usd: capUsd, ts: clock.now()
         });
+        if (failedResult(debited)) throw new Error('managed debit refused');
       } catch (_) {
         return fail('managed_credit_unavailable');
       }
@@ -119,10 +121,11 @@
       }
       if (refundUsd > 0) {
         try {
-          payment.credit(rec.accountId, refundUsd, {
+          const credited = payment.credit(rec.accountId, refundUsd, {
             kind: 'managed.refund', accountId: rec.accountId, runId,
             agentId: rec.agentId, usd: refundUsd, ts: clock.now()
           });
+          if (failedResult(credited)) throw new Error('managed refund refused');
         } catch (_) {
           return fail('managed_credit_unavailable');
         }
