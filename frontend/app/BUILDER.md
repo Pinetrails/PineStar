@@ -77,7 +77,10 @@ Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `TOO_FAR`, `BAD_STY
 - **Chunked / incremental bake** (the bible §5.2) — DONE for REFIT. `StationBake.bakeIncremental`
   renders bounded 384px chunks, maps `WorldPatch.dirtyRects` to dirty chunks, and reuses untouched
   chunk canvases while preserving the legacy `StationBake.bake()` path for callers that still need a
-  monolithic canvas.
+  monolithic canvas. Large-station callers can pass `{ visibleRect, maxRetainedChunks }` to render
+  only visible chunks on cold start and evict old non-visible chunks while always keeping the current
+  dirty and visible chunks. `StationBake.drawBase/drawLight(..., visibleRect)` culls chunk composites
+  to the current viewport.
 - **Discrete door placement**, **Salvage/XP economy + tiers**, **PixelLab hi-tier art**.
 
 ## Ownership / coordination

@@ -80,4 +80,31 @@ A.ok(second.chunkMap.get('1,0') === reusedBefore.get('1,0'), 'untouched chunk ob
 A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
   'incremental rebake remains bounded to chunk-sized canvases');
 
+const visible = StationBake.visibleChunks(first, { x: 384, y: 0, w: 384, h: 384 });
+A.eq(visible.map(c => c.key), ['1,0'], 'visible chunk query returns only chunks intersecting the viewport');
+
+const drawn = [];
+const drawCtx = { drawImage(cv, x, y) { drawn.push({ cv, x, y }); } };
+StationBake.drawBase(drawCtx, first, 0, 0, { x: 384, y: 0, w: 384, h: 384 });
+A.eq(drawn.length, 1, 'drawBase culls chunked composites to the visible viewport');
+A.eq(drawn[0].x, 384, 'drawBase preserves chunk world offset when culling');
+
+canvases.length = 0;
+const visibleCold = StationBake.bakeIncremental(geo, null, null, {
+  visibleRect: { x: 384, y: 0, w: 384, h: 384 },
+  maxRetainedChunks: 2
+});
+A.eq(visibleCold.stats.chunkCount, 1, 'cold visible bake renders only requested chunks');
+A.eq(visibleCold.stats.dirtyChunks, ['1,0'], 'cold visible bake reports the rendered visible chunk');
+A.eq(visibleCold.stats.evictedChunks, 0, 'cold visible bake does not evict when under the retention cap');
+
+const retained = StationBake.bakeIncremental(geo, first, [{ x1: 4, y1: 4, x2: 4, y2: 4 }], {
+  visibleRect: { x: 384, y: 0, w: 384, h: 384 },
+  maxRetainedChunks: 2
+});
+A.eq(retained.stats.chunkCount, 2, 'LRU retention bounds the cached chunk count');
+A.ok(retained.chunkMap.has('0,0'), 'dirty chunk is retained even when outside the visible viewport');
+A.ok(retained.chunkMap.has('1,0'), 'visible chunk is retained for the current frame');
+A.ok(retained.stats.evictedChunks >= 4, 'LRU retention evicts older non-required chunks');
+
 A.report('stationbake.chunk');
