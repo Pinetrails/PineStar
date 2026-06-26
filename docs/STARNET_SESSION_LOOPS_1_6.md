@@ -319,6 +319,22 @@ powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree
 powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree.ps1 gap6-builder-bake
 ```
 
+## Per-session status ledgers
+
+Each implementation session writes only its own status file. The central status board
+below is owned by the orchestrator and is updated only when branches are merged,
+blocked, or explicitly accepted.
+
+- Session 1: `docs/session-status/session-1-station-authority.md`
+- Session 2: `docs/session-status/session-2-org-graph.md`
+- Session 3: `docs/session-status/session-3-release-gate.md`
+- Session 4: `docs/session-status/session-4-managed-credits.md`
+- Session 5: `docs/session-status/session-5-iteration-budget.md`
+- Session 6: `docs/session-status/session-6-builder-bake.md`
+
+A session status file should contain: current slice, changed files, targeted tests,
+full gates, live verification, blockers/holds, and readiness claim. This keeps loop
+progress visible without creating a shared-doc merge hotspot.
 ## Session prompt template
 
 Use this exact opening prompt for each Codex/Claude session, replacing the session
@@ -335,7 +351,7 @@ Run your session loop continuously:
 4. implement the smallest slice,
 5. run the required gate,
 6. commit only your owned files by pathspec,
-7. update your session status in docs/STARNET_SESSION_LOOPS_1_6.md,
+7. update only your own `docs/session-status/session-*.md` ledger,
 8. repeat until your DONE condition is met, or mark BLOCKED/HELD with the exact reason.
 
 Never self-merge to trunk. When complete, report READY to the orchestrator with changed
@@ -366,5 +382,4 @@ A session is "perfect standard" only if all are true:
 - No secrets are logged or sent to the renderer.
 - The branch is rebased onto current trunk and ready for orchestrator merge.
 - Remaining risks are either zero or explicitly accepted in the status board.
-
 
