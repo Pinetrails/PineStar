@@ -103,6 +103,39 @@ function twoAgentStation() {
 
 {
   const s = twoAgentStation();
+  const doc = s.serialize();
+  doc.props.push({ id: 'straddle-console', t: 'console', x: 17, y: 8, w: 3, h: 1, block: true, agentId: 'lead' });
+  const snapshot = {
+    serialize: () => doc,
+    projectGeometry: () => s.projectGeometry(),
+    roomAt: (x, y) => s.roomAt(x, y),
+    spawnRoomId: () => s.spawnRoomId(),
+    roomById: id => s.roomById(id)
+  };
+  const v = OV.validateOrg(snapshot);
+  A.ok(!v.ok, 'grant footprint crossing room boundaries is invalid');
+  A.ok(v.errors.some(e => e.code === 'GRANT_BAD_FOOTPRINT' && e.propId === 'straddle-console'), 'bad grant footprint has a stable reason code');
+}
+
+{
+  const s = twoAgentStation();
+  const doc = s.serialize();
+  const leadBay = doc.props.find(p => p.t === 'bay' && p.agentId === 'lead');
+  leadBay.x = 17; leadBay.y = 8; leadBay.w = 3; leadBay.h = 1;
+  const snapshot = {
+    serialize: () => doc,
+    projectGeometry: () => s.projectGeometry(),
+    roomAt: (x, y) => s.roomAt(x, y),
+    spawnRoomId: () => s.spawnRoomId(),
+    roomById: id => s.roomById(id)
+  };
+  const v = OV.validateOrg(snapshot);
+  A.ok(!v.ok, 'bay anchor footprint crossing room boundaries is invalid');
+  A.ok(v.errors.some(e => e.code === 'AGENT_ANCHOR_BAD_FOOTPRINT' && e.agentId === 'lead'), 'bad anchor footprint has a stable reason code');
+}
+
+{
+  const s = twoAgentStation();
   const al = s.addProp({ t: 'airlock', x: 20, y: 4, w: 1, h: 1, block: false, door: 'closed' });
   A.ok(al.ok, 'sealed airlock fixture places');
   const v = OV.validateOrg(s);

@@ -32,6 +32,18 @@
   const isComputer = p => capFor(p) === 'computer';
   const center = p => ({ x: (p.x | 0) + Math.floor(((p.w || 1) - 1) / 2), y: (p.y | 0) + Math.floor(((p.h || 1) - 1) / 2) });
   const edgeKey = e => e.from + '>' + e.to + ':' + e.whenKind + ':' + (e.lane || '');
+  function footprintRoom(prop, roomAt) {
+    const w = Math.max(1, prop && prop.w | 0 || 1);
+    const h = Math.max(1, prop && prop.h | 0 || 1);
+    let roomId = null;
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+      const rid = roomAt((prop.x | 0) + xx, (prop.y | 0) + yy);
+      if (!rid) return { ok: false, roomId: roomId || null };
+      if (roomId == null) roomId = rid;
+      else if (roomId !== rid) return { ok: false, roomId };
+    }
+    return { ok: true, roomId };
+  }
 
   function stationParts(input) {
     const model = input && typeof input.projectGeometry === 'function' && typeof input.serialize === 'function' ? input : null;
@@ -95,9 +107,10 @@
         continue;
       }
       const bay = bays[0];
-      const roomId = roomAt(bay.x, bay.y);
-      if (!roomId) {
-        errors.push({ code: 'AGENT_ANCHOR_OFF_DECK', agentId, propId: bay.id || null });
+      const anchorFootprint = footprintRoom(bay, roomAt);
+      const roomId = anchorFootprint.roomId;
+      if (!anchorFootprint.ok) {
+        errors.push({ code: roomId ? 'AGENT_ANCHOR_BAD_FOOTPRINT' : 'AGENT_ANCHOR_OFF_DECK', agentId, propId: bay.id || null });
         continue;
       }
       agents[agentId] = { agentId, bayPropId: bay.id || null, roomId, objects: [] };
@@ -114,9 +127,10 @@
     for (const p of props) {
       const cap = capFor(p);
       if (!cap) continue;
-      const roomId = roomAt(p.x, p.y);
-      if (!roomId) {
-        errors.push({ code: 'GRANT_UNPLACED_OBJECT', propId: p.id || null, objectType: cap });
+      const placedFootprint = footprintRoom(p, roomAt);
+      const roomId = placedFootprint.roomId;
+      if (!placedFootprint.ok) {
+        errors.push({ code: roomId ? 'GRANT_BAD_FOOTPRINT' : 'GRANT_UNPLACED_OBJECT', propId: p.id || null, objectType: cap });
         continue;
       }
       if (p.agentId) {

@@ -4,7 +4,7 @@
 
 - Status: `CHECKPOINT`
 - Branch/worktree: `agent/org-graph-gap2` in `C:\Users\andro\gen-trees\org-graph-gap2`
-- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate/self/malformed raw `PipelineEdge` rejection and explicit grant-bound agent validation.
+- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate/self/malformed raw `PipelineEdge` rejection, explicit grant-bound agent validation, and footprint-level placed-object validation.
 - Runbook note: `AGENTS.md` was requested but is absent under `C:\Users\andro\gen-trees`; followed `docs/STARNET_SESSION_LOOPS_1_6.md`.
 
 ## Changed Files
@@ -28,6 +28,8 @@
   - grant bound to an invalid agent id: `GRANT_BAD_AGENT`
   - grant bound to an unknown agent: `GRANT_UNKNOWN_AGENT`
   - grant bound to an agent seated in another room: `GRANT_WRONG_ROOM`
+  - grant object footprint crossing room/void boundaries: `GRANT_BAD_FOOTPRINT`
+  - bay anchor footprint crossing room/void boundaries: `AGENT_ANCHOR_BAD_FOOTPRINT`
   - unbound connector portal: `CONNECTOR_UNBOUND`
   - unknown edge endpoint: `PIPELINE_UNKNOWN_AGENT`
   - malformed raw edge shape: `PIPELINE_BAD_EDGE`
@@ -42,6 +44,7 @@
 - Added self-loop `PipelineEdge` validation so raw snapshots cannot mark `A->A` handoffs runnable by pathing to the same anchor.
 - Added grant-bound agent validation so a prop-level `agentId` can only target a known legal agent seated in the same room as the placed grant object.
 - Added malformed raw `PipelineEdge` validation so blank endpoints or missing/invalid `whenKind` fail with `PIPELINE_BAD_EDGE` before path readiness is evaluated.
+- Added footprint-level validation so raw snapshots cannot grant capability objects or legal bay anchors by placing only the top-left tile on deck while the rest crosses into another room or void.
 
 ## Tests Run
 
@@ -50,11 +53,16 @@
 - `node test/pipeline.test.js` - pass, `pipeline: OK (32 assertions)`
 - `npm.cmd run test:fast` - pass on 2026-06-26T14:00:21-04:00 after the grant-bound agent validation slice.
 - `npm.cmd run test:fast` - pass on 2026-06-26T15:01:47-04:00 after the malformed raw `PipelineEdge` validation slice.
+- `node test/org-validator.test.js` - pass, `org-validator: OK (50 assertions)` on 2026-06-26T16:00:51-04:00 after footprint validation.
+- `node test/worldmodel.test.js` - pass, `worldmodel: OK (192 assertions)` on 2026-06-26T16:00:51-04:00.
+- `node test/pipeline.test.js` - pass, `pipeline: OK (32 assertions)` on 2026-06-26T16:00:51-04:00.
+- `npm.cmd run test:fast` - pass on 2026-06-26T16:00:51-04:00 after the footprint validation slice.
 
 ## Full Gates
 
 - `npm.cmd run test:fast` completed green on 2026-06-26T14:00:21-04:00 after the grant-bound agent validation slice.
 - `npm.cmd run test:fast` completed green on 2026-06-26T15:01:47-04:00 after the malformed raw `PipelineEdge` validation slice.
+- `npm.cmd run test:fast` completed green on 2026-06-26T16:00:51-04:00 after footprint-level placed-object validation.
 - No HTTP or live sidecar gate run in this checkpoint; this slice is pure validation/model persistence only.
 
 ## Live Verification
