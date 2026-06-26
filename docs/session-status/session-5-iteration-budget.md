@@ -25,10 +25,13 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 
 - `node test/loop.replay.test.js` - pass at 2026-06-26 07:52 UTC
 - `node test/orchestration.test.js` - pass at 2026-06-26 07:52 UTC
+- `node test/loop.replay.test.js` - pass at 2026-06-26 08:51 UTC
+- `node test/orchestration.test.js` - pass at 2026-06-26 08:51 UTC
 
 ## Full Gate
 
 - `npm.cmd run test:fast` - pass at 2026-06-26 07:53 UTC
+- `npm.cmd run test:fast` - pass at 2026-06-26 08:52 UTC
 
 ## Live Verification
 
@@ -38,6 +41,8 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 
 - `sidecar/index.js` is required to consume `o.maxIters` in production `runOnce`, but board check at 2026-06-26 07:52 UTC showed it is contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`. Held instead of editing the contended run host.
 - `sidecar/index.js` is also outside the Session 5 owned-file list in `docs/STARNET_SESSION_LOOPS_1_6.md`; final production plumbing needs owner/orchestrator coordination before this session can touch it.
+- Board check at 2026-06-26 08:51 UTC now also shows `sidecar/loop.js` actively contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
+- `AGENTS.md` was requested by the session prompt but is absent under `C:\Users\andro\gen-trees`; this run followed `docs/STARNET_SESSION_LOOPS_1_6.md` and existing repository conventions.
 
 ## Readiness Claim
 
@@ -45,4 +50,4 @@ HELD-FOR-COORDINATION. The owned loop and orchestration surfaces are implemented
 
 ## Next Loop Condition
 
-Wake after the `sidecar/index.js` contention clears, then add the narrow production run host plumbing, run targeted tests plus `npm.cmd run test:fast`, and commit or mark READY.
+Wake after the `sidecar/index.js` and `sidecar/loop.js` contention clears, then add the narrow production run host plumbing if the orchestrator/owner permits this session to touch the run host; otherwise request the owner to thread `o.maxIters` into `runAgentLoop` limits. Run targeted tests plus `npm.cmd run test:fast`, then commit or mark READY.
