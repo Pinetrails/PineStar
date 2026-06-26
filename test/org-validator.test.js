@@ -180,7 +180,8 @@ function twoAgentStation() {
     { from: '', to: 'worker', whenKind: 'handoff', lane: 'blank-from' },
     { from: 'lead', to: '', whenKind: 'handoff', lane: 'blank-to' },
     { from: 'lead', to: 'worker', lane: 'missing-kind' },
-    { from: 'lead', to: 'worker', whenKind: 'bad kind', lane: 'bad-kind' }
+    { from: 'lead', to: 'worker', whenKind: 'bad kind', lane: 'bad-kind' },
+    { from: 'lead', to: 'worker', whenKind: 'handoff', lane: 'bad lane' }
   ];
   const snapshot = {
     serialize: () => doc,
@@ -195,9 +196,11 @@ function twoAgentStation() {
   A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'blank-to'), 'blank edge target has a stable reason code');
   A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'missing-kind'), 'missing edge trigger kind has a stable reason code');
   A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'bad-kind'), 'bad edge trigger kind has a stable reason code');
+  A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'bad lane'), 'bad edge lane has a stable reason code');
   A.eq(v.graph.edgeRunnable['>worker:handoff:blank-from'], false, 'bad edge readiness is false');
   A.eq(v.graph.edgeRunnable['lead>worker::missing-kind'], false, 'missing whenKind readiness is false');
   A.eq(v.graph.edgeRunnable['lead>worker:bad kind:bad-kind'], false, 'bad whenKind readiness is false');
+  A.eq(v.graph.edgeRunnable['lead>worker:handoff:bad lane'], false, 'bad lane readiness is false');
 }
 
 A.report('org-validator');

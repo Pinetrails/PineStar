@@ -43,7 +43,10 @@ const WorldModel = (() => {
     if (!AID_RE.test(from) || !AID_RE.test(to) || from === to || !WHEN_RE.test(whenKind)) return null;
     const out = { from, to, whenKind };
     const lane = String(e.lane == null ? '' : e.lane).trim();
-    if (lane) out.lane = lane.slice(0, 40);
+    if (lane) {
+      if (!WHEN_RE.test(lane)) return null;
+      out.lane = lane;
+    }
     return out;
   }
   // copy any present + valid junction config from src onto dst (mutates dst; additive — absent fields untouched)

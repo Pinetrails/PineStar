@@ -167,7 +167,7 @@
       if (e.lane) edge.lane = String(e.lane).trim();
       const from = agents[edge.from], to = agents[edge.to];
       const out = { from: edge.from, to: edge.to, whenKind: edge.whenKind, lane: edge.lane || null, runnable: false, reason: null };
-      if (!AID_RE.test(edge.from) || !AID_RE.test(edge.to) || !WHEN_RE.test(edge.whenKind)) out.reason = 'PIPELINE_BAD_EDGE';
+      if (!AID_RE.test(edge.from) || !AID_RE.test(edge.to) || !WHEN_RE.test(edge.whenKind) || (edge.lane && !WHEN_RE.test(edge.lane))) out.reason = 'PIPELINE_BAD_EDGE';
       else if (edge.from === edge.to) out.reason = SELF_EDGE;
       else if (edgeCounts[edgeKey(edge)] > 1) out.reason = DUP_EDGE;
       else if (!from || !to) out.reason = 'PIPELINE_UNKNOWN_AGENT';
