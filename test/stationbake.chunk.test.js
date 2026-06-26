@@ -91,6 +91,13 @@ StationBake.drawBase(drawCtx, first, 0, 0, { x: 384, y: 0, w: 384, h: 384 });
 A.eq(drawn.length, 1, 'drawBase culls chunked composites to the visible viewport');
 A.eq(drawn[0].x, 384, 'drawBase preserves chunk world offset when culling');
 
+const fullDrawn = [];
+StationBake.drawBase({ drawImage(cv, x, y) { fullDrawn.push({ cv, x, y, w: cv.width, h: cv.height }); } }, first, 0, 0);
+A.eq(fullDrawn.map(d => [d.x, d.y, d.w, d.h]), [
+  [0, 0, 384, 384], [384, 0, 384, 384], [768, 0, 132, 384],
+  [0, 384, 384, 266], [384, 384, 384, 266], [768, 384, 132, 266]
+], 'full chunk composite covers the station without gaps, overlaps, or seam offsets');
+
 canvases.length = 0;
 const visibleCold = StationBake.bakeIncremental(geo, null, null, {
   visibleRect: { x: 384, y: 0, w: 384, h: 384 },
@@ -118,5 +125,17 @@ A.eq(retained.stats.chunkCount, 2, 'LRU retention bounds the cached chunk count'
 A.ok(retained.chunkMap.has('0,0'), 'dirty chunk is retained even when outside the visible viewport');
 A.ok(retained.chunkMap.has('1,0'), 'visible chunk is retained for the current frame');
 A.ok(retained.stats.evictedChunks >= 4, 'LRU retention evicts older non-required chunks');
+
+const shiftedGeo = makeGeo();
+shiftedGeo.origin = { tx: 1, ty: 0 };
+canvases.length = 0;
+const reset = StationBake.bakeIncremental(shiftedGeo, first, [{ x1: 10, y1: 10, x2: 10, y2: 10 }], {
+  visibleRect: { x: 0, y: 0, w: 384, h: 384 },
+  maxRetainedChunks: 2
+});
+A.eq(reset.stats.fullReset, true, 'origin changes reset chunk metadata instead of reusing stale chunks');
+A.eq(reset.stats.chunkCount, 1, 'origin reset can rebuild only the visible chunk');
+A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
+  'origin reset does not allocate full-world base/light canvases');
 
 A.report('stationbake.chunk');
