@@ -357,6 +357,7 @@ function chatFixture() {
     {
       const r = await run({ m1: httpErr(503, 'overloaded') }, ['m2']);
       A.eq(r.res.reason, 'done', '503 overloaded -> fell back and completed (not error)');
+      A.eq(r.res.model, 'm2', 'loop result returns the actual fallback model used');
       A.eq(r.provider.callCount(), 2, 'one failed attempt + one fallback attempt');
       A.eq(r.seq.find(e => e.name === 'agent.cost').payload.model, 'm2', 'agent.cost reports the fallback model (the visible failover signal)');
       A.eq(r.seq.filter(e => e.name === 'agent.run.error').length, 0, 'no run.error when the fallback recovers');
@@ -406,6 +407,21 @@ function chatFixture() {
       A.ok(summarized >= 1, 'the summarizer ran as part of the overflow recovery');
       A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'exactly one compaction during recovery');
     }
+  }
+
+  // ---- unpriced usage evidence: a cold catalog does not pretend the model was free; the host can backfill later ----
+  {
+    const { emit } = setup();
+    const provider = makeReplayProvider({ turns: [[
+      { type: 'text', delta: 'hi' },
+      { type: 'usage', usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 } },
+      { type: 'done', finishReason: 'stop' }
+    ]] });
+    provider.priceOf = () => null;
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'hi' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'cold/model', agentId: 'a', runId: 'r' });
+    A.eq(res.usd, 0, 'cold catalog run has no guessed usd inside the loop');
+    A.eq(res.model, 'cold/model', 'loop result keeps the requested model identity');
+    A.eq(res.unpricedUsage, [{ model: 'cold/model', tokensIn: 1000, tokensOut: 500 }], 'unpriced usage is returned for final backfill');
   }
 
   A.report('loop.replay.test');

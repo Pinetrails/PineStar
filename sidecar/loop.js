@@ -156,10 +156,15 @@
     const lgWarned = new Set();   // signatures already nudged (the warn fires once)
 
     let spentUsd = 0, turns = 0, spentTokens = 0;
+    const unpricedUsage = [];
     let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
+    function noteUnpriced(modelId, c) {
+      if (!c || !c.unpriced) return;
+      unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
+    }
     function end(reason) {
       emit('agent.run.end', { agentId, runId, reason, turns, usd: spentUsd });
-      return { reason, messages, usd: spentUsd, turns, tokens: spentTokens };
+      return { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
     }
 
     // Fold older history into a summary when the live prompt is past the context manager's threshold, so a long
@@ -204,7 +209,10 @@
       if (todoNote) { try { const tn = todoNote(); if (tn) rebuilt = rebuilt.concat([{ role: 'system', content: String(tn) }]); } catch (e) {} }
       const afterTokens = context.estimateMessages(rebuilt);
       messages.length = 0; for (const mm of rebuilt) messages.push(mm);
-      if (r && typeof r === 'object') { spentUsd += r.usd || 0; spentTokens += r.tokens || 0; }   // count the summarizer's own spend
+      if (r && typeof r === 'object') {
+        spentUsd += r.usd || 0; spentTokens += r.tokens || 0;   // count the summarizer's own spend
+        if (Array.isArray(r.unpricedUsage)) for (const u of r.unpricedUsage) unpricedUsage.push(u);
+      }
       lastUsage = null;   // the next turn re-measures against the compacted prompt before considering another fold
       emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'context' });
       // H5.2 anti-thrash: a fold that barely shrinks the prompt isn't worth another paid summarizer call. After two
@@ -304,6 +312,7 @@
       const final = cost ? cost.reconcile(usage, model) : { usd: 0, tokensIn: 0, tokensOut: 0, reasoningTokens: 0, cachedTokens: 0 };
       spentUsd += final.usd || 0;
       spentTokens += (final.tokensIn || 0) + (final.tokensOut || 0);
+      noteUnpriced(model, final);
       lastUsage = usage;   // feeds the next turn's compaction decision (shouldCompact reads prompt_tokens)
       emit('agent.cost', {
         agentId, runId, usd: final.usd || 0, tokensIn: final.tokensIn || 0, tokensOut: final.tokensOut || 0,

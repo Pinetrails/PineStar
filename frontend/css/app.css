@@ -911,6 +911,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .kb-empty-col { font-size: 12px; opacity: 0.4; padding: 6px 2px; }
 
 /* SKILLS — honest capability readout (reuses v7 .perk-grid/.perk) */
+.term.skills-term { max-height: calc(100vh - 96px); }
+.term.skills-term .term-body { flex: 1 1 auto; min-height: 0; }
 .sk-note { font-size: 12px; opacity: 0.62; margin-top: 12px; line-height: 1.45; }
 .perk-stat { font-size: 10px; color: var(--ph-dim); margin-top: 2px; letter-spacing: 1px; }
 .perk.on .perk-stat { color: var(--ok); }

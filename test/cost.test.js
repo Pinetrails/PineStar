@@ -24,12 +24,23 @@ A.eq(r.tokensOut, 500, 'reconcile tokensOut');
 A.eq(r.cachedTokens, 200, 'cached tokens tracked separately');
 A.eq(r.reasoningTokens, 50, 'reasoning tokens tracked separately');
 A.ok(Math.abs(r.usd - 2000 / 1e6) < 1e-12, 'reconcile usd');
+A.eq(r.costSource, 'catalog', 'catalog-priced reconcile is labeled');
+A.eq(r.unpriced, false, 'catalog-priced usage is not unpriced');
+
+const pc = ce.reconcile({ prompt_tokens: 1000, completion_tokens: 500, cost: 0.042 }, 'm');
+A.eq(pc.usd, 0.042, 'provider cost wins in reconcile');
+A.eq(pc.costSource, 'provider', 'provider-priced reconcile is labeled');
+A.eq(ce.reconcile({ prompt_tokens: 1, completion_tokens: 1, cost: '0.125' }, 'm').usd, 0.125, 'numeric string provider cost is preserved');
 
 // reasoning via completion_tokens_details fallback
 A.eq(ce.reconcile({ prompt_tokens: 1, completion_tokens: 1, completion_tokens_details: { reasoning_tokens: 7 } }, 'm').reasoningTokens, 7, 'reasoning via completion_tokens_details');
 
 // unknown model + no cost -> 0 usd (never guess)
 A.eq(ce.estimate({ prompt_tokens: 100 }, 'unknown').usd, 0, 'no price + no cost -> 0 usd');
+const unpriced = ce.reconcile({ prompt_tokens: 100, completion_tokens: 20 }, 'unknown');
+A.eq(unpriced.usd, 0, 'unpriced reconcile stays zero before catalog evidence');
+A.eq(unpriced.costSource, 'unpriced', 'unpriced usage is labeled');
+A.eq(unpriced.unpriced, true, 'unpriced usage is marked for final backfill');
 
 // null usage is safe
 A.eq(ce.estimate(null, 'm').usd, 0, 'null usage estimate -> 0');

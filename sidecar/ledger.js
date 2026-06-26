@@ -23,8 +23,10 @@
   'use strict';
 
   const DAY_MS = 24 * 60 * 60 * 1000;
+  const UNKNOWN_MODEL = '(unknown)';
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function str(v) { return v == null ? '' : String(v); }
+  function modelName(v) { const s = str(v).trim(); return (s || UNKNOWN_MODEL).slice(0, 80); }
 
   function makeLedger(opts) {
     opts = opts || {};
@@ -44,6 +46,8 @@
       const entry = {
         runId: str(e.runId), agentId: str(e.agentId),
         turns: num(e.turns), usd: num(e.usd), tokens: num(e.tokens),
+        model: modelName(e.model),
+        unmetered: !!e.unmetered,
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);

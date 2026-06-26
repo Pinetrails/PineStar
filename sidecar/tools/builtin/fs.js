@@ -17,6 +17,9 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
+  const { parsePatch, hunkOldText, hunkNewText, addText } = require('./patchparse.js');
+  const { fuzzyFindAndReplace } = require('./fuzzymatch.js');
+
   function safeAgentId(id) {
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(id || '')) throw new Error('bad agentId');
     return id;
@@ -181,6 +184,118 @@
       }
     };
 
+    const patchTool = {
+      name: 'fs.patch', capability: 'cabinet', scope: 'write', requiresConsent: true, timeoutMs: 15000,
+      description: 'Apply a V4A multi-hunk patch inside your workspace. Validates every path and hunk before writing, so a failed hunk leaves files unchanged.',
+      schema: { type: 'object', required: ['patch'], properties: { patch: { type: 'string' } } },
+      run: async (args, ctx) => {
+        const aid = (ctx && ctx.agentId) || 'agent';
+        const parsed = parsePatch(args && args.patch);
+        if (!parsed.ok) throw new Error(parsed.error);
+
+        const plans = new Map(); // abs -> { rel, abs, exists, content, touched }
+        async function planFor(rel) {
+          const resolved = await resolveInside(aid, rel);
+          const key = resolved.abs;
+          if (plans.has(key)) return plans.get(key);
+          let content = null, exists = false;
+          try { content = await fsp.readFile(key, 'utf8'); exists = true; }
+          catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
+          const plan = { rel: String(rel), abs: key, exists, content, touched: false };
+          plans.set(key, plan);
+          return plan;
+        }
+        function assertSize(rel, content) {
+          const bytes = Buffer.byteLength(String(content), 'utf8');
+          if (bytes > WRITE_BYTES) throw new Error('file too large after patch for ' + rel + ' (' + bytes + ' > ' + WRITE_BYTES + ' bytes)');
+        }
+        function requireExists(plan, op) {
+          if (!plan.exists || plan.content == null) throw new Error(op + ' target does not exist: ' + plan.rel);
+        }
+        function requireMissing(plan, op) {
+          if (plan.exists || plan.content != null) throw new Error(op + ' target already exists: ' + plan.rel);
+        }
+
+        for (const op of parsed.operations) {
+          if (op.type === 'add') {
+            const plan = await planFor(op.path);
+            requireMissing(plan, 'ADD');
+            const next = addText(op);
+            assertSize(op.path, next);
+            plan.content = next;
+            plan.exists = true;
+            plan.touched = true;
+          } else if (op.type === 'delete') {
+            const plan = await planFor(op.path);
+            requireExists(plan, 'DELETE');
+            plan.content = null;
+            plan.exists = false;
+            plan.touched = true;
+          } else if (op.type === 'move') {
+            const src = await planFor(op.path);
+            const dst = await planFor(op.newPath);
+            requireExists(src, 'MOVE');
+            if (src.abs !== dst.abs) requireMissing(dst, 'MOVE');
+            dst.content = src.content;
+            dst.exists = true;
+            dst.touched = true;
+            if (src.abs !== dst.abs) {
+              src.content = null;
+              src.exists = false;
+              src.touched = true;
+            }
+          } else if (op.type === 'update') {
+            const plan = await planFor(op.path);
+            requireExists(plan, 'UPDATE');
+            let current = plan.content;
+            for (const hunk of op.hunks) {
+              const oldText = hunkOldText(hunk);
+              const newText = hunkNewText(hunk);
+              const res = fuzzyFindAndReplace(current, oldText, newText);
+              if (!res.ok) throw new Error('UPDATE ' + op.path + ': ' + res.error);
+              current = res.content;
+            }
+            assertSize(op.path, current);
+            if (op.newPath) {
+              const dst = await planFor(op.newPath);
+              if (plan.abs !== dst.abs) requireMissing(dst, 'MOVE');
+              dst.content = current;
+              dst.exists = true;
+              dst.touched = true;
+              if (plan.abs !== dst.abs) {
+                plan.content = null;
+                plan.exists = false;
+                plan.touched = true;
+              } else {
+                plan.content = current;
+                plan.touched = true;
+              }
+            } else {
+              plan.content = current;
+              plan.touched = true;
+            }
+          } else {
+            throw new Error('unsupported patch operation: ' + op.type);
+          }
+        }
+
+        const touched = Array.from(plans.values()).filter(p => p.touched);
+        for (const plan of touched) {
+          if (plan.content == null) {
+            await fsp.rm(plan.abs, { force: true });
+          } else {
+            await fsp.mkdir(P.dirname(plan.abs), { recursive: true });
+            await fsp.writeFile(plan.abs, Buffer.from(plan.content, 'utf8'));
+            emitDeliverable(ctx, aid, plan.rel);
+          }
+        }
+        return {
+          content: 'Applied patch: ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' changed.',
+          summary: 'patched ' + touched.length + ' file' + (touched.length === 1 ? '' : 's')
+        };
+      }
+    };
+
     // fs.search — a ripgrep-grade content/file search over the agent's workspace, in PURE Node (no `rg`
     // dependency, so it runs on a clean machine — our "bundle Node, no system deps" rule). Mirrors the
     // polished behaviour of a grep+find+ls replacement: target 'content' (grep) | 'files' (find/ls by glob,
@@ -341,9 +456,9 @@
     };
 
     return {
-      writeTool, readTool, listTool, appendTool, editTool, searchTool,
-      _internals: { resolveInside, workspaceRoot, safeAgentId, walk, collectFiles, globToRe, pathInside },
-      register(reg) { [writeTool, readTool, listTool, appendTool, editTool, searchTool].forEach(t => reg.register(t)); return reg; }
+      writeTool, readTool, listTool, appendTool, editTool, patchTool, searchTool,
+      _internals: { resolveInside, workspaceRoot, safeAgentId, walk, collectFiles, globToRe, pathInside, parsePatch, fuzzyFindAndReplace },
+      register(reg) { [writeTool, readTool, listTool, appendTool, editTool, patchTool, searchTool].forEach(t => reg.register(t)); return reg; }
     };
   }
 

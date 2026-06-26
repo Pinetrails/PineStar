@@ -6,7 +6,7 @@
    with fakes and stays free of ambient time/randomness (clock injected).
 
    makeConnectorManager({ makeTransport, makeClient?, makeToolDef?, clock?, timeoutMs?, onEvent? }) -> {
-     configure(id, { url, token?, label?, enabled? }) -> Promise<{ ok, state, toolCount, error? }>,
+     configure(id, { transport?, url?, token?, command?, args?, cwd?, env?, label?, enabled? }) -> Promise<{ ok, state, toolCount, error? }>,
      remove(id) -> Promise, refresh(id) -> Promise<...>, close() -> Promise,
      status(id) -> summary | null, list() -> summary[],            // summaries NEVER include the token
      has(id), ids(),
@@ -42,7 +42,32 @@
     const timeoutMs = deps.timeoutMs || 30000;
     const onEvent = typeof deps.onEvent === 'function' ? deps.onEvent : function () {};
 
-    const conns = new Map();   // id -> { id, url, token, label, enabled, state, detail, tools[], client, transport, ts }
+    const conns = new Map();   // id -> { id, transportKind, url, token, command, args, cwd, env, label, enabled, state, detail, tools[], client, transport, ts }
+
+    function normalizeTransport(cfg, prev) {
+      const raw = cfg.transport || (prev && prev.transportKind) || (cfg.command || (prev && prev.command) ? 'stdio' : 'http');
+      const t = String(raw || 'http').toLowerCase();
+      if (t !== 'http' && t !== 'stdio') throw new Error('connector transport must be "http" or "stdio"');
+      return t;
+    }
+    function normalizeArgs(args, prev) {
+      if (!('args' in (args || {}))) return prev && Array.isArray(prev.args) ? prev.args.slice() : [];
+      if (!Array.isArray(args.args)) throw new Error('connector stdio args must be an array');
+      return args.args.map(a => String(a == null ? '' : a));
+    }
+    function normalizeEnv(cfg, prev) {
+      if (!('env' in (cfg || {}))) return prev && prev.env && typeof prev.env === 'object' ? Object.assign({}, prev.env) : {};
+      if (!cfg.env || typeof cfg.env !== 'object' || Array.isArray(cfg.env)) throw new Error('connector stdio env must be an object');
+      const out = {};
+      for (const k of Object.keys(cfg.env)) out[k] = String(cfg.env[k] == null ? '' : cfg.env[k]);
+      return out;
+    }
+    function redactEnv(env) {
+      const out = {};
+      const keys = Object.keys(env || {}).sort();
+      for (const k of keys) out[k] = /TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|BEARER|CREDENTIAL|COOKIE/i.test(k) ? '<redacted>' : '<set>';
+      return out;
+    }
 
     function setState(c, state, detail) {
       c.state = state; c.detail = detail || ''; c.ts = clock.now();
@@ -56,7 +81,16 @@
     async function connect(c) {
       setState(c, 'connecting');
       try {
-        c.transport = makeTransport({ url: c.url, token: c.token, timeoutMs: timeoutMs });
+        c.transport = makeTransport({
+          transport: c.transportKind,
+          url: c.url,
+          token: c.token,
+          command: c.command,
+          args: c.args,
+          cwd: c.cwd,
+          env: c.env,
+          timeoutMs: timeoutMs
+        });
         c.client = makeClient({ transport: c.transport, timeoutMs: timeoutMs });
         await c.client.initialize();
         c.tools = await c.client.listTools() || [];
@@ -76,16 +110,23 @@
       cfg = cfg || {};
       const prev = conns.get(id);
       if (prev) teardown(prev);
+      const transportKind = normalizeTransport(cfg, prev);
       const c = {
         id: id,
+        transportKind: transportKind,
         url: String(cfg.url || (prev && prev.url) || ''),
         token: ('token' in cfg) ? (cfg.token || '') : (prev ? prev.token : ''),
+        command: String(cfg.command || (prev && prev.command) || ''),
+        args: normalizeArgs(cfg, prev),
+        cwd: String(cfg.cwd || (prev && prev.cwd) || ''),
+        env: normalizeEnv(cfg, prev),
         label: String(cfg.label || (prev && prev.label) || id),
         enabled: cfg.enabled !== false,
         state: 'down', detail: '', tools: [], client: null, transport: null, ts: clock.now()
       };
       conns.set(id, c);
-      if (!c.url) { setState(c, 'error', 'no server URL configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
+      if (transportKind === 'http' && !c.url) { setState(c, 'error', 'no server URL configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
+      if (transportKind === 'stdio' && !c.command) { setState(c, 'error', 'no stdio command configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
       if (!c.enabled) { setState(c, 'down'); return { ok: true, state: 'down', toolCount: 0 }; }
       return connect(c);
     }
@@ -93,7 +134,7 @@
     function refresh(id) {
       const c = conns.get(String(id));
       if (!c) return Promise.resolve({ ok: false, state: 'down', toolCount: 0, error: 'unknown connector' });
-      if (!c.enabled || !c.url) return Promise.resolve({ ok: false, state: c.state, toolCount: 0 });
+      if (!c.enabled || (c.transportKind === 'http' && !c.url) || (c.transportKind === 'stdio' && !c.command)) return Promise.resolve({ ok: false, state: c.state, toolCount: 0 });
       return connect(c);
     }
 
@@ -105,7 +146,27 @@
 
     // a summary safe to log / return over HTTP: the token is NEVER included (only whether one is set).
     function summary(c) {
-      return { id: c.id, label: c.label, url: c.url, enabled: c.enabled, state: c.state, detail: c.detail, hasToken: !!c.token, toolCount: (c.tools || []).length, tools: (c.tools || []).map(t => t.name) };
+      const out = {
+        id: c.id,
+        label: c.label,
+        transport: c.transportKind,
+        enabled: c.enabled,
+        state: c.state,
+        detail: c.detail,
+        hasToken: !!c.token,
+        toolCount: (c.tools || []).length,
+        tools: (c.tools || []).map(t => t.name)
+      };
+      if (c.transportKind === 'stdio') {
+        out.command = c.command;
+        out.args = (c.args || []).slice();
+        out.cwd = c.cwd || '';
+        out.env = redactEnv(c.env);
+        out.hasEnv = Object.keys(c.env || {}).length > 0;
+      } else {
+        out.url = c.url;
+      }
+      return out;
     }
     function status(id) { const c = conns.get(String(id)); return c ? summary(c) : null; }
     function list() { const out = []; for (const c of conns.values()) out.push(summary(c)); return out; }

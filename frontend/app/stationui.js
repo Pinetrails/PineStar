@@ -123,6 +123,15 @@ const StationUI = (() => {
     top  = Math.max(8, Math.min(top,  window.innerHeight - hpx - 8));
     w.style.left = left + 'px'; w.style.top = top + 'px'; w.style.transform = 'none';
   }
+  function fitTermInViewport(w) {
+    if (!w) return;
+    const pad = 8;
+    const maxLeft = Math.max(pad, window.innerWidth - w.offsetWidth - pad);
+    const maxTop = Math.max(pad, window.innerHeight - w.offsetHeight - pad);
+    w.style.left = Math.max(pad, Math.min(w.offsetLeft, maxLeft)) + 'px';
+    w.style.top = Math.max(pad, Math.min(w.offsetTop, maxTop)) + 'px';
+    w.style.transform = 'none';
+  }
 
   /* focus scrim: one dim layer mounted under the lowest open window so an
      open dossier/settings panel owns the eye. Purely visual (pointer-events
@@ -151,6 +160,7 @@ const StationUI = (() => {
     const w = el('div', 'term');
     w.style.zIndex = U.zTop();
     if (opts && opts.w) w.style.width = opts.w;
+    if (opts && opts.className) w.classList.add(opts.className);
     w._onClose = opts && opts.onClose;
     const head = el('div', 'term-head', '<span class="term-title">▮ ' + title + '</span>');
     const x = el('button', 'term-x', '✕');
@@ -177,7 +187,10 @@ const StationUI = (() => {
       termDrag = { w, dx: ev.clientX - w.offsetLeft, dy: ev.clientY - w.offsetTop };
       ev.preventDefault();
     });
-    w._render = () => builder(body);
+    w._render = () => {
+      builder(body);
+      if (opts && opts.fitViewport) requestAnimationFrame(() => fitTermInViewport(w));
+    };
     w._render();
     syncBB(); syncScrim();
   }
@@ -672,8 +685,20 @@ const StationUI = (() => {
     try { placed = (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(agentId).map(c => c.objectType) : []; } catch (e) {}
     fetch('/api/skills?placed=' + encodeURIComponent(placed.join(',')))
       .then(r => r.ok ? r.json() : { skills: [] })
-      .then(d => { const h = $('#sk-lib'); if (h) renderSkillLibrary(h, (d && d.skills) || [], agentId, placed); })
-      .catch(() => { const h = $('#sk-lib'); if (h) h.innerHTML = '<div class="sk-loading">Could not load the skill library — is the sidecar running?</div>'; });
+      .then(d => {
+        const h = $('#sk-lib');
+        if (h) {
+          renderSkillLibrary(h, (d && d.skills) || [], agentId, placed);
+          requestAnimationFrame(() => fitTermInViewport(open.skills));
+        }
+      })
+      .catch(() => {
+        const h = $('#sk-lib');
+        if (h) {
+          h.innerHTML = '<div class="sk-loading">Could not load the skill library — is the sidecar running?</div>';
+          requestAnimationFrame(() => fitTermInViewport(open.skills));
+        }
+      });
   }
 
   const SK_OBJ_NAME = { cabinet: 'CABINET', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
@@ -1586,26 +1611,30 @@ const StationUI = (() => {
       '<div id="lb-list" class="mc-list">loading…</div>';
     const listEl = body.querySelector('#lb-list'), aboutEl = body.querySelector('#lb-about');
     let tab = 'runs';
+    function spendText(x) { return (x && x.unmetered) ? 'subscription / unmetered' : ('$' + (Number(x && x.usd) || 0).toFixed(4)); }
     function runRow(r) {
       const when = r.ts ? esc(fmtRel(new Date(r.ts).toISOString())) : '';
       const rl = LB_REASON[r.reason] || esc(r.reason || 'done');
       const title = r.title ? esc(r.title) : esc(String(r.runId || 'run').slice(0, 12));
+      const model = esc(r.model || '(unknown)');
       // H3.2: a run with a streamId can OPEN its transcript inline (the join the audit found was missing).
       const sid = r.streamId ? esc(String(r.streamId)) : '';
       const cls = sid ? 'mc-row lb-run-open' : 'mc-row';
       const attr = sid ? ' data-stream="' + sid + '" title="click to open this run\'s transcript"' : '';
       return '<div class="' + cls + '"' + attr + '><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + (sid ? ' · ▸ transcript' : '') + '</span></div>' +
-        '<div class="mc-url dim">' + rl + ' · $' + (Number(r.usd) || 0).toFixed(4) + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + (r.tokens ? (' · ' + r.tokens + ' tok') : '') + '</div>' +
+        '<div class="mc-url dim">' + rl + ' · ' + model + ' · ' + esc(spendText(r)) + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + (r.tokens ? (' · ' + r.tokens + ' tok') : '') + '</div>' +
         (sid ? '<div class="lb-tx" hidden></div>' : '') + '</div>';
     }
     function insightsHtml(j) {
       j = j || {};
       if (!j.totalRuns) return '<div class="fb-empty">NO DATA YET.<br><span>Insights appear once this agent finishes some runs.</span></div>';
-      const ov = '<div class="mc-row"><div class="mc-top"><b>' + j.totalRuns + ' run' + (j.totalRuns === 1 ? '' : 's') + ' · $' + (Number(j.totalUsd) || 0).toFixed(4) + '</b></div>' +
-        '<div class="mc-url dim">avg $' + (Number(j.avgUsdPerRun) || 0).toFixed(4) + '/run · ' + (j.successPct == null ? '—' : j.successPct + '% success') + ' · ' + (j.totalTokens || 0) + ' tok</div></div>';
+      const unmetered = Number(j.unmeteredRuns) || 0;
+      const unmeteredBit = unmetered ? (' · ' + unmetered + ' subscription / unmetered') : '';
+      const ov = '<div class="mc-row"><div class="mc-top"><b>' + j.totalRuns + ' run' + (j.totalRuns === 1 ? '' : 's') + ' · $' + (Number(j.totalUsd) || 0).toFixed(4) + ' metered</b></div>' +
+        '<div class="mc-url dim">avg $' + (Number(j.avgUsdPerRun) || 0).toFixed(4) + '/metered run · ' + (j.successPct == null ? '—' : j.successPct + '% success') + ' · ' + (j.totalTokens || 0) + ' tok' + unmeteredBit + '</div></div>';
       const models = (j.byModel || []).slice(0, 8).map(m =>
         '<div class="mc-row"><div class="mc-top"><b>' + esc(m.model) + '</b> <span class="dim">' + m.runs + ' run' + (m.runs === 1 ? '' : 's') + '</span></div>' +
-        '<div class="mc-url dim">$' + (Number(m.usd) || 0).toFixed(4) + ' · ' + (m.tokens || 0) + ' tok</div></div>').join('');
+        '<div class="mc-url dim">' + (m.unmetered ? 'subscription / unmetered' : ('$' + (Number(m.usd) || 0).toFixed(4) + ' metered')) + ' · ' + (m.tokens || 0) + ' tok' + (m.unmeteredRuns ? (' · ' + m.unmeteredRuns + ' unmetered') : '') + '</div></div>').join('');
       const reasons = Object.keys(j.byReason || {}).map(k => esc(k) + ' ' + j.byReason[k]).join(' · ');
       return ov + '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">BY MODEL</div>' + (models || '<div class="mc-detail dim">—</div>') +
         '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">OUTCOMES</div><div class="mc-detail dim">' + (reasons || '—') + '</div>';
@@ -1781,7 +1810,7 @@ const StationUI = (() => {
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
-    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '680px' }],
+    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '680px', className: 'skills-term', fitViewport: true }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { w: '500px' }],

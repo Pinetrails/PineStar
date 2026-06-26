@@ -37,6 +37,7 @@ src-tauri/binaries/
 .uisummon/
 .uiaudit/
 .uigolden/
+.dogfood/
 .matest-workspaces/
 # skin-generation working files (pixellab scratch; the committed sprite sets + _preset recipe stay tracked)
 frontend/assets/sprites/_clawd_work/

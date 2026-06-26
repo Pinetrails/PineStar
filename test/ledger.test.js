@@ -17,6 +17,8 @@ const clock = { now: () => t };
   const e = L.record({ runId: 'r1', agentId: 'a', turns: 3, usd: 0.5, tokens: 1200 });
   A.eq(e.ts, t, 'record stamps the injected clock time');
   A.eq(e.usd, 0.5, 'usd preserved');
+  A.eq(e.model, '(unknown)', 'missing model records explicit unknown');
+  A.eq(e.unmetered, false, 'metered by default');
   A.eq(io.rows.length, 1, 'entry persisted through io.append');
   A.eq(L.count(), 1, 'count reflects the recorded run');
   A.eq(io.rows[0].runId, 'r1', 'persisted entry carries the runId');
@@ -28,7 +30,19 @@ const clock = { now: () => t };
   A.eq(L.record({ runId: 'r', usd: 1, ts: 42 }).ts, 42, 'explicit ts is honored');
   const z = L.record({});
   A.eq([z.runId, z.agentId, z.turns, z.usd, z.tokens], ['', '', 0, 0, 0], 'absent fields coerce to safe defaults');
+  A.eq(z.model, '(unknown)', 'absent model coerces to explicit unknown');
   A.eq(z.ts, t, 'absent ts falls back to the clock');
+}
+
+// ---- model + unmetered are persisted on spend rows ----
+{
+  const io = fakeIo();
+  const L = makeLedger({ io, clock });
+  const e = L.record({ runId: 'codex-run', agentId: 'a', usd: 0, tokens: 900000, model: '  gpt-5.3-codex  ', unmetered: true });
+  A.eq(e.model, 'gpt-5.3-codex', 'model is trimmed and recorded');
+  A.eq(e.unmetered, true, 'unmetered flag recorded');
+  A.eq(io.rows[0].model, 'gpt-5.3-codex', 'persisted row carries model');
+  A.eq(L.all()[0].unmetered, true, 'all() surfaces unmetered');
 }
 
 // ---- totals + scoped queries ----

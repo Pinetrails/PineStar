@@ -21,6 +21,8 @@ const { makeConcurrencyGate } = require('./concurrency.js');
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
+const { makeBrowserTools } = require('./tools/builtin/browser.js');
+const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
@@ -43,7 +45,9 @@ const { summarizeCapabilities } = require('./capability/capsummary.js');   // tr
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
+const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
+const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
 const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
@@ -57,6 +61,7 @@ const { makeSseHub } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
+const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
@@ -533,6 +538,7 @@ function stashProposals(agentId, runId, proposals) {
 // fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
 async function runReflection(o) {
   const { agentId, runId, messages, provider, model, cost } = o;
+  const unmetered = !!(o && o.unmetered);
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, REFLECT_TIMEOUT_MS);
   let usd = 0, tokens = 0;
@@ -566,7 +572,7 @@ async function runReflection(o) {
     clearTimeout(timer);
     // book the reflection's own spend into the append-only ledger so the day/global pools stay honest (the run
     // already booked the loop's spend before this fired). A second entry for the same runId just sums.
-    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens }); } catch (_) {} }
+    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
   }
 }
 
@@ -716,7 +722,8 @@ function saveConnectorConfigs() {
   } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
 }
 const connectors = makeConnectorManager({
-  makeTransport: makeHttpTransport, clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
+  clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
@@ -1192,7 +1199,7 @@ server.listen(PORT, '127.0.0.1', () => {
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
   // connector that is down/errors simply projects no tools — it never blocks the host or a run).
   try {
-    for (const c of connectorConfigs) { if (c && c.enabled !== false && c.url) connectors.configure(c.id, c).catch(() => {}); }
+    for (const c of connectorConfigs) { if (c && c.enabled !== false && (c.url || c.command)) connectors.configure(c.id, c).catch(() => {}); }
     if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
   // cron (OPT-IN): the scheduler arms iff SKYNET_CRON_ENABLED OR the persisted runtime cronArmed flag is set
@@ -1276,12 +1283,33 @@ async function handleConnectorUpsert(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const id = String(body.id || '').trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return json(400, { error: 'connector id must be 1-40 chars of [A-Za-z0-9_-]' });
-  const url = String(body.url || '').trim();
-  if (!url) return json(400, { error: 'a server URL is required' });
   const prev = connectorConfigs.find(c => c.id === id) || {};
+  const transport = String(body.transport || prev.transport || (body.command ? 'stdio' : 'http')).toLowerCase();
+  if (transport !== 'http' && transport !== 'stdio') return json(400, { error: 'connector transport must be "http" or "stdio"' });
+  const url = String(body.url || (transport === 'http' ? (prev.url || '') : '')).trim();
+  const command = String(body.command || (transport === 'stdio' ? (prev.command || '') : '')).trim();
+  if (transport === 'http' && !url) return json(400, { error: 'a server URL is required' });
+  if (transport === 'stdio' && !command) return json(400, { error: 'a stdio command is required' });
+  let args = Array.isArray(prev.args) ? prev.args.slice() : [];
+  if ('args' in body) {
+    if (!Array.isArray(body.args)) return json(400, { error: 'stdio args must be an array' });
+    args = body.args.map(a => String(a == null ? '' : a));
+  }
+  let env = (prev.env && typeof prev.env === 'object') ? Object.assign({}, prev.env) : {};
+  if ('env' in body) {
+    if (!body.env || typeof body.env !== 'object' || Array.isArray(body.env)) return json(400, { error: 'stdio env must be an object' });
+    env = {};
+    for (const k of Object.keys(body.env)) env[k] = String(body.env[k] == null ? '' : body.env[k]);
+  }
   const cfg = {
-    id: id, url: url,
-    token: ('token' in body && body.token !== '') ? String(body.token) : (prev.token || ''),   // a blank token keeps the saved one
+    id: id,
+    transport: transport,
+    url: transport === 'http' ? url : '',
+    token: transport === 'http' ? (('token' in body && body.token !== '') ? String(body.token) : (prev.token || '')) : '',   // a blank token keeps the saved one for HTTP only
+    command: transport === 'stdio' ? command : '',
+    args: transport === 'stdio' ? args : [],
+    cwd: transport === 'stdio' ? String(body.cwd || prev.cwd || '') : '',
+    env: transport === 'stdio' ? env : {},
     label: String(body.label || prev.label || id),
     enabled: body.enabled !== false
   };
@@ -1834,7 +1862,9 @@ async function handleRun(req, res) {
    reply-assembler for the hub), the run lifecycle/cleanup, AND the consent SURFACE — 'interactive' + a live
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
-  const { key, model, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
+  const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
+  const usingCodex = (o.provider === 'codex' || o.provider === 'openai-codex');
+  let model = String((o && o.model) || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
@@ -1877,6 +1907,7 @@ async function runOnce(o) {
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
+  makeBrowserTools({}).register(registry);   // browser.* automation: exposed only through the web/dish capability
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -1893,6 +1924,8 @@ async function runOnce(o) {
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  // computer.use (same workbench gate): desktop control is execute-scoped, consent-gated, and driver-injected by desktop builds.
+  makeComputerTools({}).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -1956,7 +1989,6 @@ async function runOnce(o) {
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
   // an API key. A dead/missing token surfaces as a clean run.error so the UI can prompt a re-sign-in; everything
   // downstream of the provider seam (loop, cost, gauge) is identical to the OpenRouter path.
-  const usingCodex = (o.provider === 'codex' || o.provider === 'openai-codex');
   let provider;
   if (usingCodex) {
     let codexToken;
@@ -2030,7 +2062,9 @@ async function runOnce(o) {
     }
     const c = cost.reconcile(usage, model);
     emit('agent.cost', { agentId, runId, usd: c.usd || 0, model, reconciled: true });   // display-only; no token fields (gauge-safe)
-    return { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
+    const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
+    if (c.unpriced) r.unpricedUsage = [{ model, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
+    return r;
   }
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
   // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
@@ -2215,12 +2249,16 @@ async function runOnce(o) {
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
     // result.usd/tokens already INCLUDE the summarizer's spend (the loop folds it into spentUsd as it accrues).
-    try { ledger.record({ runId, agentId, turns: (result && result.turns) || 0, usd: (result && result.usd) || 0, tokens: (result && result.tokens) || 0 }); } catch (_) {}
+    const finalModel = resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL });
+    const finalUsd = effectiveUsd({ usd: (result && result.usd) || 0, unmetered: usingCodex, unpricedUsage: result && result.unpricedUsage, priceOf: provider && provider.priceOf });
+    const finalTurns = (result && result.turns) || 0;
+    const finalTokens = (result && result.tokens) || 0;
+    try { ledger.record({ runId, agentId, turns: finalTurns, usd: finalUsd, tokens: finalTokens, model: finalModel, unmetered: usingCodex }); } catch (_) {}
     // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: (result && result.turns) || 0, tokens: (result && result.tokens) || 0, usd: (result && result.usd) || 0, title: title, streamId: o.streamId || '', model: model || '' });   // H3.2/H3.3: join to transcript + per-model insights
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: usingCodex });   // H3.2/H3.3/G6: transcript join + honest model/spend insights
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
@@ -2235,7 +2273,7 @@ async function runOnce(o) {
   // Keep/Edit/Discard turn-in. Gated to a COMPLETED run with a substantive exchange; reflect() dedups vs the
   // store and never auto-writes (§5.6). result.messages is the live conversation (the agent's replies included).
   if (o.reflect && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)) {
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model, cost }).catch(() => {});
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: usingCodex }).catch(() => {});
   }
   return result;
 

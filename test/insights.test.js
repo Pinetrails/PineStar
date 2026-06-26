@@ -16,6 +16,8 @@ const r = foldInsights(rows, { nowMs: 1000 + 2 * H, bucketMs: H, buckets: 3 });
 
 // ---- overview ----
 A.eq(r.totalRuns, 3, 'total runs');
+A.eq(r.meteredRuns, 3, 'all fixture runs are metered');
+A.eq(r.unmeteredRuns, 0, 'no unmetered runs in base fixture');
 A.ok(Math.abs(r.totalUsd - 0.06) < 1e-9, 'total spend sums');
 A.eq(r.totalTokens, 1700, 'total tokens sum');
 A.ok(Math.abs(r.avgUsdPerRun - 0.02) < 1e-9, 'avg $/run');
@@ -47,5 +49,32 @@ A.eq(e.byModel.length, 0, 'empty: no models');
 // ---- a row with no model folds under (unknown) (never crashes) ----
 const u = foldInsights([{ reason: 'done', usd: 0.01, ts: 1000 }], { nowMs: 1000 });
 A.eq(u.byModel[0].model, '(unknown)', 'a model-less run folds under (unknown)');
+
+// ---- G6: unmetered/subscription runs count for activity/tokens but are excluded from USD aggregates ----
+{
+  const mixed = [
+    { reason: 'done', usd: 0.04, tokens: 100, model: 'metered-a', agentId: 'a', ts: 1000 },
+    { reason: 'done', usd: 123.45, tokens: 900, model: 'gpt-5.3-codex', agentId: 'a', ts: 1000 + H, unmetered: true },
+    { reason: 'error', usd: 0.02, tokens: 200, model: 'metered-b', agentId: 'b', ts: 1000 + 2 * H }
+  ];
+  const x = foldInsights(mixed, { nowMs: 1000 + 2 * H, bucketMs: H, buckets: 3 });
+  A.eq(x.totalRuns, 3, 'mixed: unmetered run still counts');
+  A.eq(x.meteredRuns, 2, 'mixed: metered run count');
+  A.eq(x.unmeteredRuns, 1, 'mixed: unmetered run count');
+  A.ok(Math.abs(x.totalUsd - 0.06) < 1e-9, 'mixed: totalUsd excludes unmetered reported dollars');
+  A.eq(x.totalTokens, 1200, 'mixed: token totals include unmetered usage');
+  A.ok(Math.abs(x.avgUsdPerRun - 0.03) < 1e-9, 'mixed: avg USD divides by metered run count only');
+  const codex = x.byModel.find(m => m.model === 'gpt-5.3-codex');
+  A.ok(codex && codex.unmetered, 'mixed: Codex row is marked unmetered');
+  A.eq(codex.spendLabel, 'subscription / unmetered', 'mixed: Codex row carries subscription label');
+  A.eq(codex.usd, 0, 'mixed: Codex row USD excluded');
+  A.eq(codex.tokens, 900, 'mixed: Codex row token total retained');
+  const agentA = x.byAgent.find(a => a.agentId === 'a');
+  A.ok(Math.abs(agentA.usd - 0.04) < 1e-9, 'mixed: byAgent USD excludes unmetered dollars');
+  A.eq(agentA.runs, 2, 'mixed: byAgent run count includes unmetered');
+  A.eq(agentA.unmeteredRuns, 1, 'mixed: byAgent tracks unmetered runs');
+  A.ok(Math.abs(x.overTime.reduce((s, b) => s + b.usd, 0) - 0.06) < 1e-9, 'mixed: overTime USD excludes unmetered dollars');
+  A.eq(x.overTime.reduce((s, b) => s + b.unmeteredRuns, 0), 1, 'mixed: overTime tracks unmetered runs separately');
+}
 
 A.report('insights.test');
