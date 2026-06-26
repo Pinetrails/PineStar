@@ -102,7 +102,7 @@
     const emit = o.emit;
     const tools = o.tools || [];
     const limits = o.limits || {};
-    const maxIters = limits.maxIters || 10;
+    const maxIters = limits.maxIters || 40;
     // GRACE TURN (P0.3): when a run hits the iteration ceiling, give it ONE final no-tools turn to deliver its
     // best answer instead of dead-stopping at 'max_iters' (the Hermes grace-call pattern). Default on; pass
     // limits.grace === false to test/force the raw hard cap. Bounded: exactly one grace turn per run.
@@ -242,6 +242,7 @@
       // until a context manager + summarizer are injected). Runs before turns++ so it cannot inflate the count.
       await maybeCompact();
       if (signal.aborted) return end('cancelled');   // a cancel during summarization ends cleanly
+      const turnStart = turns;
       turns++;
 
       // (2) STREAM one model call — with classified RECOVERY (compress on overflow / fall back on a failover) so a
@@ -316,7 +317,10 @@
       messages.push(assistantTurn(acc.text, calls));
 
       // (5) STOP iff no tool calls accumulated
-      if (calls.length === 0) return end('done');
+      if (calls.length === 0) {
+        if (!String(acc.text || '').trim()) turns = turnStart;   // empty/no-assistant turn: refund only this turn
+        return end('done');
+      }
 
       // (6) EXECUTE — needs a dispatcher (M1.2+)
       if (!dispatch) {

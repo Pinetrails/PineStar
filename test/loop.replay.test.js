@@ -113,6 +113,31 @@ function chatFixture() {
     A.eq(seq.find(e => e.name === 'agent.cost').payload.tokensIn, 0, 'agent.cost zeros without usage');
   }
 
+  // ---- no-op refund: an empty/no-assistant/no-tool turn does not consume an effective turn ----
+  {
+    const { seq, emit } = setup();
+    const provider = makeReplayProvider({ turns: [[{ type: 'done', finishReason: 'stop' }]] });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', limits: { maxIters: 1, grace: false } });
+    A.eq(res.reason, 'done', 'empty no-tool turn still ends cleanly');
+    A.eq(res.turns, 0, 'empty no-tool turn is refunded to the turn starting count');
+    A.eq(seq.find(e => e.name === 'agent.run.end').payload.turns, 0, 'run.end reports the refunded effective turn count');
+  }
+
+  // ---- no-op refund never erases earlier productive turns ----
+  {
+    const { emit } = setup();
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async (a) => 'wrote ' + a.path });
+    const provider = makeReplayProvider({ turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'done', finishReason: 'stop' }]
+    ] });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', limits: { maxIters: 2, grace: false }, dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: openCtx() });
+    A.eq(res.reason, 'done', 'productive turn followed by empty final turn ends cleanly');
+    A.eq(res.turns, 1, 'refund restores only the empty turn, not the earlier productive turn');
+  }
+
   // ---- L2: broken tool-call args are repaired, the tool runs, pairing holds ----
   {
     const { seq, emit } = setup();

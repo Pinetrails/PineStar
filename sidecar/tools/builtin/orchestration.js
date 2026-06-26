@@ -9,6 +9,7 @@
      roster    : () -> Map(agentId -> { system, name, model }) — the live crew identities (pushed by the browser)
      key       : this run's API key (per-run)        model : the lead's model (worker fallback)
      perWorker : per-WORKER USD ceiling (a runaway worker can't blow the lead's per-run cap)
+     workerMaxIters: per-WORKER iteration ceiling (a runaway worker can't burn the lead's full loop)
      newId     : () -> a fresh runId for each child (crypto.randomUUID, injected so this UMD stays dep-free)
      maxWorkers: hard cap on workers per dispatch (defensive)
 
@@ -56,6 +57,7 @@
     // string when absent → a spawned subagent still runs, just without an inherited persona.
     const selfSystem = (typeof deps.selfSystem === 'string') ? deps.selfSystem : '';
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
+    const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 10;
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
     const maxWorkers = (typeof deps.maxWorkers === 'number' && deps.maxWorkers > 0) ? deps.maxWorkers : 4;
@@ -127,7 +129,8 @@
               // (A headless lead passes an autonomous broker → its workers still can't self-approve shell. Safe.)
               consent: ctx && ctx.consent,
               extraObjects: WORKER_KIT,
-              maxCostUsd: perWorker            // a runaway worker can't blow the lead's per-run ceiling
+              maxCostUsd: perWorker,           // a runaway worker can't blow the lead's per-run ceiling
+              maxIters: workerMaxIters         // a runaway worker can't burn the lead's full iteration budget
             });
           } catch (e) {
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
@@ -219,7 +222,8 @@
                 consent: ctx && ctx.consent,                // same approval posture as the orchestrator
                 extraObjects: WORKER_KIT,                   // WORKBENCH only — NO 'lead' → no orchestrator object →
                                                             // team.spawn never exposed to it → FLAT DEPTH (no re-spawn)
-                maxCostUsd: perWorker                        // a runaway clone can't blow the lead's per-run ceiling
+                maxCostUsd: perWorker,                       // a runaway clone can't blow the lead's per-run ceiling
+                maxIters: workerMaxIters                     // a runaway clone can't burn the lead's full iteration budget
               });
             } catch (e) {
               const r = { label, agentId: ephemeralId, reason: 'error', result: 'subagent run failed: ' + ((e && e.message) || e), usd: 0 };
@@ -323,7 +327,8 @@
             trigger: 'directive', surface: 'autonomous',
             consent: ctx && ctx.consent,
             extraObjects: WORKER_KIT,
-            maxCostUsd: perWorker
+            maxCostUsd: perWorker,
+            maxIters: workerMaxIters
           });
         } catch (e) {
           return { status: 'error', reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };

@@ -193,6 +193,7 @@ One sequence across all three domains, grouped into waves. Sizes: **S** = days, 
 21. **(L) Harness #11** — LSP lint-delta (tsserver).
 22. **(L) Harness #12** — make the loop re-entrant. *Prereq for delegation.*
 23. **(L) Harness #13** — `delegate` tool (attenuate ∩-rule, shared global budget).
+    - Session 5 H6.3 checkpoint: `team.dispatch`, background dispatch, `team.resume`, and `team.spawn` now carry a worker `maxIters` cap of 10 by default, and empty/no-assistant/no-tool loop turns refund to the turn's starting count. Production `runOnce` consumption is held while `sidecar/index.js` is contended.
 24. **(M) Harness #14** — progressive tool disclosure (before the tool count explodes).
 25. **(L) Harness #15** — skills + background review.
 26. **(M) Harness #16** — curator.

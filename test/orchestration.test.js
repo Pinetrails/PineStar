@@ -45,6 +45,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(ro.calls[1].model, 'lead-model', 'child falls back to the lead model when the worker has none');
   A.ok(ro.calls[0].signal === signal, 'the parent signal is threaded into the child (abort propagation)');
   A.eq(ro.calls[0].maxCostUsd, 1, 'per-worker cost cap is passed to the child');
+  A.eq(ro.calls[0].maxIters, 10, 'default per-worker iteration cap is passed to the child');
   A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless on the autonomous office baseline');
   // SAME ACCESS AS THE ORCHESTRATOR: a worker shares the lead's consent broker (its APPROVAL posture + grants)
   // and is handed the WORKBENCH, so shell/writes are available and gated by the lead's approvals — not auto-denied.
@@ -59,6 +60,15 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(parsed[0].result, 'out:researcher', "result carries the worker's final assistant text");
   A.eq(parsed[0].reason, 'done', 'result carries the run reason');
   A.ok(Math.abs(parsed[0].usd - 0.2) < 1e-9, 'result carries the worker spend');
+}
+
+// ---- worker maxIters can be tuned without changing the lead's loop default ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['researcher', { system: 'R' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), workerMaxIters: 6 });
+  await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }] }, { agentId: 'lead', emit: () => {} });
+  A.eq(ro.calls[0].maxIters, 6, 'deps.workerMaxIters overrides the default worker loop cap');
 }
 
 // ---- child emit forwarding: ONLY lifecycle/cost reach the lead bus (no token/COMMS pollution) ----
@@ -129,6 +139,8 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }], background: true }, { agentId: 'lead', emit: () => {} });
     const handle = JSON.parse(out.content)[0];
     A.ok(handle.id && handle.status === 'running', 'background dispatch returns a running durable handle immediately');
+    await tick();
+    A.eq(ro.calls[0].maxIters, 10, 'background worker receives the same default iteration cap');
     await tick(); await tick();
     const rec = subagents.get(handle.id);
     A.eq(rec.status, 'done', 'background worker completes into the durable record');
@@ -161,6 +173,26 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     A.ok(childSignal && childSignal.aborted, 'team.interrupt aborts the child run signal');
     A.eq(subagents.get(handle.id).status, 'interrupted', 'team.interrupt marks the durable record interrupted');
     A.eq(subagents.get(handle.id).canResume, true, 'interrupted background worker can be resumed');
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+// ---- team.resume restarts a background worker with the same worker iteration cap ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-orch-resume-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'subagents.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const first = subagents.start({ leadId: 'lead', agentId: 'researcher', prompt: 'retry', runId: 'run_a' }, async () => new Promise(() => {}));
+    await tick();
+    subagents.interrupt(first.id, 'lead');
+    const ro = fakeRunOnce(async () => ({ reason: 'done', messages: [{ role: 'assistant', content: 'resumed' }], usd: 0 }));
+    const roster = new Map([['researcher', { system: 'R' }]]);
+    const { resumeTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), subagents, workerMaxIters: 7 });
+    const out = await resumeTool.run({ id: first.id }, { agentId: 'lead', emit: () => {} });
+    A.eq(out.summary, 'resumed', 'team.resume restarts the interrupted worker');
+    await tick(); await tick();
+    A.eq(ro.calls[0].maxIters, 7, 'resumed worker receives the configured iteration cap');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }
@@ -293,6 +325,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     A.ok(ro.calls[0].agentId !== ro.calls[1].agentId && ro.calls[0].agentId !== 'lead', 'each clone is a distinct, non-lead id');
     A.eq(ro.calls[0].isTask, true, 'the clone run is a task (tool-capable)');
     A.eq(ro.calls[0].maxCostUsd, 2, 'per-worker cost cap is passed to the clone');
+    A.eq(ro.calls[0].maxIters, 10, 'default per-worker iteration cap is passed to the clone');
     A.ok(ro.calls[0].consent === leadBroker, 'the clone shares the lead consent broker (same approval posture)');
     A.ok(Array.isArray(ro.calls[0].extraObjects) && ro.calls[0].extraObjects.some(o => o.objectType === 'workbench'), 'the clone gets the workbench (terminal)');
     A.ok(!ro.calls[0].lead, 'FLAT DEPTH: the clone is NOT a lead (no orchestrator object) so it cannot re-spawn');
