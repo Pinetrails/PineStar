@@ -1,6 +1,6 @@
 # StarNet Phase 4 Baseline
 
-Generated: `2026-06-26T19:41:33.922Z`
+Generated: `2026-06-26T21:14:48.236Z`
 
 This file preserves the latest Phase 1-3 evidence before Phase 4 planning. It is intentionally tracked in `docs/`; raw logs remain under `.dogfood/` and may be regenerated.
 
@@ -20,7 +20,7 @@ This file preserves the latest Phase 1-3 evidence before Phase 4 planning. It is
 
 # StarNet Phase 2 Evidence
 
-- Generated: `2026-06-26T19:40:54.743Z`
+- Generated: `2026-06-26T21:14:08.251Z`
 - Verdict: `blocked`
 - Live key present: `false`
 - Cargo present: `false`
@@ -40,13 +40,13 @@ This file preserves the latest Phase 1-3 evidence before Phase 4 planning. It is
 
 ## Logs
 
-- `test-fast`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-193924\test-fast.log`
-- `test-http`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-193924\test-http.log`
-- `audit-mock`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-193924\audit-mock.log`
-- `golden`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-193924\golden.log`
-- `validate-map`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-193924\validate-map.log`
-- `test-world`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-193924\test-world.log`
-- `desktop-prepare`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-193924\desktop-prepare.log`
+- `test-fast`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-211238\test-fast.log`
+- `test-http`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-211238\test-http.log`
+- `audit-mock`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-211238\audit-mock.log`
+- `golden`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-211238\golden.log`
+- `validate-map`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-211238\validate-map.log`
+- `test-world`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-211238\test-world.log`
+- `desktop-prepare`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-211238\desktop-prepare.log`
 
 ## Next Action
 
@@ -56,7 +56,7 @@ Blocked steps need external state: usually a real OpenRouter key or desktop Rust
 
 # StarNet Dogfood Evidence
 
-- Generated: `2026-06-26T19:41:31.560Z`
+- Generated: `2026-06-26T21:14:45.887Z`
 - Verdict: `blocked`
 - Live key present: `false`
 
@@ -75,12 +75,12 @@ Blocked steps need external state: usually a real OpenRouter key or desktop Rust
 
 ## Logs
 
-- `research-file-replay`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-194055\research-file-replay.log`
-- `shell-exec-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-194055\shell-exec-proof.log`
-- `verify-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-194055\verify-proof.log`
-- `cancel-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-194055\cancel-proof.log`
-- `budget-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-194055\budget-proof.log`
-- `restart-resume-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-194055\restart-resume-proof.log`
+- `research-file-replay`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-211408\research-file-replay.log`
+- `shell-exec-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-211408\shell-exec-proof.log`
+- `verify-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-211408\verify-proof.log`
+- `cancel-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-211408\cancel-proof.log`
+- `budget-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-211408\budget-proof.log`
+- `restart-resume-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-211408\restart-resume-proof.log`
 
 ## Verdict Rule
 
@@ -90,7 +90,7 @@ This pack is green only when paid live provider proof and the attended UI dogfoo
 
 # StarNet Phase 3 Evidence
 
-- Generated: `2026-06-26T19:41:32.306Z`
+- Generated: `2026-06-26T21:14:46.712Z`
 - Verdict: `blocked`
 - Loops run: `1`
 - Cargo present: `false`
