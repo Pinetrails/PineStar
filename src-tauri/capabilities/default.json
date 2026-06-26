@@ -1,8 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core permissions for the Skynet window plus the app's own keychain commands (harness_store_key/has_key/clear_key, allowed by default once a capability applies). Wildcard window match so it also covers the window created dynamically in setup().",
+  "description": "Core permissions for the StarNet app window plus the app's own keychain/update commands. The packaged UI loads from the bundled app origin; the loopback sidecar bridge is plain fetch/CORS and does not need native permissions on remote localhost pages.",
   "windows": ["*"],
-  "remote": { "urls": ["http://127.0.0.1:*/**", "http://localhost:*/**"] },
   "permissions": ["core:default", "updater:default"]
 }

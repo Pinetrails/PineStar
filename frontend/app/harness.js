@@ -52,19 +52,15 @@ const Harness = (() => {
     return init;
   }
   function ensureApiToken() {
+    if (!apiToken && typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) apiToken = String(window.__STARNET_API_TOKEN__);
     if (apiToken) return Promise.resolve(apiToken);
-    if (apiTokenPromise) return apiTokenPromise;
-    apiTokenPromise = fetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-      .then(r => r.ok ? r.json() : null)
-      .then(j => { apiToken = String((j && j.token) || ''); return apiToken; })
-      .catch(() => '')
-      .then(t => { apiTokenPromise = null; return t; });
+    if (!apiTokenPromise) apiTokenPromise = Promise.resolve('').then(t => { apiTokenPromise = null; return t; });
     return apiTokenPromise;
   }
   if (typeof window !== 'undefined' && window.fetch && !window.__STARNET_FETCH_HARDENED__) {
     const rawFetch = window.fetch.bind(window);
     window.fetch = function (u, init) {
-      if (!isApiUrl(u) || String(u) === '/api/session') return rawFetch(u, init);
+      if (!isApiUrl(u)) return rawFetch(u, init);
       return ensureApiToken().then(t => rawFetch(u, withApiToken(init, t)));
     };
     window.__STARNET_FETCH_HARDENED__ = true;
@@ -300,7 +296,7 @@ const Harness = (() => {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
-    apiToken: () => apiToken,
+    apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
