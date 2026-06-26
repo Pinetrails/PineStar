@@ -76,5 +76,45 @@ function resp(status, body, headers) {
     await a.disconnect();
   }
 
+  // ---- D. DM ownership: first Discord DM claims owner; preset owner survives restart/refuses strangers ----
+  {
+    const inbox = [], claims = [];
+    const connectGateway = ({ onMessage }) => {
+      onMessage({ id: '960', channel_id: 'a', content: 'first', author: { id: 'owner', username: 'o' } });
+      onMessage({ id: '961', channel_id: 'b', content: 'takeover', author: { id: 'stranger', username: 's' } });
+      onMessage({ id: '962', channel_id: 'a', content: 'again', author: { id: 'owner', username: 'o' } });
+      return { close() {} };
+    };
+    const transport = makeDiscordTransport({ fetch: fakeFetch(() => resp(200, { id: '1' })), token: 'T', connectGateway, parkMs: 1, sleep: () => Promise.resolve() });
+    const a = makeDiscordAdapter({
+      transport, onInbound: m => inbox.push(m), onOwnerClaim: u => claims.push(u),
+      clock: { now: () => 1 }, dropPendingOnConnect: false
+    });
+    await a.connect();
+    for (let i = 0; i < 20 && inbox.length < 2; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['first', 'again'], 'first Discord DM claims owner; a different user is dropped');
+    A.eq(claims, ['owner'], 'Discord owner claim callback fires once with the first userId');
+    A.eq(a._internals.owner, 'owner', 'Discord adapter records the claimed owner');
+    await a.disconnect();
+  }
+  {
+    const inbox = [], claims = [];
+    const connectGateway = ({ onMessage }) => {
+      onMessage({ id: '970', channel_id: 'x', content: 'reclaim', author: { id: 'stranger', username: 's' } });
+      onMessage({ id: '971', channel_id: 'y', content: 'owner-ok', author: { id: 'owner', username: 'o' } });
+      return { close() {} };
+    };
+    const transport = makeDiscordTransport({ fetch: fakeFetch(() => resp(200, { id: '1' })), token: 'T', connectGateway, parkMs: 1, sleep: () => Promise.resolve() });
+    const a = makeDiscordAdapter({
+      transport, ownerUserId: 'owner', onInbound: m => inbox.push(m), onOwnerClaim: u => claims.push(u),
+      clock: { now: () => 1 }, dropPendingOnConnect: false
+    });
+    await a.connect();
+    for (let i = 0; i < 20 && inbox.length < 1; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['owner-ok'], 'preset Discord owner survives restart; first stranger DM cannot reclaim');
+    A.eq(claims, [], 'preset owner does not emit a new claim');
+    await a.disconnect();
+  }
+
   A.report('channels.discord.test');
 })().catch(e => { console.error(e); process.exit(1); });

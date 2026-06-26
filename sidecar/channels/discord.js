@@ -53,6 +53,8 @@
       name: 'discord',
       maxMessageLength: MAX_MESSAGE_LENGTH,
       allowedChats: o.allowedChats,
+      ownerUserId: o.ownerUserId,
+      onOwnerClaim: o.onOwnerClaim,
       onInbound: o.onInbound,
       onCallback: o.onCallback,
       onStatus: o.onStatus,

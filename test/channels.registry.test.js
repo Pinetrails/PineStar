@@ -63,21 +63,37 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
   }
 
   // ---- C. the REAL discord descriptor wires into a STARTABLE adapter bound to the hub ----
-  //   (the gateway->normalize->onInbound e2e is already proven in channels.discord.test.js; here we prove only
-  //    that the registry/wire path produces a real, connectable discord adapter tied to a real hub.)
+  //   The host passes ownerUserId through this generic wire path; a preset owner must survive restart and
+  //   refuse a stranger's first DM before it reaches runOnce.
   {
     const reg = makeChannelRegistry();
-    let boundInbound = null;
-    const runOnce = async () => {};
-    const transport = makeDiscordTransport({ fetch: fakeFetch(), token: 'T', connectGateway: ({ onMessage }) => ({ close() {} }), parkMs: 1, sleep: () => Promise.resolve() });
+    const ran = [], sent = [];
+    const runOnce = async (o) => {
+      ran.push(o);
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const transport = makeDiscordTransport({ fetch: fakeFetch(), token: 'T', connectGateway: ({ onMessage }) => {
+      onMessage({ id: '1', channel_id: 'x', content: 'steal it', author: { id: 'stranger', username: 's' } });
+      onMessage({ id: '2', channel_id: 'y', content: 'owner msg', author: { id: 'owner', username: 'o' } });
+      return { close() {} };
+    }, parkMs: 1, sleep: ms => new Promise(r => setTimeout(r, ms)) });
     const { hub, adapter } = wireChannel(reg.get('discord'), {
-      hub: { runOnce, store: fakeStore(), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: ids() },
-      adapter: { transport, clock: { now: () => 1 } }
+      hub: { runOnce, store: fakeStore(), send: (c, t) => { sent.push({ c, t }); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: ids() },
+      adapter: { transport, clock: { now: () => 1 }, ownerUserId: 'owner' }
     });
     A.eq(typeof adapter.connect, 'function', 'discord wires into an adapter with connect()');
     A.eq(typeof adapter.disconnect, 'function', 'discord adapter exposes disconnect()');
     A.eq(typeof adapter.send, 'function', 'discord adapter exposes send() (the hub send-ref target)');
     A.eq(typeof hub.onInbound, 'function', 'a real makeChannelHub backs the discord channel (inbound -> runOnce path exists)');
+    await adapter.connect();
+    for (let i = 0; i < 20 && ran.length < 1; i++) await tick();
+    A.eq(ran.length, 1, 'preset Discord owner through wireChannel: stranger first DM did not reach runOnce');
+    A.eq(ran[0].messages, [{ role: 'user', content: 'owner msg' }], 'the owner message reached runOnce');
+    for (let i = 0; i < 20 && sent.length < 1; i++) await tick();
+    A.eq(sent, [{ c: 'y', t: 'ok' }], 'reply went back to the owner channel');
+    await adapter.disconnect();
   }
 
   A.report('channels.registry.test');

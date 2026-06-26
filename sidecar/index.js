@@ -929,12 +929,14 @@ function startTelegram(token, key, model, agentCfg) {
   stopTelegram();
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
+  const prev = (channelSecrets && channelSecrets.telegram) || {};
   // Persist the SAME agentId + composed system prompt the app uses, so a Telegram run IS the same agent
   // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
   // LIVE by the hub each message, so /sync can refresh them (dossier edits) without a reconnect.
   channelSecrets = Object.assign({}, channelSecrets, { telegram: {
     token: token, key: key, model: model, provider: provider, enabled: true,
-    agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined
+    agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
+    ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
   saveChannelSecrets(channelSecrets);
   let adapterRef = null;
@@ -1030,9 +1032,11 @@ function startDiscord(token, key, model, agentCfg) {
   stopDiscord();
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
+  const prev = (channelSecrets && channelSecrets.discord) || {};
   channelSecrets = Object.assign({}, channelSecrets, { discord: {
     token: token, key: key, model: model, provider: provider, enabled: true,
-    agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined
+    agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
+    ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
   saveChannelSecrets(channelSecrets);
   const wired = wireChannel(channelRegistry.get('discord'), {
@@ -1052,6 +1056,15 @@ function startDiscord(token, key, model, agentCfg) {
     },
     adapter: {
       fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
+      ownerUserId: (channelSecrets.discord && channelSecrets.discord.ownerId) || '',
+      onOwnerClaim: (uid) => {
+        try {
+          const d = (channelSecrets && channelSecrets.discord) || {};
+          channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, d, { ownerId: String(uid) }) });
+          saveChannelSecrets(channelSecrets);
+          console.log('  · discord owner claimed (userId ' + String(uid) + ') — other DMs are now refused');
+        } catch (_) {}
+      },
       onStatus: (s) => {
         const state = (s && s.state) || 'down';
         discordStatus = { connected: state === 'error' ? false : !!discord, state: state, detail: (s && s.detail) || '' };
@@ -2584,6 +2597,15 @@ const MIME = {
   '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
 };
+const ACTIVE_DELIVERABLE_EXTS = new Set([
+  '.html', '.htm', '.xhtml', '.js', '.mjs', '.cjs', '.svg', '.xml', '.xsl', '.xslt', '.wasm'
+]);
+function safeDownloadName(abs) {
+  return path.basename(abs).replace(/[^A-Za-z0-9_.-]/g, '_') || 'download';
+}
+function isActiveDeliverable(abs) {
+  return ACTIVE_DELIVERABLE_EXTS.has(path.extname(abs).toLowerCase());
+}
 
 // parse a single-range `Range: bytes=a-b` header against a known size. Returns { start, end } (inclusive,
 // clamped) or null when there's no/blank range, or { unsatisfiable: true } when the range can't be served
@@ -2628,13 +2650,15 @@ async function serveWorkspaceFile(req, res) {
   if (!st.isFile()) { res.writeHead(404); return res.end('not found'); }
 
   const ext = path.extname(abs).toLowerCase();
+  const active = isActiveDeliverable(abs);
   const headers = {
-    'Content-Type': MIME[ext] || 'text/plain; charset=utf-8',
+    'Content-Type': active ? 'application/octet-stream' : (MIME[ext] || 'text/plain; charset=utf-8'),
     'Cache-Control': 'no-store',
-    'Content-Disposition': 'inline; filename="' + path.basename(abs).replace(/[^A-Za-z0-9_.-]/g, '_') + '"',
+    'Content-Disposition': (active ? 'attachment' : 'inline') + '; filename="' + safeDownloadName(abs) + '"',
     'X-Content-Type-Options': 'nosniff',
     'Accept-Ranges': 'bytes'   // advertise range support so the browser asks for byte ranges when seeking
   };
+  if (active) headers['Content-Security-Policy'] = "sandbox; default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'";
 
   const range = parseRange(req.headers && req.headers.range, st.size);
   let start = 0, end = st.size - 1, code = 200;
