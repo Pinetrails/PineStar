@@ -24,11 +24,25 @@ $env:OPENROUTER_API_KEY="<real key>"
 npm.cmd run phase4:live
 ```
 
+Create the attended evidence placeholders:
+
+```powershell
+npm.cmd run phase4:evidence:init:decision
+```
+
+Check whether the attended evidence packet is complete:
+
+```powershell
+npm.cmd run phase4:evidence:check
+```
+
 Evidence lands in:
 
 - `.dogfood/phase4-<timestamp>/summary.md`
 - `.dogfood/phase4-<timestamp>/phase4-status.json`
 - `.dogfood/phase4-latest/`
+- `.dogfood/phase4-attended-evidence.json`
+- `.dogfood/phase4-decision.json`
 
 ## Phase 4 Goal
 
@@ -79,6 +93,7 @@ Automated support:
 
 Attended proof:
 
+- `npm.cmd run phase4:evidence:init` can create the placeholder packet.
 - `.dogfood/phase4-attended-evidence.json` must mark `sameWorkTrial.passed`.
 - Evidence must include screenshots, run ids, transcript ids, artifact paths, and
   ledger rows.
@@ -113,6 +128,7 @@ Automated support:
 
 Attended proof:
 
+- `npm.cmd run phase4:evidence:check` must pass.
 - `.dogfood/phase4-attended-evidence.json` marks cancel, budget, denied consent,
   tool error, and checkpoint/restore paths.
 
@@ -122,6 +138,8 @@ Goal: record the replacement decision instead of leaving it implied.
 
 Gate:
 
+- `npm.cmd run phase4:evidence:init:decision` can create a blocked placeholder,
+  but the final values must be set from the real cutover decision.
 - `.dogfood/phase4-decision.json` exists.
 - Decision is one of `ready-to-replace`, `limited-pilot`, `blocked`, or
   `not-ready`.

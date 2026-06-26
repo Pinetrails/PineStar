@@ -1,8 +1,21 @@
 # StarNet Phase 4 Attended Evidence Template
 
-Copy this shape into `.dogfood/phase4-attended-evidence.json` after the live UI
-cutover trial has been run. The Phase 4 runner treats this file as the human
-evidence packet for gates that cannot be proven headlessly.
+The easiest path is to create the placeholders with the helper:
+
+```powershell
+npm.cmd run phase4:evidence:init:decision
+```
+
+Then fill the generated files after the live UI cutover trial has been run and
+check them with:
+
+```powershell
+npm.cmd run phase4:evidence:check
+```
+
+The helper never marks pass fields automatically. The Phase 4 runner treats
+`.dogfood/phase4-attended-evidence.json` as the human evidence packet for gates
+that cannot be proven headlessly.
 
 ```json
 {
