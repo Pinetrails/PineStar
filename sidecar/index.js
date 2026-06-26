@@ -261,6 +261,23 @@ function loadResilient(file, tag) {
 // durable single-file write: fsync-before-rename + snapshot the prior good value to <file>.bak.
 function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
 
+/* ---- P3 bounded append-only JSONL logs ----
+   The ledger / run-history / transcript are append-only and were read into RAM IN FULL at boot
+   (fs.readFileSync(FILE).split('\n')) and never rotated, so months of 24/7 use grow them without bound
+   until a single boot-time readFileSync crash-loops startup. readBoundedJsonl loads only the last
+   LOG_MAX_BYTES of (archive + live) at boot (newest lines), and rotateJsonl rolls the live file to
+   <file>.1 once it passes the cap — so BOOT memory/latency AND on-disk size stay bounded no matter how
+   old the history is. 16 MB of JSONL is far more than any display/query reads (run lists cap at ≤500,
+   insights bucket the last 24 h), so this is behavior-neutral in practice; the one residual — a global
+   ledger total can under-count only past ~2×LOG_MAX_BYTES of lifetime spend, which is far beyond any
+   default cap — is documented in docs/PERSISTENCE_HARDENING.md. Env-overridable. */
+const LOG_MAX_BYTES = Math.max(1 << 20, num(ENV('LOG_MAX_BYTES'), 16 * 1024 * 1024));
+function readBoundedJsonl(file) {
+  return loadBounded({ fs: fs }, file, LOG_MAX_BYTES)
+    .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+}
+function rotateJsonl(file) { try { rotateIfLarge({ fs: fs }, file, LOG_MAX_BYTES); } catch (_) {} }
+
 /* ---- spend ledger + budget (Wave 1 cost spine) ----
    The ledger is an append-only JSONL of finished runs (sibling of the fs jail, so the agent's own fs.* tools can
    neither read nor rewrite the spend record). Each append is fsync'd to disk so the day/global pools survive even
@@ -270,10 +287,7 @@ function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, w
 const LEDGER_FILE = path.join(WORKSPACES, 'ledger.jsonl');
 const ledgerIo = {
   readAll() {
-    try {
-      return fs.readFileSync(LEDGER_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(LEDGER_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     // open(O_APPEND) -> write -> fsync -> close, all fail-open: a persistence error must never crash the run
@@ -285,6 +299,7 @@ const ledgerIo = {
       fs.fsyncSync(fd);
     } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(LEDGER_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
@@ -299,16 +314,14 @@ const concurrencyGate = makeConcurrencyGate({ max: MAX_CONCURRENT_AGENTS });
 const RUNS_FILE = path.join(WORKSPACES, 'runs.jsonl');
 const runsIo = {
   readAll() {
-    try {
-      return fs.readFileSync(RUNS_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(RUNS_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(RUNS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[runs] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(RUNS_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
@@ -322,16 +335,14 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
 const transcriptIo = {
   readAll() {
-    try {
-      return fs.readFileSync(TRANSCRIPT_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(TRANSCRIPT_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(TRANSCRIPT_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
