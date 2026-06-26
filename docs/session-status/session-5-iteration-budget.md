@@ -34,6 +34,8 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - `node test/orchestration.test.js` - pass at 2026-06-26 17:59 UTC
 - `node test/loop.replay.test.js` - pass at 2026-06-26 18:58 UTC
 - `node test/orchestration.test.js` - pass at 2026-06-26 18:58 UTC
+- `node test/loop.replay.test.js` - pass at 2026-06-26 20:00 UTC
+- `node test/orchestration.test.js` - pass at 2026-06-26 20:00 UTC
 
 ## Full Gate
 
@@ -43,6 +45,7 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - Not rerun at 2026-06-26 10:52 UTC; not declaring READY while production run-host plumbing remains blocked.
 - `npm.cmd run test:fast` - pass at 2026-06-26 17:59 UTC
 - `npm.cmd run test:fast` - pass at 2026-06-26 18:58 UTC
+- `npm.cmd run test:fast` - pass at 2026-06-26 20:00 UTC
 
 ## Live Verification
 
@@ -61,6 +64,9 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - `AGENTS.md` was requested by the session prompt but is absent under `C:\Users\andro\gen-trees`; this run followed `docs/STARNET_SESSION_LOOPS_1_6.md` and existing repository conventions.
 - Board check at 2026-06-26 18:58 UTC still shows `sidecar/index.js` actively contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`; it also remains outside the Session 5 owned-file list.
 - `sidecar/index.js` inspection at 2026-06-26 18:58 UTC still shows `runAgentLoop` using `limits: { maxIters: CAPS.maxIters, ... }`; `o.maxIters` is not yet consumed by the production run host.
+- Board check at 2026-06-26 19:59 UTC still shows `sidecar/loop.js` actively contended by `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
+- Board check at 2026-06-26 19:59 UTC still lists `sidecar/index.js` as a contended file across multiple lanes; it also remains outside the Session 5 owned-file list.
+- `sidecar/index.js` inspection at 2026-06-26 20:00 UTC still shows `runAgentLoop` using `limits: { maxIters: CAPS.maxIters, ... }`; `o.maxIters` is not yet consumed by the production run host.
 
 ## Readiness Claim
 
