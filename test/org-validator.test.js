@@ -47,6 +47,17 @@ function twoAgentStation() {
 
 {
   const s = WM.create();
+  const lab = s.addRoom({ kind: 'lab', rect: { x1: 22, y1: 0, x2: 30, y2: 8 } });
+  A.ok(lab.ok, 'isolated lab fixture places');
+  s.addProp({ t: 'bay', x: 24, y: 2, w: 2, h: 2, block: false, agentId: 'stranded' });
+  s.addProp({ t: 'console', x: 27, y: 2, w: 2, h: 1, block: true, agentId: 'stranded' });
+  const v = OV.validateOrg(s);
+  A.ok(!v.ok, 'agent in a disconnected room is invalid');
+  A.ok(v.errors.some(e => e.code === 'AGENT_UNREACHABLE_ANCHOR' && e.agentId === 'stranded'), 'unreachable anchor has a stable reason code');
+}
+
+{
+  const s = WM.create();
   const r = s.roomById(s.spawnRoomId()).rects[0];
   s.addProp({ t: 'bay', x: r.x1 + 2, y: r.y1 + 2, w: 2, h: 2, block: false, agentId: 'ops' });
   s.addProp({ t: 'console', x: r.x1 + 6, y: r.y1 + 2, w: 2, h: 1, block: true, agentId: 'ops' });

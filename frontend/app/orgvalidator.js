@@ -42,6 +42,15 @@
     return { x: c.x - geo.origin.tx, y: c.y - geo.origin.ty };
   }
 
+  function localRoomCenter(geo, room) {
+    const r = room && room.rects && room.rects[0];
+    if (!r) return null;
+    return {
+      x: (Math.floor((r.x1 + r.x2) / 2) | 0) - geo.origin.tx,
+      y: (Math.floor((r.y1 + r.y2) / 2) | 0) - geo.origin.ty
+    };
+  }
+
   function hasCompute(agentId, roomId, props, roomAt) {
     const boundBays = props.filter(p => p.t === 'bay' && p.agentId && roomAt(p.x, p.y) === roomId).length;
     const soloRoom = boundBays <= 1;
@@ -72,6 +81,10 @@
       (byAgent[p.agentId] = byAgent[p.agentId] || []).push(p);
     }
 
+    const spawnRoomId = parts.model && typeof parts.model.spawnRoomId === 'function' ? parts.model.spawnRoomId() : doc.meta && (doc.meta.trunkRoomId || doc.meta.spawnRoomId);
+    const spawnRoom = parts.model && typeof parts.model.roomById === 'function' && spawnRoomId ? parts.model.roomById(spawnRoomId) : null;
+    const spawnAnchor = geo ? localRoomCenter(geo, spawnRoom) : null;
+
     for (const agentId of Object.keys(byAgent).sort()) {
       const bays = byAgent[agentId];
       if (bays.length !== 1) {
@@ -85,6 +98,12 @@
         continue;
       }
       agents[agentId] = { agentId, bayPropId: bay.id || null, roomId, objects: [] };
+      if (geo && typeof geo.path === 'function' && spawnAnchor && roomId !== spawnRoomId) {
+        const bayAnchor = localAnchor(geo, bay);
+        if (!geo.path(spawnAnchor.x, spawnAnchor.y, bayAnchor.x, bayAnchor.y)) {
+          errors.push({ code: 'AGENT_UNREACHABLE_ANCHOR', agentId, propId: bay.id || null, roomId });
+        }
+      }
       if (!hasCompute(agentId, roomId, props, roomAt)) errors.push({ code: 'AGENT_MISSING_COMPUTE', agentId, propId: bay.id || null });
     }
 

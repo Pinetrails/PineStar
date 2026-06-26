@@ -4,7 +4,7 @@
 
 - Status: `CHECKPOINT`
 - Branch/worktree: `agent/org-graph-gap2` in `C:\Users\andro\gen-trees\org-graph-gap2`
-- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness.
+- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with unreachable agent-anchor validation.
 - Runbook note: `AGENTS.md` was requested but is absent under `C:\Users\andro\gen-trees`; followed `docs/STARNET_SESSION_LOOPS_1_6.md`.
 
 ## Changed Files
@@ -23,6 +23,7 @@
 - Validates:
   - duplicate bay anchors: `AGENT_DUPLICATE_ANCHOR`
   - missing compute: `AGENT_MISSING_COMPUTE`
+  - disconnected legal bay room: `AGENT_UNREACHABLE_ANCHOR`
   - unplaced grant object: `GRANT_UNPLACED_OBJECT`
   - unbound connector portal: `CONNECTOR_UNBOUND`
   - unknown edge endpoint: `PIPELINE_UNKNOWN_AGENT`
@@ -30,17 +31,18 @@
   - sealed/severed handoff path: `PIPELINE_SEVERED_CONNECT_CORRIDOR`
 - Added additive `doc.edges: []` migration/default with `PipelineEdge {from,to,whenKind,lane?}` accessors and mutators.
 - Preserved `connectorId` through worldmodel migration so connector portal grants remain stable after deserialize.
+- Added spawn/trunk-to-bay path validation so an agent cannot be seated in an otherwise valid but unreachable room.
 
 ## Tests Run
 
 - `node test/worldmodel.test.js` - pass, `worldmodel: OK (192 assertions)`
-- `node test/org-validator.test.js` - pass, `org-validator: OK (17 assertions)`
+- `node test/org-validator.test.js` - pass, `org-validator: OK (20 assertions)`
 - `node test/pipeline.test.js` - pass, `pipeline: OK (32 assertions)`
 - `npm.cmd run test:fast` - pass
 
 ## Full Gates
 
-- `npm.cmd run test:fast` completed green on 2026-06-26.
+- `npm.cmd run test:fast` completed green on 2026-06-26 after the unreachable-anchor slice.
 - No HTTP or live sidecar gate run in this checkpoint; this slice is pure validation/model persistence only.
 
 ## Live Verification
@@ -59,5 +61,5 @@
 
 ## Next Loop Condition
 
-- If S1 is still unmerged: select the next pure invariant (`unreachable bay`, `dead handoff`, or additional grant-to-placed-object cases) and add tests to `test/org-validator.test.js`.
+- If S1 is still unmerged: select the next pure invariant (`dead handoff` or additional grant-to-placed-object cases) and add tests to `test/org-validator.test.js`.
 - If S1 is merged: wire `OrgValidator.validateOrg` into sidecar station acceptance and routing acceptance without editing shared event/schema contracts.
