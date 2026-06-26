@@ -94,7 +94,7 @@
       requestId: str, agentId: str, name: str, specId: str, persona: str, skin: str, purpose: str
     }),
     'permission.response': obj(['promptId', 'decision'], {
-      promptId: str, decision: { enum: ['once', 'session', 'always', 'deny'] }
+      promptId: str, decision: { enum: ['once', 'session', 'always', 'deny', 'full'] }
     }),
     'object.place': obj(['room', 'objectType', 'instanceId'], { room: str, objectType: str, instanceId: str }),
     'object.reclaim': obj(['room', 'objectType', 'instanceId'], { room: str, objectType: str, instanceId: str }),

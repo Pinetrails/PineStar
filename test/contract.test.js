@@ -27,7 +27,7 @@ const cases = [
   ['agent.run.end', { agentId: 'a', runId: 'r', reason: 'done', turns: 2, usd: 0.2 }, { agentId: 'a', runId: 'r', reason: 'whoops', turns: 2, usd: 0.2 }],
   ['provider.fallback', { agentId: 'a', runId: 'r', fromModel: 'm1', toModel: 'm2', reason: 'rate_limit', rotate: true }, { agentId: 'a', runId: 'r', fromModel: 'm1', toModel: 'm2' }],
   ['budget.threshold', { scope: 'run', usd: 1, cap: 5 }, { scope: 'weekly', usd: 1, cap: 5 }],
-  ['permission.response', { promptId: 'p', decision: 'once' }, { promptId: 'p', decision: 'maybe' }],
+  ['permission.response', { promptId: 'p', decision: 'full' }, { promptId: 'p', decision: 'maybe' }],
   ['memory.recall', { agentId: 'a', runId: 'r', count: 3, chars: 120 }, { agentId: 'a', runId: 'r', count: 'three' }],
   ['memory.write', { agentId: 'a', runId: 'r', id: 'mem_1', kind: 'note', scope: 'global' }, { agentId: 'a', runId: 'r', id: 'mem_1' }],
   ['memory.forget', { agentId: 'a', id: 'mem_1', reason: 'discarded' }, { agentId: 'a', reason: 'discarded' }],
