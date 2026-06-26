@@ -29,12 +29,18 @@ function makeStationStore(o) {
     return { ok: true, rooms: station.rooms().length, props: station.props().length };
   }
 
+  function setSaveDoc(saveDoc) {
+    if (!saveDoc || typeof saveDoc !== 'object' || Array.isArray(saveDoc)) return { ok: false, error: 'save document required' };
+    if (!saveDoc.station || typeof saveDoc.station !== 'object' || Array.isArray(saveDoc.station)) return { ok: false, error: 'save document station required' };
+    return setStation(saveDoc.station);
+  }
+
   function clearStation() { station = null; doc = null; return { ok: true, cleared: true }; }
   function hasStation() { return !!station; }
   function getStation() { return doc; }
   function bayObjects(agentId) { return station ? station.bayObjects(agentId) : null; }
 
-  return { validateStationDoc, setStation, clearStation, hasStation, getStation, bayObjects };
+  return { validateStationDoc, setStation, setSaveDoc, clearStation, hasStation, getStation, bayObjects };
 }
 
 module.exports = { makeStationStore };
