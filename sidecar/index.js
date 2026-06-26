@@ -61,7 +61,8 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
-const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { makeKeyedMutex, readJsonResilient, writeJsonResilient } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { makeMemoryStore } = require('./memory-store.js'); // durable notebook:<agent> and todo:<agent> sibling stores
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -425,30 +426,17 @@ const spotifyStore = makeSpotifyStore({ fsp, pathMod: path, dir: path.join(WORKS
 // in-flight PKCE verifiers keyed by the OAuth `state` (a round-trip completes in seconds). Pruned on each start.
 const spotifyPending = new Map();
 
-// PERSISTENT notebook (memory) — JSON file per agent, durable write, survives sidecar restarts. Stored as a
-// SIBLING of the agent's workspace dir (WORKSPACES/<aid>.notebook.json), OUTSIDE the fs-jailed
-// WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. get/set match the
-// notebook tool's store contract; update(key, mutator) is the SAFE per-agent-serialized write (P1) that
-// re-reads under a lock before merging so concurrent writers (recall fold + cron fire + UI edit) never lose
-// an update, and every write is fsync-durable + keeps a .bak last-known-good (P2).
-function notebookFile(key) {
-  const aid = String(key).replace(/^notebook:/, '') || 'agent';
-  if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('bad notebook agentId');
-  return path.join(WORKSPACES, aid + '.notebook.json');
-}
-const notebookDurable = makeDurableJsonStore({
-  fs: fs, path: path, fileFor: notebookFile, writeDurable: writeFileDurable,
-  onRecover: (key, file) => console.warn('[notebook] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
-  onCorrupt: (key, file) => quarantineCorrupt(file, 'notebook')
+// PERSISTENT memory KV - JSON file per agent/key family, durable write, survives sidecar restarts. Stored as
+// SIBLINGS of the agent's workspace dir (WORKSPACES/<aid>.notebook.json and <aid>.todo.json), OUTSIDE the
+// fs-jailed WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt them. update(key,
+// mutator) is the SAFE per-agent/key serialized write (P1), and every write is fsync-durable + keeps a .bak
+// last-known-good (P2).
+const notebookStore = makeMemoryStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[memory] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : 'notebook'),
+  warn: (...args) => console.warn.apply(console, args)
 });
-const notebookStore = {
-  // get/set tolerate a non-agent key (e.g. the todo tool's 'todo:<aid>', which notebookFile rejects) by
-  // failing soft, exactly as the prior plain-fs store did — behavior-neutral for those callers.
-  get(key) { try { return notebookDurable.get(key); } catch (e) { return undefined; } },
-  set(key, value) { try { notebookDurable.set(key, value); } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); } },
-  // update(key, mutator) -> Promise: per-agent serialized, re-read-under-lock, durable. The ONE safe writer.
-  update(key, mutator) { return notebookDurable.update(key, mutator); }
-};
 
 // PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
 // browser (POST /api/dossier) and folded into server-composed autonomous personas (cron) so an unattended

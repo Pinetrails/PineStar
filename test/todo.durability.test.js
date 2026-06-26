@@ -1,0 +1,79 @@
+/* node test/todo.durability.test.js - durable todo storage regression.
+
+   Guards the StarNet goal 5-6 bug: todo:<agent> keys must not be treated as unsupported notebook keys
+   and swallowed by the host store. The todo tool writes through the same injected memory store as notebook,
+   but persists to its own sibling file so task plans survive restart and compaction. */
+'use strict';
+
+const A = require('./_assert.js');
+const path = require('path');
+const { makeMemoryStore, memoryFileFor } = require('../sidecar/memory-store.js');
+const { makeTodoTool, formatForInjection } = require('../sidecar/tools/builtin/todo.js');
+
+function memFs() {
+  const files = new Map();
+  const fds = new Map();
+  let nextFd = 10;
+  const stats = { fsync: 0, rename: 0 };
+  return {
+    files, stats,
+    readFileSync(p) { if (!files.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; } return files.get(p); },
+    writeFileSync(p, data) { files.set(p, String(data)); },
+    renameSync(a, b) { if (!files.has(a)) { const e = new Error('ENOENT: ' + a); e.code = 'ENOENT'; throw e; } files.set(b, files.get(a)); files.delete(a); stats.rename++; },
+    mkdirSync() {},
+    openSync(p, flags) {
+      const fd = nextFd++;
+      if (flags === 'r') {
+        if (!files.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; }
+        fds.set(fd, { path: p, buf: files.get(p), read: true });
+      } else {
+        fds.set(fd, { path: p, buf: '' });
+        files.set(p, '');
+      }
+      return fd;
+    },
+    writeSync(fd, data) { const h = fds.get(fd); h.buf += String(data); files.set(h.path, h.buf); },
+    fsyncSync() { stats.fsync++; },
+    closeSync(fd) { fds.delete(fd); }
+  };
+}
+
+(async () => {
+  const ROOT = '/ws';
+
+  A.eq(memoryFileFor(ROOT, path, 'notebook:hero'), path.join(ROOT, 'hero.notebook.json'), 'notebook keys map to notebook sibling files');
+  A.eq(memoryFileFor(ROOT, path, 'todo:hero'), path.join(ROOT, 'hero.todo.json'), 'todo keys map to todo sibling files');
+  A.throws(() => memoryFileFor(ROOT, path, 'todo:../bad'), 'invalid todo agent ids are rejected');
+  A.throws(() => memoryFileFor(ROOT, path, 'other:hero'), 'unknown memory keys are rejected');
+
+  const fs = memFs();
+  const store = makeMemoryStore({ fs, path, workspaces: ROOT });
+  const { todoTool } = makeTodoTool({ store });
+
+  const write = await todoTool.run({ todos: [
+    { id: 'a', content: 'audit current todo behavior', status: 'completed' },
+    { id: 'b', content: 'persist todo list durably', status: 'in_progress' },
+    { id: 'c', content: 'run regression tests', status: 'pending' }
+  ] }, { agentId: 'hero' });
+  A.ok(/3 tasks/.test(write.summary), 'todo write succeeds through the durable host store');
+
+  const todoFile = path.join(ROOT, 'hero.todo.json');
+  const notebookFile = path.join(ROOT, 'hero.notebook.json');
+  A.ok(fs.files.has(todoFile), 'todo:<agent> persisted to a real .todo.json file');
+  A.ok(!fs.files.has(notebookFile), 'todo writes do not create or clobber the notebook file');
+  A.ok(fs.stats.fsync > 0, 'todo write used the durable fsync-before-rename path');
+
+  await todoTool.run({ merge: true, todos: [{ id: 'b', status: 'completed' }] }, { agentId: 'hero' });
+  A.ok(fs.files.has(todoFile + '.bak'), 'second todo write snapshotted the prior plan to .bak');
+
+  const afterRestart = makeMemoryStore({ fs, path, workspaces: ROOT });
+  const { todoTool: restartedTodo } = makeTodoTool({ store: afterRestart });
+  const read = await restartedTodo.run({}, { agentId: 'hero' });
+  A.ok(/\[x\] b\. persist todo list durably/.test(read.content), 'fresh store reads the persisted todo list after restart');
+
+  const inj = formatForInjection(afterRestart, 'hero');
+  A.ok(/preserved across context compaction/.test(inj), 'active todo list is available for compaction reinjection');
+  A.ok(inj.indexOf('run regression tests') >= 0 && inj.indexOf('audit current todo behavior') < 0, 'injection keeps pending items and omits completed ones');
+
+  A.report('todo.durability.test');
+})();

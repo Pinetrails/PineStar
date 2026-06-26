@@ -43,13 +43,13 @@
   }
   function listOf(store, aid) { const v = store && store.get(KEY(aid)); return Array.isArray(v) ? v.map(validate) : []; }
 
-  function writeList(store, aid, todos, merge) {
+  function buildList(current, todos, merge) {
     todos = Array.isArray(todos) ? todos : [];
     let items;
     if (!merge) {
       items = dedupeById(todos).map(validate);
     } else {
-      items = listOf(store, aid);
+      items = Array.isArray(current) ? current.map(validate) : [];
       const byId = {}; items.forEach(it => { byId[it.id] = it; });
       for (const raw of dedupeById(todos)) {
         const id = String((raw && raw.id) != null ? raw.id : '').trim();
@@ -63,8 +63,18 @@
       items = items.filter(it => (seen[it.id] ? false : (seen[it.id] = 1))).map(it => byId[it.id] || it);
     }
     if (items.length > MAX_ITEMS) items = items.slice(0, MAX_ITEMS);   // keep the highest-priority head
+    return items;
+  }
+  function writeList(store, aid, todos, merge) {
+    const items = buildList(merge ? store.get(KEY(aid)) : [], todos, merge);
     store.set(KEY(aid), items);
     return items;
+  }
+  function updateList(store, aid, todos, merge) {
+    if (store && typeof store.update === 'function') {
+      return store.update(KEY(aid), cur => buildList(cur, todos, merge));
+    }
+    return Promise.resolve(writeList(store, aid, todos, merge));
   }
 
   function render(items) {
@@ -106,7 +116,7 @@
       } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
-        const items = (args && args.todos != null) ? writeList(store, aid, args.todos, !!args.merge) : listOf(store, aid);
+        const items = (args && args.todos != null) ? await updateList(store, aid, args.todos, !!args.merge) : listOf(store, aid);
         if (!items.length) return { content: 'Your task list is empty. Pass "todos" to create a plan.', summary: '0 tasks' };
         return { content: render(items), summary: summarize(items) };
       }
@@ -115,5 +125,5 @@
     return { todoTool, register(reg) { reg.register(todoTool); return reg; } };
   }
 
-  return { makeTodoTool, formatForInjection, _internals: { validate, dedupeById, writeList, listOf, render, summarize } };
+  return { makeTodoTool, formatForInjection, _internals: { validate, dedupeById, buildList, writeList, updateList, listOf, render, summarize } };
 });
