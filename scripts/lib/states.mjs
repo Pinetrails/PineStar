@@ -1,0 +1,65 @@
+// scripts/lib/states.mjs — the canonical list of UI states the screenshotter drives.
+//
+// The bottom dock (#bottombar) groups items into 4 popovers (CREW / WORK / BUILD / SYSTEM).
+// Each item keeps a STABLE id or data-term (see frontend/index.html / navdock.js), so we click
+// by id/[data-term] instead of by visible text — text drifts, ids don't. The popover need not
+// be open: .click() fires the item's bound handler even while the flyout is visually hidden.
+//
+// Re-derived from current trunk (index.html lines 166-200): adds MANUAL + NOTIFS panels that
+// the old text-matched list missed, and fixes ROSTER (it opens the full-bleed RECRUITMENT BAY).
+
+// Close whatever panel/overlay/mode is open so panels don't stack between shots.
+// Hardened against an early call (guards document.body) — the cold-boot race could fire this
+// before the page finished, which is what threw the old "classList of null" warning.
+export const CLOSE = `(() => {
+  if (!document.body) return 'no-body';
+  // exit REFIT/BUILD mode first (a full-canvas mode, not a #terms panel)
+  const rd = document.getElementById('refit-done'); if (rd) { try { rd.click(); } catch {} }
+  document.querySelectorAll('.refit-overlay').forEach(o => { try { o.remove(); } catch {} });
+  try { document.body.classList.remove('refit-on'); } catch {}
+  // Click the REAL close button on every open window so the app's own closeTerm() runs and its
+  // internal open{} map clears (nuking #terms.innerHTML leaves that map populated → corrupts the
+  // single-vs-cascade placement logic).
+  document.querySelectorAll('.term-x, #terms .x, #terms .close, #terms [data-close], .term-close, .panel-close, .win-close, .rb-close, .recruit-close').forEach(b => { try { b.click(); } catch {} });
+  // Escape as a backstop for panels that honor it (recruitment bay, etc.)
+  ['keydown','keyup'].forEach(type => document.dispatchEvent(new KeyboardEvent(type, { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true })));
+  return 'closed';
+})()`;
+
+// Open a dock panel by a STABLE selector (id or [data-term]); reports NOTFOUND if absent.
+export const openSel = (sel, label) => `(() => {
+  ${CLOSE};
+  const el = document.querySelector(${JSON.stringify(sel)});
+  if (!el) return 'NOTFOUND:' + ${JSON.stringify(sel)};
+  try { el.click(); } catch (e) { return 'CLICK_ERR:' + e.message; }
+  return 'opened:' + ${JSON.stringify(label || sel)};
+})()`;
+
+export const closeOnly = `(() => { ${CLOSE}; return 'reset'; })()`;
+
+// Every key UI state: the floor at rest + each of the 16 dock panels.
+export function buildStates() {
+  return [
+    { name: 'ingame',          drive: closeOnly,                                   wait: 900 },
+    // CREW group
+    { name: 'crew-agents',     drive: openSel('[data-term="agents"]', 'AGENTS') },
+    { name: 'crew-roster',     drive: openSel('#bb-roster', 'ROSTER→RECRUITMENT'), wait: 1800 },
+    { name: 'crew-summon',     drive: openSel('#bb-summon', 'SUMMON'),             wait: 1800 },
+    { name: 'crew-commander',  drive: openSel('[data-term="commander"]', 'COMMANDER') },
+    // WORK group
+    { name: 'work-tasks',      drive: openSel('[data-term="tasks"]', 'TASKS') },
+    { name: 'work-recipes',    drive: openSel('#bb-missions', 'RECIPES') },
+    { name: 'work-routines',   drive: openSel('[data-term="routines"]', 'ROUTINES') },
+    // BUILD group
+    { name: 'build-station',   drive: openSel('#bb-build', 'BUILD STATION'),       wait: 2000 },
+    { name: 'build-manual',    drive: openSel('[data-term="manual"]', 'MANUAL') },
+    { name: 'build-skills',    drive: openSel('[data-term="skills"]', 'SKILLS') },
+    { name: 'build-connectors',drive: openSel('[data-term="connectors"]', 'CONNECTORS') },
+    // SYSTEM group
+    { name: 'sys-settings',    drive: openSel('[data-term="settings"]', 'SETTINGS') },
+    { name: 'sys-messaging',   drive: openSel('[data-term="messaging"]', 'MESSAGING') },
+    { name: 'sys-rewind',      drive: openSel('[data-term="rewind"]', 'REWIND') },
+    { name: 'sys-logbook',     drive: openSel('[data-term="logbook"]', 'LOGBOOK') },
+    { name: 'sys-notifs',      drive: openSel('[data-term="notifs"]', 'NOTIFS') },
+  ];
+}

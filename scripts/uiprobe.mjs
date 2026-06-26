@@ -19,8 +19,22 @@ try{
   await sleep(9000);
   const dump=await ev(cdp,`(()=>{
     const out={};
+    // --- boot state: WHY is dev=false / which screen is up? ---
+    let H='no-Harness';
+    try{ H=(typeof Harness!=='undefined')?{configured:Harness.configured(),model:Harness.getModel(),prov:Harness.getProv()}:'no-Harness'; }catch(e){ H='Harness-err:'+e.message; }
+    out.boot={
+      title:document.title,
+      devType:typeof window.__STARNET_DEV__,
+      devVal:window.__STARNET_DEV__||null,
+      apiToken:!!window.__SKYNET_API_TOKEN__,
+      harness:H,
+      ls:{key:!!localStorage.getItem('skynet.byok.key'),model:localStorage.getItem('skynet.byok.model'),prov:localStorage.getItem('skynet.byok.prov')},
+      hasCanvas:!!document.querySelector('canvas'),
+      bodyClass:document.body.className,
+      newStation:!!([...document.querySelectorAll('button,*')].find(e=>(e.textContent||'').trim()==='NEW STATION')),
+    };
     // all buttons with text + id/class
-    out.buttons=[...document.querySelectorAll('button,.btn,[role=button],.dock-btn,.tool')].slice(0,80).map(b=>({t:(b.textContent||'').trim().slice(0,28),id:b.id||'',cls:(b.className||'').toString().slice(0,40),vis:b.offsetParent!==null}));
+    out.buttons=[...document.querySelectorAll('button,.btn,[role=button],.dock-btn,.tool,.bb,.bb-grp')].slice(0,80).map(b=>({t:(b.textContent||'').trim().slice(0,28),id:b.id||'',cls:(b.className||'').toString().slice(0,40),vis:b.offsetParent!==null}));
     // overlays/panels
     out.overlays=[...document.querySelectorAll('#terms,.panel,.window,.modal,[class*=panel],[class*=overlay]')].slice(0,40).map(e=>({id:e.id||'',cls:(e.className||'').toString().slice(0,50),disp:getComputedStyle(e).display,z:getComputedStyle(e).zIndex}));
     return out;
