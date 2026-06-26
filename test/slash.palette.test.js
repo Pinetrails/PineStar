@@ -13,8 +13,14 @@ A.ok(src.indexOf("name: 'copy'") >= 0 && src.indexOf("name: 'help'") >= 0, 'pale
 A.ok(src.indexOf("name: 'new'") >= 0 && src.indexOf("name: 'branch'") >= 0, 'palette fallback includes new and branch');
 A.ok(src.indexOf("name: 'queue'") >= 0 && src.indexOf("name: 'steer'") >= 0, 'palette fallback includes queue and steer');
 A.ok(src.indexOf("name: 'undo'") >= 0 && src.indexOf("name: 'compress'") >= 0, 'palette fallback includes undo and compress');
+A.ok(src.indexOf("name: 'model'") >= 0 && src.indexOf("name: 'personality'") >= 0, 'palette fallback includes model and personality');
+A.ok(src.indexOf("name: 'yolo'") >= 0 && src.indexOf("name: 'tools'") >= 0, 'palette fallback includes yolo and tools');
+A.ok(src.indexOf("name: 'skills'") >= 0 && src.indexOf("name: 'reload-skills'") >= 0, 'palette fallback includes skills and reload-skills');
+A.ok(src.indexOf("name: 'debug'") >= 0, 'palette fallback includes debug');
 A.ok(src.indexOf('newWorkstreamCommand') >= 0 && src.indexOf('branchWorkstreamCommand') >= 0, 'palette maps workflow commands to workstream handlers');
 A.ok(src.indexOf('usageCommand') >= 0 && src.indexOf('statusCommand') >= 0, 'palette maps usage and status commands');
+A.ok(src.indexOf('modelCommand') >= 0 && src.indexOf('personalityCommand') >= 0 && src.indexOf('yoloCommand') >= 0, 'palette maps config commands');
+A.ok(src.indexOf('toolsCommand') >= 0 && src.indexOf('skillsCommand') >= 0 && src.indexOf('reloadSkillsCommand') >= 0, 'palette maps tools and skills commands');
 A.ok(src.indexOf('/api/slash/catalog') >= 0, 'palette fetches the sidecar slash catalog');
 A.ok(src.indexOf('/api/slash/dispatch') >= 0, 'palette dispatches server-backed commands through the sidecar');
 A.ok(src.indexOf('slashPlacedTypes') >= 0 && src.indexOf('World.heroCaps') >= 0, 'palette asks the sidecar for commands matching the active agent capabilities');

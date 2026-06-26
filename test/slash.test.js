@@ -7,12 +7,16 @@ const S = require('../sidecar/slash.js');
 {
   const cat = S.catalog();
   const names = cat.commands.map(c => c.name).sort();
-  const required = ['branch', 'compress', 'copy', 'help', 'new', 'queue', 'retry', 'status', 'steer', 'stop', 'undo', 'usage'];
+  const required = [
+    'branch', 'compress', 'copy', 'debug', 'help', 'model', 'new', 'personality', 'queue',
+    'reload-skills', 'retry', 'skills', 'status', 'steer', 'stop', 'tools', 'undo', 'usage', 'yolo'
+  ];
   A.eq(names, required.slice().sort(), 'catalog exposes the built-in workflow commands');
   A.ok(cat.commands.every(c => c.source === 'builtin'), 'catalog marks built-ins');
   A.ok(cat.commands.every(c => c.dispatch === 'client'), 'catalog commands dispatch to client directives');
   A.ok(cat.commands.find(c => c.name === 'branch').aliases.indexOf('fork') >= 0, 'branch exposes /fork alias');
   A.ok(cat.commands.find(c => c.name === 'queue').aliases.indexOf('q') >= 0, 'queue exposes /q alias');
+  A.ok(cat.commands.find(c => c.name === 'reload-skills').aliases.indexOf('reload_skills') >= 0, 'reload-skills exposes underscore alias');
 }
 
 {
@@ -38,6 +42,11 @@ const S = require('../sidecar/slash.js');
   const q = S.dispatch('/q next note');
   A.eq(q.command.name, 'queue', 'q alias canonicalizes to queue');
   A.eq(q.directive.action, 'queue', 'q dispatch runs queue action');
+  const reload = S.dispatch('/reload_skills');
+  A.eq(reload.command.name, 'reload-skills', 'reload_skills alias canonicalizes');
+  A.eq(reload.directive.action, 'reload-skills', 'reload alias runs reload-skills action');
+  const model = S.dispatch('/model openai/gpt-5');
+  A.eq(model.directive, { type: 'client', action: 'model', args: 'openai/gpt-5' }, 'model dispatch carries model id args');
 }
 
 {

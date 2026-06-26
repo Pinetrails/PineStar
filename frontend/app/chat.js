@@ -706,7 +706,14 @@ const Chat = (() => {
     Object.freeze({ name: 'queue', aliases: ['q'], desc: 'show or add queued follow-up text', action: 'queue' }),
     Object.freeze({ name: 'steer', desc: 'queue steering guidance for the current task', action: 'steer' }),
     Object.freeze({ name: 'undo', desc: 'remove the last local exchange', action: 'undo' }),
-    Object.freeze({ name: 'compress', desc: 'show context compaction status', action: 'compress' })
+    Object.freeze({ name: 'compress', desc: 'show context compaction status', action: 'compress' }),
+    Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
+    Object.freeze({ name: 'personality', desc: 'show or set the active personality', action: 'personality' }),
+    Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', action: 'yolo' }),
+    Object.freeze({ name: 'tools', desc: 'show tools granted by the workstation', action: 'tools' }),
+    Object.freeze({ name: 'skills', desc: 'show installed skill recipes', action: 'skills' }),
+    Object.freeze({ name: 'reload-skills', aliases: ['reload_skills'], desc: 'refresh the slash skill catalog', action: 'reload-skills' }),
+    Object.freeze({ name: 'debug', desc: 'show chat and slash debug state', action: 'debug' })
   ]);
   function isSlashOpen() { const p = el('chat-slash'); return !!(p && !p.hidden); }
   function copyLastReply() {
@@ -801,12 +808,107 @@ const Chat = (() => {
       localLine('Context compaction is automatic when the provider reports a context limit; no manual compaction endpoint is exposed yet.');
     }
   }
+  function activeAgent() {
+    try { return (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null; } catch (_) { return null; }
+  }
+  function applyAgentPatch(patch) {
+    try { if (typeof App !== 'undefined' && App.applyConfig) { App.applyConfig(patch); return true; } } catch (_) {}
+    return false;
+  }
+  function modelCommand(args) {
+    const next = String(args || '').trim();
+    if (next) {
+      if (applyAgentPatch({ model: next })) localLine('Model set to ' + next + ' for future runs.');
+      else if (typeof Harness !== 'undefined' && Harness.setModel) { Harness.setModel(next); localLine('Model set to ' + next + ' for this harness session.'); }
+      else localLine('Model setting is not available yet.');
+      refreshWorkflowViews();
+      return;
+    }
+    const a = activeAgent();
+    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : ((a && a.model) || '');
+    const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : '';
+    localLine('Model: ' + (model || 'not selected') + (provider ? ' via ' + provider : '') + '. Use /model <model-id> to switch.');
+  }
+  function personalityCommand(args) {
+    const raw = String(args || '').trim();
+    const key = raw.toLowerCase();
+    if (key && typeof Personas !== 'undefined' && Personas.exists && Personas.exists(key)) {
+      const id = Personas.resolve ? Personas.resolve(key) : key;
+      if (applyAgentPatch({ personaId: id })) localLine('Personality set to ' + Personas.get(id).name + '.');
+      else localLine('Personality setting is not available yet.');
+      return;
+    }
+    const list = (typeof Personas !== 'undefined' && Personas.list) ? Personas.list() : [];
+    const currentId = (activeAgent() && activeAgent().personaId) || (typeof Voice !== 'undefined' && Voice.personaId ? Voice.personaId() : '');
+    const current = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(currentId) : null;
+    localLine((raw ? 'Unknown personality "' + raw + '". ' : '') + 'Personality: ' + ((current && current.name) || currentId || 'unknown')
+      + (list.length ? '. Options: ' + list.map(p => p.id).join(', ') + '.' : '.'));
+  }
+  function yoloCommand(args) {
+    const a = activeAgent();
+    if (!a) return localLine('Approval mode is not available yet.');
+    const raw = String(args || '').trim().toLowerCase();
+    const want = raw ? /^(1|true|yes|on|full|yolo)$/i.test(raw) : a.approvalMode !== 'full';
+    if (applyAgentPatch({ approvalMode: want ? 'full' : 'ask' })) {
+      localLine('Approval mode: ' + (want ? 'full access. The agent will not pause for approval prompts.' : 'ask first. The agent will pause before gated actions.') );
+    } else localLine('Could not change approval mode.');
+  }
+  function toolRows() {
+    return [
+      { cap: null, label: 'compute', tools: 'model.chat' },
+      { cap: 'dish', label: 'web', tools: 'web_search, web_fetch' },
+      { cap: 'cabinet', label: 'files', tools: 'fs.read, fs.list, fs.write/edit' },
+      { cap: 'notebook', label: 'memory', tools: 'notebook.read, notebook.write' },
+      { cap: 'workbench', label: 'terminal', tools: 'shell.exec, verify.run' },
+      { cap: 'studio', label: 'image', tools: 'image.generate, image.analyze' },
+      { cap: 'jukebox', label: 'spotify', tools: 'spotify controls' }
+    ];
+  }
+  function toolsCommand() {
+    const placed = slashPlacedTypes();
+    const have = {}; placed.forEach(t => { have[t] = true; });
+    const active = toolRows().filter(r => r.cap == null || have[r.cap]);
+    const missing = toolRows().filter(r => r.cap && !have[r.cap]).map(r => r.label);
+    localLine('Tools: ' + active.map(r => r.label + ' (' + r.tools + ')').join('; ')
+      + (missing.length ? '. Locked until placed: ' + missing.join(', ') + '.' : '.'));
+  }
+  async function skillsCommand() {
+    try {
+      const key = slashCatalogKey();
+      const r = await fetch('/api/skills?placed=' + encodeURIComponent(key), { cache: 'no-store' });
+      const j = r.ok ? await r.json() : null;
+      const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
+      if (!skills.length) return localLine('No skill recipes are installed.');
+      const active = skills.filter(s => s.enabled && s.available).map(s => s.slug);
+      const locked = skills.filter(s => s.enabled && !s.available).map(s => s.slug);
+      const off = skills.filter(s => !s.enabled).length;
+      localLine('Skills: ' + active.length + ' active' + (active.length ? ' (' + active.slice(0, 8).join(', ') + ')' : '')
+        + (locked.length ? '; ' + locked.length + ' enabled but locked (' + locked.slice(0, 5).join(', ') + ')' : '')
+        + (off ? '; ' + off + ' off' : '') + '. Use /<skill-slug> to draft with an available skill.');
+    } catch (_) { localLine('Could not load skills from the sidecar.'); }
+  }
+  function reloadSkillsCommand() {
+    slashServerCommands = null; slashCatalogLoaded = null; slashCatalogLoading = null;
+    warmSlashCatalog();
+    localLine('Refreshing slash skills and command catalog for this workstation.');
+  }
+  function debugCommand() {
+    const ws = activeWs || {};
+    const rid = (typeof Channels !== 'undefined' && Channels.runIdOf && ws.id) ? Channels.runIdOf(ws.id) : '';
+    const pending = (ws.id && queued.get(ws.id)) || [];
+    const a = activeAgent();
+    localLine('Debug: stream=' + (ws.id || 'none') + ', agent=' + ((ws.agentId || (a && a.id)) || 'agent')
+      + ', run=' + (rid || 'none') + ', busy=' + (isBusy() ? 'yes' : 'no') + ', queued=' + pending.length
+      + ', slashCatalog=' + (slashServerCommands ? slashServerCommands.length : 0) + ', model=' + ((typeof Harness !== 'undefined' && Harness.getModel && Harness.getModel()) || 'unset') + '.');
+  }
   function localSlashActions() {
     return {
       retry: retryLast, stop: stopActive, copy: copyLastReply, help: showHelp,
       new: newWorkstreamCommand, branch: branchWorkstreamCommand, status: statusCommand,
       usage: usageCommand, queue: queueCommand, steer: steerCommand, undo: undoCommand,
-      compress: compressCommand
+      compress: compressCommand, model: modelCommand, personality: personalityCommand,
+      yolo: yoloCommand, tools: toolsCommand, skills: skillsCommand,
+      'reload-skills': reloadSkillsCommand, debug: debugCommand
     };
   }
   function showHelp() {

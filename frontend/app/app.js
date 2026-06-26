@@ -164,6 +164,18 @@ const App = (() => {
       if (typeof patch.purpose === 'string') { d.purpose = patch.purpose; agent.purpose = patch.purpose.trim(); }
       if (typeof patch.manual === 'string') d.manual = patch.manual;
       if (typeof patch.context === 'string') d.context = patch.context;
+      if (typeof patch.model === 'string' && patch.model.trim()) {
+        agent.model = patch.model.trim();
+        if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(agent.model);
+        const gtM = el('gt-model'); if (gtM) gtM.textContent = agent.model;
+      }
+      if (typeof patch.personaId === 'string' && typeof Personas !== 'undefined' && Personas.exists(patch.personaId)) {
+        agent.personaId = Personas.resolve ? Personas.resolve(patch.personaId) : patch.personaId;
+        if (typeof Voice !== 'undefined' && Voice.init) Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: false });
+      }
+      if (typeof patch.approvalMode === 'string') {
+        agent.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
+      }
     }
     if (typeof DossierStore !== 'undefined') DossierStore.syncDocs(d);   // seed the dossier from any newly-authored onboarding doc (first-seed-wins per doc) BEFORE the recompose
     agent.systemPrompt = composeSystemPrompt(agent);
@@ -1128,5 +1140,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail, summonAgent, summonForRequest };
+  return { show, refreshUsage, persist, refreshRail: renderRail, summonAgent, summonForRequest, currentAgent: () => agent, applyConfig: applyAgentConfig };
 })();

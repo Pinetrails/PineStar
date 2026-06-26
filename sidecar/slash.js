@@ -82,6 +82,52 @@ const BUILTIN_COMMANDS = Object.freeze([
     category: 'Session',
     desc: 'show context compaction status',
     action: 'compress'
+  }),
+  Object.freeze({
+    name: 'model',
+    category: 'Configuration',
+    desc: 'show or set the active model',
+    argsHint: '[model-id]',
+    action: 'model'
+  }),
+  Object.freeze({
+    name: 'personality',
+    category: 'Configuration',
+    desc: 'show or set the active personality',
+    argsHint: '[personality]',
+    action: 'personality'
+  }),
+  Object.freeze({
+    name: 'yolo',
+    category: 'Configuration',
+    desc: 'toggle full-access approval mode',
+    argsHint: '[on|off]',
+    action: 'yolo'
+  }),
+  Object.freeze({
+    name: 'tools',
+    category: 'Tools',
+    desc: 'show tools granted by the workstation',
+    action: 'tools'
+  }),
+  Object.freeze({
+    name: 'skills',
+    category: 'Tools',
+    desc: 'show installed skill recipes',
+    action: 'skills'
+  }),
+  Object.freeze({
+    name: 'reload-skills',
+    aliases: ['reload_skills'],
+    category: 'Tools',
+    desc: 'refresh the slash skill catalog',
+    action: 'reload-skills'
+  }),
+  Object.freeze({
+    name: 'debug',
+    category: 'Info',
+    desc: 'show chat and slash debug state',
+    action: 'debug'
   })
 ]);
 

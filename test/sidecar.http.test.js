@@ -110,6 +110,9 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(slashCat.body.commands.some(c => c && c.name === 'new'), 'slash catalog includes /new');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'branch' && c.aliases && c.aliases.indexOf('fork') >= 0), 'slash catalog includes /branch with /fork alias');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'queue' && c.aliases && c.aliases.indexOf('q') >= 0), 'slash catalog includes /queue with /q alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'model'), 'slash catalog includes /model');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'skills'), 'slash catalog includes /skills');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'reload-skills' && c.aliases && c.aliases.indexOf('reload_skills') >= 0), 'slash catalog includes /reload-skills alias');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'morning-brief'), 'slash catalog includes built-in recipe commands');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'plan' && c.source === 'skill'), 'slash catalog includes available compute-only skill commands');
     A.ok(!slashCat.body.commands.some(c => c && c.name === 'test-driven-development'), 'slash catalog omits unavailable workbench skill without placed workbench');
@@ -125,6 +128,14 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(slashFork.status, 200, 'POST /api/slash/dispatch /fork -> 200');
     A.eq(slashFork.body.command.name, 'branch', '/fork dispatch canonicalizes to branch');
     A.eq(slashFork.body.directive, { type: 'client', action: 'branch', args: 'copy this' }, 'fork dispatch returns branch client directive');
+
+    const slashModel = await j('POST', '/api/slash/dispatch', { input: '/model openai/gpt-5' });
+    A.eq(slashModel.status, 200, 'POST /api/slash/dispatch /model -> 200');
+    A.eq(slashModel.body.directive, { type: 'client', action: 'model', args: 'openai/gpt-5' }, 'model dispatch returns client directive with model id');
+
+    const slashReload = await j('POST', '/api/slash/dispatch', { input: '/reload_skills' });
+    A.eq(slashReload.status, 200, 'POST /api/slash/dispatch /reload_skills -> 200');
+    A.eq(slashReload.body.command.name, 'reload-skills', 'reload_skills dispatch canonicalizes');
 
     const slashRecipe = await j('POST', '/api/slash/dispatch', { input: '/summarize launch notes' });
     A.eq(slashRecipe.status, 200, 'POST /api/slash/dispatch recipe -> 200');
