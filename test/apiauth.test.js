@@ -19,9 +19,9 @@ A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires to
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');
 A.eq(auth.requiresApiToken(req('GET', '/api/save?slot=1')), true, 'GET save now requires token (was exempt)');
+A.eq(auth.requiresApiToken(req('POST', '/api/session')), true, 'POST session now requires token (no token vending)');
 
 // ---- the documented header-less exempt set (routes that cannot carry the custom header) ----
-A.eq(auth.requiresApiToken(req('POST', '/api/session')), false, 'session bootstrap is token-exempt');
 A.eq(auth.requiresApiToken(req('POST', '/api/key')), false, 'key push exempt (own IPC_TOKEN guard)');
 A.eq(auth.requiresApiToken(req('GET', '/api/health')), false, 'health probe exempt');
 A.eq(auth.requiresApiToken(req('GET', '/api/spotify/callback?code=abc')), false, 'spotify OAuth redirect exempt');

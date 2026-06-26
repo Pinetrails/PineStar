@@ -42,14 +42,12 @@ function pathOf(url) { const u = String(url || ''); const i = u.indexOf('?'); re
 
 /* Does this request require the custom-header token? YES for every /api/* route — GET data routes included —
    EXCEPT a small set that provably cannot carry the header:
-     /api/session          : the bootstrap that delivers the token (hardened separately: vends only to a
-                             trusted PRESENT Origin, never to a header-less local caller)
      /api/key              : guarded by its OWN per-launch IPC_TOKEN (the desktop key push)
      /api/health           : liveness probe
      /api/spotify/callback : an OAuth redirect — a top-level browser navigation, no place to put a header
      /api/channels/events  : SSE — EventSource cannot set headers, so it carries a ?token= query instead,
                              validated by queryTokenOk in the handler */
-const TOKEN_EXEMPT = new Set(['/api/session', '/api/key', '/api/health', '/api/spotify/callback', '/api/channels/events']);
+const TOKEN_EXEMPT = new Set(['/api/key', '/api/health', '/api/spotify/callback', '/api/channels/events']);
 function requiresApiToken(req) {
   if (!req || req.method === 'OPTIONS') return false;
   const p = pathOf(req.url);

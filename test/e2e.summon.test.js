@@ -10,6 +10,7 @@ const A = require('./_assert.js');
 const http = require('http');
 const path = require('path');
 const os = require('os');
+const { bootToken } = require('./_httpToken.js');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const HOST = '127.0.0.1';
@@ -79,8 +80,7 @@ function boot(port, env, attemptsLeft) {
   const { child, port } = await boot(8890 + (process.pid % 50), env, 20);
   const B = 'http://' + HOST + ':' + port;
   try {
-    const sess = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } });
-    const token = String((await sess.json()).token || '');
+    const token = await bootToken(B, B);
     A.ok(token.length >= 32, 'got a session API token');
 
     // drive a real streaming lead run; the mock makes it call team.summon

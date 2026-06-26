@@ -73,23 +73,23 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(health.status, 200, 'GET /api/health -> 200');
     A.eq(health.body, 'ok', 'health body is ok');
 
-    // ---- API token bootstrap: vended ONLY to a trusted, PRESENT Origin (no longer free for the asking) ----
-    const sess = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } });
-    A.eq(sess.status, 200, 'POST /api/session from a trusted origin -> 200');
-    const sessBody = await sess.json();
-    apiToken = String(sessBody.token || '');
-    A.ok(apiToken.length >= 32, 'session vends a high-entropy API token to a trusted origin');
-
-    // C1 hole closed: a header-less caller (no Origin — curl/another local app) gets NO token back.
-    const sessAnon = await (await fetch(B + '/api/session', { method: 'POST' })).json();
-    A.eq(!!sessAnon.token, false, 'POST /api/session WITHOUT an Origin returns no token (no free vending)');
-
-    // the served page still injects the token for browser mode (the primary delivery path)
+    // the served page injects the token for browser mode (the primary delivery path)
     const injected = await (await fetch(B + '/')).text();
     A.ok(/__STARNET_API_TOKEN__/.test(injected), 'served index.html bootstraps the API token for browser mode');
+    apiToken = await bootToken(B, B);
+    A.ok(apiToken.length >= 32, 'served index.html carries a high-entropy API token');
+    const tok = { 'X-StarNet-Token': apiToken };
+
+    const sessNoToken = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } });
+    A.eq(sessNoToken.status, 403, 'POST /api/session without X-StarNet-Token -> 403');
+    const sess = await fetch(B + '/api/session', { method: 'POST', headers: Object.assign({ Origin: B }, tok) });
+    A.eq(sess.status, 200, 'POST /api/session with token -> 200');
+    const sessBody = await sess.json();
+    A.eq(sessBody.token, undefined, 'POST /api/session never echoes the API token');
 
     // ---- localhost API hardening: CORS mirrors only trusted origins; foreign origins rejected ----
-    const tok = { 'X-StarNet-Token': apiToken };
+    const sameOriginNoToken = await fetch(B + '/api/budget/status', { headers: { Origin: B } });
+    A.eq(sameOriginNoToken.status, 403, 'same-origin sensitive GET without token -> 403');
     const sameOrigin = await fetch(B + '/api/budget/status', { headers: Object.assign({ Origin: B }, tok) });
     A.eq(sameOrigin.status, 200, 'same-origin API request (with token) -> 200');
     A.eq(sameOrigin.headers.get('access-control-allow-origin'), B, 'same-origin CORS mirrors the exact loopback origin');
@@ -102,6 +102,8 @@ function boot(port, workspaces, attemptsLeft) {
     const badOrigin = await fetch(B + '/api/budget/status', { headers: { Origin: 'https://evil.example' } });
     A.eq(badOrigin.status, 403, 'foreign web origin API request -> 403');
     A.eq(badOrigin.headers.get('access-control-allow-origin'), null, 'foreign origin gets no CORS read access');
+    const badOriginWithToken = await fetch(B + '/api/budget/status', { headers: Object.assign({ Origin: 'https://evil.example' }, tok) });
+    A.eq(badOriginWithToken.status, 403, 'foreign web origin with a valid token is still blocked');
 
     const preflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: B, 'Access-Control-Request-Method': 'POST' } });
     A.eq(preflight.status, 204, 'trusted API preflight -> 204');
@@ -120,6 +122,9 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(sseNoTok.status, 403, 'GET /api/channels/events WITHOUT ?token -> 403');
     const sseBadTok = await fetch(B + '/api/channels/events?token=nope');
     A.eq(sseBadTok.status, 403, 'GET /api/channels/events with a WRONG ?token -> 403');
+    const sseWithTok = await fetch(B + '/api/channels/events?token=' + encodeURIComponent(apiToken), { headers: { Origin: B } });
+    A.eq(sseWithTok.status, 200, 'GET /api/channels/events with the token query -> 200');
+    try { if (sseWithTok.body && sseWithTok.body.cancel) await sseWithTok.body.cancel(); } catch (_) {}
 
     const noApiToken = await fetch(B + '/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ scope: 'day' }) });
     A.eq(noApiToken.status, 403, 'privileged POST without X-StarNet-Token -> 403');
@@ -208,7 +213,7 @@ function boot(port, workspaces, attemptsLeft) {
     fs.writeFileSync(path.join(ws, 'agent', 'active', 'app.js'), 'fetch("/api/budget/status")');
     fs.writeFileSync(path.join(ws, 'agent', 'active', 'vector.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
     for (const f of ['page.html', 'app.js', 'vector.svg']) {
-      const active = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('active/' + f));
+      const active = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('active/' + f), { headers: tok });
       A.eq(active.status, 200, f + ' served for download');
       A.eq(active.headers.get('content-type'), 'application/octet-stream', f + ' loses executable content-type');
       A.ok(/^attachment\b/.test(active.headers.get('content-disposition') || ''), f + ' is an attachment, not inline');

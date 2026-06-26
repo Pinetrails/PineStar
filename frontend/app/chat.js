@@ -277,12 +277,25 @@ const Chat = (() => {
   function brief(s) { s = String(s || ''); return s.length > 56 ? s.slice(0, 53) + '…' : s; }
   function fmtMs(ms) { return ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's'; }   // 8423 → '8.4s'
   // a clickable COMMS row for a file the agent produced — opens it via the sidecar's jailed /api/file route
+  function fileBlobUrl(title, agentId) {
+    const url = fileUrl(title, agentId);
+    return fetch(url, { cache: 'no-store' }).then(r => {
+      if (!r.ok) throw new Error('file HTTP ' + r.status);
+      return r.blob();
+    }).then(b => URL.createObjectURL(b));
+  }
+  function wireBlobOpen(a, title, agentId) {
+    a.href = '#'; a.target = '_blank'; a.rel = 'noopener';
+    a.addEventListener('click', ev => {
+      ev.preventDefault();
+      fileBlobUrl(title, agentId).then(u => { try { window.open(u, '_blank', 'noopener'); } catch (_) {} }).catch(() => {});
+    });
+  }
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
     const a = document.createElement('a');
-    a.href = '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
-    a.target = '_blank'; a.rel = 'noopener';
+    wireBlobOpen(a, title, agentId);
     a.textContent = String(title).split(/[\\/]/).pop() || title;   // show the filename, not the whole path
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
@@ -294,17 +307,17 @@ const Chat = (() => {
   // opens the full image in a new tab. Built with DOM nodes (never innerHTML) so the title can't inject markup.
   function imageDeliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable'); r.d.classList.add('image');
-    const url = '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(title);
     r.body.appendChild(document.createTextNode('▤ made '));
     const a = document.createElement('a');
-    a.href = url; a.target = '_blank'; a.rel = 'noopener';
+    wireBlobOpen(a, title, agentId);
     a.className = 'deliverable-thumb';
     a.title = title;                                               // full path on hover
     const img = document.createElement('img');
-    img.src = url; img.loading = 'lazy';
+    img.loading = 'lazy';
     img.alt = String(title).split(/[\\/]/).pop() || title;
     a.appendChild(img);
     r.body.appendChild(a);
+    fileBlobUrl(title, agentId).then(u => { img.src = u; a.href = u; }).catch(() => {});
     autoscroll();
   }
   // CLIENT-SIDE MEDIA KIND, keyed off the file extension (the Hermes media.ts model): the backend doesn't
@@ -324,10 +337,11 @@ const Chat = (() => {
   }
   // append a small "open in a new tab" fallback link — shown when an inline player can't decode the file
   // (e.g. an .mkv/.avi the browser won't play), mirroring Hermes's OpenMediaButton.
-  function openFallback(parent, label, url, title) {
+  function openFallback(parent, label, url, title, agentId) {
     if (parent.querySelector('.media-fallback')) return;   // once
     const a = document.createElement('a');
-    a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.className = 'deliverable-link media-fallback';
+    a.href = url || '#'; a.target = '_blank'; a.rel = 'noopener'; a.className = 'deliverable-link media-fallback';
+    if (!url) wireBlobOpen(a, title, agentId);
     a.textContent = label; a.title = title;
     parent.appendChild(a);
   }
@@ -336,15 +350,16 @@ const Chat = (() => {
   // fetches just enough for a duration + scrubber. On a decode error we drop in an open-externally link.
   function mediaPlayerLine(title, agentId, kind) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable'); r.d.classList.add(kind);
-    const url = fileUrl(title, agentId);
     const name = String(title).split(/[\\/]/).pop() || title;
     r.body.appendChild(document.createTextNode('▤ made '));
     const cap = document.createElement('span'); cap.className = 'media-name'; cap.textContent = name; cap.title = title;
     r.body.appendChild(cap);
     const el = document.createElement(kind === 'audio' ? 'audio' : 'video');
-    el.controls = true; el.preload = 'metadata'; el.src = url; el.className = 'deliverable-' + kind;
-    el.addEventListener('error', () => openFallback(r.body, 'open ' + kind + ' ↗', url, title), { once: true });
+    el.controls = true; el.preload = 'metadata'; el.className = 'deliverable-' + kind;
+    let blobUrl = '';
+    el.addEventListener('error', () => openFallback(r.body, 'open ' + kind, blobUrl, title, agentId), { once: true });
     r.body.appendChild(el);
+    fileBlobUrl(title, agentId).then(u => { blobUrl = u; el.src = u; }).catch(() => openFallback(r.body, 'open ' + kind, '', title, agentId));
     autoscroll();
   }
   // a live consent prompt: the agent wants to do something that needs approval (a file write today). The run is

@@ -19,6 +19,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { bootToken } = require('./_httpToken.js');
 
 const KEY = process.env.SKYNET_OPENROUTER_KEY || process.env.OPENROUTER_API_KEY || '';
 const MODEL = process.env.SKYNET_SMOKE_MODEL || 'anthropic/claude-3.5-haiku';
@@ -73,8 +74,8 @@ async function run(B, body, apiToken) {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-live-'));
   const { child, port } = await boot(8890 + (process.pid % 40), ws, 20);
   const B = 'http://' + HOST + ':' + port;
-  const get = async p => { const r = await fetch(B + p); return r.json(); };
-  const apiToken = String((await (await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } })).json()).token || '');
+  const apiToken = await bootToken(B, B);
+  const get = async p => { const r = await fetch(B + p, { headers: { 'X-StarNet-Token': apiToken, Origin: B } }); return r.json(); };
   const body = { key: KEY, model: MODEL, system: BIG_SYSTEM, messages: [{ role: 'user', content: 'Reply with exactly one word: ACK' }], isTask: false };
 
   try {

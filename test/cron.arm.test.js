@@ -25,6 +25,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { bootToken } = require('./_httpToken.js');
 
 const HOST = '127.0.0.1';
 const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
@@ -64,9 +65,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
   const B = () => 'http://' + HOST + ':' + port;
   let apiToken = '';
   async function refreshToken() {
-    const r = await fetch(B() + '/api/session', { method: 'POST', headers: { Origin: B() } });
-    const j = await r.json();
-    apiToken = String((j && j.token) || '');
+    apiToken = await bootToken(B(), B());
   }
   await refreshToken();
   // j() sends the token (the guarded-POST contract); jNoToken() deliberately omits it (guard test).

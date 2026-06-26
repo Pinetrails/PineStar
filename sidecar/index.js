@@ -1083,8 +1083,8 @@ const server = http.createServer((req, res) => {
     if (!isApi) { res.writeHead(404); return res.end('not found'); }
     res.writeHead(204); return res.end();
   }
-  if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
   if (isApi && rejectBadApiToken(req, res)) return;
+  if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
@@ -1242,13 +1242,7 @@ function handleBudgetStatus(req, res) {
 }
 function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  // The token is primarily delivered by injection into the served page (serveStatic) and the Tauri init
-  // script. This bootstrap fallback vends it ONLY to a request carrying a TRUSTED, PRESENT Origin — a real
-  // browser or the desktop shell. A header-less local process (curl / another app) sends no Origin and gets
-  // no token, so the token is no longer free for the asking. (rejectApi already blocked foreign-origin/host.)
-  const origin = String(req.headers.origin || '');
-  const trusted = !!origin && isAllowedApiOrigin(origin, PORT);
-  res.end(JSON.stringify(trusted ? { token: API_TOKEN } : { ok: true }));
+  res.end(JSON.stringify({ ok: true }));
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
    base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */
@@ -1430,7 +1424,7 @@ function handleCronList(req, res) {
 
 // POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
 // Privileged: this route is behind the SAME x-starnet-token gate as the cron CRUD routes (rejectBadApiToken
-// runs before dispatch for every /api/* POST except /api/session|/api/key|/api/save), so a browser-driven
+// runs before dispatch for private /api/* routes; /api/key has its own desktop IPC token), so a browser-driven
 // cross-site call can't arm the autonomous scheduler. It (a) PERSISTS the cronArmed flag durably and (b)
 // ACTUALLY arms/disarms the live timer NOW — arming fires a due job within ONE tick with no restart; the
 // honest GET /api/cron `enabled` flips immediately. We do NOT touch process.env (the boot-frozen gate stays
