@@ -505,6 +505,14 @@ const StationBake = (() => {
     }
     return { evicted };
   }
+  function uniqueFlickers(chunks) {
+    const seen = new Set(), out = [];
+    for (const c of chunks) for (const f of (c.flickers || [])) {
+      const key = Math.round(f.x * 1000) + ',' + Math.round(f.y * 1000) + ',' + Math.round(f.r * 1000);
+      if (!seen.has(key)) { seen.add(key); out.push(f); }
+    }
+    return out;
+  }
   function bakeIncremental(geo, previous, dirtyRects, opts) {
     opts = opts || {};
     const reuse = sameChunkFrame(previous, geo);
@@ -530,7 +538,7 @@ const StationBake = (() => {
     const chunks = Array.from(chunkMap.values()).sort((a, b) => (a.cy - b.cy) || (a.cx - b.cx));
     return {
       chunked: true, chunks, chunkMap, chunkPx: CHUNK_PX, generation,
-      W: geo.W, H: geo.H, origin: geo.origin, flickers: chunks.flatMap(c => c.flickers || []),
+      W: geo.W, H: geo.H, origin: geo.origin, flickers: uniqueFlickers(chunks),
       stats: { chunkCount: chunks.length, rebakedChunks: dirty.length + visibleBaked, reusedChunks: reuse ? Math.max(0, chunks.length - dirty.length - visibleBaked) : 0,
         dirtyChunks: dirty.map(d => d.key), visibleChunks: visible ? Array.from(visibleKeys) : null,
         evictedChunks: pruned.evicted, fullReset: !reuse }
