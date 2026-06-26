@@ -11,6 +11,7 @@
   'use strict';
 
   const SEVERED = 'PIPELINE_SEVERED_CONNECT_CORRIDOR';
+  const DUP_EDGE = 'PIPELINE_DUPLICATE_EDGE';
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -131,13 +132,22 @@
       }
     }
 
+    const edgeCounts = {};
+    for (const e of edges) {
+      const edge = { from: String(e.from || ''), to: String(e.to || ''), whenKind: String(e.whenKind || 'handoff') };
+      if (e.lane) edge.lane = String(e.lane);
+      const k = edgeKey(edge);
+      edgeCounts[k] = (edgeCounts[k] || 0) + 1;
+    }
+
     const validEdges = {};
     for (const e of edges) {
       const edge = { from: String(e.from || ''), to: String(e.to || ''), whenKind: String(e.whenKind || 'handoff') };
       if (e.lane) edge.lane = String(e.lane);
       const from = agents[edge.from], to = agents[edge.to];
       const out = { from: edge.from, to: edge.to, whenKind: edge.whenKind, lane: edge.lane || null, runnable: false, reason: null };
-      if (!from || !to) out.reason = 'PIPELINE_UNKNOWN_AGENT';
+      if (edgeCounts[edgeKey(edge)] > 1) out.reason = DUP_EDGE;
+      else if (!from || !to) out.reason = 'PIPELINE_UNKNOWN_AGENT';
       else if (!geo || typeof geo.path !== 'function') out.reason = 'PIPELINE_NO_PATH_GRAPH';
       else {
         const fb = props.find(p => p.id === from.bayPropId);
@@ -156,5 +166,5 @@
     return { ok: errors.length === 0, errors, warnings, graph };
   }
 
-  return { validateOrg, validate: validateOrg, codes: { SEVERED } };
+  return { validateOrg, validate: validateOrg, codes: { SEVERED, DUP_EDGE } };
 });

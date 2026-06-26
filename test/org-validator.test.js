@@ -78,4 +78,15 @@ function twoAgentStation() {
   A.eq(v.graph.edges[0].reason, OV.codes.SEVERED, 'edge graph carries the legible severed reason');
 }
 
+{
+  const s = twoAgentStation();
+  const doc = s.serialize();
+  doc.edges.push({ from: 'lead', to: 'worker', whenKind: 'handoff', lane: 'primary' });
+  const migrated = WM.deserialize(doc);
+  const v = OV.validateOrg(migrated);
+  A.ok(!v.ok, 'duplicate PipelineEdge definitions are invalid');
+  A.ok(v.errors.some(e => e.code === OV.codes.DUP_EDGE && e.from === 'lead' && e.to === 'worker'), 'duplicate edge has a stable reason code');
+  A.eq(v.graph.edgeRunnable['lead>worker:handoff:primary'], false, 'duplicate edge readiness is false instead of ambiguous');
+}
+
 A.report('org-validator');

@@ -4,7 +4,7 @@
 
 - Status: `CHECKPOINT`
 - Branch/worktree: `agent/org-graph-gap2` in `C:\Users\andro\gen-trees\org-graph-gap2`
-- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with unreachable agent-anchor validation.
+- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate `PipelineEdge` rejection.
 - Runbook note: `AGENTS.md` was requested but is absent under `C:\Users\andro\gen-trees`; followed `docs/STARNET_SESSION_LOOPS_1_6.md`.
 
 ## Changed Files
@@ -27,22 +27,24 @@
   - unplaced grant object: `GRANT_UNPLACED_OBJECT`
   - unbound connector portal: `CONNECTOR_UNBOUND`
   - unknown edge endpoint: `PIPELINE_UNKNOWN_AGENT`
+  - duplicate edge definition: `PIPELINE_DUPLICATE_EDGE`
   - no projected path graph: `PIPELINE_NO_PATH_GRAPH`
   - sealed/severed handoff path: `PIPELINE_SEVERED_CONNECT_CORRIDOR`
 - Added additive `doc.edges: []` migration/default with `PipelineEdge {from,to,whenKind,lane?}` accessors and mutators.
 - Preserved `connectorId` through worldmodel migration so connector portal grants remain stable after deserialize.
 - Added spawn/trunk-to-bay path validation so an agent cannot be seated in an otherwise valid but unreachable room.
+- Added duplicate `PipelineEdge` validation so readiness for a repeated `{from,to,whenKind,lane?}` key is hard-false instead of silently ambiguous.
 
 ## Tests Run
 
 - `node test/worldmodel.test.js` - pass, `worldmodel: OK (192 assertions)`
-- `node test/org-validator.test.js` - pass, `org-validator: OK (20 assertions)`
+- `node test/org-validator.test.js` - pass, `org-validator: OK (24 assertions)`
 - `node test/pipeline.test.js` - pass, `pipeline: OK (32 assertions)`
-- `npm.cmd run test:fast` - pass
+- `npm.cmd run test:fast` - pass on 2026-06-26T04:52:49-04:00
 
 ## Full Gates
 
-- `npm.cmd run test:fast` completed green on 2026-06-26 after the unreachable-anchor slice.
+- `npm.cmd run test:fast` completed green on 2026-06-26T04:52:49-04:00 after the duplicate-edge slice.
 - No HTTP or live sidecar gate run in this checkpoint; this slice is pure validation/model persistence only.
 
 ## Live Verification
@@ -52,7 +54,7 @@
 ## Blockers / Holds
 
 - `HELD-S1-SIDECAR-AUTHORITY`: runbook says if S1 is not merged, Session 2 works only on pure validation modules and tests. Sidecar station acceptance/routing integration remains blocked until S1 exposes the authority API.
-- Coordination board command `node scripts/board.mjs --files ...` timed out during pre-edit check, so this checkpoint avoided broad hot-file changes and stayed inside owned Session 2 files.
+- Coordination board command `node scripts/board.mjs --files frontend/app/orgvalidator.js test/org-validator.test.js` timed out after printing that no uncommitted tracked edits matched `frontend/app/orgvalidator.js`; this checkpoint avoided broad hot-file changes and stayed inside owned Session 2 files.
 
 ## Readiness Claim
 
