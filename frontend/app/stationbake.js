@@ -466,6 +466,22 @@ const StationBake = (() => {
     if (!baked || !baked.chunked) return [];
     return baked.chunks.filter(c => rectIntersectsChunk(rect, c));
   }
+  function expectedChunkKeysForRect(baked, rect) {
+    if (!baked || !baked.chunked || !rect) return [];
+    const cols = Math.max(1, Math.ceil(baked.W / CHUNK_PX));
+    const rows = Math.max(1, Math.ceil(baked.H / CHUNK_PX));
+    const x0 = Math.max(0, Math.floor(rect.x / CHUNK_PX));
+    const y0 = Math.max(0, Math.floor(rect.y / CHUNK_PX));
+    const x1 = Math.min(cols - 1, Math.floor(Math.max(0, rect.x + rect.w - 1) / CHUNK_PX));
+    const y1 = Math.min(rows - 1, Math.floor(Math.max(0, rect.y + rect.h - 1) / CHUNK_PX));
+    const keys = [];
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) keys.push(chunkKey(cx, cy));
+    return keys;
+  }
+  function missingVisibleChunks(baked, rect) {
+    if (!baked || !baked.chunked || !rect) return [];
+    return expectedChunkKeysForRect(baked, rect).filter(k => !baked.chunkMap.has(k));
+  }
   function sameChunkFrame(prev, geo) {
     return !!(prev && prev.chunked && prev.W === geo.W && prev.H === geo.H && prev.origin &&
       prev.origin.tx === geo.origin.tx && prev.origin.ty === geo.origin.ty && prev.chunkPx === CHUNK_PX);
@@ -496,22 +512,26 @@ const StationBake = (() => {
     const chunkMap = reuse ? new Map(previous.chunkMap) : new Map();
     const visible = chunkRefsForRect(geo, opts.visibleRect);
     const visibleKeys = new Set((visible || []).map(c => c.key));
-    let dirty = reuse ? dirtyChunks(geo, dirtyRects) : dirtyChunks(geo, []);
+    let dirty = (reuse && opts.onlyMissingVisible) ? [] : (reuse ? dirtyChunks(geo, dirtyRects) : dirtyChunks(geo, []));
     if (!reuse && visible) dirty = dirty.filter(d => visibleKeys.has(d.key));
     for (const d of dirty) chunkMap.set(d.key, bakeChunk(geo, d.cx, d.cy, generation));
     const requiredKeys = new Set(dirty.map(d => d.key));
+    let visibleBaked = 0;
     for (const v of (visible || [])) {
       requiredKeys.add(v.key);
       const existing = chunkMap.get(v.key);
       if (existing) existing.usedAt = generation;
-      else chunkMap.set(v.key, bakeChunk(geo, v.cx, v.cy, generation));
+      else {
+        chunkMap.set(v.key, bakeChunk(geo, v.cx, v.cy, generation));
+        visibleBaked++;
+      }
     }
     const pruned = pruneChunkMap(chunkMap, opts.maxRetainedChunks, requiredKeys);
     const chunks = Array.from(chunkMap.values()).sort((a, b) => (a.cy - b.cy) || (a.cx - b.cx));
     return {
       chunked: true, chunks, chunkMap, chunkPx: CHUNK_PX, generation,
       W: geo.W, H: geo.H, origin: geo.origin, flickers: chunks.flatMap(c => c.flickers || []),
-      stats: { chunkCount: chunks.length, rebakedChunks: dirty.length, reusedChunks: reuse ? Math.max(0, chunks.length - dirty.length) : 0,
+      stats: { chunkCount: chunks.length, rebakedChunks: dirty.length + visibleBaked, reusedChunks: reuse ? Math.max(0, chunks.length - dirty.length - visibleBaked) : 0,
         dirtyChunks: dirty.map(d => d.key), visibleChunks: visible ? Array.from(visibleKeys) : null,
         evictedChunks: pruned.evicted, fullReset: !reuse }
     };
@@ -526,7 +546,7 @@ const StationBake = (() => {
     else if (baked && baked.lightCv) ctx.drawImage(baked.lightCv, ox, oy);
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, drawBase, drawLight, CHUNK_PX };
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;

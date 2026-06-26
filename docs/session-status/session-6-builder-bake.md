@@ -1,19 +1,20 @@
 # Session 6 - Builder Bake Status
 
-Updated: 2026-06-26T03:59:47-04:00
+Updated: 2026-06-26T04:59:24-04:00
 
 ## Current Slice
 
-Visible chunk culling and bounded chunk retention checkpoint:
-- Added `StationBake.visibleChunks()` for local-pixel viewport to chunk selection.
-- Extended `StationBake.drawBase()` and `StationBake.drawLight()` to accept an optional `visibleRect` and skip off-viewport chunks.
-- Extended `StationBake.bakeIncremental()` with optional `{ visibleRect, maxRetainedChunks }` so large-station callers can cold-bake only visible chunks and evict older non-required chunks.
-- Preserved the default full-composite behavior when callers omit those options.
-- Documented the opt-in culling/LRU contract in `frontend/app/BUILDER.md`.
+REFIT viewport-wired chunk bake checkpoint:
+- Added a `StationBake.missingVisibleChunks()` query so callers can detect when a camera pan exposes chunks that were not retained.
+- Added `onlyMissingVisible` incremental bake mode so pan-driven fills bake only newly exposed visible chunks instead of treating a missing dirty rect list as a full-station dirty set.
+- Wired `frontend/app/build.js` to pass the current bake-local camera viewport into `StationBake.bakeIncremental()` and `StationBake.drawBase/drawLight()`.
+- Bounded REFIT chunk retention with a small visible/dirty chunk cache cap while preserving dirty and visible chunks.
+- Documented the live REFIT viewport/culling behavior in `frontend/app/BUILDER.md`.
 
 ## Changed Files
 
 - `frontend/app/stationbake.js`
+- `frontend/app/build.js`
 - `frontend/app/BUILDER.md`
 - `test/stationbake.chunk.test.js`
 - `docs/session-status/session-6-builder-bake.md`
@@ -26,29 +27,33 @@ Visible chunk culling and bounded chunk retention checkpoint:
   - visible viewport selection returns only intersecting chunks;
   - `drawBase(..., visibleRect)` draws only the visible chunk while preserving its world offset;
   - cold visible-only bake renders only requested chunks;
-  - retention with `maxRetainedChunks: 2` keeps the dirty and visible chunks while evicting older non-required chunks.
-- `npm.cmd run shoot` passed and refreshed `.uishots`.
-- `npm.cmd run golden` kept the Session 6 target frame stable: `build-station diff=0.32` under threshold `1.5`.
-- `npm.cmd run audit` passed the builder/moat checks: `moat/build-mode`, `moat/place-prop`, `moat/capability-online`, and `moat/caps-well-formed`.
+  - retained caches keep dirty and visible chunks while evicting older non-required chunks;
+  - complete visible caches report no missing visible chunks;
+  - panning a visible-only cache reports the newly exposed chunk;
+  - `onlyMissingVisible` fills that newly exposed chunk without dirtying or rebaking the whole station.
+- REFIT caller now computes the current camera viewport in bake-local pixels and uses it for bake, draw culling, and pan-triggered missing chunk fills.
+- `npm.cmd run shoot` passed and captured all visual states.
+- `npm.cmd run golden` kept Session 6 builder frames stable: `build-station diff=0.08`, `build-manual diff=0.20`, `build-connectors diff=0.83`; the remaining changed frames are non-builder screens already tracked as blockers.
+- `npm.cmd run audit` passed all builder/moat checks: `moat/build-mode`, `moat/place-prop`, `moat/capability-online`, and `moat/caps-well-formed`.
 
 ## Tests Run
 
-- `node test/stationbake.chunk.test.js` - PASS, 20 assertions.
+- `node test/stationbake.chunk.test.js` - PASS, 25 assertions.
 - `npm.cmd run test:fast` - PASS, includes `stationbake.chunk`.
 - `npm.cmd run shoot` - PASS, all states captured.
-- `npm.cmd run golden` - FAIL outside builder target: `crew-roster diff=14.11`, `crew-summon diff=14.46`, `work-recipes diff=14.41`, `build-skills diff=2.41`; `build-station` passed.
-- `npm.cmd run audit` - FAIL outside builder bake slice: `task/run-lifecycle` expected placeholder-key error end state and did not see one; `summon/bay-open` never saw `.mkt-primary`; builder/moat checks passed.
+- `npm.cmd run golden` - FAIL outside builder target: `crew-roster diff=14.11`, `crew-summon diff=14.46`, `work-recipes diff=14.39`, `build-skills diff=2.43`; `build-station` passed.
+- `npm.cmd run audit` - FAIL outside builder bake slice: `task/run-lifecycle` expected placeholder-key end/error and did not see one; `summon/bay-open` never saw `.mkt-primary`; builder/moat checks passed.
 
 ## Blockers / Holds
 
-- `GOLDEN-UNRELATED-SCREENS`: golden is blocked by non-builder frames. I did not bless unrelated baselines from this Session 6 worktree.
+- `GOLDEN-UNRELATED-SCREENS`: golden remains blocked by non-builder frames. I did not bless unrelated baselines from this Session 6 worktree.
 - `AUDIT-TASK-UNRELATED`: audit task placeholder lifecycle is failing outside the builder bake/culling slice.
 - `AUDIT-SUMMON-UNRELATED`: audit summon marketplace behavior is failing outside owned Session 6 files.
 
 ## Readiness Claim
 
-Checkpoint is safe to review but not DONE. Chunked REFIT bake now has exact dirty chunk mapping, opt-in visible chunk culling, and bounded retention evidence. `test:fast` is green. Session 6 cannot claim full done condition until the unrelated golden/audit blockers are resolved or accepted and final visual/audit gates are green.
+Safe checkpoint committed for review, but Session 6 is not DONE. Chunked REFIT bake now has exact dirty chunk mapping, bounded chunk canvases, visible viewport culling, bounded retention, and caller-side pan fills that do not rebake the whole station. `test:fast` is green. Full ready remains blocked by unrelated golden/audit failures outside the Session 6 ownership boundary.
 
 ## Next Loop Condition
 
-After visual/audit blockers are cleared or accepted, rerun `npm.cmd run golden` and `npm.cmd run audit`, then select the next scale slice: seed-station monolithic-vs-chunk pixel tolerance or caller-side viewport wiring.
+After unrelated visual/audit blockers are resolved or accepted, rerun `npm.cmd run golden` and `npm.cmd run audit`, then select the next scale slice: live-world chunk cache integration or seed-station monolithic-vs-chunk pixel tolerance.

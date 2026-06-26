@@ -25,7 +25,7 @@ const Build = (() => {
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
-  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
+  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT' };
@@ -43,6 +43,7 @@ const Build = (() => {
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
 
   const T = () => (station ? station.TILE : 12);
+  const MAX_REFIT_CHUNKS = 18;
 
   /* ---------- lifecycle ---------- */
   function init(o) { opts = o; }
@@ -709,6 +710,16 @@ const Build = (() => {
     const c = toCanvas(ev), t = T();
     return { tx: Math.floor(((c.x - panX) / zoom) / t), ty: Math.floor(((c.y - panY) / zoom) / t) };
   }
+  function visibleBakeRect(g) {
+    if (!cv || !g) return null;
+    const t = g.TILE || T(), ox = g.origin.tx * t, oy = g.origin.ty * t;
+    return {
+      x: Math.max(0, (-panX) / zoom - ox),
+      y: Math.max(0, (-panY) / zoom - oy),
+      w: Math.ceil(cv.width / zoom),
+      h: Math.ceil(cv.height / zoom)
+    };
+  }
 
   /* ---------- pointer interaction ---------- */
   function panTrigger(ev) { return spaceHeld || ev.button === 1; }  // space-drag or middle-drag
@@ -980,13 +991,20 @@ const Build = (() => {
   /* ---------- render loop ---------- */
   function rebake() {
     cacheGeo = station.projectGeometry();
-    cache = StationBake.bakeIncremental ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects) : StationBake.bake(cacheGeo);
+    const visibleRect = visibleBakeRect(cacheGeo);
+    cache = StationBake.bakeIncremental
+      ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects, { visibleRect, maxRetainedChunks: MAX_REFIT_CHUNKS, onlyMissingVisible: bakeVisibleOnly })
+      : StationBake.bake(cacheGeo);
     valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
-    bakeDirty = false; bakeDirtyRects = null;
+    bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
 
   function frame(now) {
     if (!running) return;
+    const visibleRect = cacheGeo ? visibleBakeRect(cacheGeo) : null;
+    if (visibleRect && cache && StationBake.missingVisibleChunks && StationBake.missingVisibleChunks(cache, visibleRect).length) {
+      bakeDirty = true; bakeVisibleOnly = true;
+    }
     if (bakeDirty || !cache) rebake();
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1001,13 +1019,14 @@ const Build = (() => {
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
     ctx.imageSmoothingEnabled = false;
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
-    if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy);
+    const drawVisibleRect = visibleBakeRect(cacheGeo);
+    if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy, drawVisibleRect);
     else ctx.drawImage(cache.baseCv, ox, oy);
     drawGrid(t);
     drawConveyor(now, t);   // belts (floor) → props → boxes ride on top
     drawProps(now);
     drawConveyorBoxes(now, t);
-    if (StationBake.drawLight) StationBake.drawLight(ctx, cache, ox, oy);
+    if (StationBake.drawLight) StationBake.drawLight(ctx, cache, ox, oy, drawVisibleRect);
     else ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
     drawFlashes(now, t);

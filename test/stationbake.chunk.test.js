@@ -82,6 +82,8 @@ A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationB
 
 const visible = StationBake.visibleChunks(first, { x: 384, y: 0, w: 384, h: 384 });
 A.eq(visible.map(c => c.key), ['1,0'], 'visible chunk query returns only chunks intersecting the viewport');
+A.eq(StationBake.missingVisibleChunks(first, { x: 384, y: 0, w: 384, h: 384 }), [],
+  'complete cache reports no missing visible chunks');
 
 const drawn = [];
 const drawCtx = { drawImage(cv, x, y) { drawn.push({ cv, x, y }); } };
@@ -97,6 +99,16 @@ const visibleCold = StationBake.bakeIncremental(geo, null, null, {
 A.eq(visibleCold.stats.chunkCount, 1, 'cold visible bake renders only requested chunks');
 A.eq(visibleCold.stats.dirtyChunks, ['1,0'], 'cold visible bake reports the rendered visible chunk');
 A.eq(visibleCold.stats.evictedChunks, 0, 'cold visible bake does not evict when under the retention cap');
+A.eq(StationBake.missingVisibleChunks(visibleCold, { x: 768, y: 0, w: 132, h: 384 }), ['2,0'],
+  'visible-only cache reports newly exposed chunks after panning');
+const panned = StationBake.bakeIncremental(geo, visibleCold, null, {
+  visibleRect: { x: 768, y: 0, w: 132, h: 384 },
+  maxRetainedChunks: 2,
+  onlyMissingVisible: true
+});
+A.eq(panned.stats.dirtyChunks, [], 'pan-only visible fill does not dirty the whole station');
+A.eq(panned.stats.rebakedChunks, 1, 'pan-only visible fill bakes only the newly exposed chunk');
+A.ok(panned.chunkMap.has('2,0'), 'pan-only visible fill caches the newly exposed chunk');
 
 const retained = StationBake.bakeIncremental(geo, first, [{ x1: 4, y1: 4, x2: 4, y2: 4 }], {
   visibleRect: { x: 384, y: 0, w: 384, h: 384 },

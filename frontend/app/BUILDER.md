@@ -80,7 +80,8 @@ Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `TOO_FAR`, `BAD_STY
   monolithic canvas. Large-station callers can pass `{ visibleRect, maxRetainedChunks }` to render
   only visible chunks on cold start and evict old non-visible chunks while always keeping the current
   dirty and visible chunks. `StationBake.drawBase/drawLight(..., visibleRect)` culls chunk composites
-  to the current viewport.
+  to the current viewport. REFIT now passes its live camera viewport into bake/draw, caps retained
+  chunks, and fills newly exposed chunks incrementally when panning instead of rebaking the station.
 - **Discrete door placement**, **Salvage/XP economy + tiers**, **PixelLab hi-tier art**.
 
 ## Ownership / coordination
