@@ -1140,5 +1140,10 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail, summonAgent, summonForRequest, currentAgent: () => agent, applyConfig: applyAgentConfig };
+  return {
+    show, refreshUsage, persist, refreshRail: renderRail, summonAgent, summonForRequest,
+    currentAgent: () => agent,
+    agents: () => liveAgents().map(serializeAgentLite),
+    applyConfig: applyAgentConfig
+  };
 })();

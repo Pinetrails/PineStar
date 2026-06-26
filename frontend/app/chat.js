@@ -694,12 +694,13 @@ const Chat = (() => {
      runs immediately. ↑/↓ move, Enter/Tab run, Esc closes. */
   let slashItems = [], slashSel = 0;
   let slashServerCommands = null, slashCatalogLoading = null, slashCatalogLoaded = null;
+  let slashGoal = '', slashSubgoals = [];
   const FALLBACK_SLASH_COMMANDS = Object.freeze([
     Object.freeze({ name: 'retry', desc: 're-run the last turn', action: 'retry' }),
     Object.freeze({ name: 'stop', desc: 'interrupt the running turn', action: 'stop' }),
     Object.freeze({ name: 'copy', desc: "copy the agent's last reply", action: 'copy' }),
     Object.freeze({ name: 'help', desc: 'list available commands', action: 'help' }),
-    Object.freeze({ name: 'new', desc: 'start a fresh workstream', action: 'new' }),
+    Object.freeze({ name: 'new', aliases: ['reset'], desc: 'start a fresh workstream', action: 'new' }),
     Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', action: 'branch' }),
     Object.freeze({ name: 'status', desc: 'show current stream and run state', action: 'status' }),
     Object.freeze({ name: 'usage', desc: 'show token and spend totals', action: 'usage' }),
@@ -707,13 +708,30 @@ const Chat = (() => {
     Object.freeze({ name: 'steer', desc: 'queue steering guidance for the current task', action: 'steer' }),
     Object.freeze({ name: 'undo', desc: 'remove the last local exchange', action: 'undo' }),
     Object.freeze({ name: 'compress', desc: 'show context compaction status', action: 'compress' }),
+    Object.freeze({ name: 'title', desc: 'show or rename the current workstream', action: 'title' }),
+    Object.freeze({ name: 'resume', aliases: ['sessions', 'switch'], desc: 'list or switch workstreams', action: 'resume' }),
+    Object.freeze({ name: 'save', desc: 'save the current station state', action: 'save' }),
+    Object.freeze({ name: 'agents', aliases: ['tasks'], desc: 'show active agents and running streams', action: 'agents' }),
+    Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', action: 'background' }),
+    Object.freeze({ name: 'goal', desc: 'show the current standing-goal status', action: 'goal' }),
+    Object.freeze({ name: 'subgoal', desc: 'show subgoal support status', action: 'subgoal' }),
     Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
     Object.freeze({ name: 'personality', desc: 'show or set the active personality', action: 'personality' }),
     Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', action: 'yolo' }),
+    Object.freeze({ name: 'reasoning', desc: 'show reasoning-mode support status', action: 'reasoning' }),
+    Object.freeze({ name: 'fast', desc: 'show fast-mode support status', action: 'fast' }),
+    Object.freeze({ name: 'voice', desc: 'show or toggle spoken replies', action: 'voice' }),
     Object.freeze({ name: 'tools', desc: 'show tools granted by the workstation', action: 'tools' }),
     Object.freeze({ name: 'skills', desc: 'show installed skill recipes', action: 'skills' }),
+    Object.freeze({ name: 'memory', desc: 'show the active agent memory records', action: 'memory' }),
+    Object.freeze({ name: 'bundles', desc: 'list recipe and skill slash bundles', action: 'bundles' }),
+    Object.freeze({ name: 'cron', desc: 'show or arm scheduled routines', action: 'cron' }),
+    Object.freeze({ name: 'suggestions', aliases: ['suggest'], desc: 'review recurring-task recipe suggestions', action: 'suggestions' }),
+    Object.freeze({ name: 'blueprint', aliases: ['bp'], desc: 'load a recipe blueprint into the composer', action: 'blueprint' }),
+    Object.freeze({ name: 'reload-mcp', aliases: ['reload_mcp'], desc: 'refresh configured MCP connectors', action: 'reload-mcp' }),
     Object.freeze({ name: 'reload-skills', aliases: ['reload_skills'], desc: 'refresh the slash skill catalog', action: 'reload-skills' }),
-    Object.freeze({ name: 'debug', desc: 'show chat and slash debug state', action: 'debug' })
+    Object.freeze({ name: 'debug', desc: 'show chat and slash debug state', action: 'debug' }),
+    Object.freeze({ name: 'version', aliases: ['v'], desc: 'show StarNet version information', action: 'version' })
   ]);
   function isSlashOpen() { const p = el('chat-slash'); return !!(p && !p.hidden); }
   function copyLastReply() {
@@ -733,6 +751,110 @@ const Chat = (() => {
     try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
   }
   function streamLabel(w) { return (w && (w.title || (w.id === (typeof Workstreams !== 'undefined' && Workstreams.generalId && Workstreams.generalId()) ? 'General' : 'Untitled'))) || 'current stream'; }
+  function workstreamList() {
+    try { return (typeof Workstreams !== 'undefined' && Workstreams.list) ? Workstreams.list() : []; } catch (_) { return []; }
+  }
+  function findWorkstreamRef(args) {
+    const raw = String(args || '').trim();
+    const list = workstreamList();
+    if (!raw) return null;
+    const n = Number(raw);
+    if (Number.isInteger(n) && n >= 1 && n <= list.length) return list[n - 1];
+    const q = raw.toLowerCase();
+    return list.find(w => String(w.id || '').toLowerCase() === q)
+      || list.find(w => String(streamLabel(w)).toLowerCase() === q)
+      || list.find(w => String(streamLabel(w)).toLowerCase().indexOf(q) >= 0)
+      || null;
+  }
+  function summarizeStreams() {
+    const list = workstreamList();
+    if (!list.length) return 'No saved workstreams.';
+    const bits = list.slice(0, 8).map((w, i) => {
+      const busy = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(w.id)) ? '*' : '';
+      const here = activeWs && w.id === activeWs.id ? '>' : '';
+      const turns = (w.history && w.history.length) || 0;
+      return here + (i + 1) + '. ' + streamLabel(w) + busy + ' (' + turns + ')';
+    });
+    return 'Workstreams: ' + bits.join(' | ') + (list.length > 8 ? ' | +' + (list.length - 8) + ' more' : '') + '. Use /resume <number|title>.';
+  }
+  function titleCommand(args) {
+    if (!activeWs || typeof Workstreams === 'undefined' || !Workstreams.rename) return localLine('No active workstream to rename.');
+    const title = String(args || '').trim();
+    if (!title) return localLine('Title: ' + streamLabel(activeWs) + '. Use /title <name> to rename this workstream.');
+    Workstreams.rename(activeWs.id, title);
+    refreshWorkflowViews();
+    localLine('Renamed this workstream to ' + streamLabel(activeWs) + '.');
+  }
+  function resumeCommand(args) {
+    if (typeof Workstreams === 'undefined' || !Workstreams.switch) return localLine('Workstreams are not available yet.');
+    const target = findWorkstreamRef(args);
+    if (!String(args || '').trim()) return localLine(summarizeStreams());
+    if (!target) return localLine('No workstream matched "' + String(args || '').trim() + '". ' + summarizeStreams());
+    const ws = Workstreams.switch(target.id);
+    if (!ws) return localLine('Could not switch workstreams.');
+    load(ws); refreshWorkflowViews();
+    localLine('Resumed ' + streamLabel(ws) + '.');
+  }
+  function saveCommand() {
+    try { if (typeof App !== 'undefined' && App.persist) { App.persist(); localLine('Saved the current station state.'); return; } } catch (_) {}
+    localLine('Save is not available yet.');
+  }
+  function appAgents() {
+    try {
+      if (typeof App !== 'undefined' && App.agents) return App.agents() || [];
+      const a = activeAgent();
+      return a ? [a] : [];
+    } catch (_) { return []; }
+  }
+  function agentsCommand() {
+    const agents = appAgents();
+    const streams = workstreamList();
+    const busy = streams.filter(w => typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(w.id));
+    const names = agents.map(a => (a.name || a.id || 'agent') + ((a.id && a.id !== 'agent') ? ' [' + a.id + ']' : '')).slice(0, 6);
+    localLine('Agents: ' + (names.length ? names.join(', ') : 'none loaded') + '. Streams: ' + streams.length + '; running: '
+      + (busy.length ? busy.map(streamLabel).join(', ') : 'none') + '.');
+  }
+  function backgroundCommand(args) {
+    const text = String(args || '').trim();
+    if (!text) return localLine('Usage: /background <prompt>');
+    if (typeof Workstreams === 'undefined' || !Workstreams.create) return localLine('Workstreams are not available yet.');
+    const prev = activeWs;
+    const title = Workstreams.deriveTitle ? (Workstreams.deriveTitle(text) || 'Background task') : 'Background task';
+    const ws = Workstreams.create(title, { agentId: (activeWs && activeWs.agentId) || 'agent' });
+    load(ws);
+    send(text);
+    if (prev && Workstreams.switch) {
+      const back = Workstreams.switch(prev.id);
+      if (back) load(back);
+    }
+    refreshWorkflowViews();
+    localLine('Started background workstream: ' + streamLabel(ws) + '.');
+  }
+  function goalCommand(args) {
+    const raw = String(args || '').trim();
+    const low = raw.toLowerCase();
+    if (!raw || low === 'status') {
+      return localLine(slashGoal ? ('Goal note: ' + slashGoal + (slashSubgoals.length ? ' Subgoals: ' + slashSubgoals.join(' | ') + '.' : '.'))
+        : 'No standing goal note is set. StarNet does not have an autonomous goal loop in this chat yet; /goal stores a local reminder only.');
+    }
+    if (low === 'clear') { slashGoal = ''; slashSubgoals = []; return localLine('Cleared the local goal note.'); }
+    slashGoal = raw;
+    localLine('Goal note set for this chat. It will not auto-run; use /queue or a workstream to act on it.');
+  }
+  function subgoalCommand(args) {
+    const raw = String(args || '').trim();
+    const low = raw.toLowerCase();
+    if (!raw) return localLine(slashSubgoals.length ? ('Subgoals: ' + slashSubgoals.map((s, i) => (i + 1) + '. ' + s).join(' | ')) : 'No subgoals are set.');
+    if (low === 'clear') { slashSubgoals = []; return localLine('Cleared subgoals.'); }
+    const rm = /^remove\s+(\d+)$/i.exec(raw);
+    if (rm) {
+      const i = Number(rm[1]) - 1;
+      if (i >= 0 && i < slashSubgoals.length) { const old = slashSubgoals.splice(i, 1)[0]; return localLine('Removed subgoal: ' + old); }
+      return localLine('No subgoal #' + rm[1] + '.');
+    }
+    slashSubgoals.push(raw);
+    localLine('Added subgoal #' + slashSubgoals.length + '.');
+  }
   function newWorkstreamCommand(args) {
     if (typeof Workstreams === 'undefined' || !Workstreams.create) return localLine('Workstreams are not available yet.');
     const title = String(args || '').trim() || null;
@@ -853,6 +975,44 @@ const Chat = (() => {
       localLine('Approval mode: ' + (want ? 'full access. The agent will not pause for approval prompts.' : 'ask first. The agent will pause before gated actions.') );
     } else localLine('Could not change approval mode.');
   }
+  function reasoningCommand(args) {
+    const raw = String(args || '').trim();
+    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState() : null;
+    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
+    if (raw && raw.toLowerCase() !== 'status') return localLine('Reasoning effort is not a separate StarNet toggle yet. Pick a reasoning-capable model with /model; usage events still track reasoning tokens when the provider reports them.');
+    localLine('Reasoning: controlled by the selected model' + (model ? ' (' + model + ')' : '') + '. '
+      + (cs && cs.limit ? 'Context window ' + (cs.used || 0) + '/' + cs.limit + ' tokens.' : 'Context window is still calibrating.'));
+  }
+  function fastCommand(args) {
+    const raw = String(args || '').trim();
+    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
+    if (raw && raw.toLowerCase() !== 'status') return localLine('Fast mode is not a separate runtime toggle yet. Use /model <fast-model-id> to switch to a cheaper or lower-latency model.');
+    localLine('Fast mode: no global toggle is active. Current model: ' + (model || 'not selected') + '.');
+  }
+  function voiceCommand(args) {
+    if (typeof Voice === 'undefined') return localLine('Voice controls are not available in this surface.');
+    const raw = String(args || '').trim().toLowerCase();
+    if (!raw || raw === 'status') {
+      return localLine('Voice: replies ' + (Voice.isOn && Voice.isOn() ? 'on' : 'off')
+        + ', hands-free ' + (Voice.inVoiceMode && Voice.inVoiceMode() ? 'on' : 'off')
+        + ', listening support ' + (Voice.canListen && Voice.canListen() ? 'yes' : 'no')
+        + ', speech support ' + (Voice.canSpeak && Voice.canSpeak() ? 'yes' : 'no') + '.');
+    }
+    if (/^(on|true|yes|speak|tts)$/.test(raw)) {
+      if (Voice.setSpeakReplies) Voice.setSpeakReplies(true);
+      return localLine('Voice replies are on.');
+    }
+    if (/^(off|false|no|mute)$/.test(raw)) {
+      if (Voice.stopConvo) Voice.stopConvo();
+      if (Voice.setSpeakReplies) Voice.setSpeakReplies(false);
+      return localLine('Voice replies are off.');
+    }
+    if (/^(handsfree|hands-free|convo|conversation|live)$/.test(raw)) {
+      if (Voice.toggleVoiceMode) Voice.toggleVoiceMode();
+      return localLine('Hands-free voice mode toggled.');
+    }
+    localLine('Usage: /voice [on|off|status|handsfree]');
+  }
   function toolRows() {
     return [
       { cap: null, label: 'compute', tools: 'model.chat' },
@@ -887,10 +1047,126 @@ const Chat = (() => {
         + (off ? '; ' + off + ' off' : '') + '. Use /<skill-slug> to draft with an available skill.');
     } catch (_) { localLine('Could not load skills from the sidecar.'); }
   }
+  async function memoryCommand(args) {
+    if (typeof Harness === 'undefined' || !Harness.memoryRecords) return localLine('Memory records are not available yet.');
+    const agentId = (activeWs && activeWs.agentId) || (activeAgent() && activeAgent().id) || 'agent';
+    const q = String(args || '').trim().toLowerCase();
+    try {
+      let recs = await Harness.memoryRecords(agentId);
+      recs = Array.isArray(recs) ? recs : [];
+      const shown = q ? recs.filter(r => String((r && (r.content || r.text || r.kind)) || '').toLowerCase().indexOf(q) >= 0) : recs;
+      const top = shown.slice(0, 4).map(r => String((r && (r.content || r.text)) || '').replace(/\s+/g, ' ').slice(0, 56));
+      localLine('Memory: ' + recs.length + ' record' + (recs.length === 1 ? '' : 's')
+        + (q ? ', ' + shown.length + ' matching "' + q + '"' : '')
+        + (top.length ? ' - ' + top.join(' | ') : '.'));
+    } catch (_) { localLine('Could not load memory records from the sidecar.'); }
+  }
+  async function bundlesCommand() {
+    const recipes = (typeof Recipes !== 'undefined' && Recipes.list) ? Recipes.list() : [];
+    let skillCount = 0, activeSkills = [];
+    try {
+      const r = await fetch('/api/skills?placed=' + encodeURIComponent(slashCatalogKey()), { cache: 'no-store' });
+      const j = r.ok ? await r.json() : null;
+      const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
+      skillCount = skills.length;
+      activeSkills = skills.filter(s => s.enabled && s.available).map(s => s.slug);
+    } catch (_) {}
+    localLine('Bundles: ' + recipes.length + ' recipe blueprint' + (recipes.length === 1 ? '' : 's')
+      + (recipes.length ? ' (' + recipes.slice(0, 6).map(r => r.id).join(', ') + ')' : '')
+      + '; ' + skillCount + ' skill recipe' + (skillCount === 1 ? '' : 's')
+      + (activeSkills.length ? ', active: ' + activeSkills.slice(0, 6).join(', ') : '') + '.');
+  }
+  function recipeByRef(raw) {
+    const q = String(raw || '').trim().toLowerCase();
+    const list = (typeof Recipes !== 'undefined' && Recipes.list) ? Recipes.list() : [];
+    if (!q) return null;
+    return list.find(r => String(r.id || '').toLowerCase() === q)
+      || list.find(r => String(r.name || '').toLowerCase() === q)
+      || list.find(r => String(r.id || '').toLowerCase().indexOf(q) >= 0 || String(r.name || '').toLowerCase().indexOf(q) >= 0)
+      || null;
+  }
+  function blueprintCommand(args) {
+    const raw = String(args || '').trim();
+    const list = (typeof Recipes !== 'undefined' && Recipes.list) ? Recipes.list() : [];
+    if (!raw) return localLine('Blueprints: ' + (list.length ? list.slice(0, 10).map(r => '/' + r.id).join(', ') : 'none') + '. Use /blueprint <name> to load one.');
+    const r = recipeByRef(raw);
+    if (!r) return localLine('No blueprint matched "' + raw + '".');
+    insertRecipe(r);
+    localLine('Loaded blueprint ' + (r.name || r.id) + ' into the composer.');
+  }
+  function suggestionsCommand(args) {
+    if (typeof MintStore === 'undefined' || !MintStore.candidates) return localLine('Suggestions are not available yet.');
+    const raw = String(args || '').trim();
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const action = (parts[0] || '').toLowerCase();
+    const candidates = MintStore.candidates() || [];
+    if (!raw || action === 'catalog' || action === 'list') {
+      if (!candidates.length) return localLine('No recurring-task suggestions are ready yet.');
+      return localLine('Suggestions: ' + candidates.map((c, i) => (i + 1) + '. ' + String(c.template || c.lastText || c.key).slice(0, 70)).join(' | ')
+        + '. Use /suggestions accept N or /suggestions dismiss N.');
+    }
+    if (action === 'clear') { if (MintStore.forget) MintStore.forget(); return localLine('Cleared recurring-task suggestion history.'); }
+    const n = Number(parts[1] || parts[0]);
+    const c = Number.isInteger(n) ? candidates[n - 1] : null;
+    if (!c) return localLine('Pick a suggestion number from /suggestions.');
+    if (action === 'dismiss' || action === 'reject') {
+      MintStore.markDismissed(c.key);
+      return localLine('Dismissed suggestion #' + n + '.');
+    }
+    if (action === 'accept' || action === 'save' || action === 'approve') {
+      if (typeof Recipes !== 'undefined' && Recipes.saveCustom && Recipes.draft) {
+        const rec = Recipes.saveCustom(Recipes.draft({ name: 'Suggested Mission', tagline: 'learned from recurring tasks', task: c.template || c.lastText || '' }));
+        MintStore.markMinted(c.key);
+        warmSlashCatalog();
+        return localLine('Saved suggestion #' + n + ' as /' + rec.id + '.');
+      }
+      MintStore.markMinted(c.key);
+      return localLine('Marked suggestion #' + n + ' accepted.');
+    }
+    localLine('Usage: /suggestions [accept N|dismiss N|clear]');
+  }
+  async function cronCommand(args) {
+    const raw = String(args || '').trim().toLowerCase();
+    try {
+      if (/^(on|enable|enabled|arm)$/.test(raw) || /^(off|disable|disabled|disarm)$/.test(raw)) {
+        const want = /^(on|enable|enabled|arm)$/.test(raw);
+        const r = await fetch('/api/cron/arm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: want }) });
+        const j = await r.json().catch(() => null);
+        return localLine(r.ok && j ? ('Routines scheduler ' + (j.enabled ? 'enabled' : 'disabled') + '.') : 'Could not update the routines scheduler.');
+      }
+      const r = await fetch('/api/cron', { cache: 'no-store' });
+      const j = r.ok ? await r.json() : null;
+      const jobs = (j && Array.isArray(j.jobs)) ? j.jobs : [];
+      const bits = jobs.slice(0, 5).map((job, i) => (i + 1) + '. ' + (job.name || job.id || 'routine') + (job.enabled === false ? ' [paused]' : ''));
+      localLine('Routines: scheduler ' + (j && j.enabled ? 'on' : 'off') + ', ' + jobs.length + ' job' + (jobs.length === 1 ? '' : 's')
+        + (bits.length ? ' - ' + bits.join(' | ') : '.') + ' Use /cron on or /cron off to arm/disarm.');
+    } catch (_) { localLine('Could not load routines from the sidecar.'); }
+  }
+  async function reloadMcpCommand(args) {
+    const target = String(args || '').trim();
+    try {
+      const r = await fetch('/api/connectors', { cache: 'no-store' });
+      const j = r.ok ? await r.json() : null;
+      let conns = (j && Array.isArray(j.connectors)) ? j.connectors : [];
+      if (target) conns = conns.filter(c => String(c.id || '').toLowerCase() === target.toLowerCase());
+      if (!conns.length) return localLine(target ? ('No MCP connector matched "' + target + '".') : 'No MCP connectors are configured.');
+      const results = [];
+      for (const c of conns) {
+        const rr = await fetch('/api/connectors/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id }) });
+        const jj = await rr.json().catch(() => null);
+        const st = (jj && (jj.status || jj));
+        results.push(String(c.id) + ':' + ((st && st.state) || (rr.ok ? 'refreshed' : 'error')) + ((st && st.toolCount != null) ? '/' + st.toolCount + ' tools' : ''));
+      }
+      localLine('MCP refresh: ' + results.join(', ') + '.');
+    } catch (_) { localLine('Could not refresh MCP connectors.'); }
+  }
   function reloadSkillsCommand() {
     slashServerCommands = null; slashCatalogLoaded = null; slashCatalogLoading = null;
     warmSlashCatalog();
     localLine('Refreshing slash skills and command catalog for this workstation.');
+  }
+  function versionCommand() {
+    localLine('StarNet harness: local development build. Package version is not exposed to the browser yet; sidecar health is checked through /api/health.');
   }
   function debugCommand() {
     const ws = activeWs || {};
@@ -906,9 +1182,15 @@ const Chat = (() => {
       retry: retryLast, stop: stopActive, copy: copyLastReply, help: showHelp,
       new: newWorkstreamCommand, branch: branchWorkstreamCommand, status: statusCommand,
       usage: usageCommand, queue: queueCommand, steer: steerCommand, undo: undoCommand,
-      compress: compressCommand, model: modelCommand, personality: personalityCommand,
-      yolo: yoloCommand, tools: toolsCommand, skills: skillsCommand,
-      'reload-skills': reloadSkillsCommand, debug: debugCommand
+      compress: compressCommand, title: titleCommand, resume: resumeCommand,
+      save: saveCommand, agents: agentsCommand, background: backgroundCommand,
+      goal: goalCommand, subgoal: subgoalCommand,
+      model: modelCommand, personality: personalityCommand, yolo: yoloCommand,
+      reasoning: reasoningCommand, fast: fastCommand, voice: voiceCommand,
+      tools: toolsCommand, skills: skillsCommand, memory: memoryCommand,
+      bundles: bundlesCommand, cron: cronCommand, suggestions: suggestionsCommand,
+      blueprint: blueprintCommand, 'reload-mcp': reloadMcpCommand,
+      'reload-skills': reloadSkillsCommand, debug: debugCommand, version: versionCommand
     };
   }
   function showHelp() {

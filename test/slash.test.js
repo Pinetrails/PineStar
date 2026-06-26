@@ -8,15 +8,25 @@ const S = require('../sidecar/slash.js');
   const cat = S.catalog();
   const names = cat.commands.map(c => c.name).sort();
   const required = [
-    'branch', 'compress', 'copy', 'debug', 'help', 'model', 'new', 'personality', 'queue',
-    'reload-skills', 'retry', 'skills', 'status', 'steer', 'stop', 'tools', 'undo', 'usage', 'yolo'
+    'agents', 'background', 'blueprint', 'branch', 'bundles', 'compress', 'copy', 'cron',
+    'debug', 'fast', 'goal', 'help', 'memory', 'model', 'new', 'personality', 'queue',
+    'reasoning', 'reload-mcp', 'reload-skills', 'resume', 'retry', 'save', 'skills',
+    'status', 'steer', 'stop', 'subgoal', 'suggestions', 'title', 'tools', 'undo',
+    'usage', 'version', 'voice', 'yolo'
   ];
   A.eq(names, required.slice().sort(), 'catalog exposes the built-in workflow commands');
   A.ok(cat.commands.every(c => c.source === 'builtin'), 'catalog marks built-ins');
   A.ok(cat.commands.every(c => c.dispatch === 'client'), 'catalog commands dispatch to client directives');
+  A.ok(cat.commands.find(c => c.name === 'new').aliases.indexOf('reset') >= 0, 'new exposes /reset alias');
   A.ok(cat.commands.find(c => c.name === 'branch').aliases.indexOf('fork') >= 0, 'branch exposes /fork alias');
   A.ok(cat.commands.find(c => c.name === 'queue').aliases.indexOf('q') >= 0, 'queue exposes /q alias');
+  A.ok(cat.commands.find(c => c.name === 'resume').aliases.indexOf('sessions') >= 0, 'resume exposes /sessions alias');
+  A.ok(cat.commands.find(c => c.name === 'background').aliases.indexOf('bg') >= 0, 'background exposes /bg alias');
+  A.ok(cat.commands.find(c => c.name === 'suggestions').aliases.indexOf('suggest') >= 0, 'suggestions exposes /suggest alias');
+  A.ok(cat.commands.find(c => c.name === 'blueprint').aliases.indexOf('bp') >= 0, 'blueprint exposes /bp alias');
+  A.ok(cat.commands.find(c => c.name === 'reload-mcp').aliases.indexOf('reload_mcp') >= 0, 'reload-mcp exposes underscore alias');
   A.ok(cat.commands.find(c => c.name === 'reload-skills').aliases.indexOf('reload_skills') >= 0, 'reload-skills exposes underscore alias');
+  A.ok(cat.commands.find(c => c.name === 'version').aliases.indexOf('v') >= 0, 'version exposes /v alias');
 }
 
 {
@@ -47,6 +57,20 @@ const S = require('../sidecar/slash.js');
   A.eq(reload.directive.action, 'reload-skills', 'reload alias runs reload-skills action');
   const model = S.dispatch('/model openai/gpt-5');
   A.eq(model.directive, { type: 'client', action: 'model', args: 'openai/gpt-5' }, 'model dispatch carries model id args');
+  const reset = S.dispatch('/reset');
+  A.eq(reset.command.name, 'new', 'reset alias canonicalizes to new');
+  const sessions = S.dispatch('/sessions 2');
+  A.eq(sessions.directive, { type: 'client', action: 'resume', args: '2' }, 'sessions alias dispatches to resume');
+  const bg = S.dispatch('/bg write a report');
+  A.eq(bg.command.name, 'background', 'bg alias canonicalizes to background');
+  A.eq(bg.directive.action, 'background', 'bg dispatch runs background action');
+  const bp = S.dispatch('/bp morning-brief');
+  A.eq(bp.directive, { type: 'client', action: 'blueprint', args: 'morning-brief' }, 'bp alias dispatches to blueprint');
+  const mcp = S.dispatch('/reload_mcp github');
+  A.eq(mcp.command.name, 'reload-mcp', 'reload_mcp alias canonicalizes');
+  A.eq(mcp.directive.action, 'reload-mcp', 'reload_mcp dispatch runs reload-mcp action');
+  const ver = S.dispatch('/v');
+  A.eq(ver.directive.action, 'version', 'v alias dispatches to version');
 }
 
 {

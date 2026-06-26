@@ -33,6 +33,7 @@ const BUILTIN_COMMANDS = Object.freeze([
   }),
   Object.freeze({
     name: 'new',
+    aliases: ['reset'],
     category: 'Session',
     desc: 'start a fresh workstream',
     action: 'new'
@@ -84,6 +85,56 @@ const BUILTIN_COMMANDS = Object.freeze([
     action: 'compress'
   }),
   Object.freeze({
+    name: 'title',
+    category: 'Session',
+    desc: 'show or rename the current workstream',
+    argsHint: '[name]',
+    action: 'title'
+  }),
+  Object.freeze({
+    name: 'resume',
+    aliases: ['sessions', 'switch'],
+    category: 'Session',
+    desc: 'list or switch workstreams',
+    argsHint: '[name|number]',
+    action: 'resume'
+  }),
+  Object.freeze({
+    name: 'save',
+    category: 'Session',
+    desc: 'save the current station state',
+    action: 'save'
+  }),
+  Object.freeze({
+    name: 'agents',
+    aliases: ['tasks'],
+    category: 'Session',
+    desc: 'show active agents and running streams',
+    action: 'agents'
+  }),
+  Object.freeze({
+    name: 'background',
+    aliases: ['bg', 'btw'],
+    category: 'Session',
+    desc: 'run a prompt in a new background workstream',
+    argsHint: '<prompt>',
+    action: 'background'
+  }),
+  Object.freeze({
+    name: 'goal',
+    category: 'Session',
+    desc: 'show the current standing-goal status',
+    argsHint: '[text|status|clear]',
+    action: 'goal'
+  }),
+  Object.freeze({
+    name: 'subgoal',
+    category: 'Session',
+    desc: 'show subgoal support status',
+    argsHint: '[text|remove N|clear]',
+    action: 'subgoal'
+  }),
+  Object.freeze({
     name: 'model',
     category: 'Configuration',
     desc: 'show or set the active model',
@@ -105,6 +156,27 @@ const BUILTIN_COMMANDS = Object.freeze([
     action: 'yolo'
   }),
   Object.freeze({
+    name: 'reasoning',
+    category: 'Configuration',
+    desc: 'show reasoning-mode support status',
+    argsHint: '[status]',
+    action: 'reasoning'
+  }),
+  Object.freeze({
+    name: 'fast',
+    category: 'Configuration',
+    desc: 'show fast-mode support status',
+    argsHint: '[status]',
+    action: 'fast'
+  }),
+  Object.freeze({
+    name: 'voice',
+    category: 'Configuration',
+    desc: 'show or toggle spoken replies',
+    argsHint: '[on|off|status]',
+    action: 'voice'
+  }),
+  Object.freeze({
     name: 'tools',
     category: 'Tools',
     desc: 'show tools granted by the workstation',
@@ -115,6 +187,50 @@ const BUILTIN_COMMANDS = Object.freeze([
     category: 'Tools',
     desc: 'show installed skill recipes',
     action: 'skills'
+  }),
+  Object.freeze({
+    name: 'memory',
+    category: 'Tools',
+    desc: 'show the active agent memory records',
+    argsHint: '[query]',
+    action: 'memory'
+  }),
+  Object.freeze({
+    name: 'bundles',
+    category: 'Tools',
+    desc: 'list recipe and skill slash bundles',
+    action: 'bundles'
+  }),
+  Object.freeze({
+    name: 'cron',
+    category: 'Tools',
+    desc: 'show or arm scheduled routines',
+    argsHint: '[on|off|status]',
+    action: 'cron'
+  }),
+  Object.freeze({
+    name: 'suggestions',
+    aliases: ['suggest'],
+    category: 'Tools',
+    desc: 'review recurring-task recipe suggestions',
+    argsHint: '[accept|dismiss N|clear]',
+    action: 'suggestions'
+  }),
+  Object.freeze({
+    name: 'blueprint',
+    aliases: ['bp'],
+    category: 'Tools',
+    desc: 'load a recipe blueprint into the composer',
+    argsHint: '[recipe]',
+    action: 'blueprint'
+  }),
+  Object.freeze({
+    name: 'reload-mcp',
+    aliases: ['reload_mcp'],
+    category: 'Tools',
+    desc: 'refresh configured MCP connectors',
+    argsHint: '[connector-id]',
+    action: 'reload-mcp'
   }),
   Object.freeze({
     name: 'reload-skills',
@@ -128,6 +244,13 @@ const BUILTIN_COMMANDS = Object.freeze([
     category: 'Info',
     desc: 'show chat and slash debug state',
     action: 'debug'
+  }),
+  Object.freeze({
+    name: 'version',
+    aliases: ['v'],
+    category: 'Info',
+    desc: 'show StarNet version information',
+    action: 'version'
   })
 ]);
 

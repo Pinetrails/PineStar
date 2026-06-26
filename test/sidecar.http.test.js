@@ -112,6 +112,12 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(slashCat.body.commands.some(c => c && c.name === 'queue' && c.aliases && c.aliases.indexOf('q') >= 0), 'slash catalog includes /queue with /q alias');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'model'), 'slash catalog includes /model');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'skills'), 'slash catalog includes /skills');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'resume' && c.aliases && c.aliases.indexOf('sessions') >= 0), 'slash catalog includes /resume with /sessions alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'background' && c.aliases && c.aliases.indexOf('bg') >= 0), 'slash catalog includes /background with /bg alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'cron'), 'slash catalog includes /cron');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'memory'), 'slash catalog includes /memory');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'reload-mcp' && c.aliases && c.aliases.indexOf('reload_mcp') >= 0), 'slash catalog includes /reload-mcp alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'version' && c.aliases && c.aliases.indexOf('v') >= 0), 'slash catalog includes /version alias');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'reload-skills' && c.aliases && c.aliases.indexOf('reload_skills') >= 0), 'slash catalog includes /reload-skills alias');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'morning-brief'), 'slash catalog includes built-in recipe commands');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'plan' && c.source === 'skill'), 'slash catalog includes available compute-only skill commands');
@@ -136,6 +142,14 @@ function boot(port, workspaces, attemptsLeft) {
     const slashReload = await j('POST', '/api/slash/dispatch', { input: '/reload_skills' });
     A.eq(slashReload.status, 200, 'POST /api/slash/dispatch /reload_skills -> 200');
     A.eq(slashReload.body.command.name, 'reload-skills', 'reload_skills dispatch canonicalizes');
+
+    const slashSessions = await j('POST', '/api/slash/dispatch', { input: '/sessions 1' });
+    A.eq(slashSessions.status, 200, 'POST /api/slash/dispatch /sessions -> 200');
+    A.eq(slashSessions.body.directive, { type: 'client', action: 'resume', args: '1' }, 'sessions dispatch returns resume directive');
+
+    const slashMcp = await j('POST', '/api/slash/dispatch', { input: '/reload_mcp github' });
+    A.eq(slashMcp.status, 200, 'POST /api/slash/dispatch /reload_mcp -> 200');
+    A.eq(slashMcp.body.directive, { type: 'client', action: 'reload-mcp', args: 'github' }, 'reload_mcp dispatch returns reload-mcp directive');
 
     const slashRecipe = await j('POST', '/api/slash/dispatch', { input: '/summarize launch notes' });
     A.eq(slashRecipe.status, 200, 'POST /api/slash/dispatch recipe -> 200');
