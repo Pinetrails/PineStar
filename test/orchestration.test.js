@@ -266,6 +266,103 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(summoned, 1, 'a granted summon reaches ctx.summon');
 }
 
+// ============================ team.spawn (ephemeral self-clone sub-agents / Meeseeks) ============================
+
+// ---- spawns N ephemeral clones: clone identity (lead system+model), ephemeral non-roster id, flat depth, results,
+//      and the Meeseeks visual feed (lifecycle forwarded + task{kind:'subagent'} emitted, tokens NOT forwarded) ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-spawn-'));
+  try {
+    const taskEvents = [];
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: (n, p) => { if (n === 'task') taskEvents.push(p); }, newId: counter() });
+    const ro = fakeRunOnce(async (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'directive', model: 'm' });
+      o.emit('agent.token', { agentId: o.agentId, delta: 'secret' });
+      return { reason: 'done', messages: [{ role: 'assistant', content: 'res:' + o.agentId }], usd: 0.4 };
+    });
+    const emitted = [];
+    const leadBroker = { _isLeadConsent: true };
+    const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'lead-model', selfSystem: 'LEAD-SYS', perWorker: 2, newId: counter(), subagents });
+    const ctx = { agentId: 'lead', emit: (n) => emitted.push(n), consent: leadBroker };
+    const out = await spawnTool.run({ tasks: [{ prompt: 'sub A', label: 'alpha' }, { prompt: 'sub B' }] }, ctx);
+
+    A.eq(ro.calls.length, 2, 'two ephemeral clones spawned (one per task)');
+    A.eq(ro.calls[0].system, 'LEAD-SYS', "the clone runs with the LEAD's OWN base identity (clone of self)");
+    A.eq(ro.calls[0].model, 'lead-model', 'the clone uses the lead model');
+    A.ok(/^sub-/.test(ro.calls[0].agentId), 'the clone gets an anonymous ephemeral agentId (sub- prefix, not a roster id)');
+    A.ok(ro.calls[0].agentId !== ro.calls[1].agentId && ro.calls[0].agentId !== 'lead', 'each clone is a distinct, non-lead id');
+    A.eq(ro.calls[0].isTask, true, 'the clone run is a task (tool-capable)');
+    A.eq(ro.calls[0].maxCostUsd, 2, 'per-worker cost cap is passed to the clone');
+    A.ok(ro.calls[0].consent === leadBroker, 'the clone shares the lead consent broker (same approval posture)');
+    A.ok(Array.isArray(ro.calls[0].extraObjects) && ro.calls[0].extraObjects.some(o => o.objectType === 'workbench'), 'the clone gets the workbench (terminal)');
+    A.ok(!ro.calls[0].lead, 'FLAT DEPTH: the clone is NOT a lead (no orchestrator object) so it cannot re-spawn');
+    A.eq(ro.calls[0].surface, 'autonomous', 'the clone runs headless on the autonomous baseline');
+
+    const parsed = JSON.parse(out.content);
+    A.eq(parsed.length, 2, 'both clone results returned');
+    A.eq(parsed[0].label, 'alpha', 'a provided label is carried back');
+    A.eq(parsed[1].label, 'subagent 2', 'an unlabelled task gets a default label');
+    A.ok(/^res:sub-/.test(parsed[0].result), 'the clone final text is returned');
+    A.eq(parsed[0].reason, 'done', 'the clone run reason is carried');
+
+    A.ok(emitted.indexOf('agent.run.start') >= 0, 'clone lifecycle forwarded to the lead bus (floor materializes the Meeseeks)');
+    A.ok(emitted.indexOf('agent.token') < 0, "clone tokens are NOT forwarded (no pollution of the lead's COMMS)");
+    A.ok(taskEvents.some(e => e.kind === 'subagent'), 'a task{kind:subagent} record is emitted (the Meeseeks identity signal)');
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+// ---- background mode returns durable handles immediately and completes into the record ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-spawn-bg-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce(async (o) => ({ reason: 'done', messages: [{ role: 'assistant', content: 'bg:' + o.agentId }], usd: 0.1 }));
+    const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents });
+    const out = await spawnTool.run({ tasks: [{ prompt: 'x' }], background: true }, { agentId: 'lead', emit: () => {} });
+    const handle = JSON.parse(out.content)[0];
+    A.ok(handle.id && handle.status === 'running', 'background spawn returns a running durable handle immediately');
+    A.eq(handle.label, 'subagent 1', 'the handle carries the label');
+    await tick(); await tick();
+    A.eq(subagents.get(handle.id).status, 'done', 'the background clone completes into the durable record');
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+// ---- guards: no subagent manager → unavailable (no run); empty tasks → noop ----
+{
+  const ro = fakeRunOnce();
+  const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter() });   // no subagents dep
+  const out = await spawnTool.run({ tasks: [{ prompt: 'x' }] }, { agentId: 'lead', emit: () => {} });
+  A.eq(out.summary, 'unavailable', 'team.spawn without a subagent manager is unavailable, not a crash');
+  A.eq(ro.calls.length, 0, 'unavailable spawn never reaches runOnce');
+}
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-spawn-noop-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const { spawnTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents });
+    const out = await spawnTool.run({ tasks: [] }, { agentId: 'lead', emit: () => {} });
+    A.eq(out.summary, 'noop', 'empty tasks is a noop');
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+// ---- capability gate: team.spawn is denied without the orchestrator grant, runs with it ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-spawn-cap-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce();
+    const reg = makeRegistry();
+    makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents }).register(reg);
+    const denyCtx = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: [], approvalRules: {} }, { emit: () => {} });
+    const r1 = await reg.dispatch({ name: 'team.spawn', args: { tasks: [{ prompt: 'x' }] } }, denyCtx);
+    A.ok(r1.isError && /capability denied/.test(r1.content), 'team.spawn denied without the orchestrator object');
+    const allowCtx = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: ['team.spawn'], approvalRules: {} }, { emit: () => {} });
+    const r2 = await reg.dispatch({ name: 'team.spawn', args: { tasks: [{ prompt: 'x' }] } }, allowCtx);
+    A.ok(!r2.isError, 'team.spawn runs when the orchestrator object is present');
+    await tick(); await tick();
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
 A.report('orchestration.test');
 
 })();
