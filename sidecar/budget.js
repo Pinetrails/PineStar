@@ -9,7 +9,9 @@
      cap and which are in the warn band. No state, no clock, no emit — trivially testable.
    • makeBudget({ caps, ledger, clock, dayMs?, warnFrac? }) -> the stateful governor the host wires in:
      tracks in-flight (live) run spend, emits `budget.threshold` once per (scope, level) crossing,
-     applies session-scoped resume overrides, and answers check()/status().
+     applies session-scoped resume overrides, and answers check()/status(). An optional
+     resumeGuard can veto extra headroom, which lets managed-credit hosts fail closed before
+     budget.resume can continue an exhausted paid path.
 
    Caps are SOFT: hitting one ends the current run with reason 'budget' (the loop's existing terminal
    reason) and emits a threshold; the Commander clicks "resume", which bumps that scope's override for
@@ -64,6 +66,7 @@
     const clock = opts.clock || { now() { return 0; } };
     const dayMs = opts.dayMs || DAY_MS;
     const warnFrac = (typeof opts.warnFrac === 'number') ? opts.warnFrac : WARN_FRAC;
+    const resumeGuard = (typeof opts.resumeGuard === 'function') ? opts.resumeGuard : null;
 
     const overrides = { run: 0, agent: 0, day: 0, global: 0 };
     const live = new Map();          // runId -> $ spent so far this run (in-flight, not yet in the ledger)
@@ -132,11 +135,26 @@
 
     // one-click resume: grant another `amount` (default = the scope's base cap) of headroom for the rest of the
     // session, and let that scope warn again. Returns the new effective cap (or null if the scope is ungoverned).
-    function resume(scope, amount) {
+    function resume(scope, amount, meta) {
       if (SCOPES.indexOf(scope) < 0) return null;
       const base = capOf(baseCaps, scope);
       if (base == null) return null;
-      overrides[scope] += (typeof amount === 'number' && isFinite(amount) && amount > 0) ? amount : base;
+      const inc = (typeof amount === 'number' && isFinite(amount) && amount > 0) ? amount : base;
+      const currentCap = base + num(overrides[scope]);
+      const nextCap = currentCap + inc;
+      if (resumeGuard) {
+        let allowed = false;
+        try {
+          allowed = resumeGuard({
+            scope, amount: inc, baseCap: base, currentCap, nextCap,
+            status: status(clock.now()), meta: meta || {}
+          });
+        } catch (_) {
+          allowed = false;
+        }
+        if (allowed === false || (allowed && allowed.ok === false)) return null;
+      }
+      overrides[scope] += inc;
       for (const k of emitted) if (k.endsWith(':' + scope + ':warn') || k.endsWith(':' + scope + ':cap')) emitted.delete(k);   // let every run re-warn
       return base + overrides[scope];
     }
