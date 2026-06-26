@@ -118,6 +118,11 @@
         errors.push({ code: 'GRANT_UNPLACED_OBJECT', propId: p.id || null, objectType: cap });
         continue;
       }
+      if (p.agentId) {
+        if (!AID_RE.test(p.agentId)) errors.push({ code: 'GRANT_BAD_AGENT', propId: p.id || null, agentId: p.agentId, objectType: cap });
+        else if (!agents[p.agentId]) errors.push({ code: 'GRANT_UNKNOWN_AGENT', propId: p.id || null, agentId: p.agentId, objectType: cap });
+        else if (agents[p.agentId].roomId !== roomId) errors.push({ code: 'GRANT_WRONG_ROOM', propId: p.id || null, agentId: p.agentId, objectType: cap, roomId });
+      }
       if (cap === 'connector' && !p.connectorId) errors.push({ code: 'CONNECTOR_UNBOUND', propId: p.id || null });
       for (const agentId of Object.keys(agents)) {
         const a = agents[agentId];

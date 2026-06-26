@@ -69,6 +69,40 @@ function twoAgentStation() {
 
 {
   const s = twoAgentStation();
+  const doc = s.serialize();
+  doc.props.push({ id: 'rogue-console', t: 'console', x: 6, y: 2, w: 2, h: 1, block: true, agentId: 'ghost' });
+  doc.props.push({ id: 'bad-console', t: 'console', x: 7, y: 3, w: 2, h: 1, block: true, agentId: 'bad agent id' });
+  const snapshot = {
+    serialize: () => doc,
+    projectGeometry: () => s.projectGeometry(),
+    roomAt: (x, y) => s.roomAt(x, y),
+    spawnRoomId: () => s.spawnRoomId(),
+    roomById: id => s.roomById(id)
+  };
+  const v = OV.validateOrg(snapshot);
+  A.ok(!v.ok, 'grant bound to an invalid or unknown agent is invalid');
+  A.ok(v.errors.some(e => e.code === 'GRANT_UNKNOWN_AGENT' && e.agentId === 'ghost'), 'unknown grant agent has a stable reason code');
+  A.ok(v.errors.some(e => e.code === 'GRANT_BAD_AGENT' && e.agentId === 'bad agent id'), 'bad grant agent id has a stable reason code');
+}
+
+{
+  const s = twoAgentStation();
+  const doc = s.serialize();
+  doc.props.push({ id: 'misbound-console', t: 'console', x: 6, y: 2, w: 2, h: 1, block: true, agentId: 'worker' });
+  const snapshot = {
+    serialize: () => doc,
+    projectGeometry: () => s.projectGeometry(),
+    roomAt: (x, y) => s.roomAt(x, y),
+    spawnRoomId: () => s.spawnRoomId(),
+    roomById: id => s.roomById(id)
+  };
+  const v = OV.validateOrg(snapshot);
+  A.ok(!v.ok, 'grant bound to an agent in another room is invalid');
+  A.ok(v.errors.some(e => e.code === 'GRANT_WRONG_ROOM' && e.agentId === 'worker' && e.propId === 'misbound-console'), 'wrong-room grant has a stable reason code');
+}
+
+{
+  const s = twoAgentStation();
   const al = s.addProp({ t: 'airlock', x: 20, y: 4, w: 1, h: 1, block: false, door: 'closed' });
   A.ok(al.ok, 'sealed airlock fixture places');
   const v = OV.validateOrg(s);

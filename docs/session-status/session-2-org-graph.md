@@ -4,7 +4,7 @@
 
 - Status: `CHECKPOINT`
 - Branch/worktree: `agent/org-graph-gap2` in `C:\Users\andro\gen-trees\org-graph-gap2`
-- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate and self `PipelineEdge` rejection.
+- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate/self `PipelineEdge` rejection and explicit grant-bound agent validation.
 - Runbook note: `AGENTS.md` was requested but is absent under `C:\Users\andro\gen-trees`; followed `docs/STARNET_SESSION_LOOPS_1_6.md`.
 
 ## Changed Files
@@ -25,6 +25,9 @@
   - missing compute: `AGENT_MISSING_COMPUTE`
   - disconnected legal bay room: `AGENT_UNREACHABLE_ANCHOR`
   - unplaced grant object: `GRANT_UNPLACED_OBJECT`
+  - grant bound to an invalid agent id: `GRANT_BAD_AGENT`
+  - grant bound to an unknown agent: `GRANT_UNKNOWN_AGENT`
+  - grant bound to an agent seated in another room: `GRANT_WRONG_ROOM`
   - unbound connector portal: `CONNECTOR_UNBOUND`
   - unknown edge endpoint: `PIPELINE_UNKNOWN_AGENT`
   - duplicate edge definition: `PIPELINE_DUPLICATE_EDGE`
@@ -36,17 +39,18 @@
 - Added spawn/trunk-to-bay path validation so an agent cannot be seated in an otherwise valid but unreachable room.
 - Added duplicate `PipelineEdge` validation so readiness for a repeated `{from,to,whenKind,lane?}` key is hard-false instead of silently ambiguous.
 - Added self-loop `PipelineEdge` validation so raw snapshots cannot mark `A->A` handoffs runnable by pathing to the same anchor.
+- Added grant-bound agent validation so a prop-level `agentId` can only target a known legal agent seated in the same room as the placed grant object.
 
 ## Tests Run
 
 - `node test/worldmodel.test.js` - pass, `worldmodel: OK (192 assertions)`
-- `node test/org-validator.test.js` - pass, `org-validator: OK (28 assertions)`
+- `node test/org-validator.test.js` - pass, `org-validator: OK (35 assertions)`
 - `node test/pipeline.test.js` - pass, `pipeline: OK (32 assertions)`
-- `npm.cmd run test:fast` - pass on 2026-06-26T05:52:49-04:00
+- `npm.cmd run test:fast` - pass on 2026-06-26T14:00:21-04:00
 
 ## Full Gates
 
-- `npm.cmd run test:fast` completed green on 2026-06-26T05:52:49-04:00 after the self-edge slice.
+- `npm.cmd run test:fast` completed green on 2026-06-26T14:00:21-04:00 after the grant-bound agent validation slice.
 - No HTTP or live sidecar gate run in this checkpoint; this slice is pure validation/model persistence only.
 
 ## Live Verification
@@ -56,7 +60,7 @@
 ## Blockers / Holds
 
 - `HELD-S1-SIDECAR-AUTHORITY`: runbook says if S1 is not merged, Session 2 works only on pure validation modules and tests. Sidecar station acceptance/routing integration remains blocked until S1 exposes the authority API.
-- Coordination board command `node scripts/board.mjs --files frontend/app/orgvalidator.js test/org-validator.test.js docs/session-status/session-2-org-graph.md` reported no uncommitted tracked edits for the owned validator/test targets; this checkpoint avoided broad hot-file changes and stayed inside owned Session 2 files.
+- Coordination board command `node scripts/board.mjs --files frontend/app/orgvalidator.js test/org-validator.test.js test/pipeline.test.js test/worldmodel.test.js frontend/app/pipeline.js frontend/app/worldmodel.js package.json docs/session-status/session-2-org-graph.md` showed only this worktree's existing `frontend/app/orgvalidator.js` edit on the live collision surface; this checkpoint avoided broad hot-file changes and stayed inside owned Session 2 files.
 
 ## Readiness Claim
 
@@ -65,5 +69,5 @@
 
 ## Next Loop Condition
 
-- If S1 is still unmerged: select the next pure invariant (additional grant-to-placed-object cases) and add tests to `test/org-validator.test.js`.
+- If S1 is still unmerged: select the next pure invariant (additional edge readiness or grant-to-placed-object cases) and add tests to `test/org-validator.test.js`.
 - If S1 is merged: wire `OrgValidator.validateOrg` into sidecar station acceptance and routing acceptance without editing shared event/schema contracts.
