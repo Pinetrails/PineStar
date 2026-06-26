@@ -7,6 +7,11 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { makeRng } = require('../shared/clock-rng.js');
+
+const worldRng = makeRng('test_world');
+Math.random = () => worldRng.next();
+
 const load = f => fs.readFileSync(path.join(__dirname, '..', 'frontend', 'js', f), 'utf8');
 
 const [U, SFX] = eval(load('util.js') + '\n[U, SFX];');
