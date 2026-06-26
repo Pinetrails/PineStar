@@ -35,11 +35,23 @@
       { capId: 'cabinet', tool: 'fs.search', scope: 'read', requiresConsent: false, network: false },
       { capId: 'cabinet', tool: 'fs.write', scope: 'write', requiresConsent: true, network: false },
       { capId: 'cabinet', tool: 'fs.append', scope: 'write', requiresConsent: true, network: false },
-      { capId: 'cabinet', tool: 'fs.edit', scope: 'write', requiresConsent: true, network: false }
+      { capId: 'cabinet', tool: 'fs.edit', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'cabinet', tool: 'fs.patch', scope: 'write', requiresConsent: true, network: false }
     ],
     dish: [
       { capId: 'web', tool: 'web_search', scope: 'read', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'web_fetch', scope: 'read', requiresConsent: false, network: true }
+      { capId: 'web', tool: 'web_fetch', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.navigate', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.snapshot', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.get_text', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.console', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.vision', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.click', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.type', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.press', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.dialog', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.scroll', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.back', scope: 'execute', requiresConsent: false, network: true }
     ],
     // CONNECTORS: a 'connector' object is a DYNAMIC capability — its grants are the tools its configured MCP
     // server reports at runtime (tools/list), which can't be statically listed here. The connector manager
@@ -55,6 +67,7 @@
     workbench: [
       { capId: 'workbench', tool: 'shell.exec', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'computer.use', scope: 'execute', requiresConsent: true, network: false },
       { capId: 'workbench', tool: 'shell.bg.status', scope: 'read', requiresConsent: false, network: false },   // H2.2: inspect your background processes
       { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
     ],

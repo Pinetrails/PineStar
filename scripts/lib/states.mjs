@@ -35,6 +35,32 @@ export const openSel = (sel, label) => `(() => {
   return 'opened:' + ${JSON.stringify(label || sel)};
 })()`;
 
+// The notifications panel is intentionally user-owned state, so its rows carry
+// wall-clock timestamps and whatever the capture run happened to emit. Normalize
+// only the rendered rows for this screenshot frame; the app store is untouched.
+export const openStableNotifs = `(() => {
+  ${openSel('[data-term="notifs"]', 'NOTIFS')};
+  const list = document.querySelector('.nf-list');
+  if (list) {
+    const rows = [
+      ['07:00', 'Station layout saved', 'good'],
+      ['07:01', 'NOVA is online - anthropic/claude-3.5-sonnet', 'good'],
+      ['07:02', 'Connector "local" connected', 'good'],
+      ['07:03', 'saved briefing.md - your agent runs on it now', 'gold'],
+      ['07:04', 'routine ran', 'good'],
+      ['07:05', 'budget resumed - global cap raised; agents can run again', 'good'],
+      ['07:06', 'StarNet is up to date', 'good'],
+      ['07:07', 'routine "morning check" scheduled for NOVA', 'good'],
+      ['07:08', 'copied the last reply', 'good'],
+      ['07:09', 'rewound agent to an earlier restore point', 'warn'],
+      ['07:10', 'Connector "local" removed', ''],
+      ['07:11', 'first steps complete - you have got the controls', 'gold']
+    ];
+    list.innerHTML = rows.map(r => '<div class="nf ' + r[2] + '"><span class="ts">[' + r[0] + ']</span> ' + r[1] + '</div>').join('');
+  }
+  return 'opened:NOTIFS';
+})()`;
+
 export const closeOnly = `(() => { ${CLOSE}; return 'reset'; })()`;
 
 // Every key UI state: the floor at rest + each of the 16 dock panels.
@@ -60,6 +86,6 @@ export function buildStates() {
     { name: 'sys-messaging',   drive: openSel('[data-term="messaging"]', 'MESSAGING') },
     { name: 'sys-rewind',      drive: openSel('[data-term="rewind"]', 'REWIND') },
     { name: 'sys-logbook',     drive: openSel('[data-term="logbook"]', 'LOGBOOK') },
-    { name: 'sys-notifs',      drive: openSel('[data-term="notifs"]', 'NOTIFS') },
+    { name: 'sys-notifs',      drive: openStableNotifs },
   ];
 }

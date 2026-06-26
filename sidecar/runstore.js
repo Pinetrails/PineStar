@@ -27,8 +27,10 @@
   const REASONS = { done: 1, max_iters: 1, budget: 1, cancelled: 1, error: 1, refusal: 1 };
   const DEFAULT_LIMIT = 200;        // a sane cap so list() never returns an unbounded history
   const TITLE_MAX = 120;
+  const UNKNOWN_MODEL = '(unknown)';
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function str(v) { return v == null ? '' : String(v); }
+  function modelName(v) { const s = str(v).trim(); return (s || UNKNOWN_MODEL).slice(0, 80); }
 
   function makeRunStore(opts) {
     opts = opts || {};
@@ -49,7 +51,8 @@
         turns: num(e.turns), tokens: num(e.tokens), usd: num(e.usd),
         title: str(e.title).slice(0, TITLE_MAX),
         streamId: str(e.streamId),     // H3.2: the run's workstream — joins this outcome row to its transcript (GET /api/transcript?stream=)
-        model: str(e.model).slice(0, 80),   // H3.3: the model this run used — powers per-model spend in /api/insights
+        model: modelName(e.model),   // H3.3/G6: actual model used, or explicit (unknown) as a last resort
+        unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);

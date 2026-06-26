@@ -19,11 +19,14 @@
 // Usage:
 //   npm run audit
 //   SKYNET_AUDIT_PORT=8934 SKYNET_AUDIT_CDP=9334 npm run audit
+//   SKYNET_AUDIT_LIVE_PROVIDER=1 npm run audit     # use the real configured provider/key
+//   SKYNET_AUDIT_REUSE=1 npm run audit             # intentionally drive an already-running sidecar
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from './lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from './lib/seed.mjs';
-import { closeOnly } from './lib/states.mjs';
+import { closeOnly, openSel } from './lib/states.mjs';
 
 const PORT = process.env.SKYNET_AUDIT_PORT || '8934';
 const CDP_PORT = Number(process.env.SKYNET_AUDIT_CDP || 9334);
@@ -33,6 +36,50 @@ const WIN = process.env.SKYNET_SHOT_SIZE || '1440,900';
 const KEEP = process.argv.includes('--keep');
 const SCRATCH = join(OUT_DIR, '_seed-workspace');
 const PROFILE = join(OUT_DIR, '_profile');
+const REUSE_EXISTING = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_AUDIT_REUSE || '').trim());
+const LIVE_PROVIDER = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_AUDIT_LIVE_PROVIDER || '').trim());
+
+// Default audit provider: deterministic, local, zero-spend. The task scenario needs
+// a terminal run lifecycle, not a race against OpenRouter rejecting a placeholder key.
+function startMockOpenRouter(model) {
+  return new Promise((resolve) => {
+    const requests = [];
+    const server = createServer((req, res) => {
+      if (req.url && req.url.indexOf('/models') >= 0) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: [{
+          id: model || DEFAULT_MODEL,
+          name: 'Audit Mock Model',
+          context_length: 8000,
+          pricing: { prompt: '0', completion: '0' },
+          supported_parameters: ['tools']
+        }] }));
+        return;
+      }
+      if (req.url && req.url.indexOf('/chat/completions') >= 0) {
+        let body = '';
+        req.on('data', d => { body += d; });
+        req.on('end', () => {
+          try { requests.push(JSON.parse(body)); } catch {}
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '2\n3\n5' } }] }) + '\n\n');
+          setTimeout(() => {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+          }, 600);
+        });
+        return;
+      }
+      res.writeHead(404); res.end();
+    });
+    server.listen(0, '127.0.0.1', () => resolve({
+      server,
+      requests,
+      base: 'http://127.0.0.1:' + server.address().port + '/api/v1'
+    }));
+  });
+}
 
 // Wait until the DEV test probe is armed AND reports in-game.
 async function waitTestReady(cdp, tries = 24) {
@@ -104,20 +151,19 @@ async function scenarioFloorRest(cdp, A) {
   return { bodies: list, hud };
 }
 
-// SCENARIO: RUN A TASK — send a chat directive and prove a run is dispatched + the floor reacts.
-// Model-free: setActivity('task') fires client-side at send, and the sidecar emits agent.run.* before
-// the placeholder key 401s. (run-dispatched is SOFT — it depends on the sidecar reaching the provider.)
+// SCENARIO: RUN A TASK — send a chat directive and prove a run is dispatched + resolved.
+// By default the audit points the sidecar at a deterministic local provider, so this scenario
+// waits on terminal agent.run.* events instead of a provider/network race.
 async function scenarioTask(cdp, A) {
   await evalJS(cdp, closeOnly).catch(() => {});
   const before = (await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run').length").catch(() => 0)) || 0;
   const sent = await sendChat(cdp, 'list 3 prime numbers, one per line, then stop');
   A.ok('task/sent', sent === 'sent', sent);
 
-  // Tight initial poll: the work pose (activity='task') is set at send but reverts the instant the
-  // placeholder key 401s (<1s), so we latch it fast. The frozen log is permanent, so the run-* events
-  // are the RELIABLE proof a run was dispatched + ran its lifecycle.
+  // Tight initial poll: the work pose can be brief, while the frozen log is permanent. Run lifecycle
+  // events are the reliable proof a task was dispatched and reached a terminal state.
   let sawActivity = false, kinds = {};
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 100; i++) {
     const act = await evalJS(cdp, "(typeof World!=='undefined'&&World.getActivity)?World.getActivity():null").catch(() => null);
     if (act === 'task' || act === 'thinking') sawActivity = true;          // latch
     const runs = await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run').map(e=>e.name)").catch(() => []);
@@ -127,19 +173,19 @@ async function scenarioTask(cdp, A) {
   }
   const total = Object.values(kinds).reduce((a, b) => a + b, 0);
   A.ok('task/run-dispatched', total > before && (kinds['agent.run.start'] || 0) > 0, `agent.run.* seen: ${Object.keys(kinds).join(', ') || 'none'}`);
-  A.ok('task/run-lifecycle', (kinds['agent.run.start'] || 0) > 0 && (kinds['agent.run.end'] || 0) > 0, `start=${kinds['agent.run.start'] || 0} end=${kinds['agent.run.end'] || 0} err=${kinds['agent.run.error'] || 0} (error expected on placeholder key)`);
-  A.ok('task/work-pose-engaged', sawActivity, sawActivity ? 'caught World activity=task' : 'work pose too brief to latch (run 401s fast on placeholder key) — visual capture covers it', /*soft*/ true);
+  A.ok('task/run-lifecycle', (kinds['agent.run.start'] || 0) > 0 && (kinds['agent.run.end'] || 0) > 0, `start=${kinds['agent.run.start'] || 0} end=${kinds['agent.run.end'] || 0} err=${kinds['agent.run.error'] || 0}`);
+  A.ok('task/work-pose-engaged', sawActivity, sawActivity ? 'caught World activity=task' : 'work pose too brief to latch; run lifecycle completed deterministically', /*soft*/ true);
 }
 
 // SCENARIO: SUMMON a new agent via the real Recruitment Bay, and prove the new body is well-behaved.
 async function scenarioSummon(cdp, A) {
   await evalJS(cdp, closeOnly).catch(() => {});
   const before = (await getBodies(cdp)).length;
-  await clickSel(cdp, '#bb-summon');
-  const bayUp = await waitSel(cdp, '.mkt-primary', 30);                    // bay opens after an /api/limits fetch
-  A.ok('summon/bay-open', bayUp, bayUp ? 'recruitment bay shown' : '.mkt-primary never appeared');
+  const opened = await evalJS(cdp, openSel('#bb-summon', 'SUMMON')).catch((e) => 'ERR:' + e.message);
+  const bayUp = await waitSel(cdp, '.mkt-cta-main.mkt-deploy', 40);        // bay opens after an /api/limits fetch
+  A.ok('summon/bay-open', bayUp, bayUp ? `recruitment bay shown (${opened})` : `.mkt-cta-main.mkt-deploy never appeared (${opened})`);
   if (bayUp) {
-    const rec = await evalJS(cdp, "(() => { const b = document.querySelector('.mkt-primary'); if (!b) return 'NONE'; const id = b.dataset.id || ''; b.click(); return 'recruited:' + id; })()").catch((e) => 'ERR:' + e.message);
+    const rec = await evalJS(cdp, "(() => { const b = document.querySelector('.mkt-cta-main.mkt-deploy'); if (!b) return 'NONE'; const id = b.dataset.id || ''; b.click(); return 'recruited:' + id; })()").catch((e) => 'ERR:' + e.message);
     await sleep(2200);                                                     // spawn + materialize + first stroll beat
     const list = await getBodies(cdp);
     A.ok('summon/body-spawned', list.length === before + 1, `${before} → ${list.length} (${rec})`);
@@ -185,9 +231,17 @@ async function scenarioMoat(cdp, A) {
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   let ownSidecar = null;
+  let mock = null;
   if (await isUp(APP_URL)) {
+    if (!REUSE_EXISTING) throw new Error(`audit port :${PORT} already has a server; set SKYNET_AUDIT_REUSE=1 to reuse it, or set SKYNET_AUDIT_PORT to a free port`);
     console.log(`sidecar: reusing the one already up on :${PORT}`);
   } else {
+    if (!LIVE_PROVIDER) {
+      mock = await startMockOpenRouter(DEFAULT_MODEL);
+      process.env.SKYNET_OPENROUTER_BASE = mock.base;
+      process.env.STARNET_OPENROUTER_BASE = mock.base;
+      console.log(`provider: deterministic audit mock on ${mock.base}`);
+    }
     console.log(`sidecar: booting SEEDED SKYNET_DEV on :${PORT} (model=${DEFAULT_MODEL}) ...`);
     materializeSeedWorkspace(SCRATCH);
     ownSidecar = bootSeededSidecar({ port: PORT, scratchDir: SCRATCH });
@@ -243,6 +297,7 @@ async function main() {
     try { cdp?.ws.close(); } catch {}
     try { proc.kill('SIGKILL'); } catch {}
     if (ownSidecar) { try { ownSidecar.kill('SIGKILL'); } catch {} }
+    if (mock && mock.server) { try { mock.server.close(); } catch {} }
     if (!KEEP) { try { rmSync(SCRATCH, { recursive: true, force: true }); } catch {} }
   }
 

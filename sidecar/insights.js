@@ -29,20 +29,29 @@
     const bucketMs = num(opts.bucketMs) > 0 ? num(opts.bucketMs) : HOUR;
     const nBuckets = num(opts.buckets) > 0 ? num(opts.buckets) : 24;
 
-    let totalUsd = 0, totalTokens = 0;
+    let totalUsd = 0, totalTokens = 0, meteredRuns = 0, unmeteredRuns = 0, unmeteredTokens = 0;
     const byReason = {};
     const modelMap = new Map();   // model -> { model, usd, tokens, runs }
     const agentMap = new Map();   // agentId -> { agentId, usd, tokens, runs }
 
     for (const r of rows) {
       const usd = num(r.usd), tok = num(r.tokens);
-      totalUsd += usd; totalTokens += tok;
+      const unmetered = !!(r && r.unmetered);
+      const meteredUsd = unmetered ? 0 : usd;
+      totalUsd += meteredUsd; totalTokens += tok;
+      if (unmetered) { unmeteredRuns++; unmeteredTokens += tok; } else { meteredRuns++; }
       const reason = str(r.reason) || 'done';
       byReason[reason] = (byReason[reason] || 0) + 1;
       const m = str(r.model) || '(unknown)';
-      const mm = modelMap.get(m) || { model: m, usd: 0, tokens: 0, runs: 0 }; mm.usd += usd; mm.tokens += tok; mm.runs++; modelMap.set(m, mm);
+      const mm = modelMap.get(m) || { model: m, usd: 0, tokens: 0, runs: 0, meteredRuns: 0, unmeteredRuns: 0, unmeteredTokens: 0 };
+      mm.usd += meteredUsd; mm.tokens += tok; mm.runs++;
+      if (unmetered) { mm.unmeteredRuns++; mm.unmeteredTokens += tok; } else { mm.meteredRuns++; }
+      modelMap.set(m, mm);
       const a = str(r.agentId) || '(unknown)';
-      const am = agentMap.get(a) || { agentId: a, usd: 0, tokens: 0, runs: 0 }; am.usd += usd; am.tokens += tok; am.runs++; agentMap.set(a, am);
+      const am = agentMap.get(a) || { agentId: a, usd: 0, tokens: 0, runs: 0, meteredRuns: 0, unmeteredRuns: 0, unmeteredTokens: 0 };
+      am.usd += meteredUsd; am.tokens += tok; am.runs++;
+      if (unmetered) { am.unmeteredRuns++; am.unmeteredTokens += tok; } else { am.meteredRuns++; }
+      agentMap.set(a, am);
     }
 
     // runs/spend-over-time: most-recent `nBuckets` windows of width bucketMs, oldest-first, anchored at nowMs.
@@ -51,9 +60,16 @@
       const start = nowMs - (nBuckets - 1) * bucketMs;
       const idx = (t) => Math.floor((t - start) / bucketMs);
       const slot = [];
-      for (let i = 0; i < nBuckets; i++) slot.push({ t: start + i * bucketMs, runs: 0, usd: 0 });
-      for (const r of rows) { const i = idx(num(r.ts)); if (i >= 0 && i < nBuckets) { slot[i].runs++; slot[i].usd += num(r.usd); } }
-      for (const s of slot) overTime.push({ bucketStart: s.t, runs: s.runs, usd: round(s.usd) });
+      for (let i = 0; i < nBuckets; i++) slot.push({ t: start + i * bucketMs, runs: 0, usd: 0, unmeteredRuns: 0 });
+      for (const r of rows) {
+        const i = idx(num(r.ts));
+        if (i >= 0 && i < nBuckets) {
+          const unmetered = !!(r && r.unmetered);
+          slot[i].runs++;
+          if (unmetered) slot[i].unmeteredRuns++; else slot[i].usd += num(r.usd);
+        }
+      }
+      for (const s of slot) overTime.push({ bucketStart: s.t, runs: s.runs, usd: round(s.usd), unmeteredRuns: s.unmeteredRuns });
     }
 
     const decided = num(byReason.done) + num(byReason.error) + num(byReason.budget) + num(byReason.max_iters) + num(byReason.refusal) + num(byReason.cancelled);
@@ -61,13 +77,24 @@
     const byUsdDesc = (a, b) => b.usd - a.usd || b.runs - a.runs;
     return {
       totalRuns: rows.length,
+      meteredRuns: meteredRuns,
+      unmeteredRuns: unmeteredRuns,
       totalUsd: round(totalUsd),
       totalTokens: totalTokens,
-      avgUsdPerRun: rows.length ? round(totalUsd / rows.length) : 0,
+      unmeteredTokens: unmeteredTokens,
+      avgUsdPerRun: meteredRuns ? round(totalUsd / meteredRuns) : 0,
       successPct: decided ? Math.round((products / decided) * 100) : null,   // null = no decided runs yet (honest unknown)
       byReason: byReason,
-      byModel: Array.from(modelMap.values()).map(m => ({ model: m.model, usd: round(m.usd), tokens: m.tokens, runs: m.runs })).sort(byUsdDesc),
-      byAgent: Array.from(agentMap.values()).map(a => ({ agentId: a.agentId, usd: round(a.usd), tokens: a.tokens, runs: a.runs })).sort(byUsdDesc),
+      byModel: Array.from(modelMap.values()).map(m => ({
+        model: m.model, usd: round(m.usd), tokens: m.tokens, runs: m.runs,
+        meteredRuns: m.meteredRuns, unmeteredRuns: m.unmeteredRuns, unmeteredTokens: m.unmeteredTokens,
+        unmetered: m.unmeteredRuns > 0 && m.meteredRuns === 0,
+        spendLabel: (m.unmeteredRuns > 0 && m.meteredRuns === 0) ? 'subscription / unmetered' : ''
+      })).sort(byUsdDesc),
+      byAgent: Array.from(agentMap.values()).map(a => ({
+        agentId: a.agentId, usd: round(a.usd), tokens: a.tokens, runs: a.runs,
+        meteredRuns: a.meteredRuns, unmeteredRuns: a.unmeteredRuns, unmeteredTokens: a.unmeteredTokens
+      })).sort(byUsdDesc),
       overTime: overTime
     };
   }

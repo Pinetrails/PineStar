@@ -19,6 +19,7 @@ const { makeCostEngine } = require('../sidecar/cost.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeWebTools } = require('../sidecar/tools/builtin/web.js');
+const { makeBrowserTools } = require('../sidecar/tools/builtin/browser.js');
 const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
 const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
 const { makeTodoTool } = require('../sidecar/tools/builtin/todo.js');
@@ -75,6 +76,7 @@ const fixture = {
   // ---- build the graph EXACTLY as sidecar/index.js does ----
   const registry = makeRegistry();
   makeWebTools({ fetchImpl: cannedFetch, lookup: null }).register(registry);
+  makeBrowserTools({ driver: { navigate: async u => u, snapshot: async () => [], click: async () => '', type: async () => '', press: async k => k, scroll: async () => '', back: async () => '', getText: async () => '', consoleLog: () => [], handleDialog: async () => ({}), screenshot: async () => '' } }).register(registry);
   makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
   makeNotebookTools({ store: new Map(), clock: { now: () => 0 } }).register(registry);
   makeTodoTool({ store: new Map() }).register(registry);
@@ -94,7 +96,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['web_search', 'web_fetch', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.list', 'skill.view', 'todo'];
+  const EXPECTED = ['web_search', 'web_fetch', 'browser.navigate', 'browser.snapshot', 'browser.click', 'browser.type', 'browser.scroll', 'browser.back', 'browser.press', 'browser.console', 'browser.dialog', 'browser.get_text', 'browser.vision', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.list', 'skill.view', 'todo'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 
