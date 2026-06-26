@@ -91,9 +91,14 @@ const StationUI = (() => {
   const termPos = {};   // key -> {left,top} remembered drag position — kills the dead-center pile-up
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
-      termDrag.w.style.left = (ev.clientX - termDrag.dx) + 'px';
-      termDrag.w.style.top = (ev.clientY - termDrag.dy) + 'px';
-      termDrag.w.style.transform = 'none';
+      const w = termDrag.w, ww = termDrag.ww;
+      // clamp so the title bar can never be dragged off-screen (lost window): keep >=64px of the panel
+      // horizontally on each edge and the header row always reachable. (ww/wh cached at grab — no layout read.)
+      const nl = Math.max(64 - ww, Math.min(ev.clientX - termDrag.dx, window.innerWidth - 64));
+      const nt = Math.max(0, Math.min(ev.clientY - termDrag.dy, window.innerHeight - 36));
+      w.style.left = nl + 'px';
+      w.style.top = nt + 'px';
+      w.style.transform = 'none';
     }
   });
   window.addEventListener('mouseup', () => {
@@ -193,7 +198,20 @@ const StationUI = (() => {
     w.addEventListener('mousedown', () => { w.style.zIndex = U.zTop(); });
     head.addEventListener('mousedown', ev => {
       if (ev.target === x) return;
-      termDrag = { w, dx: ev.clientX - w.offsetLeft, dy: ev.clientY - w.offsetTop };
+      // Bake the window's CURRENT VISUAL position into explicit left/top before dragging. A freshly
+      // opened single window is centered purely in CSS (left/top:50% + translate(-50%,-50%)), so its
+      // offsetLeft/offsetTop report the PRE-transform corner (viewport centre) — anchoring the drag off
+      // that, then dropping the transform, snapped the window half its own size away on grab. We also
+      // cancel the power-on animation first: a RUNNING CSS animation overrides inline transform, so
+      // without this a grab mid-open still jumped (and the rect would be read mid-scale). With the
+      // animation cleared, the rect reflects the settled centered position and the cursor tracks exactly.
+      w.style.animation = 'none';
+      const r = w.getBoundingClientRect();
+      w.style.left = r.left + 'px';
+      w.style.top = r.top + 'px';
+      w.style.transform = 'none';
+      // cache size once at grab (it can't change mid-drag) so the move handler never forces a layout read.
+      termDrag = { w, dx: ev.clientX - r.left, dy: ev.clientY - r.top, ww: r.width, wh: r.height };
       ev.preventDefault();
     });
     // a11y: Esc closes; Tab is trapped within the window (focus can't leak to the page behind).
