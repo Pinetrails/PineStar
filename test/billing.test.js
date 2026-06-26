@@ -171,4 +171,20 @@ function fakeLedger() {
   A.eq((billing.status('r6') || {}).settled, false, 'failed finalization remains retryable');
 }
 
+// ---- refund adapter failures fail closed instead of silently keeping unused reserved credit ----
+{
+  const payment = {
+    balance() { return 5; },
+    debit() { return { ok: true }; }
+  };
+  const ledger = fakeLedger();
+  const billing = makeBilling({ payment, ledger });
+  A.eq(billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r7', capUsd: 3 }).ok, true, 'managed run reserves credit');
+  const settled = billing.finishRun({ runId: 'r7', reason: 'done', usd: 1, tokens: 10, turns: 1 });
+  A.eq(settled.ok, false, 'missing refund adapter refuses managed finalization with unused reserve');
+  A.eq(settled.reason, 'managed_credit_unavailable', 'missing refund adapter is a closed billing failure');
+  A.eq(ledger.rows.length, 1, 'final spend is still recorded before refund retry');
+  A.eq((billing.status('r7') || {}).settled, false, 'missing refund adapter leaves finalization retryable');
+}
+
 A.report('billing.test');

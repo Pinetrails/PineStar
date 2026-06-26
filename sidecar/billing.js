@@ -114,7 +114,10 @@
       }
 
       const refundUsd = rec.reservedUsd - finalUsd;
-      if (refundUsd > 0 && typeof payment.credit === 'function') {
+      if (refundUsd > 0 && typeof payment.credit !== 'function') {
+        return fail('managed_credit_unavailable');
+      }
+      if (refundUsd > 0) {
         try {
           payment.credit(rec.accountId, refundUsd, {
             kind: 'managed.refund', accountId: rec.accountId, runId,
