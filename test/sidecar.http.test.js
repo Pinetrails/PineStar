@@ -151,6 +151,7 @@ function boot(port, workspaces, attemptsLeft) {
     const full = await fetch(fileUrl);
     A.eq(full.status, 200, 'GET /api/file -> 200');
     A.eq(full.headers.get('content-type'), 'video/webm', 'webm served with a video content-type');
+    A.ok(/^inline\b/.test(full.headers.get('content-disposition') || ''), 'video deliverable is still served inline');
     A.eq(full.headers.get('accept-ranges'), 'bytes', 'full response advertises byte-range support');
     A.eq(full.headers.get('content-length'), String(N), 'full Content-Length is the file size');
     A.eq((await full.arrayBuffer()).byteLength, N, 'full body is the whole file');
@@ -176,6 +177,21 @@ function boot(port, workspaces, attemptsLeft) {
 
     const escape = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('../../etc/passwd'));
     A.ok(escape.status === 403 || escape.status === 404, 'a jail-escape path is refused (403/404), never served');
+
+    // ---- /api/file active deliverables: script-capable files download with a sandbox CSP instead of executing
+    //      on the app's origin with API-token authority. Media UX above stays inline/range-capable.
+    fs.mkdirSync(path.join(ws, 'agent', 'active'), { recursive: true });
+    fs.writeFileSync(path.join(ws, 'agent', 'active', 'page.html'), '<script>fetch("/api/budget/status")</script>');
+    fs.writeFileSync(path.join(ws, 'agent', 'active', 'app.js'), 'fetch("/api/budget/status")');
+    fs.writeFileSync(path.join(ws, 'agent', 'active', 'vector.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    for (const f of ['page.html', 'app.js', 'vector.svg']) {
+      const active = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('active/' + f));
+      A.eq(active.status, 200, f + ' served for download');
+      A.eq(active.headers.get('content-type'), 'application/octet-stream', f + ' loses executable content-type');
+      A.ok(/^attachment\b/.test(active.headers.get('content-disposition') || ''), f + ' is an attachment, not inline');
+      A.ok(/sandbox/.test(active.headers.get('content-security-policy') || ''), f + ' carries a sandbox CSP');
+      A.ok(/script-src 'none'/.test(active.headers.get('content-security-policy') || ''), f + ' explicitly denies script');
+    }
 
     // ---- /api/summon/ack: the team.summon round-trip's reply leg. A stale runId/requestId is a harmless 200
     //      no-op (the run already ended or auto-settled), exactly like /api/consent; malformed JSON 400s. ----
