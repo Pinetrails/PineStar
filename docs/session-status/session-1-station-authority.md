@@ -2,7 +2,7 @@
 
 ## Current slice
 
-HELD-FOR-COORDINATION on the HTTP integration slice. The next unmet Session 1 items are `/api/station` acceptance/persistence and `/api/run` ignoring forged `body.placed`, both of which require `sidecar/index.js`. That file is still contended as of 2026-06-26T19:57Z, so no source edits were made in this loop.
+HELD-FOR-COORDINATION on the HTTP integration slice. The next unmet Session 1 items are `/api/station` acceptance/persistence and `/api/run` ignoring forged `body.placed`, both of which require `sidecar/index.js`. That file is still contended as of 2026-06-26T20:58Z, so no source edits were made in this loop.
 
 ## Changed files
 
@@ -16,6 +16,7 @@ HELD-FOR-COORDINATION on the HTTP integration slice. The next unmet Session 1 it
 - 2026-06-26T17:56Z loop only updated `docs/session-status/session-1-station-authority.md`.
 - 2026-06-26T18:56Z loop only updated `docs/session-status/session-1-station-authority.md`.
 - 2026-06-26T19:57Z loop only updated `docs/session-status/session-1-station-authority.md`.
+- 2026-06-26T20:58Z loop only updated `docs/session-status/session-1-station-authority.md`.
 
 ## Evidence
 
@@ -39,6 +40,7 @@ HELD-FOR-COORDINATION on the HTTP integration slice. The next unmet Session 1 it
 - Not rerun in the 2026-06-26T13:56:34-04:00 loop because the session is held before code changes.
 - Not rerun in the 2026-06-26T14:56:42-04:00 loop because the session is held before code changes.
 - Not rerun in the 2026-06-26T15:57:29-04:00 loop because the session is held before code changes.
+- Not rerun in the 2026-06-26T16:58:48-04:00 loop because the session is held before source code changes.
 
 ## Full gates
 
@@ -50,6 +52,7 @@ HELD-FOR-COORDINATION on the HTTP integration slice. The next unmet Session 1 it
 - Not rerun in the 2026-06-26T13:56:34-04:00 loop because no source code changed and the session remains HELD. Run before any READY claim.
 - Not rerun in the 2026-06-26T14:56:42-04:00 loop because no source code changed and the session remains HELD. Run before any READY claim.
 - Not rerun in the 2026-06-26T15:57:29-04:00 loop because no source code changed and the session remains HELD. Run before any READY claim.
+- Not rerun in the 2026-06-26T16:58:48-04:00 loop because no source code changed and the session remains HELD. Run before any READY claim.
 
 ## Live verification
 
@@ -64,6 +67,7 @@ HELD-FOR-COORDINATION on the HTTP integration slice. The next unmet Session 1 it
 - HELD-FOR-COORDINATION still applies to `sidecar/index.js`. `node scripts/board.mjs --files sidecar/index.js sidecar/station-store.js sidecar/routing/router.js test/sidecar.http.test.js test/station-authority.test.js docs/session-status/session-1-station-authority.md` on 2026-06-26T17:56Z reported active uncommitted edits to `sidecar/index.js` in `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`. No `sidecar/index.js` edits were made in this loop.
 - HELD-FOR-COORDINATION still applies to `sidecar/index.js`. `node scripts/board.mjs --files sidecar/index.js sidecar/station-store.js sidecar/routing/router.js test/station-authority.test.js test/routing.b5.test.js frontend/app/world.js frontend/app/harness.js frontend/app/app.js frontend/app/worldmodel.js` on 2026-06-26T18:56Z reported active uncommitted edits to `sidecar/index.js` in `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`. No `sidecar/index.js` edits were made in this loop.
 - HELD-FOR-COORDINATION still applies to `sidecar/index.js`. `node scripts/board.mjs --files sidecar/index.js` on 2026-06-26T19:57Z reported active uncommitted edits to `sidecar/index.js` in `agent/hermes-settings-audit` and `agent/starnet-spend-model-honesty`. No `sidecar/index.js` edits were made in this loop.
+- HELD-FOR-COORDINATION still applies to `sidecar/index.js`. `node scripts/board.mjs --files sidecar/index.js` on 2026-06-26T20:58Z reported active uncommitted edits to `sidecar/index.js` in `agent/hermes-settings-audit` and `agent/starnet-spend-model-honesty`. No `sidecar/index.js` edits were made in this loop.
 
 ## Readiness claim
 
