@@ -1805,6 +1805,15 @@ const StationUI = (() => {
     badges();
   }
 
+  // OPEN (never toggle-closed) a dock term by key — used by deep links like the COMMS error chip that
+  // points a beginner at Settings (fix your model key) or SKILLS (enable a capability). No-op if unknown;
+  // if the panel is already open it's left as-is rather than closed.
+  function openTerm(key) {
+    const def = BUILDERS[key]; if (!def) return;
+    if (open[key]) return;
+    toggleTerm(key, def[0], def[1], def[2]);
+  }
+
   // called when entering the game room with the live agent(s)
   // one-shot: fold any legacy starnet.station.v1 kanban cards into real workstreams, then retire tasks[].
   // Guarded by a persisted flag so a refresh never re-imports / duplicates the cards. Runs from enter(),
@@ -1871,5 +1880,5 @@ const StationUI = (() => {
   }
   function getTheme() { return store.settings.theme; }
 
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
 })();

@@ -783,19 +783,37 @@ const App = (() => {
     pv.appendChild(q); pv.appendChild(m);
   }
 
-  function initConnect(prefillName) {
+  // initConnect(prefillName, isRecovery, savedAgent)
+  //  - fresh first run: initConnect() -> CREATE YOUR OVERSEER (everything live).
+  //  - RESUME / recovery (saved station, missing creds, or a disconnect re-entry): pass isRecovery=true and the
+  //    savedAgent so the screen becomes a RESUME console: a phosphor banner, the model pre-filled, and the
+  //    identity fields (name · skin · voice · approval) shown READ-ONLY so resume can't silently re-spec the
+  //    agent. The key/provider section stays live so the Commander can re-enter a key and continue.
+  function initConnect(prefillName, isRecovery, savedAgent) {
+    const recovery = !!isRecovery && !!savedAgent;
     el('in-key').value = Harness.getKey();
     // desktop: the key lives in the OS keychain (getKey returns ''); show that it's already set.
     if (Harness.configured && Harness.configured() && !el('in-key').value) {
       el('in-key').placeholder = '•••••••• stored in keychain — leave blank to keep';
     }
-    el('in-model').value = Harness.getModel();
+    // RESUME pre-fills the saved agent's model; a fresh screen carries the last-used model.
+    el('in-model').value = recovery ? (savedAgent.model || Harness.getModel()) : Harness.getModel();
     el('in-model').oninput = updateHint;
     if (prefillName) el('in-name').value = prefillName;
     // a fresh create screen carries no stale voice picks — reset the module-level state so fine-tune
     // dials / a custom-voice note from an abandoned create session never ride onto the next agent.
-    pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'professional';
-    pickedApproval = 'ask';   // a fresh create screen defaults to the safe posture (color is fixed: the lead's gold)
+    // In RESUME the saved agent's own identity is authoritative — seed the pickers FROM it so the read-only
+    // view shows the real skin/voice/approval (and onWake, were it ever reached, wouldn't downgrade them).
+    if (recovery) {
+      pickedTraits = Object.assign({}, savedAgent.voiceTraits || {});
+      pickedCustomVoice = savedAgent.customVoice || '';
+      pickedPersona = savedAgent.personaId || ((typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'professional');
+      pickedApproval = (savedAgent.approvalMode === 'full') ? 'full' : 'ask';
+      pickedSkin = savedAgent.skin || pickedSkin;
+    } else {
+      pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'professional';
+      pickedApproval = 'ask';   // a fresh create screen defaults to the safe posture (color is fixed: the lead's gold)
+    }
     buildPhosphor();
     buildSkins();
     buildVoice();
@@ -803,7 +821,8 @@ const App = (() => {
     // the hero nameplate tracks the name field live; picking an approval mode updates the second line.
     if (el('in-name')) el('in-name').oninput = updateNameplate;
     updateNameplate();
-    el('btn-back').onclick = () => { SFX.click(); stopCodexPoll(); codexFlow = null; showTitle(); };
+    applyRecoveryMode(recovery, savedAgent);
+    el('btn-back').onclick = onConnectBack;
     el('btn-wake').onclick = onWake;
     // Enter commits from ANY of the core text fields (name / key / model), not just the name — so a Commander
     // who fills the key or types a model slug and hits Enter wakes the agent instead of nothing happening.
@@ -817,6 +836,75 @@ const App = (() => {
     el('btn-codex-signin').onclick = startCodexSignIn;
     el('btn-codex-logout').onclick = codexLogout;
     selectProviderUI(Harness.getProv());
+  }
+
+  // RESUME mode dressing for the connect screen. Recovery = an existing station re-entering (missing creds or a
+  // disconnect): swap the GENESIS header for a RESUME banner, lock the identity fields (name · skin · voice ·
+  // approval) READ-ONLY so resume can't re-spec the agent, and keep the key/provider section + WAKE live. A
+  // fresh first run passes recovery=false, which clears all of this back to the CREATE YOUR OVERSEER console.
+  function applyRecoveryMode(recovery, savedAgent) {
+    const screen = el('screen-connect');
+    if (screen) screen.classList.toggle('recovery', recovery);
+    // EXPORT is only meaningful when there's a saved agent to back up — surface it in RESUME mode (the title
+    // screen that used to host it is gone), hide it on a fresh first run where there's nothing yet.
+    const exp = el('btn-export'); if (exp) exp.classList.toggle('hidden', !recovery);
+    const banner = el('cc-recovery');
+    const title = el('cc-title'), sub = el('cc-sub'), mode = el('cc-mode');
+    const wake = el('btn-wake');
+    // the identity fields resume must NOT let the Commander re-spec — visually muted, kept in the DOM so onWake
+    // (if ever reached) still reads the seeded values rather than blanks.
+    const locked = ['in-name', 'skin-picker', 'voice-archetypes', 'voice-preview', 'adv-toggle', 'adv-body',
+                    'approval-picker', 'phosphor-swatches'];
+    if (recovery) {
+      const nm = (savedAgent && savedAgent.name) || 'your agent';
+      if (banner) {
+        banner.classList.remove('hidden');
+        banner.innerHTML = '▮ RESUMING <b>' + U.esc(nm) + '</b> — your agent is safe. Enter your key to continue.';
+      }
+      if (title) title.textContent = '▮ RESUME ' + nm.toUpperCase();
+      if (sub) sub.innerHTML = 'your station is intact — this only re-connects the <b>brain</b>. Identity stays as you left it.';
+      if (mode) mode.textContent = 'RESUME';
+      if (wake) wake.textContent = '⏼ RESUME STATION ▸';
+      locked.forEach(id => { const n = el(id); if (n) { n.classList.add('field-locked'); n.setAttribute('aria-disabled', 'true'); } });
+      const nameIn = el('in-name'); if (nameIn) { nameIn.readOnly = true; nameIn.tabIndex = -1; }
+    } else {
+      if (banner) { banner.classList.add('hidden'); banner.innerHTML = ''; }
+      if (title) title.textContent = '▮ CREATE YOUR OVERSEER';
+      if (sub) sub.innerHTML = 'the first mind you wake is your <b>OVERSEER</b> — it runs the station and recruits every agent after it.';
+      if (mode) mode.textContent = 'GENESIS';
+      if (wake) wake.textContent = '⏼ WAKE OVERSEER ▸';
+      locked.forEach(id => { const n = el(id); if (n) { n.classList.remove('field-locked'); n.removeAttribute('aria-disabled'); } });
+      const nameIn = el('in-name'); if (nameIn) { nameIn.readOnly = false; nameIn.removeAttribute('tabindex'); }
+    }
+  }
+
+  // BACK from the connect screen. With the title screen gone there's nowhere to retreat TO, so BACK is a
+  // context move: in RESUME it re-runs auto-resume (a fresh credential check may now pass straight in); on a
+  // fresh first run it's a no-op beyond dropping any in-flight codex poll (the create screen is the root).
+  function onConnectBack() {
+    SFX.click(); stopCodexPoll(); codexFlow = null;
+    const saved = Save.has() ? Save.load() : null;
+    if (saved && saved.agent) { reentry(); return; }
+    // fresh first run — nothing behind the create screen; just stay put.
+  }
+
+  // The single re-entry point that replaces the old title screen for any "leave the game / lost creds" path
+  // (disconnect, recovery, back). Preserves the agent ALWAYS: if creds are in hand it resumes straight into the
+  // station; otherwise it shows the connect screen in RESUME mode. Only a genuine no-save state falls through
+  // to a fresh creation.
+  function reentry() {
+    const saved = Save.has() ? Save.load() : null;
+    if (saved && saved.agent) {
+      if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);
+      if (Harness.getKey() || (Harness.configured && Harness.configured()) || Harness.getProv() === 'codex') {
+        resumingSaved = null; resumeInto(saved); return;
+      }
+      resumingSaved = saved;
+      show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
+      el('connect-msg').textContent = '';
+      return;
+    }
+    startCreation();
   }
 
   // The "FINE-TUNE VOICE" reveal on the create screen: collapses the trait dials + the free-text voice box
@@ -1048,38 +1136,29 @@ const App = (() => {
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
 
-  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); showTitle(); }
+  // DISCONNECT (the ⏏ button) tears down the live game but NEVER wipes data and NEVER lands on a dead title
+  // screen — it persists, then re-enters via reentry(): straight back into the station if creds are still in
+  // hand, otherwise the RESUME-mode connect screen. The agent is always preserved.
+  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
 
-  /* ---------- title ---------- */
-  function showTitle() {
-    const saved = Save.has() ? Save.load() : null;
-    const has = !!(saved && saved.agent);
-    el('btn-resume').classList.toggle('hidden', !has);
-    el('btn-newagent').classList.toggle('hidden', !has);
-    el('btn-begin').classList.toggle('hidden', has);
-    el('btn-export').classList.toggle('hidden', !has);   // only export when there's an agent to back up
-    if (has) el('btn-resume').textContent = '▮ RESUME — ' + saved.agent.name + ' ▮';
-    show('screen-title');
+  /* ---------- creation ---------- */
+  // Guarded: a genuine FRESH start (no save) wipes any stale resume pointer and opens CREATE YOUR OVERSEER.
+  // But if a resume is mid-flight (resumingSaved set, e.g. recovery), do NOT clear it from here — the connect
+  // screen must keep its RESUME binding so a key re-entry continues the saved agent rather than re-speccing one.
+  function startCreation() {
+    SFX.boot(); SFX.open();
+    const hasSave = Save.has() && !!Save.load();
+    if (!resumingSaved || !hasSave) resumingSaved = null;
+    show('screen-connect'); initConnect();
   }
-
-  function startCreation() { SFX.boot(); SFX.open(); resumingSaved = null; show('screen-connect'); initConnect(); }
 
   /* ---------- boot ---------- */
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
     if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
     if (typeof Updates !== 'undefined' && typeof StationUI !== 'undefined') Updates.init({ notify: StationUI.notify, rerender: StationUI.rerender });
-    el('btn-begin').onclick = startCreation;
-    el('btn-newagent').onclick = () => {
-      SFX.click(); Save.clear();
-      // NEW AGENT = a clean slate: also wipe the behavioral stores that self-persist OUTSIDE the save
-      // envelope (Save.clear only removes starnet.save). Per the Commander's scope decision, learned
-      // task-mining (S1) + curiosity dismissals (S2) are per-agent and reset; one-time UI/consent flags stay.
-      if (typeof MintStore !== 'undefined' && MintStore.reset) MintStore.reset();
-      if (typeof CuriosityStore !== 'undefined' && CuriosityStore.reset) CuriosityStore.reset();
-      startCreation();
-    };
-    el('btn-resume').onclick = () => { const s = Save.load(); if (s) { SFX.open(); resumeInto(s); } };
+    // (the title screen — RESUME / NEW STATION / the destructive NEW AGENT wipe — is gone; boot auto-resumes,
+    //  see the three-way at the foot of init(). Re-entry is handled by reentry()/startCreation().)
 
     // data portability — the safety net for the localStorage-fragile agent. Export bundles every
     // starnet.* key + a memory snapshot into one file; import restores it on any browser.
@@ -1103,7 +1182,7 @@ const App = (() => {
         : (r.memories ? r.memories + ' in file' : 0);
       dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys'
         + (mem ? ' + ' + mem + ' memories' : ''));
-      showTitle();   // re-render so RESUME surfaces the restored agent
+      reentry();   // resume straight into the restored agent (or its RESUME screen if creds are still missing)
     };
 
     // durable restore: adopt whichever of {localStorage cache, sidecar mirror} is NEWER. This is what brings
@@ -1115,16 +1194,18 @@ const App = (() => {
     // in after a wipe/origin-reset instead of being misrouted to an OpenRouter key prompt.
     if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
     if (saved && saved.agent) {
-      // auto-resume on refresh: an OpenRouter key in hand, the desktop keychain holds one (configured),
-      // OR the Codex provider (which holds its OAuth tokens server-side — a missing/expired token surfaces
-      // as a run error that prompts re-sign-in).
+      // AUTO-RESUME: a saved station goes STRAIGHT back into the world when creds are available — an OpenRouter
+      // key in hand, the desktop keychain holds one (configured), OR the Codex provider (OAuth tokens live
+      // server-side; a missing/expired one surfaces as a run error that prompts re-sign-in). No title screen.
       if (Harness.getKey() || (Harness.configured && Harness.configured()) || Harness.getProv() === 'codex') { resumeInto(saved); return; }
+      // saved station, but the credentials are gone (cache/origin wipe). RESUME-mode recovery screen: a banner,
+      // the model pre-filled, identity locked read-only — the agent is preserved, only the brain re-connects.
       resumingSaved = saved;
-      show('screen-connect'); initConnect(saved.agent.name);
-      el('connect-msg').textContent = 're-enter your key to resume ' + saved.agent.name + '.';
+      show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
       return;
     }
-    showTitle();
+    // FIRST RUN (no save) — straight to CREATE YOUR OVERSEER.
+    startCreation();
   }
   init();
 

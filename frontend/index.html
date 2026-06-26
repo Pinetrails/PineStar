@@ -15,26 +15,6 @@
 </head>
 <body class="theme-amber">
 
-<!-- ============ TITLE ============ -->
-<section id="screen-title" class="screen active">
-  <div class="title-wrap">
-    <img id="title-logo" src="assets/brand/starnet-logo.png" alt="STARNET">
-    <div class="title-sub">▸ GAMIFIED AI-AGENT HARNESS</div>
-    <div class="title-btns">
-      <button id="btn-resume" class="btn-xl hidden">▮ RESUME ▮</button>
-      <button id="btn-begin" class="btn-xl">▮ NEW STATION ▮</button>
-      <button id="btn-newagent" class="btn hidden">⟲ NEW AGENT</button>
-    </div>
-    <div class="title-data">
-      <button id="btn-export" class="btn-sm hidden">⭳ EXPORT AGENT</button>
-      <button id="btn-import" class="btn-sm">⭱ IMPORT</button>
-      <input id="file-import" type="file" accept="application/json,.json" hidden>
-    </div>
-    <div id="data-status" class="title-status"></div>
-    <div class="title-foot">BYOK · v0.2 · save + onboarding</div>
-  </div>
-</section>
-
 <!-- ============ CONNECT / CREATE ============ -->
 <!-- Desktop COMMISSION CONSOLE — a wide two-column terminal: BRAIN+IDENTITY on the left, VOICE on the
      right, framed in ASCII chrome. Every id/handler below is preserved verbatim from the old single
@@ -44,17 +24,20 @@
      orchestrating lead; specialists are recruited LATER in the Recruitment Bay. Every functional id below is
      preserved verbatim from the old screen so app.js wiring (loadModels, buildSkins, buildVoice, codex
      sign-in, onWake) keeps working; NEW ids (approval-picker, np-name, np-mode) are wired in app.js. -->
-<section id="screen-connect" class="screen">
+<section id="screen-connect" class="screen active">
   <div class="panel connect-panel ov-panel">
     <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
     <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
 
     <header class="cc-console-head ov-head">
-      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">GENESIS</span><span class="cc-tb-phosphor"><span class="cc-tb-plabel">PHOSPHOR</span><span id="phosphor-swatches" class="phosphor-swatches" role="group" aria-label="Console phosphor tint"></span></span><span class="cc-tb-rec">● REC</span></div>
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span id="cc-mode" class="cc-tb-mode">GENESIS</span><span class="cc-tb-phosphor"><span class="cc-tb-plabel">PHOSPHOR</span><span id="phosphor-swatches" class="phosphor-swatches" role="group" aria-label="Console phosphor tint"></span></span><span class="cc-tb-rec">● REC</span></div>
       <div class="cc-title-row ov-title-row">
-        <h2>▮ CREATE YOUR OVERSEER</h2>
-        <span class="ov-sub">the first mind you wake is your <b>OVERSEER</b> — it runs the station and recruits every agent after it.</span>
+        <h2 id="cc-title">▮ CREATE YOUR OVERSEER</h2>
+        <span id="cc-sub" class="ov-sub">the first mind you wake is your <b>OVERSEER</b> — it runs the station and recruits every agent after it.</span>
       </div>
+      <!-- RESUME banner — shown only when re-entering an existing station (recovery / disconnect re-entry).
+           initConnect(name, true, agent) unhides this and disables the identity fields; a fresh create hides it. -->
+      <div id="cc-recovery" class="ov-recovery hidden" role="status"></div>
     </header>
 
     <div class="ov-grid">
@@ -148,7 +131,16 @@
 
     <div id="connect-msg" class="msg"></div>
     <div class="ov-foot">
-      <span class="ov-foot-cap">＋ everything here is re-editable later in the Commander Dossier</span>
+      <div class="ov-foot-data">
+        <span class="ov-foot-cap">＋ everything here is re-editable later in the Commander Dossier</span>
+        <!-- DATA PORTABILITY — IMPORT must stay reachable for first-run users now that the title screen is gone.
+             EXPORT is surfaced here whenever there's a saved agent to back up (it is the only in-app export
+             entry point); app.js (applyRecoveryMode) toggles its visibility. -->
+        <button id="btn-import" class="btn-sm">⭱ IMPORT AGENT</button>
+        <button id="btn-export" class="btn-sm hidden">⭳ EXPORT AGENT</button>
+        <input id="file-import" type="file" accept="application/json,.json" hidden>
+        <span id="data-status" class="title-status"></span>
+      </div>
       <div class="connect-actions ov-actions">
         <button id="btn-back" class="btn">‹ BACK</button>
         <button id="btn-wake" class="btn-xl">⏼ WAKE OVERSEER ▸</button>
@@ -307,6 +299,7 @@
 <script src="app/world.js"></script>
 <script src="app/testapi.js"></script><!-- DEV-only: window.__SKYNET_TEST__ (inert unless __STARNET_DEV__) -->
 <script src="app/classify.js"></script>
+<script src="app/friendlyerror.js"></script>
 <script src="app/agentid.js"></script>
 <script src="app/workstreams.js"></script>
 <script src="app/channels.js"></script>

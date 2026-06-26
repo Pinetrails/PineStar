@@ -4,6 +4,7 @@
 'use strict';
 const A = require('./_assert.js');
 const { classifyApiError, REASONS } = require('../sidecar/providers/errorClass.js');
+const { friendlyError, KINDS } = require('../frontend/app/friendlyerror.js');
 
 // openrouter-adapter-shaped error: `new Error('openrouter http <s> — <detail>')` with .status set
 function httpErr(status, detail) { return Object.assign(new Error('openrouter http ' + status + (detail ? ' — ' + detail : '')), { status: status }); }
@@ -119,6 +120,131 @@ const R = (err, ctx) => classifyApiError(err, ctx || {});
   c = R({ status: 429, headers: { 'retry-after': 'soon-ish' } });
   A.eq(c.reason, 'rate_limit', 'unparseable Retry-After still classifies normally');
   A.eq(c.retryAfterMs, null, 'unparseable Retry-After -> null (no crash)');
+}
+
+// ---- I. friendlyError (frontend) — the BEGINNER-FACING layer over the classifier (B5). It turns the raw
+//        thrown Error / in-band error string the COMMS panel sees into { userMessage, kind, retryable, action,
+//        raw }, leading with plain language and pointing non-retryable faults at the right destination. ----
+const F = (err, status) => friendlyError(err, status);
+{
+  // 5xx / "sidecar HTTP 5xx" -> retryable server_error
+  let v = F(new Error('sidecar HTTP 500'));
+  A.eq(v.kind, 'server_error', '5xx -> server_error');
+  A.eq(v.retryable, true, 'server_error retryable');
+  A.eq(v.action, null, 'server_error has no deep-link action');
+  A.ok(/local StarNet service hit an error/i.test(v.userMessage), 'server_error leads with the friendly headline');
+  A.ok(/sidecar HTTP 500/.test(v.raw), 'raw technical text preserved for the dim sub-line');
+  A.eq(F({ status: 503 }).kind, 'server_error', 'a bare 503 status -> server_error');
+
+  // network / sidecar-unreachable -> retryable network
+  v = F(new Error('cannot reach the STARNET sidecar — start it with `npm start`'));
+  A.eq(v.kind, 'network', 'sidecar-unreachable -> network');
+  A.eq(v.retryable, true, 'network retryable');
+  A.ok(/Can't reach the StarNet sidecar/i.test(v.userMessage), 'network friendly headline');
+  A.eq(F(new Error('Failed to fetch')).kind, 'network', 'browser "Failed to fetch" -> network');
+
+  // 429 / rate / quota -> retryable rate_limit
+  v = F(new Error('sidecar HTTP 429'));
+  A.eq(v.kind, 'rate_limit', '429 -> rate_limit');
+  A.eq(v.retryable, true, 'rate_limit retryable');
+  A.ok(/rate-limiting/i.test(v.userMessage), 'rate_limit friendly headline');
+  A.eq(F(new Error('Rate limit exceeded')).kind, 'rate_limit', '"rate limit" message -> rate_limit');
+
+  // 401 / 403 / auth -> NOT retryable, action = settings
+  v = F(new Error('sidecar HTTP 401'));
+  A.eq(v.kind, 'auth', '401 -> auth');
+  A.eq(v.retryable, false, 'auth not retryable');
+  A.eq(v.action, 'settings', 'auth points at Settings');
+  A.ok(/key was rejected.*Settings/i.test(v.userMessage), 'auth friendly headline names Settings');
+  A.eq(F(new Error('sidecar HTTP 403')).kind, 'auth', '403 -> auth');
+  A.eq(F(new Error('invalid api key')).kind, 'auth', '"invalid api key" -> auth');
+
+  // capability denied -> NOT retryable, action = skills
+  v = F(new Error('no web — capability is off'));
+  A.eq(v.kind, 'capdenied', 'capdenied forwarded string -> capdenied');
+  A.eq(v.retryable, false, 'capdenied not retryable');
+  A.eq(v.action, 'skills', 'capdenied points at SKILLS');
+  A.ok(/enable it in SKILLS/i.test(v.userMessage), 'capdenied friendly headline names SKILLS');
+  A.eq(F(new Error('capdenied: terminal')).kind, 'capdenied', 'literal capdenied token -> capdenied');
+
+  // timeout vs user-abort: a user cancel is a quiet, non-retryable "Stopped."; a real timeout is retryable.
+  v = F(Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' }));
+  A.eq(v.kind, 'user_abort', 'AbortError -> user_abort');
+  A.eq(v.retryable, false, 'user_abort offers no retry chip');
+  A.eq(v.action, null, 'user_abort is not actionable');
+  A.eq(v.userMessage, 'Stopped.', 'user_abort is a calm cancel, not a scary error');
+  v = F(new Error('sidecar HTTP 504'));
+  A.eq(v.kind, 'timeout', '504 -> timeout');
+  A.eq(v.retryable, true, 'timeout retryable');
+  A.ok(/timed out/i.test(v.userMessage), 'timeout friendly headline');
+  A.eq(F(new Error('request timed out')).kind, 'timeout', '"timed out" message -> timeout');
+
+  // 402 billing -> Settings; 404 model-not-found -> Settings
+  A.eq(F(new Error('sidecar HTTP 402')).kind, 'billing', '402 -> billing');
+  A.eq(F(new Error('sidecar HTTP 402')).action, 'settings', 'billing points at Settings');
+  A.eq(F(new Error('sidecar HTTP 402')).retryable, false, 'billing not retryable');
+  A.eq(F(new Error('sidecar HTTP 404')).kind, 'model_not_found', '404 -> model_not_found');
+  A.eq(F(new Error('sidecar HTTP 404')).action, 'settings', 'model_not_found points at Settings');
+
+  // unknown / default -> friendly generic + retryable, with the raw text kept for debugging
+  v = F(new Error('something weird happened'));
+  A.eq(v.kind, 'unknown', 'unrecognized -> unknown');
+  A.eq(v.retryable, true, 'unknown is retryable');
+  A.ok(/Something went wrong/i.test(v.userMessage), 'unknown has a friendly generic headline');
+  A.ok(/something weird happened/.test(v.raw), 'unknown keeps the raw text');
+
+  // robustness: a bare string and a null both classify without throwing
+  A.eq(F('sidecar HTTP 500').kind, 'server_error', 'a bare string error is accepted');
+  A.notThrows(() => F(null), 'null error does not throw');
+
+  // every KIND yields a complete, well-typed verdict
+  for (const k of Object.keys(KINDS)) {
+    const def = KINDS[k];
+    A.ok(typeof def.retryable === 'boolean' && typeof def.msg === 'string' && def.msg.length > 0, 'kind "' + k + '" has a boolean retryable + a non-empty message');
+    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills', 'kind "' + k + '" action is null|settings|skills');
+  }
+}
+
+// ---- J. browser fallback path: re-load friendlyerror.js with the sidecar classifier UNREACHABLE (as in the
+//        shipped browser, where require() / the errorClass module don't exist), forcing classifyApiError=null so
+//        EVERY verdict flows through kindFromRaw. Locks the untested browser path to the same truth as delegation —
+//        a future kindFromRaw edit that diverges from the classifier now fails here instead of shipping silently. ----
+{
+  const Module = require('module');
+  const path = require('path');
+  const ecPath = require.resolve('../sidecar/providers/errorClass.js');
+  const fePath = require.resolve('../frontend/app/friendlyerror.js');
+  const origLoad = Module._load;
+  // make the errorClass require inside friendlyerror.js throw → its try/catch leaves classifyApiError = null.
+  Module._load = function (request, parent, isMain) {
+    const resolved = (() => { try { return Module._resolveFilename(request, parent, isMain); } catch (_) { return request; } })();
+    if (resolved === ecPath || /errorClass\.js$/.test(String(request))) throw new Error('module unavailable (browser)');
+    return origLoad.apply(this, arguments);
+  };
+  delete require.cache[fePath];
+  let friendlyErrorBrowser;
+  try { friendlyErrorBrowser = require('../frontend/app/friendlyerror.js').friendlyError; }
+  finally { Module._load = origLoad; delete require.cache[fePath]; }
+  // re-require the normal (delegating) build so any later require sees the real module again.
+  require('../frontend/app/friendlyerror.js');
+
+  const B = (err, status) => friendlyErrorBrowser(err, status);
+  A.eq(B(new Error('sidecar HTTP 500')).kind, 'server_error', 'browser: 5xx -> server_error');
+  A.eq(B(new Error('cannot reach the STARNET sidecar — start it')).kind, 'network', 'browser: unreachable -> network');
+  A.eq(B(new Error('Failed to fetch')).kind, 'network', 'browser: Failed to fetch -> network');
+  A.eq(B(new Error('sidecar HTTP 429')).kind, 'rate_limit', 'browser: 429 -> rate_limit');
+  A.eq(B(new Error('sidecar HTTP 401')).kind, 'auth', 'browser: 401 -> auth');
+  A.eq(B(new Error('invalid api key')).kind, 'auth', 'browser: invalid api key -> auth');
+  A.eq(B(new Error('sidecar HTTP 402')).kind, 'billing', 'browser: 402 -> billing');
+  A.eq(B(new Error('sidecar HTTP 404')).kind, 'model_not_found', 'browser: 404 -> model_not_found');
+  A.eq(B(new Error('sidecar HTTP 504')).kind, 'timeout', 'browser: 504 -> timeout');
+  A.eq(B(new Error('no web — capability is off')).kind, 'capdenied', 'browser: capdenied string -> capdenied');
+  A.eq(B(Object.assign(new Error('aborted'), { name: 'AbortError' })).kind, 'user_abort', 'browser: AbortError -> user_abort');
+  A.eq(B(new Error('something weird happened')).kind, 'unknown', 'browser: unrecognized -> unknown');
+  // the new pre-flight misconfig mapping must hold on the browser path too (points at Settings, not a retry).
+  A.eq(B(new Error('no API key set')).kind, 'auth', 'browser: "no API key set" -> auth');
+  A.eq(B(new Error('no API key set')).action, 'settings', 'browser: missing key points at Settings');
+  A.eq(B(new Error('no model selected')).kind, 'auth', 'browser: "no model selected" -> auth');
 }
 
 A.report('errorclass.test');
