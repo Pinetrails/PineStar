@@ -23,12 +23,12 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 
 ## Tests Run
 
-- `node test/loop.replay.test.js` - pass
-- `node test/orchestration.test.js` - pass
+- `node test/loop.replay.test.js` - pass at 2026-06-26 07:52 UTC
+- `node test/orchestration.test.js` - pass at 2026-06-26 07:52 UTC
 
 ## Full Gate
 
-- `npm.cmd run test:fast` - not run yet in this checkpoint.
+- `npm.cmd run test:fast` - pass at 2026-06-26 07:53 UTC
 
 ## Live Verification
 
@@ -36,11 +36,12 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 
 ## Blockers / Holds
 
-- `sidecar/index.js` is required to consume `o.maxIters` in production `runOnce`, but board check at 2026-06-26 06:53 UTC showed it is contended by `(detached)` and `agent/hermes-settings-audit`. Held instead of editing the contended run host.
+- `sidecar/index.js` is required to consume `o.maxIters` in production `runOnce`, but board check at 2026-06-26 07:52 UTC showed it is contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`. Held instead of editing the contended run host.
+- `sidecar/index.js` is also outside the Session 5 owned-file list in `docs/STARNET_SESSION_LOOPS_1_6.md`; final production plumbing needs owner/orchestrator coordination before this session can touch it.
 
 ## Readiness Claim
 
-HELD-FOR-COORDINATION. The owned loop and orchestration surfaces are implemented and targeted tests pass, but the session is not READY until `sidecar/index.js` can be safely updated to thread `o.maxIters` into `runAgentLoop` limits and `npm.cmd run test:fast` passes.
+HELD-FOR-COORDINATION. The owned loop and orchestration surfaces are implemented and targeted/full tests pass, but the session is not READY until `sidecar/index.js` can be safely updated to thread `o.maxIters` into `runAgentLoop` limits.
 
 ## Next Loop Condition
 
