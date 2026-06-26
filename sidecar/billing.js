@@ -65,7 +65,7 @@
 
       const rec = {
         mode, runId, accountId, agentId: str(o.agentId), reservedUsd: capUsd,
-        settled: false, startedAt: clock.now()
+        settled: false, recorded: false, startedAt: clock.now()
       };
       runs.set(runId, rec);
       return { ok: true, mode, runId, managed: true, reservedUsd: capUsd, balance: balance - capUsd };
@@ -88,6 +88,19 @@
         return fail('managed_credit_over_cap', { runId, usd: finalUsd, reservedUsd: rec.reservedUsd });
       }
 
+      if (ledger && typeof ledger.record === 'function' && !rec.recorded) {
+        try {
+          ledger.record({
+            runId, agentId: rec.agentId, billingMode: 'managed',
+            accountId: rec.accountId, reason: str(o.reason || 'done'),
+            turns: num(o.turns), usd: finalUsd, tokens: num(o.tokens), ts: clock.now()
+          });
+          rec.recorded = true;
+        } catch (_) {
+          return fail('managed_credit_unavailable');
+        }
+      }
+
       const refundUsd = rec.reservedUsd - finalUsd;
       if (refundUsd > 0 && typeof payment.credit === 'function') {
         try {
@@ -103,13 +116,6 @@
       rec.settled = true;
       rec.finalUsd = finalUsd;
       rec.refundUsd = refundUsd;
-      if (ledger && typeof ledger.record === 'function') {
-        ledger.record({
-          runId, agentId: rec.agentId, billingMode: 'managed',
-          accountId: rec.accountId, reason: str(o.reason || 'done'),
-          turns: num(o.turns), usd: finalUsd, tokens: num(o.tokens), ts: clock.now()
-        });
-      }
       return { ok: true, mode: 'managed', runId, usd: finalUsd, refundUsd, settled: true };
     }
 

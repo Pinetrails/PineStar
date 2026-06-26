@@ -108,4 +108,18 @@ function fakeLedger() {
   A.eq(ledger.rows.length, 0, 'failed authorization records no spend');
 }
 
+// ---- final spend persistence failures fail closed before refunding reserved credit ----
+{
+  const payment = fakePayment({ acct: 5 });
+  const ledger = { record() { throw new Error('ledger unavailable'); } };
+  const billing = makeBilling({ payment, ledger });
+  A.eq(billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r6', capUsd: 3 }).ok, true, 'managed run reserves credit');
+  const settled = billing.finishRun({ runId: 'r6', reason: 'done', usd: 1, tokens: 10, turns: 1 });
+  A.eq(settled.ok, false, 'ledger failure refuses managed finalization');
+  A.eq(settled.reason, 'managed_credit_unavailable', 'ledger failure is a closed billing failure');
+  A.eq(payment.get('acct'), 2, 'no refund is issued before final spend is recorded');
+  A.eq(payment.calls.filter(c => c.op === 'credit').length, 0, 'failed finalization does not credit managed balance');
+  A.eq((billing.status('r6') || {}).settled, false, 'failed finalization remains retryable');
+}
+
 A.report('billing.test');

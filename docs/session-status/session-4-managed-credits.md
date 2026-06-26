@@ -2,8 +2,8 @@
 
 ## Current Slice
 
-- Implemented the pure managed-credit billing adapter beside BYOK.
-- Selected invariant: managed account balance, debit-on-run reservation, failed-run refund, BYOK isolation, and fail-closed payment persistence.
+- Hardened the pure managed-credit billing adapter beside BYOK.
+- Selected invariant: managed final spend persistence must fail closed before any reserved-credit refund is issued.
 
 ## Changed Files
 
@@ -15,19 +15,22 @@
 
 - `sidecar/billing.js` exports `makeBilling({ payment, ledger, clock })`.
 - Managed runs require an account and positive cap, check balance, and reserve credit before paid work can start.
-- Reconciled final spend is settled once; unused reserved credit is refunded once.
+- Reconciled managed final spend is recorded before unused reserved credit is refunded.
+- If the managed final ledger write throws, `finishRun` returns `managed_credit_unavailable`, does not refund, and leaves the run unsettled/retryable.
+- Reconciled final spend is settled once; unused reserved credit is refunded once after durable recording.
 - BYOK runs pass through without calling managed payment methods or recording managed-credit debits.
 - Managed payment balance/debit failures return closed billing failures before any run is authorized.
-- `AGENTS.md` was absent under `C:\Users\andro\gen-trees`; repo-local `CLAUDE.md` and the runbook were followed.
+- `AGENTS.md` was absent in this worktree; `C:\Users\andro\Desktop\gen\AGENTS.md` and the runbook were followed.
+- `node scripts/board.mjs --files sidecar/index.js` reported `sidecar/index.js` as contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`, so route integration was held for this loop.
 
 ## Tests Run
 
-- `node test\billing.test.js` - OK, 27 assertions.
+- `node test\billing.test.js` - OK, 33 assertions.
 - `npm.cmd run test:fast` - OK.
 
 ## Full Gates
 
-- `npm.cmd run test:fast` - green on 2026-06-26.
+- `npm.cmd run test:fast` - green on 2026-06-26 at 2026-06-26T03:56:34-04:00.
 - `npm.cmd run test:http` - not run; this slice added no HTTP route.
 
 ## Live Verification
@@ -37,7 +40,7 @@
 
 ## Blockers / Holds
 
-- No active blocker for the pure billing adapter slice.
+- HELD-FOR-COORDINATION: `sidecar/index.js` is currently hot/contended, so `/api/run` managed-credit admission wiring was not attempted in this loop.
 - `test/billing.test.js` is not wired into `test:fast` because `package.json` is outside the Session 4 owned-file list in the runbook.
 
 ## Readiness Claim
@@ -47,4 +50,4 @@
 
 ## Next Loop Condition
 
-- Select the next backend invariant: wire managed-credit authorization into the run admission path or add route-level fake-provider HTTP coverage after checking ownership for `sidecar/index.js` with `scripts/board.mjs`.
+- Retry `node scripts/board.mjs --files sidecar/index.js`; if it is no longer hot, wire managed-credit authorization into the run admission path and add fake-provider HTTP coverage. If still hot, select another pure backend invariant.
