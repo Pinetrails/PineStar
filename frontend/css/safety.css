@@ -1,40 +1,7 @@
-/* STARNET — safety.css : the always-visible E-STOP control + the prefers-reduced-motion floor.
-   Loaded LAST so the reduced-motion overrides win. safety.js builds the E-STOP DOM; this styles it. */
-
-/* ---------- E-STOP control (fixed, bottom-right, above the HUD + CRT glass) ---------- */
-#estop-wrap {
-  position: fixed; right: 14px; bottom: 12px; z-index: 980;
-  display: flex; align-items: center; gap: 8px; pointer-events: none;   /* let clicks through the gaps */
-  font-family: 'VT323', 'Courier New', monospace;
-}
-body.refit-on #estop-wrap { bottom: var(--refit-dock-clearance, 190px); }
-#estop-wrap > * { pointer-events: auto; }
-
-#estop-btn {
-  font-family: inherit; font-size: 16px; letter-spacing: 2px; line-height: 1; cursor: pointer;
-  color: var(--bad); background: rgba(8, 3, 2, 0.92); border: 2px solid var(--bad);
-  padding: 7px 15px; border-radius: 2px; text-transform: uppercase;
-  text-shadow: 0 0 6px rgba(255, 92, 77, 0.5);
-  box-shadow: 0 0 14px rgba(255, 92, 77, 0.35), inset 0 0 14px rgba(0, 0, 0, 0.6);
-}
-#estop-btn:hover { color: #fff; background: var(--bad); }
-#estop-btn:active { transform: translateY(1px); }
-#estop-btn:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
-#estop-btn.hit {   /* brief confirmation flash after a HALT */
-  color: var(--ink); background: var(--gold); border-color: var(--gold);
-  box-shadow: 0 0 20px rgba(255, 211, 74, 0.6);
-}
-
-.estop-budget { display: flex; align-items: center; gap: 6px; }
-.estop-budget[hidden] { display: none; }
-.bseg {
-  font-size: 12px; letter-spacing: 0.5px; white-space: nowrap;
-  color: var(--ph, #ffaa33); background: rgba(8, 3, 2, 0.88);
-  border: 1px solid var(--ph-dim, #b9791c); padding: 2px 7px; border-radius: 2px;
-}
-.bseg.dim { color: var(--ph-dim, #b9791c); border-color: var(--ph-faint, #1e1404); }
-.bseg.warn { color: var(--warn); border-color: var(--warn); }          /* ≥80% of a pool cap */
-.bseg.over { color: var(--bad); border-color: var(--bad); box-shadow: 0 0 8px rgba(255, 92, 77, 0.4); }   /* at/over cap */
+/* STARNET — safety.css : the prefers-reduced-motion floor.
+   Loaded LAST so the reduced-motion overrides win. The always-visible corner E-STOP button + budget chip
+   were removed (they overlapped the bottom-right status cluster); the HALT path is now Alt+H only, so this
+   file no longer styles any E-STOP DOM. */
 
 /* ---------- accessibility: honor the OS "reduce motion" setting (the repo had NONE) ----------
    Neutralizes the CRT screen-flicker, button/dot pulses, and any keyframe/transition motion while keeping

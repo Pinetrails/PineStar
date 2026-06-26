@@ -146,7 +146,7 @@ const Marketplace = (() => {
       : 'choose a specialist to wake your agent as';
     const who = (ctx && ctx.agentName) || 'your agent';
     return tab === 'recipes'
-      ? 'launch a ready-made mission — ' + who + ' picks it up in a fresh workstream'
+      ? 'launch a ready-made recipe — ' + who + ' picks it up in a fresh workstream'
       : 'deploy a specialty onto ' + who + ' — or save this one as a template';
   }
 
@@ -228,7 +228,7 @@ const Marketplace = (() => {
           '<button class="bb sm mkt-saveas">＋ SAVE THIS AGENT AS A SPECIALTY</button>' +
           '<label class="mkt-adopt"><input type="checkbox" class="mkt-adopt-cb"> adopt its voice too</label>' +
         '</div>'
-      : '<div class="mkt-toolbar"><span class="mkt-hint">picking one pre-fills the wake screen — name, voice &amp; mission, ready to tweak</span></div>';
+      : '<div class="mkt-toolbar"><span class="mkt-hint">picking one pre-fills the wake screen — name, voice &amp; purpose, ready to tweak</span></div>';
     let html = toolbar;
     html += summonSkinBarHTML();
     html += glassHTML();
@@ -248,19 +248,19 @@ const Marketplace = (() => {
   }
   function recipesRosterHTML() {
     if (!hasRecipes()) return '<div class="mkt-empty">the recipe library isn’t available.</div>';
-    let html = '<div class="mkt-toolbar"><button class="bb sm mkt-recipe-saveas">＋ SAVE A MISSION</button>' +
-      '<span class="mkt-hint">pick a mission, fill in the blanks, and ' + esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
+    let html = '<div class="mkt-toolbar"><button class="bb sm mkt-recipe-saveas">＋ SAVE A RECIPE</button>' +
+      '<span class="mkt-hint">pick a recipe, fill in the blanks, and ' + esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
     html += glassHTML();
     html += suggestedShelfHTML();
     html += recipeRecShelfHTML();
     const builtins = filt(Recipes.builtins());
     const customs = filt(Recipes.customs());
-    html += '<div class="mkt-sect-h">▮ MISSION LIBRARY</div>';
+    html += '<div class="mkt-sect-h">▮ RECIPE LIBRARY</div>';
     html += builtins.length ? '<div class="mkt-grid">' + builtins.map(recipeCardHTML).join('') + '</div>'
-      : '<div class="mkt-empty">no missions match your filter.</div>';
-    html += '<div class="mkt-sect-h">▮ YOUR MISSIONS</div>';
+      : '<div class="mkt-empty">no recipes match your filter.</div>';
+    html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
     html += customs.length ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
-      : '<div class="mkt-empty">no saved missions yet — hit “＋ save a mission” above to turn a job you do often into a one-tap mission you own.</div>';
+      : '<div class="mkt-empty">no saved recipes yet — hit “＋ save a recipe” above to turn a job you do often into a one-tap recipe you own.</div>';
     return html;
   }
 
@@ -332,10 +332,10 @@ const Marketplace = (() => {
     const bar = (k, label) => { const v = Math.round((t[k] || 0) * 100);
       return '<div class="mkt-barrow"><span class="bk">' + label + '</span><span class="trk"><span class="fill" style="width:' + v + '%"></span></span><span class="bv">' + v + '%</span></div>'; };
     const badges = (here ? ' <span class="mkt-badge mkt-here">DEPLOYED</span>' : '') + (s.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '');
-    const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ RECRUIT ' + esc(s.name).toUpperCase());
+    const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ SUMMON ' + esc(s.name).toUpperCase());
     const ctaSub = deploy
       ? 're-specs ' + esc((ctx && ctx.agentName) || 'your agent') + '’s purpose &amp; standing orders'
-      : 'opens a fresh workstream · pre-fills name, voice &amp; mission — <b>you pick its character next</b>';
+      : 'opens a fresh workstream · pre-fills name, voice &amp; purpose — <b>you pick its character next</b>';
     const custActs = s.custom
       ? '<div class="mkt-cta-row"><button class="bb sm mkt-edit" data-id="' + esc(s.id) + '">✎ EDIT</button>' +
         '<button class="bb sm danger mkt-del" data-id="' + esc(s.id) + '">⌫ DELETE</button></div>' : '';
@@ -360,7 +360,7 @@ const Marketplace = (() => {
   }
   function recipeDossierHTML() {
     const r = (focusRecipe && Recipes.get(focusRecipe)) || Recipes.builtins()[0];
-    if (!r) return '<div class="mkt-dos-empty">no mission selected.</div>';
+    if (!r) return '<div class="mkt-dos-empty">no recipe selected.</div>';
     const who = (ctx && ctx.agentName) || 'your agent';
     const n = (r.params || []).length;
     const inputs = n ? '<div class="mkt-block"><div class="bh">INPUTS</div><ul class="mkt-starters">' +
@@ -368,14 +368,14 @@ const Marketplace = (() => {
     const custActs = r.custom
       ? '<div class="mkt-cta-row"><button class="bb sm mkt-recipe-edit" data-id="' + esc(r.id) + '">✎ EDIT</button>' +
         '<button class="bb sm danger mkt-recipe-del" data-id="' + esc(r.id) + '">⌫ DELETE</button></div>' : '';
-    return '<div class="mkt-dos-label">▮ MISSION DOSSIER</div>' +
+    return '<div class="mkt-dos-label">▮ RECIPE DOSSIER</div>' +
       '<div class="mkt-dos-hero">' + sealHTML(r, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div></div></div>' +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs +
       '<div class="mkt-dos-cta">' + custActs +
-        '<button class="mkt-cta-main mkt-launch" data-id="' + esc(r.id) + '">' + (n ? '▸ SET UP &amp; LAUNCH' : '▸ LAUNCH MISSION') + '</button>' +
+        '<button class="mkt-cta-main mkt-launch" data-id="' + esc(r.id) + '">' + (n ? '▸ SET UP &amp; LAUNCH' : '▸ LAUNCH RECIPE') + '</button>' +
         '<div class="mkt-cta-sub">opens a fresh workstream · sets <b>' + esc(who) + '</b> to work on it</div>' +
       '</div>';
   }
@@ -478,7 +478,7 @@ const Marketplace = (() => {
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(c.template) + '</div>' +
           '<div class="mkt-rec-tag">you’ve asked this ' + c.count + ' times</div></div></div>' +
       '<div class="mkt-suggest-acts"><button class="bb sm mkt-suggest-review" data-key="' + esc(c.key) + '">▸ REVIEW &amp; SAVE</button>' +
-        '<button class="bb sm mkt-suggest-dismiss" data-key="' + esc(c.key) + '" aria-label="dismiss this suggestion" title="not a mission">✕</button></div>' +
+        '<button class="bb sm mkt-suggest-dismiss" data-key="' + esc(c.key) + '" aria-label="dismiss this suggestion" title="not a recipe">✕</button></div>' +
     '</div>';
   }
 
@@ -554,7 +554,7 @@ const Marketplace = (() => {
       const r = hasRecipes() ? Recipes.get(rDel.dataset.id) : null;
       if (hasRecipes()) Recipes.removeCustom(rDel.dataset.id);
       if (focusRecipe === rDel.dataset.id) focusRecipe = ((hasRecipes() && Recipes.builtins()[0]) || {}).id || null;
-      note('removed mission: ' + ((r && r.name) || rDel.dataset.id), 'good'); renderStage();
+      note('removed recipe: ' + ((r && r.name) || rDel.dataset.id), 'good'); renderStage();
     }));
   }
   // two-step arm/confirm on a destructive button (the bay's idiom — never a native confirm)
@@ -615,7 +615,7 @@ const Marketplace = (() => {
   /* ---------- launch a recipe ---------- */
   function launchRecipeNow(r, values) {
     const ok = !ctx || !ctx.onLaunch || ctx.onLaunch(r, values) !== false;
-    if (ok) { note('mission launched: ' + r.name + ' — ' + ((ctx && ctx.agentName) || 'your agent') + ' is on it', 'good'); close(); }
+    if (ok) { note('recipe launched: ' + r.name + ' — ' + ((ctx && ctx.agentName) || 'your agent') + ' is on it', 'good'); close(); }
     else { sfx('bad'); note('could not launch ' + r.name + ' — nothing to send', 'bad'); }
   }
   function launchFormHTML() {
@@ -629,9 +629,9 @@ const Marketplace = (() => {
     return '<div class="mkt-save mkt-launch-form">' +
       '<div class="mkt-save-h">' + esc('▸ LAUNCH — ' + r.name) + '</div>' +
       '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
-      (fields || '<p class="mkt-hint">this mission needs no setup — just launch it.</p>') +
+      (fields || '<p class="mkt-hint">this recipe needs no setup — just launch it.</p>') +
       '<p class="mkt-launch-note">▸ opens a fresh workstream and sets <b>' + esc(who) + '</b> to work on it.</p>' +
-      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-launch">▸ LAUNCH MISSION</button></div></div>';
+      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-launch">▸ LAUNCH RECIPE</button></div></div>';
   }
   function wireLaunchForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
@@ -659,7 +659,7 @@ const Marketplace = (() => {
   function recipeTokenHint(task) {
     if (!hasRecipes()) return '';
     const ps = Recipes.paramsFromTemplate(task);
-    if (!ps.length) return '<span class="mkt-r-tok-none">◷ one-tap mission — no fill-ins</span>';
+    if (!ps.length) return '<span class="mkt-r-tok-none">◷ one-tap recipe — no fill-ins</span>';
     return '<span class="mkt-r-tok-lbl">asks for</span> ' + ps.map(p => '<span class="mkt-r-tok">' + esc(p.label) + '</span>').join(' ');
   }
   function recipeSaveFormHTML() {
@@ -668,9 +668,9 @@ const Marketplace = (() => {
     const d = editing || (minting
       ? { emoji: '✦', name: pendingMintTemplate.replace(/\{[^}]*\}/g, '').replace(/\s+/g, ' ').trim().slice(0, 28), tagline: '', task: pendingMintTemplate }
       : { emoji: '✦', name: '', tagline: '', task: '' });
-    const title = editing ? 'EDIT MISSION' : minting ? 'SAVE THIS AS A MISSION' : 'SAVE A MISSION';
+    const title = editing ? 'EDIT RECIPE' : minting ? 'SAVE THIS AS A RECIPE' : 'SAVE A RECIPE';
     const intro = minting
-      ? 'you’ve done this a few times — saving it makes it a one-tap mission you own. Tweak the wording, wrap any blanks in <b>{braces}</b>, then save.'
+      ? 'you’ve done this a few times — saving it makes it a one-tap recipe you own. Tweak the wording, wrap any blanks in <b>{braces}</b>, then save.'
       : 'write the directive your agent should run. Wrap each blank in <b>{braces}</b> — “Brief me on <b>{topic}</b>” — and it becomes a fill-in at launch.';
     return '<div class="mkt-save mkt-recipe-form">' +
       '<div class="mkt-save-h">' + esc(title) + '</div>' +
@@ -681,7 +681,7 @@ const Marketplace = (() => {
       '<label class="mkt-lbl">DIRECTIVE TEMPLATE<textarea class="mkt-in mkt-r-task" id="mkt-r-task" rows="4" placeholder="e.g. Summarize {project} progress since {since} and flag blockers.">' + esc(d.task || '') + '</textarea></label>' +
       '<div class="mkt-r-tokens" id="mkt-r-tokens"></div>' +
       '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button>' +
-        '<button class="bb sm mkt-do-recipe-save">' + (editing ? '✓ SAVE CHANGES' : '✓ SAVE MISSION') + '</button></div></div>';
+        '<button class="bb sm mkt-do-recipe-save">' + (editing ? '✓ SAVE CHANGES' : '✓ SAVE RECIPE') + '</button></div></div>';
   }
   function wireRecipeSaveForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
@@ -694,7 +694,7 @@ const Marketplace = (() => {
       const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
       const name = (stage.querySelector('#mkt-r-name').value || '').trim();
       const task = (stage.querySelector('#mkt-r-task').value || '').trim();
-      if (!name) { sfx('bad'); note('give your mission a name', 'bad'); stage.querySelector('#mkt-r-name').focus(); return; }
+      if (!name) { sfx('bad'); note('give your recipe a name', 'bad'); stage.querySelector('#mkt-r-name').focus(); return; }
       if (!task) { sfx('bad'); note('write the directive your agent should run', 'bad'); stage.querySelector('#mkt-r-task').focus(); return; }
       const rec = { name, emoji: (stage.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦', tagline: (stage.querySelector('#mkt-r-tag').value || '').trim(), task };
       if (editing) rec.id = editing.id;
@@ -703,7 +703,7 @@ const Marketplace = (() => {
         if (pendingMintKey && mintApi()) MintStore.markMinted(pendingMintKey);
         pendingMintKey = null; pendingMintTemplate = null;
         focusRecipe = saved.id;
-        sfx('click'); note((editing ? 'updated' : 'saved') + ' mission: ' + saved.name, 'good');
+        sfx('click'); note((editing ? 'updated' : 'saved') + ' recipe: ' + saved.name, 'good');
         editingRecipeId = null; view = 'grid'; renderStage();
       } catch (e) { sfx('bad'); note((e && e.message) || 'could not save', 'bad'); }
     });
@@ -759,14 +759,14 @@ const Marketplace = (() => {
      A full authoring form: icon, name, accent (the seal colour), tagline, clearance tier, purpose +
      standing orders — saved straight to YOUR SPECIALISTS via Specialties.saveCustom (tags auto-derive
      from the text, so the new class ranks in the feed and deploys/recruits like any built-in). */
-  const BUILD_ACCENTS = ['#ffaa33', '#7df0a0', '#46c8ff', '#e6a0ff', '#ff8f8f', '#6cd0ff', '#ffd34a', '#5fd0e0', '#c8efff'];
+  const BUILD_ACCENTS = ['#ffaa33', '#7bc88a', '#6fa8bf', '#b790c0', '#cf8a7d', '#88b6c4', '#ffd34a', '#6fbcc0', '#9fc0c4'];
   function buildFormHTML() {
     const sw = BUILD_ACCENTS.map(c => '<button type="button" class="mkt-sw' + (c === buildAccent ? ' sel' : '') +
       '" data-acc="' + c + '" style="background:' + c + '" aria-label="accent ' + c + '"></button>').join('');
     const seg = (m, l) => '<button type="button" class="mkt-seg' + (buildModel === m ? ' sel' : '') + '" data-model="' + m + '">' + l + '</button>';
     return '<div class="mkt-save mkt-build-form">' +
       '<div class="mkt-save-h">BUILD A CUSTOM CLASS</div>' +
-      '<p class="mkt-hint">define your own class — its job, its standing orders, its look. it joins <b>YOUR SPECIALISTS</b>, ready to deploy or recruit.</p>' +
+      '<p class="mkt-hint">define your own class — its job, its standing orders, its look. it joins <b>YOUR SPECIALISTS</b>, ready to deploy or summon.</p>' +
       '<div class="mkt-build-preview"><div class="mkt-coin" id="mkt-build-coin" style="--accent:' + esc(buildAccent) + '">' +
         '<span class="mkt-coin-emoji" id="mkt-build-emoji">✦</span></div><span class="mkt-hint">live preview — your class seal</span></div>' +
       '<div class="mkt-save-row"><label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-b-emoji" maxlength="2" value="✦"></label>' +

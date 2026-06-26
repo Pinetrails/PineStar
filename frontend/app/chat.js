@@ -377,7 +377,7 @@ const Chat = (() => {
   // THAT stream's run (per-channel runId), not a single global one.
   function permissionRow(p, ws) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
-    r.body.appendChild(document.createTextNode('🔒 ' + name + ' wants to ' + actionPhrase(p) + ' '));
+    r.body.appendChild(document.createTextNode('▣ ' + name + ' wants to ' + actionPhrase(p) + ' '));
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     let decided = false;
     function decide(decision, doneLabel, isDeny) {
@@ -424,7 +424,7 @@ const Chat = (() => {
     clearNudge();   // ONE post-run beat at a time: the turn-in owns the moment, so retire any curiosity nudge that beat it here
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin');
     const n = batch.proposals.length;
-    head.body.appendChild(document.createTextNode('🧠 ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — keep ' + (n > 1 ? 'them' : 'it') + '?'));
+    head.body.appendChild(document.createTextNode('◈ ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — keep ' + (n > 1 ? 'them' : 'it') + '?'));
 
     let remaining = n;
     // a card is settled → it fades out; when the last one goes, the whole header retires with it (no empty husk).
@@ -608,7 +608,20 @@ const Chat = (() => {
       append(t) { if (!t) return; if (!seg) open(); raw += t; renderProse(seg.body, raw); autoscroll(); },
       breakSeg() { closeSeg(); },   // an inline action is about to render below — end this paragraph
       done() { closeSeg(); },
-      error(m) { if (!seg) open(); seg.d.classList.add('err'); raw += (raw ? '\n' : '') + '⚠ ' + m; renderProse(seg.body, raw); if (caret) { caret.remove(); caret = null; } seg = null; raw = ''; }
+      // m = the plain-language headline to LEAD with; rawDetail (optional) = the original technical text, kept
+      // accessible as a dim sub-line + a title tooltip so debugging info isn't lost, just de-emphasized.
+      error(m, rawDetail) {
+        if (!seg) open();
+        seg.d.classList.add('err');
+        raw += (raw ? '\n' : '') + '⚠ ' + m; renderProse(seg.body, raw);
+        if (rawDetail && String(rawDetail).trim() && String(rawDetail).trim() !== String(m).trim()) {
+          const sub = document.createElement('span'); sub.className = 'err-detail dim';
+          sub.textContent = String(rawDetail).trim();
+          sub.title = String(rawDetail).trim();
+          seg.d.appendChild(sub);
+        }
+        if (caret) { caret.remove(); caret = null; } seg = null; raw = '';
+      }
     };
   }
   // close the live paragraph (if any) so the action about to render lands BELOW the prose, in order
@@ -691,8 +704,25 @@ const Chat = (() => {
     load(activeWs);                 // re-render the thread cleanly (the popped ⚠ row is gone)
     send(text, { retry: true });    // re-run it; the user turn is already present, so don't echo it
   }
-  // a one-tap "↻ retry" chip dropped under a failed turn (reuses the suggestion-pill row, which self-removes on tap).
-  function offerRetry() { if (log) choices([{ label: '↻ retry', value: 'retry' }], () => retryLast()); }
+  // a one-tap recovery chip dropped under a failed turn (reuses the suggestion-pill row, which self-removes on
+  // tap). CONTEXT-AWARE on the classified verdict: a retryable fault offers "↻ Try again"; an auth/billing
+  // fault points at SETTINGS (fix the key) instead of a doomed retry; a capability denial points at SKILLS;
+  // a non-retryable, non-actionable fault offers nothing (no blind retry). Falls back to a plain retry chip
+  // when called without a verdict (legacy callers / unknowns), preserving the old behavior + value:'retry'.
+  function offerRetry(verdict) {
+    if (!log) return;
+    if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); return; }
+    if (verdict.action === 'settings') {
+      choices([{ label: '⚙ Open Settings', value: 'settings' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
+      return;
+    }
+    if (verdict.action === 'skills') {
+      choices([{ label: '✦ Open SKILLS', value: 'skills' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); });
+      return;
+    }
+    if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); return; }
+    // non-retryable with no destination: leave no chip rather than inviting a doomed re-run.
+  }
 
   // show the Stop control + the queued pills for whatever stream is on screen. Called from syncStatus (covers
   // switch + turn-end) and at send() start (status goes 'thinking…' without a syncStatus).
@@ -719,7 +749,7 @@ const Chat = (() => {
     }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('no reply to copy yet', '');
   }
-  function showHelp() { localLine('Commands — /retry · /stop · /copy · /help, and /<recipe> to drop a mission into the box. Type “/” to browse.'); }
+  function showHelp() { localLine('Commands — /retry · /stop · /copy · /help, and /<recipe> to drop a recipe into the box. Type “/” to browse.'); }
   // drop a recipe's directive into the input: apply each OPTIONAL param's default, but leave REQUIRED blanks
   // visible as {tokens} so the Commander can see what to fill — and pre-select the first one to type over.
   function insertRecipe(r) {
@@ -928,10 +958,13 @@ const Chat = (() => {
         }
       });
       if (error) {
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(error); if (!isTask) World.say('…' + (error.length > 40 ? error.slice(0, 40) + '…' : error)); }
-        ws.history.push({ role: 'assistant', content: '⚠ ' + error, error: true });   // so the failure survives a switch-back, not just a transient notify
-        if (typeof StationUI !== 'undefined') StationUI.notify('run error: ' + brief(error), 'warn');
-        if (isActiveWs(ws)) offerRetry();   // RETRY: one tap re-runs the failed turn
+        // PLAIN-LANGUAGE: lead with the beginner-facing message, keep the raw error as a dim sub-line; persist
+        // the friendly text (not the plumbing) so a switch-back / replay shows the same readable failure.
+        const v = (typeof Friendly !== 'undefined') ? Friendly.friendlyError(error) : { userMessage: error, retryable: true, action: null, raw: error };
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…' + (v.userMessage.length > 40 ? v.userMessage.slice(0, 40) + '…' : v.userMessage)); }
+        ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // so the failure survives a switch-back, not just a transient notify
+        if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
+        if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
       } else {
         const replyText = reply || acc;
         finalReply = replyText;
@@ -963,9 +996,15 @@ const Chat = (() => {
         if (acc.trim()) ws.history.push({ role: 'assistant', content: acc });   // the partial reply survives a switch
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
       } else {
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(aborted ? '— disconnected —' : (e.message || String(e))); if (!isTask && !aborted) World.say('…connection trouble…'); }
-        if (!aborted) ws.history.push({ role: 'assistant', content: '⚠ ' + (e.message || String(e)), error: true });   // keep a trace; skip on deliberate teardown
-        if (isActiveWs(ws) && !aborted) offerRetry();   // RETRY: a network/connection failure (not a deliberate teardown) gets a re-run chip
+        // A throw that is NOT a deliberate Stop: an unexpected disconnect (the reader aborted with no Stop) or a
+        // hard fetch/network error. An unexpected abort here means the connection dropped — classify it as a
+        // network fault (NOT a user cancel) so it reads "can't reach the sidecar" and still offers a retry.
+        const v = (typeof Friendly !== 'undefined')
+          ? Friendly.friendlyError(aborted ? new Error('cannot reach the STARNET sidecar — connection dropped') : e)
+          : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…connection trouble…'); }
+        ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // keep a readable trace of the failure
+        if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (a dropped connection is retryable)
       }
       // a THROWN teardown (abort/cancel/disconnect/network drop) means agent.run.end was LOST on the bus, so the
       // crew HUD would stick at WORKING — clear this run's count here. Normal + in-band-error completions deliver
@@ -1011,6 +1050,11 @@ const Chat = (() => {
      req.on('close') then stops the loop) AND tell the sidecar to kill the run by id — belt-and-suspenders. */
   function abort() {
     if (typeof Voice !== 'undefined' && Voice.stopConvo) Voice.stopConvo();   // drop hands-free on disconnect
+    // teardown is a DELIBERATE interrupt, not a dropped connection: flag every in-flight stream interrupted BEFORE
+    // aborting so send()'s catch reads `stopped` and stays silent — otherwise the AbortError gets reclassified as a
+    // network fault and a spurious "can't reach the sidecar" row is pushed into ws.history + persisted. (A reader
+    // that aborts WITHOUT going through here = a genuine dropped connection → still a network error + retry.)
+    for (const id of aborters.keys()) interrupted.add(id);
     // cancel EVERY in-flight run (not just one global): abort each fetch + tell the sidecar to kill the run by id
     for (const ac of aborters.values()) { try { ac.abort(); } catch (_) {} }
     if (typeof Channels !== 'undefined') for (const id of Channels.busyIds()) { const rid = Channels.runIdOf(id); if (rid) Harness.cancel(rid); }

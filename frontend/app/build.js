@@ -55,7 +55,6 @@ const Build = (() => {
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
-    updateSafetyClearance();
     unsub = station.onChange(() => { bakeDirty = true; updateUndoRedo(); });
     bakeDirty = true;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver }) : null;
@@ -80,7 +79,6 @@ const Build = (() => {
     if (unsub) unsub(), unsub = null;
     if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
     document.body.classList.remove('refit-on');
-    document.body.style.removeProperty('--refit-dock-clearance');
     if (root && root.parentNode) root.parentNode.removeChild(root);
     root = cv = ctx = tip = hintEl = undoBtn = redoBtn = null;
     window.removeEventListener('resize', resize);
@@ -282,17 +280,6 @@ const Build = (() => {
     }
     if (label) label.textContent = paletteLabel || 'OPTIONS';
     if (section) section.classList.toggle('is-empty', !pal.children.length);
-    updateSafetyClearance();
-  }
-
-  function updateSafetyClearance() {
-    if (!root || !document.body) return;
-    const dock = root.querySelector('.refit-dock');
-    if (!dock) return;
-    const r = dock.getBoundingClientRect();
-    const gap = 12;
-    const clearance = Math.ceil(r.height + Math.max(0, window.innerHeight - r.bottom) + gap);
-    document.body.style.setProperty('--refit-dock-clearance', Math.max(58, clearance) + 'px');
   }
 
   /* ---------- visual prop palette: a scrollable gallery of LIVE animated previews ----------
@@ -681,7 +668,6 @@ const Build = (() => {
     dpr = window.devicePixelRatio || 1;
     cv.width = Math.max(1, Math.round(cv.clientWidth * dpr));
     cv.height = Math.max(1, Math.round(cv.clientHeight * dpr));
-    updateSafetyClearance();
   }
   function seedStars() {
     stars = [];

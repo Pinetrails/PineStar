@@ -19,6 +19,7 @@ const StationUI = (() => {
   let present = [];          // agent objects currently on the station
   const runningAgents = new Map();   // agentId -> live-run COUNT (concurrent streams can share an agentId, e.g. 'agent')
   let crewLiveWired = false;         // the crew-status live listener is registered exactly once
+  let lastStageSummary = '';         // #8: last screen-reader summary text, so we only update the live region on change
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
   let routineAgentId = 'agent'; // selected roster agent for new scheduled routines
@@ -80,12 +81,24 @@ const StationUI = (() => {
 
   /* ============== FLOATING TERMINAL WINDOWS (ported v7 ui.js) ============== */
   let termDrag = null;
+  let termTitleSeq = 0;   // a11y: gives each window's title a unique id for aria-labelledby
+  // a11y: the tabbable controls inside a window, in DOM order, that are actually visible.
+  function termFocusables(w) {
+    if (!w) return [];
+    return Array.from(w.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'))
+      .filter(e => e.offsetWidth > 0 || e.offsetHeight > 0 || e === document.activeElement);
+  }
   const termPos = {};   // key -> {left,top} remembered drag position — kills the dead-center pile-up
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
-      termDrag.w.style.left = (ev.clientX - termDrag.dx) + 'px';
-      termDrag.w.style.top = (ev.clientY - termDrag.dy) + 'px';
-      termDrag.w.style.transform = 'none';
+      const w = termDrag.w, ww = termDrag.ww;
+      // clamp so the title bar can never be dragged off-screen (lost window): keep >=64px of the panel
+      // horizontally on each edge and the header row always reachable. (ww/wh cached at grab — no layout read.)
+      const nl = Math.max(64 - ww, Math.min(ev.clientX - termDrag.dx, window.innerWidth - 64));
+      const nt = Math.max(0, Math.min(ev.clientY - termDrag.dy, window.innerHeight - 36));
+      w.style.left = nl + 'px';
+      w.style.top = nt + 'px';
+      w.style.transform = 'none';
     }
   });
   window.addEventListener('mouseup', () => {
@@ -104,21 +117,19 @@ const StationUI = (() => {
     const p = termPos[key];
     if (p) { w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none'; return; }
     const prior = Math.max(0, Object.keys(open).length - 1);   // how many were already open
-    const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
-    let left, top;
     if (prior === 0) {
-      // SINGLE window = the focal point: center it (slightly high, like a CRT).
-      // Cascading from the top-left corner only makes sense once panels stack;
-      // for the common one-panel case a centered window reads as intentional
-      // instead of "a box shoved in the corner" with COMMS + floor competing.
-      left = (window.innerWidth  - wpx) / 2;
-      top  = (window.innerHeight - hpx) / 2 - 18;
-    } else {
-      // 2nd+ window: cascade off the corner so stacked panels never bury each other.
-      const baseL = 92, baseT = 80, step = 30, span = 6;
-      left = baseL + (prior % span) * step;
-      top  = baseT + (prior % span) * step;
+      // SINGLE window = the focal point: let CSS center it (left/top:50% + translate(-50%,-50%) with a
+      // capped max-height), which is ALWAYS on-screen even for tall panels like Settings. We must NOT
+      // measure offsetHeight here and pin an inline top: placeTerm runs before the body content (and the
+      // power-on animation) settles, so the height read is header-only (~54px) — centering for that pushed
+      // tall modals ~200px off the bottom of the viewport. Leaving the CSS centering in place fixes that.
+      return;
     }
+    // 2nd+ window: cascade off the corner so stacked panels never bury each other.
+    const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
+    const baseL = 92, baseT = 80, step = 30, span = 6;
+    let left = baseL + (prior % span) * step;
+    let top  = baseT + (prior % span) * step;
     left = Math.max(8, Math.min(left, window.innerWidth  - wpx - 8));
     top  = Math.max(8, Math.min(top,  window.innerHeight - hpx - 8));
     w.style.left = left + 'px'; w.style.top = top + 'px'; w.style.transform = 'none';
@@ -138,7 +149,10 @@ const StationUI = (() => {
     if (open[key]) {
       const w = open[key];
       if (w._onClose) { try { w._onClose(); } catch (_) {} }   // e.g. tear down the live arcade canvas
+      const opener = w._opener;   // a11y: the control that opened this window, to restore focus to
       w.remove(); delete open[key]; sfx('close');
+      // restore keyboard focus to the opener (or its dock trigger) so Tab order isn't lost on close.
+      try { if (opener && opener.isConnected && opener.focus) opener.focus(); } catch (_) {}
     }
     syncBB(); syncScrim();
   }
@@ -148,12 +162,22 @@ const StationUI = (() => {
     // Opening a panel exits refit first so two features can't stack (see COHERENCE_MATRIX dim T).
     if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) { try { Build.close(); } catch (_) {} }
     sfx('open');
+    // a11y: remember who opened this so focus can return there on close (the dock item / trigger).
+    const opener = (typeof document !== 'undefined' && document.activeElement) || null;
     const w = el('div', 'term');
     w.style.zIndex = U.zTop();
     if (opts && opts.w) w.style.width = opts.w;
     w._onClose = opts && opts.onClose;
-    const head = el('div', 'term-head', '<span class="term-title">▮ ' + title + '</span>');
+    w._opener = opener;
+    // a11y: a floating window is a real modal dialog — label it by its title, make it focusable.
+    const titleId = 'term-title-' + (++termTitleSeq);
+    w.setAttribute('role', 'dialog');
+    w.setAttribute('aria-modal', 'true');
+    w.setAttribute('aria-labelledby', titleId);
+    w.tabIndex = -1;
+    const head = el('div', 'term-head', '<span class="term-title" id="' + titleId + '">▮ ' + title + '</span>');
     const x = el('button', 'term-x', '✕');
+    x.setAttribute('aria-label', 'Close ' + title);
     x.addEventListener('click', () => closeTerm(key));
     head.appendChild(x);
     const body = el('div', 'term-body');
@@ -174,11 +198,38 @@ const StationUI = (() => {
     w.addEventListener('mousedown', () => { w.style.zIndex = U.zTop(); });
     head.addEventListener('mousedown', ev => {
       if (ev.target === x) return;
-      termDrag = { w, dx: ev.clientX - w.offsetLeft, dy: ev.clientY - w.offsetTop };
+      // Bake the window's CURRENT VISUAL position into explicit left/top before dragging. A freshly
+      // opened single window is centered purely in CSS (left/top:50% + translate(-50%,-50%)), so its
+      // offsetLeft/offsetTop report the PRE-transform corner (viewport centre) — anchoring the drag off
+      // that, then dropping the transform, snapped the window half its own size away on grab. We also
+      // cancel the power-on animation first: a RUNNING CSS animation overrides inline transform, so
+      // without this a grab mid-open still jumped (and the rect would be read mid-scale). With the
+      // animation cleared, the rect reflects the settled centered position and the cursor tracks exactly.
+      w.style.animation = 'none';
+      const r = w.getBoundingClientRect();
+      w.style.left = r.left + 'px';
+      w.style.top = r.top + 'px';
+      w.style.transform = 'none';
+      // cache size once at grab (it can't change mid-drag) so the move handler never forces a layout read.
+      termDrag = { w, dx: ev.clientX - r.left, dy: ev.clientY - r.top, ww: r.width, wh: r.height };
       ev.preventDefault();
+    });
+    // a11y: Esc closes; Tab is trapped within the window (focus can't leak to the page behind).
+    w.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeTerm(key); return; }
+      if (ev.key !== 'Tab') return;
+      const f = termFocusables(w);
+      if (!f.length) { ev.preventDefault(); w.focus(); return; }
+      const first = f[0], last = f[f.length - 1], act = document.activeElement;
+      if (!w.contains(act)) { ev.preventDefault(); first.focus(); }
+      else if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
     });
     w._render = () => builder(body);
     w._render();
+    // a11y: move focus into the freshly-opened dialog — the first control, or the window itself.
+    const f0 = termFocusables(w);
+    try { (f0[0] || w).focus(); } catch (_) {}
     syncBB(); syncScrim();
   }
   function rerender(key) { if (open[key]) open[key]._render(); }
@@ -197,14 +248,14 @@ const StationUI = (() => {
       return;
     }
     ul.innerHTML = present.map((a, i) =>
-      '<li class="crew-row" data-i="' + i + '">' +
+      '<li class="crew-row" data-i="' + i + '" data-agent-id="' + a.id + '">' +
       '<span class="dot on"></span>' +
       '<div class="crew-main">' +
       '<div class="crew-name" style="color:' + a.color + '">' + esc(a.name) +
       '<span class="crew-room">HAB-01' + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
       '<div class="crew-status" id="cs-' + a.id + '">…</div>' +
       '</div></li>').join('');
-    $('#crew-n').textContent = present.length + (present.length === 1 ? ' UNIT' : ' UNITS');
+    $('#crew-n').textContent = present.length + (present.length === 1 ? ' AGENT' : ' AGENTS');
     ul.querySelectorAll('.crew-row').forEach(li =>
       li.addEventListener('click', () => { sfx('click'); openAgent(+li.dataset.i); }));
     crewTick();
@@ -229,6 +280,13 @@ const StationUI = (() => {
     if (sum) sum.innerHTML =
       '<span class="pos">▮ ' + working + ' WORKING</span>' +
       '<span class="dim">▯ ' + (present.length - working) + ' IDLE</span>';
+    // #8: keep the canvas's screen-reader live region in sync (the <canvas> itself is opaque to AT).
+    // Update only when the text actually changes so the region doesn't spam announcements every tick.
+    const stageSum = $('#stage-summary');
+    if (stageSum) {
+      const txt = 'Station crew: ' + working + ' working, ' + (present.length - working) + ' idle.';
+      if (txt !== lastStageSummary) { lastStageSummary = txt; stageSum.textContent = txt; }
+    }
   }
   // ref-counted so two concurrent runs sharing an agentId (e.g. two hero streams as 'agent') both count, and
   // one finishing doesn't prematurely flip the pill to IDLE while the other is still live. Deleted at 0 so
@@ -312,10 +370,10 @@ const StationUI = (() => {
       '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
       '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +
       '</div>' +
-      '<div class="ag-mission"><div class="ag-mission-lbl">MISSION</div>' +
+      '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
       (a.purpose
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
-        : '<div class="ag-mission-cta">No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
+        : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
       '<div class="ag-foot-row">on station since <b>' + since + '</b> · all figures are real spend</div>';
   }
@@ -1114,7 +1172,7 @@ const StationUI = (() => {
     function paint(st) {
       const conn = st && st.connected;
       configured = !!(st && st.configured);
-      const color = conn ? '#8f8' : (configured ? '#fc6' : '#999');
+      const color = conn ? 'var(--ok)' : (configured ? 'var(--gold)' : 'var(--ph-dim)');
       statusEl.style.color = color;
       statusEl.textContent = conn ? ('● CONNECTED — polling' + (st.state && st.state !== 'up' ? ' (' + st.state + ')' : ''))
         : configured ? ('○ saved but offline — click CONNECT to reconnect' + (st.detail ? ' — ' + st.detail : ''))
@@ -1122,7 +1180,7 @@ const StationUI = (() => {
     }
     async function refresh() {
       try { const r = await fetch('/api/channels/telegram/status'); paint(await r.json()); }
-      catch (_) { configured = false; statusEl.style.color = '#999'; statusEl.textContent = '○ sidecar offline'; }
+      catch (_) { configured = false; statusEl.style.color = 'var(--ph-dim)'; statusEl.textContent = '○ sidecar offline'; }
     }
     buildMessaging._refresh = refresh;
     // live transport health: channel.connect (poll up / network down / fatal token error) is emitted + SSE-broadcast
@@ -1207,8 +1265,8 @@ const StationUI = (() => {
     const msgEl = body.querySelector('#mc-msg');
 
     function badge(state) {
-      return ({ up: ['#8f8', '● connected'], connecting: ['var(--gold)', '◌ connecting…'],
-                down: ['#999', '○ disabled'], error: ['var(--bad)', '✕ error'] })[state] || ['#999', '○ ' + esc(state || 'unknown')];
+      return ({ up: ['var(--ok)', '● connected'], connecting: ['var(--gold)', '◌ connecting…'],
+                down: ['var(--ph-dim)', '○ disabled'], error: ['var(--bad)', '✕ error'] })[state] || ['var(--ph-dim)', '○ ' + esc(state || 'unknown')];
     }
     function row(c) {
       const b = badge(c.state);
@@ -1286,7 +1344,7 @@ const StationUI = (() => {
         const j = await (await fetch('/api/spotify/status')).json();
         if (redirEl && j.redirectUri) redirEl.textContent = j.redirectUri;
         if (j.connected) {
-          statusEl.innerHTML = '<span style="color:#8f8">● connected</span>' + (j.scope ? ' <span class="dim">· ' + esc(j.scope) + '</span>' : '');
+          statusEl.innerHTML = '<span style="color:var(--ok)">● connected</span>' + (j.scope ? ' <span class="dim">· ' + esc(j.scope) + '</span>' : '');
           connectBtn.textContent = '↻ RECONNECT';
           disconnectBtn.style.display = '';
         } else {
@@ -1551,7 +1609,7 @@ const StationUI = (() => {
         // Tell the user what actually triggers a restore point under their current config, not an aspirational promise.
         const empty = (j && j.enabled)
           ? 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a command or edits a file at a WORKBENCH.</span>'
-          : 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a <b>shell command</b>. File-edit snapshots are off — enable them with <code>STARNET_CHECKPOINTS=1</code>.</span>';
+          : 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a <b>shell command</b>. File-edit snapshots aren\'t enabled on this station.</span>';
         listEl.innerHTML = snaps.length ? snaps.map(row).join('') : '<div class="fb-empty">' + empty + '</div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage restore points.</div>'; }
     }
@@ -1805,6 +1863,15 @@ const StationUI = (() => {
     badges();
   }
 
+  // OPEN (never toggle-closed) a dock term by key — used by deep links like the COMMS error chip that
+  // points a beginner at Settings (fix your model key) or SKILLS (enable a capability). No-op if unknown;
+  // if the panel is already open it's left as-is rather than closed.
+  function openTerm(key) {
+    const def = BUILDERS[key]; if (!def) return;
+    if (open[key]) return;
+    toggleTerm(key, def[0], def[1], def[2]);
+  }
+
   // called when entering the game room with the live agent(s)
   // one-shot: fold any legacy starnet.station.v1 kanban cards into real workstreams, then retire tasks[].
   // Guarded by a persisted flag so a refresh never re-imports / duplicates the cards. Runs from enter(),
@@ -1871,5 +1938,5 @@ const StationUI = (() => {
   }
   function getTheme() { return store.settings.theme; }
 
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, notify, flashSave, openAgent, openArcade, toggleTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => runningAgents.has(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
 })();
