@@ -29,12 +29,14 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - `node test/orchestration.test.js` - pass at 2026-06-26 08:51 UTC
 - `node test/loop.replay.test.js` - pass at 2026-06-26 09:52 UTC
 - `node test/orchestration.test.js` - pass at 2026-06-26 09:52 UTC
+- Not rerun at 2026-06-26 10:52 UTC; this loop made no implementation edits because the remaining production plumbing is blocked/held.
 
 ## Full Gate
 
 - `npm.cmd run test:fast` - pass at 2026-06-26 07:53 UTC
 - `npm.cmd run test:fast` - pass at 2026-06-26 08:52 UTC
 - `npm.cmd run test:fast` - pass at 2026-06-26 09:52 UTC
+- Not rerun at 2026-06-26 10:52 UTC; not declaring READY while production run-host plumbing remains blocked.
 
 ## Live Verification
 
@@ -46,6 +48,8 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - `sidecar/index.js` is also outside the Session 5 owned-file list in `docs/STARNET_SESSION_LOOPS_1_6.md`; final production plumbing needs owner/orchestrator coordination before this session can touch it.
 - Board check at 2026-06-26 08:51 UTC now also shows `sidecar/loop.js` actively contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
 - Board check at 2026-06-26 09:51 UTC still shows `sidecar/loop.js` actively contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
+- Board check at 2026-06-26 10:51 UTC still shows `sidecar/loop.js` actively contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
+- `sidecar/index.js` inspection at 2026-06-26 10:52 UTC still shows `runAgentLoop` using `limits: { maxIters: CAPS.maxIters, ... }`; `o.maxIters` is not yet consumed by the production run host.
 - `AGENTS.md` was requested by the session prompt but is absent under `C:\Users\andro\gen-trees`; this run followed `docs/STARNET_SESSION_LOOPS_1_6.md` and existing repository conventions.
 
 ## Readiness Claim
