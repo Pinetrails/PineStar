@@ -1,6 +1,6 @@
 # Session 6 - Builder Bake Status
 
-Updated: 2026-06-26T16:00:44-04:00
+Updated: 2026-06-26T17:01:24-04:00
 
 ## Current Slice
 
@@ -27,6 +27,7 @@ Monolithic parity checkpoint:
 
 - 2026-06-26 15:01 ET verification loop found no new Session 6 code changes needed. The branch already contains the chunked bake/cache checkpoint commits and the worktree was clean before gate reruns.
 - 2026-06-26 16:00 ET verification loop found no new Session 6 code changes needed. The worktree remained clean before gate reruns, no active collision was reported for this ledger by `node scripts/board.mjs --files docs/session-status/session-6-builder-bake.md`, and the branch remains at the safe chunked bake checkpoint.
+- 2026-06-26 17:01 ET verification loop found no new Session 6 code changes needed. `git worktree list`, `git status --short --branch`, and `node scripts/board.mjs --files ...` confirmed this worktree is clean, on `agent/gap6-builder-bake`, and has no active uncommitted collision on Session 6 owned bake files.
 - `test/stationbake.chunk.test.js` now proves:
   - a 900x650 synthetic station uses a 3x2 chunk grid with no canvas larger than 384x384;
   - a single tile dirty rect maps to chunk `0,0`, rebakes one chunk, and reuses five untouched chunks;
@@ -49,7 +50,7 @@ Monolithic parity checkpoint:
 ## Tests Run
 
 - `node test/stationbake.chunk.test.js` - PASS, 32 assertions.
-- `npm.cmd run test:fast` - PASS on 2026-06-26 16:00 ET, includes `stationbake.chunk`.
+- `npm.cmd run test:fast` - PASS on 2026-06-26 17:01 ET, includes `stationbake.chunk`.
 - `npm.cmd run shoot` - PASS on 2026-06-26 15:00 ET, all states captured.
 - `npm.cmd run golden` - FAIL outside builder target on 2026-06-26 15:01 ET: `crew-roster diff=14.10`, `crew-summon diff=14.46`, `work-recipes diff=14.39`, `build-skills diff=2.48`; `build-station`, `build-manual`, and `build-connectors` passed.
 - `npm.cmd run audit` - FAIL outside builder bake slice on 2026-06-26 15:01 ET: `summon/bay-open` never saw `.mkt-primary`; builder/moat checks passed and placeholder task lifecycle passed.
