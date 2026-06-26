@@ -237,7 +237,7 @@ const StationUI = (() => {
       '<span class="crew-room">HAB-01' + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
       '<div class="crew-status" id="cs-' + a.id + '">…</div>' +
       '</div></li>').join('');
-    $('#crew-n').textContent = present.length + (present.length === 1 ? ' UNIT' : ' UNITS');
+    $('#crew-n').textContent = present.length + (present.length === 1 ? ' AGENT' : ' AGENTS');
     ul.querySelectorAll('.crew-row').forEach(li =>
       li.addEventListener('click', () => { sfx('click'); openAgent(+li.dataset.i); }));
     crewTick();
@@ -352,10 +352,10 @@ const StationUI = (() => {
       '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
       '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +
       '</div>' +
-      '<div class="ag-mission"><div class="ag-mission-lbl">MISSION</div>' +
+      '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
       (a.purpose
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
-        : '<div class="ag-mission-cta">No mission set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
+        : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
       '<div class="ag-foot-row">on station since <b>' + since + '</b> · all figures are real spend</div>';
   }

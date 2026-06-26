@@ -749,7 +749,7 @@ const Chat = (() => {
     }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('no reply to copy yet', '');
   }
-  function showHelp() { localLine('Commands — /retry · /stop · /copy · /help, and /<recipe> to drop a mission into the box. Type “/” to browse.'); }
+  function showHelp() { localLine('Commands — /retry · /stop · /copy · /help, and /<recipe> to drop a recipe into the box. Type “/” to browse.'); }
   // drop a recipe's directive into the input: apply each OPTIONAL param's default, but leave REQUIRED blanks
   // visible as {tokens} so the Commander can see what to fill — and pre-select the first one to type over.
   function insertRecipe(r) {

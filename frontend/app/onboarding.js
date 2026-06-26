@@ -84,7 +84,7 @@ const Onboarding = (() => {
           { label: 'Write & edit', value: 'Write and edit sharp content.' },
           { label: 'A bit of everything', value: 'Be my general-purpose lead across whatever comes up.' }
         ],
-        custom: true, placeholder: 'in your own words — what’s the mission?',
+        custom: true, placeholder: 'in your own words — what’s the purpose?',
         build: t => ({ purpose: t }),
         ack: lead
           ? 'there it is — purpose.md, in ink. that’s what this station’s for.'
