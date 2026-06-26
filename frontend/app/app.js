@@ -4,7 +4,8 @@
 
 const App = (() => {
   const el = id => document.getElementById(id);
-  const SUITS = ['#5ad0ff', '#3dff70', '#ff8f3d', '#c08bff', '#ff5c9d', '#ffd34a'];
+  // CRT-muted crew suit tints — distinct per crew member but passed through the amber-phosphor grade (no pure neons). Last entry stays gold to match ORCH_COLOR.
+  const SUITS = ['#6fb3bf', '#7bc88a', '#d99a5a', '#a888c0', '#cf7d96', '#ffd34a'];
 
   let agent = null;           // the FOCUSED agent — COMMS + camera target. Every existing `agent.` reference still
                               //   reads "the agent in front of you"; summon adds more, focus repoints this pointer.
@@ -588,7 +589,7 @@ const App = (() => {
     try { const r = await fetch('/api/auth/codex/status'); j = await r.json(); } catch (_) {}
     codexConnected = !!j.connected;
     if (codexConnected) {
-      statusEl.innerHTML = '<span class="conn-dot" style="background:#69ff8e;box-shadow:0 0 8px rgba(105,255,142,.7)"></span>connected to ChatGPT — your agents can run on your subscription';
+      statusEl.innerHTML = '<span class="conn-dot"></span>connected to ChatGPT — your agents can run on your subscription';
       statusEl.className = 'codex-status ok';
       signinBtn.textContent = '↻ RE-SIGN IN';
       logoutBtn.classList.remove('hidden');

@@ -759,7 +759,7 @@ const Marketplace = (() => {
      A full authoring form: icon, name, accent (the seal colour), tagline, clearance tier, purpose +
      standing orders — saved straight to YOUR SPECIALISTS via Specialties.saveCustom (tags auto-derive
      from the text, so the new class ranks in the feed and deploys/recruits like any built-in). */
-  const BUILD_ACCENTS = ['#ffaa33', '#7df0a0', '#46c8ff', '#e6a0ff', '#ff8f8f', '#6cd0ff', '#ffd34a', '#5fd0e0', '#c8efff'];
+  const BUILD_ACCENTS = ['#ffaa33', '#7bc88a', '#6fa8bf', '#b790c0', '#cf8a7d', '#88b6c4', '#ffd34a', '#6fbcc0', '#9fc0c4'];
   function buildFormHTML() {
     const sw = BUILD_ACCENTS.map(c => '<button type="button" class="mkt-sw' + (c === buildAccent ? ' sel' : '') +
       '" data-acc="' + c + '" style="background:' + c + '" aria-label="accent ' + c + '"></button>').join('');

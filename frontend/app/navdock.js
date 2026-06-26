@@ -13,13 +13,19 @@
   const groups = Array.from(bar.querySelectorAll('.bb-group'));
   if (!groups.length) return;
 
+  // the menuitem buttons inside a group's popover (role=menuitem; see index.html .bb-menu)
+  const itemsOf = g => Array.from(g.querySelectorAll('.bb-menu .bb'));
+
   /* ---------- popover open/close (one at a time) ---------- */
   function closeAll(except) {
     groups.forEach(g => {
       if (g === except) return;
+      const wasOpen = g.classList.contains('open');
       g.classList.remove('open');
       const t = g.querySelector('.bb-grp');
       if (t) t.setAttribute('aria-expanded', 'false');
+      // a11y: if focus was inside the popover we just closed, hand it back to the trigger
+      if (wasOpen && t && g.contains(document.activeElement)) { try { t.focus(); } catch (_) {} }
     });
   }
   function toggle(g) {
@@ -28,7 +34,11 @@
     g.classList.toggle('open', willOpen);
     const t = g.querySelector('.bb-grp');
     if (t) t.setAttribute('aria-expanded', String(willOpen));
-    if (willOpen) dismissCoach();   // they found the docks — retire the hint for good
+    if (willOpen) {
+      dismissCoach();   // they found the docks — retire the hint for good
+      // a11y: move focus to the first menu item so the open popover is keyboard-navigable
+      const first = itemsOf(g)[0]; if (first) { try { first.focus(); } catch (_) {} }
+    }
     try { if (typeof SFX === 'object' && SFX[willOpen ? 'open' : 'close']) SFX[willOpen ? 'open' : 'close'](); } catch (_) {}
   }
 
@@ -66,8 +76,18 @@
     const trigger = g.querySelector('.bb-grp');
     if (trigger) trigger.addEventListener('click', ev => { ev.stopPropagation(); toggle(g); });
     // picking an item runs its own (existing) handler — just collapse the dock after.
-    g.querySelectorAll('.bb-menu .bb').forEach(item =>
-      item.addEventListener('click', () => closeAll(null)));
+    itemsOf(g).forEach(item => {
+      item.setAttribute('role', 'menuitem');   // a11y: items inside the role=menu popover
+      item.addEventListener('click', () => closeAll(null));
+    });
+    // a11y: trap Tab inside an open popover so focus can't wander to the page behind it.
+    g.addEventListener('keydown', ev => {
+      if (ev.key !== 'Tab' || !g.classList.contains('open')) return;
+      const items = itemsOf(g); if (!items.length) return;
+      const first = items[0], last = items[items.length - 1], act = document.activeElement;
+      if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
+    });
   });
 
   // click anywhere else, or Escape, dismisses an open dock

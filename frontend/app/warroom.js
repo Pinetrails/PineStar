@@ -80,7 +80,7 @@
     const name = ($('#gt-agent') && $('#gt-agent').textContent.trim()) || 'the agent';
     h.className = 'pending';
     h.innerHTML =
-      '<div class="wrah-hdr"><span>🔒 APPROVAL REQUIRED</span><span>1 PENDING</span></div>' +
+      '<div class="wrah-hdr"><span>▣ APPROVAL REQUIRED</span><span>1 PENDING</span></div>' +
       '<div class="wrah-who"><b>' + esc(name) + '</b> wants to ' + actionPhrase(cur.p) + '</div>' +
       '<div class="wrah-btns">' +
       '<button class="wrah-btn" data-d="once">Approve once</button>' +

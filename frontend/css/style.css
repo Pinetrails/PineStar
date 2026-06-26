@@ -19,7 +19,7 @@
   --bad: #ff5c4d;
   --gold: #ffd34a;
   --text: #eec88f;
-  --ok: #69ff8e;              /* the "online / success" status green — tokenized so every surface themes through it */
+  --ok: #7bc88a;              /* the "online / success" status green — CRT-muted (not neon) so it reads as good without breaking the amber-phosphor grade; tokenized so every surface themes through it */
   /* color grade applied to the station feed so the world sits inside the terminal */
   --cam-grade: saturate(0.8) sepia(0.12) hue-rotate(-5deg) contrast(1.08) brightness(0.9);
 
@@ -184,7 +184,7 @@ h3::after { /* engraved double rule */
 .scrolly::-webkit-scrollbar-track { background: rgba(0,0,0,0.4); }
 
 .pos { color: var(--ok); } .neg, .bad { color: var(--bad); } .warn { color: var(--warn); } .gold { color: var(--gold); }
-.dim { opacity: 0.5; }
+.dim { opacity: 1; }   /* was .5 (~2:1 on --bg, WCAG fail); .dim color comes from app.css var(--ph-dim) which is solid >=4.5:1 — only the text opacity is dropped, border/line uses of --ph-dim are untouched */
 b { font-weight: normal; color: var(--ph-bright); }
 ::selection { background: var(--ph); color: var(--ink); text-shadow: none; }
 
@@ -247,8 +247,8 @@ b { font-weight: normal; color: var(--ph-bright); }
 .crew-row:hover { background: var(--ph-faint); box-shadow: inset 0 0 0 1px var(--ph); }
 .crew-row:hover .crew-status { opacity: 1; }
 .dot {
-  width: 7px; height: 7px; background: #41ff8a; margin-top: 6px; flex-shrink: 0;
-  box-shadow: 0 0 7px #41ff8a; animation: pulse 2.4s infinite;
+  width: 7px; height: 7px; background: var(--ok); margin-top: 6px; flex-shrink: 0;
+  box-shadow: 0 0 7px var(--ok); animation: pulse 2.4s infinite;
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 .dot.alert { background: var(--warn); box-shadow: 0 0 7px var(--warn); animation: pulse 0.7s infinite; }
@@ -464,8 +464,8 @@ body.no-scan .crt-scan { display: none; }
 }
 @keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
 .term {
-  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -52%);
-  width: 480px; max-width: 94vw; max-height: 82vh;
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 480px; max-width: 94vw; max-height: min(86vh, 100vh - 32px);
   border-radius: var(--r-lg);
   background:
     radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
@@ -480,10 +480,10 @@ body.no-scan .crt-scan { display: none; }
   pointer-events: none; z-index: 6; background: var(--glass);
 }
 @keyframes term-power {
-  0%   { transform: translate(-50%, -52%) scale(1, 0.012); filter: brightness(6); }
-  9%   { transform: translate(-50%, -52%) scale(1, 0.04); }
-  46%  { transform: translate(-50%, -52%) scale(1.004, 1.03); filter: brightness(2.2); }
-  100% { transform: translate(-50%, -52%) scale(1, 1); filter: brightness(1); }
+  0%   { transform: translate(-50%, -50%) scale(1, 0.012); filter: brightness(6); }
+  9%   { transform: translate(-50%, -50%) scale(1, 0.04); }
+  46%  { transform: translate(-50%, -50%) scale(1.004, 1.03); filter: brightness(2.2); }
+  100% { transform: translate(-50%, -50%) scale(1, 1); filter: brightness(1); }
 }
 .term-head {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s-2);
@@ -508,6 +508,7 @@ body.no-scan .crt-scan { display: none; }
 .term-x:hover { background: var(--ph-faint); color: var(--ph-bright); border-color: var(--ph); }
 .term-body {
   padding: var(--s-3) var(--s-4); overflow-y: auto; position: relative; z-index: 5;
+  flex: 1 1 auto; min-height: 0;
   scrollbar-width: thin; scrollbar-color: var(--ph) transparent;
 }
 .term-body::-webkit-scrollbar { width: 6px; }
@@ -834,7 +835,7 @@ body.no-scan .crt-scan { display: none; }
   font-family: inherit; font-size: 13.5px; padding: 3px 8px; letter-spacing: 0.5px;
 }
 .pw-note:focus { border-color: var(--ph); outline: none; box-shadow: 0 0 8px var(--ph-glow2); }
-.pw-note::placeholder { color: var(--ph-dim); opacity: 0.7; }
+.pw-note::placeholder { color: var(--ph-dim); opacity: 1; }   /* solid --ph-dim hint >=4.5:1; .7 opacity was ~3.2:1 (WCAG fail) — matches input::placeholder / #chat-input::placeholder */
 .pw-send { flex-shrink: 0; }
 .pw-dirs { margin-top: 2px; }
 .pw-dir { border-color: var(--ph-dim) !important; color: var(--ph) !important; }

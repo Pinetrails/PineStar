@@ -377,7 +377,7 @@ const Chat = (() => {
   // THAT stream's run (per-channel runId), not a single global one.
   function permissionRow(p, ws) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
-    r.body.appendChild(document.createTextNode('🔒 ' + name + ' wants to ' + actionPhrase(p) + ' '));
+    r.body.appendChild(document.createTextNode('▣ ' + name + ' wants to ' + actionPhrase(p) + ' '));
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     let decided = false;
     function decide(decision, doneLabel, isDeny) {
@@ -424,7 +424,7 @@ const Chat = (() => {
     clearNudge();   // ONE post-run beat at a time: the turn-in owns the moment, so retire any curiosity nudge that beat it here
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin');
     const n = batch.proposals.length;
-    head.body.appendChild(document.createTextNode('🧠 ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — keep ' + (n > 1 ? 'them' : 'it') + '?'));
+    head.body.appendChild(document.createTextNode('◈ ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — keep ' + (n > 1 ? 'them' : 'it') + '?'));
 
     let remaining = n;
     // a card is settled → it fades out; when the last one goes, the whole header retires with it (no empty husk).

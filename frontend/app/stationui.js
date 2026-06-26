@@ -81,6 +81,13 @@ const StationUI = (() => {
 
   /* ============== FLOATING TERMINAL WINDOWS (ported v7 ui.js) ============== */
   let termDrag = null;
+  let termTitleSeq = 0;   // a11y: gives each window's title a unique id for aria-labelledby
+  // a11y: the tabbable controls inside a window, in DOM order, that are actually visible.
+  function termFocusables(w) {
+    if (!w) return [];
+    return Array.from(w.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'))
+      .filter(e => e.offsetWidth > 0 || e.offsetHeight > 0 || e === document.activeElement);
+  }
   const termPos = {};   // key -> {left,top} remembered drag position — kills the dead-center pile-up
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
@@ -105,21 +112,19 @@ const StationUI = (() => {
     const p = termPos[key];
     if (p) { w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none'; return; }
     const prior = Math.max(0, Object.keys(open).length - 1);   // how many were already open
-    const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
-    let left, top;
     if (prior === 0) {
-      // SINGLE window = the focal point: center it (slightly high, like a CRT).
-      // Cascading from the top-left corner only makes sense once panels stack;
-      // for the common one-panel case a centered window reads as intentional
-      // instead of "a box shoved in the corner" with COMMS + floor competing.
-      left = (window.innerWidth  - wpx) / 2;
-      top  = (window.innerHeight - hpx) / 2 - 18;
-    } else {
-      // 2nd+ window: cascade off the corner so stacked panels never bury each other.
-      const baseL = 92, baseT = 80, step = 30, span = 6;
-      left = baseL + (prior % span) * step;
-      top  = baseT + (prior % span) * step;
+      // SINGLE window = the focal point: let CSS center it (left/top:50% + translate(-50%,-50%) with a
+      // capped max-height), which is ALWAYS on-screen even for tall panels like Settings. We must NOT
+      // measure offsetHeight here and pin an inline top: placeTerm runs before the body content (and the
+      // power-on animation) settles, so the height read is header-only (~54px) — centering for that pushed
+      // tall modals ~200px off the bottom of the viewport. Leaving the CSS centering in place fixes that.
+      return;
     }
+    // 2nd+ window: cascade off the corner so stacked panels never bury each other.
+    const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
+    const baseL = 92, baseT = 80, step = 30, span = 6;
+    let left = baseL + (prior % span) * step;
+    let top  = baseT + (prior % span) * step;
     left = Math.max(8, Math.min(left, window.innerWidth  - wpx - 8));
     top  = Math.max(8, Math.min(top,  window.innerHeight - hpx - 8));
     w.style.left = left + 'px'; w.style.top = top + 'px'; w.style.transform = 'none';
@@ -139,7 +144,10 @@ const StationUI = (() => {
     if (open[key]) {
       const w = open[key];
       if (w._onClose) { try { w._onClose(); } catch (_) {} }   // e.g. tear down the live arcade canvas
+      const opener = w._opener;   // a11y: the control that opened this window, to restore focus to
       w.remove(); delete open[key]; sfx('close');
+      // restore keyboard focus to the opener (or its dock trigger) so Tab order isn't lost on close.
+      try { if (opener && opener.isConnected && opener.focus) opener.focus(); } catch (_) {}
     }
     syncBB(); syncScrim();
   }
@@ -149,12 +157,22 @@ const StationUI = (() => {
     // Opening a panel exits refit first so two features can't stack (see COHERENCE_MATRIX dim T).
     if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) { try { Build.close(); } catch (_) {} }
     sfx('open');
+    // a11y: remember who opened this so focus can return there on close (the dock item / trigger).
+    const opener = (typeof document !== 'undefined' && document.activeElement) || null;
     const w = el('div', 'term');
     w.style.zIndex = U.zTop();
     if (opts && opts.w) w.style.width = opts.w;
     w._onClose = opts && opts.onClose;
-    const head = el('div', 'term-head', '<span class="term-title">▮ ' + title + '</span>');
+    w._opener = opener;
+    // a11y: a floating window is a real modal dialog — label it by its title, make it focusable.
+    const titleId = 'term-title-' + (++termTitleSeq);
+    w.setAttribute('role', 'dialog');
+    w.setAttribute('aria-modal', 'true');
+    w.setAttribute('aria-labelledby', titleId);
+    w.tabIndex = -1;
+    const head = el('div', 'term-head', '<span class="term-title" id="' + titleId + '">▮ ' + title + '</span>');
     const x = el('button', 'term-x', '✕');
+    x.setAttribute('aria-label', 'Close ' + title);
     x.addEventListener('click', () => closeTerm(key));
     head.appendChild(x);
     const body = el('div', 'term-body');
@@ -178,8 +196,22 @@ const StationUI = (() => {
       termDrag = { w, dx: ev.clientX - w.offsetLeft, dy: ev.clientY - w.offsetTop };
       ev.preventDefault();
     });
+    // a11y: Esc closes; Tab is trapped within the window (focus can't leak to the page behind).
+    w.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeTerm(key); return; }
+      if (ev.key !== 'Tab') return;
+      const f = termFocusables(w);
+      if (!f.length) { ev.preventDefault(); w.focus(); return; }
+      const first = f[0], last = f[f.length - 1], act = document.activeElement;
+      if (!w.contains(act)) { ev.preventDefault(); first.focus(); }
+      else if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
+    });
     w._render = () => builder(body);
     w._render();
+    // a11y: move focus into the freshly-opened dialog — the first control, or the window itself.
+    const f0 = termFocusables(w);
+    try { (f0[0] || w).focus(); } catch (_) {}
     syncBB(); syncScrim();
   }
   function rerender(key) { if (open[key]) open[key]._render(); }

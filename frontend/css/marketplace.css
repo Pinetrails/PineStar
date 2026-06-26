@@ -50,7 +50,7 @@
 .mkt-search { display: flex; align-items: center; gap: 7px; padding: 5px 11px; min-width: 170px;
   background: var(--panel2); border-radius: 6px; box-shadow: var(--well); color: var(--ph-dim); }
 .mkt-search input { background: transparent; border: 0; outline: none; width: 100%; font-family: inherit; font-size: 15px; color: var(--ph-bright); letter-spacing: .5px; }
-.mkt-search input::placeholder { color: var(--ph-dim); opacity: .7; }
+.mkt-search input::placeholder { color: var(--ph-dim); opacity: 1; }   /* solid --ph-dim >=4.5:1 (WCAG AA); .7 was ~3.2:1 — matches the other placeholder rules */
 .mkt-x { flex: 0 0 auto; font-family: inherit; font-size: 16px; line-height: 1; cursor: pointer;
   color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-dim); border-radius: 5px; padding: 6px 10px; box-shadow: var(--raise); }
 .mkt-x:hover { color: var(--ph-bright); border-color: var(--ph); }

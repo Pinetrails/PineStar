@@ -2682,7 +2682,7 @@ const World = (() => {
     // CTX gauge flashes its own mint "compacted" echo (StationUI listens to agent.compact directly).
     U.bus.on('agent.compact', p => {
       const freed = (p && p.beforeTokens) ? Math.round((p.removed || 0) / p.beforeTokens * 100) : 0;
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('🧠 context compacted' + (freed > 0 ? ' — freed ' + freed + '%' : ''), 'good');
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◈ context compacted' + (freed > 0 ? ' — freed ' + freed + '%' : ''), 'good');
     });
     // ── consume-side telemetry that was already validated + SSE-broadcast but had NO frontend listener
     //    (the wiring-honesty pass: render the events already on the bus so the floor reflects real activity). ──
@@ -2695,7 +2695,7 @@ const World = (() => {
     // (the workbench already pulses on shell), so only the restore is toasted.
     U.bus.on('checkpoint.restored', () => hudNote('⏪ rewound to an earlier restore point', 'warn'));
     // MEMORY: a recall fence was injected into this run's prompt — surface the count so recall feels ALIVE, not silent.
-    U.bus.on('memory.recall', p => { const c = p && (p.count | 0); if (c > 0) hudNote('🧠 recalled ' + c + ' memor' + (c === 1 ? 'y' : 'ies'), 'good'); });
+    U.bus.on('memory.recall', p => { const c = p && (p.count | 0); if (c > 0) hudNote('◈ recalled ' + c + ' memor' + (c === 1 ? 'y' : 'ies'), 'good'); });
     // CONNECTOR PORTALS — make the external on-ramp LIVE: poll each configured server's state so a placed
     // portal glows green/amber/red, and pulse it when ITS tools fire (an mcp__<connectorId>__* tool call).
     const connIds = [];
