@@ -1,6 +1,6 @@
 # Session 6 - Builder Bake Status
 
-Updated: 2026-06-26T14:02:16-04:00
+Updated: 2026-06-26T15:01:52-04:00
 
 ## Current Slice
 
@@ -25,6 +25,7 @@ Monolithic parity checkpoint:
 
 ## Evidence
 
+- 2026-06-26 15:01 ET verification loop found no new Session 6 code changes needed. The branch already contains the chunked bake/cache checkpoint commits and the worktree was clean before gate reruns.
 - `test/stationbake.chunk.test.js` now proves:
   - a 900x650 synthetic station uses a 3x2 chunk grid with no canvas larger than 384x384;
   - a single tile dirty rect maps to chunk `0,0`, rebakes one chunk, and reuses five untouched chunks;
@@ -41,16 +42,16 @@ Monolithic parity checkpoint:
   - full chunk base and light composites match the monolithic bake baseline in the deterministic headless pixel harness.
 - REFIT caller now computes the current camera viewport in bake-local pixels and uses it for bake, draw culling, and pan-triggered missing chunk fills.
 - `npm.cmd run shoot` passed and captured all visual states.
-- `npm.cmd run golden` kept Session 6 builder bake frames stable: `build-station diff=0.15`, `build-manual diff=0.08`, `build-connectors diff=0.86`; the remaining changed frames are non-bake screens already tracked as blockers.
+- `npm.cmd run golden` kept Session 6 builder bake frames stable on the fresh run: `build-station diff=0.17`, `build-manual diff=0.13`, `build-connectors diff=0.85`; the remaining changed frames are non-bake screens already tracked as blockers.
 - `npm.cmd run audit` passed all builder/moat checks: `moat/build-mode`, `moat/place-prop`, `moat/capability-online`, and `moat/caps-well-formed`.
 
 ## Tests Run
 
 - `node test/stationbake.chunk.test.js` - PASS, 32 assertions.
-- `npm.cmd run test:fast` - PASS, includes `stationbake.chunk`.
-- `npm.cmd run shoot` - PASS, all states captured.
-- `npm.cmd run golden` - FAIL outside builder target: `crew-roster diff=14.11`, `crew-summon diff=14.46`, `work-recipes diff=14.39`, `build-skills diff=2.40`; `build-station`, `build-manual`, and `build-connectors` passed.
-- `npm.cmd run audit` - FAIL outside builder bake slice: `summon/bay-open` never saw `.mkt-primary`; builder/moat checks passed and placeholder task lifecycle passed.
+- `npm.cmd run test:fast` - PASS on 2026-06-26 15:00 ET, includes `stationbake.chunk`.
+- `npm.cmd run shoot` - PASS on 2026-06-26 15:00 ET, all states captured.
+- `npm.cmd run golden` - FAIL outside builder target on 2026-06-26 15:01 ET: `crew-roster diff=14.10`, `crew-summon diff=14.46`, `work-recipes diff=14.39`, `build-skills diff=2.48`; `build-station`, `build-manual`, and `build-connectors` passed.
+- `npm.cmd run audit` - FAIL outside builder bake slice on 2026-06-26 15:01 ET: `summon/bay-open` never saw `.mkt-primary`; builder/moat checks passed and placeholder task lifecycle passed.
 
 ## Blockers / Holds
 
@@ -59,7 +60,7 @@ Monolithic parity checkpoint:
 
 ## Readiness Claim
 
-Safe checkpoint ready for review, but Session 6 is not DONE. Chunked REFIT bake now has exact dirty chunk mapping, bounded chunk canvases, visible viewport culling, bounded retention, caller-side pan fills that do not rebake the whole station, deduplicated glow anchors, and monolithic-vs-chunk base/light parity evidence. `test:fast` is green. Full ready remains blocked by unrelated golden/audit failures outside the Session 6 ownership boundary.
+Safe checkpoint remains ready for review, but Session 6 is not DONE. Chunked REFIT bake now has exact dirty chunk mapping, bounded chunk canvases, visible viewport culling, bounded retention, caller-side pan fills that do not rebake the whole station, deduplicated glow anchors, and monolithic-vs-chunk base/light parity evidence. `test:fast` is green on the latest run. Full ready remains blocked by unrelated golden/audit failures outside the Session 6 ownership boundary.
 
 ## Next Loop Condition
 
