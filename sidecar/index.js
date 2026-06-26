@@ -1342,6 +1342,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/channels/discord/status') return handleDiscordStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/notify') return handleChannelNotify(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
+  if (req.method === 'GET' && req.url === '/api/channels/discord/status') return handleDiscordChannelStatus(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
   if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
@@ -3017,6 +3018,20 @@ async function handleChannelNotify(req, res) {
   try { saveChannelSecrets(channelSecrets); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'persist failed' })); }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true, notifyAutonomous: on }));
+}
+
+// GET /api/channels/discord/status — status only; never returns token/key/ownerId. `ownerLocked` lets boot tests
+// and the UI prove a saved Discord owner survived restart without disclosing who that owner is.
+function handleDiscordChannelStatus(req, res) {
+  const d = (channelSecrets && channelSecrets.discord) || {};
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    connected: discordStatus.connected,
+    configured: !!d.token,
+    state: discordStatus.state,
+    detail: discordStatus.detail || '',
+    ownerLocked: !!d.ownerId
+  }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */

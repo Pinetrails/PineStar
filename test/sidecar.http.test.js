@@ -73,7 +73,7 @@ function boot(port, workspaces, attemptsLeft) {
     let out = '', settled = false;
     const onData = d => {
       out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
+      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port, output: () => out }); }
       if (!settled && /already in use/i.test(out)) {
         settled = true; try { child.kill(); } catch (_) {}
         if (attemptsLeft > 0) resolve(boot(port + 1, workspaces, attemptsLeft - 1));
@@ -96,6 +96,19 @@ function boot(port, workspaces, attemptsLeft) {
     { runId: 'r2', agentId: 'bob', turns: 1, usd: 0.75, tokens: 400, ts: now - 500 }
   ];
   fs.writeFileSync(path.join(ws, 'ledger.jsonl'), seed.map(e => JSON.stringify(e)).join('\n') + '\n');
+  fs.mkdirSync(path.join(ws, 'channels'), { recursive: true });
+  fs.writeFileSync(path.join(ws, 'channels', 'secrets.json'), JSON.stringify({
+    version: 1,
+    discord: {
+      enabled: true,
+      token: 'discord-token',
+      key: 'sk-or-v1-fake-discord',
+      model: 'anthropic/claude-sonnet-4.6',
+      provider: 'openrouter',
+      agentId: 'agent',
+      ownerId: 'discord-owner-42'
+    }
+  }));
 
   const booted = await boot(8820 + (process.pid % 60), ws, 20);
   const { child, port } = booted;
@@ -264,6 +277,20 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(Math.abs(st.body.day.usd - 2.0) < 1e-9, 'day pool reflects seeded spend inside the 24h window');
     A.ok(Math.abs(st.body.global.usd - 2.0) < 1e-9, 'global pool reflects seeded spend');
     A.ok(JSON.stringify(st.body).indexOf('sk-') < 0, 'status leaks no key-shaped secret');
+
+    // ---- Discord saved-owner restart guard: a boot from persisted config must restore owner lock
+    //      before the adapter sees any DM, so the first post-reboot stranger cannot claim the bot.
+    for (let i = 0; i < 15 && booted.output().indexOf('discord auto-started from saved config') < 0; i++) await sleep(100);
+    A.ok(booted.output().indexOf('discord auto-started from saved config') >= 0, 'Discord auto-started from saved config on boot');
+    const dcStatus = await j('GET', '/api/channels/discord/status');
+    A.eq(dcStatus.status, 200, 'GET /api/channels/discord/status -> 200');
+    A.eq(dcStatus.body.configured, true, 'Discord status sees saved config');
+    A.eq(dcStatus.body.connected, true, 'Discord status reports the auto-started adapter');
+    A.eq(dcStatus.body.ownerLocked, true, 'Discord owner lock survived restart');
+    A.ok(JSON.stringify(dcStatus.body).indexOf('discord-owner-42') < 0, 'Discord status does not expose ownerId');
+    A.ok(JSON.stringify(dcStatus.body).indexOf('discord-token') < 0, 'Discord status does not expose token');
+    const savedChannels = JSON.parse(fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8'));
+    A.eq(savedChannels.discord.ownerId, 'discord-owner-42', 'Discord auto-start preserved saved ownerId on disk');
 
     // ---- resume lifts a pool for the session ----
     const rs = await j('POST', '/api/budget/resume', { scope: 'day' });

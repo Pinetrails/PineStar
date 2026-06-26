@@ -67,7 +67,7 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
   //   refuse a stranger's first DM before it reaches runOnce.
   {
     const reg = makeChannelRegistry();
-    const ran = [], sent = [];
+    const ran = [], sent = [], claims = [];
     const runOnce = async (o) => {
       ran.push(o);
       o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
@@ -81,7 +81,7 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
     }, parkMs: 1, sleep: ms => new Promise(r => setTimeout(r, ms)) });
     const { hub, adapter } = wireChannel(reg.get('discord'), {
       hub: { runOnce, store: fakeStore(), send: (c, t) => { sent.push({ c, t }); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: ids() },
-      adapter: { transport, clock: { now: () => 1 }, ownerUserId: 'owner' }
+      adapter: { transport, clock: { now: () => 1 }, ownerUserId: 'owner', onOwnerClaim: u => claims.push(u) }
     });
     A.eq(typeof adapter.connect, 'function', 'discord wires into an adapter with connect()');
     A.eq(typeof adapter.disconnect, 'function', 'discord adapter exposes disconnect()');
@@ -91,6 +91,7 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
     for (let i = 0; i < 20 && ran.length < 1; i++) await tick();
     A.eq(ran.length, 1, 'preset Discord owner through wireChannel: stranger first DM did not reach runOnce');
     A.eq(ran[0].messages, [{ role: 'user', content: 'owner msg' }], 'the owner message reached runOnce');
+    A.eq(claims, [], 'preset Discord owner through wireChannel does not emit a fresh owner claim');
     for (let i = 0; i < 20 && sent.length < 1; i++) await tick();
     A.eq(sent, [{ c: 'y', t: 'ok' }], 'reply went back to the owner channel');
     await adapter.disconnect();
