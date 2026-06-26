@@ -1281,7 +1281,35 @@ const Build = (() => {
 
   function sfx(n) { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); }
 
-  return { init, open, close, toggle, isOpen };
+  // DEV-ONLY test hook (gated on window.__SKYNET_DEV__) — lets the audit harness prove the
+  // object=capability moat (place a dish → web cap appears) by placing through the REAL
+  // station.addProp path at a validated tile, instead of simulating fragile canvas-drag pixel
+  // coordinates. Never attached in a shipped build (the dev flag is never set there).
+  function findPlaceableTile(type, w, h) {
+    if (!station || !station.bounds || !station.canPlaceProp) return null;
+    const b = station.bounds();
+    for (let ty = b.minTy; ty <= b.maxTy; ty++)
+      for (let tx = b.minTx; tx <= b.maxTx; tx++)
+        if (station.canPlaceProp(type, tx, ty, w, h)) return { tx, ty };
+    return null;
+  }
+  const __test__ = {
+    isOpen: () => running,
+    placeCapProp: (type) => {
+      if (!running || !station) return { ok: false, reason: 'not-in-build' };
+      const t = type || 'workbench';   // a real cap-prop id (CAP_PROP_MAP): workbench→terminal, comms_dish→web
+      const s = propSpec(t);
+      const tile = findPlaceableTile(t, s.w, s.h);
+      if (!tile) return { ok: false, reason: 'no-valid-tile' };
+      propType = t; tool = 'prop';
+      const res = station.addProp({ t, x: tile.tx, y: tile.ty, w: s.w, h: s.h, block: s.blocks !== false });
+      return { ok: !!(res && res.ok), tile, type: t };
+    },
+  };
+
+  const api = { init, open, close, toggle, isOpen };
+  if (typeof window !== 'undefined' && window.__SKYNET_DEV__) api.__test__ = __test__;
+  return api;
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = Build;
