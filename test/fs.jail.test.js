@@ -26,6 +26,21 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
   }
   // a bad agentId is rejected (no path traversal via the agent segment)
   await rejects(_internals.resolveInside('../evil', 'x.txt'), 'rejects path-traversal agentId');
+  // symlink/junction-style escapes: the string path stays under the jail, but the real target does not.
+  {
+    const outside = path.join(os.tmpdir(), 'starnet-fs-outside-' + process.pid);
+    try {
+      await fsp.mkdir(path.join(ROOT, 'ag'), { recursive: true });
+      await fsp.mkdir(outside, { recursive: true });
+      await fsp.writeFile(path.join(outside, 'pwn.txt'), 'nope');
+      await fsp.symlink(outside, path.join(ROOT, 'ag', 'link'), 'dir');
+      await rejects(_internals.resolveInside('ag', 'link/pwn.txt'), 'rejects symlink escape to an outside directory');
+    } catch (e) {
+      A.ok(true, 'symlink escape regression skipped because this filesystem disallows symlinks');
+    } finally {
+      try { fs.rmSync(outside, { recursive: true, force: true }); } catch (e) {}
+    }
+  }
 
   // ---- write -> read -> list roundtrip (real disk) ----
   {

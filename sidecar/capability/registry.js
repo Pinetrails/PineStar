@@ -68,7 +68,10 @@
       // team.summon CREATES a new crew member — a stronger, outward-visible mutation than delegating to existing
       // crew, so unlike team.dispatch it IS consent-gated (the APPROVAL-mode confirm beat). Lead-only by the same
       // orchestrator conferral; a delegated worker never gets the orchestrator object and so can never summon.
-      { capId: 'orchestrator', tool: 'team.summon', scope: 'write', requiresConsent: true, network: false }
+      { capId: 'orchestrator', tool: 'team.summon', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'orchestrator', tool: 'team.subagents', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'team.interrupt', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'team.resume', scope: 'execute', requiresConsent: false, network: true }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so
