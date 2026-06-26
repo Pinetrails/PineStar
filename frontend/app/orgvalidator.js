@@ -14,6 +14,7 @@
   const DUP_EDGE = 'PIPELINE_DUPLICATE_EDGE';
   const SELF_EDGE = 'PIPELINE_SELF_EDGE';
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+  const WHEN_RE = /^[A-Za-z0-9_.:-]{1,40}$/;
 
   const clone = o => JSON.parse(JSON.stringify(o));
   const asArray = a => Array.isArray(a) ? a : [];
@@ -140,19 +141,20 @@
 
     const edgeCounts = {};
     for (const e of edges) {
-      const edge = { from: String(e.from || ''), to: String(e.to || ''), whenKind: String(e.whenKind || 'handoff') };
-      if (e.lane) edge.lane = String(e.lane);
+      const edge = { from: String(e.from || '').trim(), to: String(e.to || '').trim(), whenKind: e.whenKind == null ? '' : String(e.whenKind).trim() };
+      if (e.lane) edge.lane = String(e.lane).trim();
       const k = edgeKey(edge);
       edgeCounts[k] = (edgeCounts[k] || 0) + 1;
     }
 
     const validEdges = {};
     for (const e of edges) {
-      const edge = { from: String(e.from || ''), to: String(e.to || ''), whenKind: String(e.whenKind || 'handoff') };
-      if (e.lane) edge.lane = String(e.lane);
+      const edge = { from: String(e.from || '').trim(), to: String(e.to || '').trim(), whenKind: e.whenKind == null ? '' : String(e.whenKind).trim() };
+      if (e.lane) edge.lane = String(e.lane).trim();
       const from = agents[edge.from], to = agents[edge.to];
       const out = { from: edge.from, to: edge.to, whenKind: edge.whenKind, lane: edge.lane || null, runnable: false, reason: null };
-      if (edge.from && edge.from === edge.to) out.reason = SELF_EDGE;
+      if (!AID_RE.test(edge.from) || !AID_RE.test(edge.to) || !WHEN_RE.test(edge.whenKind)) out.reason = 'PIPELINE_BAD_EDGE';
+      else if (edge.from === edge.to) out.reason = SELF_EDGE;
       else if (edgeCounts[edgeKey(edge)] > 1) out.reason = DUP_EDGE;
       else if (!from || !to) out.reason = 'PIPELINE_UNKNOWN_AGENT';
       else if (!geo || typeof geo.path !== 'function') out.reason = 'PIPELINE_NO_PATH_GRAPH';
@@ -173,5 +175,5 @@
     return { ok: errors.length === 0, errors, warnings, graph };
   }
 
-  return { validateOrg, validate: validateOrg, codes: { SEVERED, DUP_EDGE, SELF_EDGE } };
+  return { validateOrg, validate: validateOrg, codes: { SEVERED, DUP_EDGE, SELF_EDGE, BAD_EDGE: 'PIPELINE_BAD_EDGE' } };
 });

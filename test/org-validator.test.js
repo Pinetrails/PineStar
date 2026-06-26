@@ -140,4 +140,31 @@ function twoAgentStation() {
   A.eq(v.graph.edgeRunnable['lead>lead:handoff:self'], false, 'self edge readiness is false');
 }
 
+{
+  const s = twoAgentStation();
+  const doc = s.serialize();
+  doc.edges = [
+    { from: '', to: 'worker', whenKind: 'handoff', lane: 'blank-from' },
+    { from: 'lead', to: '', whenKind: 'handoff', lane: 'blank-to' },
+    { from: 'lead', to: 'worker', lane: 'missing-kind' },
+    { from: 'lead', to: 'worker', whenKind: 'bad kind', lane: 'bad-kind' }
+  ];
+  const snapshot = {
+    serialize: () => doc,
+    projectGeometry: () => s.projectGeometry(),
+    roomAt: (x, y) => s.roomAt(x, y),
+    spawnRoomId: () => s.spawnRoomId(),
+    roomById: id => s.roomById(id)
+  };
+  const v = OV.validateOrg(snapshot);
+  A.ok(!v.ok, 'malformed raw PipelineEdge rows are invalid before readiness');
+  A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'blank-from'), 'blank edge source has a stable reason code');
+  A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'blank-to'), 'blank edge target has a stable reason code');
+  A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'missing-kind'), 'missing edge trigger kind has a stable reason code');
+  A.ok(v.errors.some(e => e.code === OV.codes.BAD_EDGE && e.lane === 'bad-kind'), 'bad edge trigger kind has a stable reason code');
+  A.eq(v.graph.edgeRunnable['>worker:handoff:blank-from'], false, 'bad edge readiness is false');
+  A.eq(v.graph.edgeRunnable['lead>worker::missing-kind'], false, 'missing whenKind readiness is false');
+  A.eq(v.graph.edgeRunnable['lead>worker:bad kind:bad-kind'], false, 'bad whenKind readiness is false');
+}
+
 A.report('org-validator');
