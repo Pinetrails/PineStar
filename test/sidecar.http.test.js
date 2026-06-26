@@ -121,6 +121,7 @@ function boot(port, workspaces, attemptsLeft) {
     apiToken = await bootToken(B, B);
     A.ok(apiToken.length >= 32, 'served index.html carries a high-entropy API token');
     const tok = { 'X-StarNet-Token': apiToken };
+    const tauriOrigin = 'http://tauri.localhost';
 
     const sessNoToken = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } });
     A.eq(sessNoToken.status, 403, 'POST /api/session without X-StarNet-Token -> 403');
@@ -136,7 +137,6 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(sameOrigin.status, 200, 'same-origin API request (with token) -> 200');
     A.eq(sameOrigin.headers.get('access-control-allow-origin'), B, 'same-origin CORS mirrors the exact loopback origin');
 
-    const tauriOrigin = 'http://tauri.localhost';
     const tauri = await fetch(B + '/api/budget/status', { headers: Object.assign({ Origin: tauriOrigin }, tok) });
     A.eq(tauri.status, 200, 'Tauri app origin API request -> 200');
     A.eq(tauri.headers.get('access-control-allow-origin'), tauriOrigin, 'Tauri CORS mirrors the trusted app origin');
@@ -222,6 +222,24 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(!!(customProvider && customProvider.configured), true, 'Custom provider is configured after scoped base URL push');
     A.ok(JSON.stringify(configuredProviders.body).indexOf('sk-provider-http-test-secret') < 0, 'provider list never leaks the pushed secret');
     A.ok(JSON.stringify(configuredProviders.body).indexOf('xai-provider-http-test-secret') < 0, 'provider list never leaks the pushed xAI secret');
+    const sensitiveGets = [
+      ['/api/connectors', 'connectors'],
+      ['/api/cron', 'cron'],
+      ['/api/checkpoint?agent=agent', 'checkpoint'],
+      ['/api/notebook?agent=agent', 'notebook'],
+      ['/api/save?agent=agent', 'save'],
+      ['/api/runs?agent=agent&limit=5', 'runs'],
+      ['/api/transcript?stream=global&agent=agent&limit=5', 'transcript'],
+      ['/api/memory/proposals?agent=agent', 'memory proposals'],
+      ['/api/memory/records?agent=agent', 'memory records'],
+      ['/api/insights?agent=agent', 'insights']
+    ];
+    for (const [p, label] of sensitiveGets) {
+      const noTok = await fetch(B + p);
+      A.eq(noTok.status, 403, 'GET ' + label + ' WITHOUT a token -> 403');
+      const withTok = await fetch(B + p, { headers: Object.assign({ Origin: B }, tok) });
+      A.eq(withTok.status, 200, 'GET ' + label + ' WITH trusted browser token -> 200');
+    }
 
     // ---- SSE telemetry requires the ?token= query (EventSource cannot send a header) ----
     const sseNoTok = await fetch(B + '/api/channels/events');
