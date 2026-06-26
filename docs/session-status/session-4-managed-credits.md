@@ -2,8 +2,8 @@
 
 ## Current Slice
 
-- Tightened pure managed-credit admission and cap-kill behavior while route integration remains held.
-- Selected invariant: managed-credit admission retries must not reserve twice, and reconciled final spend above the reserved cap must fail closed.
+- Tightened pure managed-credit admission conflict handling while route integration remains held.
+- Selected invariant: duplicate managed-credit admission retries are idempotent only when the billing identity matches; a reused `runId` cannot switch BYOK/managed mode, managed account, or reserved cap.
 
 ## Changed Files
 
@@ -13,31 +13,25 @@
 
 ## Evidence
 
-- `sidecar/billing.js` exports `makeBilling({ payment, ledger, clock })`.
-- Managed runs require an account and positive cap, check balance, and reserve credit before paid work can start.
-- Reconciled managed final spend is recorded before unused reserved credit is refunded.
-- If the managed final ledger write throws, `finishRun` returns `managed_credit_unavailable`, does not refund, and leaves the run unsettled/retryable.
-- Reconciled final spend is settled once; unused reserved credit is refunded once after durable recording.
-- Duplicate managed `beginRun` calls return the original managed reservation metadata and do not issue a second debit.
-- Managed final spend above the reserved cap returns `managed_credit_over_cap`, records no final spend, issues no refund, and leaves the run unsettled for explicit recovery.
-- BYOK runs pass through without calling managed payment methods or recording managed-credit debits.
-- Managed payment balance/debit failures return closed billing failures before any run is authorized.
-- `makeBudget({ resumeGuard })` can veto a resume before override headroom is applied.
-- A managed-credit resume veto leaves budget overrides unchanged, so soft budget resume cannot continue an exhausted managed paid path.
-- BYOK/non-managed resume remains unchanged when the guard allows it, and existing callers without a guard keep current behavior.
-- `AGENTS.md` was absent in this worktree; `C:\Users\andro\Desktop\gen\AGENTS.md` and the runbook were followed.
-- `node scripts/board.mjs --files sidecar/index.js` reported `sidecar/index.js` as contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`, so route integration was held for this loop.
-- `node scripts/board.mjs --files sidecar/budget.js test/budget.test.js sidecar/billing.js test/billing.test.js` reported no live uncommitted tracked edits for `sidecar/budget.js`.
+- `sidecar/billing.js` now compares duplicate `beginRun` calls against the original billing mode.
+- Duplicate BYOK admissions remain idempotent.
+- Duplicate managed admissions remain idempotent when account and reserved cap match, preserving the existing exactly-once debit behavior.
+- A reused `runId` that attempts to switch from BYOK to managed returns `billing_run_conflict` before any managed payment call.
+- A reused managed `runId` that attempts to switch accounts returns `billing_run_conflict` and does not debit the second account.
+- A reused managed `runId` that attempts to change the reserved cap returns `billing_run_conflict` and does not debit again.
+- `AGENTS.md` is absent under `C:\Users\andro\gen-trees`; `CLAUDE.md` and `docs/STARNET_SESSION_LOOPS_1_6.md` were followed.
+- `node scripts/board.mjs --files sidecar/index.js` still reports `sidecar/index.js` as contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`.
+- `node scripts/board.mjs --files sidecar/ledger.js test/ledger.test.js sidecar/billing.js test/billing.test.js docs/session-status/session-4-managed-credits.md` reports `sidecar/ledger.js` as contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; no live contention was reported for `sidecar/billing.js` or `test/billing.test.js`.
 
 ## Tests Run
 
+- `node test\billing.test.js` - OK, 55 assertions.
 - `node test\budget.test.js` - OK, 49 assertions.
-- `node test\billing.test.js` - OK, 46 assertions.
 - `npm.cmd run test:fast` - OK.
 
 ## Full Gates
 
-- `npm.cmd run test:fast` - green on 2026-06-26 at 2026-06-26T05:55:51-04:00.
+- `npm.cmd run test:fast` - green on 2026-06-26 at 2026-06-26T14:01:18-04:00.
 - `npm.cmd run test:http` - not run; this slice added no HTTP route.
 
 ## Live Verification
@@ -48,13 +42,14 @@
 ## Blockers / Holds
 
 - HELD-FOR-COORDINATION: `sidecar/index.js` is still hot/contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`, so `/api/run` managed-credit admission wiring was not attempted in this loop.
+- HELD-FOR-COORDINATION: `sidecar/ledger.js` is hot/contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`, so strict durable managed-ledger persistence was not attempted in this loop.
 - `test/billing.test.js` is not wired into `test:fast` because `package.json` is outside the Session 4 owned-file list in the runbook.
 
 ## Readiness Claim
 
-- Safe checkpoint slice is ready: pure managed-credit authorization/settlement, admission retry, cap-kill, and guarded budget-resume invariants are covered, and the full fast gate is green.
-- Session 4 done condition is not yet met; route integration, run-loop/HUD selection, `budget.resume` managed-credit behavior, HTTP tests, and fake-provider live smoke remain.
+- Safe checkpoint slice is ready: pure billing admission now fails closed on conflicting `runId` reuse, and the full fast gate is green.
+- Session 4 done condition is not yet met; route integration, run-loop/HUD selection, HTTP tests, strict durable managed-ledger persistence, and fake-provider live smoke remain.
 
 ## Next Loop Condition
 
-- Retry `node scripts/board.mjs --files sidecar/index.js`; if it is no longer hot, wire managed-credit authorization plus the budget resume guard into the run admission/resume routes and add fake-provider HTTP coverage. If still hot, select another pure backend invariant.
+- Retry `node scripts/board.mjs --files sidecar/index.js sidecar/ledger.js`; if `sidecar/index.js` is no longer hot, wire managed-credit authorization plus the budget resume guard into the run admission/resume routes and add fake-provider HTTP coverage. If `sidecar/ledger.js` is no longer hot first, add strict durable append behavior for managed final spend. If both remain hot, select another pure backend invariant.

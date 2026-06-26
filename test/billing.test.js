@@ -72,6 +72,26 @@ function fakeLedger() {
   A.eq(payment.calls.filter(c => c.op === 'debit').length, 1, 'duplicate admission emits exactly one debit');
 }
 
+// ---- admission conflict: a reused runId cannot switch billing identity to bypass managed credit ----
+{
+  const payment = fakePayment({ acct: 5, other: 5 });
+  const billing = makeBilling({ payment });
+  A.eq(billing.beginRun({ mode: 'byok', runId: 'r1c' }).ok, true, 'original BYOK admission succeeds');
+  const switched = billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r1c', capUsd: 2 });
+  A.eq(switched.ok, false, 'runId cannot switch from BYOK to managed');
+  A.eq(switched.reason, 'billing_run_conflict', 'mode switch fails closed as a billing conflict');
+  A.eq(payment.calls.length, 0, 'conflicting mode switch performs no managed payment calls');
+
+  const first = billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r1d', capUsd: 2 });
+  A.eq(first.ok, true, 'original managed admission succeeds');
+  const otherAccount = billing.beginRun({ mode: 'managed', accountId: 'other', runId: 'r1d', capUsd: 2 });
+  A.eq(otherAccount.ok, false, 'runId cannot switch managed accounts');
+  A.eq(otherAccount.reason, 'billing_run_conflict', 'account switch fails closed as a billing conflict');
+  const largerCap = billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r1d', capUsd: 3 });
+  A.eq(largerCap.ok, false, 'runId cannot silently change its reserved cap');
+  A.eq(payment.calls.filter(c => c.op === 'debit').length, 1, 'conflicting managed retries do not debit again');
+}
+
 // ---- exhausted balance: block before any debit/provider work can happen ----
 {
   const payment = fakePayment({ acct: 0.5 });

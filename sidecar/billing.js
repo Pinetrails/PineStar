@@ -27,6 +27,12 @@
       return Object.assign({ ok: false, reason }, extra || {});
     }
 
+    function sameAdmission(prior, mode, o) {
+      if (!prior || prior.mode !== mode) return false;
+      if (mode !== 'managed') return true;
+      return prior.accountId === str(o.accountId) && Math.abs(prior.reservedUsd - num(o.capUsd)) < 1e-9;
+    }
+
     function beginRun(o) {
       o = o || {};
       const runId = str(o.runId);
@@ -34,6 +40,7 @@
       if (!runId) return fail('run_id_required');
       if (runs.has(runId)) {
         const prior = runs.get(runId);
+        if (!sameAdmission(prior, mode, o)) return fail('billing_run_conflict', { runId });
         const out = { ok: true, mode: prior.mode, runId, managed: prior.mode === 'managed' };
         if (prior.mode === 'managed') out.reservedUsd = prior.reservedUsd;
         return out;
