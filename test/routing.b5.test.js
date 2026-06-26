@@ -6,6 +6,7 @@ const A = require('./_assert.js');
 const Pipeline = require('../frontend/app/pipeline.js');
 const { makeRouter } = require('../sidecar/routing/router.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
+const WM = require('../frontend/app/worldmodel.js');
 
 // a deployable intake -> belt -> bay floor (so setPlan accepts it), with the bay enriched as world.js does
 function planWith(objects) {
@@ -58,6 +59,39 @@ function planWith(objects) {
 
 // no posted plan -> null (routed-mode off; the office default applies everywhere)
 A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null');
+
+// sidecar station authority: when the router has accepted a Station document, bay grants are derived from
+// that document and forged capability objects embedded in a legacy posted RoutingPlan are ignored.
+{
+  const stDoc = WM.defaultDoc();
+  stDoc.props.push({ id: 'bay1', t: 'bay', x: 4, y: 1, w: 2, h: 2, agentId: 'coder' });
+  stDoc.props.push({ id: 'pc1', t: 'console', x: 7, y: 1, w: 2, h: 1, agentId: 'coder' });
+  stDoc.props.push({ id: 'dish1', t: 'comms_dish', x: 10, y: 1, w: 1, h: 1 });
+  stDoc.props.push({ id: 'conn1', t: 'connector_portal', x: 12, y: 1, w: 1, h: 1, connectorId: 'github' });
+  stDoc._nid = 4;
+  const r = makeRouter();
+  A.ok(r.setStation(stDoc).ok, 'a valid Station document is accepted by the sidecar router');
+  A.ok(r.setPlan(planWith(['computer', 'cabinet', 'workbench'])).ok, 'legacy routing plan with forged grants is still deployable');
+  const resolved = resolveTools('coder', r.stationFor('coder'));
+  A.ok(resolved.hasCompute, 'sidecar-derived station grants the real dedicated workstation');
+  A.ok(resolved.tools.indexOf('web_search') >= 0, 'sidecar-derived station grants the real room dish');
+  A.eq(resolved.tools.filter(t => t.indexOf('fs.') === 0).length, 0, 'forged plan cabinet grants no fs tools');
+  A.eq(resolved.tools.indexOf('shell.exec'), -1, 'forged plan workbench grants no shell tool');
+  const conn = r.stationFor('coder').rooms.bay.objects.find(o => o.objectType === 'connector');
+  A.ok(conn && conn.connectorId === 'github', 'sidecar-derived station preserves bound connector portal identity');
+}
+
+// setStation is transactional: an invalid Station update is refused and leaves the last-good station active.
+{
+  const stDoc = WM.defaultDoc();
+  stDoc.props.push({ id: 'bay1', t: 'bay', x: 4, y: 1, w: 2, h: 2, agentId: 'coder' });
+  stDoc.props.push({ id: 'pc1', t: 'console', x: 7, y: 1, w: 2, h: 1, agentId: 'coder' });
+  const r = makeRouter();
+  A.ok(r.setStation(stDoc).ok, 'valid Station document installs as last-good');
+  A.ok(!r.setStation({ schema: 'starnet.station', version: 1, rooms: {}, order: [], props: [] }).ok, 'invalid empty Station document is refused');
+  r.setPlan(planWith(['cabinet']));
+  A.ok(resolveTools('coder', r.stationFor('coder')).hasCompute, 'last-good station stays active after invalid update');
+}
 
 // a connector portal carries a per-instance binding: stationFor passes the rich object through verbatim, so the
 // connector manager can project THAT server's tools. resolveTools yields no STATIC grant for it (dynamic at run).
