@@ -77,4 +77,19 @@ const clock = { now: () => t };
   A.eq(L.totalUsd(), 1, 'in-memory total holds even when persistence failed');
 }
 
+// ---- strict record is available for paid-credit paths that must fail closed on durable append failure ----
+{
+  const bad = { readAll() { return []; }, append() { throw new Error('disk gone'); } };
+  const L = makeLedger({ io: bad, clock });
+  A.throws(() => L.recordStrict({ runId: 'r', usd: 1 }), 'recordStrict throws on append failure');
+  A.eq(L.count(), 0, 'recordStrict does not update the RAM mirror when append fails');
+
+  const io = fakeIo();
+  const ok = makeLedger({ io, clock });
+  const e = ok.recordStrict({ runId: 'strict', agentId: 'a', usd: 2 });
+  A.eq(e.runId, 'strict', 'recordStrict returns the persisted entry');
+  A.eq(ok.count(), 1, 'recordStrict updates the RAM mirror after append succeeds');
+  A.eq(io.rows.length, 1, 'recordStrict persists through io.append');
+}
+
 A.report('ledger.test');

@@ -102,9 +102,10 @@
         return fail('managed_credit_over_cap', { runId, usd: finalUsd, reservedUsd: rec.reservedUsd });
       }
 
-      if (ledger && typeof ledger.record === 'function' && !rec.recorded) {
+      if (ledger && (typeof ledger.recordStrict === 'function' || typeof ledger.record === 'function') && !rec.recorded) {
         try {
-          ledger.record({
+          const record = typeof ledger.recordStrict === 'function' ? ledger.recordStrict : ledger.record;
+          record.call(ledger, {
             runId, agentId: rec.agentId, billingMode: 'managed',
             accountId: rec.accountId, reason: str(o.reason || 'done'),
             turns: num(o.turns), usd: finalUsd, tokens: num(o.tokens), ts: clock.now()

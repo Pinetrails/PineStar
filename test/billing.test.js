@@ -3,6 +3,7 @@
 'use strict';
 const A = require('./_assert.js');
 const { makeBilling } = require('../sidecar/billing.js');
+const { makeLedger } = require('../sidecar/ledger.js');
 
 function fakePayment(seed) {
   const balances = Object.assign({}, seed || {});
@@ -195,6 +196,24 @@ function fakeLedger() {
   A.eq(payment.get('acct'), 2, 'no refund is issued before final spend is recorded');
   A.eq(payment.calls.filter(c => c.op === 'credit').length, 0, 'failed finalization does not credit managed balance');
   A.eq((billing.status('r6') || {}).settled, false, 'failed finalization remains retryable');
+}
+
+// ---- strict durable ledgers fail closed for managed credits before refunding reserved credit ----
+{
+  const payment = fakePayment({ acct: 5 });
+  const ledger = makeLedger({
+    io: { readAll() { return []; }, append() { throw new Error('disk gone'); } },
+    clock: { now: () => 456 }
+  });
+  const billing = makeBilling({ payment, ledger, clock: { now: () => 456 } });
+  A.eq(billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r6b', capUsd: 3 }).ok, true, 'managed run reserves before strict ledger failure');
+  const settled = billing.finishRun({ runId: 'r6b', reason: 'done', usd: 1, tokens: 10, turns: 1 });
+  A.eq(settled.ok, false, 'strict durable append failure refuses managed finalization');
+  A.eq(settled.reason, 'managed_credit_unavailable', 'strict durable append failure is a closed billing failure');
+  A.eq(payment.get('acct'), 2, 'strict durable append failure refunds nothing before final spend is persisted');
+  A.eq(payment.calls.filter(c => c.op === 'credit').length, 0, 'strict durable append failure emits no credit');
+  A.eq(ledger.count(), 0, 'strict durable append failure records no in-memory false success');
+  A.eq((billing.status('r6b') || {}).settled, false, 'strict durable append failure leaves finalization retryable');
 }
 
 // ---- refund adapter failures fail closed instead of silently keeping unused reserved credit ----

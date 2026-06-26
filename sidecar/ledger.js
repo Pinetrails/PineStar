@@ -9,6 +9,7 @@
 
    makeLedger({ io, clock, dayMs? }) -> {
      record({ runId, agentId, turns, usd, tokens }) -> entry,   // stamps ts, appends, returns it
+     recordStrict({ runId, agentId, turns, usd, tokens }) -> entry, // same, but append failure throws
      all() -> entry[],            count() -> int,
      totalUsd() -> number,                                       // every recorded run, ever
      usdSince(ts) -> number,      usdForDay(now?) -> number,     // trailing `dayMs` window
@@ -39,15 +40,26 @@
     try { const raw = io.readAll(); if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object'); }
     catch (e) { rows = []; }
 
-    function record(e) {
+    function makeEntry(e) {
       e = e || {};
-      const entry = {
+      return {
         runId: str(e.runId), agentId: str(e.agentId),
         turns: num(e.turns), usd: num(e.usd), tokens: num(e.tokens),
         ts: num(e.ts) || clock.now()
       };
+    }
+
+    function record(e) {
+      const entry = makeEntry(e);
       rows.push(entry);
       try { io.append(entry); } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
+      return entry;
+    }
+
+    function recordStrict(e) {
+      const entry = makeEntry(e);
+      io.append(entry);
+      rows.push(entry);
       return entry;
     }
 
@@ -55,6 +67,7 @@
 
     return {
       record,
+      recordStrict,
       all() { return rows.map(r => Object.assign({}, r)); },
       count() { return rows.length; },
       totalUsd() { return sum(null); },
