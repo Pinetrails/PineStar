@@ -1,12 +1,14 @@
 'use strict';
 
 const WorldModel = require('../frontend/app/worldmodel.js');
+const Pipeline = require('../frontend/app/pipeline.js');
 
 function makeStationStore(o) {
   o = o || {};
   const model = o.worldModel || WorldModel;
   let station = null;
   let doc = null;
+  let routingPlan = null;
 
   function validateStationDoc(nextDoc) {
     if (!nextDoc || typeof nextDoc !== 'object' || Array.isArray(nextDoc)) return { ok: false, error: 'station document required' };
@@ -18,7 +20,8 @@ function makeStationStore(o) {
     try { parsed = model.deserialize(nextDoc); } catch (e) { return { ok: false, error: (e && e.message) || 'station rejected' }; }
     if (!parsed || typeof parsed.bayObjects !== 'function' || typeof parsed.serialize !== 'function') return { ok: false, error: 'station model unavailable' };
     if (!parsed.rooms || !parsed.rooms().length) return { ok: false, error: 'station must contain at least one room' };
-    return { ok: true, station: parsed, doc: parsed.serialize() };
+    const plan = Pipeline.compileRoutingPlan(parsed.projectGeometry());
+    return { ok: true, station: parsed, doc: parsed.serialize(), routingPlan: plan, routingOk: Pipeline.ok(plan) };
   }
 
   function setStation(nextDoc) {
@@ -26,7 +29,8 @@ function makeStationStore(o) {
     if (!v.ok) return { ok: false, error: v.error };
     station = v.station;
     doc = v.doc;
-    return { ok: true, rooms: station.rooms().length, props: station.props().length };
+    routingPlan = v.routingPlan;
+    return { ok: true, rooms: station.rooms().length, props: station.props().length, routingOk: v.routingOk, routingPlan };
   }
 
   function setSaveDoc(saveDoc) {
@@ -35,12 +39,13 @@ function makeStationStore(o) {
     return setStation(saveDoc.station);
   }
 
-  function clearStation() { station = null; doc = null; return { ok: true, cleared: true }; }
+  function clearStation() { station = null; doc = null; routingPlan = null; return { ok: true, cleared: true }; }
   function hasStation() { return !!station; }
   function getStation() { return doc; }
+  function getRoutingPlan() { return routingPlan; }
   function bayObjects(agentId) { return station ? station.bayObjects(agentId) : null; }
 
-  return { validateStationDoc, setStation, setSaveDoc, clearStation, hasStation, getStation, bayObjects };
+  return { validateStationDoc, setStation, setSaveDoc, clearStation, hasStation, getStation, getRoutingPlan, bayObjects };
 }
 
 module.exports = { makeStationStore };

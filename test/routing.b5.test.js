@@ -93,6 +93,41 @@ A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null'
   A.ok(resolveTools('coder', r.stationFor('coder')).hasCompute, 'last-good station stays active after invalid update');
 }
 
+// sidecar station authority also owns routing: once a Station document is installed, resolveTarget follows the
+// server-derived Station geometry instead of a forged legacy RoutingPlan posted by the renderer.
+{
+  const stDoc = WM.defaultDoc();
+  stDoc.props.push({ id: 'intake1', t: 'intake', x: 0, y: 0, w: 1, h: 1 });
+  stDoc.props.push({ id: 'bay-real', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'real' });
+  stDoc.belts = { '1,0': 'E', '2,0': 'E', '3,0': 'E' };
+  stDoc._nid = 4;
+  const forged = Pipeline.compileRoutingPlan({
+    belts: [{ x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }],
+    props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 }, { id: 'b', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'fake' }]
+  });
+  const r = makeRouter();
+  A.ok(r.setStation(stDoc).ok, 'authoritative Station with deployable routing is accepted');
+  A.ok(r.setPlan(forged).ok, 'forged legacy RoutingPlan is still syntactically deployable');
+  A.eq(r.resolveTarget({}), 'real', 'server-derived Station routing overrides the forged legacy RoutingPlan');
+}
+
+// non-deployable Station routing updates are transactional: the last-good Station-derived routing plan stays active.
+{
+  const good = WM.defaultDoc();
+  good.props.push({ id: 'intake1', t: 'intake', x: 0, y: 0, w: 1, h: 1 });
+  good.props.push({ id: 'bay-real', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'real' });
+  good.belts = { '1,0': 'E', '2,0': 'E', '3,0': 'E' };
+  good._nid = 4;
+  const bad = WM.defaultDoc();
+  bad.props.push({ id: 'intake2', t: 'intake', x: 0, y: 0, w: 1, h: 1 });
+  bad.props.push({ id: 'bay-fake', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'fake' });
+  bad._nid = 4;
+  const r = makeRouter();
+  A.ok(r.setStation(good).ok, 'good Station routing installs first');
+  A.ok(!r.setStation(bad).ok, 'non-deployable Station routing update is refused');
+  A.eq(r.resolveTarget({}), 'real', 'last-good Station routing survives the refused update');
+}
+
 // a connector portal carries a per-instance binding: stationFor passes the rich object through verbatim, so the
 // connector manager can project THAT server's tools. resolveTools yields no STATIC grant for it (dynamic at run).
 {
