@@ -7,10 +7,14 @@
    back to its own resolution, so real work never stalls. */
 'use strict';
 const Pipeline = require('../../frontend/app/pipeline.js');
+const { makeStationStore } = require('../station-store.js');
 
-function makeRouter() {
+function makeRouter(o) {
+  o = o || {};
   let plan = null;
+  let stationPlan = null;
   let rr = {};   // per-SPLITTER-tile round-robin counter so dispatch spreads work across lanes (matches the engine)
+  const stationStore = o.stationStore || makeStationStore();
 
   // store a posted plan. null/empty clears it (no routing floor). A plan with BLOCKING errors is refused.
   function setPlan(p) {
@@ -20,15 +24,35 @@ function makeRouter() {
     plan = p; rr = {}; return { ok: true, hash: p.hash || null, bays: (p.bays || []).length };   // new floor -> reset round-robin
   }
   function clearPlan() { plan = null; rr = {}; }
-  function getPlan() { return plan; }
-  function hasPlan() { return !!plan; }
+  function activePlan() { return stationPlan || plan; }
+  function getPlan() { return activePlan(); }
+  function hasPlan() { return !!activePlan(); }
+  function setStation(stationDoc) {
+    const v = stationStore.validateStationDoc(stationDoc);
+    if (!v.ok) return { ok: false, error: v.error };
+    if (!v.routingOk && stationPlan) {
+      return {
+        ok: false,
+        error: 'station routing plan has blocking errors',
+        codes: v.routingPlan.errors.filter(e => !e.warn).map(e => e.code)
+      };
+    }
+    const r = stationStore.setStation(stationDoc);
+    if (!r.ok) return r;
+    stationPlan = r.routingOk ? r.routingPlan : null;
+    rr = {};
+    return r;
+  }
+  function clearStation() { stationPlan = null; return stationStore.clearStation(); }
+  function getStation() { return stationStore.getStation(); }
   // the agentId a work-item routes to, or null (caller falls back to its default resolution — never stalls).
   // The picker advances a per-splitter-tile counter, so successive work-items spread across the splitter's lanes
   // (a FILTER stays deterministic by tag and ignores it) — dispatch load-balances instead of always lane 0.
   function resolveTarget(ctx) {
-    if (!plan) return null;
+    const p = activePlan();
+    if (!p) return null;
     const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
-    return Pipeline.resolveTarget(plan, ctx || {}, pick);
+    return Pipeline.resolveTarget(p, ctx || {}, pick);
   }
 
   /* Phase B5 — per-bay capability isolation. The resolveTools-shaped station for a BAY-bound agent, built from
@@ -37,10 +61,12 @@ function makeRouter() {
      unchanged. PURE room objects — no baseline — so an UNEQUIPPED bay grants no compute and can't spend (the
      compute gate stays shut; cost-safe), exactly mirroring resolveTools' projection of the placed floor. */
   function stationFor(agentId) {
-    if (!plan || !agentId) return null;
-    const bay = (plan.bays || []).find(b => b.agentId === agentId);
+    const p = activePlan();
+    if (!p || !agentId) return null;
+    const bay = (p.bays || []).find(b => b.agentId === agentId);
     if (!bay) return null;
-    const objs = Array.isArray(bay.objects) ? bay.objects : [];
+    const authoritative = stationStore.hasStation() ? stationStore.bayObjects(agentId) : null;
+    const objs = Array.isArray(authoritative) ? authoritative : (Array.isArray(bay.objects) ? bay.objects : []);
     // each entry is EITHER a bare objectType string (the generic caps: 'computer'/'dish'/…) OR a rich object
     // { objectType, … } carrying per-instance data — e.g. a connector portal's { objectType:'connector',
     // connectorId } so the manager can project THAT server's tools. Normalize both to a room object.
@@ -52,7 +78,7 @@ function makeRouter() {
     };
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, resolveTarget, stationFor };
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, stationFor };
 }
 
 module.exports = { makeRouter };
