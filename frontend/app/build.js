@@ -1281,7 +1281,7 @@ const Build = (() => {
 
   function sfx(n) { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); }
 
-  // DEV-ONLY test hook (gated on window.__SKYNET_DEV__) — lets the audit harness prove the
+  // DEV-ONLY test hook (gated on window.__STARNET_DEV__) — lets the audit harness prove the
   // object=capability moat (place a dish → web cap appears) by placing through the REAL
   // station.addProp path at a validated tile, instead of simulating fragile canvas-drag pixel
   // coordinates. Never attached in a shipped build (the dev flag is never set there).
@@ -1308,7 +1308,7 @@ const Build = (() => {
   };
 
   const api = { init, open, close, toggle, isOpen };
-  if (typeof window !== 'undefined' && window.__SKYNET_DEV__) api.__test__ = __test__;
+  if (typeof window !== 'undefined' && window.__STARNET_DEV__) api.__test__ = __test__;
   return api;
 })();
 

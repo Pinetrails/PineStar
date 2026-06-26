@@ -24,8 +24,8 @@ try{
     try{ H=(typeof Harness!=='undefined')?{configured:Harness.configured(),model:Harness.getModel(),prov:Harness.getProv()}:'no-Harness'; }catch(e){ H='Harness-err:'+e.message; }
     out.boot={
       title:document.title,
-      devType:typeof window.__SKYNET_DEV__,
-      devVal:window.__SKYNET_DEV__||null,
+      devType:typeof window.__STARNET_DEV__,
+      devVal:window.__STARNET_DEV__||null,
       apiToken:!!window.__SKYNET_API_TOKEN__,
       harness:H,
       ls:{key:!!localStorage.getItem('skynet.byok.key'),model:localStorage.getItem('skynet.byok.model'),prov:localStorage.getItem('skynet.byok.prov')},

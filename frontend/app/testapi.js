@@ -1,6 +1,6 @@
 /* SKYNET — testapi.js : DEV-ONLY behavioral + truthfulness test surface (window.__SKYNET_TEST__).
 
-   GATED ON window.__SKYNET_DEV__ — this entire module is INERT in a normal/shipped build (the dev
+   GATED ON window.__STARNET_DEV__ — this entire module is INERT in a normal/shipped build (the dev
    hook is only ever injected by a SKYNET_DEV sidecar; a packaged Tauri build never sets it). So it
    can live in the always-served frontend without leaking a debug API to users.
 
@@ -17,7 +17,7 @@
    mutated, so turning it on cannot change what a normal session would do. */
 'use strict';
 (() => {
-  if (typeof window === 'undefined' || !window.__SKYNET_DEV__) return;   // DEV gate — inert otherwise
+  if (typeof window === 'undefined' || !window.__STARNET_DEV__) return;   // DEV gate — inert otherwise
 
   const VERSION = '1';
   const LOG_CAP = 5000;
@@ -124,7 +124,7 @@
   // ---- readiness + one-call probe ----
   function ready() {
     try {
-      if (!window.__SKYNET_DEV__) return false;
+      if (!window.__STARNET_DEV__) return false;
       const g = document.getElementById('screen-game');
       const inGame = !!(g && g.classList.contains('active'));
       return inGame && bodies().length > 0;

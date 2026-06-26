@@ -45,7 +45,7 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
     console.log('navigating + booting to the floor...');
     await cdp.send('Page.navigate', { url: APP_URL });
     const ready = await waitDevReady(cdp, evalJS, { tries: 24, url: APP_URL });
-    const dev = await evalJS(cdp, '!!window.__SKYNET_DEV__').catch(() => false);
+    const dev = await evalJS(cdp, '!!window.__STARNET_DEV__').catch(() => false);
     const screen = await evalJS(cdp, `(document.querySelector('.screen.active')||{}).id || '?'`).catch(() => '?');
     console.log(`  dev=${dev} activeScreen=${screen} ready=${ready}`);
     manifest.ready = ready; manifest.dev = dev; manifest.activeScreen = screen;

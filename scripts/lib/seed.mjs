@@ -69,7 +69,7 @@ export async function waitUp(url, tries = 60) {
 // what defeats the cold-boot race (a fresh sidecar's FIRST page load can transiently show the
 // title screen with dev=false). We poll, reloading periodically, until the floor is truly up.
 export const READY_EXPR = `(() => { try {
-  if (!window.__SKYNET_DEV__) return false;
+  if (!window.__STARNET_DEV__) return false;
   const g = document.getElementById('screen-game');
   if (g && g.classList.contains('active')) return true;
   // fallback: dock visible and the title CTA is not
