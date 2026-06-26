@@ -10,6 +10,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rawArgs = process.argv.slice(2);
 const LOOP_ARG = rawArgs.find(a => /^--loop(=|$)/.test(a));
 const LOOP_MAX = LOOP_ARG ? Math.max(1, Number(LOOP_ARG.split('=')[1] || 3) || 3) : 1;
+const SKIP_PHASE4_BASELINE = /^(1|true|yes|on)$/i.test(String(process.env.STARNET_SKIP_PHASE4_BASELINE || '').trim());
 const STAMP = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
 const OUT = resolve(process.env.STARNET_PHASE3_SEAL_DIR || join(ROOT, '.dogfood', 'phase3-seal-' + STAMP));
 const LATEST = join(ROOT, '.dogfood', 'phase3-seal-latest');
@@ -118,9 +119,11 @@ async function runOnce(loop) {
   const steps = [
     { id: 'phase3-classifier', title: 'Phase 3 classifier completes without red failure', cmd: npmCmd, args: ['run', 'phase3'], timeoutMs: 1200000 },
     { id: 'timeout-wrapper', title: 'Timeout wrapper kills a hung test process', cmd: nodeCmd, args: ['test/timeout.test.js'], timeoutMs: 30000 },
-    { id: 'diff-check', title: 'Git whitespace conflict check', cmd: 'git', args: ['diff', '--check'], timeoutMs: 30000 },
-    { id: 'phase4-baseline', title: 'Preserve latest Phase 1-3 evidence for Phase 4', cmd: nodeCmd, args: ['scripts/preserve-phase4-baseline.mjs'], timeoutMs: 30000 }
+    { id: 'diff-check', title: 'Git whitespace conflict check', cmd: 'git', args: ['diff', '--check'], timeoutMs: 30000 }
   ];
+  if (!SKIP_PHASE4_BASELINE) {
+    steps.push({ id: 'phase4-baseline', title: 'Preserve latest Phase 1-3 evidence for Phase 4', cmd: nodeCmd, args: ['scripts/preserve-phase4-baseline.mjs'], timeoutMs: 30000 });
+  }
   const results = [];
   for (const step of steps) {
     console.log('[phase3-seal] loop ' + loop + ' ' + step.id + ' - ' + step.title);

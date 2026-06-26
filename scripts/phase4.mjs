@@ -282,6 +282,7 @@ async function runOnce(loop) {
     title: 'Phase 1-3 seal remains green',
     cmd: npmCmd,
     args: ['run', 'phase3:seal'],
+    env: Object.assign({}, process.env, { STARNET_SKIP_PHASE4_BASELINE: '1' }),
     required: true,
     class: 'entry-gate',
     timeoutMs: 1200000
