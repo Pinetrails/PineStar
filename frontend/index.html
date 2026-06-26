@@ -177,7 +177,8 @@
   </aside>
 
   <div id="stage-wrap">
-    <canvas id="stage"></canvas>
+    <canvas id="stage" role="img" aria-label="Live view of your agent station" aria-describedby="stage-summary"></canvas>
+    <div id="stage-summary" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="cam-hud">
       <span class="cam-c cam-tl">┌</span><span class="cam-c cam-tr">┐</span>
       <span class="cam-c cam-bl">└</span><span class="cam-c cam-br">┘</span>

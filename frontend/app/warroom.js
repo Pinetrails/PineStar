@@ -104,22 +104,27 @@
 
   /* ---------------- CREW instrument-cluster pulse (real activity) ---------------- */
   function tickCrew() {
-    const dots = document.querySelectorAll('#crew .dot'); if (!dots.length) return;
-    let cls = 'wr-idle';
-    if (currentPending()) cls = 'wr-await';
-    else if (running() > 0) {
-      // a REAL agent run is live (hero, summoned worker, or routed) — not merely the hero's status TEXT, which
-      // used to light every dot in lockstep with the hero even when no run existed. refine work-vs-think from
-      // the hero status line only while something is actually running.
-      const st = (($('#chat-status') || {}).textContent || '').toLowerCase();
-      cls = st.indexOf('think') >= 0 ? 'wr-think' : 'wr-work';
+    const rows = document.querySelectorAll('#crew .crew-row'); if (!rows.length) return;
+    // A pending consent blocks the WHOLE station, so AWAIT is global; otherwise each dot reflects ITS OWN agent's
+    // live run (read per-agent from StationUI), not the single hero state that used to light every dot in lockstep.
+    const awaiting = !!currentPending();
+    // work-vs-think flavour comes from the hero status line — only meaningful for the common single-agent station.
+    const thinking = (($('#chat-status') || {}).textContent || '').toLowerCase().indexOf('think') >= 0;
+    for (const row of rows) {
+      const d = row.querySelector('.dot'); if (!d) continue;
+      // resolve this row's agent id from its per-agent status div (id 'cs-{agentId}', set by StationUI crewRender).
+      const cs = row.querySelector('.crew-status');
+      const id = cs && cs.id && cs.id.indexOf('cs-') === 0 ? cs.id.slice(3) : '';
+      let cls = 'wr-idle';
+      if (awaiting) cls = 'wr-await';
+      else if (id && isAgentRunning(id)) cls = thinking ? 'wr-think' : 'wr-work';
+      d.className = 'dot on ' + cls;
     }
-    for (const d of dots) d.className = 'dot on ' + cls;
   }
   // authoritative per-agent run state — the SAME self-healing map the crew LIST reads (StationUI's runningAgents,
-  // fed by real agent.run.start/end), never the global hero status string.
-  function running() {
-    try { return (typeof StationUI !== 'undefined' && StationUI.runningCount) ? StationUI.runningCount() : 0; } catch (_) { return 0; }
+  // fed by real agent.run.start/end), never the global hero status string. Each crew dot lights for ITS OWN live run.
+  function isAgentRunning(id) {
+    try { return !!(typeof StationUI !== 'undefined' && StationUI.isAgentRunning && StationUI.isAgentRunning(id)); } catch (_) { return false; }
   }
 
   /* ---------------- CINEMA mode ---------------- */

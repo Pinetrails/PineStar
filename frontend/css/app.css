@@ -16,6 +16,9 @@
 }
 .hidden { display: none !important; }
 
+/* visually-hidden but exposed to assistive tech (screen-reader-only live regions / labels) */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
 .dim { color: var(--ph-dim); }
 .dimb { color: var(--ph-dim); font-weight: normal; }
 .pos { color: var(--gold); }

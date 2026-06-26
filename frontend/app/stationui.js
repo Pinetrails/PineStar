@@ -19,6 +19,7 @@ const StationUI = (() => {
   let present = [];          // agent objects currently on the station
   const runningAgents = new Map();   // agentId -> live-run COUNT (concurrent streams can share an agentId, e.g. 'agent')
   let crewLiveWired = false;         // the crew-status live listener is registered exactly once
+  let lastStageSummary = '';         // #8: last screen-reader summary text, so we only update the live region on change
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
   let routineAgentId = 'agent'; // selected roster agent for new scheduled routines
@@ -229,6 +230,13 @@ const StationUI = (() => {
     if (sum) sum.innerHTML =
       '<span class="pos">▮ ' + working + ' WORKING</span>' +
       '<span class="dim">▯ ' + (present.length - working) + ' IDLE</span>';
+    // #8: keep the canvas's screen-reader live region in sync (the <canvas> itself is opaque to AT).
+    // Update only when the text actually changes so the region doesn't spam announcements every tick.
+    const stageSum = $('#stage-summary');
+    if (stageSum) {
+      const txt = 'Station crew: ' + working + ' working, ' + (present.length - working) + ' idle.';
+      if (txt !== lastStageSummary) { lastStageSummary = txt; stageSum.textContent = txt; }
+    }
   }
   // ref-counted so two concurrent runs sharing an agentId (e.g. two hero streams as 'agent') both count, and
   // one finishing doesn't prematurely flip the pill to IDLE while the other is still live. Deleted at 0 so
@@ -1114,7 +1122,7 @@ const StationUI = (() => {
     function paint(st) {
       const conn = st && st.connected;
       configured = !!(st && st.configured);
-      const color = conn ? '#8f8' : (configured ? '#fc6' : '#999');
+      const color = conn ? 'var(--ok)' : (configured ? 'var(--gold)' : 'var(--ph-dim)');
       statusEl.style.color = color;
       statusEl.textContent = conn ? ('● CONNECTED — polling' + (st.state && st.state !== 'up' ? ' (' + st.state + ')' : ''))
         : configured ? ('○ saved but offline — click CONNECT to reconnect' + (st.detail ? ' — ' + st.detail : ''))
@@ -1122,7 +1130,7 @@ const StationUI = (() => {
     }
     async function refresh() {
       try { const r = await fetch('/api/channels/telegram/status'); paint(await r.json()); }
-      catch (_) { configured = false; statusEl.style.color = '#999'; statusEl.textContent = '○ sidecar offline'; }
+      catch (_) { configured = false; statusEl.style.color = 'var(--ph-dim)'; statusEl.textContent = '○ sidecar offline'; }
     }
     buildMessaging._refresh = refresh;
     // live transport health: channel.connect (poll up / network down / fatal token error) is emitted + SSE-broadcast
@@ -1207,8 +1215,8 @@ const StationUI = (() => {
     const msgEl = body.querySelector('#mc-msg');
 
     function badge(state) {
-      return ({ up: ['#8f8', '● connected'], connecting: ['var(--gold)', '◌ connecting…'],
-                down: ['#999', '○ disabled'], error: ['var(--bad)', '✕ error'] })[state] || ['#999', '○ ' + esc(state || 'unknown')];
+      return ({ up: ['var(--ok)', '● connected'], connecting: ['var(--gold)', '◌ connecting…'],
+                down: ['var(--ph-dim)', '○ disabled'], error: ['var(--bad)', '✕ error'] })[state] || ['var(--ph-dim)', '○ ' + esc(state || 'unknown')];
     }
     function row(c) {
       const b = badge(c.state);
@@ -1286,7 +1294,7 @@ const StationUI = (() => {
         const j = await (await fetch('/api/spotify/status')).json();
         if (redirEl && j.redirectUri) redirEl.textContent = j.redirectUri;
         if (j.connected) {
-          statusEl.innerHTML = '<span style="color:#8f8">● connected</span>' + (j.scope ? ' <span class="dim">· ' + esc(j.scope) + '</span>' : '');
+          statusEl.innerHTML = '<span style="color:var(--ok)">● connected</span>' + (j.scope ? ' <span class="dim">· ' + esc(j.scope) + '</span>' : '');
           connectBtn.textContent = '↻ RECONNECT';
           disconnectBtn.style.display = '';
         } else {
@@ -1551,7 +1559,7 @@ const StationUI = (() => {
         // Tell the user what actually triggers a restore point under their current config, not an aspirational promise.
         const empty = (j && j.enabled)
           ? 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a command or edits a file at a WORKBENCH.</span>'
-          : 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a <b>shell command</b>. File-edit snapshots are off — enable them with <code>STARNET_CHECKPOINTS=1</code>.</span>';
+          : 'NO RESTORE POINTS YET.<br><span>They appear once this agent runs a <b>shell command</b>. File-edit snapshots aren\'t enabled on this station.</span>';
         listEl.innerHTML = snaps.length ? snaps.map(row).join('') : '<div class="fb-empty">' + empty + '</div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage restore points.</div>'; }
     }
@@ -1880,5 +1888,5 @@ const StationUI = (() => {
   }
   function getTheme() { return store.settings.theme; }
 
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => runningAgents.has(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
 })();
