@@ -1,4 +1,4 @@
-/* SKYNET — warroom.js : the LIVING WAR-ROOM visible layer.
+/* STARNET — warroom.js : the LIVING WAR-ROOM visible layer.
 
    Implements the war-room concept ON the real app, on top of the per-agent Channels gate:
      · a REACTOR spend gauge in the top bar (bound to real lifetime spend),

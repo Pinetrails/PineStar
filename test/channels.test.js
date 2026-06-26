@@ -29,6 +29,17 @@ A.eq(C.statusOf('a'), 'thinking…', 'begin sets status thinking');
 A.eq(C.snapshot('a').acc, '', 'begin clears stale acc');
 A.eq(C.snapshot('a').tools, [], 'begin clears stale tool lines');
 
+/* ---------- begin stamps the run-start (the COMMS elapsed timer); end clears it ---------- */
+C.reset();
+A.eq(C.startedAtOf('a'), 0, 'no channel yet → startedAt is 0');
+C.begin('a', 1700000000000);
+A.eq(C.startedAtOf('a'), 1700000000000, 'begin records the injected wall-clock start');
+A.eq(C.snapshot('a').startedAt, 1700000000000, 'snapshot carries startedAt (survives a stream switch)');
+C.begin('a', 0);   // a clock-less caller (or a test) leaves it unset rather than fabricating a time
+A.eq(C.startedAtOf('a'), 0, 'begin without a timestamp leaves startedAt 0 (no fabricated start)');
+C.begin('a', 1700000005000); C.end('a');
+A.eq(C.startedAtOf('a'), 0, 'end clears the run-start');
+
 /* ---------- THE CORE: two workstreams busy AT THE SAME TIME, fully isolated ---------- */
 C.reset();
 C.begin('a'); C.begin('b');

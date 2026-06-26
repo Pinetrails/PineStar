@@ -200,7 +200,7 @@
         try {
           res = await doFetch(baseUrl + '/chat/completions', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + (key || ''), 'Content-Type': 'application/json', 'HTTP-Referer': referer, 'X-Title': 'SKYNET' },
+            headers: { 'Authorization': 'Bearer ' + (key || ''), 'Content-Type': 'application/json', 'HTTP-Referer': referer, 'X-Title': 'STARNET' },
             body: JSON.stringify(body),
             signal
           });

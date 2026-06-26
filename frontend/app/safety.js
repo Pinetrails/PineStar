@@ -1,4 +1,4 @@
-/* SKYNET — safety.js : the always-visible E-STOP + a glanceable spend/cap readout.
+/* STARNET — safety.js : the always-visible E-STOP + a glanceable spend/cap readout.
 
    The harness autonomously spends the Commander's money and writes files, so it needs (1) a one-click
    "stop EVERYTHING" and (2) the budget made VISIBLE, not just enforced. HALT calls /api/halt — which kills

@@ -1,7 +1,7 @@
 # Conveyor Phase B — state & continuation handoff
 
 **Purpose:** so a fresh context can continue Phase B (functional + multi-agent conveyor routing) at full
-quality. Read this + the `skynet-conveyor-pipeline` memory + `docs/CONVEYOR_PIPELINE_PLAN.md` first.
+quality. Read this + the `starnet-conveyor-pipeline` memory + `docs/CONVEYOR_PIPELINE_PLAN.md` first.
 
 ## Where we are (2026-06-15)
 
@@ -76,7 +76,7 @@ the single authority `require()`d by both the frontend sim and the sidecar route
   2 bays + equip each room with a console → DM 'research…'/'code…' → each sorts to the right bay + lights up.
 
 ### Verifying world.js (browser) — the worktree-served preview
-The running `skynet-frontend` preview serves the *integration tree*, NOT this worktree. Added a
+The running `starnet-frontend` preview serves the *integration tree*, NOT this worktree. Added a
 `workpipe-b-frontend` launch config (`http-server C:/Users/andro/gen-trees/workpipe-b/frontend -p 8099`).
 world.js is not headless; verify via that preview: `preview_eval` to compile a synthetic floor + check
 `Pipeline`/`resolveTarget`, instrument `ctx.fillRect` to confirm bodies drew (screenshots time out on the

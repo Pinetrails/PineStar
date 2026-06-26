@@ -1,10 +1,12 @@
-/* SKYNET — save.js : local persistence for the agent + session.
+/* STARNET — save.js : local persistence for the agent + session.
    A VERSIONED envelope so saves survive future changes. localStorage for now;
    the same shape + migration ladder moves to the SQLite sidecar later. */
 'use strict';
 
 const Save = (() => {
-  const KEY = 'skynet.save';
+  const KEY = 'starnet.save';
+  const LEGACY_SCHEMA = 'skynet.save';   // Skynet→StarNet rename: saves written before the rename carry this schema tag (the
+  const SCHEMA = 'starnet.save';         // legacymigrate boot pass copies the OLD `skynet.save` localStorage KEY forward; load() still accepts the old TAG inside the value).
   const CURRENT = 5;
 
   // forward-only migrations: { fromVersion: (doc) => upgradedDoc }
@@ -56,7 +58,7 @@ const Save = (() => {
       const raw = localStorage.getItem(KEY);
       if (!raw) return null;
       let doc = JSON.parse(raw);
-      if (!doc || doc.schema !== 'skynet.save' || !doc.agent) return null;
+      if (!doc || (doc.schema !== SCHEMA && doc.schema !== LEGACY_SCHEMA) || !doc.agent) return null;
       return migrate(doc);
     } catch (e) { console.warn('[save] load failed:', e); return null; }
   }
@@ -64,7 +66,7 @@ const Save = (() => {
   // returns the persisted doc (so callers can mirror the EXACT envelope to the durable sidecar), or null on
   // failure. The doc carries a fresh updatedAt stamp, which the sidecar uses to reject stale write-throughs.
   function write(state) {
-    const doc = Object.assign({ schema: 'skynet.save', version: CURRENT, updatedAt: Date.now() }, state);
+    const doc = Object.assign({ schema: SCHEMA, version: CURRENT, updatedAt: Date.now() }, state);
     try { localStorage.setItem(KEY, JSON.stringify(doc)); return doc; }
     catch (e) { console.warn('[save] write failed:', e); return null; }
   }

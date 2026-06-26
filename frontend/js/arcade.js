@@ -1,4 +1,4 @@
-/* SKYNET — arcade.js : "BREACH PROTOCOL" — the playable arcade cabinet.
+/* STARNET — arcade.js : "BREACH PROTOCOL" — the playable arcade cabinet.
    Clicking an arcade cabinet in the quarters opens a real game: a phosphor
    Space-Invaders descendant where rogue scraper-bots besiege the station and
    the Commander mans the point-defense turret. Renders into a low-res canvas
@@ -9,7 +9,7 @@
 
 const ARCADE = (() => {
   const W = 232, H = 290;            // internal phosphor resolution
-  const HI_KEY = 'skynet_arcade_hi';
+  const HI_KEY = 'starnet_arcade_hi';
   let cv = null, ctx = null, raf = 0, mounted = false, hidden = false;
   let last = 0, acc = 0, frameN = 0;
   let keys = {}, kd = null, ku = null;

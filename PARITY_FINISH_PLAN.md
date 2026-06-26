@@ -629,11 +629,11 @@ ORs with `SKYNET_CRON_ENABLED`, NOT runtime `process.env` mutation), then re-ren
     backlog — then arm the interval; no-op if a timer already runs) / `disarmCron()` (clear the interval). New
     privileged route **`POST /api/cron/arm {enabled:bool}`** persists the flag durably FIRST, sets the live
     `cronArmed`, then `armCron()`/`disarmCron()` so a due job fires within ONE tick of enabling with NO restart
-    and disabling stops the timer immediately. **Guarded by the SAME `x-skynet-token` gate as the cron CRUD
+    and disabling stops the timer immediately. **Guarded by the SAME `x-starnet-token` gate as the cron CRUD
     routes** — `rejectBadApiToken` runs before dispatch for every `/api/*` POST except
     `/api/session|/api/key|/api/save`, so a cross-site browser call can't arm the autonomous scheduler (NOT a
     weaker hand-rolled guard). The frontend `fetch` is already token-hardened (`harness.js` monkey-patch
-    auto-injects `X-Skynet-Token`), so no UI token plumbing was needed.
+    auto-injects `X-StarNet-Token`), so no UI token plumbing was needed.
   - **GET /api/cron `enabled`** now reports the live `cronArmed` (was boot-frozen `CRON_ENABLED`) so the panel
     reflects a runtime arm/disarm immediately. The cron.api.test `enabled:false` assertion still holds (cron
     off → `cronArmed` false).
@@ -650,7 +650,7 @@ ORs with `SKYNET_CRON_ENABLED`, NOT runtime `process.env` mutation), then re-ren
     persisted (exit 1); the inert-when-off + token-guard 403 assertions PASSED even pre-fix (the invariants
     that must not regress — and don't). GREEN after: `OK (25 assertions)`. Cases: (1) INERT-WHEN-OFF — boot OFF
     → `enabled:false`, no flag file, no timer armed, a due routine never ticks over a multi-tick window;
-    (2) TOKEN GUARD — arm without `X-Skynet-Token` → 403, enabled unchanged; (3) RUNTIME ARM — arm flips
+    (2) TOKEN GUARD — arm without `X-StarNet-Token` → 403, enabled unchanged; (3) RUNTIME ARM — arm flips
     `enabled:true`, persists `armed:true`, and the LIVE timer ticks a DUE one-shot within one tick (the
     non-mockable `[cron] cron.tick` signal — no key → no-capability path → zero spend); (4) RUNTIME DISARM —
     flips off, persists `armed:false`, no further ticks run; (5) ARM-AT-BOOT — a persisted `armed:true` arms
@@ -954,7 +954,7 @@ merge in small increments.
   **`POST /api/cron/arm {enabled:bool}`** persists the flag durably FIRST, sets the live `cronArmed`, then actually
   arms/disarms the live timer NOW via idempotent `armCron()` (one immediate reconcile under the G4.3 lock + arm the
   interval) / `disarmCron()` (clear it) — so a due job fires within ONE tick of enabling with NO restart. Guarded by
-  the SAME `x-skynet-token` gate as the cron CRUD routes (`rejectBadApiToken` before dispatch), not a weaker
+  the SAME `x-starnet-token` gate as the cron CRUD routes (`rejectBadApiToken` before dispatch), not a weaker
   hand-rolled guard. `GET /api/cron enabled` now reports the live `cronArmed` (reflects a runtime arm/disarm
   immediately). UI (`stationui buildRoutines`): OFF shows a red "scheduling is OFF — routines will NOT fire" badge +
   one-click ENABLE SCHEDULING; ON shows armed + DISABLE. INERT-WHEN-OFF preserved (no env + no flag → cronArmed=false

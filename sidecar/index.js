@@ -40,6 +40,7 @@ const { resolveTools } = require('./capability/resolve.js');
 const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
+const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const codexAuth = require('./providers/codex-auth.js');
@@ -60,24 +61,37 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
+const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
+const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
+const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/disable choices for the recipe library
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
+const { makeEnvironmentManager } = require('./environment.js');     // Hermes-style execution backend boundary
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
+const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
-const PORT = Number(process.env.SKYNET_PORT || process.env.PORT) || 8787;
-const API_TOKEN = String(process.env.SKYNET_API_TOKEN || crypto.randomBytes(32).toString('hex'));
+// ---- Skynet→StarNet env back-compat ------------------------------------------------------------
+// The project was renamed Skynet → StarNet; its env vars moved SKYNET_* → STARNET_*. ENV() reads the
+// NEW name first and falls back to the LEGACY one, so existing launch configs / shells / the desktop
+// shell keep working unchanged. Membership test (not truthiness) so a deliberately-empty STARNET_X
+// still wins over a set SKYNET_X — preserving each downstream var's exact empty-vs-unset semantics.
+function ENV(suffix) { const k = 'STARNET_' + suffix; return (k in process.env) ? process.env[k] : process.env['SKYNET_' + suffix]; }
+
+const PORT = Number(ENV('PORT') || process.env.PORT) || 8787;
+const API_TOKEN = String(ENV('API_TOKEN') || crypto.randomBytes(32).toString('hex'));
 // DEV fast-path (the `npm run dev:seed` launcher sets this): when on, the served index.html carries a small
-// boot payload (window.__SKYNET_DEV__ = {model, prov}) so a fresh browser origin auto-resumes the server-
+// boot payload (window.__STARNET_DEV__ = {model, prov}) so a fresh browser origin auto-resumes the server-
 // seeded save with no connect screen / awakening. Holds NO secret — the API key stays in runtimeKey. Never
 // set in a packaged build, so this is inert in shipping. Loopback-only like the rest of the server.
-const DEV_MODE = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_DEV || '').trim());
+const DEV_MODE = /^(1|true|yes|on)$/i.test(String(ENV('DEV') || '').trim());
 const LOOPBACK_ORIGINS = new Set(['http://127.0.0.1:' + PORT, 'http://localhost:' + PORT]);
 const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
 function isAllowedApiOrigin(origin) {
@@ -97,7 +111,7 @@ function applyApiCors(req, res) {
     res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-Skynet-Token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-StarNet-Token,X-Skynet-Token');   // accept the legacy header name too (old Tauri shell)
   res.setHeader('Access-Control-Max-Age', '600');
 }
 function rejectApi(req, res) {
@@ -106,7 +120,7 @@ function rejectApi(req, res) {
   return false;
 }
 function apiTokenOk(req) {
-  const got = String(req.headers['x-skynet-token'] || '');
+  const got = String(req.headers['x-starnet-token'] || req.headers['x-skynet-token'] || '');   // dual-accept: legacy header still honored
   if (!got || got.length !== API_TOKEN.length) return false;
   try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(API_TOKEN)); } catch (_) { return false; }
 }
@@ -122,11 +136,11 @@ function rejectBadApiToken(req, res) {
 }
 // Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
-let runtimeKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
+let runtimeKey = String(ENV('OPENROUTER_KEY') || '').trim();
 // OpenRouter base URL override (env SKYNET_OPENROUTER_BASE). Default undefined -> the provider's own
 // https://openrouter.ai/api/v1. Lets a user point at an OR-compatible proxy, and lets the boot+run E2E aim
 // the provider at a local mock so the real streaming path is tested end-to-end without a live key.
-const OPENROUTER_BASE = String(process.env.SKYNET_OPENROUTER_BASE || '').trim() || undefined;
+const OPENROUTER_BASE = String(ENV('OPENROUTER_BASE') || '').trim() || undefined;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
 // the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). SKYNET_WORKSPACES
 // wins (the desktop shell + isolated tests set it); otherwise resolve a PER-USER, writable OS app-data dir.
@@ -137,12 +151,18 @@ function defaultWorkspaces() {
   const base = process.env.LOCALAPPDATA || process.env.APPDATA            // Windows: %LOCALAPPDATA% (machine-local app data)
     || process.env.XDG_DATA_HOME                                          // Linux XDG
     || path.join(os.homedir() || '.', '.local', 'share');                 // POSIX fallback
-  return path.join(base, 'Skynet', 'workspaces');
+  // Skynet→StarNet rename back-compat: prefer the NEW dir; if it doesn't exist yet but the OLD one does, keep
+  // using the old one IN PLACE (no move) so existing data is never lost and any old-code process that still
+  // looks for \Skynet\ keeps sharing the same data (no split-brain). Fresh installs land under \StarNet\.
+  const neu = path.join(base, 'StarNet', 'workspaces');
+  const old = path.join(base, 'Skynet', 'workspaces');   // legacy pre-rename location — read in place, never renamed
+  try { if (!fs.existsSync(neu) && fs.existsSync(old)) return old; } catch (_) {}
+  return neu;
 }
-const WORKSPACES = process.env.SKYNET_WORKSPACES ? path.resolve(process.env.SKYNET_WORKSPACES) : defaultWorkspaces();
+const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
 // maxIters: per-run tool-turn ceiling. Raised 16→40 (P0.3) so real multi-step work isn't truncated early;
 // env-overridable. Parsed inline (num() is defined below). The loop adds one grace turn on top to finish cleanly.
-const CAPS = { maxIters: (Number(process.env.SKYNET_MAX_ITERS) > 0 ? Math.floor(Number(process.env.SKYNET_MAX_ITERS)) : 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+const CAPS = { maxIters: (Number(ENV('MAX_ITERS')) > 0 ? Math.floor(Number(ENV('MAX_ITERS'))) : 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
 // can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.
@@ -150,18 +170,18 @@ const CAPS = { maxIters: (Number(process.env.SKYNET_MAX_ITERS) > 0 ? Math.floor(
 // disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
 const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
 const BUDGET_CAPS = {
-  perRun: num(process.env.SKYNET_BUDGET_PER_RUN, 3),
-  perAgent: num(process.env.SKYNET_BUDGET_PER_AGENT, 5),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned)
-  perDay: num(process.env.SKYNET_BUDGET_PER_DAY, 40),
-  global: num(process.env.SKYNET_BUDGET_GLOBAL, 100)
+  perRun: num(ENV('BUDGET_PER_RUN'), 3),
+  perAgent: num(ENV('BUDGET_PER_AGENT'), 5),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned)
+  perDay: num(ENV('BUDGET_PER_DAY'), 40),
+  global: num(ENV('BUDGET_GLOBAL'), 100)
 };
 // Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
 // (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
 // parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
-const MAX_CONCURRENT_AGENTS = num(process.env.SKYNET_MAX_CONCURRENT_AGENTS, 3);
+const MAX_CONCURRENT_AGENTS = num(ENV('MAX_CONCURRENT_AGENTS'), 3);
 // Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
 // runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
-const ORCH_PER_WORKER = num(process.env.SKYNET_BUDGET_PER_WORKER, 1);
+const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
 const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the same
@@ -169,8 +189,8 @@ const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered
 // ChatGPT OAuth token. A job with no model falls back to the selected agent model or SKYNET_DEFAULT_MODEL;
 // absent model/credentials, a due job no-capability-skips rather than firing. Cadence + the self-healing lease
 // ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
-const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CRON_ENABLED || '').trim());
-const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
+const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CRON_ENABLED') || '').trim());
+const CRON_TICK_MS = num(ENV('CRON_TICK_MS'), 60000);
 // Host IANA timezone, captured ONCE at boot as a boot-frozen constant (G4.1). A cron schedule with no
 // explicit tz fires on this LOCAL wall-clock (so "0 9 * * *" means 09:00 here and shifts across DST),
 // while the pure cron-math (sidecar/cron.js) stays determinism-clean by receiving this as an INJECTED
@@ -178,25 +198,25 @@ const CRON_TICK_MS = num(process.env.SKYNET_CRON_TICK_MS, 60000);
 // headless server that should run routines in a specific zone); an invalid value falls back to UTC so a
 // typo never wedges the scheduler. A schedule's OWN tz always wins over this default.
 const CRON_HOST_TZ = (function () {
-  const override = String(process.env.SKYNET_CRON_TZ || '').trim();
+  const override = String(ENV('CRON_TZ') || '').trim();
   const candidate = override || (function () {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { return 'UTC'; }
   })();
   return cron.isValidTz(candidate) ? (candidate || 'UTC') : 'UTC';
 })();
-const CRON_MAX_RUN_MS = num(process.env.SKYNET_CRON_MAX_RUN_MS, CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
+const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
 // G4.4 global concurrency cap: at most this many cron runs may be IN-FLIGHT across all routines at once.
 // A tick whose due set would exceed it DEFERS the extra jobs to the next tick (without advancing their
 // nextRunAt, so they stay due) — a burst of simultaneously-due routines drains `maxParallel` at a time
 // rather than flooding the run host / spend all at once. Threaded as an INJECTED int so the cron driver
 // stays determinism-clean (it never reads process.env itself). Default 4.
-const CRON_MAX_PARALLEL = num(process.env.SKYNET_CRON_MAX_PARALLEL, 4);
+const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 4);
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
 // fast-tool timeout (CAPS.toolTimeoutMs) or it always times out before a real worker returns. Give it the same
 // ≈8-min single-run worst-case bound; env-tunable. Per-worker spend is still capped by ORCH_PER_WORKER.
-const ORCH_DISPATCH_TIMEOUT_MS = num(process.env.SKYNET_DISPATCH_TIMEOUT_MS, CRON_MAX_RUN_MS);
-const CRON_DEFAULT_MODEL = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
-const CRON_PERSONA = 'You are an autonomous SKYNET station agent running a SCHEDULED routine — no human is watching. '
+const ORCH_DISPATCH_TIMEOUT_MS = num(ENV('DISPATCH_TIMEOUT_MS'), CRON_MAX_RUN_MS);
+const CRON_DEFAULT_MODEL = String(ENV('DEFAULT_MODEL') || '').trim();
+const CRON_PERSONA = 'You are an autonomous STARNET station agent running a SCHEDULED routine — no human is watching. '
   + 'Carry out the task with your REAL tools (web search/read, files, memory); ground every factual claim in what the '
   + 'tools actually return and cite sources; save any durable deliverable to your workspace with fs_write. Be concise. '
   + 'If there is genuinely nothing new or noteworthy to report this run, reply with EXACTLY "[SILENT]" and nothing else.';
@@ -212,6 +232,52 @@ process.on('uncaughtException', e => console.error('uncaughtException:', (e && e
 
 try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 
+/* ---- P2 crash-safe persistence helpers for the single-file sibling stores (roster, dossier, channel
+   secrets, codex tokens, connectors, allowlist, notebook). Each of these was a plain
+   writeFileSync->rename (atomic but NOT power-loss durable) with a catch-and-return-empty loader (so a
+   torn/zero-length file booted the app AMNESIAC and the next write made it permanent). These route every
+   write through writeFileDurable (fsync-before-rename) + a .bak last-known-good snapshot, and every load
+   through readJsonResilient (recover the .bak on a torn/corrupt main; quarantine+log loudly when there is
+   no usable .bak — NEVER silently empty). A genuinely-absent file (new install/agent) is the only thing
+   that loads empty. These stores hold a FULL in-memory state snapshot on each write (not a disk-snapshot
+   read-modify-write), so they have no lost-update hazard and need no per-key lock — durability + recovery
+   is the fix they needed. (notebook + channels DO read-modify-write a per-key disk snapshot, so those get
+   the per-key serialized update() / sync-RMW path instead.) */
+let _quarantineSeq = 0;
+function quarantineCorrupt(file, tag) {
+  try {
+    const dest = file + '.corrupt-' + process.pid + '-' + (++_quarantineSeq);
+    fs.renameSync(file, dest);
+    console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered from .bak — quarantined to ' + dest + ' and loading empty (data NOT silently wiped).');
+  } catch (e) { console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered and could not be quarantined:', (e && e.message) || e); }
+}
+// load a single-file JSON store with last-known-good recovery; returns undefined for absent/corrupt.
+function loadResilient(file, tag) {
+  const r = readJsonResilient({ fs: fs }, file);
+  if (r.status === 'recovered') console.warn('[' + (tag || 'store') + '] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.');
+  else if (r.status === 'corrupt') quarantineCorrupt(file, tag);
+  return (r.status === 'ok' || r.status === 'recovered') ? r.value : undefined;
+}
+// durable single-file write: fsync-before-rename + snapshot the prior good value to <file>.bak.
+function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
+
+/* ---- P3 bounded append-only JSONL logs ----
+   The ledger / run-history / transcript are append-only and were read into RAM IN FULL at boot
+   (fs.readFileSync(FILE).split('\n')) and never rotated, so months of 24/7 use grow them without bound
+   until a single boot-time readFileSync crash-loops startup. readBoundedJsonl loads only the last
+   LOG_MAX_BYTES of (archive + live) at boot (newest lines), and rotateJsonl rolls the live file to
+   <file>.1 once it passes the cap — so BOOT memory/latency AND on-disk size stay bounded no matter how
+   old the history is. 16 MB of JSONL is far more than any display/query reads (run lists cap at ≤500,
+   insights bucket the last 24 h), so this is behavior-neutral in practice; the one residual — a global
+   ledger total can under-count only past ~2×LOG_MAX_BYTES of lifetime spend, which is far beyond any
+   default cap — is documented in docs/PERSISTENCE_HARDENING.md. Env-overridable. */
+const LOG_MAX_BYTES = Math.max(1 << 20, num(ENV('LOG_MAX_BYTES'), 16 * 1024 * 1024));
+function readBoundedJsonl(file) {
+  return loadBounded({ fs: fs }, file, LOG_MAX_BYTES)
+    .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+}
+function rotateJsonl(file) { try { rotateIfLarge({ fs: fs }, file, LOG_MAX_BYTES); } catch (_) {} }
+
 /* ---- spend ledger + budget (Wave 1 cost spine) ----
    The ledger is an append-only JSONL of finished runs (sibling of the fs jail, so the agent's own fs.* tools can
    neither read nor rewrite the spend record). Each append is fsync'd to disk so the day/global pools survive even
@@ -221,10 +287,7 @@ try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 const LEDGER_FILE = path.join(WORKSPACES, 'ledger.jsonl');
 const ledgerIo = {
   readAll() {
-    try {
-      return fs.readFileSync(LEDGER_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(LEDGER_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     // open(O_APPEND) -> write -> fsync -> close, all fail-open: a persistence error must never crash the run
@@ -236,6 +299,7 @@ const ledgerIo = {
       fs.fsyncSync(fd);
     } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(LEDGER_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
@@ -250,16 +314,14 @@ const concurrencyGate = makeConcurrencyGate({ max: MAX_CONCURRENT_AGENTS });
 const RUNS_FILE = path.join(WORKSPACES, 'runs.jsonl');
 const runsIo = {
   readAll() {
-    try {
-      return fs.readFileSync(RUNS_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(RUNS_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(RUNS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[runs] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(RUNS_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
@@ -273,16 +335,14 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
 const transcriptIo = {
   readAll() {
-    try {
-      return fs.readFileSync(TRANSCRIPT_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(TRANSCRIPT_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(TRANSCRIPT_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
@@ -305,6 +365,26 @@ const skillsIo = {
   }
 };
 const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact });
+
+// BUNDLED SKILL LIBRARY (capability-gated recipe packs shipped WITH StarNet — distinct from skillStore above,
+// which holds what the agent SAVES at runtime). Loaded once from sidecar/skills/library/*.md; the user's
+// enable/disable choices persist append-only (same fsync discipline as skillStore). Injected into each run's
+// system prompt below, gated by requires ⊆ the agent's placed objects (object = capability — the moat).
+const SKILL_LIBRARY = skillsCatalog.loadDir(path.join(__dirname, 'skills', 'library'), fs, path);
+const SKILL_PREFS_FILE = path.join(WORKSPACES, 'skillprefs.jsonl');
+const skillPrefsIo = {
+  readAll() {
+    try { return fs.readFileSync(SKILL_PREFS_FILE, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean); }
+    catch (e) { return []; }
+  },
+  append(entry) {
+    let fd = null;
+    try { fd = fs.openSync(SKILL_PREFS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
+    catch (e) { console.warn('[skills] prefs append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+  }
+};
+const skillPrefs = makeSkillPrefs({ io: skillPrefsIo, clock: { now: () => Date.now() } });
 
 // credential pool (P0.2): orders the primary OpenRouter key + alternates and cools a key that just hit a
 // rotate-reason failure (rate_limit/auth/billing) so it isn't retried first next run. In-memory only; never
@@ -329,23 +409,22 @@ function replaceAgentRoster(list) {
       name: String((a && a.name) || id).slice(0, 40),
       model: (a && a.model) ? String(a.model) : null,
       provider: normalizeProviderId((a && a.provider) || ''),
-      role: String((a && a.role) || '').slice(0, 120)
+      role: String((a && a.role) || '').slice(0, 120),
+      approvalMode: ((a && a.approvalMode) === 'full') ? 'full' : 'ask'   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
     });
   }
 }
 function loadAgentRoster() {
   try {
-    const raw = JSON.parse(fs.readFileSync(AGENT_ROSTER_FILE, 'utf8'));
-    replaceAgentRoster(raw && raw.agents);
+    const raw = loadResilient(AGENT_ROSTER_FILE, 'roster');   // last-known-good recovery; never silent-wipe
+    if (raw) replaceAgentRoster(raw && raw.agents);
   } catch (_) {}
 }
 function saveAgentRoster() {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '' }));
-    const tmp = AGENT_ROSTER_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, agents }));
-    fs.renameSync(tmp, AGENT_ROSTER_FILE);
+    saveResilient(AGENT_ROSTER_FILE, { version: 1, agents });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
 }
 loadAgentRoster();
@@ -361,26 +440,29 @@ const spotifyStore = makeSpotifyStore({ fsp, pathMod: path, dir: path.join(WORKS
 // in-flight PKCE verifiers keyed by the OAuth `state` (a round-trip completes in seconds). Pruned on each start.
 const spotifyPending = new Map();
 
-// PERSISTENT notebook (memory) — JSON file per agent, atomic write, survives sidecar restarts. Stored as a
+// PERSISTENT notebook (memory) — JSON file per agent, durable write, survives sidecar restarts. Stored as a
 // SIBLING of the agent's workspace dir (WORKSPACES/<aid>.notebook.json), OUTSIDE the fs-jailed
-// WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. Sync get/set to
-// match the notebook tool's store contract.
+// WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. get/set match the
+// notebook tool's store contract; update(key, mutator) is the SAFE per-agent-serialized write (P1) that
+// re-reads under a lock before merging so concurrent writers (recall fold + cron fire + UI edit) never lose
+// an update, and every write is fsync-durable + keeps a .bak last-known-good (P2).
 function notebookFile(key) {
   const aid = String(key).replace(/^notebook:/, '') || 'agent';
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('bad notebook agentId');
   return path.join(WORKSPACES, aid + '.notebook.json');
 }
+const notebookDurable = makeDurableJsonStore({
+  fs: fs, path: path, fileFor: notebookFile, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[notebook] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'notebook')
+});
 const notebookStore = {
-  get(key) { try { return JSON.parse(fs.readFileSync(notebookFile(key), 'utf8')); } catch (e) { return undefined; } },
-  set(key, value) {
-    try {
-      const f = notebookFile(key);
-      fs.mkdirSync(path.dirname(f), { recursive: true });
-      const tmp = f + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(value));
-      fs.renameSync(tmp, f);   // atomic replace
-    } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
-  }
+  // get/set tolerate a non-agent key (e.g. the todo tool's 'todo:<aid>', which notebookFile rejects) by
+  // failing soft, exactly as the prior plain-fs store did — behavior-neutral for those callers.
+  get(key) { try { return notebookDurable.get(key); } catch (e) { return undefined; } },
+  set(key, value) { try { notebookDurable.set(key, value); } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); } },
+  // update(key, mutator) -> Promise: per-agent serialized, re-read-under-lock, durable. The ONE safe writer.
+  update(key, mutator) { return notebookDurable.update(key, mutator); }
 };
 
 // PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
@@ -395,12 +477,10 @@ const commanderDossier = {
     this._block = String(block == null ? '' : block).slice(0, 4096);   // the frontend caps it ~800; this is a hard safety ceiling
     try {
       fs.mkdirSync(WORKSPACES, { recursive: true });
-      const tmp = DOSSIER_FILE + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ block: this._block }));
-      fs.renameSync(tmp, DOSSIER_FILE);   // atomic replace
+      saveResilient(DOSSIER_FILE, { block: this._block });   // fsync-durable + .bak last-known-good
     } catch (e) { console.warn('[dossier] persist failed:', (e && e.message) || e); }
   },
-  load() { try { const o = JSON.parse(fs.readFileSync(DOSSIER_FILE, 'utf8')); this._block = String((o && o.block) || ''); } catch (_) {} }
+  load() { const o = loadResilient(DOSSIER_FILE, 'dossier'); if (o) this._block = String((o && o.block) || ''); }
 };
 commanderDossier.load();
 
@@ -520,20 +600,18 @@ async function runReflection(o) {
 /* ---- consent (P1.5): the four-tier broker's host-side state ----
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
    prompt-injection escalation path (mirrors Hermes' import-frozen YOLO flag). */
-const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_FULL_ACCESS || '').trim());
+const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(ENV('FULL_ACCESS') || '').trim());
 // permanent allowlist of danger-class keys (capability:scope) the user has blessed forever. Lives BESIDE
 // the notebook store (sibling of the fs jail) so the agent's own fs.* tools can neither read nor rewrite it.
 const ALLOWLIST_FILE = path.join(WORKSPACES, 'permissions.allow.json');
 function loadAllowlist() {
   try {
-    const raw = JSON.parse(fs.readFileSync(ALLOWLIST_FILE, 'utf8'));
+    const raw = loadResilient(ALLOWLIST_FILE, 'permissions');   // recover blessed grants from .bak on a torn main
     return new Set((raw && Array.isArray(raw.allow) ? raw.allow : []).filter(x => typeof x === 'string'));
-  } catch (e) { return new Set(); }   // missing or corrupt -> nothing pre-allowed (fail-closed)
+  } catch (e) { return new Set(); }   // unrecoverable -> nothing pre-allowed (fail-closed, the safe default)
 }
 function persistAllowlist(nextAllow) {   // throws on failure -> the broker degrades the grant to a deny
-  const tmp = ALLOWLIST_FILE + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ version: 1, allow: nextAllow }));
-  fs.renameSync(tmp, ALLOWLIST_FILE);    // atomic replace
+  saveResilient(ALLOWLIST_FILE, { version: 1, allow: nextAllow });   // fsync-durable + .bak; throws on a real write failure
 }
 const grantsPermanent = loadAllowlist();   // process-wide, restored from disk
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
@@ -547,6 +625,7 @@ function blanketSetFor(agentId) {
   return s;
 }
 const pendingByRun = new Map();            // runId -> Map(promptId -> resolve(decision)); the live consent prompts
+const pendingSummonByRun = new Map();      // runId -> Map(requestId -> resolve(newAgentId|null)); live team.summon requests awaiting the browser
 // unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
 // resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
 function hardlineFloor(call) {
@@ -562,7 +641,7 @@ function hardlineFloor(call) {
    lone ambient-I/O edge (injected globalThis.fetch); the hub drives the SAME runOnce host with
    surface:'autonomous' (a headless chat has no browser to answer a consent prompt — ungranted writes
    default-deny and the run continues). Opt-in: nothing starts unless the Commander connects (or env is set). */
-const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the SKYNET station, reachable over Telegram. '
+const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET station, reachable over Telegram. '
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
   + 'report what you actually found; never claim you cannot act.';
@@ -572,37 +651,34 @@ let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled 
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 function loadChannelSecrets() {
-  try { const raw = JSON.parse(fs.readFileSync(CHANNEL_SECRETS_FILE, 'utf8')); return (raw && typeof raw === 'object') ? raw : {}; }
-  catch (e) { return {}; }   // missing/corrupt -> nothing configured
+  try { const raw = loadResilient(CHANNEL_SECRETS_FILE, 'channels'); return (raw && typeof raw === 'object') ? raw : {}; }
+  catch (e) { return {}; }   // unrecoverable -> nothing configured
 }
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    const tmp = CHANNEL_SECRETS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(obj));
-    fs.renameSync(tmp, CHANNEL_SECRETS_FILE);
+    saveResilient(CHANNEL_SECRETS_FILE, obj);   // fsync-durable + .bak last-known-good (bot token survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
 }
 let channelSecrets = loadChannelSecrets();
-const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() } });
+const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() }, writeDurable: writeFileDurable, onRecover: (file) => console.warn('[channels] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.') });
 
 // ---- Codex (personal ChatGPT subscription) OAuth tokens — a protected sibling of the fs jail, SAME posture
 //      as the channel secrets above: the agent's own fs.* tools can't reach it, and the access/refresh tokens
 //      are NEVER placed on the event bus. Shape: { access_token, refresh_token, last_refresh, auth_mode }. ----
 const CODEX_TOKENS_FILE = path.join(WORKSPACES, 'codex', 'tokens.json');
 function loadCodexTokens() {
-  try { const raw = JSON.parse(fs.readFileSync(CODEX_TOKENS_FILE, 'utf8')); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
+  try { const raw = loadResilient(CODEX_TOKENS_FILE, 'codex'); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
   catch (e) { return null; }
 }
 function saveCodexTokens(obj) {
   try {
     fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true });
-    const tmp = CODEX_TOKENS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(obj));
-    fs.renameSync(tmp, CODEX_TOKENS_FILE);
+    saveResilient(CODEX_TOKENS_FILE, obj);   // fsync-durable + .bak last-known-good (OAuth tokens survive power loss)
   } catch (e) { console.warn('[codex] token persist failed:', (e && e.message) || e); }
 }
-function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} }
+// clear must also drop the .bak so a signed-out session can't be "recovered" from the last-known-good on reload.
+function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} }
 let codexTokens = loadCodexTokens();
 
 // Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
@@ -634,6 +710,9 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 // run that started it. shell.bg.exit fires AFTER the originating run's NDJSON stream closed, so it rides the
 // durable channel bus (chanEmit). Children are unref'd; killAll() reaps them on E-STOP (handleHalt) / shutdown.
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5 });
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
+try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
+const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
 
 // per-agent inbound work-item depth (backpressure): bumped when a message is admitted, dropped when its
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
@@ -653,16 +732,14 @@ const router = makeRouter();
 const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
 function loadConnectorConfigs() {
-  try { const raw = JSON.parse(fs.readFileSync(CONNECTORS_FILE, 'utf8')); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
-  catch (e) { return []; }   // missing/corrupt -> nothing configured
+  try { const raw = loadResilient(CONNECTORS_FILE, 'connectors'); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
+  catch (e) { return []; }   // unrecoverable -> nothing configured
 }
 let connectorConfigs = loadConnectorConfigs();
 function saveConnectorConfigs() {
   try {
     fs.mkdirSync(CONNECTORS_DIR, { recursive: true });
-    const tmp = CONNECTORS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, connectors: connectorConfigs }));
-    fs.renameSync(tmp, CONNECTORS_FILE);   // atomic replace
+    saveResilient(CONNECTORS_FILE, { version: 1, connectors: connectorConfigs });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
 }
 const connectors = makeConnectorManager({
@@ -833,7 +910,7 @@ function disarmCron() {
    via SKYNET_CHECKPOINTS (default OFF = the existing run path is byte-identical) and FAIL-OPEN (a git problem
    never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
    the git/fs is here, the one ambient-I/O edge. ---- */
-const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(process.env.SKYNET_CHECKPOINTS || '').trim());
+const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
 const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(shell|verify)\./.test(name);
 function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
   return new Promise((resolve) => {
@@ -1027,6 +1104,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
+  if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
@@ -1047,6 +1125,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'POST' && req.url === '/api/skills/toggle') return handleSkillToggle(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/skills') === 0) return serveSkills(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/auth/start') return handleSpotifyStart(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/spotify/callback') === 0) return handleSpotifyCallback(req, res);
   if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
@@ -1061,11 +1141,14 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
+  if (req.method === 'GET' && req.url === '/api/execution') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); }
+  if (req.method === 'GET' && req.url.indexOf('/api/subagents') === 0) return handleSubagentsList(req, res);
+  if (req.method === 'POST' && req.url === '/api/subagents/interrupt') return handleSubagentInterrupt(req, res);
   // honest concurrency surface: how many distinct agents can RUN at once (the gate that silently 'refuses'
   // excess parallel workers). The summon bay reads this so the ceiling is visible BEFORE a fan-out, not only
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
   if (req.method === 'GET' && req.url === '/api/limits') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); }
-  if (req.method === 'GET' && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  if ((req.method === 'GET' || req.method === 'HEAD') && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
@@ -1082,8 +1165,8 @@ const server = http.createServer((req, res) => {
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
-  if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set SKYNET_PORT=<n> and retry.');
-  else if (e && e.code === 'EACCES') console.error('✗ Port ' + PORT + ' needs elevated privileges — pick a port >= 1024 via SKYNET_PORT.');
+  if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
+  else if (e && e.code === 'EACCES') console.error('✗ Port ' + PORT + ' needs elevated privileges — pick a port >= 1024 via STARNET_PORT.');
   else console.error('✗ sidecar listen error:', e);
   process.exit(1);
 });
@@ -1091,7 +1174,7 @@ server.listen(PORT, '127.0.0.1', () => {
   const url = 'http://127.0.0.1:' + PORT;
   const bar = '═'.repeat(58);
   console.log('\n' + bar);
-  console.log('  ▲ SKYNET — THE FULL APP IS RUNNING (UI + agent engine).');
+  console.log('  ▲ STARNET — THE FULL APP IS RUNNING (UI + agent engine).');
   console.log('     Open in your browser:  ' + url);
   console.log('     This one process IS the complete product — the UI you see and');
   console.log('     the agents/web-search/tools behind it are all served from here.');
@@ -1105,18 +1188,18 @@ server.listen(PORT, '127.0.0.1', () => {
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
-    const envTok = String(process.env.SKYNET_TELEGRAM_TOKEN || '').trim();
-    const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
-    const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+    const envTok = String(ENV('TELEGRAM_TOKEN') || '').trim();
+    const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
+    const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
     if (t.enabled && t.token && t.model && (providerUsesCodex(t.provider) || t.key || runtimeKey)) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider }); console.log('  · telegram auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
   try {
     const d = (channelSecrets && channelSecrets.discord) || {};
-    const envTok = String(process.env.SKYNET_DISCORD_TOKEN || '').trim();
-    const envKey = String(process.env.SKYNET_OPENROUTER_KEY || '').trim();
-    const envModel = String(process.env.SKYNET_DEFAULT_MODEL || '').trim();
+    const envTok = String(ENV('DISCORD_TOKEN') || '').trim();
+    const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
+    const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
     if (d.enabled && d.token && d.model && (providerUsesCodex(d.provider) || d.key || runtimeKey)) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider }); console.log('  · discord auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startDiscord(envTok, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
   } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
@@ -1188,8 +1271,8 @@ async function handleBudgetResume(req, res) {
 /* desktop key push: the parent shell sets the live BYOK key here (token-gated), so changing the
    key never restarts the sidecar. SKYNET_IPC_TOKEN is a per-launch secret only the shell knows. */
 async function handleSetKey(req, res) {
-  const token = String(process.env.SKYNET_IPC_TOKEN || '');
-  if (!token || req.headers['x-skynet-token'] !== token) { res.writeHead(403); return res.end('forbidden'); }
+  const token = String(ENV('IPC_TOKEN') || '');
+  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
   try { runtimeKey = String(await readBody(req, 1 << 14) || '').trim(); } catch (_) {}
   res.writeHead(200); return res.end('ok');
 }
@@ -1248,7 +1331,7 @@ function spotifyHtml(res, code, title, body) {
   res.end('<!doctype html><meta charset=utf-8><title>' + spotifyEsc(title) + '</title>' +
     '<body style="font:16px/1.5 system-ui,sans-serif;background:#0b0f14;color:#bfe8d4;display:grid;place-items:center;height:90vh;text-align:center">' +
     '<div><h2 style="margin:.2em 0">' + spotifyEsc(title) + '</h2><p>' + spotifyEsc(body) + '</p>' +
-    '<p style="opacity:.55;font-size:.9em">You can close this window and return to Skynet.</p></div>');
+    '<p style="opacity:.55;font-size:.9em">You can close this window and return to StarNet.</p></div>');
 }
 
 async function handleSpotifyStart(req, res) {
@@ -1256,7 +1339,7 @@ async function handleSpotifyStart(req, res) {
   let clientId = String(body.clientId || '').trim();
   if (clientId) { try { await spotifyStore.setClientId(clientId); } catch (_) {} }
   else { try { clientId = (await spotifyStore.getClientId()) || ''; } catch (_) {} }
-  if (!clientId) clientId = String(process.env.SKYNET_SPOTIFY_CLIENT_ID || '').trim();
+  if (!clientId) clientId = String(ENV('SPOTIFY_CLIENT_ID') || '').trim();
   if (!clientId) return spotifyJson(res, 400, { error: 'A Spotify Client ID is required. Create an app at https://developer.spotify.com/dashboard, add the redirect URI ' + SPOTIFY_REDIRECT + ' to it, then send its Client ID.', redirectUri: SPOTIFY_REDIRECT });
   // prune stale pending states (> 10 min) so the map can't grow unbounded
   const cutoff = Date.now() - 600000;
@@ -1278,7 +1361,7 @@ async function handleSpotifyCallback(req, res) {
   const state = u.searchParams.get('state') || '';
   const pending = spotifyPending.get(state);
   spotifyPending.delete(state);
-  if (!code || !pending) return spotifyHtml(res, 400, 'Link expired', 'That sign-in link is no longer valid — start again from Skynet Settings.');
+  if (!code || !pending) return spotifyHtml(res, 400, 'Link expired', 'That sign-in link is no longer valid — start again from StarNet Settings.');
   try {
     const r = await globalThis.fetch(spotifyPkce.TOKEN_URL, {
       method: 'POST',
@@ -1352,7 +1435,7 @@ function handleCronList(req, res) {
 }
 
 // POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
-// Privileged: this route is behind the SAME x-skynet-token gate as the cron CRUD routes (rejectBadApiToken
+// Privileged: this route is behind the SAME x-starnet-token gate as the cron CRUD routes (rejectBadApiToken
 // runs before dispatch for every /api/* POST except /api/session|/api/key|/api/save), so a browser-driven
 // cross-site call can't arm the autonomous scheduler. It (a) PERSISTS the cronArmed flag durably and (b)
 // ACTUALLY arms/disarms the live timer NOW — arming fires a due job within ONE tick with no restart; the
@@ -1556,6 +1639,26 @@ function handleCheckpointList(req, res) {
 // POST /api/roster { agents:[{ agentId, system, name, model, provider }] } — the browser pushes the live crew identities
 // so team.dispatch can run a WORKER as itself (its composed system prompt + model/provider). Replaces the whole roster
 // each push (the browser sends the full live set on summon/focus). Contract-free: plain HTTP, no bus event.
+function handleSubagentsList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const id = u.searchParams.get('id');
+    if (id) {
+      const rec = subagents.get(id);
+      return json(rec ? 200 : 404, rec || { error: 'not found' });
+    }
+    json(200, { records: subagents.list({ leadId: u.searchParams.get('leadId') || undefined, agentId: u.searchParams.get('agentId') || undefined, status: u.searchParams.get('status') || undefined }) });
+  } catch (e) { json(500, { error: 'subagents list failed' }); }
+}
+
+async function handleSubagentInterrupt(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  try { json(200, subagents.interrupt(String(body.id || ''), body.leadId ? String(body.leadId) : undefined)); }
+  catch (e) { json(400, { ok: false, error: (e && e.message) || String(e) }); }
+}
+
 async function handleRoster(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
@@ -1577,6 +1680,30 @@ async function handleDossier(req, res) {
   commanderDossier.set(body && body.block);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, chars: commanderDossier.get().length }));
+}
+
+// GET /api/skills?placed=cabinet,workbench — the bundled recipe library + per-workstation flags for the SKILLS
+// panel. `placed` (the selected agent's real floor objects, from World.heroCaps) drives the available/locked
+// readout; the enabled flag is the station-wide choice. Bodies are included so the panel can expand without a
+// second fetch (what the user reads == what the run is told — no divergence).
+function serveSkills(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const placedTypes = String(u.searchParams.get('placed') || '').split(',').map(s => s.trim()).filter(Boolean);
+    json(200, { skills: skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes }) });
+  } catch (e) { json(200, { skills: [] }); }
+}
+// POST /api/skills/toggle { slug, enabled } — persist a station-wide enable/disable choice for a library recipe.
+// Station-wide by design: per-AGENT reach stays the capability gate (the placed objects), not a per-agent toggle.
+async function handleSkillToggle(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const slug = String(body.slug || '').trim();
+  if (!slug) return json(400, { error: 'slug required' });
+  const r = skillPrefs.set(slug, !!body.enabled);
+  if (!r.ok) return json(400, { error: r.error || 'could not save' });
+  json(200, { ok: true, slug: r.slug, enabled: r.enabled });
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
@@ -1621,6 +1748,8 @@ async function handleRun(req, res) {
   runs.set(runId, ac);
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
+  const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
+  pendingSummonByRun.set(runId, pendingSummon);
   req.on('close', () => { ac.abort(); runs.delete(runId); });   // tab closed / DISCONNECT → stop spend
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
@@ -1652,6 +1781,36 @@ async function handleRun(req, res) {
     });
   }
 
+  // THE LIVE SUMMON CHANNEL (mirrors promptConsent): the orchestrator's team.summon tool calls ctx.summon(spec);
+  // this emits crew.summon.request down the SAME NDJSON stream, the browser runs the REAL summonAgent() and POSTs
+  // /api/summon/ack with the new agentId (handleSummonAck), which resolves this Promise. Fail-closed identically: a
+  // disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall settles to null (no agent created) so a forgotten request
+  // can never hold a billable run open. Settles exactly once. The new id flows back to the lead for team.dispatch.
+  function summonRequest(spec) {
+    return new Promise((resolve) => {
+      const requestId = crypto.randomUUID();
+      let settled = false, timer = null;
+      function onAbort() { finish(null); }
+      function finish(newAgentId) {
+        if (settled) return; settled = true;
+        pendingSummon.delete(requestId);
+        if (timer) clearTimeout(timer);
+        try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
+        resolve(newAgentId || null);
+      }
+      pendingSummon.set(requestId, finish);
+      if (ac.signal.aborted) return finish(null);
+      ac.signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => finish(null), CONSENT_TIMEOUT_MS);
+      const s = spec || {};
+      emit('crew.summon.request', {
+        requestId, agentId,
+        name: String(s.name || ''), specId: String(s.specId || ''),
+        persona: String(s.persona || ''), skin: String(s.skin || ''), purpose: String(s.purpose || '')
+      });
+    });
+  }
+
   // all setup + the run live inside ONE try, so any failure becomes a clean agent.run.error + closed stream
   try {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
@@ -1659,7 +1818,7 @@ async function handleRun(req, res) {
     await runOnce({
       key, model, system, messages, agentId, isTask, provider, fallbackModels,
       emit, signal: ac.signal, runId, trigger: 'directive',
-      surface: 'interactive', prompt: promptConsent,
+      surface: 'interactive', prompt: promptConsent, summon: summonRequest,   // team.summon → live summonAgent() round-trip
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
@@ -1673,6 +1832,8 @@ async function handleRun(req, res) {
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
+    const ps = pendingSummonByRun.get(runId);   // settle any summon request still open → null (no agent created)
+    if (ps) { for (const f of ps.values()) { try { f(null); } catch (_) {} } pendingSummonByRun.delete(runId); }
     try { res.end(); } catch (_) {}
   }
 }
@@ -1689,6 +1850,7 @@ async function runOnce(o) {
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
+  const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
   const trigger = o.trigger || 'directive';
   // P1 (WIRING_AUDIT slice 2): a server-initiated run (telegram/routed) has NO browser-local copy of its
   // lifecycle, so the station floor never lights for it. When a caller opts in via o.broadcast, ALSO mirror the
@@ -1716,7 +1878,7 @@ async function runOnce(o) {
   // up-front refusal uses (Codex sign-in / non-tool model), reason 'error', transient (a slot may free up).
   if (!concurrencyGate.tryEnter(agentId)) {
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
-    emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise SKYNET_MAX_CONCURRENT_AGENTS.' });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise STARNET_MAX_CONCURRENT_AGENTS.' });
     emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
     return;
   }
@@ -1727,7 +1889,7 @@ async function runOnce(o) {
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({ store: skillStore }).register(registry);   // H4: skill.write/list/view — the agent's reusable procedure library (memory capability)
@@ -1740,14 +1902,14 @@ async function runOnce(o) {
   makeSpotifyTools({ store: spotifyStore }).register(registry);
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
-  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
+  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
-  makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
   makeOrchestrationTools({
-    runOnce, roster: () => agentRoster, key, model, provider: o.provider,
+    runOnce, roster: () => agentRoster, key, model, provider: o.provider, subagents,
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
   }).register(registry);
@@ -1783,15 +1945,23 @@ async function runOnce(o) {
   // P1.5: the real informed-consent broker. surface:'interactive' + prompt ⇒ ungranted mutations ask live;
   // surface:'autonomous' (no one watching, e.g. a Telegram chat) ⇒ default-deny on any ungranted mutation
   // (silence is not consent). Read-only/non-network auto-allows; the hardline floor sits below Full Access.
-  const consent = makeConsentBroker({
-    bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: runId,
+  // per-agent FULL ACCESS (chosen at create / in the dossier) bypasses the gate too — same effect as the global
+  // SKYNET_FULL_ACCESS env, but scoped to this agent. The hardline floor still applies below it.
+  const agentFullAccess = ((agentRoster.get(agentId) || {}).approvalMode === 'full');
+  // A delegated/summoned worker SHARES the lead's consent broker (o.consent) so it has the SAME access the
+  // orchestrator has: the lead's APPROVAL posture (full-auto bypass, or a live prompt forwarded to the WATCHED
+  // lead's COMMS) and its session grants. A top-level run builds its own. Safe across surfaces: a headless cron
+  // lead's broker is autonomous (default-deny + exec-lockout), so its workers inherit "no self-approved shell"
+  // — only a watched, interactive lead can let a worker write/run shell, and only with a human's click.
+  const consent = o.consent || makeConsentBroker({
+    bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
     networkOf: (call) => !!resolved.networkCaps[call.name],
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
-  const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
+  const capCtx = makeCapCtx(resolved, { emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -1818,7 +1988,7 @@ async function runOnce(o) {
   // THIS provider object (same priceOf catalog) with an alternate model, so a fallback's spend is priced right.
   // Source: o.fallbackModels (array of slugs from the run request) or env SKYNET_FALLBACK_MODELS (comma list).
   // On overload/429/5xx/auth/billing the loop retries the turn on the next model instead of dying. Empty = off.
-  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(process.env.SKYNET_FALLBACK_MODELS || '').split(','))
+  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(ENV('FALLBACK_MODELS') || '').split(','))
     .map(s => String(s || '').trim()).filter(s => s && s !== model);
   // CREDENTIAL ROTATION (P0.2): on a rate-limit/auth/billing failure the loop rotates to an alternate KEY for the
   // SAME model BEFORE trying alternate models. Pool source: o.keyPool (array) or env SKYNET_KEY_POOL (comma list).
@@ -1827,7 +1997,7 @@ async function runOnce(o) {
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
   if (!usingCodex) {
-    const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(process.env.SKYNET_KEY_POOL || '').split(','))
+    const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== key);
     rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk, baseUrl: OPENROUTER_BASE }), model, credKey: rk }));
   }
@@ -1940,17 +2110,37 @@ async function runOnce(o) {
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
       + 'final report of what you found/did and which files you saved.'
     : '';
-  // Stage 2: a LEAD run is told who its WORKER crew is (agentId + role) so it can address them via team.dispatch.
-  // Built FRESH from the roster the browser pushed (/api/roster); empty for a non-lead run or a solo station, so
-  // a single-agent run is byte-identical. Only the lead receives this (and the orchestrator tool above).
+  // Stage 2/3: a LEAD run is told it can DELEGATE to existing crew (team.dispatch, listed FRESH from the roster
+  // the browser pushed via /api/roster) AND SUMMON new specialists (team.summon). Only the lead gets this (it alone
+  // gets the orchestrator object above); a non-lead worker stays byte-identical (empty) so it can never re-delegate.
   let teamNote = '';
-  if (o.lead && agentRoster.size >= 2) {
+  if (o.lead) {
+    teamNote = '\n\n[ORCHESTRATION] You are the lead orchestrator. You can build and direct a crew for the Commander:';
     const lines = [];
     for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
-    if (lines.length) teamNote = '\n\n[YOUR CREW] You can delegate subtasks to these specialist agents with the team.dispatch tool — '
-      + 'call it with workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+    if (lines.length) teamNote += '\n• DELEGATE to your existing specialist crew with team.dispatch — call it with '
+      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+    teamNote += '\n• SUMMON a NEW specialist with team.summon when the Commander wants an agent you don\'t have yet '
+      + '(e.g. "create a research agent for me"): pass a class via specId (researcher, engineer, operator, scribe, '
+      + 'analyst, reviewer, scout, archivist, designer, chief, liaison) or a custom name + purpose. It returns the new '
+      + 'agentId, which you can immediately hand work to with team.dispatch. When the Commander asks you to create or '
+      + 'summon an agent, actually DO it with team.summon — don\'t just describe it or claim you cannot.';
   }
-  const sys = (system || '') + toolNote + teamNote + summarizeCapabilities(resolved, { surface });   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  // INSTALLED SKILLS (bundled recipe library): inject the bodies of the recipes the Commander ENABLED whose
+  // required objects are actually on THIS agent's floor (object = capability — the same gate the tools use). Empty
+  // when none qualify → byte-identical to a skill-less prompt. Riding the ONE place the final system prompt is
+  // assembled means it covers every surface (browser chat, cron, delegated worker) with no per-path change.
+  let skillBlock = '';
+  try {
+    const sRoom = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
+    const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
+    skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes });
+  } catch (_) { /* a skill-injection hiccup must never break a run */ }
+  // STARNET OPERATOR MANUAL: how the station works, so the agent can guide a stuck Commander. Interactive
+  // only (same gate as capsummary — a Commander is present to help and the build UI exists). Sits right
+  // BEFORE the authoritative <capabilities_ground_truth>, which it defers to, so the two never disagree.
+  const manualBlock = (surface === 'interactive') ? starnetManual() : '';
+  const sys = (system || '') + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -1987,12 +2177,18 @@ async function runOnce(o) {
       // old positional ranked[i] aliasing is gone.
       if (runId && recall.usedIds && recall.usedIds.length) {
         const usedAt = Date.now();
-        let updated = recs;
-        for (const id of recall.usedIds) {
-          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
-          emit('memory.used', { agentId, runId, id });
-        }
-        if (updated !== recs) notebookStore.set('notebook:' + agentId, updated);
+        // P1: fold the useCount/recency bumps under the per-agent lock, RE-READING the current notebook so a
+        // note the agent wrote this run (or a concurrent run/UI edit for the same agent) is not clobbered by a
+        // whole-array overwrite from this run's start-of-run snapshot.
+        await notebookStore.update('notebook:' + agentId, (cur) => {
+          const base = Array.isArray(cur) ? cur : [];
+          let updated = base;
+          for (const id of recall.usedIds) {
+            updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
+            emit('memory.used', { agentId, runId, id });
+          }
+          return updated !== base ? updated : undefined;   // skip the write when nothing changed
+        });
       }
     }
   } catch (_) {}
@@ -2073,6 +2269,19 @@ async function handleConsent(req, res) {
   res.writeHead(200); res.end('ok');
 }
 
+// POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran
+// the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
+// team.summon tool. A stale runId/requestId is a harmless no-op (the run ended or the request auto-settled to null).
+async function handleSummonAck(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const pend = pendingSummonByRun.get(body.runId);
+  const finish = pend && pend.get(body.requestId);
+  const newId = (body.agentId != null && /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId))) ? String(body.agentId) : null;
+  if (finish) finish(newId);
+  res.writeHead(200); res.end('ok');
+}
+
 async function handleCancel(req, res) {
   let runId;
   try { runId = (JSON.parse(await readBody(req, 4096)) || {}).runId; } catch (e) {}
@@ -2088,7 +2297,8 @@ async function handleCancel(req, res) {
 function handleHalt(req, res) {
   const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
   const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
-  try { shellBg.killAll(); } catch (_) {}   // H2.2: E-STOP also reaps every background process (no orphaned dev servers)
+  try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
+  try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ halted }));
@@ -2312,7 +2522,7 @@ async function handleTts(req, res) {
   try {
     or = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'SKYNET' },
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
       body: JSON.stringify(payload)
     });
   } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
@@ -2373,32 +2583,86 @@ const MIME = {
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif',
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.map': 'application/json',
   '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8',
-  '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.log': 'text/plain; charset=utf-8'
+  '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.log': 'text/plain; charset=utf-8',
+  // media types so an agent-produced clip serves with the right content-type and the chat can <video>/<audio> it.
+  // Webp/jpeg already covered above (image set). mkv/avi stream fine but most browsers can't decode them — the
+  // COMMS player falls back to an "open" link in that case, mirroring Hermes's OpenMediaButton.
+  '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
 };
+
+// parse a single-range `Range: bytes=a-b` header against a known size. Returns { start, end } (inclusive,
+// clamped) or null when there's no/blank range, or { unsatisfiable: true } when the range can't be served
+// (so the caller can answer 416). We honor only the first range — enough for <video>/<audio> seeking, which
+// is exactly what FileResponse / Electron's net stack give Hermes for free.
+function parseRange(header, size) {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
+  if (!m || (m[1] === '' && m[2] === '')) return { unsatisfiable: true };
+  let start, end;
+  if (m[1] === '') {                                  // suffix range: last N bytes
+    const n = parseInt(m[2], 10);
+    if (!n) return { unsatisfiable: true };
+    start = Math.max(0, size - n); end = size - 1;
+  } else {
+    start = parseInt(m[1], 10);
+    end = m[2] === '' ? size - 1 : Math.min(parseInt(m[2], 10), size - 1);
+  }
+  if (!(start >= 0) || start > end || start >= size) return { unsatisfiable: true };
+  return { start, end };
+}
 
 // GET /api/file?agent=<id>&path=<rel> — read-only view of a file the agent produced, jailed to its
 // workspace (resolveInside proves the path can't escape WORKSPACES/<agentId>/). Lets the user OPEN a
 // deliverable from the app instead of digging through the filesystem. Served inline, never as an attachment.
+// STREAMS the bytes (createReadStream, never the whole file in memory) and honors HTTP Range so the COMMS
+// <video>/<audio> elements can seek — the Node analogue of Starlette's FileResponse in the Hermes gateway.
 async function serveWorkspaceFile(req, res) {
+  let abs;
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
     const rel = u.searchParams.get('path') || '';
-    const { abs } = await fsJail.resolveInside(agent, rel);   // throws on jail escape / bad agentId / '..'
-    const data = await fsp.readFile(abs);
-    const ext = path.extname(abs).toLowerCase();
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Content-Disposition': 'inline; filename="' + path.basename(abs).replace(/[^A-Za-z0-9_.-]/g, '_') + '"',
-      'X-Content-Type-Options': 'nosniff'
-    });
-    res.end(data);
+    ({ abs } = await fsJail.resolveInside(agent, rel));   // throws on jail escape / bad agentId / '..'
   } catch (e) {
     const msg = (e && e.message) || '';
     if (/escape|illegal|bad agentId|bad notebook/.test(msg)) { res.writeHead(403); return res.end('forbidden'); }
-    res.writeHead(404); res.end('not found');
+    res.writeHead(404); return res.end('not found');
   }
+  let st;
+  try { st = await fsp.stat(abs); } catch (_) { res.writeHead(404); return res.end('not found'); }
+  if (!st.isFile()) { res.writeHead(404); return res.end('not found'); }
+
+  const ext = path.extname(abs).toLowerCase();
+  const headers = {
+    'Content-Type': MIME[ext] || 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Disposition': 'inline; filename="' + path.basename(abs).replace(/[^A-Za-z0-9_.-]/g, '_') + '"',
+    'X-Content-Type-Options': 'nosniff',
+    'Accept-Ranges': 'bytes'   // advertise range support so the browser asks for byte ranges when seeking
+  };
+
+  const range = parseRange(req.headers && req.headers.range, st.size);
+  let start = 0, end = st.size - 1, code = 200;
+  if (range && range.unsatisfiable) {
+    res.writeHead(416, { 'Content-Range': 'bytes */' + st.size, 'Accept-Ranges': 'bytes' });
+    return res.end();
+  }
+  if (range) {
+    start = range.start; end = range.end; code = 206;
+    headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + st.size;
+  }
+  headers['Content-Length'] = (end - start + 1);
+
+  // HEAD: browsers/players probe with it before streaming — answer headers only.
+  if (req.method === 'HEAD') { res.writeHead(code, headers); return res.end(); }
+
+  res.writeHead(code, headers);
+  const stream = fs.createReadStream(abs, { start, end });
+  stream.on('error', () => { try { res.destroy(); } catch (_) {} });
+  req.on('close', () => { try { stream.destroy(); } catch (_) {} });   // client navigated away / closed the tab
+  stream.pipe(res);
 }
 // GET /api/notebook?agent=<id> — read-only JSON view of the agent's own notebook (its memory.md in the
 // dossier). The agent WRITES these notes itself via the notebook tool during runs; this route only reads
@@ -2429,11 +2693,15 @@ async function handleNotebookRestore(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
   const incoming = Array.isArray(body.notes) ? body.notes : [];
   try {
-    const prev = notebookStore.get('notebook:' + agent);
-    const existing = Array.isArray(prev) ? prev : [];
-    const merged = mergeNotes(existing, incoming);
-    notebookStore.set('notebook:' + agent, merged);
-    json(200, { ok: true, total: merged.length, added: merged.length - existing.length });
+    // P1: merge under the per-agent lock, re-reading existing so a concurrent run's memory.write isn't lost.
+    let existingLen = 0, mergedLen = 0;
+    await notebookStore.update('notebook:' + agent, (prev) => {
+      const existing = Array.isArray(prev) ? prev : [];
+      const merged = mergeNotes(existing, incoming);
+      existingLen = existing.length; mergedLen = merged.length;
+      return merged;
+    });
+    json(200, { ok: true, total: mergedLen, added: mergedLen - existingLen });
   } catch (e) { json(400, { error: (e && e.message) || 'restore failed' }); }
 }
 
@@ -2554,13 +2822,17 @@ async function handleMemoryTurnin(req, res) {
   }
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
   if (!content) return json(400, { error: 'a kept memory cannot be empty' });
-  const stored = notebookStore.get('notebook:' + agentId);
-  const list = Array.isArray(stored) ? stored : [];
-  writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
-  const rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
-  rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
-  list.push(rec);
-  notebookStore.set('notebook:' + agentId, list);
+  // P1: write the kept record under the per-agent lock, RE-READING the list so the id (positional) is minted
+  // against the current notebook and a concurrent run's memory.write isn't clobbered by this whole-array set.
+  let rec = null;
+  await notebookStore.update('notebook:' + agentId, (stored) => {
+    const list = Array.isArray(stored) ? stored : [];
+    writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
+    rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
+    rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
+    list.push(rec);
+    return list;
+  });
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
   json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
@@ -2593,12 +2865,16 @@ async function handleMemoryMutate(req, res, op) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   if (!String(body.id || '')) return json(400, { error: 'id required' });
   const key = 'notebook:' + agentId;
-  const stored = notebookStore.get(key);
-  const list = Array.isArray(stored) ? stored : [];
-  const r = op(list, body, agentId);
+  // P1: apply the pure memcore op under the per-agent lock, RE-READING the list so a concurrent run's
+  // memory.write/used fold isn't clobbered by this whole-array set. Only persist on a real change.
+  let r = null;
+  await notebookStore.update(key, (stored) => {
+    const list = Array.isArray(stored) ? stored : [];
+    r = op(list, body, agentId);
+    return (r.error || !r.found) ? undefined : r.records;   // skip the write on error / not-found
+  });
   if (r.error) return json(400, { error: r.error });
   if (!r.found) return json(404, { error: 'no such memory' });
-  notebookStore.set(key, r.records);
   if (r.emit) { try { chanEmit(r.emit.name, r.emit.payload); } catch (_) {} }
   return json(200, Object.assign({ ok: true, id: String(body.id) }, r.extra || {}));
 }
@@ -2632,10 +2908,10 @@ async function serveStatic(req, res) {
     if (abs !== FRONTEND && abs.indexOf(FRONTEND + path.sep) !== 0) { res.writeHead(403); return res.end('forbidden'); }
     let data = await fsp.readFile(abs);
     if (abs.toLowerCase() === path.resolve(FRONTEND, 'index.html').toLowerCase()) {
-      let boot = '<script>window.__SKYNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
+      let boot = '<script>window.__STARNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
       // DEV fast-path: hand the page a model + provider hint so a fresh origin auto-resumes the seeded
       // save with no setup. No secret crosses here — the key stays server-side in runtimeKey.
-      if (DEV_MODE) boot += 'window.__SKYNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
+      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
       boot += '</script>';
       data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
     }

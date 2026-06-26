@@ -1,4 +1,4 @@
-/* SKYNET — build.js : the diegetic full-screen REFIT (build) mode.
+/* STARNET — build.js : the diegetic full-screen REFIT (build) mode.
 
    Toggled from the dock. Dims the live sim and drops the Commander into an in-fiction
    station-editor over the SAME procedural art: pan/zoom camera, phosphor build grid,
@@ -20,7 +20,7 @@ const Build = (() => {
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
     { id: 'belt', key: '7', label: '⇶ BELT', hint: 'drag to lay a conveyor — boxes flow the way you drag', cursor: 'crosshair' },
   ];
-  const SEEN_KEY = 'skynet.refit.seen';
+  const SEEN_KEY = 'starnet.refit.seen';
 
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
@@ -254,6 +254,7 @@ const Build = (() => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'bb sm refit-propcat' + (g === propCat ? ' active' : '');
+        b.dataset.cat = g;   // lets the tutorial light the exact category tab a step needs
         b.setAttribute('aria-pressed', g === propCat ? 'true' : 'false');
         b.textContent = CAT_LABEL[g] || g.toUpperCase();
         b.onclick = () => { propCat = g; if (CATS[g] && CATS[g][0]) propType = CATS[g][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
@@ -302,6 +303,7 @@ const Build = (() => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'refit-proptile' + (c.tier === 'functional' ? ' fn' : '') + (c.id === propType ? ' active' : '');
+    b.dataset.prop = c.id;   // lets the tutorial light a specific gear tile by id
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(c.id) : null;
     b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '');   // native fallback; the rich Fallout-style card is the hover surface

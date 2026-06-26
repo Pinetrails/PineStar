@@ -1,4 +1,4 @@
-/* SKYNET — harness.js : the REAL agent harness (BYOK).
+/* STARNET — harness.js : the REAL agent harness (BYOK).
    Owns the model connection + streaming + token/cost accounting.
 
    For this prototype the call goes browser -> OpenRouter directly (CORS-friendly,
@@ -8,7 +8,7 @@
 'use strict';
 
 const Harness = (() => {
-  const LS = { key: 'skynet.byok.key', model: 'skynet.byok.model', prov: 'skynet.byok.prov' };
+  const LS = { key: 'starnet.byok.key', model: 'starnet.byok.model', prov: 'starnet.byok.prov' };
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
@@ -25,19 +25,19 @@ const Harness = (() => {
   const DESKTOP = !!TAURI;
   const invoke = (cmd, args) => TAURI.invoke(cmd, args);
   // DEV fast-path (sidecar started with SKYNET_DEV=1, e.g. `npm run dev:seed`): the host injects
-  // window.__SKYNET_DEV__ = {model, prov} and holds the API key in its own env (runtimeKey). We treat dev
+  // window.__STARNET_DEV__ = {model, prov} and holds the API key in its own env (runtimeKey). We treat dev
   // like the desktop "server holds the key" seam — no key in the page, configured() is true, and a fresh
   // origin (a new worktree port) auto-resumes the server-seeded save with no connect screen / awakening.
-  const DEV = (typeof window !== 'undefined' && window.__SKYNET_DEV__ && typeof window.__SKYNET_DEV__ === 'object') ? window.__SKYNET_DEV__ : null;
+  const DEV = (typeof window !== 'undefined' && window.__STARNET_DEV__ && typeof window.__STARNET_DEV__ === 'object') ? window.__STARNET_DEV__ : null;
   const DEVMODE = !!DEV;
   if (DEVMODE) {
     try {
-      if (DEV.model) localStorage.setItem('skynet.byok.model', String(DEV.model));
-      localStorage.setItem('skynet.byok.prov', String(DEV.prov || 'openrouter'));
+      if (DEV.model) localStorage.setItem('starnet.byok.model', String(DEV.model));
+      localStorage.setItem('starnet.byok.prov', String(DEV.prov || 'openrouter'));
     } catch (_) {}
   }
   let _configured = false;   // desktop: cached "is a key stored?" (loaded by init())
-  let apiToken = (typeof window !== 'undefined' && window.__SKYNET_API_TOKEN__) ? String(window.__SKYNET_API_TOKEN__) : '';
+  let apiToken = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
 
   function isApiUrl(u) {
@@ -47,7 +47,7 @@ const Harness = (() => {
   function withApiToken(init, token) {
     init = Object.assign({}, init || {});
     const headers = new Headers(init.headers || {});
-    if (token) headers.set('X-Skynet-Token', token);
+    if (token) headers.set('X-StarNet-Token', token);
     init.headers = headers;
     return init;
   }
@@ -61,13 +61,13 @@ const Harness = (() => {
       .then(t => { apiTokenPromise = null; return t; });
     return apiTokenPromise;
   }
-  if (typeof window !== 'undefined' && window.fetch && !window.__SKYNET_FETCH_HARDENED__) {
+  if (typeof window !== 'undefined' && window.fetch && !window.__STARNET_FETCH_HARDENED__) {
     const rawFetch = window.fetch.bind(window);
     window.fetch = function (u, init) {
       if (!isApiUrl(u) || String(u) === '/api/session') return rawFetch(u, init);
       return ensureApiToken().then(t => rawFetch(u, withApiToken(init, t)));
     };
-    window.__SKYNET_FETCH_HARDENED__ = true;
+    window.__STARNET_FETCH_HARDENED__ = true;
   }
 
   /* desktop: load the keychain "configured?" flag once at boot, before the connect screen reads it */
@@ -138,7 +138,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, agentId, isTask, signal, streamId, workbench, placed }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, signal, streamId, workbench, placed }) {
     const key = getKey(), model = getModel(), provider = getProv();
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -193,6 +193,9 @@ const Harness = (() => {
           // the run is PAUSED on the sidecar awaiting this; the UI shows approve/always/full/deny and answers
           // via Harness.consent(). No more events arrive on this stream until the answer is POSTed.
           case 'permission.prompt': onPermission && onPermission(payload); break;
+          // a backend COMMAND: the orchestrator's team.summon tool asks us to create a worker. The handler runs the
+          // real summonAgent() and POSTs /api/summon/ack with the new id (Harness.summonAck), resolving the tool.
+          case 'crew.summon.request': onSummon && onSummon(payload); break;
           case 'agent.cost':
             totals.tokens += (payload.tokensIn || 0) + (payload.tokensOut || 0);
             totals.cost += payload.usd || 0;
@@ -246,6 +249,14 @@ const Harness = (() => {
     try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
   }
 
+  // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
+  // the run's awaiting team.summon tool. Separate request from the open /api/run stream — no deadlock. The summon
+  // tool has its own browser-ack timeout, so a dropped ack settles cleanly to "not completed" rather than hanging.
+  async function summonAck(runId, requestId, agentId) {
+    if (!runId || !requestId) return;
+    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, requestId, agentId: agentId || null }) }); } catch (_) {}
+  }
+
   // Cortex (M-mem.5b): after a run, reflection may PROPOSE durable memories (announced via the memory.proposed
   // SSE event). Fetch the pending candidates WITH content for the Keep/Edit/Discard turn-in beat. [] on failure.
   async function memoryProposals(runId, agentId) {
@@ -287,7 +298,7 @@ const Harness = (() => {
 
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, init, configured,
-    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, notebook,
+    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
     apiToken: () => apiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

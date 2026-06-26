@@ -36,7 +36,7 @@ for (let i = 0; i < 200; i++) if (!arr.includes(r3.pick(arr))) pickOk = false;
 A.ok(pickOk, 'pick() returns an element of the array');
 
 // ---- fnv ----
-A.eq(fnv('skynet'), fnv('skynet'), 'fnv is deterministic');
+A.eq(fnv('starnet'), fnv('starnet'), 'fnv is deterministic');
 A.ok(fnv('a') !== fnv('b'), 'fnv distinguishes inputs');
 
 A.report('clock-rng.test');

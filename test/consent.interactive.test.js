@@ -26,7 +26,7 @@ const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
 
-const ROOT = path.join(os.tmpdir(), 'skynet-consent-itest-' + process.pid);
+const ROOT = path.join(os.tmpdir(), 'starnet-consent-itest-' + process.pid);
 
 function writeTurn(wirePath) {
   return [

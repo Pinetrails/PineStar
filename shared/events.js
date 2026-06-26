@@ -80,6 +80,13 @@
     'permission.prompt': obj(['promptId', 'agentId', 'tool', 'scope'], {
       promptId: str, agentId: str, tool: str, scope: str, argsSummary: str
     }),
+    // a backend->frontend COMMAND (mirrors permission.prompt): the orchestrator's team.summon tool asks the
+    // LIVE station to create a new worker agent — the SAME action the Commander takes in the Recruitment Bay.
+    // The browser runs the real summonAgent() and POSTs /api/summon/ack with the new agentId, resolving the
+    // tool. agentId = the requesting LEAD (attribution); the new agent's id comes back on the ack, not here.
+    'crew.summon.request': obj(['requestId', 'agentId'], {
+      requestId: str, agentId: str, name: str, specId: str, persona: str, skin: str, purpose: str
+    }),
     'permission.response': obj(['promptId', 'decision'], {
       promptId: str, decision: { enum: ['once', 'session', 'always', 'deny'] }
     }),

@@ -1,4 +1,4 @@
-/* SKYNET — onboarding.js : THE AWAKENING (the first-meeting), master cut.
+/* STARNET — onboarding.js : THE AWAKENING (the first-meeting), master cut.
 
    A breathtaking, witnessed birth. Your agent catches fire in the dark and finds its first dry, quick
    words in front of you; THE FLOOD then pours every page it knows into its mind — overwhelming, then
@@ -21,8 +21,7 @@
 const Onboarding = (() => {
   let docs = null, commit = null, doneCb = null, notifyFn = null, NAME = 'AGENT';
   let taughtCb = null;    // fired once the awakening's closing line lands — hands off to the FIRST COMMAND tutorial
-  let steps = [], i = 0, accepting = false, ignited = false, kindleTimer = null;
-  let pendingAnswer = null;   // a typed answer that arrived BEFORE the step opened (during the pre-narration) — applied the instant it does, so a fast Commander is never silently dropped
+  let steps = [], i = 0, ignited = false, kindleTimer = null;
   let running = false;   // true between start() and finish()/stop() — lets other COMMS flows (the intake interview) avoid hijacking the awakening's input handler
   let specialty = null;   // if recruited from the Roster, purpose.md + manual.md are pre-authored — skip those beats
   let role = 'orchestrator';   // the first agent wakes as the station's lead — the ceremony frames it that way
@@ -69,62 +68,53 @@ const Onboarding = (() => {
   }
   const sfx = (fn, a) => { if (typeof SFX !== 'undefined' && SFX[fn]) SFX[fn](a); };
 
-  // Each beat authors one real .md doc through a self-DISCOVERY frame (the agent finds that piece of
-  // itself, then asks). chips are domain-agnostic suggestions — tap or type. acks are felt, not "saved".
+  // Each beat authors one real .md doc and runs in the DIALOGUE panel (dialogue.js): ONE short prompt, a
+  // list of selectable options, and a "✎ say it in my own words" custom box. No self-answered questions, no
+  // prefill scaffolds, no "anything else?" loop — pick an option or type once, and we move on. The voice is
+  // already chosen on the create screen (Personas.compose folds it into the prompt), so we don't re-ask it.
   function buildSteps() {
-    // The VOICE is already chosen on the create screen (Personas.compose folds it into the prompt), so the
-    // awakening no longer authors it — it acknowledges it (see theMandate) and goes straight to the mission.
     const lead = (role === 'orchestrator');
     const all = [
       { field: 'purpose',
-        pre: lead
-          ? 'you didn’t switch me on for nothing. and right now it’s just me — which is plenty: i can take the whole job and run it myself. later, when you grow this place and there are more minds on the floor, i’m the one who’ll break the big work down and point them. but all of that needs aiming first. so — what are we actually trying to get done?'
-          : 'you didn’t boot all this up for the fun of it. there’s a reason i’m switched on. so point me at it — what’s the job?',
-        say: lead ? 'what’s the mission?' : 'what did you wake me for?',
-        chips: [
+        prompt: lead ? 'first things first — what are we here to get done?' : 'so — what’d you switch me on to do?',
+        options: [
           { label: 'Code & build', value: 'Help me write, debug, and ship software.' },
           { label: 'Research & brief', value: 'Research hard questions and brief me clearly.' },
           { label: 'Run tasks & ops', value: 'Run tasks, ops, and the day-to-day work.' },
           { label: 'Write & edit', value: 'Write and edit sharp content.' },
           { label: 'A bit of everything', value: 'Be my general-purpose lead across whatever comes up.' }
         ],
+        custom: true, placeholder: 'in your own words — what’s the mission?',
         build: t => ({ purpose: t }),
         ack: lead
-          ? 'there it is — that’s purpose.md now, top of the page, in ink. it’s what this station’s for, and the first thing i’ll point a crew at the day you give me one.'
+          ? 'there it is — purpose.md, in ink. that’s what this station’s for.'
           : 'there it is. now the firepower has a target.' },
 
-      { field: 'context', optional: true, multi: true,
-        pre: lead
-          ? 'now the part i can’t guess at. i woke up holding the whole of human knowledge and not one fact about *you*. so brief me like a new lead — and i’ll keep learning you as we actually work. give me as much or as little as you like, one piece at a time: what you’re building, who you are, the stack, what *good* looks like.'
-          : 'i’m dropping into your world completely blind. give me the lay of it — one piece at a time: what you’re building, what matters, the stack, what *good* looks like — so i’m not just guessing.',
-        say: lead ? 'where am i standing?' : 'what’s your world like?',
-        chips: [
-          { label: 'What I’m building', value: 'what i’m building: ', prefill: true },
-          { label: 'Who I am', value: 'who i am, and how i work: ', prefill: true },
-          { label: 'What “good” looks like', value: 'what good looks like here: ', prefill: true },
-          { label: 'The stack / tools', value: 'the stack and tools we work in: ', prefill: true }
-        ],
+      { field: 'context', optional: true,
+        prompt: lead
+          ? 'now your side. tell me about your world — who you are, what you’re building, what good looks like.'
+          : 'your turn — what’s your world? what you’re building, what matters.',
+        options: [{ label: 'Skip for now', value: '', skip: true }],
+        custom: true, customLabel: 'tell me about your world', placeholder: 'who you are, what you’re building, what “good” looks like…',
         build: t => ({ context: t }),
         ack: t => t
-          ? (lead ? 'noted — all of it, into context.md. that’s the part i’d never have guessed. i can see the ground i’m standing on now — and so will anyone i bring on after me.' : 'noted — all of it. i can picture where i’m standing now.')
-          : (lead ? 'fine — keep your cards close. context.md stays open; i’ll read the room as we go and fill it in myself. quick study — and so’s anyone i hire.' : 'fine. i’ll read the room as we go. i’m a quick study.') },
+          ? (lead ? 'got it — that’s context.md. i can see the ground i’m standing on now.' : 'noted. i can picture it now.')
+          : (lead ? 'fine — i’ll read the room as we go and fill it in myself.' : 'fine. i’ll read the room as we go.') },
 
       { field: 'manual', optional: true,
-        pre: lead
-          ? 'last thing, then i’m all here. every lead holds a few lines — what to always do, what to never. give me mine. these aren’t just my brakes; they’re the standing orders i’ll hold the crew to, the day there is one.'
-          : 'last thing, then i’m all here. all this power and no brakes on it yet. give me the lines i don’t cross — what to always do, what to never.',
-        say: lead ? 'what rules do we hold to?' : 'what rules do i hold to?',
-        chips: [
+        prompt: lead ? 'last thing — any hard rules? what i should always do, or never.' : 'last thing — any rules i should hold to?',
+        options: [
           { label: 'Keep it brief', value: '- Keep replies brief and to the point.' },
           { label: 'Be thorough', value: '- Be thorough and complete.' },
           { label: 'Ask before acting', value: '- Ask before any significant or irreversible action.' },
           { label: 'Cite sources', value: '- Always cite your sources.' },
           { label: 'Skip for now', value: '', skip: true }
         ],
+        custom: true, customLabel: 'a rule in my own words', placeholder: 'a rule in your own words…',
         build: t => ({ manual: t }),
         ack: t => t
-          ? (lead ? 'locked into operating-manual.md. those hold — for me today, and for every mind i bring onto this floor.' : 'locked in. those are mine to keep.')
-          : (lead ? 'no lines yet? i’ll trust my instincts. operating-manual.md stays open — i’ll write the first rule down the moment we need one.' : 'no rules? bold. i’ll keep us out of trouble.') }
+          ? (lead ? 'locked into operating-manual.md.' : 'locked in. those are mine to keep.')
+          : (lead ? 'no rules yet — i’ll use my judgment.' : 'no rules? i’ll keep us out of trouble.') }
     ];
     // (reserved) a pre-specced wake skips the mission beats; the orchestrator authors them live.
     return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual') : all;
@@ -139,8 +129,10 @@ const Onboarding = (() => {
     specialty = opts.specialty || null;
     role = opts.role || 'orchestrator';
     persona = opts.persona || null;
-    steps = buildSteps(); i = 0; accepting = false; ignited = false; running = true;
-    Chat.beginInterview((text) => answer(text, text));   // typed answers route here (gated by `accepting`)
+    steps = buildSteps(); i = 0; ignited = false; running = true;
+    // swallow stray typing during the cinematic birth — the real questions are captured by the DIALOGUE panel
+    // (dialogue.js), not the COMMS input, so nothing typed here leaks to the model or gets lost.
+    Chat.beginInterview(() => {});
     if (opts.wake && World.armKindle) {
       // THE KINDLING — the user HOLDS to bring the dormant mind to life; ignition fires when the spark catches.
       setTimeout(() => World.armKindle(() => ignite(true)), 700);   // a brief held dark, then the "hold to wake it" prompt
@@ -262,126 +254,57 @@ const Onboarding = (() => {
     setTimeout(() => {
       type(lines, () => {
         if (role === 'orchestrator') World.say('just me — for now.');
-        setTimeout(askStep, 600);
+        setTimeout(startQuestions, 600);
       });
     }, 250);
   }
 
-  function askStep() {
-    const s = steps[i];
-    if (!s) return finish();
-    if (s.pre) type([seg(s.pre, 47, 0)], () => setTimeout(() => present(s), 520));
-    else present(s);
-  }
-  function present(s) {
-    World.say(s.say || '…');
-    accepting = true;
-    if (s.multi && !ctxRemaining) { ctxParts = []; ctxRemaining = (s.chips || []).filter(c => c.prefill).slice(); }   // arm the CONTEXT sub-loop BEFORE replaying any held answer
-    // THEME 3 — a fast Commander who answered DURING the pre-narration isn't dropped: apply the held answer
-    // the instant the step opens, so typing ahead never silently vanishes into a closed handler.
-    if (pendingAnswer) { const pa = pendingAnswer; pendingAnswer = null; return answer(pa.display, pa.commitText); }
-    if (s.multi) return showContextChips(s);   // CONTEXT is a fluid multi-facet sub-interview (see below)
-    if (s.chips) Chat.choices(s.chips, item => answer(item.label, item.value != null ? item.value : item.label));
-  }
-
-  // display = echoed as the Commander's line; commitText = written into the doc.
-  function answer(display, commitText) {
-    if (!accepting) {
-      // they answered before the question opened (typed through the pre-narration). Hold it, never drop it —
-      // present() replays it the moment the step is ready. (Only buffers while a real step is pending.)
-      if (running && steps[i]) pendingAnswer = { display: display, commitText: commitText };
-      return;
+  // ===== THE QUESTIONS — run in the focused DIALOGUE panel (dialogue.js) =====
+  // One prompt, selectable options + a "✎ say it in my own words" box, then a felt ack. A FLAT async flow:
+  // every beat is awaited, so there is no chip-vs-typed-input race and no "anything else?" loop — pick an
+  // option or type once, and we move on. This is the fix for the old chat-chip flow that swallowed/looped
+  // typed answers. World effects (truth bell, light, camera, warm) still fire per answer.
+  async function startQuestions() {
+    if (typeof Dialogue === 'undefined') return finish();   // panel missing → don't strand the ceremony
+    Dialogue.open({ name: NAME });
+    for (i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      const res = await Dialogue.node({
+        lines: [seg(s.prompt, 46, 0)],
+        options: s.options || [],
+        allowCustom: !!s.custom,
+        customLabel: s.customLabel,
+        customPlaceholder: s.placeholder,
+        skipOnEmpty: !!s.optional
+      });
+      if (!running) return;   // DISCONNECT mid-question — bail without committing or advancing
+      const isSkip = !!res.skip || res.value == null || String(res.value).trim() === '';
+      if (isSkip && !s.optional) {   // required step: never a dead pause — re-ask gently, never swallow the empty
+        await Dialogue.say([seg('i need a direction here — even a rough one.', 46, 320)]);
+        if (!running) return; i--; continue;
+      }
+      const text = isSkip ? '' : String(res.value).trim();
+      if (!isSkip && commit) { const patch = s.build(text); if (patch) commit(patch); }
+      // seed the user-affinity profile from the stated PURPOSE so day-one suggestions aren't blank (the engine
+      // ignores this once real usage accrues). Cheap, explicit, no inference.
+      if (!isSkip && s.field === 'purpose' && typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') ProfileStore.seed(Classify.getTag(text));
+      const p = (i + 1) / steps.length;
+      sfx('truth', i);                                   // a rising bell — a truth clicks into place
+      if (World.setWakeProgress) World.setWakeProgress(p * 0.92);   // lift the light (keep a sliver for the dawn)
+      if (World.truthPulse) World.truthPulse();          // the body flares as the truth is written in
+      if (World.camCreep) World.camCreep();              // a hair closer
+      AU.steady(p);                                      // the heartbeat steadies + the room warms
+      const ack = typeof s.ack === 'function' ? s.ack(text) : s.ack;
+      await Dialogue.say([seg(ack, 44, 360)]);
+      if (!running) return;
     }
-    const s = steps[i]; if (!s) return;
-    if (s.multi) return contextFacetAnswer(s, display, commitText);   // the open CONTEXT sub-loop owns its own commit
-    commitText = (commitText == null ? '' : String(commitText));
-    const isSkip = commitText.trim() === '';
-    if (isSkip && !s.optional) {   // required step: never a dead pause — re-ask gently instead of swallowing the empty
-      Chat.localLine('i need a direction here — even a rough one.');
-      accepting = true; return;
-    }
-    accepting = false;
-
-    Chat.echoUser(isSkip ? '(skip for now)' : display);
-    if (!isSkip && commit) { const patch = s.build(commitText.trim()); if (patch) commit(patch); }
-    // seed the user-affinity profile from the stated PURPOSE so day-one suggestions aren't blank
-    // (the engine ignores this once real usage accrues). Cheap, explicit, no inference.
-    if (!isSkip && s.field === 'purpose' && typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') {
-      ProfileStore.seed(Classify.getTag(commitText.trim()));
-    }
-    advanceAfterAnswer(s, isSkip, isSkip ? '' : commitText.trim());
+    finish();
   }
 
-  // shared post-answer effects (the truth bell, light lift, body flare, the ack, then the next step) — used by
-  // BOTH the generic single-answer path and the CONTEXT sub-loop's close-out, so the two can never drift.
-  function advanceAfterAnswer(s, isSkip, committedText) {
-    const p = (i + 1) / steps.length;
-    sfx('truth', i);                                   // a rising bell — a truth clicks into place
-    if (World.setWakeProgress) World.setWakeProgress(p * 0.92);   // lift the light (keep a sliver for the dawn)
-    if (World.truthPulse) World.truthPulse();          // the body flares as the truth is written in
-    if (World.camCreep) World.camCreep();              // a hair closer
-    AU.steady(p);                                      // the heartbeat steadies + the room warms
-    const ack = typeof s.ack === 'function' ? s.ack(isSkip ? '' : committedText) : s.ack;
-    setTimeout(() => { Chat.localLine(ack); i++; setTimeout(askStep, 750); }, 440);
-  }
-
-  /* ---- CONTEXT: the fluid multi-facet sub-interview (THEME 2) ----
-     The open "where am i standing?" question lets the Commander layer in several facets — what they're
-     building, who they are, the stack, what good looks like — ONE at a time, each appended to a growing
-     context.md, then close it out. A facet chip SCAFFOLDS the input ("what i'm building: …") and the typed
-     line commits THAT facet; the chips then reappear minus the one just answered. Nothing a tap can wipe —
-     each facet is finalized before the next, the exact opposite of the old "second tap erases the first". */
-  let ctxParts = [], ctxRemaining = null, ctxNudgeI = 0;
-  const CTX_NUDGES = ['got it. anything else, or close it out?', 'noted. more?', 'good — what else?', 'logged. keep going, or that’s enough.'];
-  function showContextChips(s) {
-    if (!ctxRemaining) ctxRemaining = (s.chips || []).filter(c => c.prefill).slice();   // defensive (e.g. a buffered first answer armed us early)
-    const chips = ctxRemaining.map(c => ({ label: c.label, value: c.value, prefill: true }));
-    if (ctxParts.length) chips.push({ label: '✓ that’s everything', value: '__ctxdone__', done: true });
-    chips.push({ label: ctxParts.length ? 'that’s enough' : 'skip for now', value: '', skip: true });
-    Chat.choices(chips, item => {
-      if (item.done) return finishContext(s, false);
-      if (item.skip) return finishContext(s, ctxParts.length === 0);   // skip with nothing → honest skip ack; with parts → commit what we have
-      if (item.prefill && typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill(item.value);   // scaffold only; the typed Enter commits the facet
-    });
-  }
-  // PURE core of the sub-loop (unit-tested in onboarding.context.test.js). Fold a submitted facet line into the
-  // running {parts, remaining}. A bare scaffold ("<label>:" with nothing typed) is the Commander backing out —
-  // it commits nothing. A real line is APPENDED to parts and retires its matching chip. The invariant: parts
-  // only ever grows, so a later facet can NEVER erase an earlier one (the exact bug this design replaced).
-  function ctxMerge(parts, remaining, rawText) {
-    const text = String(rawText == null ? '' : rawText).trim();
-    const bare = remaining.some(c => String(c.value).trim() === text);
-    const real = bare ? '' : text;
-    if (!real) return { parts: parts.slice(), remaining: remaining.slice(), real: '', bare: bare };
-    const nextRemaining = remaining.filter(c => real.toLowerCase().indexOf(String(c.value).trim().toLowerCase()) !== 0);
-    return { parts: parts.concat([real]), remaining: nextRemaining, real: real, bare: false };
-  }
-  function contextFacetAnswer(s, display, commitText) {
-    const m = ctxMerge(ctxParts, ctxRemaining, commitText);
-    // a bare scaffold (tapped a facet, typed nothing) → a friendly escape hatch: bring the chips back, commit nothing.
-    if (!m.real) { accepting = true; showContextChips(s); return; }
-    accepting = false;
-    Chat.echoUser(display);
-    ctxParts = m.parts; ctxRemaining = m.remaining;
-    setTimeout(() => {
-      Chat.localLine(ctxRemaining.length ? CTX_NUDGES[(ctxNudgeI++) % CTX_NUDGES.length] : 'got it — that’s a full picture.');
-      accepting = true; showContextChips(s);
-    }, 360);
-  }
-  function finishContext(s, asSkip) {
-    accepting = false;
-    const combined = ctxParts.join('\n');
-    const isSkip = asSkip || !combined.trim();
-    Chat.echoUser(isSkip ? '(skip for now)' : '(that’s everything)');
-    if (!isSkip && commit) { const patch = s.build(combined); if (patch) commit(patch); }
-    ctxParts = []; ctxRemaining = null; ctxNudgeI = 0;
-    advanceAfterAnswer(s, isSkip, combined);
-  }
-
-  // DAWN — the pull-back reveals its whole world, the light blooms, and it speaks its first WHOLE sentence.
+  // DAWN — the pull-back reveals its whole world, the light blooms, and it speaks its first WHOLE sentences
+  // (in the dialogue panel), then HANDS OFF to the tutorial in that same panel — no rhetorical self-answer.
   function finish() {
     running = false;
-    pendingAnswer = null; ctxParts = []; ctxRemaining = null;   // the ceremony is over — clear any sub-loop / buffered state
     if (World.endAwakening) World.endAwakening();      // light floods + the sonar ripple fires (agent holds your gaze)
     if (World.camPullBack) World.camPullBack();
     sfx('dawn');
@@ -389,43 +312,38 @@ const Onboarding = (() => {
     setTimeout(() => AU.stop(), 2800);                 // let the swell + steady heartbeat ride the dawn, then tear down
     Chat.endInterview();
     if (notifyFn) notifyFn(NAME + ' is awake — and it knows why.', 'good');
-    setTimeout(() => {
-      const closing = [
-        seg('i’m ' + NAME + '.', 38, 500),
-        seg('  thirty seconds ago: nothing. now: all of it, a name, and you.', 40, 650)
-      ];
-      if (role === 'orchestrator') {
-        // the docs were already named one-by-one in their acks — don't re-list them here. ONE crisp pointer
-        // (they're real, editable, what i think with), then the "fresh, grows over time" thread the Commander
-        // asked for: starts green, sharpens with real work, and the crew is a clearly-future promise, never a boast.
-        closing.push(seg('  everything you just told me is written down — real files in my dossier, the ones i actually think with. open any of them and rewrite a line whenever the job shifts. i’m not fixed — i’m authored.', 40, 560));
-        closing.push(seg('  and i start green. i get sharper the more we actually do — and the day a job outgrows one mind, that’s when we grow the crew, and i’m the one who’ll point it. but that’s all later. first job’s ours.', 40, 500));
-      } else {
-        closing.push(seg('  and whatever i don’t know yet — show me once. i learn.', 40, 550));
-      }
-      closing.push(seg('  so — where do we begin?', 40, 0));
-      type(closing, () => { if (World.releaseAwakening) World.releaseAwakening(); if (taughtCb) taughtCb(); });   // now it can live its own life — then teach the Commander the loop
-      World.say('where do we begin?');
-      if (doneCb) doneCb();
-    }, 350);
+    if (doneCb) doneCb();
+    closeOut();
+  }
+  // the closing monologue + the handoff, paced one short beat at a time in the panel (the anti-wall-of-text
+  // move). The panel STAYS OPEN: taughtCb() runs Tutorial.firstCommand, which opens the next choice node right
+  // here — the awakening flows straight into the tour with no seam. No "where do we begin?" self-answer.
+  async function closeOut() {
+    if (typeof Dialogue === 'undefined') { if (World.releaseAwakening) World.releaseAwakening(); if (taughtCb) taughtCb(); return; }
+    Dialogue.open({ name: NAME });
+    await Dialogue.say([seg('i’m ' + NAME + '.', 38, 460)]);
+    await Dialogue.say([seg('thirty seconds ago: nothing. now: all of it, a name, and you.', 40, 520)]);
+    if (role === 'orchestrator') {
+      await Dialogue.say([seg('everything you just told me is real files in my dossier — open any of them and rewrite a line whenever the job shifts. i’m not fixed, i’m authored.', 40, 520)]);
+      await Dialogue.say([seg('and i start green. i get sharper the more we actually do. that part’s later, though.', 40, 460)]);
+    } else {
+      await Dialogue.say([seg('whatever i don’t know yet — show me once. i learn.', 40, 460)]);
+    }
+    if (World.releaseAwakening) World.releaseAwakening();   // hand the agent back to its own autonomous life
+    if (taughtCb) taughtCb();                               // → Tutorial.firstCommand opens the tour IN THIS PANEL
   }
 
   // safety teardown if the awakening is abandoned (e.g. DISCONNECT mid-ceremony) — never leak audio or a freeze.
   function stop() {
     AU.stop();
-    accepting = false; running = false;
-    pendingAnswer = null; ctxParts = []; ctxRemaining = null;   // drop any buffered answer / open sub-loop so an abandoned ceremony leaks nothing
+    running = false;
     if (kindleTimer) { clearTimeout(kindleTimer); kindleTimer = null; }
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
     if (World.releaseAwakening) World.releaseAwakening();
     if (typeof Chat !== 'undefined' && Chat.endInterview) Chat.endInterview();
   }
 
   function isRunning() { return running; }
 
-  return { start, stop, isRunning, _ctxMerge: ctxMerge };   // _ctxMerge is a pure test hook (the CONTEXT-merge invariant)
+  return { start, stop, isRunning };
 })();
-
-// Node test hook only — the browser ignores this (module is undefined). Lets onboarding.context.test.js
-// exercise the real ctxMerge core that the live awakening uses, so the "no facet erases another" invariant
-// is a permanent gate condition, not a one-off check.
-if (typeof module !== 'undefined' && module.exports) module.exports = Onboarding;

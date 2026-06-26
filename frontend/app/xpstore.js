@@ -1,4 +1,4 @@
-/* SKYNET — xpstore.js : the live wiring that turns REAL harness events into agent + station growth.
+/* STARNET — xpstore.js : the live wiring that turns REAL harness events into agent + station growth.
 
    Subscribes (read-only) to the U.bus event spine — every harness event is already re-emitted there
    by harness.js — runs each outcome through the pure Xp engine, mutates the persisted agent.stats and

@@ -15,7 +15,7 @@ The harness's whole differentiator is **truthful, drill-to-the-run telemetry**. 
 3. **Human stays in control.** Memory is **proposed, then approved** — never silently written (the user's locked choice). Manual saves stay available; auto-proposal is the under-saving safety net.
 4. **Determinism + purity.** All scoring/rendering/compaction logic is pure UMD with injected deps (clock, summarizer) — no bare `Date.now`/`Math.random` in `shared/`+`sidecar/` (excluding `sidecar/index.js`); `lint-determinism.js` enforces it. The aux summarizer/consolidator is **injected** so the replay suite stays byte-identical.
 5. **Frozen contract first.** Every new cross-boundary signal (`memory.recall`, `memory.write`, `memory.forget`, `memory.proposed`, `agent.compact`) gets a `shared/events.js` rung **before** its first `emit`, or `emitter.js` drops it and `lint-emits.js` fails.
-6. **Save-safe.** Every persisted shape is versioned + tolerant of missing/corrupt (fail toward empty, never crash). Rides the `skynet.save` v2 (Workstreams) envelope.
+6. **Save-safe.** Every persisted shape is versioned + tolerant of missing/corrupt (fail toward empty, never crash). Rides the `starnet.save` v2 (Workstreams) envelope.
 
 ---
 
@@ -157,7 +157,7 @@ The smallest step that makes memory show up in the prompt. Split into three reve
 **DoD:** agent sees its own notes without calling `notebook.read`; empty-memory run byte-identical to today; `context.js` stays pure; `test:fast` green.
 
 ### M-mem.2 — Real memory store + provenance + scope
-Grow the notebook store into the §5.2 record shape (`scope`/`streamId`/`trust`/provenance); migrate old notes → `{kind:'note', scope:'global'}`; freeze `memory.write`/`memory.forget`; save-safe v2→ (rides the Workstreams `skynet.save` migration). Keep the frozen `notebook.*` tool seam additive.
+Grow the notebook store into the §5.2 record shape (`scope`/`streamId`/`trust`/provenance); migrate old notes → `{kind:'note', scope:'global'}`; freeze `memory.write`/`memory.forget`; save-safe v2→ (rides the Workstreams `starnet.save` migration). Keep the frozen `notebook.*` tool seam additive.
 
 ### M-mem.3 — BM25 recall + core-memory block
 Pure `rank()` module; split recall into **core** (always-on prefix block, char-capped, PROFILE/LEARNED) vs **working** (top-K, stream-scoped) + the living-delta tail (Bet 1).

@@ -75,7 +75,7 @@ function boot(port, env, attemptsLeft) {
     // drive a real streaming run and collect the NDJSON event stream
     const res = await fetch(B + '/api/run', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': token, Origin: B },
+      headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
       body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e', messages: [{ role: 'user', content: 'hi' }] })
     });
     A.eq(res.status, 200, 'POST /api/run streams (200)');
@@ -111,7 +111,7 @@ function boot(port, env, attemptsLeft) {
 
     // H1.2: bulletproof resume — a 2nd run on the SAME stream with EMPTY history must seed the prior dialogue.
     async function drive(streamId, text) {
-      const r = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': token, Origin: B },
+      const r = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
         body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e', streamId, messages: [{ role: 'user', content: text }] }) });
       const rd = r.body.getReader(); while (true) { const { done } = await rd.read(); if (done) break; }   // drain
     }

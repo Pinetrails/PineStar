@@ -1,4 +1,4 @@
-/* SKYNET â€” sprites.js : procedural pixel art for furniture + agents */
+/* STARNET â€” sprites.js : procedural pixel art for furniture + agents */
 'use strict';
 
 const SPR = (() => {

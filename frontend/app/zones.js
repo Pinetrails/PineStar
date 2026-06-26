@@ -1,4 +1,4 @@
-/* SKYNET — zones.js : the IDLE-CONTAINMENT primitive (P0, pure + headless-testable).
+/* STARNET — zones.js : the IDLE-CONTAINMENT primitive (P0, pure + headless-testable).
 
    A "zone" is the area an agent is allowed to ROAM inside while idle. It is DERIVED on the
    fly from geometry the world already holds (room rects + props) — never persisted, never on

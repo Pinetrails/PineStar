@@ -1,4 +1,4 @@
-/* SKYNET — app.js : screen flow + wiring.
+/* STARNET — app.js : screen flow + wiring.
    title -> connect (create a character) -> game.  Auto-resumes a saved agent on refresh. */
 'use strict';
 
@@ -13,9 +13,10 @@ const App = (() => {
   const ORCH_COLOR = '#ffd34a';   // the Orchestrator's suit tint — gold marks the lead (same gold as SUITS' last entry). No color picker any more (skins are the visual identity); summoned crew cycle SUITS.
   let pickedColor = ORCH_COLOR;
   let pickedSkin = (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) || 'bear';   // the sprite set the new agent will wear
-  let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'confidant';
+  let pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'professional';
   let pickedTraits = {};        // the VOICE & MANNER fine-tune dials (warmth/humor/formality/length + emoji/blunt) — only set keys contribute prompt text
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
+  let pickedApproval = 'ask';   // the APPROVAL mode — 'ask' (consent-gated) | 'full' (auto-approve). Drives the REAL consent broker (sidecar bypass), not a cosmetic toggle.
   let pickedProvider = 'openrouter';   // 'openrouter' (BYO API key) | 'codex' (personal ChatGPT subscription via OAuth)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
   let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
@@ -67,7 +68,7 @@ const App = (() => {
     // later (the team.dispatch tool only exists once a crew does). It must never speak in the present as if it already
     // commands a crew — that would be the app-lie the awakening + tutorial are careful to avoid.
     if (role === 'orchestrator') {
-      s += ' You are this station\'s ORCHESTRATOR — its first agent and its lead, and right now its only agent. For now '
+      s += ' You are this station\'s OVERSEER — its orchestrating lead, its first agent, and right now its only agent. For now '
         + 'you simply do the work yourself. As the Commander recruits specialists over time, you grow into the one who '
         + 'breaks a big job into pieces and hands them out — you gain a team.dispatch tool to delegate the moment there '
         + 'is a crew to delegate to, and not before. Until then, never speak as if you command a crew you do not yet have; '
@@ -94,17 +95,49 @@ const App = (() => {
       a.docs.identity = id.split(/\n+VOICE & MANNER:/)[0].trimEnd();
     }
   }
-  // assemble the real system prompt from the config docs: identity + PERSONALITY + mission + standing orders.
+  // the APPROVAL clause folded into the system prompt — it MUST match the real consent broker (sidecar) so the
+  // agent's words and its actual behaviour never diverge (truthful-telemetry law). 'full' = the broker bypasses
+  // the consent gate; 'ask' = the broker prompts the Commander on any mutation/network call.
+  function approvalClause(a) {
+    const full = a && a.approvalMode === 'full';
+    if (full) return '\n\nAPPROVAL — FULL ACCESS: the Commander has granted you full access. You may run your tools — including file writes and shell commands — without stopping to ask each time. A hard safety floor still blocks the most dangerous actions; use judgment and flag anything truly irreversible before you do it.';
+    return '\n\nAPPROVAL — ASK FIRST: before any action that writes a file, runs a command, or reaches out over the network, you STOP and ask the Commander for approval, then wait for their go-ahead. Reasoning over what you already have does not need approval.';
+  }
+  // an always-appended SYSTEM truth: what the agent ACTUALLY runs on. Mirrors approvalClause — derived fresh each
+  // compose, never stored in the editable identity.md (so it can't be edited away and never drifts stale). Fixes the
+  // "I'm a Hermes agent" misread AND the sibling "I'm a Skynet agent" one: when the agent introspects (env/pwd) it may
+  // still meet two legacy names — "Skynet" (the project's former name; renamed to StarNet, but some paths/env survive as
+  // back-compat aliases) and "Hermes" (the open-source harness StarNet's backend was ported from). Without this grounding
+  // it guesses one of those. Truthful-telemetry law: state only what's true (StarNet harness, Commander's own model), don't guess.
+  function foundationClause() {
+    return '\n\nYOUR FOUNDATION: You run on the StarNet harness — a local-first agent runtime on the Commander\'s own '
+      + 'machine, not a hosted service. Your reasoning comes from whichever model the Commander has connected through '
+      + 'their own API key or account. As you look around your environment you may still meet two legacy names, and '
+      + 'neither changes what you are: (1) StarNet was previously called "Skynet" — it has been renamed, but some file '
+      + 'paths, environment variables, and config keys may still carry the old "Skynet"/"SKYNET_" name as a back-compat '
+      + 'alias. (2) StarNet\'s harness was built by porting parts of the open-source Hermes agent harness, so some code, '
+      + 'comments, and tool names mention "Hermes". You are a StarNet agent on the StarNet harness — not a Skynet agent '
+      + 'and not a Hermes agent. Do not guess at your own foundation from ambiguous signals in the environment; report '
+      + 'only what you can actually verify, and say plainly when you are not sure.';
+  }
+  // assemble the real system prompt from the config docs: identity + FOUNDATION + PERSONALITY + APPROVAL + mission + standing orders.
   function composeSystemPrompt(a) {
     const d = agentDocs(a);
     let p = (d.identity || '').trim() || baseIdentity(a.name, a.role);
+    // FOUNDATION sits right after identity (before personality) — a constant system truth that grounds "what you are"
+    // so the agent never mistakes StarNet's Hermes-derived internals for being a Hermes agent. Kept out of the docs.
+    p += foundationClause();
     // personality sits AFTER identity (keeps the REAL-tools clause) and BEFORE purpose, so it colours the
     // agent's tone without ever displacing capability or the mission. Personas.compose folds the chosen
-    // archetype + the Commander's fine-tune dials + their free-text voice note into one block. Default: confidant.
+    // archetype + the Commander's fine-tune dials + their free-text voice note into one block. Default: professional.
     if (typeof Personas !== 'undefined' && Personas.compose) {
       const voice = Personas.compose(a.personaId || Personas.DEFAULT_ID, a.voiceTraits, a.customVoice);
       if (voice) p += '\n\n' + voice;
     }
+    // the APPROVAL posture sits after personality — it tells the agent (truthfully) whether it must ask before
+    // acting or has full access, mirroring exactly what the consent broker will do at runtime.
+    const ac = approvalClause(a);
+    if (ac) p += ac;
     const purpose = (d.purpose || '').trim();
     if (purpose) p += '\n\nYOUR PURPOSE (purpose.md):\n' + purpose;
     else p += '\n\nYou have not yet been given a purpose — you are eager for your Commander to assign one.';
@@ -159,7 +192,7 @@ const App = (() => {
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
-             purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
+             approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
   // DATA only — world bodies are spawned in enterGame once World.init has run.
@@ -169,7 +202,7 @@ const App = (() => {
       if (!s || !s.id || s.id === 'agent' || agents.has(s.id)) continue;   // hero already registered; skip dups (so the 'specialist' default below is always correct here — the orchestrator never routes through this path)
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
-                  purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   docs: s.docs, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
       a.systemPrompt = composeSystemPrompt(a);
@@ -323,12 +356,39 @@ const App = (() => {
     if (spec) return String(spec.tagline || spec.name || '').slice(0, 120);
     return String(a.purpose || 'general specialist').slice(0, 120);
   }
+  // the most recent /api/roster POST. A backend-initiated summon must AWAIT this before acking, so the lead's
+  // immediate team.dispatch sees the new worker in agentRoster (the POST is otherwise fire-and-forget → a race).
+  let lastRosterPush = Promise.resolve();
   function pushRoster() {
     try {
       const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
-      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider, role: rosterRole(a) }));
-      fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
-    } catch (_) {}
+      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask') }));
+      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
+      return lastRosterPush;
+    } catch (_) { return Promise.resolve(); }
+  }
+
+  // BACKEND-INITIATED SUMMON (crew.summon.request): the orchestrator's team.summon tool asked the station to
+  // create a worker for the Commander. Run the SAME summonAgent() the Recruitment Bay uses (single source of
+  // truth — sprite, workstream, system prompt, roster push), resolving the new id ONLY AFTER the roster POST
+  // lands so the lead's immediate team.dispatch finds the worker. Returns null if it couldn't summon.
+  async function summonForRequest(ev) {
+    ev = ev || {};
+    // a known built-in class id (researcher/engineer/…) seeds the full specialty (purpose + manual + skin); a
+    // freeform name makes a custom specialist. Event fields always win over the class defaults.
+    let base = (ev.specId && typeof Specialties !== 'undefined' && Specialties.get) ? Specialties.get(ev.specId) : null;
+    const spec = Object.assign({}, base || {}, {
+      id: ev.specId || (base && base.id) || undefined,
+      name: ev.name || (base && base.name) || undefined,
+      skin: ev.skin || (base && base.skin) || undefined,
+      persona: ev.persona || (base && base.persona) || undefined,
+      purpose: ev.purpose || (base && base.purpose) || undefined
+    });
+    let a = null;
+    try { a = summonAgent(spec); } catch (_) { a = null; }
+    if (!a) return null;
+    try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
+    return a.id;
   }
 
   function persist() {
@@ -372,8 +432,109 @@ const App = (() => {
     updateHint();
   }
 
+  /* ---------- recommended-model quick picks (OpenRouter) ----------
+     One-tap slugs for newcomers who don't know what to type — directly serves the "easier than Hermes
+     for beginners" moat. These are SUGGESTIONS, not a claim of availability: a chip only prefills
+     #in-model, which the live catalog (updateHint → priceOf) then prices or flags. The slugs match the
+     curated FALLBACK list loadModels() already ships, so nothing new is fabricated. Codex hides them —
+     its menu is discovered live per-account (loadCodexModels), so a static list there could mislead. */
+  const MODEL_PICKS = Object.freeze([
+    { label: 'Opus 4.8', id: 'anthropic/claude-opus-4.8', tag: 'deepest' },
+    { label: 'Sonnet 4.6', id: 'anthropic/claude-sonnet-4.6', tag: 'balanced' },
+    { label: 'GPT-5', id: 'openai/gpt-5', tag: '' },
+    { label: 'Gemini 2.5 Pro', id: 'google/gemini-2.5-pro', tag: '' }
+  ]);
+  /* ---------- PHOSPHOR tint picker (the console-wide theme, surfaced at commission) ----------
+     The station already ships four CRT phosphors (style.css body.theme-*) persisted by StationUI. We
+     surface that choice up-front so the Commander sets the whole station's colour the moment they build
+     it — picking a swatch recolours live AND writes through StationUI.setTheme so it survives enterGame
+     and stays in lockstep with the in-game Settings panel. No new state, no fakery. */
+  const PHOSPHOR = Object.freeze([['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['white', '#e8f0e8']]);
+  // THE APPROVAL MODE — the crucial pick for the everything-orchestrator: how much it can do on its own. This is
+  // NOT cosmetic — it drives the REAL consent broker in the sidecar (full → bypass the gate; ask → prompt on any
+  // mutation/network call), threaded through pushRoster → /api/roster. `np` is the nameplate readout.
+  const APPROVAL = Object.freeze([
+    Object.freeze({ id: 'ask',  label: 'ASK FOR APPROVAL', icon: '✋', desc: 'stops to check with you before it writes, runs, or reaches out', np: 'asks for approval' }),
+    Object.freeze({ id: 'full', label: 'FULL ACCESS',      icon: '⚡', desc: 'runs everything itself — no approval prompts',                  np: 'full access' })
+  ]);
+  const approvalById = id => APPROVAL.find(a => a.id === id) || APPROVAL[0];
+  function applyTheme(t) {
+    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-white');
+    document.body.classList.add('theme-' + t);
+  }
+  function buildPhosphor() {
+    const wrap = el('phosphor-swatches'); if (!wrap) return;
+    let cur = 'amber';
+    try { if (typeof StationUI !== 'undefined' && StationUI.getTheme) cur = StationUI.getTheme() || 'amber'; } catch (_) {}
+    applyTheme(cur);   // reflect a previously-saved tint on the create screen too (StationUI hasn't entered yet)
+    wrap.innerHTML = '';
+    PHOSPHOR.forEach(([t, c]) => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'swatch' + (t === cur ? ' sel' : ''); b.dataset.t = t;
+      b.style.setProperty('--sw', c); b.title = t.toUpperCase() + ' phosphor'; b.setAttribute('aria-label', t + ' phosphor');
+      b.onclick = () => {
+        applyTheme(t);
+        try { if (typeof StationUI !== 'undefined' && StationUI.setTheme) StationUI.setTheme(t); } catch (_) {}   // persist + keep Settings in sync
+        SFX.click();
+        [...wrap.children].forEach(x => x.classList.toggle('sel', x === b));
+      };
+      wrap.appendChild(b);
+    });
+  }
+
+  // THE APPROVAL PICKER — two wide cards (ask vs full access). The pick rides on agent.approvalMode and drives
+  // the real consent broker; 'ask' is pre-selected (the safe default), so it never blocks WAKE.
+  function buildApproval() {
+    const wrap = el('approval-picker'); if (!wrap) return;
+    wrap.innerHTML = '';
+    APPROVAL.forEach(m => {
+      const c = document.createElement('button'); c.type = 'button';
+      c.className = 'ov-card' + (pickedApproval === m.id ? ' sel' : '');
+      c.dataset.a = m.id; c.title = m.desc; c.setAttribute('aria-pressed', String(pickedApproval === m.id));
+      const pk = document.createElement('span'); pk.className = 'ov-card-pick'; pk.textContent = '◆';
+      const ic = document.createElement('div'); ic.className = 'ov-card-ic'; ic.textContent = m.icon;
+      const nm = document.createElement('div'); nm.className = 'ov-card-nm'; nm.textContent = m.label;
+      const ds = document.createElement('div'); ds.className = 'ov-card-ds'; ds.textContent = m.desc;
+      c.appendChild(pk); c.appendChild(ic); c.appendChild(nm); c.appendChild(ds);
+      c.onclick = () => {
+        pickedApproval = m.id;
+        [...wrap.children].forEach(x => { const on = x === c; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
+        SFX.click(); updateNameplate();
+      };
+      wrap.appendChild(c);
+    });
+    updateNameplate();
+  }
+
+  // the live nameplate under the agent: NAME (from the input) + the approval-posture readout.
+  function updateNameplate() {
+    const np = el('np-name'); if (np) np.textContent = ((el('in-name') && el('in-name').value.trim()) || 'OVERSEER').toUpperCase();
+    const nm = el('np-mode'); if (nm) nm.textContent = approvalById(pickedApproval).np;
+  }
+
+  function buildModelPicks() {
+    const wrap = el('model-picks'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (pickedProvider === 'codex') return;   // discovered live; no static menu
+    MODEL_PICKS.forEach(m => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'mp-chip'; b.dataset.id = m.id; b.title = m.id;
+      b.appendChild(document.createTextNode(m.label));
+      if (m.tag) { const t = document.createElement('b'); t.textContent = ' · ' + m.tag; b.appendChild(t); }
+      b.onclick = () => { el('in-model').value = m.id; SFX.click(); updateHint(); };
+      wrap.appendChild(b);
+    });
+    syncModelPicks();
+  }
+  function syncModelPicks() {
+    const wrap = el('model-picks'); if (!wrap) return;
+    const cur = el('in-model').value.trim();
+    [...wrap.children].forEach(b => b.classList.toggle('sel', b.dataset.id === cur));
+  }
+
   function updateHint() {
     const id = el('in-model').value.trim(), hint = el('model-hint');
+    syncModelPicks();   // keep the recommended-chip highlight in lockstep with whatever's in the field
     if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription — no per-token cost'; return; }
     const p = Harness.priceOf(id);
     if (p) hint.innerHTML = 'pricing: <b>$' + p.in.toFixed(2) + '</b> /1M in · <b>$' + p.out.toFixed(2) + '</b> /1M out';
@@ -402,6 +563,7 @@ const App = (() => {
       stopCodexPoll(); codexFlow = null;
       loadModels();
     }
+    buildModelPicks();        // recommended chips (OpenRouter only; clears itself on the codex path)
   }
 
   // Populate the model datalist with EXACTLY the slugs the connected account's Codex backend accepts, so the
@@ -496,6 +658,8 @@ const App = (() => {
 
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
   // id rides on agent.skin and is read by the sprite engine (assets.js drawBody → DATA.SKINS).
+  // A live preview STAGE on the right (shared SkinStage) plays the picked (or hovered) skin's real
+  // walk cycle big enough to actually read — a 40px still of a chunky sprite is unidentifiable.
   function buildSkins() {
     const wrap = el('skin-picker'); if (!wrap || typeof DATA === 'undefined' || !DATA.SKINS) return;
     wrap.innerHTML = '';
@@ -513,10 +677,15 @@ const App = (() => {
       b.onclick = () => {
         pickedSkin = id;
         [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        if (typeof SkinStage !== 'undefined') SkinStage.show(id);
         SFX.click();
       };
+      // hover scrubs the stage so you can compare without committing; leaving snaps back to the pick
+      b.onmouseenter = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(id); };
       wrap.appendChild(b);
     });
+    wrap.onmouseleave = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSkin); };
+    if (typeof SkinStage !== 'undefined') SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
   }
 
   /* ---------- VOICE & MANNER (the create-screen personality system) ----------
@@ -530,19 +699,18 @@ const App = (() => {
     pickedPersona = Personas.resolve(pickedPersona);   // collapse any legacy id to its grounded archetype
     wrap.innerHTML = '';
     Personas.list().forEach(p => {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'archetype' + (p.id === pickedPersona ? ' sel' : '');
-      card.title = p.vibe;
-      const nm = document.createElement('span'); nm.className = 'arch-name'; nm.textContent = p.name;
-      const ln = document.createElement('span'); ln.className = 'arch-line'; ln.textContent = '“' + p.cardLine + '”';
-      card.appendChild(nm); card.appendChild(ln);
-      card.onclick = () => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ov-vchip' + (p.id === pickedPersona ? ' sel' : '');
+      chip.title = p.vibe;
+      chip.textContent = p.name;
+      chip.setAttribute('aria-pressed', String(p.id === pickedPersona));
+      chip.onclick = () => {
         pickedPersona = p.id;
-        [...wrap.children].forEach(x => x.classList.remove('sel')); card.classList.add('sel');
+        [...wrap.children].forEach(x => { const on = x === chip; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
         SFX.click(); renderVoicePreview();
       };
-      wrap.appendChild(card);
+      wrap.appendChild(chip);
     });
     buildVoiceTuning();
     renderVoicePreview();
@@ -626,9 +794,15 @@ const App = (() => {
     if (prefillName) el('in-name').value = prefillName;
     // a fresh create screen carries no stale voice picks — reset the module-level state so fine-tune
     // dials / a custom-voice note from an abandoned create session never ride onto the next agent.
-    pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'confidant';
+    pickedTraits = {}; pickedCustomVoice = ''; pickedPersona = (typeof Personas !== 'undefined') ? Personas.DEFAULT_ID : 'professional';
+    pickedApproval = 'ask';   // a fresh create screen defaults to the safe posture (color is fixed: the lead's gold)
+    buildPhosphor();
     buildSkins();
     buildVoice();
+    buildApproval();
+    // the hero nameplate tracks the name field live; picking an approval mode updates the second line.
+    if (el('in-name')) el('in-name').oninput = updateNameplate;
+    updateNameplate();
     el('btn-back').onclick = () => { SFX.click(); stopCodexPoll(); codexFlow = null; showTitle(); };
     el('btn-wake').onclick = onWake;
     // Enter commits from ANY of the core text fields (name / key / model), not just the name — so a Commander
@@ -685,13 +859,13 @@ const App = (() => {
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
 
-    // the FIRST agent is always the station's ORCHESTRATOR — the lead the Commander commissions before any
-    // specialist. Its voice is the archetype + fine-tune dials + free-text note picked on this screen; its
-    // mission/context/standing-orders are authored in the awakening that follows.
+    // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
+    // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
+    // full access) drives the real consent broker, while the mission/context/orders are authored in the awakening.
     agent = { id: 'agent', name, role: 'orchestrator', color: pickedColor, skin: pickedSkin || DATA.DEFAULT_SKIN, model,
               personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
-              purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
-    agentDocs(agent);                              // seed identity.md (orchestrator-aware) / purpose.md / operating-manual.md
+              approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
+    agentDocs(agent);                              // seed identity.md (overseer-aware) / purpose.md / operating-manual.md
     agent.systemPrompt = composeSystemPrompt(agent);
     registerHero(agent);   // found the multi-agent registry with the hero
     Harness.resetTotals();
@@ -757,7 +931,7 @@ const App = (() => {
       Build.init({ getStation: () => station, persist: persist, world: World, agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })) });
       const bbBuild = el('bb-build');
       if (bbBuild) {
-        let seenBuild = false; try { seenBuild = !!localStorage.getItem('skynet.refit.seen'); } catch (e) {}
+        let seenBuild = false; try { seenBuild = !!localStorage.getItem('starnet.refit.seen'); } catch (e) {}
         if (!seenBuild) bbBuild.classList.add('refit-nudge');   // pulse the dock button until first opened
         bbBuild.onclick = () => { SFX.click(); bbBuild.classList.remove('refit-nudge'); Build.toggle(); if (typeof Tutorial !== 'undefined' && Tutorial.onBuildOpen && Build.isOpen && Build.isOpen()) Tutorial.onBuildOpen(); };
       }
@@ -894,11 +1068,12 @@ const App = (() => {
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
     if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
+    if (typeof Updates !== 'undefined' && typeof StationUI !== 'undefined') Updates.init({ notify: StationUI.notify, rerender: StationUI.rerender });
     el('btn-begin').onclick = startCreation;
     el('btn-newagent').onclick = () => {
       SFX.click(); Save.clear();
       // NEW AGENT = a clean slate: also wipe the behavioral stores that self-persist OUTSIDE the save
-      // envelope (Save.clear only removes skynet.save). Per the Commander's scope decision, learned
+      // envelope (Save.clear only removes starnet.save). Per the Commander's scope decision, learned
       // task-mining (S1) + curiosity dismissals (S2) are per-agent and reset; one-time UI/consent flags stay.
       if (typeof MintStore !== 'undefined' && MintStore.reset) MintStore.reset();
       if (typeof CuriosityStore !== 'undefined' && CuriosityStore.reset) CuriosityStore.reset();
@@ -907,7 +1082,7 @@ const App = (() => {
     el('btn-resume').onclick = () => { const s = Save.load(); if (s) { SFX.open(); resumeInto(s); } };
 
     // data portability — the safety net for the localStorage-fragile agent. Export bundles every
-    // skynet.* key + a memory snapshot into one file; import restores it on any browser.
+    // starnet.* key + a memory snapshot into one file; import restores it on any browser.
     const dataStatus = m => { const n = el('data-status'); if (n) n.textContent = m || ''; };
     el('btn-export').onclick = async () => {
       SFX.click(); dataStatus('exporting…');
@@ -953,5 +1128,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail };
+  return { show, refreshUsage, persist, refreshRail: renderRail, summonAgent, summonForRequest };
 })();

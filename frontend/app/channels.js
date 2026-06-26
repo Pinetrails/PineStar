@@ -1,4 +1,4 @@
-/* SKYNET — channels.js : per-workstream COMMS run-state (THE GATE).
+/* STARNET — channels.js : per-workstream COMMS run-state (THE GATE).
 
    The single defect that made genuine multi-agent impossible was that chat.js kept ONE
    global run-state (one `busy`, one `currentRunId`, one in-flight stream) and wiped the DOM
@@ -38,6 +38,7 @@
       acc: '',                    // accumulated in-flight assistant text (survives a switch)
       tools: [],                  // in-flight tool-activity lines: [{ text, isErr }]
       pending: null,              // live consent awaiting a human: { promptId, tool, argsSummary, runId }
+      startedAt: 0,               // wall-clock ms this run began (the COMMS elapsed timer reads it; survives a switch)
       status: 'online'            // 'online' | 'thinking…' | 'working…' | 'awaiting your approval…'
     };
   }
@@ -53,10 +54,13 @@
   function has(wsId) { return map.has(wsId); }
 
   // ---------- run lifecycle ----------
-  // a run is starting on this workstream — clear any stale transient state, mark busy.
-  function begin(wsId) {
+  // a run is starting on this workstream — clear any stale transient state, mark busy. ts (wall-clock ms,
+  // injected by the caller so this module stays clock-free + headless-testable) stamps the run's start so
+  // the COMMS elapsed timer reads a real "how long has this turn been running" off the channel.
+  function begin(wsId, ts) {
     const c = get(wsId);
     c.busy = true; c.runId = null; c.acc = ''; c.tools = []; c.pending = null;
+    c.startedAt = ts || 0;
     c.status = 'thinking…';
     return c;
   }
@@ -64,6 +68,7 @@
   function end(wsId) {
     const c = peek(wsId); if (!c) return;
     c.busy = false; c.runId = null; c.acc = ''; c.tools = []; c.pending = null;
+    c.startedAt = 0;
     c.status = 'online';
   }
   function setRunId(wsId, runId) { const c = get(wsId); c.runId = runId; return runId; }
@@ -77,6 +82,7 @@
   // ---------- queries ----------
   function isBusy(wsId) { const c = peek(wsId); return !!(c && c.busy); }
   function runIdOf(wsId) { const c = peek(wsId); return c ? c.runId : null; }
+  function startedAtOf(wsId) { const c = peek(wsId); return c ? c.startedAt : 0; }
   function statusOf(wsId) { const c = peek(wsId); return c ? c.status : 'online'; }
   function pendingOf(wsId) { const c = peek(wsId); return c ? c.pending : null; }
   function anyBusy() { for (const c of map.values()) if (c.busy) return true; return false; }
@@ -91,6 +97,7 @@
       wsId: c.wsId, busy: c.busy, runId: c.runId, acc: c.acc,
       tools: c.tools.map(t => ({ text: t.text, isErr: t.isErr })),
       pending: c.pending ? Object.assign({}, c.pending) : null,
+      startedAt: c.startedAt,
       status: c.status
     };
   }
@@ -107,7 +114,7 @@
     get: get, peek: peek, has: has,
     begin: begin, end: end, setRunId: setRunId, setStatus: setStatus,
     appendToken: appendToken, setAcc: setAcc, addTool: addTool, setPending: setPending, clearPending: clearPending,
-    isBusy: isBusy, runIdOf: runIdOf, statusOf: statusOf, pendingOf: pendingOf,
+    isBusy: isBusy, runIdOf: runIdOf, startedAtOf: startedAtOf, statusOf: statusOf, pendingOf: pendingOf,
     anyBusy: anyBusy, busyCount: busyCount, busyIds: busyIds, pendingIds: pendingIds, snapshot: snapshot,
     setComposeTarget: setComposeTarget, composeTarget: composeTarget,
     drop: drop, reset: reset

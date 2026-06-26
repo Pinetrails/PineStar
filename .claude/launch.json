@@ -9,6 +9,14 @@
       "autoPort": false
     },
     {
+      "name": "skin-test",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/skins/sidecar/index.js"],
+      "port": 8790,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8790" }
+    },
+    {
       "name": "skynet-frontend",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "http-server", "frontend", "-c-1", "-p", "8087"],
@@ -55,6 +63,62 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/arcade-game/frontend", "-c-1", "-p", "8096"],
       "port": 8096
+    },
+    {
+      "name": "onboarding-remaster-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/onboarding-remaster/frontend", "-c-1", "-p", "8097"],
+      "port": 8097
+    },
+    {
+      "name": "skins-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/skins/frontend", "-c-1", "-p", "8098"],
+      "port": 8098
+    },
+    {
+      "name": "commission-redux-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/commission-redux/frontend", "-c-1", "-p", "8099"],
+      "port": 8099
+    },
+    {
+      "name": "card-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", ".qa_tmp", "-c-1", "-p", "8101"],
+      "port": 8101
+    },
+    {
+      "name": "recruit-bay-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/recruit-bay/frontend", "-c-1", "-p", "8124"],
+      "port": 8124
+    },
+    {
+      "name": "awakening-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/awakening-dialogue/frontend", "-c-1", "-p", "8125"],
+      "port": 8125
+    },
+    {
+      "name": "create-overseer-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/create-overseer/frontend", "-c-1", "-p", "8126"],
+      "port": 8126
+    },
+    {
+      "name": "comms-msg-actions-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/comms-msg-actions/frontend", "-c-1", "-p", "8130"],
+      "port": 8130
+    },
+    {
+      "name": "tutorial-fix-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/tutorial-fix/dev/seed.js"],
+      "port": 8811,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8811", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
     }
   ]
 }

@@ -1,4 +1,4 @@
-/* SKYNET — assets.js : PixelLab sprite loading + per-agent recoloring */
+/* STARNET — assets.js : PixelLab sprite loading + per-agent recoloring */
 'use strict';
 
 const SPRITES = (() => {
@@ -32,27 +32,30 @@ const SPRITES = (() => {
     return '';
   }
 
-  /* crew sprites render on a 92px canvas — too large for 12px tiles. downscale
-     once at recolor time (cached), nearest-neighbor for crispness.
+  /* crew sprites are authored on a 92px master — far larger than their ~35px on-floor footprint.
+     We DON'T pre-shrink here any more: the old nearest-neighbor crush to ~35px dropped most of the
+     master's pixels and mushed every agent into a shapeless blob (the picker, which shows the full
+     master, looked far better than the floor). Instead we cache frames at NATIVE resolution and apply
+     the per-set downscale at DRAW time with smoothing ON (drawBody) — full detail survives onto the
+     floor at the SAME size, and stays sharp when the camera zooms in.
      ultron keeps more of his source size so he towers over the crew. */
   const SCALE = { ultron: 0.60 };   // skins read their scale from DATA.SKINS; ULTRON is special
+  function drawScaleFor(setName) {
+    return SCALE[setName] || (DATA.SKINS[setName] && DATA.SKINS[setName].scale) || 2 / 3;
+  }
   function tintFrames(agentId, key) {
     const ck = agentId + '|' + key;
     if (tinted[ck]) return tinted[ck];
     const src = frames[key];
     if (!src) return null;
     const filt = filterFor(agentId);
-    const setName = key.split('.')[0];
-    const sc = SCALE[setName] || (DATA.SKINS[setName] && DATA.SKINS[setName].scale) || 2 / 3;
     tinted[ck] = src.map(img => {
-      const w = Math.max(1, Math.round(img.width * sc));
-      const h = Math.max(1, Math.round(img.height * sc));
+      if (!filt) return img;   // no recolor (skins are natively colored) → use the master image directly, full res
       const c = document.createElement('canvas');
-      c.width = w; c.height = h;
+      c.width = img.width; c.height = img.height;
       const x = c.getContext('2d');
-      x.imageSmoothingEnabled = false;
-      if (filt) x.filter = filt;
-      x.drawImage(img, 0, 0, w, h);
+      x.filter = filt;
+      x.drawImage(img, 0, 0);
       return c;
     });
     return tinted[ck];
@@ -118,10 +121,15 @@ const SPRITES = (() => {
     const fr = tintFrames(b.id, key);
     if (!fr || !fr.length) return null;
     const f = fr.length > 1 ? fr[Math.floor(nowMs / (1000 / fps) + b.phase) % fr.length] : fr[0];
-    const x = Math.round(b.px - f.width / 2);
-    const y = Math.round(b.py - f.height + 4 + bob);
+    // footprint = native master × per-set scale → identical on-floor size as before, but f is now the
+    // full-resolution master. Draw it DOWN to that size with smoothing ON so the detail survives (and
+    // stays sharp if the camera zooms in, since it resamples straight from the 92px master each frame).
+    const sc = drawScaleFor(set);
+    const dw = f.width * sc, dh = f.height * sc;
+    const x = Math.round(b.px - dw / 2);
+    const y = Math.round(b.py - dh + 4 + bob);
     // soft shadow scaled to the body's footprint
-    const shw = Math.max(8, Math.round(f.width * 0.38));
+    const shw = Math.max(8, Math.round(dw * 0.38));
     if (set === 'ultron') {
       // menacing red spill under the station's leader
       ctx.globalAlpha = 0.18 + 0.08 * Math.sin(nowMs / 400);
@@ -132,9 +140,13 @@ const SPRITES = (() => {
     ctx.fillStyle = '#000';
     ctx.fillRect(Math.round(b.px) - (shw >> 1), Math.round(b.py) - 1, shw, 2);
     ctx.globalAlpha = 1;
-    ctx.drawImage(f, x, y);
+    const prevSmooth = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(f, x, y, dw, dh);
+    ctx.imageSmoothingEnabled = prevSmooth;
     // geometry for overlays (alert icon, bubble, selection box) — top of the visible body
-    return { top: y + Math.round(f.height * 0.22), w: Math.round(f.width * 0.6), h: f.height };
+    return { top: y + Math.round(dh * 0.22), w: Math.round(dw * 0.6), h: dh };
   }
 
   /* loading */

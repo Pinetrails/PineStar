@@ -114,9 +114,10 @@
 
   function makeShellTool(deps) {
     deps = deps || {};
+    const environment = deps.environment || null;
     const spawn = deps.spawn, fs = deps.fs, P = deps.pathMod, ROOT = deps.root;
     const bg = deps.bg || null;   // H2.2: the singleton background-process manager (shellbg.js); null -> bg disabled
-    if (typeof spawn !== 'function' || !fs || !P || !ROOT) throw new Error('shell.js requires { spawn, fs, pathMod, root }');
+    if (!environment && (typeof spawn !== 'function' || !fs || !P || !ROOT)) throw new Error('shell.js requires { spawn, fs, pathMod, root } or { environment }');
     const redact = typeof deps.redact === 'function' ? deps.redact : (s) => s;
     const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : () => 0;
     const isWin = (deps.platform != null) ? (deps.platform === 'win32') : WIN;
@@ -142,28 +143,35 @@
         if (!cmd) throw new Error('empty command');
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
-        const jailRoot = P.join(ROOT, aid);
+        const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
         // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
         // that is still in-jail and still exists; otherwise fall back to the jail root.
         const sess = sessions.get(aid);
-        let cwd = jailRoot;
-        if (sess && sess.cwd && withinJail(P, sess.cwd, jailRoot) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
-        try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {}
+        let cwd = environment ? environment.getCwd(aid) : jailRoot;
+        if (!environment && sess && sess.cwd && withinJail(P, sess.cwd, jailRoot) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
+        if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
         // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
         if (args && args.background) {
-          if (!bg) return Promise.resolve({ content: 'Background processes are not available in this build.', summary: 'unavailable' });
-          const r = bg.start({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin });
+          if (!environment && !bg) return Promise.resolve({ content: 'Background processes are not available in this build.', summary: 'unavailable' });
+          const r = environment && typeof environment.startBackground === 'function'
+            ? environment.startBackground({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin })
+            : bg.start({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin });
           const content = r.ok
             ? 'Started background process ' + r.bgId + ' in your workspace. It keeps running while you work — check it with shell.bg.status (id "' + r.bgId + '"), stop it with shell.bg.kill.'
             : 'Could not start a background process: ' + r.error;
           return Promise.resolve({ content: content, summary: r.ok ? ('bg started ' + r.bgId) : 'bg refused' });
         }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
-        return runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin }).then(function (res) {
+        const markerIsWin = environment && environment.backendId !== 'local' ? false : isWin;
+        const run = environment && typeof environment.execute === 'function'
+          ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now } })
+          : runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
+        return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
           const pm = parseMarker(res.out);
-          if (pm.cwd && withinJail(P, pm.cwd, jailRoot)) sessions.set(aid, { cwd: pm.cwd });
+          if (environment && pm.cwd) environment.rememberCwd(aid, pm.cwd);
+          else if (pm.cwd && withinJail(P, pm.cwd, jailRoot)) sessions.set(aid, { cwd: pm.cwd });
           const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
           const body = redact(pm.cleanOut || '(no output)');
@@ -187,14 +195,15 @@
       schema: { type: 'object', properties: { id: { type: 'string' } } },
       run: function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
-        if (!bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
+        const source = environment && typeof environment.statusBackground === 'function' ? environment : null;
+        if (!source && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : null;
         if (id) {
-          const v = bg.status(aid, id);
+          const v = source ? source.statusBackground(aid, id) : bg.status(aid, id);
           if (!v) return { content: 'No background process "' + id + '".', summary: 'not found' };
           return { content: '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '')) + ' · ' + v.ms + 'ms · ' + v.cmd + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : 'exited ' + v.exitCode };
         }
-        const list = bg.status(aid) || [];
+        const list = source ? (source.statusBackground(aid) || []) : (bg.status(aid) || []);
         if (!list.length) return { content: 'No background processes.', summary: '0' };
         return { content: list.map(function (v) { return '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode) + ' · ' + v.cmd; }).join('\n'), summary: list.length + ' process(es)' };
       }
@@ -205,9 +214,10 @@
       schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
       run: function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
-        if (!bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
+        const source = environment && typeof environment.killBackground === 'function' ? environment : null;
+        if (!source && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : '';
-        const r = bg.kill(aid, id);
+        const r = source ? source.killBackground(aid, id) : bg.kill(aid, id);
         return { content: r.ok ? (r.alreadyExited ? 'Process ' + id + ' had already exited.' : 'Killed background process ' + id + '.') : ('Could not kill: ' + r.error), summary: r.ok ? 'killed' : 'not killed' };
       }
     };

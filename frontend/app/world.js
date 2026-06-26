@@ -1,4 +1,4 @@
-/* SKYNET — world.js : the LIVE station the agent lives inside.
+/* STARNET — world.js : the LIVE station the agent lives inside.
 
    Renders the player-built WorldModel station (multi-room) with the generalized
    procedural bake (stationbake.js), under a pan/zoom camera. The agent has a
@@ -65,7 +65,6 @@ const World = (() => {
   // AGENT GROWTH HUD: the hero's live Xp.compute() snapshot pushed in by XpStore (drives the name-tag "Lv N"
   // chip + the gold level-up ripple). The station headline lives in the top-bar STATION chip, not the canvas.
   let xpAgent = null, levelUpAt = 0;
-  let compactBeatAt = 0, compactBeat = null;   // M-mem.4: the desk gauge's "context compacted" beat (real agent.compact)
   const CREW_COLORS = ['#5ad0ff', '#ff8a5a', '#7df08a', '#e0a0ff', '#ffd45a', '#5affd0', '#ff6a9a'];
   const crewColor = aid => CREW_COLORS[U.hash('' + aid) % CREW_COLORS.length];
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
@@ -357,7 +356,7 @@ const World = (() => {
     if (convey) convey.reset();         // W2: drop the prior agent's in-flight belt crates
     chanQueues.clear(); serverLit.clear();   // W3: no phantom backlog gauge / no body stuck "working" from a prior run
     xpAgent = null;                     // W4: name-tag level chip re-seeds from XpStore on enterGame
-    levelUpAt = 0; compactBeatAt = 0; compactBeat = null; lastSlagAt = -1e9; lastOutboxFlash = -1e9;   // W4: one-shot beats don't replay into the newborn
+    levelUpAt = 0; lastSlagAt = -1e9; lastOutboxFlash = -1e9;   // W4: one-shot beats don't replay into the newborn
     agent = {
       id: a.id, name: a.name, color: a.color || '#5ad0ff', skin: a.skin || DATA.DEFAULT_SKIN,
       px: 0, py: 0, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: true,
@@ -1541,7 +1540,7 @@ const World = (() => {
   /* ---------- power-down: in the deep wind-down mood it goes dormant where it stands (the eerie "is it off?") ---------- */
   function sleep(now) {
     self.goal = 'sleep'; self.usingProp = null; self.studyKey = null; self.quirkKind = null;
-    self.sitting = true; self.working = false; self.state = 'idle';
+    self.sitting = false; self.working = false; self.state = 'idle';   // dormant STANDING where it stands — never seated: a sit pose on a chairless tile reads as "sitting on air"; the sit anim is reserved for an actual seat (desk/couch)
     self.glance = null;                                      // frozen: maybeGlance skips goal==='sleep', so no lingering cooldown to leak
     self.studyUntil = now + U.irnd(20000, 55000);
     curiositySay(SLEEP_LINE, 0.3, now);
@@ -1796,12 +1795,13 @@ const World = (() => {
     if (agent.state === 'walk' && !agent.target && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) {
       agent.state = 'idle'; agent.idleUntil = 0;
     }
-    // THE DESK-TRIP INVARIANT (chat.js sets activity='task' for the WHOLE duration of a task run): a task
-    // ALWAYS seizes the agent here — this block runs ABOVE every idle/leisure branch in the tick ladder, and
-    // all of those branches are gated on activity==='idle', so while a task runs the agent walks to the
-    // workstation and STAYS seated working there until the run ends (then the activity!=='task' branch below
-    // stands it up). Never add a branch that moves the body while activity==='task'. Stance is locked in
-    // classify.js (stanceFor) + classify.test.js; this is the world half of the same promise.
+    // THE DESK-TRIP INVARIANT: while activity==='task' the agent is seized HERE — this block runs ABOVE every
+    // idle/leisure branch in the tick ladder, and all of those are gated on activity==='idle', so the agent
+    // walks to the workstation and STAYS seated working until activity flips off 'task' (the branch below then
+    // stands it up). Never add a branch that moves the body while activity==='task'. NOTE: chat.js now ARMS
+    // 'task' REACTIVELY — the moment a run makes its first real tool call (walkToDesk), not the instant the
+    // Commander sends a message — so a question answered from memory never triggers this. Once armed it holds
+    // for the rest of the run. The talk/task mapping still lives in classify.js (stanceFor) + classify.test.js.
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (activity === 'task' && agent.goal !== 'work') {
       if (agent.goal !== 'summon' && agent.goal !== 'fetch') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
@@ -1969,10 +1969,10 @@ const World = (() => {
     if (kindleArmed || kindleP > 0) drawKindle(now);   // THE KINDLING — dormant ember + hold prompt + awareness bar (pre-ignition)
     if (floodAt) drawFlood(now);   // THE FLOOD — the cascade of knowledge streaming in, over the dark room
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
-    drawDeskGauge(now);   // the context-window memory core at the workstation (world-space, above the lightmap)
+    // (the context-window gauge now lives engraved in the bottom bar — StationUI.ctxTick, not the desk)
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
-    if (agent && !agent.unplaced && hoverAgent) drawNameTag();
+    if (agent && !agent.unplaced && hoverAgent) drawNameplate(now);
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
     drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
@@ -2195,26 +2195,59 @@ const World = (() => {
     else { ctx.fillRect(x - 3 + (step ? 1 : 0), y - 2, 2, 2); ctx.fillRect(x + 1 - (step ? 1 : 0), y - 2, 2, 2); }
   }
 
-  function drawNameTag() {
-    ctx.save();
-    ctx.font = '9px monospace';
-    const label = agent.name;
-    const tw = ctx.measureText(label).width, bw = tw + 8, bh = 11;
-    const rx = rposX(), ry = rposY();
-    const bx = Math.round(rx - bw / 2), by = Math.round(ry - 30);
-    ctx.fillStyle = 'rgba(4,3,2,0.88)'; ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = agent.color; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = agent.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(label, rx, by + bh / 2);
-    // a small gold "Lv N" chip riding just right of the name tag (the hero's earned seasoning at a glance)
-    if (xpAgent && xpAgent.level) {
-      const lv = 'Lv ' + xpAgent.level;
-      const lw = ctx.measureText(lv).width, cw = lw + 6, cx = bx + bw + 2;
-      ctx.fillStyle = 'rgba(4,3,2,0.88)'; ctx.fillRect(cx, by, cw, bh);
-      ctx.strokeStyle = '#ffd45a'; ctx.lineWidth = 1; ctx.strokeRect(cx + 0.5, by + 0.5, cw - 1, bh - 1);
-      ctx.fillStyle = '#ffd45a'; ctx.fillText(lv, cx + cw / 2, by + bh / 2);
+  /* ---------- hover nameplate: a compact terminal tag for the agent under the cursor ----------
+     Screen-space (always sharp — not the zoom-blurred world-space sliver it replaced): a slim CRT
+     plate in the station's own VT323 face (the same font stack the DOM uses, so it matches whether
+     VT323 is loaded or falls back to Courier), with a faint phosphor glow + scanlines. Codename,
+     level, and the 1px XP-to-next sliver along the bottom all share the suit color — one tiny extra.
+     Anchored just above the head, clamped to the viewport. Intentionally small: a glance, not a window. */
+  const PLATE_FONT = '"VT323","Courier New",monospace';   // the station terminal face (mirrors the body font stack)
+  function drawNameplate(now) {
+    if (!cache) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const Wc = cv.width / dpr, Hc = cv.height / dpr;
+    const suit = agent.color || '#ffaa33';
+    const name = String(agent.name || '');
+    const lvl = (xpAgent && xpAgent.level) ? ('Lv ' + xpAgent.level) : null;
+    const frac = (xpAgent && typeof xpAgent.frac === 'number') ? Math.max(0, Math.min(1, xpAgent.frac)) : 0;
+
+    const nameSz = 17, lvlSz = 16;
+    ctx.font = nameSz + 'px ' + PLATE_FONT; const nameW = ctx.measureText(name).width;
+    ctx.font = lvlSz + 'px ' + PLATE_FONT;  const lvlW = lvl ? ctx.measureText(lvl).width : 0;
+    const padX = 8, gap = lvl ? 9 : 0, h = 21, barH = 2;
+    const w = Math.round(padX * 2 + nameW + gap + lvlW);
+
+    // anchor centered just above the head, crisp + clamped to the canvas
+    const ax = (rposX() * scale + panX) / dpr, ay = (rposY() * scale + panY) / dpr;
+    const spriteH = 15 * scale / dpr;
+    const x = Math.round(Math.max(4, Math.min(Wc - w - 4, ax - w / 2)));
+    const y = Math.round(Math.max(4, Math.min(Hc - h - 4, ay - spriteH - 9 - h)));
+
+    // plate: dark CRT glass + scanlines + an amber structural frame with a suit accent along the top
+    ctx.fillStyle = 'rgba(6,5,4,0.92)'; ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = 0.13; ctx.fillStyle = '#000';
+    for (let sy = y + 2; sy < y + h - 1; sy += 3) ctx.fillRect(x + 1, sy, w - 2, 1);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#b9791c'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.globalAlpha = 0.6; ctx.fillStyle = suit; ctx.fillRect(x + 1, y, w - 2, 1); ctx.globalAlpha = 1;
+
+    // codename (suit) + level (gold) in VT323, with a faint phosphor bloom (mirrors the DOM text-shadow)
+    const tcy = y + Math.round((h - barH) / 2) + 1;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.shadowBlur = 4; ctx.shadowColor = suit;
+    ctx.font = nameSz + 'px ' + PLATE_FONT; ctx.fillStyle = suit; ctx.fillText(name, x + padX, tcy);
+    if (lvl) {
+      ctx.font = lvlSz + 'px ' + PLATE_FONT; ctx.fillStyle = suit; ctx.fillText(lvl, x + padX + nameW + gap, tcy);
     }
-    ctx.restore();
+    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+    // the one tiny useful extra: a hairline XP-to-next bar along the bottom inside edge (honest — hidden at 0)
+    if (frac > 0) {
+      const bx0 = x + 1, bw0 = w - 2, byb = y + h - barH - 1;
+      ctx.fillStyle = '#140c03'; ctx.fillRect(bx0, byb, bw0, barH);
+      ctx.fillStyle = suit; ctx.fillRect(bx0, byb, Math.max(1, Math.round(bw0 * frac)), barH);
+    }
   }
 
   function drawBubble(now, who) {
@@ -2644,10 +2677,10 @@ const World = (() => {
     // is handled by the handoff bindings above — so this never double-drives a body.
     U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
     U.bus.on('agent.run.end', p => { if (p && p.agentId && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
-    // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — fire the desk
-    // gauge's drain beat + a one-line notify. Truthful: driven by the event's own before/after token counts.
+    // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — raise a
+    // one-line notify. Truthful: driven by the event's own before/after token counts. The bottom-bar
+    // CTX gauge flashes its own mint "compacted" echo (StationUI listens to agent.compact directly).
     U.bus.on('agent.compact', p => {
-      compactBeatAt = performance.now(); compactBeat = p || {};
       const freed = (p && p.beforeTokens) ? Math.round((p.removed || 0) / p.beforeTokens * 100) : 0;
       if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('🧠 context compacted' + (freed > 0 ? ' — freed ' + freed + '%' : ''), 'good');
     });
@@ -2773,74 +2806,6 @@ const World = (() => {
     cell(cB, r2, 'SLAG', String(fs.slag), fs.slag > 0 ? (flash ? '#ff9a7a' : '#ef6a4a') : '#3f8a5a');
     cell(cA, r3, 'THRU', fs.thruOutPerMin + '/m', fs.thruOutPerMin > 0 ? '#aeb9c4' : '#5a6a62');
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
-  }
-
-  /* ---------- CONTEXT-WINDOW gauge: the agent's memory core, made physical ----------
-     A segmented "memory bank" standing beside the workstation that fills toward the model's REAL
-     context ceiling: latest prompt_tokens / catalog context_length (via Harness.contextState +
-     CtxGauge). Green→amber→red as it nears full; the topmost cell pulses at crit (steady under
-     reduced-motion). Drawn in world-space, above the lightmap, so it lives at the desk and reads at
-     a glance. Honest by construction: an unknown limit shows an empty core + "—" (calibrating),
-     never a fabricated fill. The core FILLS toward the ceiling on real prompt_tokens; when the loop
-     auto-compacts (agent.compact, M-mem.4) the COMPACTION beat below drains it with a downward sweep
-     + "−N%" caption, and the steady fill then settles lower on the next real reading. */
-  function drawDeskGauge(now) {
-    if (!desk || !agent || agent.unplaced) return;
-    if (wakeDark > 0.5) return;   // stay out of the awakening cinematic until first light has mostly arrived
-    if (typeof Harness === 'undefined' || !Harness.contextState || typeof CtxGauge === 'undefined') return;
-    const cs = Harness.contextState();
-    const g = CtxGauge.compute(cs.used, cs.limit);
-
-    const gw = 4, gh = 18, N = 6, gap = 1;
-    const gx = (desk.tx + desk.w) * T;   // standing just past the desk's right edge
-    const gy = desk.ty * T - 6;
-
-    // housing
-    fpx(gx - 1, gy - 1, gw + 2, gh + 2, '#05080b');
-    fpx(gx, gy, gw, gh, '#0b1014');
-    fpx(gx, gy, gw, 1, '#1b2630');        // top rim
-    fpx(gx, gy, 1, gh, '#13202a');        // left edge sheen
-
-    const col = g.level === 'crit' ? '#ff5a4a' : g.level === 'warn' ? '#ffb24a' : g.level === 'ok' ? '#3fd07c' : '#243038';
-    const dimC = '#13201a';
-    const cellH = Math.floor((gh - (N - 1) * gap) / N);
-    const lit = (g.known && g.used > 0) ? Math.max(1, Math.round(g.frac * N)) : 0;   // any real fill lights ≥1 cell
-
-    for (let i = 0; i < N; i++) {   // stack bottom-up
-      const cy = gy + gh - cellH - i * (cellH + gap);
-      const on = i < lit;
-      let c = on ? col : dimC;
-      if (on && g.level === 'crit' && i === lit - 1 && !reduceMotion() && !fblink(360)) c = U.shade(col, -0.45);
-      fpx(gx + 1, cy, gw - 2, cellH, c);
-      if (on) fpx(gx + 1, cy, gw - 2, 1, U.shade(c, 0.3));   // cell top highlight
-    }
-    if (g.known && g.used > 0) fglow(gx, gy, gw, gh, col, g.level === 'crit' ? 0.20 : 0.12);
-
-    // compact readout above the core — percentage when known, a calibrating dash when not.
-    // VT323 (the station's typed/terminal font) with a 1px dark backing so it reads over the lit room.
-    ctx.font = "10px 'VT323', 'Courier New', monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    const lx = gx + gw / 2, ly = gy - 3;
-    ctx.fillStyle = 'rgba(2,4,3,0.85)'; ctx.fillText(g.pctLabel, lx, ly + 1);
-    ctx.fillStyle = g.known ? col : '#5a6b62'; ctx.fillText(g.pctLabel, lx, ly);
-
-    // COMPACTION beat (M-mem.4): a brief (~1.5s) drain when a real agent.compact fired — a bright sweep down
-    // the core + a fading glow + a "−N%" caption. Reads as the memory bank folding older context away.
-    if (compactBeatAt) {
-      const bt = (now - compactBeatAt) / 1500;
-      if (bt < 0 || bt >= 1) { compactBeatAt = 0; }
-      else {
-        const a = 1 - bt;
-        fglow(gx, gy, gw, gh, '#9effc4', 0.22 * a);
-        if (!reduceMotion()) { ctx.fillStyle = 'rgba(180,255,210,' + (0.85 * a).toFixed(3) + ')'; ctx.fillRect(gx, gy + Math.min(gh, bt * gh), gw, 1); }   // the drain sweep
-        const freed = (compactBeat && compactBeat.beforeTokens) ? Math.round((compactBeat.removed || 0) / compactBeat.beforeTokens * 100) : 0;
-        const cap = freed > 0 ? '⤓−' + freed + '%' : '⤓ COMPACT';   // ⤓−N%
-        const cyy = gy - 13;
-        ctx.font = "9px 'VT323', 'Courier New', monospace"; ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(2,4,3,' + (0.85 * a).toFixed(3) + ')'; ctx.fillText(cap, lx, cyy + 1);
-        ctx.fillStyle = 'rgba(158,255,196,' + a.toFixed(3) + ')'; ctx.fillText(cap, lx, cyy);
-      }
-    }
-    ctx.textAlign = 'left';
   }
 
   return { init, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit, pauseBridge, resumeBridge,

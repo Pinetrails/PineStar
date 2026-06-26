@@ -31,16 +31,36 @@
 
   function makeFsTools(deps) {
     deps = deps || {};
-    const fsp = deps.fsp, P = deps.pathMod, ROOT = deps.root;
-    if (!fsp || !P || !ROOT) throw new Error('fs.js requires { fsp, pathMod, root }');
+    const fsp = deps.fsp, P = deps.pathMod, ROOT = deps.root, environment = deps.environment || null;
+    if (!fsp || !P || (!ROOT && !environment)) throw new Error('fs.js requires { fsp, pathMod, root } or { fsp, pathMod, environment }');
     const WRITE_BYTES = (deps.limits && deps.limits.writeBytes) || (1 << 20);
     const READ_RETURN = (deps.limits && deps.limits.readReturn) || 200000;
     const redact = deps.redact || ((s) => s);   // §5.6: scrub secrets out of any surfaced search line (optional, default identity)
 
     async function workspaceRoot(agentId) {
+      if (environment && typeof environment.ensureWorkspace === 'function') return environment.ensureWorkspace(safeAgentId(agentId || 'agent'));
       const dir = P.join(ROOT, safeAgentId(agentId || 'agent'));
       await fsp.mkdir(dir, { recursive: true });
       return dir;
+    }
+    function pathInside(abs, base) {
+      let a = P.resolve(abs), b = P.resolve(base);
+      if (P.sep === '\\') { a = a.toLowerCase(); b = b.toLowerCase(); }
+      return a === b || a.indexOf(b + P.sep) === 0;
+    }
+    async function realpathOrSelf(p) {
+      try { return await fsp.realpath(p); } catch (_) { return p; }
+    }
+    async function deepestExisting(abs, base) {
+      let cur = abs;
+      for (;;) {
+        try { await fsp.lstat(cur); return cur; }
+        catch (e) {
+          const parent = P.dirname(cur);
+          if (!parent || parent === cur) return base;
+          cur = parent;
+        }
+      }
     }
     // Resolve a relative path and PROVE it stays inside the agent's workspace.
     async function resolveInside(agentId, rel) {
@@ -49,7 +69,11 @@
         throw new Error('illegal path: ' + rel);
       const base = await workspaceRoot(agentId);
       const abs = P.resolve(base, rel || '.');
-      if (abs !== base && abs.indexOf(base + P.sep) !== 0) throw new Error('path escapes workspace');
+      if (!pathInside(abs, base)) throw new Error('path escapes workspace');
+      const baseReal = await realpathOrSelf(base);
+      const existing = await deepestExisting(abs, base);
+      const existingReal = await realpathOrSelf(existing);
+      if (!pathInside(existingReal, baseReal)) throw new Error('path escapes workspace via symlink');
       return { base, abs };
     }
 
@@ -318,7 +342,7 @@
 
     return {
       writeTool, readTool, listTool, appendTool, editTool, searchTool,
-      _internals: { resolveInside, workspaceRoot, safeAgentId, walk, collectFiles, globToRe },
+      _internals: { resolveInside, workspaceRoot, safeAgentId, walk, collectFiles, globToRe, pathInside },
       register(reg) { [writeTool, readTool, listTool, appendTool, editTool, searchTool].forEach(t => reg.register(t)); return reg; }
     };
   }

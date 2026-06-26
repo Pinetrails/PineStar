@@ -1,4 +1,4 @@
-/* SKYNET — worldmodel.js : the canonical, mutable, serializable STATION document.
+/* STARNET — worldmodel.js : the canonical, mutable, serializable STATION document.
 
    This is the single source of truth the builder edits and that both the renderer
    (via projectGeometry → stationbake.js) and the future AgentOrg runtime read.
@@ -114,7 +114,7 @@ const WorldModel = (() => {
 
   function freshDoc(createdAt) {
     const doc = {
-      schema: 'skynet.station', version: 1, _nid: 1,
+      schema: 'starnet.station', version: 1, _nid: 1,
       meta: { name: 'STARNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null, trunkRoomId: null },
       rooms: {}, order: [], props: [], belts: {}
     };
@@ -750,7 +750,7 @@ const WorldModel = (() => {
   /* forward-only migration ladder for serialized docs (none yet — v1 is current) */
   function migrate(doc) {
     if (!doc || typeof doc !== 'object') return doc;
-    if (!doc.schema) doc.schema = 'skynet.station';
+    if (!doc.schema) doc.schema = 'starnet.station';
     if (!doc.version) doc.version = 1;
     // future: while (doc.version < CURRENT && migrations[doc.version]) ...
     // make deserialize TOTAL over any partial/legacy/corrupted v1 blob (it's the persistence seam):

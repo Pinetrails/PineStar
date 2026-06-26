@@ -1,4 +1,4 @@
-/* SKYNET — curiositystore.js : the thin wiring around the pure just-in-time curiosity engine (curiosity.js).
+/* STARNET — curiositystore.js : the thin wiring around the pure just-in-time curiosity engine (curiosity.js).
 
    Holds the two pieces of state the pure engine can't: the per-SESSION nudge count (in memory, resets each
    run of the app — keeps "one gentle ask per session") and the persisted set of dimensions the Commander has
@@ -7,7 +7,7 @@
    just the live read of the dossier's blank dimensions + the budget bookkeeping. NEVER emits on U.bus. */
 'use strict';
 const CuriosityStore = (() => {
-  const KEY = 'skynet.curiosity.v1';
+  const KEY = 'starnet.curiosity.v1';
   let state = null;
   let sessionCount = 0;
 
@@ -32,7 +32,7 @@ const CuriosityStore = (() => {
   function markDismissed(dim) { if (ready() && dim) { state.dismissed[dim] = true; save(); } }   // never raise it again
 
   // S2: a NEW AGENT starts with no waved-off dimensions. Drop the self-persisted key so the next init()
-  // hydrates clean (Save.clear() only wipes skynet.save — this store persists to its own key).
+  // hydrates clean (Save.clear() only wipes starnet.save — this store persists to its own key).
   function reset() { state = null; sessionCount = 0; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   return { init, consider, markShown, markDismissed, reset };

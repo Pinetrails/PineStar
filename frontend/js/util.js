@@ -1,4 +1,4 @@
-/* SKYNET — util.js : helpers + event bus */
+/* STARNET — util.js : helpers + event bus */
 'use strict';
 
 const U = {

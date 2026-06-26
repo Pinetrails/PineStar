@@ -15,9 +15,11 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
+use serde::Serialize;
+use tauri::{ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
 const KEYCHAIN_ACCOUNT: &str = "openrouter";
@@ -41,6 +43,73 @@ impl AppState {
             }
         }
     }
+}
+
+struct PendingUpdate(Mutex<Option<Update>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateStatus {
+    desktop: bool,
+    current_version: String,
+    target: Option<String>,
+    pending: Option<UpdateMetadata>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheck {
+    available: bool,
+    checked_at: u64,
+    update: Option<UpdateMetadata>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMetadata {
+    version: String,
+    current_version: String,
+    date: Option<String>,
+    body: Option<String>,
+    target: String,
+    critical: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "event", content = "data")]
+enum UpdateInstallEvent {
+    #[serde(rename_all = "camelCase")]
+    Started {
+        content_length: Option<u64>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Progress {
+        chunk_length: usize,
+    },
+    Finished,
+    Installing,
+}
+
+fn update_metadata(update: &Update) -> UpdateMetadata {
+    UpdateMetadata {
+        version: update.version.clone(),
+        current_version: update.current_version.clone(),
+        date: update.date.map(|d| d.to_string()),
+        body: update.body.clone(),
+        target: update.target.clone(),
+        critical: update
+            .raw_json
+            .get("critical")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 impl Drop for AppState {
@@ -108,12 +177,10 @@ fn strip_verbatim(p: &Path) -> PathBuf {
 /// worktree one level up; release = bundled resource dir.
 fn project_root(app: &tauri::AppHandle) -> PathBuf {
     let candidates = if cfg!(debug_assertions) {
-        vec![
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(".")),
-        ]
+        vec![PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))]
     } else {
         let mut paths = Vec::new();
         if let Ok(exe) = std::env::current_exe() {
@@ -328,6 +395,100 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Desktop updater status without hitting the network. The frontend uses this to
+/// render the Update Center immediately and decide whether native updates exist.
+#[tauri::command]
+fn starnet_update_status(
+    app: AppHandle,
+    pending_update: State<PendingUpdate>,
+) -> Result<UpdateStatus, String> {
+    let pending = pending_update
+        .0
+        .lock()
+        .map_err(|_| "update state is unavailable".to_string())?
+        .as_ref()
+        .map(update_metadata);
+    Ok(UpdateStatus {
+        desktop: true,
+        current_version: app.package_info().version.to_string(),
+        target: tauri_plugin_updater::target(),
+        pending,
+    })
+}
+
+/// Check the signed release manifest and cache the verified update object if a
+/// newer build exists. No install happens until the user asks for it.
+#[tauri::command]
+async fn starnet_update_check(
+    app: AppHandle,
+    pending_update: State<'_, PendingUpdate>,
+) -> Result<UpdateCheck, String> {
+    let update = app
+        .updater_builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    let metadata = update.as_ref().map(update_metadata);
+    *pending_update
+        .0
+        .lock()
+        .map_err(|_| "update state is unavailable".to_string())? = update;
+    Ok(UpdateCheck {
+        available: metadata.is_some(),
+        checked_at: now_ms(),
+        update: metadata,
+    })
+}
+
+/// Download, verify, and install the pending update. On Windows the updater exits
+/// the app as the installer starts; on other desktop platforms we restart after a
+/// successful install so the user lands on the new version.
+#[tauri::command]
+async fn starnet_update_install(
+    app: AppHandle,
+    pending_update: State<'_, PendingUpdate>,
+    on_event: Channel<UpdateInstallEvent>,
+) -> Result<(), String> {
+    let update = {
+        let mut guard = pending_update
+            .0
+            .lock()
+            .map_err(|_| "update state is unavailable".to_string())?;
+        guard
+            .take()
+            .ok_or_else(|| "there is no pending update".to_string())?
+    };
+
+    let mut started = false;
+    let install_result = update
+        .download_and_install(
+            |chunk_length, content_length| {
+                if !started {
+                    let _ = on_event.send(UpdateInstallEvent::Started { content_length });
+                    started = true;
+                }
+                let _ = on_event.send(UpdateInstallEvent::Progress { chunk_length });
+            },
+            || {
+                let _ = on_event.send(UpdateInstallEvent::Finished);
+            },
+        )
+        .await;
+
+    if let Err(e) = install_result {
+        if let Ok(mut guard) = pending_update.0.lock() {
+            *guard = Some(update);
+        }
+        return Err(e.to_string());
+    }
+
+    let _ = on_event.send(UpdateInstallEvent::Installing);
+    app.restart()
+}
+
 fn main() {
     tauri::Builder::default()
         // A second launch should focus the running window, not spin up a 2nd sidecar.
@@ -337,11 +498,15 @@ fn main() {
                 let _ = win.set_focus();
             }
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             harness_store_key,
             harness_has_key,
             harness_clear_key,
-            open_external_url
+            open_external_url,
+            starnet_update_status,
+            starnet_update_check,
+            starnet_update_install
         ])
         .setup(|app| {
             let root = project_root(app.handle());
@@ -367,12 +532,13 @@ fn main() {
             };
             let _ = spawn_sidecar(&state);
             app.manage(state);
+            app.manage(PendingUpdate(Mutex::new(None)));
 
             // The frontend is served LOCALLY (bundled via frontendDist), NOT from the sidecar's
             // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
             // rewrites the frontend's root-relative /api/* fetches to the sidecar's port.
             let init = format!(
-                "window.__SKYNET_API__='http://127.0.0.1:{port}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__SKYNET_API__+u;return _sf(u,o)}};"
+                "window.__STARNET_API__='http://127.0.0.1:{port}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
             );
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

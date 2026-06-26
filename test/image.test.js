@@ -11,7 +11,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { makeImageTools } = require('../sidecar/tools/builtin/image.js');
 
-const ROOT = path.join(os.tmpdir(), 'skynet-image-test');
+const ROOT = path.join(os.tmpdir(), 'starnet-image-test');
 
 // a 1x1 transparent PNG (real bytes), as base64 — used as the model's "generated" image
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';

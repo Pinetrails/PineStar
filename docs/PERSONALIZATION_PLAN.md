@@ -20,7 +20,7 @@ The panel validated the instinct and sharpened it with two reframes that the moa
 
 ## 2. Principles (non-negotiable)
 
-- **Local-first, provably.** The profile lives in `localStorage` (`skynet.save`) / per-agent JSON. No central server. The trust promise is architectural, not policy: *"your profile, 0 bytes sent."*
+- **Local-first, provably.** The profile lives in `localStorage` (`starnet.save`) / per-agent JSON. No central server. The trust promise is architectural, not policy: *"your profile, 0 bytes sent."*
 - **Glass box.** One screen shows everything the harness has learned, each row with its provenance; the user can edit, forget, pause, and export. Cloud assistants can't match this.
 - **Every recommendation explains itself.** A deterministic "because you…" line on every card, sourced from the signal that actually dominated the score — never an LLM guess, always present.
 - **Honest about confidence.** Cold-start says so ("calibrating"), exactly like the existing Confidence% meter. Never fabricate a number the data hasn't earned.

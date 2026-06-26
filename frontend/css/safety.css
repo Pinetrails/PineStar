@@ -1,4 +1,4 @@
-/* SKYNET — safety.css : the always-visible E-STOP control + the prefers-reduced-motion floor.
+/* STARNET — safety.css : the always-visible E-STOP control + the prefers-reduced-motion floor.
    Loaded LAST so the reduced-motion overrides win. safety.js builds the E-STOP DOM; this styles it. */
 
 /* ---------- E-STOP control (fixed, bottom-right, above the HUD + CRT glass) ---------- */

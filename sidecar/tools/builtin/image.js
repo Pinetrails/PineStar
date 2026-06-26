@@ -107,7 +107,7 @@
       if (!apiKey) throw new Error('no OpenRouter API key configured — connect a key first');
       const res = await withTimeout(signal => doFetch(OR_URL, {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://skynet.local', 'X-Title': 'SKYNET' },
+        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://starnet.local', 'X-Title': 'STARNET' },
         body: JSON.stringify(body),
         signal
       }).then(async r => ({ status: r.status, json: await r.json().catch(() => null), text: null })), timeoutMs);

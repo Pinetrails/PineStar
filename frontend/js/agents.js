@@ -1,4 +1,4 @@
-/* SKYNET — agents.js : world bodies, movement & behavior
+/* STARNET — agents.js : world bodies, movement & behavior
    v8 "PURPOSEFUL STATION": bodies carry plans (step sequences) so every
    journey has a reason — deliverables get hand-carried to the belt and on
    to HERALD, researchers walk their intel to the factories, flagged work

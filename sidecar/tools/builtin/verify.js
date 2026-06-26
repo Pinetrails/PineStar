@@ -30,8 +30,9 @@
 
   function makeVerifyTool(deps) {
     deps = deps || {};
+    const environment = deps.environment || null;
     const spawn = deps.spawn, fs = deps.fs, P = deps.pathMod, ROOT = deps.root;
-    if (typeof spawn !== 'function' || !fs || !P || !ROOT) throw new Error('verify.js requires { spawn, fs, pathMod, root }');
+    if (!environment && (typeof spawn !== 'function' || !fs || !P || !ROOT)) throw new Error('verify.js requires { spawn, fs, pathMod, root } or { environment }');
     const redact = typeof deps.redact === 'function' ? deps.redact : (s) => s;
     const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : () => 0;
     const isWin = (deps.platform != null) ? (deps.platform === 'win32') : WIN;
@@ -50,17 +51,21 @@
       run: function (args, ctx) {
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
-        const cwd = P.join(ROOT, aid);
+        const cwd = environment ? environment.getCwd(aid) : P.join(ROOT, aid);
+        const hostCwd = environment && typeof environment.workspaceRoot === 'function' ? environment.workspaceRoot(aid) : cwd;
         let cmd = String((args && args.cmd) || '').trim();
         if (!cmd) {
-          if (fs.existsSync(P.join(cwd, 'package.json'))) cmd = 'npm test';
+          if (fs && fs.existsSync && fs.existsSync(P.join(hostCwd, 'package.json'))) cmd = 'npm test';
           else throw new Error('no check command given and no package.json found — pass { "cmd": "<your check>" }');
         }
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
-        try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {}
+        if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
-        return runCommand({ spawn: spawn, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin }).then(function (res) {
+        const run = environment && typeof environment.execute === 'function'
+          ? environment.execute({ agentId: aid, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now } })
+          : runCommand({ spawn: spawn, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
+        return run.then(function (res) {
           const verdict = interpret(res);
           const body = redact(res.out || '(no output)');
           const content = (verdict.passed ? '✓ PASSED' : '✗ FAILED') + ' — `' + cmd + '`\n' + body

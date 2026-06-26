@@ -1,4 +1,4 @@
-/* SKYNET — recipes.js : THE RECIPE / MISSION LIBRARY — ready-made, parameterized job templates.
+/* STARNET — recipes.js : THE RECIPE / MISSION LIBRARY — ready-made, parameterized job templates.
 
    The sibling of specialties.js. A SPECIALTY answers "who should my agent BE" (its purpose + standing
    orders); a RECIPE answers "what should my agent DO right now" — a one-tap mission like "morning research
@@ -28,7 +28,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const STORE_KEY = 'skynet.recipes.v1';   // localStorage home for custom (save-your-own) recipes
+  const STORE_KEY = 'starnet.recipes.v1';   // localStorage home for custom (save-your-own) recipes
 
   // the interest vocabulary the personalization recommender ranks against (mirrors classify.js getTag and
   // specialties.js) — a recipe's `tags` map weights these lanes so it ranks honestly in the same feed.

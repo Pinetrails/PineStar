@@ -7,7 +7,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { makeSpotifyStore } = require('../sidecar/spotify/store.js');
 
-const DIR = path.join(os.tmpdir(), 'skynet-spotify-store-test');
+const DIR = path.join(os.tmpdir(), 'starnet-spotify-store-test');
 
 function fetchOnce(resp) {
   const calls = [];

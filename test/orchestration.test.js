@@ -4,7 +4,11 @@
    rejects self/unknown targets without a run, null-guards a refused child, and is capability-gated. */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { makeOrchestrationTools } = require('../sidecar/tools/builtin/orchestration.js');
+const { makeSubagentManager } = require('../sidecar/subagents.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 
@@ -16,6 +20,7 @@ function fakeRunOnce(impl) {
   return fn;
 }
 const counter = () => { let n = 0; return () => 'child_' + (++n); };
+const tick = () => new Promise(resolve => setImmediate(resolve));
 
 (async () => {
 
@@ -29,7 +34,8 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'lead-model', perWorker: 1, newId: counter() });
   const signal = { aborted: false };
   const emitted = [];
-  const ctx = { agentId: 'agent', signal, emit: (name, p) => emitted.push({ name, p }) };
+  const leadBroker = { _isLeadConsent: true };   // stand-in for the lead's consent broker (ctx.consent)
+  const ctx = { agentId: 'agent', signal, emit: (name, p) => emitted.push({ name, p }), consent: leadBroker };
   const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'find X' }, { agentId: 'analyst', prompt: 'analyze Y' }] }, ctx);
 
   A.eq(ro.calls.length, 2, 'two child runs dispatched (one per worker)');
@@ -39,7 +45,11 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   A.eq(ro.calls[1].model, 'lead-model', 'child falls back to the lead model when the worker has none');
   A.ok(ro.calls[0].signal === signal, 'the parent signal is threaded into the child (abort propagation)');
   A.eq(ro.calls[0].maxCostUsd, 1, 'per-worker cost cap is passed to the child');
-  A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless (no consent prompts)');
+  A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless on the autonomous office baseline');
+  // SAME ACCESS AS THE ORCHESTRATOR: a worker shares the lead's consent broker (its APPROVAL posture + grants)
+  // and is handed the WORKBENCH, so shell/writes are available and gated by the lead's approvals — not auto-denied.
+  A.ok(ro.calls[0].consent === leadBroker, "worker shares the lead's consent broker (same access as the orchestrator)");
+  A.ok(Array.isArray(ro.calls[0].extraObjects) && ro.calls[0].extraObjects.some(o => o.objectType === 'workbench'), 'worker is equipped with the workbench (terminal) on top of the office');
   A.eq(ro.calls[0].isTask, true, 'worker run is a task (tool-capable)');
   A.ok(ro.calls[0].runId && ro.calls[0].runId !== ro.calls[1].runId, 'each child gets a distinct runId');
 
@@ -105,6 +115,58 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
 }
 
 // ---- capability gate: team.dispatch is denied without the orchestrator grant, runs with it ----
+// ---- background mode returns durable handles immediately and records watch events/results ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-orch-bg-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'subagents.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce(async (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'directive', model: 'm' });
+      return { reason: 'done', messages: [{ role: 'assistant', content: 'bg:' + o.agentId }], usd: 0.3 };
+    });
+    const roster = new Map([['researcher', { system: 'R' }]]);
+    const { dispatchTool, subagentsTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), subagents });
+    const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }], background: true }, { agentId: 'lead', emit: () => {} });
+    const handle = JSON.parse(out.content)[0];
+    A.ok(handle.id && handle.status === 'running', 'background dispatch returns a running durable handle immediately');
+    await tick(); await tick();
+    const rec = subagents.get(handle.id);
+    A.eq(rec.status, 'done', 'background worker completes into the durable record');
+    A.eq(rec.result, 'bg:researcher', 'background worker stores final text');
+    A.ok(rec.events.some(e => e.name === 'agent.run.start'), 'background worker stores watchable lifecycle events');
+    const listed = await subagentsTool.run({}, { agentId: 'lead' });
+    A.eq(JSON.parse(listed.content).length, 1, 'team.subagents lists this lead\'s durable workers');
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+// ---- background interrupt aborts the worker signal and marks the record resumable ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-orch-cut-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'subagents.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    let childSignal = null;
+    const ro = fakeRunOnce(async (o) => {
+      childSignal = o.signal;
+      return new Promise(() => {});
+    });
+    const roster = new Map([['researcher', { system: 'R' }]]);
+    const { dispatchTool, interruptTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), subagents });
+    const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }], background: true }, { agentId: 'lead', emit: () => {} });
+    const handle = JSON.parse(out.content)[0];
+    await tick();
+    const cut = await interruptTool.run({ id: handle.id }, { agentId: 'lead' });
+    A.ok(/interrupted/.test(cut.summary), 'team.interrupt reports interrupted');
+    A.ok(childSignal && childSignal.aborted, 'team.interrupt aborts the child run signal');
+    A.eq(subagents.get(handle.id).status, 'interrupted', 'team.interrupt marks the durable record interrupted');
+    A.eq(subagents.get(handle.id).canResume, true, 'interrupted background worker can be resumed');
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+// ---- capability gate: team.dispatch is denied without the orchestrator grant, runs with it ----
 {
   const ro = fakeRunOnce();
   const roster = new Map([['researcher', { system: 'R' }]]);
@@ -135,6 +197,73 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   // an explicit override is honored (the host wires this from CRON_MAX_RUN_MS)
   const over = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 123456 }).dispatchTool;
   A.eq(over.timeoutMs, 123456, 'deps.dispatchTimeoutMs overrides the dispatch wall-clock');
+}
+
+// ============================ team.summon (create a NEW worker live) ============================
+
+// ---- the tool's shape: lead-gated, consent-gated, and outlasts the 120s browser-ack backstop ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  A.eq(summonTool.name, 'team.summon', 'tool is team.summon');
+  A.eq(summonTool.capability, 'orchestrator', 'gated by the orchestrator object (lead-only, like team.dispatch)');
+  A.eq(summonTool.scope, 'write', 'summon is a write-scope mutation');
+  A.eq(summonTool.requiresConsent, true, 'summon IS consent-gated (the APPROVAL beat) — unlike team.dispatch');
+  A.ok(typeof summonTool.timeoutMs === 'number' && summonTool.timeoutMs > 120000, 'tool wall-clock outlasts the 120s summon ack backstop (clean null, not a tool timeout)');
+}
+
+// ---- happy path: ctx.summon resolves a new id; the spec is forwarded; the result carries the id for dispatch ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  let gotSpec = null;
+  const ctx = { agentId: 'agent', summon: async (s) => { gotSpec = s; return 'researcher-2'; } };
+  const out = await summonTool.run({ name: 'Researcher', specId: 'researcher', purpose: 'find things' }, ctx);
+  A.ok(gotSpec && gotSpec.name === 'Researcher' && gotSpec.specId === 'researcher', 'the spec (name + specId) is forwarded to ctx.summon');
+  A.eq(gotSpec.purpose, 'find things', 'a custom purpose is forwarded');
+  const parsed = JSON.parse(out.content);
+  A.eq(parsed.agentId, 'researcher-2', 'the new agentId comes back for the lead to delegate to');
+  A.ok(/team\.dispatch/.test(out.summary), 'the summary nudges the lead to delegate to the new worker');
+}
+
+// ---- declined / no browser: ctx.summon resolves null -> a clean "not completed", no crash ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const out = await summonTool.run({ name: 'Ghost' }, { agentId: 'agent', summon: async () => null });
+  A.eq(out.summary, 'declined', 'a null ack (decline/timeout/disconnect) reports declined');
+  A.ok(/No agent was created/.test(out.content), 'declined summon says plainly that nothing was created');
+}
+
+// ---- headless / worker: no ctx.summon closure -> degrades to a clear "not available" (fails closed) ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const out = await summonTool.run({ name: 'X' }, { agentId: 'worker' });   // no summon on ctx (autonomous run)
+  A.eq(out.summary, 'unavailable', 'summon without a live station is unavailable, not a crash');
+}
+
+// ---- nothing to summon: neither name nor specId -> noop, never calls ctx.summon ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  let called = false;
+  const out = await summonTool.run({ name: '   ' }, { agentId: 'agent', summon: async () => { called = true; return 'x'; } });
+  A.eq(out.summary, 'noop', 'an empty spec is a noop');
+  A.ok(!called, 'a noop never reaches ctx.summon');
+}
+
+// ---- capability gate: team.summon denied without the orchestrator grant, runs with it ----
+{
+  const reg = makeRegistry();
+  makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() }).register(reg);
+  let summoned = 0;
+  const summon = async () => { summoned++; return 'researcher-2'; };
+
+  const denyCtx = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: [], approvalRules: {} }, { emit: () => {}, summon });
+  const r1 = await reg.dispatch({ name: 'team.summon', args: { name: 'R', specId: 'researcher' } }, denyCtx);
+  A.ok(r1.isError && /capability denied/.test(r1.content), 'team.summon denied without the orchestrator object');
+  A.eq(summoned, 0, 'a denied summon never reaches ctx.summon');
+
+  const allowCtx = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: ['team.summon'], approvalRules: {} }, { emit: () => {}, summon });
+  const r2 = await reg.dispatch({ name: 'team.summon', args: { name: 'R', specId: 'researcher' } }, allowCtx);
+  A.ok(!r2.isError, 'team.summon runs when the orchestrator object is present');
+  A.eq(summoned, 1, 'a granted summon reaches ctx.summon');
 }
 
 A.report('orchestration.test');

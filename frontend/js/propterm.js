@@ -1,4 +1,4 @@
-/* SKYNET — propterm.js : per-prop terminal windows.
+/* STARNET — propterm.js : per-prop terminal windows.
    v3 — "every prop is a console". Clicking a tagged prop on the station map
    opens a draggable retro window (✕ top-right, click-to-front, remembers its
    position) scoped to that prop's purpose: the Etsy fabricator opens ETSY 1,

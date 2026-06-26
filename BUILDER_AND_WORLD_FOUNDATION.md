@@ -52,7 +52,7 @@ const idx        = (tx, ty) => {          // chunk-local flat index
 
 ```ts
 interface Station {
-  schema: 'skynet.station';
+  schema: 'starnet.station';
   version: number;                 // save-format version → drives migrations
   id: string;                      // save-slot / station id
   meta: { name: string; createdAt: number; tier: number; spawnRoomId: RoomId; };
@@ -279,7 +279,7 @@ The frontend's existing subscribers bind without renaming. This is the kept-canv
 
 ```ts
 interface SaveDoc {
-  schema: 'skynet.station';
+  schema: 'starnet.station';
   version: number;            // TOP-LEVEL integer — the thing v7 never had
   station: StationSerialized; // Station minus all derived (chunks/grids/indices)
 }

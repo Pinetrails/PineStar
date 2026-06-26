@@ -1,4 +1,4 @@
-/* SKYNET — voice.js : two-way voice for the COMMS panel.
+/* STARNET — voice.js : two-way voice for the COMMS panel.
 
    INPUT  (push-to-talk): a mic button transcribes your speech and feeds the text
           straight through Chat.send — identical to typing — so all of chat.js's
@@ -23,8 +23,8 @@ const Voice = (() => {
   const el = id => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   const synth = ('speechSynthesis' in window) ? window.speechSynthesis : null;
-  const LS_SPEAK = 'skynet.voice.speak';
-  const LS_CONVO = 'skynet.voice.convo';   // remembers the user WAS hands-free, so a refresh can offer one-tap resume
+  const LS_SPEAK = 'starnet.voice.speak';
+  const LS_CONVO = 'starnet.voice.convo';   // remembers the user WAS hands-free, so a refresh can offer one-tap resume
   const REARM_DELAY = 350;                 // ms after the agent stops talking before the mic re-opens (echo guard)
   const MAX_EMPTY = 3;                      // consecutive silent listens before the loop goes passive
 
@@ -56,7 +56,7 @@ const Voice = (() => {
   // ---- UI handles (wired in init) -----------------------------------------
   let micBtn = null, toggleBtn = null, modeBtn = null, inputEl = null, statusEl = null;
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
-  let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'confidant';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
+  let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'professional';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
   let listening = false, speaking = false, savedStatus = '';
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open
