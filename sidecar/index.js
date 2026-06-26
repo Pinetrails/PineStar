@@ -232,6 +232,35 @@ process.on('uncaughtException', e => console.error('uncaughtException:', (e && e
 
 try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 
+/* ---- P2 crash-safe persistence helpers for the single-file sibling stores (roster, dossier, channel
+   secrets, codex tokens, connectors, allowlist, notebook). Each of these was a plain
+   writeFileSync->rename (atomic but NOT power-loss durable) with a catch-and-return-empty loader (so a
+   torn/zero-length file booted the app AMNESIAC and the next write made it permanent). These route every
+   write through writeFileDurable (fsync-before-rename) + a .bak last-known-good snapshot, and every load
+   through readJsonResilient (recover the .bak on a torn/corrupt main; quarantine+log loudly when there is
+   no usable .bak — NEVER silently empty). A genuinely-absent file (new install/agent) is the only thing
+   that loads empty. These stores hold a FULL in-memory state snapshot on each write (not a disk-snapshot
+   read-modify-write), so they have no lost-update hazard and need no per-key lock — durability + recovery
+   is the fix they needed. (notebook + channels DO read-modify-write a per-key disk snapshot, so those get
+   the per-key serialized update() / sync-RMW path instead.) */
+let _quarantineSeq = 0;
+function quarantineCorrupt(file, tag) {
+  try {
+    const dest = file + '.corrupt-' + process.pid + '-' + (++_quarantineSeq);
+    fs.renameSync(file, dest);
+    console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered from .bak — quarantined to ' + dest + ' and loading empty (data NOT silently wiped).');
+  } catch (e) { console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered and could not be quarantined:', (e && e.message) || e); }
+}
+// load a single-file JSON store with last-known-good recovery; returns undefined for absent/corrupt.
+function loadResilient(file, tag) {
+  const r = readJsonResilient({ fs: fs }, file);
+  if (r.status === 'recovered') console.warn('[' + (tag || 'store') + '] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.');
+  else if (r.status === 'corrupt') quarantineCorrupt(file, tag);
+  return (r.status === 'ok' || r.status === 'recovered') ? r.value : undefined;
+}
+// durable single-file write: fsync-before-rename + snapshot the prior good value to <file>.bak.
+function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
+
 /* ---- spend ledger + budget (Wave 1 cost spine) ----
    The ledger is an append-only JSONL of finished runs (sibling of the fs jail, so the agent's own fs.* tools can
    neither read nor rewrite the spend record). Each append is fsync'd to disk so the day/global pools survive even
@@ -376,17 +405,15 @@ function replaceAgentRoster(list) {
 }
 function loadAgentRoster() {
   try {
-    const raw = JSON.parse(fs.readFileSync(AGENT_ROSTER_FILE, 'utf8'));
-    replaceAgentRoster(raw && raw.agents);
+    const raw = loadResilient(AGENT_ROSTER_FILE, 'roster');   // last-known-good recovery; never silent-wipe
+    if (raw) replaceAgentRoster(raw && raw.agents);
   } catch (_) {}
 }
 function saveAgentRoster() {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '' }));
-    const tmp = AGENT_ROSTER_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, agents }));
-    fs.renameSync(tmp, AGENT_ROSTER_FILE);
+    saveResilient(AGENT_ROSTER_FILE, { version: 1, agents });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
 }
 loadAgentRoster();
@@ -412,17 +439,6 @@ function notebookFile(key) {
   const aid = String(key).replace(/^notebook:/, '') || 'agent';
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('bad notebook agentId');
   return path.join(WORKSPACES, aid + '.notebook.json');
-}
-// P2 last-resort: a present-but-unrecoverable store (corrupt main AND no usable .bak) must NEVER be silently
-// emptied. Quarantine the bad file aside (so the next write can't overwrite it and a human can inspect it) and
-// log LOUDLY; the store then loads empty for that key, but the data was surfaced, not silently wiped.
-let _quarantineSeq = 0;
-function quarantineCorrupt(file, tag) {
-  try {
-    const dest = file + '.corrupt-' + process.pid + '-' + (++_quarantineSeq);
-    fs.renameSync(file, dest);
-    console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered from .bak — quarantined to ' + dest + ' and loading empty (data NOT silently wiped).');
-  } catch (e) { console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered and could not be quarantined:', (e && e.message) || e); }
 }
 const notebookDurable = makeDurableJsonStore({
   fs: fs, path: path, fileFor: notebookFile, writeDurable: writeFileDurable,
@@ -450,12 +466,10 @@ const commanderDossier = {
     this._block = String(block == null ? '' : block).slice(0, 4096);   // the frontend caps it ~800; this is a hard safety ceiling
     try {
       fs.mkdirSync(WORKSPACES, { recursive: true });
-      const tmp = DOSSIER_FILE + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ block: this._block }));
-      fs.renameSync(tmp, DOSSIER_FILE);   // atomic replace
+      saveResilient(DOSSIER_FILE, { block: this._block });   // fsync-durable + .bak last-known-good
     } catch (e) { console.warn('[dossier] persist failed:', (e && e.message) || e); }
   },
-  load() { try { const o = JSON.parse(fs.readFileSync(DOSSIER_FILE, 'utf8')); this._block = String((o && o.block) || ''); } catch (_) {} }
+  load() { const o = loadResilient(DOSSIER_FILE, 'dossier'); if (o) this._block = String((o && o.block) || ''); }
 };
 commanderDossier.load();
 
@@ -581,14 +595,12 @@ const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(ENV('FULL_ACCESS') || '').t
 const ALLOWLIST_FILE = path.join(WORKSPACES, 'permissions.allow.json');
 function loadAllowlist() {
   try {
-    const raw = JSON.parse(fs.readFileSync(ALLOWLIST_FILE, 'utf8'));
+    const raw = loadResilient(ALLOWLIST_FILE, 'permissions');   // recover blessed grants from .bak on a torn main
     return new Set((raw && Array.isArray(raw.allow) ? raw.allow : []).filter(x => typeof x === 'string'));
-  } catch (e) { return new Set(); }   // missing or corrupt -> nothing pre-allowed (fail-closed)
+  } catch (e) { return new Set(); }   // unrecoverable -> nothing pre-allowed (fail-closed, the safe default)
 }
 function persistAllowlist(nextAllow) {   // throws on failure -> the broker degrades the grant to a deny
-  const tmp = ALLOWLIST_FILE + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ version: 1, allow: nextAllow }));
-  fs.renameSync(tmp, ALLOWLIST_FILE);    // atomic replace
+  saveResilient(ALLOWLIST_FILE, { version: 1, allow: nextAllow });   // fsync-durable + .bak; throws on a real write failure
 }
 const grantsPermanent = loadAllowlist();   // process-wide, restored from disk
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
@@ -628,15 +640,13 @@ let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled 
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 function loadChannelSecrets() {
-  try { const raw = JSON.parse(fs.readFileSync(CHANNEL_SECRETS_FILE, 'utf8')); return (raw && typeof raw === 'object') ? raw : {}; }
-  catch (e) { return {}; }   // missing/corrupt -> nothing configured
+  try { const raw = loadResilient(CHANNEL_SECRETS_FILE, 'channels'); return (raw && typeof raw === 'object') ? raw : {}; }
+  catch (e) { return {}; }   // unrecoverable -> nothing configured
 }
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    const tmp = CHANNEL_SECRETS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(obj));
-    fs.renameSync(tmp, CHANNEL_SECRETS_FILE);
+    saveResilient(CHANNEL_SECRETS_FILE, obj);   // fsync-durable + .bak last-known-good (bot token survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
 }
 let channelSecrets = loadChannelSecrets();
@@ -647,18 +657,17 @@ const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, c
 //      are NEVER placed on the event bus. Shape: { access_token, refresh_token, last_refresh, auth_mode }. ----
 const CODEX_TOKENS_FILE = path.join(WORKSPACES, 'codex', 'tokens.json');
 function loadCodexTokens() {
-  try { const raw = JSON.parse(fs.readFileSync(CODEX_TOKENS_FILE, 'utf8')); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
+  try { const raw = loadResilient(CODEX_TOKENS_FILE, 'codex'); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
   catch (e) { return null; }
 }
 function saveCodexTokens(obj) {
   try {
     fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true });
-    const tmp = CODEX_TOKENS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(obj));
-    fs.renameSync(tmp, CODEX_TOKENS_FILE);
+    saveResilient(CODEX_TOKENS_FILE, obj);   // fsync-durable + .bak last-known-good (OAuth tokens survive power loss)
   } catch (e) { console.warn('[codex] token persist failed:', (e && e.message) || e); }
 }
-function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} }
+// clear must also drop the .bak so a signed-out session can't be "recovered" from the last-known-good on reload.
+function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} }
 let codexTokens = loadCodexTokens();
 
 // Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
@@ -712,16 +721,14 @@ const router = makeRouter();
 const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
 function loadConnectorConfigs() {
-  try { const raw = JSON.parse(fs.readFileSync(CONNECTORS_FILE, 'utf8')); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
-  catch (e) { return []; }   // missing/corrupt -> nothing configured
+  try { const raw = loadResilient(CONNECTORS_FILE, 'connectors'); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
+  catch (e) { return []; }   // unrecoverable -> nothing configured
 }
 let connectorConfigs = loadConnectorConfigs();
 function saveConnectorConfigs() {
   try {
     fs.mkdirSync(CONNECTORS_DIR, { recursive: true });
-    const tmp = CONNECTORS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, connectors: connectorConfigs }));
-    fs.renameSync(tmp, CONNECTORS_FILE);   // atomic replace
+    saveResilient(CONNECTORS_FILE, { version: 1, connectors: connectorConfigs });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
 }
 const connectors = makeConnectorManager({
