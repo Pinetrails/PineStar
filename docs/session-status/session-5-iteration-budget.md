@@ -30,6 +30,8 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - `node test/loop.replay.test.js` - pass at 2026-06-26 09:52 UTC
 - `node test/orchestration.test.js` - pass at 2026-06-26 09:52 UTC
 - Not rerun at 2026-06-26 10:52 UTC; this loop made no implementation edits because the remaining production plumbing is blocked/held.
+- `node test/loop.replay.test.js` - pass at 2026-06-26 17:59 UTC
+- `node test/orchestration.test.js` - pass at 2026-06-26 17:59 UTC
 
 ## Full Gate
 
@@ -37,6 +39,7 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - `npm.cmd run test:fast` - pass at 2026-06-26 08:52 UTC
 - `npm.cmd run test:fast` - pass at 2026-06-26 09:52 UTC
 - Not rerun at 2026-06-26 10:52 UTC; not declaring READY while production run-host plumbing remains blocked.
+- `npm.cmd run test:fast` - pass at 2026-06-26 17:59 UTC
 
 ## Live Verification
 
@@ -50,6 +53,8 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - Board check at 2026-06-26 09:51 UTC still shows `sidecar/loop.js` actively contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
 - Board check at 2026-06-26 10:51 UTC still shows `sidecar/loop.js` actively contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
 - `sidecar/index.js` inspection at 2026-06-26 10:52 UTC still shows `runAgentLoop` using `limits: { maxIters: CAPS.maxIters, ... }`; `o.maxIters` is not yet consumed by the production run host.
+- Board check at 2026-06-26 17:57 UTC still shows `sidecar/loop.js` actively contended by `agent/starnet-replacement-eval` and `agent/starnet-spend-model-honesty`; held instead of editing a hot owned implementation file.
+- Board check at 2026-06-26 17:57 UTC still shows `sidecar/index.js` actively contended by `agent/hermes-settings-audit`, `agent/starnet-replacement-eval`, and `agent/starnet-spend-model-honesty`; it also remains outside the Session 5 owned-file list.
 - `AGENTS.md` was requested by the session prompt but is absent under `C:\Users\andro\gen-trees`; this run followed `docs/STARNET_SESSION_LOOPS_1_6.md` and existing repository conventions.
 
 ## Readiness Claim
