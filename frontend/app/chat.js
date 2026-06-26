@@ -698,7 +698,15 @@ const Chat = (() => {
     Object.freeze({ name: 'retry', desc: 're-run the last turn', action: 'retry' }),
     Object.freeze({ name: 'stop', desc: 'interrupt the running turn', action: 'stop' }),
     Object.freeze({ name: 'copy', desc: "copy the agent's last reply", action: 'copy' }),
-    Object.freeze({ name: 'help', desc: 'list available commands', action: 'help' })
+    Object.freeze({ name: 'help', desc: 'list available commands', action: 'help' }),
+    Object.freeze({ name: 'new', desc: 'start a fresh workstream', action: 'new' }),
+    Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', action: 'branch' }),
+    Object.freeze({ name: 'status', desc: 'show current stream and run state', action: 'status' }),
+    Object.freeze({ name: 'usage', desc: 'show token and spend totals', action: 'usage' }),
+    Object.freeze({ name: 'queue', aliases: ['q'], desc: 'show or add queued follow-up text', action: 'queue' }),
+    Object.freeze({ name: 'steer', desc: 'queue steering guidance for the current task', action: 'steer' }),
+    Object.freeze({ name: 'undo', desc: 'remove the last local exchange', action: 'undo' }),
+    Object.freeze({ name: 'compress', desc: 'show context compaction status', action: 'compress' })
   ]);
   function isSlashOpen() { const p = el('chat-slash'); return !!(p && !p.hidden); }
   function copyLastReply() {
@@ -712,8 +720,94 @@ const Chat = (() => {
     }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('no reply to copy yet', '');
   }
+  function refreshWorkflowViews() {
+    try { if (typeof App !== 'undefined' && App.refreshUsage) App.refreshUsage(); } catch (_) {}
+    try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+    try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+  }
+  function streamLabel(w) { return (w && (w.title || (w.id === (typeof Workstreams !== 'undefined' && Workstreams.generalId && Workstreams.generalId()) ? 'General' : 'Untitled'))) || 'current stream'; }
+  function newWorkstreamCommand(args) {
+    if (typeof Workstreams === 'undefined' || !Workstreams.create) return localLine('Workstreams are not available yet.');
+    const title = String(args || '').trim() || null;
+    const ws = Workstreams.create(title, { agentId: (activeWs && activeWs.agentId) || 'agent' });
+    load(ws); refreshWorkflowViews();
+    localLine('Started a fresh workstream' + (title ? ': ' + title : '.') );
+  }
+  function branchWorkstreamCommand(args) {
+    if (!activeWs || typeof Workstreams === 'undefined' || !Workstreams.create) return localLine('No active workstream to branch.');
+    const src = activeWs;
+    const title = String(args || '').trim() || ((src.title || 'General') + ' branch');
+    const ws = Workstreams.create(title, { agentId: src.agentId || 'agent' });
+    ws.history = (src.history || []).map(m => Object.assign({}, m));
+    ws.lane = 'todo';
+    load(ws); refreshWorkflowViews();
+    localLine('Branched from ' + streamLabel(src) + '.');
+  }
+  function statusCommand() {
+    const q = (activeWs && queued.get(activeWs.id)) || [];
+    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
+    const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : '';
+    const state = isBusy() ? 'working' : 'idle';
+    const turns = activeWs && activeWs.history ? activeWs.history.length : 0;
+    localLine('Status: ' + state + ' on ' + streamLabel(activeWs) + ' (' + turns + ' turn' + (turns === 1 ? '' : 's') + ', ' + q.length + ' queued)'
+      + (model ? '; model ' + model + (provider ? ' via ' + provider : '') : '') + '.');
+  }
+  function usageCommand() {
+    const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
+    const c = (activeWs && typeof Workstreams !== 'undefined' && Workstreams.costOf) ? Workstreams.costOf(activeWs.id) : { tokens: 0, usd: 0, calls: 0 };
+    localLine('Usage: lifetime ' + (t.tokens || 0) + ' tokens, $' + ((t.cost || 0).toFixed ? t.cost.toFixed(6) : '0.000000') + ', ' + (t.calls || 0)
+      + ' calls. This stream: ' + (c.tokens || 0) + ' tokens, $' + ((c.usd || 0).toFixed ? c.usd.toFixed(6) : '0.000000') + ', ' + (c.calls || 0) + ' calls.');
+  }
+  function queueCommand(args) {
+    if (!activeWs) return localLine('No active workstream.');
+    const text = String(args || '').trim();
+    if (text) {
+      if (isBusy()) { enqueue(text); localLine('Queued one follow-up for this stream.'); }
+      else send(text);
+      return;
+    }
+    const arr = queued.get(activeWs.id) || [];
+    localLine(arr.length ? ('Queue: ' + arr.length + ' pending - ' + arr.map((t, i) => (i + 1) + '. ' + String(t).slice(0, 80)).join(' | ')) : 'Queue is empty for this stream.');
+  }
+  function steerCommand(args) {
+    if (!activeWs) return localLine('No active workstream.');
+    const text = String(args || '').trim();
+    if (!text) return localLine('Usage: /steer <guidance>');
+    const note = 'Steering note for the current task: ' + text;
+    if (isBusy()) {
+      const arr = queued.get(activeWs.id) || [];
+      arr.unshift(note); queued.set(activeWs.id, arr); renderQueued();
+      localLine('Steering note queued to run next; live mid-run steering is not exposed yet.');
+    } else send(note);
+  }
+  function undoCommand() {
+    if (!activeWs) return localLine('No active workstream.');
+    if (isBusy()) return localLine('Stop the running turn before undoing history.');
+    const h = activeWs.history || [];
+    if (!h.length) return localLine('Nothing to undo.');
+    let removed = 0;
+    if (h[h.length - 1] && h[h.length - 1].role === 'assistant') { h.pop(); removed++; }
+    if (h[h.length - 1] && h[h.length - 1].role === 'user') { h.pop(); removed++; }
+    if (!removed && h.length) { h.pop(); removed++; }
+    load(activeWs); refreshWorkflowViews();
+    localLine('Undid ' + removed + ' message' + (removed === 1 ? '' : 's') + '.');
+  }
+  function compressCommand() {
+    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState() : null;
+    if (cs && cs.limit) {
+      const pct = Math.round(((cs.used || 0) / cs.limit) * 100);
+      localLine('Context: ' + (cs.used || 0) + ' / ' + cs.limit + ' tokens (' + pct + '%). Auto-compaction runs during model calls near the compaction threshold; manual compaction is not exposed yet.');
+    } else {
+      localLine('Context compaction is automatic when the provider reports a context limit; no manual compaction endpoint is exposed yet.');
+    }
+  }
   function localSlashActions() {
-    return { retry: retryLast, stop: stopActive, copy: copyLastReply, help: showHelp };
+    return {
+      retry: retryLast, stop: stopActive, copy: copyLastReply, help: showHelp,
+      new: newWorkstreamCommand, branch: branchWorkstreamCommand, status: statusCommand,
+      usage: usageCommand, queue: queueCommand, steer: steerCommand, undo: undoCommand,
+      compress: compressCommand
+    };
   }
   function showHelp() {
     const builtins = buildCommands().filter(c => c.source !== 'recipe').map(c => '/' + c.name);

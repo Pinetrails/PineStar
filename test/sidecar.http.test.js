@@ -107,6 +107,9 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(slashCat.status, 200, 'GET /api/slash/catalog -> 200');
     A.ok(Array.isArray(slashCat.body.commands), 'slash catalog returns commands');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'retry'), 'slash catalog includes /retry');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'new'), 'slash catalog includes /new');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'branch' && c.aliases && c.aliases.indexOf('fork') >= 0), 'slash catalog includes /branch with /fork alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'queue' && c.aliases && c.aliases.indexOf('q') >= 0), 'slash catalog includes /queue with /q alias');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'morning-brief'), 'slash catalog includes built-in recipe commands');
     A.ok(slashCat.body.commands.some(c => c && c.name === 'plan' && c.source === 'skill'), 'slash catalog includes available compute-only skill commands');
     A.ok(!slashCat.body.commands.some(c => c && c.name === 'test-driven-development'), 'slash catalog omits unavailable workbench skill without placed workbench');
@@ -117,6 +120,11 @@ function boot(port, workspaces, attemptsLeft) {
     const slashRun = await j('POST', '/api/slash/dispatch', { input: '/retry' });
     A.eq(slashRun.status, 200, 'POST /api/slash/dispatch /retry -> 200');
     A.eq(slashRun.body.directive, { type: 'client', action: 'retry', args: '' }, 'slash dispatch returns a client retry directive');
+
+    const slashFork = await j('POST', '/api/slash/dispatch', { input: '/fork copy this' });
+    A.eq(slashFork.status, 200, 'POST /api/slash/dispatch /fork -> 200');
+    A.eq(slashFork.body.command.name, 'branch', '/fork dispatch canonicalizes to branch');
+    A.eq(slashFork.body.directive, { type: 'client', action: 'branch', args: 'copy this' }, 'fork dispatch returns branch client directive');
 
     const slashRecipe = await j('POST', '/api/slash/dispatch', { input: '/summarize launch notes' });
     A.eq(slashRecipe.status, 200, 'POST /api/slash/dispatch recipe -> 200');

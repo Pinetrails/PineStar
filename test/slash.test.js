@@ -7,9 +7,12 @@ const S = require('../sidecar/slash.js');
 {
   const cat = S.catalog();
   const names = cat.commands.map(c => c.name).sort();
-  A.eq(names, ['copy', 'help', 'retry', 'stop'], 'catalog exposes the Plan 1 built-ins');
+  const required = ['branch', 'compress', 'copy', 'help', 'new', 'queue', 'retry', 'status', 'steer', 'stop', 'undo', 'usage'];
+  A.eq(names, required.slice().sort(), 'catalog exposes the built-in workflow commands');
   A.ok(cat.commands.every(c => c.source === 'builtin'), 'catalog marks built-ins');
   A.ok(cat.commands.every(c => c.dispatch === 'client'), 'catalog commands dispatch to client directives');
+  A.ok(cat.commands.find(c => c.name === 'branch').aliases.indexOf('fork') >= 0, 'branch exposes /fork alias');
+  A.ok(cat.commands.find(c => c.name === 'queue').aliases.indexOf('q') >= 0, 'queue exposes /q alias');
 }
 
 {
@@ -25,6 +28,16 @@ const S = require('../sidecar/slash.js');
   A.eq(r.command.name, 'help', 'dispatch resolves help');
   A.eq(r.args, 'details please', 'dispatch preserves trailing args');
   A.eq(r.directive.args, 'details please', 'directive carries args');
+}
+
+{
+  const fork = S.dispatch('/fork copy this thread');
+  A.ok(fork.ok, 'dispatch resolves /fork alias');
+  A.eq(fork.command.name, 'branch', 'fork alias canonicalizes to branch');
+  A.eq(fork.directive, { type: 'client', action: 'branch', args: 'copy this thread' }, 'branch dispatch returns a client directive with args');
+  const q = S.dispatch('/q next note');
+  A.eq(q.command.name, 'queue', 'q alias canonicalizes to queue');
+  A.eq(q.directive.action, 'queue', 'q dispatch runs queue action');
 }
 
 {

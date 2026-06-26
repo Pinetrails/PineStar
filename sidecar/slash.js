@@ -30,6 +30,58 @@ const BUILTIN_COMMANDS = Object.freeze([
     category: 'Info',
     desc: 'list available commands',
     action: 'help'
+  }),
+  Object.freeze({
+    name: 'new',
+    category: 'Session',
+    desc: 'start a fresh workstream',
+    action: 'new'
+  }),
+  Object.freeze({
+    name: 'branch',
+    aliases: ['fork'],
+    category: 'Session',
+    desc: 'fork this conversation into a new workstream',
+    action: 'branch'
+  }),
+  Object.freeze({
+    name: 'status',
+    category: 'Session',
+    desc: 'show current stream and run state',
+    action: 'status'
+  }),
+  Object.freeze({
+    name: 'usage',
+    category: 'Info',
+    desc: 'show token and spend totals',
+    action: 'usage'
+  }),
+  Object.freeze({
+    name: 'queue',
+    aliases: ['q'],
+    category: 'Session',
+    desc: 'show or add queued follow-up text',
+    argsHint: '[message]',
+    action: 'queue'
+  }),
+  Object.freeze({
+    name: 'steer',
+    category: 'Session',
+    desc: 'queue steering guidance for the current task',
+    argsHint: '<guidance>',
+    action: 'steer'
+  }),
+  Object.freeze({
+    name: 'undo',
+    category: 'Session',
+    desc: 'remove the last local exchange',
+    action: 'undo'
+  }),
+  Object.freeze({
+    name: 'compress',
+    category: 'Session',
+    desc: 'show context compaction status',
+    action: 'compress'
   })
 ]);
 
