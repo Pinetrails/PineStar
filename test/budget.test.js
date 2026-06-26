@@ -113,6 +113,27 @@ function collector() { const evs = []; return { emit: (name, payload) => evs.pus
   A.ok(Math.abs(st.overrides.day - 40) < 1e-9, 'status exposes the override headroom');
 }
 
+// ---- resumeGuard: managed-credit hosts can fail closed before resume grants extra headroom ----
+{
+  const calls = [];
+  const b = makeBudget({
+    caps: { day: 40 },
+    ledger: fakeLedger(0, 0),
+    clock: { now: () => 0 },
+    resumeGuard(req) {
+      calls.push(req);
+      return req.meta && req.meta.mode === 'managed' ? { ok: false, reason: 'managed_credits_exhausted' } : true;
+    }
+  });
+  A.ok(b.check('r1', 'a', 40, 0, null), 'day cap starts blocked before resume');
+  A.eq(b.resume('day', 40, { mode: 'managed', accountId: 'acct' }), null, 'managed-credit exhaustion vetoes budget resume');
+  A.ok(Math.abs(b.status(0).overrides.day) < 1e-9, 'vetoed resume grants no override headroom');
+  A.eq(calls.length, 1, 'resume guard is consulted exactly once');
+  A.eq(calls[0].scope, 'day', 'guard sees the requested budget scope');
+  A.eq(calls[0].nextCap, 80, 'guard sees the proposed effective cap');
+  A.ok(b.resume('day', 40, { mode: 'byok' }) > 40, 'non-managed resume can still grant headroom');
+}
+
 // fuller fake ledger that also answers per-agent (the 'agent' scope) — { day, total, byAgent:{id:usd} }
 function fakeLedgerFull(o) {
   o = o || {}; const byAgent = o.byAgent || {};
