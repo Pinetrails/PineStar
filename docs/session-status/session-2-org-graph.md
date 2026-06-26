@@ -2,9 +2,9 @@
 
 ## Current State
 
-- Status: `CHECKPOINT`
+- Status: `HELD-S1-SIDECAR-AUTHORITY`
 - Branch/worktree: `agent/org-graph-gap2` in `C:\Users\andro\gen-trees\org-graph-gap2`
-- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate/self/malformed raw `PipelineEdge` rejection, explicit grant-bound agent validation, and footprint-level placed-object validation.
+- Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate/self/malformed raw `PipelineEdge` rejection, explicit grant-bound agent validation, and footprint-level placed-object validation. Current run rechecked the dependency gate and found S1 still unmerged, so no sidecar acceptance/routing wiring was attempted.
 - Runbook note: `AGENTS.md` was requested but is absent under `C:\Users\andro\gen-trees`; followed `docs/STARNET_SESSION_LOOPS_1_6.md`.
 
 ## Changed Files
@@ -57,12 +57,17 @@
 - `node test/worldmodel.test.js` - pass, `worldmodel: OK (192 assertions)` on 2026-06-26T16:00:51-04:00.
 - `node test/pipeline.test.js` - pass, `pipeline: OK (32 assertions)` on 2026-06-26T16:00:51-04:00.
 - `npm.cmd run test:fast` - pass on 2026-06-26T16:00:51-04:00 after the footprint validation slice.
+- `node test/org-validator.test.js` - pass, `org-validator: OK (50 assertions)` on 2026-06-26T17:01:07-04:00 during S1 dependency recheck.
+- `node test/worldmodel.test.js` - pass, `worldmodel: OK (192 assertions)` on 2026-06-26T17:01:07-04:00.
+- `node test/pipeline.test.js` - pass, `pipeline: OK (32 assertions)` on 2026-06-26T17:01:07-04:00.
+- `npm.cmd run test:fast` - pass on 2026-06-26T17:01:07-04:00 while held for S1 sidecar authority.
 
 ## Full Gates
 
 - `npm.cmd run test:fast` completed green on 2026-06-26T14:00:21-04:00 after the grant-bound agent validation slice.
 - `npm.cmd run test:fast` completed green on 2026-06-26T15:01:47-04:00 after the malformed raw `PipelineEdge` validation slice.
 - `npm.cmd run test:fast` completed green on 2026-06-26T16:00:51-04:00 after footprint-level placed-object validation.
+- `npm.cmd run test:fast` completed green on 2026-06-26T17:01:07-04:00 during the current S1 dependency hold recheck.
 - No HTTP or live sidecar gate run in this checkpoint; this slice is pure validation/model persistence only.
 
 ## Live Verification
@@ -72,11 +77,11 @@
 ## Blockers / Holds
 
 - `HELD-S1-SIDECAR-AUTHORITY`: runbook says if S1 is not merged, Session 2 works only on pure validation modules and tests. Sidecar station acceptance/routing integration remains blocked until S1 exposes the authority API.
-- Coordination board command `node scripts/board.mjs --files frontend/app/orgvalidator.js test/org-validator.test.js test/pipeline.test.js test/worldmodel.test.js frontend/app/pipeline.js frontend/app/worldmodel.js package.json docs/session-status/session-2-org-graph.md` showed only this worktree's existing `frontend/app/orgvalidator.js` edit on the live collision surface; this checkpoint avoided broad hot-file changes and stayed inside owned Session 2 files.
+- Current coordination board command `node scripts/board.mjs --files frontend/app/orgvalidator.js test/org-validator.test.js test/pipeline.test.js test/worldmodel.test.js frontend/app/pipeline.js frontend/app/worldmodel.js package.json docs/session-status/session-2-org-graph.md` showed no uncommitted tracked edits for `frontend/app/orgvalidator.js`; it also showed `agent/station-authority-gap1` still unmerged and ahead of trunk, so the S1 dependency remains explicit.
 
 ## Readiness Claim
 
-- This checkpoint is ready as a pure Session 2 slice.
+- This checkpoint is ready as a pure Session 2 slice and is currently held for S1 integration.
 - Overall Session 2 done condition is not yet met because sidecar station/routing acceptance cannot be wired until S1 lands.
 
 ## Next Loop Condition
