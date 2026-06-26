@@ -20,8 +20,15 @@ Review files:
 - `templates/*-template.png` - grid and mask guides
 - `manifest.json` - dimension, alpha, and catalog-footprint validation
 
+WebGL bake:
+
+- `three-webgl/review-sheet.png` - Three.js/WebGL-baked prop preview sheet
+- `three-webgl/variants/*-webgl.png` - transparent WebGL candidate sprites
+- `three-webgl/templates/*-webgl-template.png` - WebGL candidates over the 48 px grid
+
 To regenerate:
 
 ```powershell
 python scripts/prop_sprite_review.py
+powershell -ExecutionPolicy Bypass -File scripts/run_prop_sprite_three_bake.ps1
 ```
