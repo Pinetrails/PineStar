@@ -92,21 +92,16 @@ const API_TOKEN = String(ENV('API_TOKEN') || crypto.randomBytes(32).toString('he
 // seeded save with no connect screen / awakening. Holds NO secret — the API key stays in runtimeKey. Never
 // set in a packaged build, so this is inert in shipping. Loopback-only like the rest of the server.
 const DEV_MODE = /^(1|true|yes|on)$/i.test(String(ENV('DEV') || '').trim());
-const LOOPBACK_ORIGINS = new Set(['http://127.0.0.1:' + PORT, 'http://localhost:' + PORT]);
-const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
-function isAllowedApiOrigin(origin) {
-  if (!origin) return true;                         // same-origin fetches and non-browser clients usually omit it
-  if (origin === 'null') return false;              // file:/sandboxed origins are not the app
-  return LOOPBACK_ORIGINS.has(origin) || TAURI_ORIGINS.has(origin);
-}
-function isAllowedHost(host) {
-  const h = String(host || '').toLowerCase()
-    .replace(/^\[/, '').replace(/\](:\d+)?$/, '').replace(/:\d+$/, '');
-  return h === '127.0.0.1' || h === 'localhost' || h === '::1';
-}
+// API auth/guard DECISIONS live in the unit-tested ./apiauth.js (full threat model documented there);
+// index.js keeps only the thin res-writing wrappers below. Hardened posture: EVERY /api/* route now requires
+// the per-launch token (GET data routes included) except a small header-less set — a CSRF/exfil fence that
+// does NOT rely on Origin being present, since the token is a custom header a foreign site can neither set
+// (CORS preflight) nor read (opaque cross-origin responses).
+const apiauth = require('./apiauth.js');
+const { isAllowedApiOrigin, isAllowedHost, requiresApiToken } = apiauth;
 function applyApiCors(req, res) {
   const origin = String(req.headers.origin || '');
-  if (origin && isAllowedApiOrigin(origin)) {
+  if (origin && isAllowedApiOrigin(origin, PORT)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
@@ -116,22 +111,12 @@ function applyApiCors(req, res) {
 }
 function rejectApi(req, res) {
   if (!isAllowedHost(req.headers.host)) { res.writeHead(403); res.end('forbidden host'); return true; }
-  if (!isAllowedApiOrigin(String(req.headers.origin || ''))) { res.writeHead(403); res.end('forbidden origin'); return true; }
+  if (!isAllowedApiOrigin(String(req.headers.origin || ''), PORT)) { res.writeHead(403); res.end('forbidden origin'); return true; }
   return false;
-}
-function apiTokenOk(req) {
-  const got = String(req.headers['x-starnet-token'] || req.headers['x-skynet-token'] || '');   // dual-accept: legacy header still honored
-  if (!got || got.length !== API_TOKEN.length) return false;
-  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(API_TOKEN)); } catch (_) { return false; }
-}
-function requiresApiToken(req) {
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return false;
-  if (req.url === '/api/session' || req.url === '/api/key' || req.url === '/api/save') return false;
-  return String(req.url || '').indexOf('/api/') === 0;
 }
 function rejectBadApiToken(req, res) {
   if (!requiresApiToken(req)) return false;
-  if (apiTokenOk(req)) return false;
+  if (apiauth.apiTokenOk(req, API_TOKEN)) return false;
   res.writeHead(403); res.end('forbidden token'); return true;
 }
 // Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
@@ -1125,7 +1110,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
-  if (req.method === 'GET' && req.url === '/api/channels/events') return handleChannelEvents(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
   if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
@@ -1234,6 +1219,8 @@ server.listen(PORT, '127.0.0.1', () => {
 
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
 function handleChannelEvents(req, res) {
+  // SSE can't carry a custom header (EventSource), so the live HUD passes the token as ?token=… instead.
+  if (!apiauth.queryTokenOk(req, API_TOKEN)) { res.writeHead(403); return res.end('forbidden token'); }
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -1267,7 +1254,13 @@ function handleBudgetStatus(req, res) {
 }
 function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ token: API_TOKEN }));
+  // The token is primarily delivered by injection into the served page (serveStatic) and the Tauri init
+  // script. This bootstrap fallback vends it ONLY to a request carrying a TRUSTED, PRESENT Origin — a real
+  // browser or the desktop shell. A header-less local process (curl / another app) sends no Origin and gets
+  // no token, so the token is no longer free for the asking. (rejectApi already blocked foreign-origin/host.)
+  const origin = String(req.headers.origin || '');
+  const trusted = !!origin && isAllowedApiOrigin(origin, PORT);
+  res.end(JSON.stringify(trusted ? { token: API_TOKEN } : { ok: true }));
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
    base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */

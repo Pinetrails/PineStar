@@ -61,7 +61,7 @@ function boot(port, workspaces, attemptsLeft) {
   let apiToken = '';
   const j = async (m, p, body) => {
     const headers = { 'Content-Type': 'application/json' };
-    if (apiToken && m !== 'GET') headers['X-StarNet-Token'] = apiToken;
+    if (apiToken) headers['X-StarNet-Token'] = apiToken;   // hardened: GET data routes need the token too now
     const r = await fetch(B + p, { method: m, headers, body: body ? JSON.stringify(body) : undefined });
     const t = await r.text(); let v; try { v = JSON.parse(t); } catch (_) { v = t; }
     return { status: r.status, body: v };
@@ -73,13 +73,29 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(health.status, 200, 'GET /api/health -> 200');
     A.eq(health.body, 'ok', 'health body is ok');
 
-    // ---- localhost API hardening: no wildcard CORS, hostile web origins rejected ----
-    const sameOrigin = await fetch(B + '/api/budget/status', { headers: { Origin: B } });
-    A.eq(sameOrigin.status, 200, 'same-origin API request with Origin -> 200');
+    // ---- API token bootstrap: vended ONLY to a trusted, PRESENT Origin (no longer free for the asking) ----
+    const sess = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } });
+    A.eq(sess.status, 200, 'POST /api/session from a trusted origin -> 200');
+    const sessBody = await sess.json();
+    apiToken = String(sessBody.token || '');
+    A.ok(apiToken.length >= 32, 'session vends a high-entropy API token to a trusted origin');
+
+    // C1 hole closed: a header-less caller (no Origin — curl/another local app) gets NO token back.
+    const sessAnon = await (await fetch(B + '/api/session', { method: 'POST' })).json();
+    A.eq(!!sessAnon.token, false, 'POST /api/session WITHOUT an Origin returns no token (no free vending)');
+
+    // the served page still injects the token for browser mode (the primary delivery path)
+    const injected = await (await fetch(B + '/')).text();
+    A.ok(/__STARNET_API_TOKEN__/.test(injected), 'served index.html bootstraps the API token for browser mode');
+
+    // ---- localhost API hardening: CORS mirrors only trusted origins; foreign origins rejected ----
+    const tok = { 'X-StarNet-Token': apiToken };
+    const sameOrigin = await fetch(B + '/api/budget/status', { headers: Object.assign({ Origin: B }, tok) });
+    A.eq(sameOrigin.status, 200, 'same-origin API request (with token) -> 200');
     A.eq(sameOrigin.headers.get('access-control-allow-origin'), B, 'same-origin CORS mirrors the exact loopback origin');
 
     const tauriOrigin = 'http://tauri.localhost';
-    const tauri = await fetch(B + '/api/budget/status', { headers: { Origin: tauriOrigin } });
+    const tauri = await fetch(B + '/api/budget/status', { headers: Object.assign({ Origin: tauriOrigin }, tok) });
     A.eq(tauri.status, 200, 'Tauri app origin API request -> 200');
     A.eq(tauri.headers.get('access-control-allow-origin'), tauriOrigin, 'Tauri CORS mirrors the trusted app origin');
 
@@ -93,14 +109,17 @@ function boot(port, workspaces, attemptsLeft) {
     const badPreflight = await fetch(B + '/api/run', { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' } });
     A.eq(badPreflight.status, 403, 'foreign API preflight -> 403');
 
-    const injected = await (await fetch(B + '/')).text();
-    A.ok(/__STARNET_API_TOKEN__/.test(injected), 'served index.html bootstraps the API token for browser mode');
+    // ---- C2 hole closed: GET DATA routes now require the token, not just POSTs ----
+    const getNoTok = await fetch(B + '/api/budget/status');
+    A.eq(getNoTok.status, 403, 'GET /api/budget/status WITHOUT a token -> 403 (GET data routes are gated now)');
+    const getWithTok = await fetch(B + '/api/budget/status', { headers: tok });
+    A.eq(getWithTok.status, 200, 'GET /api/budget/status WITH the token -> 200');
 
-    const sess = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B } });
-    A.eq(sess.status, 200, 'POST /api/session from trusted origin -> 200');
-    const sessBody = await sess.json();
-    apiToken = String(sessBody.token || '');
-    A.ok(apiToken.length >= 32, 'session returns a high-entropy API token');
+    // ---- SSE telemetry requires the ?token= query (EventSource cannot send a header) ----
+    const sseNoTok = await fetch(B + '/api/channels/events');
+    A.eq(sseNoTok.status, 403, 'GET /api/channels/events WITHOUT ?token -> 403');
+    const sseBadTok = await fetch(B + '/api/channels/events?token=nope');
+    A.eq(sseBadTok.status, 403, 'GET /api/channels/events with a WRONG ?token -> 403');
 
     const noApiToken = await fetch(B + '/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ scope: 'day' }) });
     A.eq(noApiToken.status, 403, 'privileged POST without X-StarNet-Token -> 403');
@@ -148,34 +167,38 @@ function boot(port, workspaces, attemptsLeft) {
     fs.writeFileSync(path.join(ws, 'agent', 'clips', 'clip.webm'), Buffer.alloc(N, 7));
     const fileUrl = B + '/api/file?agent=agent&path=' + encodeURIComponent('clips/clip.webm');
 
-    const full = await fetch(fileUrl);
-    A.eq(full.status, 200, 'GET /api/file -> 200');
+    // the deliverable-read route is token-gated too (audit C2: GET data routes were readable without a token)
+    const fileNoTok = await fetch(fileUrl);
+    A.eq(fileNoTok.status, 403, 'GET /api/file WITHOUT a token -> 403');
+
+    const full = await fetch(fileUrl, { headers: tok });
+    A.eq(full.status, 200, 'GET /api/file (with token) -> 200');
     A.eq(full.headers.get('content-type'), 'video/webm', 'webm served with a video content-type');
     A.ok(/^inline\b/.test(full.headers.get('content-disposition') || ''), 'video deliverable is still served inline');
     A.eq(full.headers.get('accept-ranges'), 'bytes', 'full response advertises byte-range support');
     A.eq(full.headers.get('content-length'), String(N), 'full Content-Length is the file size');
     A.eq((await full.arrayBuffer()).byteLength, N, 'full body is the whole file');
 
-    const ranged = await fetch(fileUrl, { headers: { Range: 'bytes=100-199' } });
+    const ranged = await fetch(fileUrl, { headers: Object.assign({ Range: 'bytes=100-199' }, tok) });
     A.eq(ranged.status, 206, 'ranged GET -> 206 Partial Content');
     A.eq(ranged.headers.get('content-range'), 'bytes 100-199/' + N, 'Content-Range names the served slice + total');
     A.eq(ranged.headers.get('content-length'), '100', 'partial Content-Length is the slice size');
     A.eq((await ranged.arrayBuffer()).byteLength, 100, 'partial body is exactly the requested 100 bytes');
 
-    const suffix = await fetch(fileUrl, { headers: { Range: 'bytes=-50' } });
+    const suffix = await fetch(fileUrl, { headers: Object.assign({ Range: 'bytes=-50' }, tok) });
     A.eq(suffix.status, 206, 'suffix range -> 206');
     A.eq(suffix.headers.get('content-range'), 'bytes 950-999/' + N, 'suffix range resolves to the last N bytes');
 
-    const unsat = await fetch(fileUrl, { headers: { Range: 'bytes=99999-' } });
+    const unsat = await fetch(fileUrl, { headers: Object.assign({ Range: 'bytes=99999-' }, tok) });
     A.eq(unsat.status, 416, 'unsatisfiable range -> 416');
     A.eq(unsat.headers.get('content-range'), 'bytes */' + N, '416 reports the full size');
 
-    const head = await fetch(fileUrl, { method: 'HEAD' });
+    const head = await fetch(fileUrl, { method: 'HEAD', headers: tok });
     A.eq(head.status, 200, 'HEAD /api/file -> 200');
     A.eq(head.headers.get('content-length'), String(N), 'HEAD reports the size with no body');
     A.eq((await head.arrayBuffer()).byteLength, 0, 'HEAD carries no body');
 
-    const escape = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('../../etc/passwd'));
+    const escape = await fetch(B + '/api/file?agent=agent&path=' + encodeURIComponent('../../etc/passwd'), { headers: tok });
     A.ok(escape.status === 403 || escape.status === 404, 'a jail-escape path is refused (403/404), never served');
 
     // ---- /api/file active deliverables: script-capable files download with a sandbox CSP instead of executing

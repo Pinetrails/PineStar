@@ -72,7 +72,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
   // j() sends the token (the guarded-POST contract); jNoToken() deliberately omits it (guard test).
   const j = async (m, p, body) => {
     const headers = { 'Content-Type': 'application/json', Origin: B() };
-    if (apiToken && m !== 'GET') headers['X-StarNet-Token'] = apiToken;
+    if (apiToken) headers['X-StarNet-Token'] = apiToken;   // hardened: GET data routes are token-gated too now
     const r = await fetch(B() + p, { method: m, headers, body: body ? JSON.stringify(body) : undefined });
     const t = await r.text(); let v; try { v = JSON.parse(t); } catch (_) { v = t; }
     return { status: r.status, body: v };

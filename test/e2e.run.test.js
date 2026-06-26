@@ -104,7 +104,7 @@ function boot(port, env, attemptsLeft) {
     A.eq(ends[0].payload.reason, 'done', 'the run completes with reason done');
 
     // H1.1: the run's full dialogue was persisted to the durable transcript (not just title+final) — fetch it back.
-    const tr = await (await fetch(B + '/api/transcript?stream=global&agent=e2e&limit=20')).json();
+    const tr = await (await fetch(B + '/api/transcript?stream=global&agent=e2e&limit=20', { headers: { 'X-StarNet-Token': token } })).json();
     const turns = (tr && tr.turns) || [];
     A.ok(turns.some(t => t.role === 'user' && t.content === 'hi'), 'transcript captured the user directive');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content).indexOf('Hello') >= 0), 'transcript captured the assistant reply turn');
@@ -123,7 +123,7 @@ function boot(port, env, attemptsLeft) {
     A.ok(seeded.indexOf('what was it') >= 0, 'run B still carries its own new directive last');
 
     // H3.2: the RUNS history rows carry their streamId — the join that lets a row open its transcript.
-    const runsJson = await (await fetch(B + '/api/runs?agent=e2e&limit=20')).json();
+    const runsJson = await (await fetch(B + '/api/runs?agent=e2e&limit=20', { headers: { 'X-StarNet-Token': token } })).json();
     A.ok((runsJson.runs || []).some(r => r.streamId === 's1'), 'H3.2: a RUNS row records its streamId (joins outcome -> transcript)');
   } finally {
     try { child.kill(); } catch (_) {}

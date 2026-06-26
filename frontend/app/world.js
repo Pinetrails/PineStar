@@ -2722,7 +2722,13 @@ const World = (() => {
     let backoff = 1000;
     const open = () => {
       if (bridgePaused) return;   // disconnected to the title screen — do not (re)open
-      try { chanES = new EventSource('/api/channels/events'); } catch (_) { return; }
+      try {
+        // EventSource can't send the custom auth header, so pass the per-launch token as ?token=… and
+        // prefix the sidecar base in the desktop build (where the page origin isn't the loopback http origin).
+        const _base = (typeof window !== 'undefined' && window.__STARNET_API__) ? window.__STARNET_API__ : '';
+        const _tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? encodeURIComponent(String(window.__STARNET_API_TOKEN__)) : '';
+        chanES = new EventSource(_base + '/api/channels/events' + (_tok ? ('?token=' + _tok) : ''));
+      } catch (_) { return; }
       chanES.onopen = () => { backoff = 1000; };
       chanES.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
       chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
@@ -2820,6 +2826,27 @@ const World = (() => {
     },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer } },
+    // read-only body snapshot for the DEV test harness (window.__SKYNET_TEST__) — the Tier A/B/C substrate.
+    // Pure read, no side effects: the hero + every crew body, each with tile/zone/glance/goal/moving so the
+    // floor invariants (idle stays in-zone · awareness is gaze-only · summoned walks to its OWN workstation)
+    // can be auto-asserted instead of eyeballed. Mirrors dbg()'s clock (fnow) and helpers (tileOf/zoneFor).
+    bodies: () => {
+      const snap = (b, hero) => {
+        if (!b) return null;
+        const t = tileOf(b.px, b.py);
+        const z = zoneFor(b);
+        return {
+          id: b.id, name: b.name, hero: !!hero,
+          tile: t, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
+          goal: b.goal || null, moving: !!b.target, working: !!b.working, sitting: !!b.sitting,
+          seated: !!b.seated, unplaced: !!b.unplaced,
+          target: b.target ? { tile: tileOf(b.target.x, b.target.y), x: Math.round(b.target.x), y: Math.round(b.target.y) } : null,
+          glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
+          zone: z, inOwnZone: tileInZone(z, t.x, t.y)
+        };
+      };
+      return [snap(agent, true), ...crew.map((b) => snap(b, false))].filter(Boolean);
+    },
     // does this agent have a WORKBENCH placed (-> shell.exec + verify.run)? An equipped BAY governs; with no bay
     // (simple single-agent floor) any placed workbench grants it. The run client sends this so the hero's run
     // gains shell ADDITIVELY on top of its default office (the room layout is the permission system, for the hero too).
