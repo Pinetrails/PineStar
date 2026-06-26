@@ -32,7 +32,12 @@
       const runId = str(o.runId);
       const mode = isManaged(o.mode) ? 'managed' : 'byok';
       if (!runId) return fail('run_id_required');
-      if (runs.has(runId)) return { ok: true, mode: runs.get(runId).mode, runId };
+      if (runs.has(runId)) {
+        const prior = runs.get(runId);
+        const out = { ok: true, mode: prior.mode, runId, managed: prior.mode === 'managed' };
+        if (prior.mode === 'managed') out.reservedUsd = prior.reservedUsd;
+        return out;
+      }
 
       if (mode !== 'managed') {
         runs.set(runId, { mode, runId, settled: false });

@@ -58,6 +58,20 @@ function fakeLedger() {
   A.eq(ledger.rows.length, 1, 'idempotent settlement does not double-record');
 }
 
+// ---- admission retry: managed beginRun is idempotent and never reserves twice ----
+{
+  const payment = fakePayment({ acct: 5 });
+  const billing = makeBilling({ payment });
+  const first = billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r1b', agentId: 'a', capUsd: 2 });
+  const second = billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r1b', agentId: 'a', capUsd: 2 });
+  A.eq(first.ok, true, 'first managed admission succeeds');
+  A.eq(second.ok, true, 'duplicate managed admission succeeds');
+  A.eq(second.managed, true, 'duplicate admission preserves managed marker');
+  A.eq(second.reservedUsd, 2, 'duplicate admission reports the original reservation');
+  A.eq(payment.get('acct'), 3, 'duplicate admission does not reserve again');
+  A.eq(payment.calls.filter(c => c.op === 'debit').length, 1, 'duplicate admission emits exactly one debit');
+}
+
 // ---- exhausted balance: block before any debit/provider work can happen ----
 {
   const payment = fakePayment({ acct: 0.5 });
@@ -106,6 +120,21 @@ function fakeLedger() {
   A.eq(auth.ok, false, 'debit failure refuses the managed run');
   A.eq(auth.reason, 'managed_credit_unavailable', 'debit failure is a closed billing failure');
   A.eq(ledger.rows.length, 0, 'failed authorization records no spend');
+}
+
+// ---- cap kill: reconciled managed spend cannot exceed the reserved cap ----
+{
+  const payment = fakePayment({ acct: 5 });
+  const ledger = fakeLedger();
+  const billing = makeBilling({ payment, ledger });
+  A.eq(billing.beginRun({ mode: 'managed', accountId: 'acct', runId: 'r5b', capUsd: 2 }).ok, true, 'reserve succeeds');
+  const settled = billing.finishRun({ runId: 'r5b', reason: 'done', usd: 2.01, tokens: 10, turns: 1 });
+  A.eq(settled.ok, false, 'over-cap managed spend is refused');
+  A.eq(settled.reason, 'managed_credit_over_cap', 'over-cap reason is explicit');
+  A.eq(payment.get('acct'), 3, 'over-cap finalization does not refund reserved credit');
+  A.eq(payment.calls.filter(c => c.op === 'credit').length, 0, 'over-cap finalization emits no credit');
+  A.eq(ledger.rows.length, 0, 'over-cap finalization records no final spend');
+  A.eq((billing.status('r5b') || {}).settled, false, 'over-cap run remains unsettled for explicit recovery');
 }
 
 // ---- final spend persistence failures fail closed before refunding reserved credit ----
