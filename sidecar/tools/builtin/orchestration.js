@@ -51,6 +51,7 @@
     const key = deps.key;
     const model = deps.model;
     const provider = deps.provider || null;
+    const subagents = deps.subagents || null;
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
@@ -71,7 +72,7 @@
       // per-worker/day/global budget caps + the concurrency ceiling + workers running autonomous (default-deny
       // their own mutations). Prompting on every delegation would be pure consent-fatigue.
       name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
-      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once.',
+      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working.',
       schema: {
         type: 'object', required: ['workers'], properties: {
           workers: {
@@ -80,7 +81,8 @@
               properties: { agentId: { type: 'string' }, prompt: { type: 'string' } }
             }
           },
-          parallel: { type: 'boolean' }
+          parallel: { type: 'boolean' },
+          background: { type: 'boolean' }
         }
       },
       run: async (args, ctx) => {
@@ -102,7 +104,8 @@
           return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid) };
         });
 
-        const runJob = async (job) => {
+        const runWorker = async (job, o2) => {
+          o2 = o2 || {};
           if (job.error) return { agentId: job.agentId, reason: 'error', result: job.error, usd: 0 };
           let result;
           try {
@@ -112,9 +115,9 @@
               system: (job.ident && job.ident.system) || '',
               messages: [{ role: 'user', content: job.prompt }],
               agentId: job.agentId, isTask: true,
-              emit: childEmit,                 // lifecycle/cost ride the lead's stream -> the floor lights the worker
-              signal: ctx && ctx.signal,       // cancelling the lead aborts every worker at its pre-paid guard
-              runId: newId(), trigger: 'directive', surface: 'autonomous',
+              emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
+              signal: o2.signal || (ctx && ctx.signal),
+              runId: o2.runId || newId(), trigger: 'directive', surface: 'autonomous',
               // SAME ACCESS AS THE ORCHESTRATOR: share the lead's consent broker so a worker's write/shell follows
               // the lead's APPROVAL posture (full-auto bypass, or a prompt forwarded to the watched lead) instead of
               // the headless default-deny — and add the WORKBENCH so the terminal is actually available to grant.
@@ -134,6 +137,20 @@
             usd: result.usd || 0
           };
         };
+
+        const runJob = async (job) => runWorker(job);
+
+        if (args.background) {
+          if (!subagents || typeof subagents.start !== 'function') return { content: 'background subagents unavailable (no subagent manager)', summary: 'error' };
+          const started = jobs.map(job => {
+            if (job.error) return { agentId: job.agentId, reason: 'error', result: job.error };
+            return subagents.start({ leadId, agentId: job.agentId, prompt: job.prompt, runId: newId() }, async (h) => {
+              const r = await runWorker(job, { runId: h.runId, signal: h.signal, emit: h.emit });
+              return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd || 0 };
+            });
+          });
+          return { content: JSON.stringify(started), summary: 'started ' + started.filter(r => r && r.id).length + ' background worker(s)' };
+        }
 
         let out;
         if (args.parallel) out = await Promise.all(jobs.map(runJob));   // fan out (bounded by the concurrency gate)
@@ -185,7 +202,80 @@
       }
     };
 
-    return { dispatchTool, summonTool, register(reg) { reg.register(dispatchTool); reg.register(summonTool); return reg; } };
+    const subagentsTool = {
+      name: 'team.subagents', capability: 'orchestrator', scope: 'read', requiresConsent: false,
+      description: 'List or inspect your background subagents. Pass id for one worker, or omit id to list recent workers for this lead. Returned records include status, event tail, result, and whether they can be interrupted or resumed.',
+      schema: { type: 'object', properties: { id: { type: 'string' }, agentId: { type: 'string' }, status: { type: 'string' } } },
+      run: async (args, ctx) => {
+        if (!subagents) return { content: 'background subagents unavailable', summary: 'unavailable' };
+        const leadId = (ctx && ctx.agentId) || 'agent';
+        if (args && args.id) {
+          const r = subagents.get(String(args.id));
+          if (!r || r.leadId !== leadId) return { content: 'No such background subagent for this lead.', summary: 'not found' };
+          return { content: JSON.stringify(r), summary: r.status };
+        }
+        const rows = subagents.list({ leadId, agentId: args && args.agentId, status: args && args.status });
+        return { content: JSON.stringify(rows), summary: rows.length + ' background subagent(s)' };
+      }
+    };
+
+    function resumeRunnerFor(ctx) {
+      return async function (h) {
+        const rec = h.record || {};
+        const crew = roster() || new Map();
+        const ident = crew.get(rec.agentId);
+        if (!ident) return { status: 'error', reason: 'error', result: 'worker is no longer in the live roster', usd: 0 };
+        let result;
+        try {
+          result = await runOnce({
+            key, provider,
+            model: (ident && ident.model) || model,
+            system: (ident && ident.system) || '',
+            messages: [{ role: 'user', content: rec.prompt || '' }],
+            agentId: rec.agentId, isTask: true,
+            emit: h.emit, signal: h.signal, runId: h.runId,
+            trigger: 'directive', surface: 'autonomous',
+            consent: ctx && ctx.consent,
+            extraObjects: WORKER_KIT,
+            maxCostUsd: perWorker
+          });
+        } catch (e) {
+          return { status: 'error', reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
+        }
+        if (!result) return { status: 'error', reason: 'refused', result: 'worker could not restart', usd: 0 };
+        return { status: result.reason === 'done' ? 'done' : 'error', reason: result.reason || 'done', result: lastAssistant(result.messages) || '(the worker returned no text)', usd: result.usd || 0 };
+      };
+    }
+
+    const interruptTool = {
+      name: 'team.interrupt', capability: 'orchestrator', scope: 'write', requiresConsent: false,
+      description: 'Interrupt one of your running background subagents by id. This aborts its run and keeps its event/result record for inspection or resume.',
+      schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+      run: async (args, ctx) => {
+        if (!subagents) return { content: 'background subagents unavailable', summary: 'unavailable' };
+        const r = subagents.interrupt(String(args.id || ''), (ctx && ctx.agentId) || 'agent');
+        return { content: JSON.stringify(r), summary: r.ok ? (r.alreadyDone ? 'already done' : 'interrupted') : 'not interrupted' };
+      }
+    };
+
+    const resumeTool = {
+      name: 'team.resume', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
+      description: 'Resume a stale/interrupted/failed background subagent by id. The worker restarts with the same prompt and appends to the same durable record.',
+      schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+      run: async (args, ctx) => {
+        if (!subagents) return { content: 'background subagents unavailable', summary: 'unavailable' };
+        const leadId = (ctx && ctx.agentId) || 'agent';
+        const rec = subagents.get(String(args.id || ''));
+        if (!rec || rec.leadId !== leadId) return { content: 'No such background subagent for this lead.', summary: 'not found' };
+        const r = subagents.resume(rec.id, resumeRunnerFor(ctx));
+        return { content: JSON.stringify(r), summary: r.ok ? 'resumed' : 'not resumed' };
+      }
+    };
+
+    return {
+      dispatchTool, summonTool, subagentsTool, interruptTool, resumeTool,
+      register(reg) { [dispatchTool, summonTool, subagentsTool, interruptTool, resumeTool].forEach(t => reg.register(t)); return reg; }
+    };
   }
 
   return { makeOrchestrationTools };

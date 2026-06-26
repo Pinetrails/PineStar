@@ -4,7 +4,11 @@
    rejects self/unknown targets without a run, null-guards a refused child, and is capability-gated. */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { makeOrchestrationTools } = require('../sidecar/tools/builtin/orchestration.js');
+const { makeSubagentManager } = require('../sidecar/subagents.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 
@@ -16,6 +20,7 @@ function fakeRunOnce(impl) {
   return fn;
 }
 const counter = () => { let n = 0; return () => 'child_' + (++n); };
+const tick = () => new Promise(resolve => setImmediate(resolve));
 
 (async () => {
 
@@ -107,6 +112,58 @@ const counter = () => { let n = 0; return () => 'child_' + (++n); };
   const out = await dispatchTool.run({ workers: [{ agentId: 'a', prompt: '1' }, { agentId: 'b', prompt: '2' }], parallel: true }, { agentId: 'lead', emit: () => {} });
   A.eq(ro.calls.length, 2, 'parallel dispatches both workers');
   A.eq(JSON.parse(out.content).length, 2, 'parallel returns both results');
+}
+
+// ---- capability gate: team.dispatch is denied without the orchestrator grant, runs with it ----
+// ---- background mode returns durable handles immediately and records watch events/results ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-orch-bg-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'subagents.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce(async (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'directive', model: 'm' });
+      return { reason: 'done', messages: [{ role: 'assistant', content: 'bg:' + o.agentId }], usd: 0.3 };
+    });
+    const roster = new Map([['researcher', { system: 'R' }]]);
+    const { dispatchTool, subagentsTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), subagents });
+    const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }], background: true }, { agentId: 'lead', emit: () => {} });
+    const handle = JSON.parse(out.content)[0];
+    A.ok(handle.id && handle.status === 'running', 'background dispatch returns a running durable handle immediately');
+    await tick(); await tick();
+    const rec = subagents.get(handle.id);
+    A.eq(rec.status, 'done', 'background worker completes into the durable record');
+    A.eq(rec.result, 'bg:researcher', 'background worker stores final text');
+    A.ok(rec.events.some(e => e.name === 'agent.run.start'), 'background worker stores watchable lifecycle events');
+    const listed = await subagentsTool.run({}, { agentId: 'lead' });
+    A.eq(JSON.parse(listed.content).length, 1, 'team.subagents lists this lead\'s durable workers');
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+// ---- background interrupt aborts the worker signal and marks the record resumable ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-orch-cut-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'subagents.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    let childSignal = null;
+    const ro = fakeRunOnce(async (o) => {
+      childSignal = o.signal;
+      return new Promise(() => {});
+    });
+    const roster = new Map([['researcher', { system: 'R' }]]);
+    const { dispatchTool, interruptTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), subagents });
+    const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }], background: true }, { agentId: 'lead', emit: () => {} });
+    const handle = JSON.parse(out.content)[0];
+    await tick();
+    const cut = await interruptTool.run({ id: handle.id }, { agentId: 'lead' });
+    A.ok(/interrupted/.test(cut.summary), 'team.interrupt reports interrupted');
+    A.ok(childSignal && childSignal.aborted, 'team.interrupt aborts the child run signal');
+    A.eq(subagents.get(handle.id).status, 'interrupted', 'team.interrupt marks the durable record interrupted');
+    A.eq(subagents.get(handle.id).canResume, true, 'interrupted background worker can be resumed');
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+  }
 }
 
 // ---- capability gate: team.dispatch is denied without the orchestrator grant, runs with it ----

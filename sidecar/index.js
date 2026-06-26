@@ -68,10 +68,12 @@ const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/d
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
+const { makeEnvironmentManager } = require('./environment.js');     // Hermes-style execution backend boundary
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
+const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 
 // ---- Skynet→StarNet env back-compat ------------------------------------------------------------
@@ -672,6 +674,9 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 // run that started it. shell.bg.exit fires AFTER the originating run's NDJSON stream closed, so it rides the
 // durable channel bus (chanEmit). Children are unref'd; killAll() reaps them on E-STOP (handleHalt) / shutdown.
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5 });
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
+try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
+const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
 
 // per-agent inbound work-item depth (backpressure): bumped when a message is admitted, dropped when its
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
@@ -1102,6 +1107,9 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
+  if (req.method === 'GET' && req.url === '/api/execution') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); }
+  if (req.method === 'GET' && req.url.indexOf('/api/subagents') === 0) return handleSubagentsList(req, res);
+  if (req.method === 'POST' && req.url === '/api/subagents/interrupt') return handleSubagentInterrupt(req, res);
   // honest concurrency surface: how many distinct agents can RUN at once (the gate that silently 'refuses'
   // excess parallel workers). The summon bay reads this so the ceiling is visible BEFORE a fan-out, not only
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
@@ -1597,6 +1605,26 @@ function handleCheckpointList(req, res) {
 // POST /api/roster { agents:[{ agentId, system, name, model, provider }] } — the browser pushes the live crew identities
 // so team.dispatch can run a WORKER as itself (its composed system prompt + model/provider). Replaces the whole roster
 // each push (the browser sends the full live set on summon/focus). Contract-free: plain HTTP, no bus event.
+function handleSubagentsList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const id = u.searchParams.get('id');
+    if (id) {
+      const rec = subagents.get(id);
+      return json(rec ? 200 : 404, rec || { error: 'not found' });
+    }
+    json(200, { records: subagents.list({ leadId: u.searchParams.get('leadId') || undefined, agentId: u.searchParams.get('agentId') || undefined, status: u.searchParams.get('status') || undefined }) });
+  } catch (e) { json(500, { error: 'subagents list failed' }); }
+}
+
+async function handleSubagentInterrupt(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  try { json(200, subagents.interrupt(String(body.id || ''), body.leadId ? String(body.leadId) : undefined)); }
+  catch (e) { json(400, { ok: false, error: (e && e.message) || String(e) }); }
+}
+
 async function handleRoster(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
@@ -1827,7 +1855,7 @@ async function runOnce(o) {
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({ store: skillStore }).register(registry);   // H4: skill.write/list/view — the agent's reusable procedure library (memory capability)
@@ -1840,14 +1868,14 @@ async function runOnce(o) {
   makeSpotifyTools({ store: spotifyStore }).register(registry);
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.
-  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
+  makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
-  makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, redact: redact, clock: { now: () => Date.now() } }).register(registry);
+  makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
   makeOrchestrationTools({
-    runOnce, roster: () => agentRoster, key, model, provider: o.provider,
+    runOnce, roster: () => agentRoster, key, model, provider: o.provider, subagents,
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
   }).register(registry);
@@ -2229,7 +2257,8 @@ async function handleCancel(req, res) {
 function handleHalt(req, res) {
   const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
   const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
-  try { shellBg.killAll(); } catch (_) {}   // H2.2: E-STOP also reaps every background process (no orphaned dev servers)
+  try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
+  try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ halted }));
