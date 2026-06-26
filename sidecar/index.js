@@ -61,6 +61,8 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
+const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
@@ -400,26 +402,40 @@ const spotifyStore = makeSpotifyStore({ fsp, pathMod: path, dir: path.join(WORKS
 // in-flight PKCE verifiers keyed by the OAuth `state` (a round-trip completes in seconds). Pruned on each start.
 const spotifyPending = new Map();
 
-// PERSISTENT notebook (memory) — JSON file per agent, atomic write, survives sidecar restarts. Stored as a
+// PERSISTENT notebook (memory) — JSON file per agent, durable write, survives sidecar restarts. Stored as a
 // SIBLING of the agent's workspace dir (WORKSPACES/<aid>.notebook.json), OUTSIDE the fs-jailed
-// WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. Sync get/set to
-// match the notebook tool's store contract.
+// WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. get/set match the
+// notebook tool's store contract; update(key, mutator) is the SAFE per-agent-serialized write (P1) that
+// re-reads under a lock before merging so concurrent writers (recall fold + cron fire + UI edit) never lose
+// an update, and every write is fsync-durable + keeps a .bak last-known-good (P2).
 function notebookFile(key) {
   const aid = String(key).replace(/^notebook:/, '') || 'agent';
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('bad notebook agentId');
   return path.join(WORKSPACES, aid + '.notebook.json');
 }
+// P2 last-resort: a present-but-unrecoverable store (corrupt main AND no usable .bak) must NEVER be silently
+// emptied. Quarantine the bad file aside (so the next write can't overwrite it and a human can inspect it) and
+// log LOUDLY; the store then loads empty for that key, but the data was surfaced, not silently wiped.
+let _quarantineSeq = 0;
+function quarantineCorrupt(file, tag) {
+  try {
+    const dest = file + '.corrupt-' + process.pid + '-' + (++_quarantineSeq);
+    fs.renameSync(file, dest);
+    console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered from .bak — quarantined to ' + dest + ' and loading empty (data NOT silently wiped).');
+  } catch (e) { console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered and could not be quarantined:', (e && e.message) || e); }
+}
+const notebookDurable = makeDurableJsonStore({
+  fs: fs, path: path, fileFor: notebookFile, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[notebook] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'notebook')
+});
 const notebookStore = {
-  get(key) { try { return JSON.parse(fs.readFileSync(notebookFile(key), 'utf8')); } catch (e) { return undefined; } },
-  set(key, value) {
-    try {
-      const f = notebookFile(key);
-      fs.mkdirSync(path.dirname(f), { recursive: true });
-      const tmp = f + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(value));
-      fs.renameSync(tmp, f);   // atomic replace
-    } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
-  }
+  // get/set tolerate a non-agent key (e.g. the todo tool's 'todo:<aid>', which notebookFile rejects) by
+  // failing soft, exactly as the prior plain-fs store did — behavior-neutral for those callers.
+  get(key) { try { return notebookDurable.get(key); } catch (e) { return undefined; } },
+  set(key, value) { try { notebookDurable.set(key, value); } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); } },
+  // update(key, mutator) -> Promise: per-agent serialized, re-read-under-lock, durable. The ONE safe writer.
+  update(key, mutator) { return notebookDurable.update(key, mutator); }
 };
 
 // PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
@@ -2143,12 +2159,18 @@ async function runOnce(o) {
       // old positional ranked[i] aliasing is gone.
       if (runId && recall.usedIds && recall.usedIds.length) {
         const usedAt = Date.now();
-        let updated = recs;
-        for (const id of recall.usedIds) {
-          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
-          emit('memory.used', { agentId, runId, id });
-        }
-        if (updated !== recs) notebookStore.set('notebook:' + agentId, updated);
+        // P1: fold the useCount/recency bumps under the per-agent lock, RE-READING the current notebook so a
+        // note the agent wrote this run (or a concurrent run/UI edit for the same agent) is not clobbered by a
+        // whole-array overwrite from this run's start-of-run snapshot.
+        await notebookStore.update('notebook:' + agentId, (cur) => {
+          const base = Array.isArray(cur) ? cur : [];
+          let updated = base;
+          for (const id of recall.usedIds) {
+            updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
+            emit('memory.used', { agentId, runId, id });
+          }
+          return updated !== base ? updated : undefined;   // skip the write when nothing changed
+        });
       }
     }
   } catch (_) {}
@@ -2653,11 +2675,15 @@ async function handleNotebookRestore(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
   const incoming = Array.isArray(body.notes) ? body.notes : [];
   try {
-    const prev = notebookStore.get('notebook:' + agent);
-    const existing = Array.isArray(prev) ? prev : [];
-    const merged = mergeNotes(existing, incoming);
-    notebookStore.set('notebook:' + agent, merged);
-    json(200, { ok: true, total: merged.length, added: merged.length - existing.length });
+    // P1: merge under the per-agent lock, re-reading existing so a concurrent run's memory.write isn't lost.
+    let existingLen = 0, mergedLen = 0;
+    await notebookStore.update('notebook:' + agent, (prev) => {
+      const existing = Array.isArray(prev) ? prev : [];
+      const merged = mergeNotes(existing, incoming);
+      existingLen = existing.length; mergedLen = merged.length;
+      return merged;
+    });
+    json(200, { ok: true, total: mergedLen, added: mergedLen - existingLen });
   } catch (e) { json(400, { error: (e && e.message) || 'restore failed' }); }
 }
 
@@ -2778,13 +2804,17 @@ async function handleMemoryTurnin(req, res) {
   }
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
   if (!content) return json(400, { error: 'a kept memory cannot be empty' });
-  const stored = notebookStore.get('notebook:' + agentId);
-  const list = Array.isArray(stored) ? stored : [];
-  writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
-  const rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
-  rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
-  list.push(rec);
-  notebookStore.set('notebook:' + agentId, list);
+  // P1: write the kept record under the per-agent lock, RE-READING the list so the id (positional) is minted
+  // against the current notebook and a concurrent run's memory.write isn't clobbered by this whole-array set.
+  let rec = null;
+  await notebookStore.update('notebook:' + agentId, (stored) => {
+    const list = Array.isArray(stored) ? stored : [];
+    writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
+    rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
+    rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
+    list.push(rec);
+    return list;
+  });
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
   json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
@@ -2817,12 +2847,16 @@ async function handleMemoryMutate(req, res, op) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   if (!String(body.id || '')) return json(400, { error: 'id required' });
   const key = 'notebook:' + agentId;
-  const stored = notebookStore.get(key);
-  const list = Array.isArray(stored) ? stored : [];
-  const r = op(list, body, agentId);
+  // P1: apply the pure memcore op under the per-agent lock, RE-READING the list so a concurrent run's
+  // memory.write/used fold isn't clobbered by this whole-array set. Only persist on a real change.
+  let r = null;
+  await notebookStore.update(key, (stored) => {
+    const list = Array.isArray(stored) ? stored : [];
+    r = op(list, body, agentId);
+    return (r.error || !r.found) ? undefined : r.records;   // skip the write on error / not-found
+  });
   if (r.error) return json(400, { error: r.error });
   if (!r.found) return json(404, { error: 'no such memory' });
-  notebookStore.set(key, r.records);
   if (r.emit) { try { chanEmit(r.emit.name, r.emit.payload); } catch (_) {} }
   return json(200, Object.assign({ ok: true, id: String(body.id) }, r.extra || {}));
 }
