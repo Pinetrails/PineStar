@@ -74,8 +74,14 @@ Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `TOO_FAR`, `BAD_STY
 - **~~Making the built station the LIVE world~~ — DONE.** `app/world.js` now renders the player-built
   station (multi-room) via `StationBake` under a pan/zoom camera, and the agent walks it room-to-room
   through doors via `geo.path()`, re-baking live on REFIT edits. (Furniture/object placement is still ahead.)
-- **Chunked / incremental bake** (the bible §5.2) — today every edit re-bakes the whole station
-  (fast for small stations); `WorldPatch.dirtyRects` is already emitted to drive a chunk cache later.
+- **Chunked / incremental bake** (the bible §5.2) — DONE for REFIT. `StationBake.bakeIncremental`
+  renders bounded 384px chunks, maps `WorldPatch.dirtyRects` to dirty chunks, and reuses untouched
+  chunk canvases while preserving the legacy `StationBake.bake()` path for callers that still need a
+  monolithic canvas. Large-station callers can pass `{ visibleRect, maxRetainedChunks }` to render
+  only visible chunks on cold start and evict old non-visible chunks while always keeping the current
+  dirty and visible chunks. `StationBake.drawBase/drawLight(..., visibleRect)` culls chunk composites
+  to the current viewport. REFIT now passes its live camera viewport into bake/draw, caps retained
+  chunks, and fills newly exposed chunks incrementally when panning instead of rebaking the station.
 - **Discrete door placement**, **Salvage/XP economy + tiers**, **PixelLab hi-tier art**.
 
 ## Ownership / coordination

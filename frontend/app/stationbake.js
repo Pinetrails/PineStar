@@ -28,7 +28,9 @@ const StationBake = (() => {
   };
 
   /* per-bake state (a bake runs synchronously start→finish, so module locals are safe) */
-  let G, T, HR, W, H, lampPos, edges, chamferAt;
+  const CHUNK_PX = 384;
+  const DIRTY_PAD_PX = pad + WALLH + 48;
+  let G, T, HR, W, H, VX, VY, CW, CH, lampPos, edges, chamferAt;
   const h2 = (x, y, s) => U.hash(x + ',' + y + ',' + (s || ''));
 
   function spandrelPath(g, kind, ax, ay, rad) {
@@ -43,6 +45,18 @@ const StationBake = (() => {
     g.clip('evenodd'); g.globalCompositeOperation = 'destination-out';
     g.fillStyle = '#000'; g.fillRect(o.ox - 1, o.oy - 1, rad + 2, rad + 2);
     g.restore();
+  }
+  function canvas(w, h) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(w));
+    c.height = Math.max(1, Math.ceil(h));
+    return c;
+  }
+  function translatedContext(c) {
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.translate(-VX, -VY);
+    return g;
   }
 
   /* derive the wall edges from the zone grid (generalizes world.js's single-room IIFE).
@@ -230,34 +244,34 @@ const StationBake = (() => {
   }
 
   function bakeHullExtrusion(b) {
-    const sil = document.createElement('canvas'); sil.width = W; sil.height = H;
-    const g = sil.getContext('2d');
+    const sil = canvas(CW, CH);
+    const g = translatedContext(sil);
     g.fillStyle = '#fff';
     for (const r of G.allRects) g.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
-    const f = document.createElement('canvas'); f.width = W; f.height = H;
+    const f = canvas(CW, CH);
     const fg = f.getContext('2d');
-    const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H;
+    const tmp = canvas(CW, CH);
     const tg = tmp.getContext('2d');
     const stamp = (dy, c) => {
-      tg.clearRect(0, 0, W, H); tg.drawImage(sil, 0, dy);
-      tg.globalCompositeOperation = 'source-in'; tg.fillStyle = c; tg.fillRect(0, 0, W, H);
+      tg.clearRect(0, 0, CW, CH); tg.drawImage(sil, 0, dy);
+      tg.globalCompositeOperation = 'source-in'; tg.fillStyle = c; tg.fillRect(0, 0, CW, CH);
       tg.globalCompositeOperation = 'source-over'; fg.drawImage(tmp, 0, 0);
     };
     stamp(WALLH, '#0b0a07'); stamp(WALLH - 2, '#14120d'); stamp(3, '#1f1c15'); stamp(1, '#3f3a2c');
     fg.globalCompositeOperation = 'destination-out'; fg.drawImage(sil, 0, 0);
     fg.globalCompositeOperation = 'source-atop';
     fg.fillStyle = 'rgba(0,0,0,0.35)';
-    for (let x = 5; x < W; x += 28) fg.fillRect(x, 0, 1, H);
+    for (let x = 5 - (VX % 28); x < CW; x += 28) fg.fillRect(x, 0, 1, CH);
     fg.globalCompositeOperation = 'source-over';
     b.globalCompositeOperation = 'destination-over';
-    b.drawImage(f, 0, 0);
+    b.drawImage(f, VX, VY);
     b.globalCompositeOperation = 'source-over';
   }
 
   function buildLightMap() {
-    const lightCv = document.createElement('canvas'); lightCv.width = W; lightCv.height = H;
-    const L = lightCv.getContext('2d');
+    const lightCv = canvas(CW, CH);
+    const L = translatedContext(lightCv);
     L.fillStyle = 'rgba(10,8,4,0.62)';
     for (const r of G.allRects) L.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(L, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
@@ -283,8 +297,8 @@ const StationBake = (() => {
   }
 
   function buildBase() {
-    const baseCv = document.createElement('canvas'); baseCv.width = W; baseCv.height = H;
-    const b = baseCv.getContext('2d'); b.imageSmoothingEnabled = false;
+    const baseCv = canvas(CW, CH);
+    const b = translatedContext(baseCv);
 
     // hull plate behind ROOMS first (notches between distant rooms show stars)
     const plate = r => b.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
@@ -355,27 +369,192 @@ const StationBake = (() => {
     }
 
     bakeHullExtrusion(b);
+    b.setTransform(1, 0, 0, 1, 0, 0);
     return baseCv;
   }
 
   /* ---------- public ---------- */
-  function bake(geo) {
+  function setBakeState(geo, viewport) {
     // belt-and-suspenders: never allocate gigabytes for a malformed/oversized imported geometry
     // (the model's MAX_SPAN normally keeps this far below the ceiling).
     if (geo.W * geo.H > 16e6) {
-      const blank = document.createElement('canvas'); blank.width = 1; blank.height = 1;
-      return { baseCv: blank, lightCv: blank, W: geo.W, H: geo.H, origin: geo.origin, flickers: [] };
+      return false;
     }
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
+    VX = viewport ? viewport.x : 0; VY = viewport ? viewport.y : 0;
+    CW = viewport ? viewport.w : W; CH = viewport ? viewport.h : H;
     lampPos = []; chamferAt = {};
     for (const [cx, cy, k] of geo.chamfers) chamferAt[cx + ',' + cy] = k;
     buildEdges();
-    const baseCv = buildBase();
-    const { lightCv, flickers } = buildLightMap();
-    return { baseCv, lightCv, W, H, origin: geo.origin, flickers };
+    return true;
   }
 
-  return { bake };
+  function blankBake(geo) {
+    const blank = canvas(1, 1);
+    return { baseCv: blank, lightCv: blank, W: geo.W, H: geo.H, origin: geo.origin, flickers: [] };
+  }
+
+  function bakeViewport(geo, viewport) {
+    if (!setBakeState(geo, viewport)) return blankBake(geo);
+    const baseCv = buildBase();
+    const { lightCv, flickers } = buildLightMap();
+    return { baseCv, lightCv, W: geo.W, H: geo.H, origin: geo.origin, flickers, viewport: viewport || { x: 0, y: 0, w: geo.W, h: geo.H } };
+  }
+
+  function bake(geo) {
+    return bakeViewport(geo, null);
+  }
+
+  const chunkKey = (cx, cy) => cx + ',' + cy;
+  function chunkGrid(geo) {
+    return {
+      cols: Math.max(1, Math.ceil(geo.W / CHUNK_PX)),
+      rows: Math.max(1, Math.ceil(geo.H / CHUNK_PX)),
+      chunkPx: CHUNK_PX
+    };
+  }
+  function chunkViewport(geo, cx, cy) {
+    const x = cx * CHUNK_PX, y = cy * CHUNK_PX;
+    return { x, y, w: Math.min(CHUNK_PX, geo.W - x), h: Math.min(CHUNK_PX, geo.H - y) };
+  }
+  function dirtyRectToLocalPx(geo, r) {
+    const t = geo.TILE;
+    return {
+      x1: Math.max(0, (r.x1 - geo.origin.tx) * t - DIRTY_PAD_PX),
+      y1: Math.max(0, (r.y1 - geo.origin.ty) * t - DIRTY_PAD_PX),
+      x2: Math.min(geo.W, (r.x2 + 1 - geo.origin.tx) * t + DIRTY_PAD_PX),
+      y2: Math.min(geo.H, (r.y2 + 1 - geo.origin.ty) * t + DIRTY_PAD_PX)
+    };
+  }
+  function dirtyChunks(geo, dirtyRects) {
+    const grid = chunkGrid(geo);
+    if (!dirtyRects || !dirtyRects.length) {
+      const all = [];
+      for (let cy = 0; cy < grid.rows; cy++) for (let cx = 0; cx < grid.cols; cx++) all.push({ cx, cy, key: chunkKey(cx, cy) });
+      return all;
+    }
+    const seen = new Set(), out = [];
+    for (const r of dirtyRects) {
+      const px = dirtyRectToLocalPx(geo, r);
+      const x0 = Math.max(0, Math.floor(px.x1 / CHUNK_PX));
+      const y0 = Math.max(0, Math.floor(px.y1 / CHUNK_PX));
+      const x1 = Math.min(grid.cols - 1, Math.floor(Math.max(0, px.x2 - 1) / CHUNK_PX));
+      const y1 = Math.min(grid.rows - 1, Math.floor(Math.max(0, px.y2 - 1) / CHUNK_PX));
+      for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+        const key = chunkKey(cx, cy);
+        if (!seen.has(key)) { seen.add(key); out.push({ cx, cy, key }); }
+      }
+    }
+    return out;
+  }
+  function rectIntersectsChunk(r, c) {
+    if (!r) return true;
+    return c.x < r.x + r.w && c.x + c.w > r.x && c.y < r.y + r.h && c.y + c.h > r.y;
+  }
+  function chunkRefsForRect(geo, rect) {
+    const grid = chunkGrid(geo);
+    if (!rect) return null;
+    const x0 = Math.max(0, Math.floor(rect.x / CHUNK_PX));
+    const y0 = Math.max(0, Math.floor(rect.y / CHUNK_PX));
+    const x1 = Math.min(grid.cols - 1, Math.floor(Math.max(0, rect.x + rect.w - 1) / CHUNK_PX));
+    const y1 = Math.min(grid.rows - 1, Math.floor(Math.max(0, rect.y + rect.h - 1) / CHUNK_PX));
+    const out = [];
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) out.push({ cx, cy, key: chunkKey(cx, cy) });
+    return out;
+  }
+  function visibleChunks(baked, rect) {
+    if (!baked || !baked.chunked) return [];
+    return baked.chunks.filter(c => rectIntersectsChunk(rect, c));
+  }
+  function expectedChunkKeysForRect(baked, rect) {
+    if (!baked || !baked.chunked || !rect) return [];
+    const cols = Math.max(1, Math.ceil(baked.W / CHUNK_PX));
+    const rows = Math.max(1, Math.ceil(baked.H / CHUNK_PX));
+    const x0 = Math.max(0, Math.floor(rect.x / CHUNK_PX));
+    const y0 = Math.max(0, Math.floor(rect.y / CHUNK_PX));
+    const x1 = Math.min(cols - 1, Math.floor(Math.max(0, rect.x + rect.w - 1) / CHUNK_PX));
+    const y1 = Math.min(rows - 1, Math.floor(Math.max(0, rect.y + rect.h - 1) / CHUNK_PX));
+    const keys = [];
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) keys.push(chunkKey(cx, cy));
+    return keys;
+  }
+  function missingVisibleChunks(baked, rect) {
+    if (!baked || !baked.chunked || !rect) return [];
+    return expectedChunkKeysForRect(baked, rect).filter(k => !baked.chunkMap.has(k));
+  }
+  function sameChunkFrame(prev, geo) {
+    return !!(prev && prev.chunked && prev.W === geo.W && prev.H === geo.H && prev.origin &&
+      prev.origin.tx === geo.origin.tx && prev.origin.ty === geo.origin.ty && prev.chunkPx === CHUNK_PX);
+  }
+  function bakeChunk(geo, cx, cy, usedAt) {
+    const viewport = chunkViewport(geo, cx, cy);
+    const baked = bakeViewport(geo, viewport);
+    return { key: chunkKey(cx, cy), cx, cy, x: viewport.x, y: viewport.y, w: viewport.w, h: viewport.h,
+      baseCv: baked.baseCv, lightCv: baked.lightCv, flickers: baked.flickers, usedAt: usedAt || 0 };
+  }
+  function pruneChunkMap(chunkMap, maxRetainedChunks, requiredKeys) {
+    if (!maxRetainedChunks || chunkMap.size <= maxRetainedChunks) return { evicted: 0 };
+    const required = requiredKeys || new Set();
+    const victims = Array.from(chunkMap.values()).filter(c => !required.has(c.key))
+      .sort((a, b) => (a.usedAt || 0) - (b.usedAt || 0));
+    let evicted = 0;
+    while (chunkMap.size > maxRetainedChunks && victims.length) {
+      const c = victims.shift();
+      chunkMap.delete(c.key);
+      evicted++;
+    }
+    return { evicted };
+  }
+  function uniqueFlickers(chunks) {
+    const seen = new Set(), out = [];
+    for (const c of chunks) for (const f of (c.flickers || [])) {
+      const key = Math.round(f.x * 1000) + ',' + Math.round(f.y * 1000) + ',' + Math.round(f.r * 1000);
+      if (!seen.has(key)) { seen.add(key); out.push(f); }
+    }
+    return out;
+  }
+  function bakeIncremental(geo, previous, dirtyRects, opts) {
+    opts = opts || {};
+    const reuse = sameChunkFrame(previous, geo);
+    const generation = reuse ? (previous.generation || 0) + 1 : 1;
+    const chunkMap = reuse ? new Map(previous.chunkMap) : new Map();
+    const visible = chunkRefsForRect(geo, opts.visibleRect);
+    const visibleKeys = new Set((visible || []).map(c => c.key));
+    let dirty = (reuse && opts.onlyMissingVisible) ? [] : (reuse ? dirtyChunks(geo, dirtyRects) : dirtyChunks(geo, []));
+    if (!reuse && visible) dirty = dirty.filter(d => visibleKeys.has(d.key));
+    for (const d of dirty) chunkMap.set(d.key, bakeChunk(geo, d.cx, d.cy, generation));
+    const requiredKeys = new Set(dirty.map(d => d.key));
+    let visibleBaked = 0;
+    for (const v of (visible || [])) {
+      requiredKeys.add(v.key);
+      const existing = chunkMap.get(v.key);
+      if (existing) existing.usedAt = generation;
+      else {
+        chunkMap.set(v.key, bakeChunk(geo, v.cx, v.cy, generation));
+        visibleBaked++;
+      }
+    }
+    const pruned = pruneChunkMap(chunkMap, opts.maxRetainedChunks, requiredKeys);
+    const chunks = Array.from(chunkMap.values()).sort((a, b) => (a.cy - b.cy) || (a.cx - b.cx));
+    return {
+      chunked: true, chunks, chunkMap, chunkPx: CHUNK_PX, generation,
+      W: geo.W, H: geo.H, origin: geo.origin, flickers: uniqueFlickers(chunks),
+      stats: { chunkCount: chunks.length, rebakedChunks: dirty.length + visibleBaked, reusedChunks: reuse ? Math.max(0, chunks.length - dirty.length - visibleBaked) : 0,
+        dirtyChunks: dirty.map(d => d.key), visibleChunks: visible ? Array.from(visibleKeys) : null,
+        evictedChunks: pruned.evicted, fullReset: !reuse }
+    };
+  }
+
+  function drawBase(ctx, baked, ox, oy, visibleRect) {
+    if (baked && baked.chunked) for (const c of visibleChunks(baked, visibleRect)) ctx.drawImage(c.baseCv, ox + c.x, oy + c.y);
+    else if (baked && baked.baseCv) ctx.drawImage(baked.baseCv, ox, oy);
+  }
+  function drawLight(ctx, baked, ox, oy, visibleRect) {
+    if (baked && baked.chunked) for (const c of visibleChunks(baked, visibleRect)) ctx.drawImage(c.lightCv, ox + c.x, oy + c.y);
+    else if (baked && baked.lightCv) ctx.drawImage(baked.lightCv, ox, oy);
+  }
+
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;

@@ -25,7 +25,7 @@ const Build = (() => {
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
-  let cache = null, cacheGeo = null, bakeDirty = true, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
+  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT' };
@@ -43,6 +43,7 @@ const Build = (() => {
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
 
   const T = () => (station ? station.TILE : 12);
+  const MAX_REFIT_CHUNKS = 18;
 
   /* ---------- lifecycle ---------- */
   function init(o) { opts = o; }
@@ -55,8 +56,14 @@ const Build = (() => {
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
-    unsub = station.onChange(() => { bakeDirty = true; updateUndoRedo(); });
-    bakeDirty = true;
+    updateSafetyClearance();
+    unsub = station.onChange(p => {
+      bakeDirty = true;
+      const rects = p && p.dirtyRects;
+      bakeDirtyRects = bakeDirtyRects && rects ? bakeDirtyRects.concat(rects) : (rects || bakeDirtyRects);
+      updateUndoRedo();
+    });
+    bakeDirty = true; bakeDirtyRects = null;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver }) : null;
     lastFrameTs = 0;
     if (!stars.length) seedStars();
@@ -79,6 +86,7 @@ const Build = (() => {
     if (unsub) unsub(), unsub = null;
     if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
     document.body.classList.remove('refit-on');
+    document.body.style.removeProperty('--refit-dock-clearance');
     if (root && root.parentNode) root.parentNode.removeChild(root);
     root = cv = ctx = tip = hintEl = undoBtn = redoBtn = null;
     window.removeEventListener('resize', resize);
@@ -280,6 +288,17 @@ const Build = (() => {
     }
     if (label) label.textContent = paletteLabel || 'OPTIONS';
     if (section) section.classList.toggle('is-empty', !pal.children.length);
+    updateSafetyClearance();
+  }
+
+  function updateSafetyClearance() {
+    if (!root || !document.body) return;
+    const dock = root.querySelector('.refit-dock');
+    if (!dock) return;
+    const r = dock.getBoundingClientRect();
+    const gap = 12;
+    const clearance = Math.ceil(r.height + Math.max(0, window.innerHeight - r.bottom) + gap);
+    document.body.style.setProperty('--refit-dock-clearance', Math.max(58, clearance) + 'px');
   }
 
   /* ---------- visual prop palette: a scrollable gallery of LIVE animated previews ----------
@@ -668,6 +687,7 @@ const Build = (() => {
     dpr = window.devicePixelRatio || 1;
     cv.width = Math.max(1, Math.round(cv.clientWidth * dpr));
     cv.height = Math.max(1, Math.round(cv.clientHeight * dpr));
+    updateSafetyClearance();
   }
   function seedStars() {
     stars = [];
@@ -689,6 +709,16 @@ const Build = (() => {
   function toWorldTile(ev) {
     const c = toCanvas(ev), t = T();
     return { tx: Math.floor(((c.x - panX) / zoom) / t), ty: Math.floor(((c.y - panY) / zoom) / t) };
+  }
+  function visibleBakeRect(g) {
+    if (!cv || !g) return null;
+    const t = g.TILE || T(), ox = g.origin.tx * t, oy = g.origin.ty * t;
+    return {
+      x: Math.max(0, (-panX) / zoom - ox),
+      y: Math.max(0, (-panY) / zoom - oy),
+      w: Math.ceil(cv.width / zoom),
+      h: Math.ceil(cv.height / zoom)
+    };
   }
 
   /* ---------- pointer interaction ---------- */
@@ -961,13 +991,20 @@ const Build = (() => {
   /* ---------- render loop ---------- */
   function rebake() {
     cacheGeo = station.projectGeometry();
-    cache = StationBake.bake(cacheGeo);
+    const visibleRect = visibleBakeRect(cacheGeo);
+    cache = StationBake.bakeIncremental
+      ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects, { visibleRect, maxRetainedChunks: MAX_REFIT_CHUNKS, onlyMissingVisible: bakeVisibleOnly })
+      : StationBake.bake(cacheGeo);
     valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
-    bakeDirty = false;
+    bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
 
   function frame(now) {
     if (!running) return;
+    const visibleRect = cacheGeo ? visibleBakeRect(cacheGeo) : null;
+    if (visibleRect && cache && StationBake.missingVisibleChunks && StationBake.missingVisibleChunks(cache, visibleRect).length) {
+      bakeDirty = true; bakeVisibleOnly = true;
+    }
     if (bakeDirty || !cache) rebake();
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -982,12 +1019,15 @@ const Build = (() => {
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
     ctx.imageSmoothingEnabled = false;
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
-    ctx.drawImage(cache.baseCv, ox, oy);
+    const drawVisibleRect = visibleBakeRect(cacheGeo);
+    if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy, drawVisibleRect);
+    else ctx.drawImage(cache.baseCv, ox, oy);
     drawGrid(t);
     drawConveyor(now, t);   // belts (floor) → props → boxes ride on top
     drawProps(now);
     drawConveyorBoxes(now, t);
-    ctx.drawImage(cache.lightCv, ox, oy);
+    if (StationBake.drawLight) StationBake.drawLight(ctx, cache, ox, oy, drawVisibleRect);
+    else ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
     drawFlashes(now, t);
     drawRoutingValidation(t, now);   // red/amber markers on any unroutable junction/bay (cost-safety)

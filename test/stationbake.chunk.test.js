@@ -1,0 +1,244 @@
+'use strict';
+
+const A = require('./_assert.js');
+
+global.U = {
+  hash(s) {
+    let h = 2166136261;
+    s = String(s);
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  },
+  shade(c) { return c; }
+};
+
+const canvases = [];
+function styleHash(style) {
+  if (style && typeof style === 'object' && style.__styleId) return style.__styleId;
+  const s = String(style == null ? '' : style);
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function fakeGradient(...args) {
+  const stops = [];
+  return {
+    get __styleId() { return styleHash('gradient:' + args.join(',') + ':' + stops.join('|')); },
+    addColorStop(off, color) { stops.push(off + '=' + color); }
+  };
+}
+function makeCanvas() {
+  const c = { _width: 0, _height: 0, _pixels: new Uint32Array(0), getContext() { return fakeCtx(c); } };
+  Object.defineProperty(c, 'width', {
+    get() { return c._width; },
+    set(v) {
+      c._width = Math.max(0, Math.floor(v || 0));
+      c._pixels = new Uint32Array(c._width * c._height);
+    }
+  });
+  Object.defineProperty(c, 'height', {
+    get() { return c._height; },
+    set(v) {
+      c._height = Math.max(0, Math.floor(v || 0));
+      c._pixels = new Uint32Array(c._width * c._height);
+    }
+  });
+  return c;
+}
+function fakeCtx(canvas) {
+  const state = {
+    tx: 0, ty: 0, fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: '',
+    textBaseline: '', globalCompositeOperation: 'source-over', imageSmoothingEnabled: false
+  };
+  const stack = [];
+  const writeRect = (x, y, w, h, val) => {
+    x = Math.floor(x + state.tx); y = Math.floor(y + state.ty);
+    w = Math.ceil(w); h = Math.ceil(h);
+    const x0 = Math.max(0, x), y0 = Math.max(0, y);
+    const x1 = Math.min(canvas.width, x + w), y1 = Math.min(canvas.height, y + h);
+    for (let yy = y0; yy < y1; yy++) {
+      const off = yy * canvas.width;
+      for (let xx = x0; xx < x1; xx++) canvas._pixels[off + xx] = val;
+    }
+  };
+  const fillValue = () => state.globalCompositeOperation === 'destination-out' ? 0 : styleHash(state.fillStyle);
+  const strokeValue = () => styleHash(state.strokeStyle);
+  return {
+    get fillStyle() { return state.fillStyle; }, set fillStyle(v) { state.fillStyle = v; },
+    get strokeStyle() { return state.strokeStyle; }, set strokeStyle(v) { state.strokeStyle = v; },
+    get lineWidth() { return state.lineWidth; }, set lineWidth(v) { state.lineWidth = v; },
+    get font() { return state.font; }, set font(v) { state.font = v; },
+    get textAlign() { return state.textAlign; }, set textAlign(v) { state.textAlign = v; },
+    get textBaseline() { return state.textBaseline; }, set textBaseline(v) { state.textBaseline = v; },
+    get globalCompositeOperation() { return state.globalCompositeOperation; }, set globalCompositeOperation(v) { state.globalCompositeOperation = v; },
+    get imageSmoothingEnabled() { return state.imageSmoothingEnabled; }, set imageSmoothingEnabled(v) { state.imageSmoothingEnabled = v; },
+    beginPath() {}, rect() {}, moveTo() {}, lineTo() {}, arc() {}, ellipse() {}, closePath() {},
+    clip() {},
+    save() { stack.push({ ...state }); },
+    restore() { if (stack.length) Object.assign(state, stack.pop()); },
+    translate(x, y) { state.tx += x; state.ty += y; },
+    setTransform(a, b, c, d, e, f) { state.tx = e || 0; state.ty = f || 0; },
+    fill() {},
+    stroke() {},
+    fillRect(x, y, w, h) { writeRect(x, y, w, h, fillValue()); },
+    clearRect(x, y, w, h) { writeRect(x, y, w, h, 0); },
+    strokeRect(x, y, w, h) {
+      const v = strokeValue(), lw = Math.max(1, Math.ceil(state.lineWidth || 1));
+      writeRect(x, y, w, lw, v); writeRect(x, y + h - lw, w, lw, v);
+      writeRect(x, y, lw, h, v); writeRect(x + w - lw, y, lw, h, v);
+    },
+    drawImage(src, x, y) {
+      x = Math.floor(x + state.tx); y = Math.floor(y + state.ty);
+      for (let sy = 0; sy < src.height; sy++) {
+        const dy = y + sy;
+        if (dy < 0 || dy >= canvas.height) continue;
+        for (let sx = 0; sx < src.width; sx++) {
+          const dx = x + sx;
+          if (dx < 0 || dx >= canvas.width) continue;
+          const v = src._pixels[sy * src.width + sx];
+          if (v || state.globalCompositeOperation !== 'destination-over') canvas._pixels[dy * canvas.width + dx] = v;
+        }
+      }
+    },
+    fillText(s, x, y) { writeRect(x, y - 7, Math.max(1, String(s || '').length * 4), 7, fillValue()); },
+    measureText(s) { return { width: String(s || '').length * 7 }; },
+    createRadialGradient: fakeGradient
+  };
+}
+global.document = {
+  createElement(tag) {
+    if (tag !== 'canvas') throw new Error('unexpected element ' + tag);
+    const c = makeCanvas();
+    canvases.push(c);
+    return c;
+  }
+};
+
+const StationBake = require('../frontend/app/stationbake.js');
+
+function composeLayer(baked, layer) {
+  const c = document.createElement('canvas');
+  c.width = baked.W; c.height = baked.H;
+  const ctx = c.getContext('2d');
+  if (layer === 'base') StationBake.drawBase(ctx, baked, 0, 0);
+  else StationBake.drawLight(ctx, baked, 0, 0);
+  return c;
+}
+function pixelDiff(a, b) {
+  if (a.width !== b.width || a.height !== b.height) return Infinity;
+  let diff = 0;
+  for (let i = 0; i < a._pixels.length; i++) if (a._pixels[i] !== b._pixels[i]) diff++;
+  return diff;
+}
+
+function makeGeo() {
+  const TILE = 12, COLS = 75, ROWS = 52;
+  const zoneGrid = new Array(COLS * ROWS).fill(null);
+  const idx = (x, y) => y * COLS + x;
+  for (let y = 2; y <= 40; y++) for (let x = 2; x <= 60; x++) zoneGrid[idx(x, y)] = 'r1';
+  return {
+    TILE, COLS, ROWS, W: 900, H: 650, origin: { tx: 0, ty: 0 },
+    allRects: [{ z: 'r1', x1: 2, y1: 2, x2: 60, y2: 40 }],
+    zones: { r1: { x1: 2, y1: 2, x2: 60, y2: 40 } },
+    ROOM_IDS: ['r1'], chamfers: [], windows: [], doorDefs: [], zoneGrid, idx,
+    isCorridor: () => false,
+    canStep: (x1, y1, x2, y2) => zoneGrid[idx(x1, y1)] === zoneGrid[idx(x2, y2)],
+    baseColorOf: () => '#30343a',
+    nameOf: () => 'HAB-01',
+    kindOf: () => 'hab',
+    FLOOR_STYLES: { hull: { base: '#30343a' } }
+  };
+}
+
+const geo = makeGeo();
+canvases.length = 0;
+const first = StationBake.bakeIncremental(geo, null, null);
+A.ok(first.chunked, 'large bake uses the chunk cache');
+A.eq(first.stats.chunkCount, 6, '900x650 bake splits into a 3x2 chunk grid');
+A.eq(first.stats.rebakedChunks, 6, 'cold bake renders every chunk once');
+A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
+  'chunk bake never allocates a full-world canvas');
+
+const mono = StationBake.bake(geo);
+A.eq(first.flickers.length, mono.flickers.length, 'chunked bake deduplicates flicker anchors to monolithic count');
+A.eq(pixelDiff(composeLayer(first, 'base'), mono.baseCv), 0,
+  'full chunk base composite matches the monolithic bake baseline');
+A.eq(pixelDiff(composeLayer(first, 'light'), mono.lightCv), 0,
+  'full chunk light composite matches the monolithic bake baseline');
+
+const reusedBefore = new Map(first.chunkMap);
+canvases.length = 0;
+const second = StationBake.bakeIncremental(geo, first, [{ x1: 10, y1: 10, x2: 10, y2: 10 }]);
+A.eq(second.stats.fullReset, false, 'same bounds/origin allow incremental reuse');
+A.eq(second.stats.dirtyChunks, ['0,0'], 'single tile edit maps to the exact dirty chunk');
+A.eq(second.stats.rebakedChunks, 1, 'single tile edit rebakes one chunk');
+A.eq(second.stats.reusedChunks, 5, 'single tile edit reuses untouched chunks');
+A.ok(second.chunkMap.get('1,0') === reusedBefore.get('1,0'), 'untouched chunk object is reused');
+A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
+  'incremental rebake remains bounded to chunk-sized canvases');
+
+const visible = StationBake.visibleChunks(first, { x: 384, y: 0, w: 384, h: 384 });
+A.eq(visible.map(c => c.key), ['1,0'], 'visible chunk query returns only chunks intersecting the viewport');
+A.eq(StationBake.missingVisibleChunks(first, { x: 384, y: 0, w: 384, h: 384 }), [],
+  'complete cache reports no missing visible chunks');
+
+const drawn = [];
+const drawCtx = { drawImage(cv, x, y) { drawn.push({ cv, x, y }); } };
+StationBake.drawBase(drawCtx, first, 0, 0, { x: 384, y: 0, w: 384, h: 384 });
+A.eq(drawn.length, 1, 'drawBase culls chunked composites to the visible viewport');
+A.eq(drawn[0].x, 384, 'drawBase preserves chunk world offset when culling');
+
+const fullDrawn = [];
+StationBake.drawBase({ drawImage(cv, x, y) { fullDrawn.push({ cv, x, y, w: cv.width, h: cv.height }); } }, first, 0, 0);
+A.eq(fullDrawn.map(d => [d.x, d.y, d.w, d.h]), [
+  [0, 0, 384, 384], [384, 0, 384, 384], [768, 0, 132, 384],
+  [0, 384, 384, 266], [384, 384, 384, 266], [768, 384, 132, 266]
+], 'full chunk composite covers the station without gaps, overlaps, or seam offsets');
+
+canvases.length = 0;
+const visibleCold = StationBake.bakeIncremental(geo, null, null, {
+  visibleRect: { x: 384, y: 0, w: 384, h: 384 },
+  maxRetainedChunks: 2
+});
+A.eq(visibleCold.stats.chunkCount, 1, 'cold visible bake renders only requested chunks');
+A.eq(visibleCold.stats.dirtyChunks, ['1,0'], 'cold visible bake reports the rendered visible chunk');
+A.eq(visibleCold.stats.evictedChunks, 0, 'cold visible bake does not evict when under the retention cap');
+A.eq(StationBake.missingVisibleChunks(visibleCold, { x: 768, y: 0, w: 132, h: 384 }), ['2,0'],
+  'visible-only cache reports newly exposed chunks after panning');
+const panned = StationBake.bakeIncremental(geo, visibleCold, null, {
+  visibleRect: { x: 768, y: 0, w: 132, h: 384 },
+  maxRetainedChunks: 2,
+  onlyMissingVisible: true
+});
+A.eq(panned.stats.dirtyChunks, [], 'pan-only visible fill does not dirty the whole station');
+A.eq(panned.stats.rebakedChunks, 1, 'pan-only visible fill bakes only the newly exposed chunk');
+A.ok(panned.chunkMap.has('2,0'), 'pan-only visible fill caches the newly exposed chunk');
+
+const retained = StationBake.bakeIncremental(geo, first, [{ x1: 4, y1: 4, x2: 4, y2: 4 }], {
+  visibleRect: { x: 384, y: 0, w: 384, h: 384 },
+  maxRetainedChunks: 2
+});
+A.eq(retained.stats.chunkCount, 2, 'LRU retention bounds the cached chunk count');
+A.ok(retained.chunkMap.has('0,0'), 'dirty chunk is retained even when outside the visible viewport');
+A.ok(retained.chunkMap.has('1,0'), 'visible chunk is retained for the current frame');
+A.ok(retained.stats.evictedChunks >= 4, 'LRU retention evicts older non-required chunks');
+
+const shiftedGeo = makeGeo();
+shiftedGeo.origin = { tx: 1, ty: 0 };
+canvases.length = 0;
+const reset = StationBake.bakeIncremental(shiftedGeo, first, [{ x1: 10, y1: 10, x2: 10, y2: 10 }], {
+  visibleRect: { x: 0, y: 0, w: 384, h: 384 },
+  maxRetainedChunks: 2
+});
+A.eq(reset.stats.fullReset, true, 'origin changes reset chunk metadata instead of reusing stale chunks');
+A.eq(reset.stats.chunkCount, 1, 'origin reset can rebuild only the visible chunk');
+A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
+  'origin reset does not allocate full-world base/light canvases');
+
+A.report('stationbake.chunk');
