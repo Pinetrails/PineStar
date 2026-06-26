@@ -464,4 +464,27 @@ const legacyDoor = WM.deserialize({ schema: 'starnet.station', version: 1,
 A.eq(legacyDoor.propById('pA').door, undefined, 'migrate drops an invalid door value');
 A.eq(legacyDoor.doc().meta.trunkRoomId, 'rD', 'migrate backfills trunkRoomId to the spawn room');
 
+/* ---- Session 2: PipelineEdge persists, migrates, sanitizes, and participates in undo ---- */
+const pe = WM.create();
+A.eq(JSON.stringify(pe.pipelineEdges()), '[]', 'a fresh station has no PipelineEdge entries');
+A.ok(pe.addPipelineEdge({ from: 'lead', to: 'worker', whenKind: 'handoff', lane: 'primary' }).ok, 'addPipelineEdge accepts a valid PipelineEdge');
+A.eq(JSON.stringify(pe.pipelineEdges()), JSON.stringify([{ from: 'lead', to: 'worker', whenKind: 'handoff', lane: 'primary' }]), 'pipelineEdges returns the persisted edge');
+const peDoc = pe.serialize();
+A.eq(JSON.stringify(WM.deserialize(peDoc).pipelineEdges()), JSON.stringify(pe.pipelineEdges()), 'PipelineEdge survives serialize/deserialize');
+pe.undo();
+A.eq(JSON.stringify(pe.pipelineEdges()), '[]', 'undo removes the added PipelineEdge');
+pe.redo();
+A.eq(pe.pipelineEdges().length, 1, 'redo restores the PipelineEdge');
+A.eq(pe.addPipelineEdge({ from: 'lead', to: 'lead', whenKind: 'handoff' }).error, 'BAD_EDGE', 'self PipelineEdge is rejected');
+A.ok(pe.removePipelineEdge({ from: 'lead', to: 'worker', whenKind: 'handoff', lane: 'primary' }).ok, 'removePipelineEdge removes the matching edge');
+A.eq(JSON.stringify(pe.pipelineEdges()), '[]', 'edge list is empty after removal');
+const legacyEdges = WM.deserialize({ schema: 'starnet.station', version: 1,
+  rooms: { rE: { id: 'rE', kind: 'hab', name: 'E', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rE'],
+  edges: [{ from: 'a', to: 'b', whenKind: 'handoff' }, { from: 'bad agent', to: 'b', whenKind: 'handoff' }, { from: 'a', to: 'a', whenKind: 'handoff' }] });
+A.eq(JSON.stringify(legacyEdges.pipelineEdges()), JSON.stringify([{ from: 'a', to: 'b', whenKind: 'handoff' }]), 'migrate keeps only valid PipelineEdge entries');
+const oldNoEdges = WM.deserialize({ schema: 'starnet.station', version: 1,
+  rooms: { rOld: { id: 'rOld', kind: 'hab', name: 'Old', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rOld'] });
+A.eq(JSON.stringify(oldNoEdges.pipelineEdges()), '[]', 'legacy docs without edges migrate to []');
+A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ from: 'a', to: 'b', whenKind: 'handoff', lane: 'bad lane' }] }).pipelineEdges()), '[]', 'malformed edge lanes are dropped during migration');
+
 A.report('worldmodel');

@@ -33,6 +33,22 @@ const WorldModel = (() => {
     return n ? out : null;
   }
   const cleanBuf = b => { const n = b | 0; return n >= 2 ? n : null; };
+  const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (mirrors the sidecar hub)
+  const WHEN_RE = /^[A-Za-z0-9_.:-]{1,40}$/;
+  function cleanPipelineEdge(e) {
+    if (!e || typeof e !== 'object') return null;
+    const from = String(e.from || '').trim();
+    const to = String(e.to || '').trim();
+    const whenKind = String(e.whenKind || 'handoff').trim();
+    if (!AID_RE.test(from) || !AID_RE.test(to) || from === to || !WHEN_RE.test(whenKind)) return null;
+    const out = { from, to, whenKind };
+    const lane = String(e.lane == null ? '' : e.lane).trim();
+    if (lane) {
+      if (!WHEN_RE.test(lane)) return null;
+      out.lane = lane;
+    }
+    return out;
+  }
   // copy any present + valid junction config from src onto dst (mutates dst; additive — absent fields untouched)
   function applyJunctionCfg(dst, src) {
     const routes = cleanRoutes(src.routes); if (routes) dst.routes = routes;
@@ -116,7 +132,7 @@ const WorldModel = (() => {
     const doc = {
       schema: 'starnet.station', version: 1, _nid: 1,
       meta: { name: 'STARNET STATION', createdAt: createdAt || 0, tier: 0, spawnRoomId: null, trunkRoomId: null },
-      rooms: {}, order: [], props: [], belts: {}
+      rooms: {}, order: [], props: [], belts: {}, edges: []
     };
     // seed the shabby starter HAB (18×11 floor — the v7 / world.js starter room), so a new
     // station is never empty and the builder has something to extend from.
@@ -231,9 +247,9 @@ const WorldModel = (() => {
       checkRects((rects || []).map(normRect), 'corridor', ignoreId);
 
     /* ---------- history (snapshot-based — small docs, correct by construction) ---------- */
-    const snap = () => clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid, props: doc.props, belts: doc.belts });
+    const snap = () => clone({ rooms: doc.rooms, order: doc.order, meta: doc.meta, _nid: doc._nid, props: doc.props, belts: doc.belts, edges: doc.edges });
     function snapshot() { undoStack.push(snap()); if (undoStack.length > 120) undoStack.shift(); redoStack.length = 0; }
-    function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; doc.belts = s.belts || {}; }
+    function restore(s) { doc.rooms = s.rooms; doc.order = s.order; doc.meta = s.meta; doc._nid = s._nid; doc.props = s.props || []; doc.belts = s.belts || {}; doc.edges = s.edges || []; }
     function emit(dirtyRects) {
       seq++;
       const patch = { seq, dirtyRects: dirtyRects || [] };
@@ -634,7 +650,6 @@ const WorldModel = (() => {
     }
 
     /* ---------- agent-bay binding (Phase B: a belt endpoint named for an agent) ---------- */
-    const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (mirrors the sidecar hub)
     function assignPropAgent(propId, agentId) {
       const p = doc.props.find(q => q.id === propId);
       if (!p) return fail('NOT_FOUND', 'no such prop');
@@ -682,6 +697,39 @@ const WorldModel = (() => {
     }
     const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
     const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
+    const pipelineEdges = () => clone(doc.edges || []);
+    function setPipelineEdges(edges) {
+      const clean = [];
+      const seen = {};
+      for (const e of (Array.isArray(edges) ? edges : [])) {
+        const ce = cleanPipelineEdge(e);
+        if (!ce) continue;
+        const k = ce.from + '>' + ce.to + ':' + ce.whenKind + ':' + (ce.lane || '');
+        if (seen[k]) continue;
+        seen[k] = true; clean.push(ce);
+      }
+      if (JSON.stringify(clean) === JSON.stringify(doc.edges || [])) return { ok: true, count: clean.length };
+      snapshot();
+      doc.edges = clean;
+      emit([]);
+      return { ok: true, count: clean.length };
+    }
+    function addPipelineEdge(edge) {
+      const ce = cleanPipelineEdge(edge);
+      if (!ce) return fail('BAD_EDGE', 'edge must be {from,to,whenKind,lane?}');
+      return setPipelineEdges((doc.edges || []).concat([ce]));
+    }
+    function removePipelineEdge(edge) {
+      const ce = cleanPipelineEdge(edge);
+      if (!ce) return fail('BAD_EDGE', 'edge must be {from,to,whenKind,lane?}');
+      const before = doc.edges || [];
+      const next = before.filter(e => !(e.from === ce.from && e.to === ce.to && e.whenKind === ce.whenKind && (e.lane || '') === (ce.lane || '')));
+      if (next.length === before.length) return fail('NOT_FOUND', 'no such edge');
+      snapshot();
+      doc.edges = next;
+      emit([]);
+      return { ok: true, count: next.length };
+    }
     function agentRoomId(agentId) {   // the room the agent's BAY sits in — the capability-isolation seam
       const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
       return bay ? roomAt(bay.x, bay.y) : null;
@@ -739,7 +787,7 @@ const WorldModel = (() => {
       addProp, removeProp, moveProp, assignPropAgent, configureJunction, bindConnector, setDoorState,
       setBelt, removeBelt, placeBeltRun,
       // agent-bay binding queries
-      propsByType, propsByAgent, agentRoomId, bayObjects,
+      propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
       capForProp: t => CAP_PROP_MAP[t] || null,   // a prop type's capability objectType (single source for the UI)
       undo, redo, canUndo, canRedo,
       // projection + io
@@ -763,10 +811,12 @@ const WorldModel = (() => {
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; if (typeof p.connectorId === 'string' && p.connectorId) o.connectorId = p.connectorId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }
+    if (!Array.isArray(doc.edges)) doc.edges = [];
+    doc.edges = doc.edges.map(cleanPipelineEdge).filter(Boolean);
     if (!doc.meta || typeof doc.meta !== 'object') doc.meta = { name: 'STARNET STATION', createdAt: 0, tier: 0, spawnRoomId: null };
     if (typeof doc._nid !== 'number') doc._nid = doc.order.length + 1;
     for (const p of doc.props) if (!p.id) p.id = 'p' + (doc._nid++);   // backfill ids for legacy/partial props
