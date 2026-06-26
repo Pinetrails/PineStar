@@ -89,4 +89,21 @@ function twoAgentStation() {
   A.eq(v.graph.edgeRunnable['lead>worker:handoff:primary'], false, 'duplicate edge readiness is false instead of ambiguous');
 }
 
+{
+  const s = twoAgentStation();
+  const doc = s.serialize();
+  doc.edges = [{ from: 'lead', to: 'lead', whenKind: 'handoff', lane: 'self' }];
+  const snapshot = {
+    serialize: () => doc,
+    projectGeometry: () => s.projectGeometry(),
+    roomAt: (x, y) => s.roomAt(x, y),
+    spawnRoomId: () => s.spawnRoomId(),
+    roomById: id => s.roomById(id)
+  };
+  const v = OV.validateOrg(snapshot);
+  A.ok(!v.ok, 'self PipelineEdge is invalid even when raw snapshots bypass worldmodel mutators');
+  A.ok(v.errors.some(e => e.code === OV.codes.SELF_EDGE && e.from === 'lead' && e.to === 'lead'), 'self edge has a stable reason code');
+  A.eq(v.graph.edgeRunnable['lead>lead:handoff:self'], false, 'self edge readiness is false');
+}
+
 A.report('org-validator');

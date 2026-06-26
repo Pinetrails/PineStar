@@ -12,6 +12,7 @@
 
   const SEVERED = 'PIPELINE_SEVERED_CONNECT_CORRIDOR';
   const DUP_EDGE = 'PIPELINE_DUPLICATE_EDGE';
+  const SELF_EDGE = 'PIPELINE_SELF_EDGE';
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -146,7 +147,8 @@
       if (e.lane) edge.lane = String(e.lane);
       const from = agents[edge.from], to = agents[edge.to];
       const out = { from: edge.from, to: edge.to, whenKind: edge.whenKind, lane: edge.lane || null, runnable: false, reason: null };
-      if (edgeCounts[edgeKey(edge)] > 1) out.reason = DUP_EDGE;
+      if (edge.from && edge.from === edge.to) out.reason = SELF_EDGE;
+      else if (edgeCounts[edgeKey(edge)] > 1) out.reason = DUP_EDGE;
       else if (!from || !to) out.reason = 'PIPELINE_UNKNOWN_AGENT';
       else if (!geo || typeof geo.path !== 'function') out.reason = 'PIPELINE_NO_PATH_GRAPH';
       else {
@@ -166,5 +168,5 @@
     return { ok: errors.length === 0, errors, warnings, graph };
   }
 
-  return { validateOrg, validate: validateOrg, codes: { SEVERED, DUP_EDGE } };
+  return { validateOrg, validate: validateOrg, codes: { SEVERED, DUP_EDGE, SELF_EDGE } };
 });
