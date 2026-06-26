@@ -52,6 +52,9 @@
     const model = deps.model;
     const provider = deps.provider || null;
     const subagents = deps.subagents || null;
+    // the LEAD's OWN base identity (system prompt), threaded from the run host so team.spawn can clone it. Empty
+    // string when absent → a spawned subagent still runs, just without an inherited persona.
+    const selfSystem = (typeof deps.selfSystem === 'string') ? deps.selfSystem : '';
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
@@ -158,6 +161,89 @@
 
         const ok = out.filter(r => r.reason === 'done').length;
         return { content: JSON.stringify(out), summary: 'dispatched ' + jobs.length + ' worker(s), ' + ok + ' done' };
+      }
+    };
+
+    // team.spawn: the LEAD spawns EPHEMERAL sub-agents — anonymous CLONES OF ITSELF — to work subtasks in PARALLEL.
+    // The "Meeseeks": a throwaway worker that does its one task, returns its result, then vanishes. UNLIKE
+    // team.dispatch (which delegates to NAMED roster crew with their own persistent identity), these have NO roster
+    // identity — each is a clone of the lead (the lead's OWN base system + model), narrowed to a focused subtask with
+    // its own cost budget and a fresh ephemeral id. Routed through the durable subagent registry so each emits
+    // task{kind:'subagent'} + the frozen agent.run.* — the floor's Meeseeks-sprite feed, CONTRACT-FREE. FLAT DEPTH:
+    // a clone is handed the WORKBENCH but NOT the orchestrator object, so team.spawn/dispatch are never EXPOSED to it
+    // → it cannot spawn its own sub-agents. The SAME gating that already stops a delegated worker re-delegating.
+    const spawnTool = {
+      timeoutMs: dispatchTimeoutMs,
+      name: 'team.spawn', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
+      description: 'Spawn EPHEMERAL sub-agents — clones of yourself — to work subtasks in parallel. Each runs its OWN agent loop on the one subtask you give it, returns its result, then vanishes (it is NOT added to your roster, and it cannot spawn its own sub-agents). Use this to decompose a task or fan out parallel work without summoning named crew first. Each task takes a prompt (the focused subtask) and an optional label. Pass background:true to spawn watchable workers and keep working while they run.',
+      schema: {
+        type: 'object', required: ['tasks'], properties: {
+          tasks: {
+            type: 'array', items: {
+              type: 'object', required: ['prompt'],
+              properties: { prompt: { type: 'string' }, label: { type: 'string' } }
+            }
+          },
+          background: { type: 'boolean' }
+        }
+      },
+      run: async (args, ctx) => {
+        if (typeof runOnce !== 'function') return { content: 'orchestration unavailable (no run host)', summary: 'error' };
+        if (!subagents || typeof subagents.start !== 'function') return { content: 'ephemeral subagents unavailable (no subagent manager)', summary: 'unavailable' };
+        const leadId = (ctx && ctx.agentId) || 'agent';
+        const reqs = Array.isArray(args.tasks) ? args.tasks.slice(0, maxWorkers) : [];
+        if (!reqs.length) return { content: 'No tasks specified.', summary: 'noop' };
+
+        // forward ONLY lifecycle/cost onto the lead's bus so the floor materializes/pops the Meeseeks live; the
+        // durable record (via h.emit) keeps the full watch tail for team.subagents/interrupt/resume.
+        const childEmit = (name, payload) => { if (FORWARD[name] && ctx && typeof ctx.emit === 'function') { try { ctx.emit(name, payload); } catch (_) {} } };
+
+        const spawnOne = (task, i) => {
+          const label = String((task && task.label) || ('subagent ' + (i + 1))).slice(0, 60);
+          const prompt = String((task && task.prompt) || '');
+          const ephemeralId = ('sub-' + newId()).slice(0, 40);   // anonymous, ID_RE-valid; NEVER a roster agentId
+          let settle; const done = new Promise(res => { settle = res; });
+          const runner = async (h) => {
+            if (!prompt.trim()) { const r = { label, agentId: ephemeralId, reason: 'error', result: 'empty subtask prompt', usd: 0 }; settle(r); return { status: 'error', reason: 'error', result: r.result, usd: 0 }; }
+            let result;
+            try {
+              result = await runOnce({
+                key, provider, model,                       // the lead's OWN model — a clone of self
+                system: selfSystem,                         // the lead's OWN base identity; the clone's runOnce
+                                                            // composes its own caps for its (narrowed) toolset
+                messages: [{ role: 'user', content: prompt }],
+                agentId: ephemeralId, isTask: true,
+                emit: (n, p) => { try { h.emit(n, p); } catch (_) {} childEmit(n, p); },   // durable record + lead stream
+                signal: h.signal, runId: h.runId,
+                trigger: 'directive', surface: 'autonomous',
+                consent: ctx && ctx.consent,                // same approval posture as the orchestrator
+                extraObjects: WORKER_KIT,                   // WORKBENCH only — NO 'lead' → no orchestrator object →
+                                                            // team.spawn never exposed to it → FLAT DEPTH (no re-spawn)
+                maxCostUsd: perWorker                        // a runaway clone can't blow the lead's per-run ceiling
+              });
+            } catch (e) {
+              const r = { label, agentId: ephemeralId, reason: 'error', result: 'subagent run failed: ' + ((e && e.message) || e), usd: 0 };
+              settle(r); return { status: 'error', reason: 'error', result: r.result, usd: 0 };
+            }
+            if (!result) {
+              const r = { label, agentId: ephemeralId, reason: 'refused', result: 'subagent could not start — the concurrency cap (STARNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once.', usd: 0 };
+              settle(r); return { status: 'error', reason: 'refused', result: r.result, usd: 0 };
+            }
+            const r = { label, agentId: ephemeralId, reason: result.reason || 'done', result: lastAssistant(result.messages) || '(the subagent returned no text)', usd: result.usd || 0 };
+            settle(r);
+            return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd };
+          };
+          const view = subagents.start({ leadId, agentId: ephemeralId, prompt: prompt, runId: newId() }, runner);
+          return { label, view, done };
+        };
+
+        const spawned = reqs.map(spawnOne);
+        if (args.background) {
+          return { content: JSON.stringify(spawned.map(s => Object.assign({ label: s.label }, s.view))), summary: 'spawned ' + spawned.length + ' subagent(s)' };
+        }
+        const results = await Promise.all(spawned.map(s => s.done));
+        const ok = results.filter(r => r.reason === 'done').length;
+        return { content: JSON.stringify(results), summary: 'spawned ' + results.length + ' subagent(s), ' + ok + ' done' };
       }
     };
 
@@ -273,8 +359,8 @@
     };
 
     return {
-      dispatchTool, summonTool, subagentsTool, interruptTool, resumeTool,
-      register(reg) { [dispatchTool, summonTool, subagentsTool, interruptTool, resumeTool].forEach(t => reg.register(t)); return reg; }
+      dispatchTool, spawnTool, summonTool, subagentsTool, interruptTool, resumeTool,
+      register(reg) { [dispatchTool, spawnTool, summonTool, subagentsTool, interruptTool, resumeTool].forEach(t => reg.register(t)); return reg; }
     };
   }
 
