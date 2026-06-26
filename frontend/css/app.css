@@ -1483,7 +1483,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .term a:focus-visible,
 .term [tabindex]:focus-visible,
 .term-x:focus-visible,
-.bb-menu .bb:focus-visible {
+.bb-menu .bb:focus-visible,
+.bb-grp:focus-visible,
+.btn:focus-visible, .btn-xl:focus-visible, .btn-sm:focus-visible, .prov:focus-visible {
   outline: 2px solid var(--ph-bright); outline-offset: 2px;
 }
 .bb-menu .bb:focus-visible { background: var(--ph-faint); color: var(--ph-bright); }

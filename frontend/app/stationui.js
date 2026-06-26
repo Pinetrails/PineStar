@@ -248,7 +248,7 @@ const StationUI = (() => {
       return;
     }
     ul.innerHTML = present.map((a, i) =>
-      '<li class="crew-row" data-i="' + i + '">' +
+      '<li class="crew-row" data-i="' + i + '" data-agent-id="' + a.id + '">' +
       '<span class="dot on"></span>' +
       '<div class="crew-main">' +
       '<div class="crew-name" style="color:' + a.color + '">' + esc(a.name) +

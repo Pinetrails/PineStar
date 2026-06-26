@@ -112,13 +112,15 @@
     const thinking = (($('#chat-status') || {}).textContent || '').toLowerCase().indexOf('think') >= 0;
     for (const row of rows) {
       const d = row.querySelector('.dot'); if (!d) continue;
-      // resolve this row's agent id from its per-agent status div (id 'cs-{agentId}', set by StationUI crewRender).
-      const cs = row.querySelector('.crew-status');
-      const id = cs && cs.id && cs.id.indexOf('cs-') === 0 ? cs.id.slice(3) : '';
+      // this tick runs ~3x/sec for the app's lifetime, so keep it cheap: read the agent id straight off the
+      // row (StationUI stamps data-agent-id) instead of a second querySelector + string slice, and only touch
+      // the DOM when the class actually changes (no redundant style invalidation every tick).
+      const id = row.dataset.agentId || '';
       let cls = 'wr-idle';
       if (awaiting) cls = 'wr-await';
       else if (id && isAgentRunning(id)) cls = thinking ? 'wr-think' : 'wr-work';
-      d.className = 'dot on ' + cls;
+      const next = 'dot on ' + cls;
+      if (d.className !== next) d.className = next;
     }
   }
   // authoritative per-agent run state — the SAME self-healing map the crew LIST reads (StationUI's runningAgents,
