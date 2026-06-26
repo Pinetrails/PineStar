@@ -25,7 +25,7 @@ const Build = (() => {
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
-  let cache = null, cacheGeo = null, bakeDirty = true, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
+  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT' };
@@ -56,8 +56,13 @@ const Build = (() => {
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
     updateSafetyClearance();
-    unsub = station.onChange(() => { bakeDirty = true; updateUndoRedo(); });
-    bakeDirty = true;
+    unsub = station.onChange(p => {
+      bakeDirty = true;
+      const rects = p && p.dirtyRects;
+      bakeDirtyRects = bakeDirtyRects && rects ? bakeDirtyRects.concat(rects) : (rects || bakeDirtyRects);
+      updateUndoRedo();
+    });
+    bakeDirty = true; bakeDirtyRects = null;
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver }) : null;
     lastFrameTs = 0;
     if (!stars.length) seedStars();
@@ -975,9 +980,9 @@ const Build = (() => {
   /* ---------- render loop ---------- */
   function rebake() {
     cacheGeo = station.projectGeometry();
-    cache = StationBake.bake(cacheGeo);
+    cache = StationBake.bakeIncremental ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects) : StationBake.bake(cacheGeo);
     valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
-    bakeDirty = false;
+    bakeDirty = false; bakeDirtyRects = null;
   }
 
   function frame(now) {
@@ -996,12 +1001,14 @@ const Build = (() => {
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
     ctx.imageSmoothingEnabled = false;
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
-    ctx.drawImage(cache.baseCv, ox, oy);
+    if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy);
+    else ctx.drawImage(cache.baseCv, ox, oy);
     drawGrid(t);
     drawConveyor(now, t);   // belts (floor) → props → boxes ride on top
     drawProps(now);
     drawConveyorBoxes(now, t);
-    ctx.drawImage(cache.lightCv, ox, oy);
+    if (StationBake.drawLight) StationBake.drawLight(ctx, cache, ox, oy);
+    else ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
     drawFlashes(now, t);
     drawRoutingValidation(t, now);   // red/amber markers on any unroutable junction/bay (cost-safety)
