@@ -51,6 +51,16 @@
       }, n);
     }
     const notesOf = aid => { const v = store.get(KEY(aid)); return Array.isArray(v) ? v.map(migrate) : []; };
+    // P1 SAFE WRITE: route every mutation through store.update (per-agent serialized, re-read-under-lock) when
+    // the host provides it; fall back to the plain get->mutate->set for a standalone store (browser/tests). The
+    // mutator always receives the MIGRATED current list and returns the new list (or undefined to skip writing).
+    const updateNotes = (aid, mutator) => {
+      const apply = cur => mutator(Array.isArray(cur) ? cur.map(migrate) : []);
+      if (store && typeof store.update === 'function') return store.update(KEY(aid), apply);
+      const next = apply(store.get(KEY(aid)));
+      if (next !== undefined) store.set(KEY(aid), next);
+      return Promise.resolve(next);
+    };
     // collision-proof id: one past the HIGHEST existing note_N. Positional ('note_'+list.length) reuses a slot
     // freed by a forget (M-mem.6) -> a DUPLICATE id -> id-keyed ops corrupt/delete the wrong record. Mirrors
     // memcore.nextNoteId (kept inline so this UMD tool stays dependency-free).
@@ -73,18 +83,20 @@
         const runId = ctx && ctx.runId ? String(ctx.runId) : null;   // provenance source (B1 Cortex seam)
         const streamId = ctx && ctx.streamId ? String(ctx.streamId) : null;   // M-mem.2b: the run's workstream
         const scope = streamId ? 'stream' : 'global';                         // a note jotted in a stream is its working memory
-        const list = notesOf(aid);
         const now = clock.now();
-        // §5.2 record: title/body/ts kept (back-compat + recall); sourceRunId is the moat (drill any fact ->
-        // the run that earned it). useCount/lastUsedAt move with memory.used; trust with memory.feedback.
-        const note = {
-          id: nextId(list), kind: 'note',
-          title: redact(String(args.title)), body: redact(String(args.body)),   // §5.6: scrub secrets before they persist
-          scope: scope, streamId: streamId, sourceRunId: runId,
-          createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
-        };
-        list.push(note);
-        store.set(KEY(aid), list);
+        // §5.2 record minted INSIDE the lock against the re-read list, so the id is collision-proof even if a
+        // concurrent run/UI write changed the notebook since this run started (P1).
+        let note = null;
+        await updateNotes(aid, (list) => {
+          note = {
+            id: nextId(list), kind: 'note',
+            title: redact(String(args.title)), body: redact(String(args.body)),   // §5.6: scrub secrets before they persist
+            scope: scope, streamId: streamId, sourceRunId: runId,
+            createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
+          };
+          list.push(note);
+          return list;
+        });
         if (ctx && typeof ctx.emit === 'function') {
           // memory.write — the durable-memory rung (feeds useCount/trust + the dossier's archivist track). The
           // frozen contract requires runId, so emit only on a real run (some test fixtures carry no runId).
@@ -147,33 +159,40 @@
         const delta = rating === 'helpful' ? HELPFUL_DELTA : rating === 'unhelpful' ? UNHELPFUL_DELTA : null;
         // error paths THROW — the registry turns a throw into an isError result (a returned {isError} is ignored).
         if (delta === null) throw new Error('rating must be "helpful" or "unhelpful"');
-        const list = notesOf(aid);
-        if (!list.length) throw new Error('your notebook is empty — nothing to rate');
-        let idx = -1;
-        if (args.id) {
-          idx = list.findIndex(n => n && n.id === String(args.id));
-          if (idx < 0) throw new Error('no memory has id "' + args.id + '"');
-        } else if (args.match) {
-          const m = String(args.match).toLowerCase();
-          const hits = [];
-          for (let i = 0; i < list.length; i++) {
-            const n = list[i]; const text = (n.title + ' ' + n.body + ' ' + (n.content || '')).toLowerCase();
-            if (text.indexOf(m) >= 0) hits.push(i);
+        // The lookup + trust fold run INSIDE the per-agent lock against the re-read list (P1); the error paths
+        // throw out of the mutator, which rejects the run (the registry turns that into an isError result) and
+        // — critically — skips the write, so a missing/ambiguous id never overwrites the notebook.
+        let recOut = null, nextOut = null;
+        await updateNotes(aid, (list) => {
+          if (!list.length) throw new Error('your notebook is empty — nothing to rate');
+          let idx = -1;
+          if (args.id) {
+            idx = list.findIndex(n => n && n.id === String(args.id));
+            if (idx < 0) throw new Error('no memory has id "' + args.id + '"');
+          } else if (args.match) {
+            const m = String(args.match).toLowerCase();
+            const hits = [];
+            for (let i = 0; i < list.length; i++) {
+              const n = list[i]; const text = (n.title + ' ' + n.body + ' ' + (n.content || '')).toLowerCase();
+              if (text.indexOf(m) >= 0) hits.push(i);
+            }
+            if (!hits.length) throw new Error('no memory matches "' + args.match + '"');
+            if (hits.length > 1) throw new Error('ambiguous: ' + hits.length + ' memories match "' + args.match + '" — use a more specific substring or the id from notebook.read');
+            idx = hits[0];
+          } else {
+            throw new Error('provide an `id` or a `match` substring to identify the memory');
           }
-          if (!hits.length) throw new Error('no memory matches "' + args.match + '"');
-          if (hits.length > 1) throw new Error('ambiguous: ' + hits.length + ' memories match "' + args.match + '" — use a more specific substring or the id from notebook.read');
-          idx = hits[0];
-        } else {
-          throw new Error('provide an `id` or a `match` substring to identify the memory');
-        }
-        const rec = list[idx];
-        const now = clock.now();
-        const next = Object.assign({}, rec, { trust: nextTrust(rec.trust, delta), lastFeedbackAt: now });
-        const out = list.slice(); out[idx] = next; store.set(KEY(aid), out);
+          const rec = list[idx];
+          const now = clock.now();
+          const next = Object.assign({}, rec, { trust: nextTrust(rec.trust, delta), lastFeedbackAt: now });
+          const out = list.slice(); out[idx] = next;
+          recOut = rec; nextOut = next;
+          return out;
+        });
         // memory.feedback rung — telemetry/bus only (the trust fold already happened above; nobody re-folds it,
         // mirroring how the turn-in writer applies trust directly then emits). reason carries the rating verb.
-        if (ctx && typeof ctx.emit === 'function') ctx.emit('memory.feedback', { agentId: aid, id: rec.id, delta: delta, reason: rating });
-        return { content: 'Marked ' + rec.id + ' ' + rating + ' (trust ' + (Math.round(rec.trust * 100) / 100) + ' → ' + (Math.round(next.trust * 100) / 100) + ').', summary: rating + ' ' + rec.id };
+        if (ctx && typeof ctx.emit === 'function') ctx.emit('memory.feedback', { agentId: aid, id: recOut.id, delta: delta, reason: rating });
+        return { content: 'Marked ' + recOut.id + ' ' + rating + ' (trust ' + (Math.round(recOut.trust * 100) / 100) + ' → ' + (Math.round(nextOut.trust * 100) / 100) + ').', summary: rating + ' ' + recOut.id };
       }
     };
 

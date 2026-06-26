@@ -59,6 +59,11 @@
     const limits = Object.assign({}, DEFAULTS, d.limits || {});
 
     let tmpSeq = 0;   // deterministic, process-unique tmp suffix (no pid/rng needed for a single host)
+    // P2: when the host injects writeDurable (writeFileDurable — fsync-before-rename), every write is power-loss
+    // durable; standalone (browser/tests) it degrades to the atomic temp+rename below. onRecover (optional) is
+    // called when a torn/corrupt main was recovered from its .bak last-known-good.
+    const writeDurable = (typeof d.writeDurable === 'function') ? d.writeDurable : null;
+    const onRecover = (typeof d.onRecover === 'function') ? d.onRecover : function () {};
 
     function ensureRoot() { try { if (fs.mkdirSync) fs.mkdirSync(root, { recursive: true }); } catch (_) {} }
     function historyFile(agentId) {
@@ -67,14 +72,33 @@
     }
     const chatMapFile = () => pathMod.join(root, 'chatmap.json');
 
-    function readJson(file) {
-      try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return undefined; }   // missing/corrupt -> undefined
+    function readRaw(file) {   // parse-or-undefined for ONE file (missing / zero-length / corrupt -> undefined)
+      try { const raw = fs.readFileSync(file, 'utf8'); if (raw == null || String(raw).length === 0) return undefined; return JSON.parse(raw); }
+      catch (_) { return undefined; }
     }
-    function writeJsonAtomic(file, value) {
+    function readJson(file) {   // recovery-aware: try the main file, then the <file>.bak last-known-good
+      const m = readRaw(file);
+      if (m !== undefined) return m;
+      const b = readRaw(file + '.bak');
+      if (b !== undefined) { try { onRecover(file); } catch (_) {} return b; }   // a torn/corrupt main recovered from .bak
+      return undefined;   // genuinely absent OR unrecoverable -> caller treats as empty (channels is fail-closed)
+    }
+    function writeRaw(file, value) {
       ensureRoot();
+      if (writeDurable) { writeDurable({ fs: fs, path: pathMod }, file, JSON.stringify(value)); return; }
       const tmp = file + '.' + (++tmpSeq) + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(value));
       fs.renameSync(tmp, file);   // atomic replace
+    }
+    function writeJsonAtomic(file, value) {
+      // snapshot the current GOOD main to <file>.bak BEFORE overwriting it, so a torn replace can be recovered.
+      // A corrupt current main is NOT copied (never clobber a possibly-good .bak with garbage). The read-modify-
+      // write in appendTurn/saveChatRecord is fully SYNCHRONOUS (no await between readJson and writeJsonAtomic),
+      // so it is inherently serialized per file by the event loop — concurrent in-process writers cannot lose an
+      // update — and now it is durable + recoverable too.
+      const prev = readRaw(file);
+      if (prev !== undefined) { try { writeRaw(file + '.bak', prev); } catch (_) {} }
+      writeRaw(file, value);
     }
 
     return {

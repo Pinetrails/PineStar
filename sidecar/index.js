@@ -61,6 +61,8 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
+const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
 const skillsCatalog = require('./skills/catalog.js');      // bundled capability-gated recipe library (parse/load/gate/compose)
@@ -230,6 +232,52 @@ process.on('uncaughtException', e => console.error('uncaughtException:', (e && e
 
 try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 
+/* ---- P2 crash-safe persistence helpers for the single-file sibling stores (roster, dossier, channel
+   secrets, codex tokens, connectors, allowlist, notebook). Each of these was a plain
+   writeFileSync->rename (atomic but NOT power-loss durable) with a catch-and-return-empty loader (so a
+   torn/zero-length file booted the app AMNESIAC and the next write made it permanent). These route every
+   write through writeFileDurable (fsync-before-rename) + a .bak last-known-good snapshot, and every load
+   through readJsonResilient (recover the .bak on a torn/corrupt main; quarantine+log loudly when there is
+   no usable .bak — NEVER silently empty). A genuinely-absent file (new install/agent) is the only thing
+   that loads empty. These stores hold a FULL in-memory state snapshot on each write (not a disk-snapshot
+   read-modify-write), so they have no lost-update hazard and need no per-key lock — durability + recovery
+   is the fix they needed. (notebook + channels DO read-modify-write a per-key disk snapshot, so those get
+   the per-key serialized update() / sync-RMW path instead.) */
+let _quarantineSeq = 0;
+function quarantineCorrupt(file, tag) {
+  try {
+    const dest = file + '.corrupt-' + process.pid + '-' + (++_quarantineSeq);
+    fs.renameSync(file, dest);
+    console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered from .bak — quarantined to ' + dest + ' and loading empty (data NOT silently wiped).');
+  } catch (e) { console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered and could not be quarantined:', (e && e.message) || e); }
+}
+// load a single-file JSON store with last-known-good recovery; returns undefined for absent/corrupt.
+function loadResilient(file, tag) {
+  const r = readJsonResilient({ fs: fs }, file);
+  if (r.status === 'recovered') console.warn('[' + (tag || 'store') + '] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.');
+  else if (r.status === 'corrupt') quarantineCorrupt(file, tag);
+  return (r.status === 'ok' || r.status === 'recovered') ? r.value : undefined;
+}
+// durable single-file write: fsync-before-rename + snapshot the prior good value to <file>.bak.
+function saveResilient(file, value) { writeJsonResilient({ fs: fs, path: path, writeDurable: writeFileDurable }, file, value); }
+
+/* ---- P3 bounded append-only JSONL logs ----
+   The ledger / run-history / transcript are append-only and were read into RAM IN FULL at boot
+   (fs.readFileSync(FILE).split('\n')) and never rotated, so months of 24/7 use grow them without bound
+   until a single boot-time readFileSync crash-loops startup. readBoundedJsonl loads only the last
+   LOG_MAX_BYTES of (archive + live) at boot (newest lines), and rotateJsonl rolls the live file to
+   <file>.1 once it passes the cap — so BOOT memory/latency AND on-disk size stay bounded no matter how
+   old the history is. 16 MB of JSONL is far more than any display/query reads (run lists cap at ≤500,
+   insights bucket the last 24 h), so this is behavior-neutral in practice; the one residual — a global
+   ledger total can under-count only past ~2×LOG_MAX_BYTES of lifetime spend, which is far beyond any
+   default cap — is documented in docs/PERSISTENCE_HARDENING.md. Env-overridable. */
+const LOG_MAX_BYTES = Math.max(1 << 20, num(ENV('LOG_MAX_BYTES'), 16 * 1024 * 1024));
+function readBoundedJsonl(file) {
+  return loadBounded({ fs: fs }, file, LOG_MAX_BYTES)
+    .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+}
+function rotateJsonl(file) { try { rotateIfLarge({ fs: fs }, file, LOG_MAX_BYTES); } catch (_) {} }
+
 /* ---- spend ledger + budget (Wave 1 cost spine) ----
    The ledger is an append-only JSONL of finished runs (sibling of the fs jail, so the agent's own fs.* tools can
    neither read nor rewrite the spend record). Each append is fsync'd to disk so the day/global pools survive even
@@ -239,10 +287,7 @@ try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 const LEDGER_FILE = path.join(WORKSPACES, 'ledger.jsonl');
 const ledgerIo = {
   readAll() {
-    try {
-      return fs.readFileSync(LEDGER_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(LEDGER_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     // open(O_APPEND) -> write -> fsync -> close, all fail-open: a persistence error must never crash the run
@@ -254,6 +299,7 @@ const ledgerIo = {
       fs.fsyncSync(fd);
     } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(LEDGER_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
@@ -268,16 +314,14 @@ const concurrencyGate = makeConcurrencyGate({ max: MAX_CONCURRENT_AGENTS });
 const RUNS_FILE = path.join(WORKSPACES, 'runs.jsonl');
 const runsIo = {
   readAll() {
-    try {
-      return fs.readFileSync(RUNS_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(RUNS_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(RUNS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[runs] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(RUNS_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
@@ -291,16 +335,14 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
 const transcriptIo = {
   readAll() {
-    try {
-      return fs.readFileSync(TRANSCRIPT_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(TRANSCRIPT_FILE); } catch (e) { return []; }   // P3: bounded boot-load
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(TRANSCRIPT_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[transcript] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(TRANSCRIPT_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
 const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: () => Date.now() }, redact });
@@ -374,17 +416,15 @@ function replaceAgentRoster(list) {
 }
 function loadAgentRoster() {
   try {
-    const raw = JSON.parse(fs.readFileSync(AGENT_ROSTER_FILE, 'utf8'));
-    replaceAgentRoster(raw && raw.agents);
+    const raw = loadResilient(AGENT_ROSTER_FILE, 'roster');   // last-known-good recovery; never silent-wipe
+    if (raw) replaceAgentRoster(raw && raw.agents);
   } catch (_) {}
 }
 function saveAgentRoster() {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '' }));
-    const tmp = AGENT_ROSTER_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, agents }));
-    fs.renameSync(tmp, AGENT_ROSTER_FILE);
+    saveResilient(AGENT_ROSTER_FILE, { version: 1, agents });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
 }
 loadAgentRoster();
@@ -400,26 +440,29 @@ const spotifyStore = makeSpotifyStore({ fsp, pathMod: path, dir: path.join(WORKS
 // in-flight PKCE verifiers keyed by the OAuth `state` (a round-trip completes in seconds). Pruned on each start.
 const spotifyPending = new Map();
 
-// PERSISTENT notebook (memory) — JSON file per agent, atomic write, survives sidecar restarts. Stored as a
+// PERSISTENT notebook (memory) — JSON file per agent, durable write, survives sidecar restarts. Stored as a
 // SIBLING of the agent's workspace dir (WORKSPACES/<aid>.notebook.json), OUTSIDE the fs-jailed
-// WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. Sync get/set to
-// match the notebook tool's store contract.
+// WORKSPACES/<aid>/, so the agent's own fs.* tools can neither read nor corrupt its memory. get/set match the
+// notebook tool's store contract; update(key, mutator) is the SAFE per-agent-serialized write (P1) that
+// re-reads under a lock before merging so concurrent writers (recall fold + cron fire + UI edit) never lose
+// an update, and every write is fsync-durable + keeps a .bak last-known-good (P2).
 function notebookFile(key) {
   const aid = String(key).replace(/^notebook:/, '') || 'agent';
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(aid)) throw new Error('bad notebook agentId');
   return path.join(WORKSPACES, aid + '.notebook.json');
 }
+const notebookDurable = makeDurableJsonStore({
+  fs: fs, path: path, fileFor: notebookFile, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[notebook] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'notebook')
+});
 const notebookStore = {
-  get(key) { try { return JSON.parse(fs.readFileSync(notebookFile(key), 'utf8')); } catch (e) { return undefined; } },
-  set(key, value) {
-    try {
-      const f = notebookFile(key);
-      fs.mkdirSync(path.dirname(f), { recursive: true });
-      const tmp = f + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(value));
-      fs.renameSync(tmp, f);   // atomic replace
-    } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); }
-  }
+  // get/set tolerate a non-agent key (e.g. the todo tool's 'todo:<aid>', which notebookFile rejects) by
+  // failing soft, exactly as the prior plain-fs store did — behavior-neutral for those callers.
+  get(key) { try { return notebookDurable.get(key); } catch (e) { return undefined; } },
+  set(key, value) { try { notebookDurable.set(key, value); } catch (e) { console.warn('[notebook] persist failed:', (e && e.message) || e); } },
+  // update(key, mutator) -> Promise: per-agent serialized, re-read-under-lock, durable. The ONE safe writer.
+  update(key, mutator) { return notebookDurable.update(key, mutator); }
 };
 
 // PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
@@ -434,12 +477,10 @@ const commanderDossier = {
     this._block = String(block == null ? '' : block).slice(0, 4096);   // the frontend caps it ~800; this is a hard safety ceiling
     try {
       fs.mkdirSync(WORKSPACES, { recursive: true });
-      const tmp = DOSSIER_FILE + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ block: this._block }));
-      fs.renameSync(tmp, DOSSIER_FILE);   // atomic replace
+      saveResilient(DOSSIER_FILE, { block: this._block });   // fsync-durable + .bak last-known-good
     } catch (e) { console.warn('[dossier] persist failed:', (e && e.message) || e); }
   },
-  load() { try { const o = JSON.parse(fs.readFileSync(DOSSIER_FILE, 'utf8')); this._block = String((o && o.block) || ''); } catch (_) {} }
+  load() { const o = loadResilient(DOSSIER_FILE, 'dossier'); if (o) this._block = String((o && o.block) || ''); }
 };
 commanderDossier.load();
 
@@ -565,14 +606,12 @@ const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(ENV('FULL_ACCESS') || '').t
 const ALLOWLIST_FILE = path.join(WORKSPACES, 'permissions.allow.json');
 function loadAllowlist() {
   try {
-    const raw = JSON.parse(fs.readFileSync(ALLOWLIST_FILE, 'utf8'));
+    const raw = loadResilient(ALLOWLIST_FILE, 'permissions');   // recover blessed grants from .bak on a torn main
     return new Set((raw && Array.isArray(raw.allow) ? raw.allow : []).filter(x => typeof x === 'string'));
-  } catch (e) { return new Set(); }   // missing or corrupt -> nothing pre-allowed (fail-closed)
+  } catch (e) { return new Set(); }   // unrecoverable -> nothing pre-allowed (fail-closed, the safe default)
 }
 function persistAllowlist(nextAllow) {   // throws on failure -> the broker degrades the grant to a deny
-  const tmp = ALLOWLIST_FILE + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ version: 1, allow: nextAllow }));
-  fs.renameSync(tmp, ALLOWLIST_FILE);    // atomic replace
+  saveResilient(ALLOWLIST_FILE, { version: 1, allow: nextAllow });   // fsync-durable + .bak; throws on a real write failure
 }
 const grantsPermanent = loadAllowlist();   // process-wide, restored from disk
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
@@ -612,37 +651,34 @@ let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled 
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 function loadChannelSecrets() {
-  try { const raw = JSON.parse(fs.readFileSync(CHANNEL_SECRETS_FILE, 'utf8')); return (raw && typeof raw === 'object') ? raw : {}; }
-  catch (e) { return {}; }   // missing/corrupt -> nothing configured
+  try { const raw = loadResilient(CHANNEL_SECRETS_FILE, 'channels'); return (raw && typeof raw === 'object') ? raw : {}; }
+  catch (e) { return {}; }   // unrecoverable -> nothing configured
 }
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    const tmp = CHANNEL_SECRETS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(obj));
-    fs.renameSync(tmp, CHANNEL_SECRETS_FILE);
+    saveResilient(CHANNEL_SECRETS_FILE, obj);   // fsync-durable + .bak last-known-good (bot token survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
 }
 let channelSecrets = loadChannelSecrets();
-const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() } });
+const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() }, writeDurable: writeFileDurable, onRecover: (file) => console.warn('[channels] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.') });
 
 // ---- Codex (personal ChatGPT subscription) OAuth tokens — a protected sibling of the fs jail, SAME posture
 //      as the channel secrets above: the agent's own fs.* tools can't reach it, and the access/refresh tokens
 //      are NEVER placed on the event bus. Shape: { access_token, refresh_token, last_refresh, auth_mode }. ----
 const CODEX_TOKENS_FILE = path.join(WORKSPACES, 'codex', 'tokens.json');
 function loadCodexTokens() {
-  try { const raw = JSON.parse(fs.readFileSync(CODEX_TOKENS_FILE, 'utf8')); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
+  try { const raw = loadResilient(CODEX_TOKENS_FILE, 'codex'); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
   catch (e) { return null; }
 }
 function saveCodexTokens(obj) {
   try {
     fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true });
-    const tmp = CODEX_TOKENS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(obj));
-    fs.renameSync(tmp, CODEX_TOKENS_FILE);
+    saveResilient(CODEX_TOKENS_FILE, obj);   // fsync-durable + .bak last-known-good (OAuth tokens survive power loss)
   } catch (e) { console.warn('[codex] token persist failed:', (e && e.message) || e); }
 }
-function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} }
+// clear must also drop the .bak so a signed-out session can't be "recovered" from the last-known-good on reload.
+function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} }
 let codexTokens = loadCodexTokens();
 
 // Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
@@ -696,16 +732,14 @@ const router = makeRouter();
 const CONNECTORS_DIR = path.join(WORKSPACES, 'connectors');
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, 'connectors.json');
 function loadConnectorConfigs() {
-  try { const raw = JSON.parse(fs.readFileSync(CONNECTORS_FILE, 'utf8')); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
-  catch (e) { return []; }   // missing/corrupt -> nothing configured
+  try { const raw = loadResilient(CONNECTORS_FILE, 'connectors'); return (raw && Array.isArray(raw.connectors)) ? raw.connectors : []; }
+  catch (e) { return []; }   // unrecoverable -> nothing configured
 }
 let connectorConfigs = loadConnectorConfigs();
 function saveConnectorConfigs() {
   try {
     fs.mkdirSync(CONNECTORS_DIR, { recursive: true });
-    const tmp = CONNECTORS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, connectors: connectorConfigs }));
-    fs.renameSync(tmp, CONNECTORS_FILE);   // atomic replace
+    saveResilient(CONNECTORS_FILE, { version: 1, connectors: connectorConfigs });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
 }
 const connectors = makeConnectorManager({
@@ -2143,12 +2177,18 @@ async function runOnce(o) {
       // old positional ranked[i] aliasing is gone.
       if (runId && recall.usedIds && recall.usedIds.length) {
         const usedAt = Date.now();
-        let updated = recs;
-        for (const id of recall.usedIds) {
-          updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
-          emit('memory.used', { agentId, runId, id });
-        }
-        if (updated !== recs) notebookStore.set('notebook:' + agentId, updated);
+        // P1: fold the useCount/recency bumps under the per-agent lock, RE-READING the current notebook so a
+        // note the agent wrote this run (or a concurrent run/UI edit for the same agent) is not clobbered by a
+        // whole-array overwrite from this run's start-of-run snapshot.
+        await notebookStore.update('notebook:' + agentId, (cur) => {
+          const base = Array.isArray(cur) ? cur : [];
+          let updated = base;
+          for (const id of recall.usedIds) {
+            updated = memcore.reduceStats(updated, { name: 'memory.used', payload: { id } }, { now: usedAt });
+            emit('memory.used', { agentId, runId, id });
+          }
+          return updated !== base ? updated : undefined;   // skip the write when nothing changed
+        });
       }
     }
   } catch (_) {}
@@ -2653,11 +2693,15 @@ async function handleNotebookRestore(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
   const incoming = Array.isArray(body.notes) ? body.notes : [];
   try {
-    const prev = notebookStore.get('notebook:' + agent);
-    const existing = Array.isArray(prev) ? prev : [];
-    const merged = mergeNotes(existing, incoming);
-    notebookStore.set('notebook:' + agent, merged);
-    json(200, { ok: true, total: merged.length, added: merged.length - existing.length });
+    // P1: merge under the per-agent lock, re-reading existing so a concurrent run's memory.write isn't lost.
+    let existingLen = 0, mergedLen = 0;
+    await notebookStore.update('notebook:' + agent, (prev) => {
+      const existing = Array.isArray(prev) ? prev : [];
+      const merged = mergeNotes(existing, incoming);
+      existingLen = existing.length; mergedLen = merged.length;
+      return merged;
+    });
+    json(200, { ok: true, total: mergedLen, added: mergedLen - existingLen });
   } catch (e) { json(400, { error: (e && e.message) || 'restore failed' }); }
 }
 
@@ -2778,13 +2822,17 @@ async function handleMemoryTurnin(req, res) {
   }
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
   if (!content) return json(400, { error: 'a kept memory cannot be empty' });
-  const stored = notebookStore.get('notebook:' + agentId);
-  const list = Array.isArray(stored) ? stored : [];
-  writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
-  const rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
-  rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
-  list.push(rec);
-  notebookStore.set('notebook:' + agentId, list);
+  // P1: write the kept record under the per-agent lock, RE-READING the list so the id (positional) is minted
+  // against the current notebook and a concurrent run's memory.write isn't clobbered by this whole-array set.
+  let rec = null;
+  await notebookStore.update('notebook:' + agentId, (stored) => {
+    const list = Array.isArray(stored) ? stored : [];
+    writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
+    rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
+    rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
+    list.push(rec);
+    return list;
+  });
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
   json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
@@ -2817,12 +2865,16 @@ async function handleMemoryMutate(req, res, op) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   if (!String(body.id || '')) return json(400, { error: 'id required' });
   const key = 'notebook:' + agentId;
-  const stored = notebookStore.get(key);
-  const list = Array.isArray(stored) ? stored : [];
-  const r = op(list, body, agentId);
+  // P1: apply the pure memcore op under the per-agent lock, RE-READING the list so a concurrent run's
+  // memory.write/used fold isn't clobbered by this whole-array set. Only persist on a real change.
+  let r = null;
+  await notebookStore.update(key, (stored) => {
+    const list = Array.isArray(stored) ? stored : [];
+    r = op(list, body, agentId);
+    return (r.error || !r.found) ? undefined : r.records;   // skip the write on error / not-found
+  });
   if (r.error) return json(400, { error: r.error });
   if (!r.found) return json(404, { error: 'no such memory' });
-  notebookStore.set(key, r.records);
   if (r.emit) { try { chanEmit(r.emit.name, r.emit.payload); } catch (_) {} }
   return json(200, Object.assign({ ok: true, id: String(body.id) }, r.extra || {}));
 }
