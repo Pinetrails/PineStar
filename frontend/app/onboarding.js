@@ -92,10 +92,10 @@ const Onboarding = (() => {
 
       { field: 'context', optional: true,
         prompt: lead
-          ? 'now your side. tell me about your world — who you are, what you’re building, what good looks like.'
-          : 'your turn — what’s your world? what you’re building, what matters.',
+          ? 'now your side. tell me about your world — who you are, and what you’re building.'
+          : 'your turn — who are you, and what are you building?',
         options: [{ label: 'Skip for now', value: '', skip: true }],
-        custom: true, customLabel: 'tell me about your world', placeholder: 'who you are, what you’re building, what “good” looks like…',
+        custom: true, customLabel: 'tell me about your world', placeholder: 'who you are, what you’re building…',
         build: t => ({ context: t }),
         ack: t => t
           ? (lead ? 'got it — that’s context.md. i can see the ground i’m standing on now.' : 'noted. i can picture it now.')
