@@ -13,7 +13,7 @@
    Requires a real key in the environment (the secret never touches the repo or a flag):
      PowerShell:  $env:SKYNET_OPENROUTER_KEY="sk-or-v1-..."; node test/live.smoke.js
      bash:        SKYNET_OPENROUTER_KEY="sk-or-v1-..." node test/live.smoke.js
-   Optional:  SKYNET_SMOKE_MODEL (default anthropic/claude-3.5-haiku — cheap + caching-capable). */
+   Optional:  SKYNET_SMOKE_MODEL (default anthropic/claude-sonnet-4.6 — live + caching-capable). */
 'use strict';
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -22,7 +22,11 @@ const os = require('os');
 const { bootToken } = require('./_httpToken.js');
 
 const KEY = process.env.SKYNET_OPENROUTER_KEY || process.env.OPENROUTER_API_KEY || '';
-const MODEL = process.env.SKYNET_SMOKE_MODEL || 'anthropic/claude-3.5-haiku';
+const MODEL = process.env.SKYNET_SMOKE_MODEL
+  || process.env.STARNET_SMOKE_MODEL
+  || process.env.SKYNET_DEFAULT_MODEL
+  || process.env.STARNET_DEFAULT_MODEL
+  || 'anthropic/claude-sonnet-4.6';
 const HOST = '127.0.0.1';
 const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 

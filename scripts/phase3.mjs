@@ -10,6 +10,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { coerceTimeoutMs, runBoundedCommand } from './lib/run-command.mjs';
+import { withoutLiveProviderEnv } from './lib/provider-env.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rawArgs = process.argv.slice(2);
@@ -167,6 +168,7 @@ function passNote(r) {
 }
 
 function buildSteps() {
+  const nonLiveEnv = withoutLiveProviderEnv();
   return [
     {
       id: '3.1-phase2-foundation',
@@ -174,6 +176,7 @@ function buildSteps() {
       phase: '3.1',
       cmd: npmCmd,
       args: ['run', 'phase2:desktop'],
+      env: nonLiveEnv,
       required: true,
       evidence: { latestDir: '.dogfood/phase2-latest', statusName: 'phase2-status.json', label: 'Phase 2', requiredOnly: true }
     },
@@ -183,6 +186,7 @@ function buildSteps() {
       phase: '3.1',
       cmd: npmCmd,
       args: ['run', 'dogfood'],
+      env: nonLiveEnv,
       required: true,
       evidence: { latestDir: '.dogfood/dogfood-latest', statusName: 'dogfood-status.json', label: 'Dogfood' }
     },
@@ -199,6 +203,7 @@ function buildSteps() {
       phase: '3.3',
       cmd: nodeCmd,
       args: ['test/fs.patch.test.js'],
+      env: nonLiveEnv,
       required: true,
       check: implementationCheck('fs-patch')
     },
@@ -208,6 +213,7 @@ function buildSteps() {
       phase: '3.4',
       cmd: nodeCmd,
       args: ['test/mcp.stdio.test.js'],
+      env: nonLiveEnv,
       required: true,
       check: implementationCheck('mcp-stdio')
     },
@@ -217,6 +223,7 @@ function buildSteps() {
       phase: '3.5',
       cmd: nodeCmd,
       args: ['test/browser.test.js'],
+      env: nonLiveEnv,
       required: true,
       proofClass: 'automated-contract',
       check: implementationCheck('browser-automation')
@@ -227,6 +234,7 @@ function buildSteps() {
       phase: '3.6',
       cmd: nodeCmd,
       args: ['test/computer.test.js'],
+      env: nonLiveEnv,
       required: true,
       proofClass: 'automated-contract',
       check: implementationCheck('computer-use')
@@ -237,6 +245,7 @@ function buildSteps() {
       phase: '3.7',
       cmd: npmCmd,
       args: ['run', 'desktop:prepare'],
+      env: nonLiveEnv,
       required: true
     },
     {
@@ -245,6 +254,7 @@ function buildSteps() {
       phase: '3.7',
       cmd: npmCmd,
       args: ['run', 'desktop:build'],
+      env: nonLiveEnv,
       required: true,
       allowFailure: true,
       skip: !cargoAvailable(),

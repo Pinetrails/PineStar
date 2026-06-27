@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { coerceTimeoutMs, runBoundedCommand } from './lib/run-command.mjs';
+import { hasLiveProviderKey, liveProviderEnv, withoutLiveProviderEnv } from './lib/provider-env.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rawArgs = process.argv.slice(2);
@@ -28,17 +29,7 @@ function statusIcon(status) {
   return status === 'pass' ? 'PASS' : status === 'fail' ? 'FAIL' : status === 'blocked' ? 'BLOCKED' : 'SKIP';
 }
 function hasLiveKey() {
-  return !!String(process.env.SKYNET_OPENROUTER_KEY || process.env.STARNET_OPENROUTER_KEY || process.env.OPENROUTER_API_KEY || '').trim();
-}
-function liveEnv() {
-  const key = String(process.env.SKYNET_OPENROUTER_KEY || process.env.STARNET_OPENROUTER_KEY || process.env.OPENROUTER_API_KEY || '').trim();
-  const env = Object.assign({}, process.env);
-  if (key) {
-    env.SKYNET_OPENROUTER_KEY = key;
-    env.STARNET_OPENROUTER_KEY = key;
-  }
-  env.SKYNET_AUDIT_LIVE_PROVIDER = '1';
-  return env;
+  return hasLiveProviderKey();
 }
 function readJson(file) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch (_) { return null; }
@@ -190,15 +181,15 @@ function checkFailureRecoveryAttended(loop) {
   return {
     id: '4.5-failure-recovery-attended',
     phase: '4.5',
-    title: 'Failure/recovery paths are proven in attended UI',
+    title: 'Failure/recovery paths are proven and recorded',
     loop,
     status: ok ? 'pass' : 'blocked',
     required: true,
-    class: 'attended-recovery',
+    class: 'recovery-evidence',
     evidenceFile: evFile,
     reason: ok
-      ? 'Attended failure/recovery evidence is present.'
-      : 'Needs attended evidence for cancel, budget, denied consent, tool error, and checkpoint/restore.'
+      ? 'Failure/recovery evidence is present from the recovery proof suite.'
+      : 'Needs recovery evidence for cancel, budget, denied consent, tool error, and checkpoint/restore.'
   };
 }
 
@@ -254,7 +245,7 @@ function liveCommands() {
       title: 'Paid live provider smoke via /api/run',
       cmd: nodeCmd,
       args: ['test/live.smoke.js'],
-      env: liveEnv(),
+      env: liveProviderEnv(),
       required: true,
       class: 'live-provider',
       timeoutMs: 600000
@@ -265,7 +256,7 @@ function liveCommands() {
       title: 'Live provider UI audit with real model/spend telemetry',
       cmd: npmCmd,
       args: ['run', 'audit'],
-      env: liveEnv(),
+      env: liveProviderEnv(),
       required: true,
       class: 'live-provider',
       timeoutMs: 600000
@@ -275,6 +266,7 @@ function liveCommands() {
 
 async function runOnce(loop) {
   const results = [];
+  const nonLiveEnv = withoutLiveProviderEnv({ STARNET_SKIP_PHASE4_BASELINE: '1' });
 
   const seal = await commandStep({
     id: '4.0-phase3-seal',
@@ -282,7 +274,7 @@ async function runOnce(loop) {
     title: 'Phase 1-3 seal remains green',
     cmd: npmCmd,
     args: ['run', 'phase3:seal'],
-    env: Object.assign({}, process.env, { STARNET_SKIP_PHASE4_BASELINE: '1' }),
+    env: nonLiveEnv,
     required: true,
     class: 'entry-gate',
     timeoutMs: 1200000
@@ -299,6 +291,7 @@ async function runOnce(loop) {
     title: 'Automated same-work support proofs remain green',
     cmd: npmCmd,
     args: ['run', 'dogfood'],
+    env: withoutLiveProviderEnv(),
     required: true,
     class: 'automated-proof',
     timeoutMs: 1200000
@@ -321,6 +314,7 @@ async function runOnce(loop) {
     title: 'Automated failure/recovery safety suite',
     cmd: nodeCmd,
     args: ['scripts/phase4-recovery-proof.mjs'],
+    env: withoutLiveProviderEnv(),
     required: true,
     class: 'automated-recovery',
     timeoutMs: 300000

@@ -174,6 +174,12 @@ async function scenarioTask(cdp, A) {
   const total = Object.values(kinds).reduce((a, b) => a + b, 0);
   A.ok('task/run-dispatched', total > before && (kinds['agent.run.start'] || 0) > 0, `agent.run.* seen: ${Object.keys(kinds).join(', ') || 'none'}`);
   A.ok('task/run-lifecycle', (kinds['agent.run.start'] || 0) > 0 && (kinds['agent.run.end'] || 0) > 0, `start=${kinds['agent.run.start'] || 0} end=${kinds['agent.run.end'] || 0} err=${kinds['agent.run.error'] || 0}`);
+  if (LIVE_PROVIDER) {
+    const costs = await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.cost').map(e=>e.payload)").catch(() => []);
+    const lastCost = Array.isArray(costs) && costs.length ? costs[costs.length - 1] : {};
+    A.ok('task/live-no-run-error', (kinds['agent.run.error'] || 0) === 0, `err=${kinds['agent.run.error'] || 0}`);
+    A.ok('task/live-cost-reconciled', !!(lastCost && (lastCost.usd || 0) > 0), `usd=${lastCost && lastCost.usd} tokensIn=${lastCost && lastCost.tokensIn}`);
+  }
   A.ok('task/work-pose-engaged', sawActivity, sawActivity ? 'caught World activity=task' : 'work pose too brief to latch; run lifecycle completed deterministically', /*soft*/ true);
 }
 

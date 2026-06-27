@@ -1316,7 +1316,7 @@ const Build = (() => {
     const b = station.bounds();
     for (let ty = b.minTy; ty <= b.maxTy; ty++)
       for (let tx = b.minTx; tx <= b.maxTx; tx++)
-        if (station.canPlaceProp(type, tx, ty, w, h)) return { tx, ty };
+        if ((station.canPlaceProp(type, tx, ty, w, h) || {}).ok) return { tx, ty };
     return null;
   }
   const __test__ = {

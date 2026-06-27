@@ -16,8 +16,10 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FIXTURE = join(REPO, 'dev', 'fixtures', 'seed-workspace');
 const SIDECAR = join(REPO, 'sidecar', 'index.js');
 
-// UI testing never makes real model calls, so a placeholder model label + key are fine.
-export const DEFAULT_MODEL = process.env.SKYNET_DEFAULT_MODEL || 'anthropic/claude-3.5-sonnet';
+// Mock UI tests only need a label, but live audit uses this model for a real provider call.
+export const DEFAULT_MODEL = process.env.SKYNET_DEFAULT_MODEL
+  || process.env.STARNET_DEFAULT_MODEL
+  || 'anthropic/claude-sonnet-4.6';
 export const PLACEHOLDER_KEY = process.env.SKYNET_OPENROUTER_KEY || 'sk-or-shoot-placeholder';
 
 // Copy the golden fixture into a fresh scratch dir and stamp a current timestamp + model so the
@@ -47,16 +49,18 @@ export function materializeSeedWorkspace(scratchDir, model = DEFAULT_MODEL) {
 export async function isUp(url) { try { const r = await fetch(url); return r.ok; } catch { return false; } }
 
 // Boot the sidecar in DEV SEED mode. Returns the child process (caller owns teardown).
-export function bootSeededSidecar({ port, model = DEFAULT_MODEL, key = PLACEHOLDER_KEY, scratchDir }) {
+export function bootSeededSidecar({ port, model = DEFAULT_MODEL, key = PLACEHOLDER_KEY, scratchDir, fullAccess = true, env: extraEnv = {} }) {
   const env = {
     ...process.env,
+    ...extraEnv,
     SKYNET_DEV: '1',
-    SKYNET_FULL_ACCESS: '1',
     SKYNET_WORKSPACES: scratchDir,
     SKYNET_PORT: String(port),
     SKYNET_DEFAULT_MODEL: model,
     SKYNET_OPENROUTER_KEY: key,
   };
+  if (fullAccess) env.SKYNET_FULL_ACCESS = '1';
+  else delete env.SKYNET_FULL_ACCESS;
   return spawn(process.execPath, [SIDECAR], { cwd: REPO, env, stdio: 'ignore' });
 }
 

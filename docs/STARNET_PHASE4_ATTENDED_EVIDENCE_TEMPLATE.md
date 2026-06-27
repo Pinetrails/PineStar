@@ -6,16 +6,25 @@ The easiest path is to create the placeholders with the helper:
 npm.cmd run phase4:evidence:init:decision
 ```
 
-Then fill the generated files after the live UI cutover trial has been run and
-check them with:
+Then fill or generate the evidence after the live UI cutover trial has been run and
+check it with:
 
 ```powershell
 npm.cmd run phase4:evidence:check
 ```
 
-The helper never marks pass fields automatically. The Phase 4 runner treats
-`.dogfood/phase4-attended-evidence.json` as the human evidence packet for gates
-that cannot be proven headlessly.
+The init helper never marks pass fields automatically. The usual generated path is:
+
+```powershell
+npm.cmd run phase4:ui-proof
+npm.cmd run phase4:recovery
+```
+
+`phase4:ui-proof` records the live gamified UI cutover and restart soak.
+`phase4:recovery` records the automated recovery proof logs for cancel, budget,
+denied consent, tool error, and checkpoint/restore. The Phase 4 runner treats
+`.dogfood/phase4-attended-evidence.json` as the evidence packet and the notes/log
+fields should make clear which pieces were UI-attended and which were automated.
 
 ```json
 {
