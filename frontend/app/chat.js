@@ -559,6 +559,7 @@ const Chat = (() => {
         if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
         if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return;
         if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return;
+        if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return;   // a focused panel is up (First Pitch graduation / awakening / tutorial) — never slot a gentle nudge behind it
         // ONE post-run beat per run: if this run produced a memory turn-in (or a card is still open in the
         // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
         if (runId && proposalRunsSeen.has(runId)) return;

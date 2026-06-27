@@ -26,6 +26,9 @@ A.ok(iSeed > 0, 'chat.js consults SeedStore.willPropose() in the post-run beat s
 A.ok(iSuggest < iSeed, 'a seed offer is checked AFTER suggestion (suggestion keeps priority)');
 A.ok(iSeed < iCuriosity, 'a seed offer is checked BEFORE curiosity (seed takes the one beat over a get-to-know-you ask)');
 A.ok(/SeedStore\.propose\(\);\s*return;/.test(chatSrc.slice(iSeed, iCuriosity)), 'a seed offer fires and RETURNS, so curiosity never also runs that task');
+// the whole gentle-nudge slot stands down when a focused Dialogue panel (First Pitch / awakening / tutorial) is open.
+const iWire = chatSrc.indexOf('function wireCuriosity');
+A.ok(iWire > 0 && chatSrc.slice(iWire, iSuggest).indexOf('Dialogue.isOpen') >= 0, 'wireCuriosity stands down when a focused Dialogue panel is open (guard before any gentle nudge)');
 
 /* ---------- 2. behavioral: the real SuggestStore decision drives the mutual exclusion ---------- */
 global.Pitch = require('../frontend/app/pitch.js');

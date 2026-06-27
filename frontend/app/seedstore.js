@@ -37,7 +37,9 @@ const SeedStore = (() => {
     if (typeof Chat === 'undefined' || !Chat.nudge) return;
     const s = pick(); if (!s) return;
     sessionProposed++;   // spend the session's one seed offer whether or not they save (anti-nag)
+    let handled = false;   // one-shot: a double-click on the choice can't double-author the recipe
     Chat.nudge(s.line, (typeof Seeds !== 'undefined' ? Seeds.choices() : []), choice => {
+      if (handled) return; handled = true;
       if (choice && choice.value === 'save') save(s);
       else if (typeof MintStore !== 'undefined' && MintStore.markDismissed) MintStore.markDismissed(s.key);
     });
