@@ -545,7 +545,8 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('nudge');
     r.body.textContent = String(text == null ? '' : text);
     autoscroll();
-    const choiceRow = choices(options || [], item => { try { if (onPick) onPick(item); } catch (_) {} });
+    const choiceRow = choices(options || [], item => { activeNudge = null; try { if (onPick) onPick(item); } catch (_) {} });
+    activeNudge = { row: r.d, choiceRow: choiceRow, dim: null };   // share the curiosity-nudge lifecycle so a turn-in's clearNudge() retires a suggestion beat too (keeps "one beat at a time")
     return { row: r.d, choiceRow: choiceRow };
   }
   function wireCuriosity() {
@@ -565,7 +566,7 @@ const Chat = (() => {
         // ONGOING SUGGESTION (Slice 3): if the station has learned something new and an idea is due, it takes this
         // ONE post-run beat — gently — and curiosity stands down for the run (the agent never stacks an idea AND a
         // question on the same task). Shares this slot's guards (busy/interview/onboarding/intake/turn-in) for free.
-        if (typeof SuggestStore !== 'undefined' && SuggestStore.willSuggest && SuggestStore.willSuggest()) { SuggestStore.fire(); return; }
+        if (typeof SuggestStore !== 'undefined' && SuggestStore.willSuggest && SuggestStore.fire && SuggestStore.willSuggest()) { SuggestStore.fire(); return; }
         if (typeof CuriosityStore === 'undefined') return;
         const dim = CuriosityStore.consider();
         if (!dim) return;

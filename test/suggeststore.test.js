@@ -95,6 +95,12 @@ A.eq(SuggestStore.willSuggest(), false, 'holds for the task cooldown even with s
 emitDone();   // → 3
 A.eq(SuggestStore.willSuggest(), true, 'suggests once it has grown AND the cooldown has passed');
 
+// defensive: a missing dossier summary must not crash the gate — it just stays quiet
+const _summ = global.DossierStore.summary;
+global.DossierStore.summary = () => null;
+A.eq(SuggestStore.willSuggest(), false, 'a null dossier summary → no idea, never throws');
+global.DossierStore.summary = _summ;
+
 (async () => {
   try {
     /* ---------- fire: renders a gentle nudge, spends the session, advances baseline + resets cooldown ---------- */
@@ -159,6 +165,22 @@ A.eq(SuggestStore.willSuggest(), true, 'suggests once it has grown AND the coold
     SuggestStore.reset();
     A.eq(mem['starnet.suggest.v1'], undefined, 'reset() removes the persisted key');
     A.eq(SuggestStore._state().lastFamiliarity, null, 'reset() clears the baseline for a new hero');
+
+    /* ---------- re-entrancy: willSuggest() is false while an idea is mid-flight (no double-fire) ---------- */
+    clearFakes(); SuggestStore.reset();
+    SuggestStore._state().lastFamiliarity = 0.4; SuggestStore._state().tasksSinceLast = 5; dsFam = 0.6; pitchDoneFlag = true;
+    A.eq(SuggestStore.willSuggest(), true, 're-entrancy setup: an idea is due');
+    let release; hn.next = new Promise(r => { release = () => r({ text: 'PITCH: x\nBUILD: workflow' }); });
+    const inflight = SuggestStore.fire();   // do NOT await — leave it mid-flight (firing === true)
+    A.eq(SuggestStore.willSuggest(), false, 'willSuggest() is false while a fire() is mid-flight (firing guard → no double-fire)');
+    release(); await inflight;
+
+    /* ---------- after a model hiccup the cooldown reset holds off the next idea ---------- */
+    clearFakes(); SuggestStore.reset();
+    SuggestStore._state().lastFamiliarity = 0.4; SuggestStore._state().tasksSinceLast = 5; dsFam = 0.6;
+    hn.next = { error: true, text: '' };
+    await SuggestStore.fire();
+    A.eq(SuggestStore.willSuggest(), false, 'after a model hiccup, the cooldown reset holds off the next idea');
 
     A.report('suggeststore.test');
   } catch (e) {
