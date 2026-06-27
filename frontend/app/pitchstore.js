@@ -70,26 +70,26 @@ const PitchStore = (() => {
     try {
       const recipes = (typeof Recipes !== 'undefined' && Recipes.list)
         ? Recipes.list().map(r => ({ id: r.id, name: r.name, tagline: r.tagline })) : [];
-      const caps = (deps.getCaps ? deps.getCaps() : []) || [];
+      const caps = deps.getCaps ? deps.getCaps() : [];
       const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '' });
-      const system = (deps.getSystem ? deps.getSystem() : '') || '';
-      const name = (deps.getName ? deps.getName() : '') || 'AGENT';
+      const system = deps.getSystem ? deps.getSystem() : '';
+      const name = deps.getName ? deps.getName() : 'AGENT';
 
       Dialogue.open({ name });
       await Dialogue.say('give me a second — now that i know you a little, let me think about what would actually be worth building for you…');
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [] });
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
       if (!parsed) {   // graceful: no usable pitch (model hiccup / unparseable) → say nothing, stay un-pitched so a later run can retry
-        if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
+        if (Dialogue.isOpen()) Dialogue.close();
         return;
       }
       const choice = await Dialogue.node({ lines: Pitch.present(parsed), options: Pitch.choices() });
       state.pitched = true; save();   // we DID deliver a pitch — never offer the first one again (a transient error above leaves it un-pitched)
-      if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
+      if (Dialogue.isOpen()) Dialogue.close();
       if (choice && choice.value === 'build') doBuild(parsed);
       // 'other' → graceful: the panel closes, the Commander stays in control, the dossier keeps learning for sharper future ideas
     } catch (_) {
-      try { if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close(); } catch (__) {}
+      try { if (Dialogue.isOpen()) Dialogue.close(); } catch (__) {}
     } finally {
       firing = false;
     }
@@ -103,7 +103,11 @@ const PitchStore = (() => {
       const b = parsed.build || {};
       if (b.kind === 'recipe' && b.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
         const r = Recipes.get(b.recipeId);
-        if (r && deps.launchRecipe) { deps.launchRecipe(r, null); return; }
+        // launch the recipe directly ONLY if it is fully runnable as-is. If it still needs a required value (its
+        // "gap"), or the proposed recipe doesn't exist, fall through to the directive path — which starts a real
+        // run AND asks the Commander for the one gap, so the build is genuinely theirs, never an empty template.
+        const missing = r ? ((typeof Recipes.requiredMissing === 'function') ? Recipes.requiredMissing(r, {}) : []) : ['_unknown'];
+        if (r && deps.launchRecipe && !missing.length) { deps.launchRecipe(r, null); return; }
       }
       const gapLine = parsed.gap ? (' First, ask me: ' + parsed.gap + '.') : '';
       const directive = "Let's build it — " + parsed.title + '.' + gapLine;
