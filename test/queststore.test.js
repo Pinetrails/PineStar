@@ -1,0 +1,48 @@
+/* node test/queststore.test.js — the thin read-join behind the QUEST LOG panel (frontend/app/queststore.js).
+   Decisions live in the pure quests.js (tested separately); this verifies the JOIN: view() gathers the real
+   station XP rollup (meter + milestones), the dossier known/blank dims, and the pending-idea flag, and hands them
+   to Quests.build — and degrades to "fewer quests, no crash" when a subsystem is absent. */
+'use strict';
+const A = require('./_assert.js');
+global.Xp = require('../frontend/app/xp.js');
+global.Quests = require('../frontend/app/quests.js');
+
+// a station rollup with one task shipped → first_light earned, pack_rat not
+let stats = Xp.fresh();
+stats = Xp.applyEvent(stats, { name: 'agent.run.end', payload: { reason: 'done', usd: 0.1 } }).stats;
+global.XpStore = { stationStats: () => stats };
+
+global.DossierStore = {
+  summary: () => ({ known: ['goals'], blank: ['identity', 'stack', 'style', 'standing_orders'] }),
+  dims: () => [
+    { key: 'identity', label: 'Identity' }, { key: 'stack', label: 'Stack & tools' }, { key: 'goals', label: 'Goals' },
+    { key: 'style', label: 'Working style' }, { key: 'standing_orders', label: 'Standing orders' }
+  ]
+};
+let pending = true;
+global.SuggestStore = { willSuggest: () => pending };
+
+const { QuestStore } = require('../frontend/app/queststore.js');
+
+/* ---------- the join ---------- */
+const v = QuestStore.view();
+A.ok(v.meter && v.meter.level >= 1, 'view() carries the station meter (Xp.compute of the rollup)');
+A.ok(v.quests.length > 0, 'view() builds a quest list');
+A.eq(v.quests[0].kind, 'idea', 'a pending idea leads the list');
+A.eq(v.quests.find(q => q.id === 'dim:goals').status, 'done', 'a known dossier dimension → a done quest');
+A.eq(v.quests.find(q => q.id === 'dim:identity').status, 'open', 'a blank dossier dimension → an open quest');
+A.eq(v.quests.find(q => q.id === 'ms:first_light').status, 'done', 'an earned milestone → a done quest');
+A.eq(v.quests.find(q => q.id === 'ms:pack_rat').status, 'open', 'an unearned milestone → an open quest');
+A.eq(v.summary.open + v.summary.done, v.summary.total, 'summary counts are consistent');
+
+/* ---------- pending-idea flag flows through ---------- */
+pending = false;
+A.eq(QuestStore.view().quests.some(q => q.kind === 'idea'), false, 'no idea quest when none is due');
+
+/* ---------- graceful degradation: missing subsystems → fewer quests, never a crash ---------- */
+global.XpStore = undefined; global.DossierStore = undefined; global.SuggestStore = undefined;
+const empty = QuestStore.view();
+A.eq(empty.meter, null, 'no XP rollup → null meter, no crash');
+A.eq(empty.quests.length, 0, 'no sources → no quests, no crash');
+
+A.report('queststore.test');

@@ -1864,6 +1864,31 @@ const StationUI = (() => {
     return row;
   }
 
+  // QUEST LOG (Slice 4): the station's REAL progress dressed as quests — a read projection (QuestStore.view),
+  // never a new source of truth. Reuses the GROWTH trophy idiom (.gx-*) so it needs no new CSS, and honors the
+  // honest-loot law: every quest pays out in real capability/work, and nothing here is gated behind a level.
+  function buildQuests(body) {
+    const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
+    if (!v) { body.innerHTML = '<p class="dim">Quest log unavailable.</p>'; return; }
+    const m = v.meter, qs = Array.isArray(v.quests) ? v.quests : [];
+    const open = qs.filter(q => q.status !== 'done'), done = qs.filter(q => q.status === 'done');
+    const tro = q =>
+      '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + '">'
+      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
+      + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
+    const meterHtml = m
+      ? '<div class="gx-sec"><span class="gx-title">STATION</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
+      : '';
+    body.innerHTML = '<div class="gx">'
+      + meterHtml
+      + '<div class="sub" style="margin:4px 0 10px;opacity:.72;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
+      + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
+      + '<div class="gx-tros">' + (open.map(tro).join('') || '<p class="dim">all caught up.</p>') + '</div>'
+      + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
+      + '<div class="gx-tros">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
+      + '</div>';
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
@@ -1879,7 +1904,8 @@ const StationUI = (() => {
     logbook:  ['LOGBOOK',                buildLogbook,   { w: '600px' }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
-    manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }]
+    manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }],
+    quests:   ['QUEST LOG',              buildQuests,    { w: '560px' }]
   };
 
   function init() {
