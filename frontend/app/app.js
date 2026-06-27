@@ -960,6 +960,7 @@ const App = (() => {
     Harness.resetTotals();
     Workstreams.reset();   // a fresh General stream for the new agent
     if (typeof PitchStore !== 'undefined') PitchStore.reset();   // a brand-new hero re-earns its First Pitch (own key)
+    if (typeof SuggestStore !== 'undefined') SuggestStore.reset();   // …and a fresh ongoing-suggestion cadence
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
@@ -1080,14 +1081,19 @@ const App = (() => {
     // proposes ONE buildable thing to make next (pitch.js engine). Read-only bus citizen; self-persists its own
     // fire-once flag (no save.js change). It reasons the pitch from the LIVE system prompt (which already carries
     // the COMMANDER dossier block), so the suggestion is personalized with no context re-injection.
-    if (typeof PitchStore !== 'undefined') PitchStore.init({
+    // shared accessors/actions for the proactive-advice stores (First Pitch + ongoing suggestions): both reason
+    // from the LIVE system prompt (it carries the dossier block) + the real recipe/capability envelope, and route
+    // a "build it" into a real run. SuggestStore is the recurring counterpart that fires as the dossier grows.
+    const adviceDeps = {
       getSystem: () => agent ? agent.systemPrompt : '',
       getName: () => agent ? agent.name : 'AGENT',
       getCaps: () => ((typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps('agent') : []).map(c => (typeof c === 'string' ? { id: c, label: c } : c)),
       getRecentTask: () => { const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
       launchRecipe: launchRecipe,
       launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('First build') : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
-    });
+    };
+    if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
+    if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity

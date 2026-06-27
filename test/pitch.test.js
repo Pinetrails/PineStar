@@ -83,4 +83,20 @@ const reply = 'PITCH: a morning brief on your project\nWHY: matches your goal\nB
 const parsed = P.parsePitch(reply);
 A.eq(parsed.build.recipeId, 'morning-brief', 'a reply maps cleanly to a recipe the directive offered');
 
+/* ---------- shouldSuggest(): the ongoing-idea cadence (Slice 3) ---------- */
+const sok = { firstPitchDone: true, knownDims: ['goals', 'identity'], familiarity: 0.6, lastFamiliarity: 0.4, tasksSinceLast: 3, sessionShown: 0 };
+A.eq(P.shouldSuggest(sok), { go: true, reason: 'ready' }, 'suggests when it has learned something new, after the cooldown, with budget');
+A.eq(P.shouldSuggest(Object.assign({}, sok, { firstPitchDone: false })), { go: false, reason: 'no-first-pitch' }, 'ongoing ideas never precede the First Pitch (graduation first)');
+A.eq(P.shouldSuggest(Object.assign({}, sok, { knownDims: ['identity'] })), { go: false, reason: 'missing:goals' }, 'cannot propose a build without knowing the goal');
+A.eq(P.shouldSuggest(Object.assign({}, sok, { sessionShown: 1 })), { go: false, reason: 'session-spent' }, 'at most one gentle idea per session (anti-nag)');
+A.eq(P.shouldSuggest(Object.assign({}, sok, { tasksSinceLast: 2 })), { go: false, reason: 'cooldown' }, 'holds for a task cooldown between ideas');
+A.eq(P.shouldSuggest(Object.assign({}, sok, { familiarity: 0.4 })), { go: false, reason: 'nothing-new' }, 'stays quiet until the dossier has actually grown');
+A.eq(P.shouldSuggest(Object.assign({}, sok, { lastFamiliarity: 0.6 })), { go: false, reason: 'nothing-new' }, 'equal familiarity is not "new" — no idea');
+// the cadence knobs are configurable + exported
+A.eq(P.shouldSuggest(Object.assign({}, sok, { tasksSinceLast: 1, minGap: 1 })), { go: true, reason: 'ready' }, 'minGap is honored');
+A.eq(P.shouldSuggest(Object.assign({}, sok, { sessionShown: 1, sessionCap: 2 })), { go: true, reason: 'ready' }, 'sessionCap is honored');
+A.eq(P.shouldSuggest({}).go, false, 'defensive: empty state never suggests, never throws');
+A.eq(P.SUGGEST_MIN_GAP, 3, 'default cooldown is 3 tasks');
+A.eq(P.SUGGEST_SESSION_CAP, 1, 'default session cap is one idea');
+
 A.report('pitch.test');

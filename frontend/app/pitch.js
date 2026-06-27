@@ -35,6 +35,8 @@
   const REQUIRE_DIMS = ['goals'];   // can't propose a build without knowing what the Commander actually wants
   const MIN_KNOWN = 2;              // at least two dossier dimensions filled before the agent dares to advise
   const MAX_RECIPES = 8;            // cap the recipe shelf we show the agent (keeps the directive lean + the prompt warm)
+  const SUGGEST_MIN_GAP = 3;        // ongoing ideas: min completed tasks between suggestions (cooldown, anti-nag)
+  const SUGGEST_SESSION_CAP = 1;    // ongoing ideas: at most one gentle suggestion per session (mirrors the curiosity cap)
 
   // the persisted shape: whether the one-time First Pitch has already fired (so it never repeats — fire-once).
   function fresh() { return { v: 1, pitched: false }; }
@@ -56,6 +58,34 @@
     const minKnown = Number.isFinite(state.minKnown) ? state.minKnown : MIN_KNOWN;
     for (const d of require) if (known.indexOf(d) < 0) return { go: false, reason: 'missing:' + d };
     if (known.length < minKnown) return { go: false, reason: 'too-cold' };
+    return { go: true, reason: 'ready' };
+  }
+
+  // THE ONGOING-SUGGESTION CADENCE (Slice 3) — the RECURRING counterpart to the one-time First Pitch. Once the
+  // First Pitch has happened, the station offers a fresh tailored idea when it has LEARNED SOMETHING NEW about the
+  // Commander (the dossier grew since the last idea) — gently: a per-session cap + a task cooldown, never a nag.
+  // Same honesty discipline as shouldPitch: every quiet outcome carries a reason. Order: graduation-first, then
+  // can-we-propose-a-build, then budget, then cooldown, then is-there-actually-something-new.
+  //   firstPitchDone  — the one-time First Pitch must precede ongoing ideas (graduation first)
+  //   knownDims       — dossier dims with a belief (needs 'goals' to propose a build)
+  //   familiarity     — current dossier familiarity (0..1, from Dossier.summary().familiarity)
+  //   lastFamiliarity — familiarity at the previous idea/pitch; familiarity > lastFamiliarity ⇒ something new to say
+  //   tasksSinceLast  — completed tasks since the last idea (cooldown)
+  //   minGap          — min tasks between ideas (default SUGGEST_MIN_GAP)
+  //   sessionShown    — ideas already shown this session; sessionCap — per-session ceiling (default 1)
+  function shouldSuggest(state) {
+    state = state || {};
+    if (!state.firstPitchDone) return { go: false, reason: 'no-first-pitch' };
+    const known = Array.isArray(state.knownDims) ? state.knownDims : [];
+    const require = Array.isArray(state.requireDims) ? state.requireDims : REQUIRE_DIMS;
+    for (const d of require) if (known.indexOf(d) < 0) return { go: false, reason: 'missing:' + d };
+    const cap = Number.isFinite(state.sessionCap) ? state.sessionCap : SUGGEST_SESSION_CAP;
+    if ((state.sessionShown || 0) >= cap) return { go: false, reason: 'session-spent' };
+    const minGap = Number.isFinite(state.minGap) ? state.minGap : SUGGEST_MIN_GAP;
+    if ((state.tasksSinceLast || 0) < minGap) return { go: false, reason: 'cooldown' };
+    const fam = Number.isFinite(state.familiarity) ? state.familiarity : 0;
+    const last = Number.isFinite(state.lastFamiliarity) ? state.lastFamiliarity : 0;
+    if (fam <= last) return { go: false, reason: 'nothing-new' };   // only speak up when it has actually learned more about you
     return { go: true, reason: 'ready' };
   }
 
@@ -138,5 +168,5 @@
     return s;
   }
 
-  return { fresh, shouldPitch, buildDirective, parsePitch, choices, present, REQUIRE_DIMS, MIN_KNOWN, MAX_RECIPES };
+  return { fresh, shouldPitch, shouldSuggest, buildDirective, parsePitch, choices, present, REQUIRE_DIMS, MIN_KNOWN, MAX_RECIPES, SUGGEST_MIN_GAP, SUGGEST_SESSION_CAP };
 });

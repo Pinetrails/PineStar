@@ -537,6 +537,17 @@ const Chat = (() => {
     });
     activeNudge = { row: r.d, choiceRow: choiceRow, dim: dim };   // track both halves so a turn-in can retire the whole nudge
   }
+  // a reusable GENTLE post-run beat (used by the ongoing-suggestion engine, suggeststore.js) — the same quiet
+  // register as the curiosity nudge: a .nudge aside, never the lit .reply headline. text = the line; options =
+  // [{label,value,skip}]; onPick(item) fires on a choice (the choice row removes itself on pick).
+  function nudge(text, options, onPick) {
+    if (!log) return null;
+    const r = row('agent'); r.d.classList.add('nudge');
+    r.body.textContent = String(text == null ? '' : text);
+    autoscroll();
+    const choiceRow = choices(options || [], item => { try { if (onPick) onPick(item); } catch (_) {} });
+    return { row: r.d, choiceRow: choiceRow };
+  }
   function wireCuriosity() {
     if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
     curiosityWired = true;
@@ -551,6 +562,10 @@ const Chat = (() => {
         // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
         if (runId && proposalRunsSeen.has(runId)) return;
         if (log && log.querySelector('.turnin-item')) return;
+        // ONGOING SUGGESTION (Slice 3): if the station has learned something new and an idea is due, it takes this
+        // ONE post-run beat — gently — and curiosity stands down for the run (the agent never stacks an idea AND a
+        // question on the same task). Shares this slot's guards (busy/interview/onboarding/intake/turn-in) for free.
+        if (typeof SuggestStore !== 'undefined' && SuggestStore.willSuggest && SuggestStore.willSuggest()) { SuggestStore.fire(); return; }
         if (typeof CuriosityStore === 'undefined') return;
         const dim = CuriosityStore.consider();
         if (!dim) return;
@@ -1133,5 +1148,5 @@ const Chat = (() => {
     return () => { killed = true; };
   }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine, nudge };
 })();

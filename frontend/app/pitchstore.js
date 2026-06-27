@@ -120,8 +120,11 @@ const PitchStore = (() => {
   // main save envelope; this store owns its own key, like curiositystore).
   function reset() { state = (typeof Pitch !== 'undefined') ? Pitch.fresh() : { v: 1, pitched: false }; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
+  // has the one-time First Pitch already fired? (read by the ongoing-suggestion engine — graduation gates it).
+  function done() { return !!(state && state.pitched); }
+
   // _-prefixed handles are exposed for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, _decide: decide, _fire: fire, _state: () => state };
+  return { init, reset, onRunEnd, done, _decide: decide, _fire: fire, _state: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { PitchStore };
