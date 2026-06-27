@@ -69,7 +69,9 @@ Do not commit the private key. Keep it in a password manager or release vault.
 ## Done Conditions
 
 T1 is done for invited beta when `t1:signing` exits 0 and the summary says
-`invitedBetaReady=true`.
+`invitedBetaReady=true`. That does not mean public signing work is finished; check
+`leadTimeStarted` and `nextAction` in the status file. If `leadTimeStarted=false`, the
+next T1 action is to start OV/EV Authenticode procurement.
 
 T1 is done for public release only when `t1:signing:public` exits 0 and the summary says
 `publicReleaseReady=true`.

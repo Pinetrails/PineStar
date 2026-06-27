@@ -46,6 +46,8 @@ try {
     const status = JSON.parse(fs.readFileSync(path.join(out, 't1-signing-status.json'), 'utf8'));
     assert.equal(status.invitedBetaReady, true);
     assert.equal(status.publicReleaseReady, false);
+    assert.equal(status.leadTimeStarted, false);
+    assert.equal(status.nextAction.id, 't1.4-cert-procurement');
     assert.ok(status.acceptedLeadTimeGaps.length >= 2, 'unsigned beta records accepted gaps');
   }
 
@@ -62,6 +64,23 @@ try {
     const status = JSON.parse(fs.readFileSync(path.join(publicOut, 't1-signing-status.json'), 'utf8'));
     assert.equal(status.publicReleaseReady, false);
     assert.equal(status.verdict, 'blocked');
+    assert.equal(status.nextAction.id, 't1.4-cert-procurement');
+  }
+
+  {
+    const startedOut = path.join(tmp, 'started-out');
+    const res = run([], {
+      STARNET_T1_APP_EXE: app,
+      STARNET_T1_INSTALLER_EXE: installer,
+      STARNET_T1_SIGNING_DIR: startedOut,
+      STARNET_T1_SIGNING_LATEST_DIR: path.join(tmp, 'started-latest'),
+      STARNET_T1_AUTHENTICODE_MOCK: mockSignatures(app, installer, 'NotSigned'),
+      STARNET_AUTHENTICODE_CERT_STATUS: 'started'
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const status = JSON.parse(fs.readFileSync(path.join(startedOut, 't1-signing-status.json'), 'utf8'));
+    assert.equal(status.leadTimeStarted, true);
+    assert.equal(status.nextAction.id, 't1.3-tauri-updater-signature');
   }
 
   {
@@ -78,9 +97,10 @@ try {
     const status = JSON.parse(fs.readFileSync(path.join(signedOut, 't1-signing-status.json'), 'utf8'));
     assert.equal(status.publicReleaseReady, true);
     assert.equal(status.acceptedLeadTimeGaps.length, 0);
+    assert.equal(status.nextAction, null);
   }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log('t1-signing.test: OK (10 assertions)');
+console.log('t1-signing.test: OK (15 assertions)');

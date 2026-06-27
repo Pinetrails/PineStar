@@ -13,7 +13,7 @@ const argSet = new Set(rawArgs);
 const LOOP_ARG = rawArgs.find(a => /^--loop(=|$)/.test(a));
 const LOOP_MAX = LOOP_ARG ? Math.max(1, Number(LOOP_ARG.split('=')[1] || process.env.STARNET_T1_LOOPS || 3) || 3) : 1;
 const REQUIRE_PUBLIC = argSet.has('--public') || argSet.has('--require-public');
-const STAMP = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+const STAMP = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').replace('.', '-').replace(/Z$/, '') + '-' + process.pid;
 const OUT = resolve(process.env.STARNET_T1_SIGNING_DIR || join(ROOT, '.dogfood', 't1-signing-' + STAMP));
 const LATEST = resolve(process.env.STARNET_T1_SIGNING_LATEST_DIR || join(ROOT, '.dogfood', 't1-signing-latest'));
 
@@ -217,6 +217,24 @@ async function runOnce(loop) {
 function signature(results) {
   return results.map(r => r.id + ':' + r.status + ':' + (r.reason || '')).join('|');
 }
+function chooseNextAction(latest) {
+  const nonPass = latest.filter(r => r.status === 'fail' || r.status === 'blocked' || r.status === 'accepted-deferral');
+  if (!nonPass.length) return null;
+  const failed = nonPass.find(r => r.status === 'fail');
+  if (failed) return failed;
+  const priority = [
+    't1.4-cert-procurement',
+    't1.3-tauri-updater-signature',
+    't1.2-authenticode',
+    't1.1-release-artifacts',
+    't1.0-loop-spec'
+  ];
+  for (const id of priority) {
+    const match = nonPass.find(r => r.id === id);
+    if (match) return match;
+  }
+  return nonPass[0];
+}
 function writeSummary(allResults, loopsRun) {
   ensureDir(OUT);
   const latest = allResults.filter(r => r.loop === loopsRun);
@@ -226,6 +244,9 @@ function writeSummary(allResults, loopsRun) {
   const pass = latest.filter(r => r.status === 'pass').length;
   const publicReleaseReady = !fail && !blocked && !accepted && latest.length > 0;
   const invitedBetaReady = !fail && !latest.some(r => r.id === 't1.1-release-artifacts' && r.status !== 'pass');
+  const procurement = latest.find(r => r.id === 't1.4-cert-procurement');
+  const leadTimeStarted = !!(procurement && procurement.status === 'pass');
+  const nextAction = chooseNextAction(latest);
   const verdict = fail ? 'red' : (blocked ? 'blocked' : 'green');
   const acceptedLeadTimeGaps = latest.filter(r => r.status === 'accepted-deferral').map(r => r.reason);
   const json = {
@@ -235,10 +256,12 @@ function writeSummary(allResults, loopsRun) {
     verdict,
     invitedBetaReady,
     publicReleaseReady,
+    leadTimeStarted,
     loopsRun,
     outDir: OUT,
     counts: { pass, accepted, blocked, fail },
     acceptedLeadTimeGaps,
+    nextAction: nextAction ? { id: nextAction.id, status: nextAction.status, reason: nextAction.reason } : null,
     results: latest,
     history: allResults.map(r => ({ loop: r.loop, id: r.id, status: r.status, reason: r.reason || '' }))
   };
@@ -250,13 +273,14 @@ function writeSummary(allResults, loopsRun) {
   md += '- Verdict: `' + json.verdict + '`\n';
   md += '- Invited beta ready: `' + json.invitedBetaReady + '`\n';
   md += '- Public release ready: `' + json.publicReleaseReady + '`\n\n';
+  md += '- Lead-time started: `' + json.leadTimeStarted + '`\n\n';
   md += '| Status | Phase | Step | Notes |\n|---|---|---|---|\n';
   for (const r of latest) md += '| ' + statusIcon(r.status) + ' | `' + mdEscape(r.phase) + '` | `' + r.id + '` ' + mdEscape(r.title) + ' | ' + mdEscape(r.reason) + ' |\n';
   md += '\n## Accepted Lead-Time Gaps\n\n';
   if (!acceptedLeadTimeGaps.length) md += 'None.\n';
   else for (const gap of acceptedLeadTimeGaps) md += '- ' + gap + '\n';
   md += '\n## Next Action\n\n';
-  const next = latest.find(r => r.status === 'fail' || r.status === 'blocked' || r.status === 'accepted-deferral');
+  const next = nextAction;
   if (next) md += 'Work `' + next.id + '`: ' + next.reason + '\n';
   else md += 'T1 is public-release ready: signed artifacts and updater signature evidence are present.\n';
   writeFileSync(join(OUT, 'summary.md'), md);
