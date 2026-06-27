@@ -30,7 +30,9 @@ const REQUIRED_TOOL_GROUPS = [
   ['fs_write'],
   ['notebook_write'],
   ['shell_exec', 'verify_run'],
-  ['web_search', 'web_fetch', 'browser_navigate', 'browser_get_text']
+  ['browser_navigate'],
+  ['browser_get_text'],
+  ['computer_use']
 ];
 
 const J = (v) => JSON.stringify(v);
@@ -145,7 +147,8 @@ async function waitRunComplete(cdp) {
 async function boot({ preserve = false } = {}) {
   if (!preserve) materializeSeedWorkspace(SCRATCH, MODEL);
   if (await isUp(APP_URL)) throw new Error('proof port already in use: ' + PORT);
-  const sidecar = bootSeededSidecar({ port: PORT, scratchDir: SCRATCH, key, model: MODEL, fullAccess: true });
+  const env = process.platform === 'win32' ? { STARNET_COMPUTER_DRIVER: 'win32' } : {};
+  const sidecar = bootSeededSidecar({ port: PORT, scratchDir: SCRATCH, key, model: MODEL, fullAccess: true, env });
   if (!(await waitUp(APP_URL))) throw new Error('sidecar failed to boot on :' + PORT);
   return sidecar;
 }
@@ -192,17 +195,21 @@ async function main() {
 
     const prompt = [
       'Phase 5 Hermes replacement workload proof.',
-      'The room already contains FILES, MEMORY, TERMINAL, and WEB stations.',
+      'The room already contains FILES, MEMORY, TERMINAL, WEB, and COMPUTER stations.',
       'Use the live tools, do not merely describe them.',
       'Required tool work:',
-      '1. Call web_search for "OpenAI official API documentation".',
-      '2. Call shell_exec or verify_run with a harmless command that prints phase5-shell-ok.',
-      '3. Call fs_write to create phase5-hermes-workload.md.',
-      '4. Call notebook_write to remember phase5-hermes-workload-memory.',
+      '1. Call browser.navigate to https://example.com.',
+      '2. Call browser.get_text and use the visible page text as evidence.',
+      '3. Call computer.use with action=screenshot and capture_after=true.',
+      '4. Call shell_exec or verify_run with a harmless command that prints phase5-shell-ok.',
+      '5. Call fs_write to create phase5-hermes-workload.md.',
+      '6. Call notebook_write to remember phase5-hermes-workload-memory.',
+      'Do not use web_search or web_fetch as a substitute for browser.navigate and browser.get_text.',
       'The Markdown file must include these exact lines:',
       '# Phase 5 Hermes Workload',
       'verdict: live StarNet workload proof',
-      'web: live tool attempted',
+      'browser: example.com text captured',
+      'computer: attended screenshot captured',
       'shell: live command attempted',
       'memory: phase5-hermes-workload-memory',
       'Finish with one short sentence naming the saved file.'
@@ -225,6 +232,8 @@ async function main() {
     const modelNames = unique((sameWork.starts || []).map(s => s.model).concat(ledgerRows.map(r => r.model)));
     const toolGroupsPresent = REQUIRED_TOOL_GROUPS.every(group => toolGroupPresent(toolNames, group));
     const okTerminal = toolGroupPresent(okToolNames, ['shell_exec', 'verify_run']);
+    const okBrowser = okToolNames.includes('browser_navigate') && okToolNames.includes('browser_get_text');
+    const okComputer = okToolNames.includes('computer_use');
     report.checks.workloadPassed = sameWork.ends.some(e => e.reason === 'done')
       && sameWork.errors.length === 0
       && sameWork.costs.some(c => (c.usd || 0) > 0)
@@ -233,7 +242,11 @@ async function main() {
       && ledgerRows.length > 0
       && modelNames.length > 0
       && toolGroupsPresent
-      && okTerminal;
+      && okTerminal
+      && okBrowser
+      && okComputer;
+    report.checks.browserHermesProven = okBrowser;
+    report.checks.computerHermesProven = okComputer;
 
     try { sidecar.kill('SIGKILL'); } catch {}
     await sleep(1000);
@@ -270,6 +283,23 @@ async function main() {
       toolCalls: unique((existing.workloads && existing.workloads.toolCalls || []).concat(toolNames)),
       notes: 'Collected by scripts/phase5-live-workload-proof.mjs through the gamified UI with live model ' + MODEL + '.'
     };
+    existing.surface = existing.surface || {};
+    existing.surface.browser = {
+      status: okBrowser ? 'hermes-proven' : ((existing.surface.browser && existing.surface.browser.status) || 'blocked'),
+      proofLevel: okBrowser ? 'live-ui-browser-tools' : ((existing.surface.browser && existing.surface.browser.proofLevel) || ''),
+      logs: unique((existing.surface.browser && existing.surface.browser.logs || []).concat(join(OUT, 'phase5-workload-report.json'))),
+      notes: okBrowser
+        ? 'Live workload used browser.navigate and browser.get_text through the gamified UI.'
+        : 'Live workload has not yet produced successful browser.navigate plus browser.get_text evidence.'
+    };
+    existing.surface.computer = {
+      status: okComputer ? 'hermes-proven' : ((existing.surface.computer && existing.surface.computer.status) || 'blocked'),
+      proofLevel: okComputer ? 'live-ui-attended-driver' : ((existing.surface.computer && existing.surface.computer.proofLevel) || ''),
+      logs: unique((existing.surface.computer && existing.surface.computer.logs || []).concat(join(OUT, 'phase5-workload-report.json'))),
+      notes: okComputer
+        ? 'Live workload used computer.use through the attended local desktop driver and captured screenshot proof.'
+        : 'Live workload has not yet produced successful attended computer.use evidence.'
+    };
     existing.soak = Object.assign({}, existing.soak || {}, {
       phase5WorkloadGreen: !!report.checks.workloadPassed,
       restartPreserved: !!report.checks.restartPreserved,
@@ -290,4 +320,3 @@ async function main() {
 }
 
 main().catch(e => { console.error('[phase5-workload] FATAL: ' + ((e && e.stack) || e)); process.exit(1); });
-

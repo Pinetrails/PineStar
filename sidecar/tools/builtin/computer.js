@@ -15,6 +15,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
+  const CP = require('node:child_process');
+
   const ACTIONS = ['screenshot', 'move', 'click', 'double_click', 'drag', 'scroll', 'type', 'key', 'hotkey', 'wait'];
   const DESTRUCTIVE_HOTKEYS = [
     'ctrl+alt+delete',
@@ -72,9 +74,90 @@
     if (a.action === 'scroll') return 'scroll ' + (a.dx || 0) + ',' + (a.dy || 0);
     return a.action;
   }
+  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  function runPowerShell(script, timeoutMs) {
+    const exe = process.env.SystemRoot ? process.env.SystemRoot + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' : 'powershell.exe';
+    const res = CP.spawnSync(exe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-Command', script], {
+      encoding: 'utf8',
+      timeout: timeoutMs || 15000,
+      windowsHide: true
+    });
+    if (res.error) throw res.error;
+    if (res.status !== 0) throw new Error((res.stderr || res.stdout || 'PowerShell desktop driver failed').trim());
+    return String(res.stdout || '').trim();
+  }
+  function runPowerShellJson(script, timeoutMs) {
+    const out = runPowerShell(script, timeoutMs);
+    try { return JSON.parse(out); } catch (e) { throw new Error('desktop driver returned invalid JSON: ' + out.slice(0, 200)); }
+  }
+  function win32DriverRequested(env) {
+    env = env || process.env;
+    return /^(1|true|win32|windows)$/i.test(String(env.STARNET_COMPUTER_DRIVER || env.SKYNET_COMPUTER_DRIVER || ''));
+  }
+  function makeWin32DesktopDriver() {
+    function mouseScript(body) {
+      return `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class StarNetMouse {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+  [DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int data, int extra);
+}
+"@
+${body}
+[Console]::Out.Write((@{ ok = $true } | ConvertTo-Json -Compress))
+`;
+    }
+    return {
+      perform: async (action) => {
+        const a = validateAction(action);
+        if (a.action === 'screenshot') return 'desktop screenshot requested';
+        if (a.action === 'wait') { await sleep(a.durationMs || 500); return 'waited ' + (a.durationMs || 500) + 'ms'; }
+        if (a.action === 'move') {
+          runPowerShellJson(mouseScript('[StarNetMouse]::SetCursorPos(' + Math.round(a.x || 0) + ', ' + Math.round(a.y || 0) + ') | Out-Null'));
+          return 'moved pointer';
+        }
+        if (a.action === 'click' || a.action === 'double_click') {
+          const x = Math.round(a.x || 0), y = Math.round(a.y || 0);
+          const click = '[StarNetMouse]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 40; [StarNetMouse]::mouse_event(4,0,0,0,0);';
+          const body = '[StarNetMouse]::SetCursorPos(' + x + ', ' + y + ') | Out-Null; ' + click + (a.action === 'double_click' ? ' Start-Sleep -Milliseconds 80; ' + click : '');
+          runPowerShellJson(mouseScript(body));
+          return a.action + ' delivered';
+        }
+        if (a.action === 'scroll') {
+          const data = Math.round(Number(a.dy || 0) || Number(a.y || 0) || 0);
+          runPowerShellJson(mouseScript('[StarNetMouse]::mouse_event(2048,0,0,' + data + ',0);'));
+          return 'scroll delivered';
+        }
+        throw new Error('local win32 desktop driver currently supports screenshot, wait, move, click, double_click, and scroll');
+      },
+      capture: async () => runPowerShellJson(`
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+if ($bounds.Width -le 0 -or $bounds.Height -le 0) { throw "primary screen has no size" }
+$path = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "starnet-computer-" + [guid]::NewGuid().ToString() + ".png")
+$bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+try {
+  $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+  $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+  $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+  $bytes = (Get-Item -LiteralPath $path).Length
+  [Console]::Out.Write((@{ width = $bounds.Width; height = $bounds.Height; bytes = $bytes; sha256 = $hash } | ConvertTo-Json -Compress))
+} finally {
+  try { $g.Dispose() } catch {}
+  try { $bmp.Dispose() } catch {}
+  try { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } catch {}
+}
+`, 20000)
+    };
+  }
   function makeDriver(deps) {
     const d = deps && deps.driver;
     if (d && typeof d.perform === 'function') return d;
+    if (process.platform === 'win32' && win32DriverRequested(process.env)) return makeWin32DesktopDriver();
     return {
       perform: async () => { throw new Error('computer-use unavailable: no desktop driver configured'); },
       capture: async () => { throw new Error('computer-use unavailable: no desktop capture driver configured'); }
@@ -122,8 +205,8 @@
         return { content, summary: summarize(action) };
       }
     };
-    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, hardBlock, validateAction, summarize, COMMAND_TEXT_RE } };
+    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, makeWin32DesktopDriver } };
   }
 
-  return { makeComputerTools, _internals: { ACTIONS, hardBlock, validateAction, summarize, COMMAND_TEXT_RE } };
+  return { makeComputerTools, _internals: { ACTIONS, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, makeWin32DesktopDriver } };
 });
