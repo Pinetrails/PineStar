@@ -41,6 +41,16 @@
       ask: 'what are you trying to get done?',
       chips: [{ label: 'skip', value: '', skip: true }] },
 
+    { dim: 'pain',
+      pre: 'now the one that tells me the most about where i can help —',
+      ask: 'what did you do this week you wish you never had to do again?',
+      chips: [
+        { label: 'Repetitive busywork', value: 'Loses time to repetitive busywork they wish were automated.' },
+        { label: 'Context-switching', value: 'Loses time to constant context-switching between tools.' },
+        { label: 'Wrangling data by hand', value: 'Loses time wrangling, cleaning, or moving data by hand.' },
+        { label: 'skip', value: '', skip: true }
+      ] },
+
     { dim: 'style',
       pre: 'how you want me to carry myself when i work for you —',
       ask: 'terse or thorough? ask-first, or run-with-it?',

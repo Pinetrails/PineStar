@@ -41,7 +41,7 @@ const Save = (() => {
     // then seeds from the agent's onboarding docs at DossierStore.init. The literal mirrors Dossier.fresh()
     // to keep save.js decoupled from dossier.js load order.
     4: doc => {
-      if (!doc.dossier || typeof doc.dossier !== 'object') doc.dossier = { v: 1, dims: { identity: [], stack: [], goals: [], style: [], standing_orders: [] }, seededFrom: {}, updatedAt: 0 };
+      if (!doc.dossier || typeof doc.dossier !== 'object') doc.dossier = { v: 1, dims: { identity: [], stack: [], goals: [], style: [], standing_orders: [], pain: [] }, seededFrom: {}, updatedAt: 0 };
       return doc;
     }
   };

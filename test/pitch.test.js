@@ -39,6 +39,7 @@ A.ok(dir.indexOf('daily digest') >= 0, 'directive carries a recipe tagline when 
 A.ok(/run code/.test(dir) && /web access/.test(dir), 'directive lists the capabilities it actually has');
 A.ok(dir.indexOf('wrote a hello file and verified it') >= 0, 'directive references the first task it just did');
 A.ok(/PITCH:/.test(dir) && /WHY:/.test(dir) && /BUILD:/.test(dir) && /GAP:/.test(dir), 'directive demands the strict tagged reply format');
+A.ok(/pain|eats their time|recurring chore/i.test(dir), 'directive aims the pitch at the Commander pain points (Slice 6 — shared by First Pitch + the suggestion engine)');
 
 // deterministic — same ctx in, byte-identical directive out (cache-warmth + testability)
 A.eq(P.buildDirective({ recipes: [{ id: 'x', name: 'X' }] }), P.buildDirective({ recipes: [{ id: 'x', name: 'X' }] }), 'buildDirective is deterministic');

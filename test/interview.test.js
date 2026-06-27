@@ -13,7 +13,7 @@ for (const q of I.QUESTIONS) {
   A.ok(D.DIM_KEYS.indexOf(q.dim) >= 0, 'question dim "' + q.dim + '" is a real dossier dimension');
   A.ok(typeof q.ask === 'string' && q.ask.length > 0, 'question for "' + q.dim + '" has an ask');
 }
-// there is exactly one question per dimension, and they cover all five
+// there is exactly one question per dimension, and they cover every dossier dimension
 A.eq(I.QUESTIONS.length, D.DIM_KEYS.length, 'one question per dossier dimension');
 A.eq(I.QUESTIONS.map(q => q.dim).sort(), D.DIM_KEYS.slice().sort(), 'questions cover every dimension exactly once');
 
@@ -32,7 +32,7 @@ A.eq(full.length, I.QUESTIONS.length, 'plan() with no skip asks every question')
 A.eq(full.map(q => q.dim), I.QUESTIONS.map(q => q.dim), 'plan() preserves canonical question order');
 
 const partial = I.plan({ skip: ['identity', 'goals'] });
-A.eq(partial.map(q => q.dim), ['stack', 'style', 'standing_orders'], 'plan() skips already-known dimensions');
+A.eq(partial.map(q => q.dim), ['stack', 'pain', 'style', 'standing_orders'], 'plan() skips already-known dimensions');
 
 A.eq(I.plan({ skip: D.DIM_KEYS }).length, 0, 'plan() asks nothing when every dimension is known');
 A.eq(I.plan({ max: 2 }).length, 2, 'plan() honors the max cap');

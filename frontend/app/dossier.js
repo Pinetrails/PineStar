@@ -2,7 +2,7 @@
 
    Phase A of the Commander Dossier (docs/COMMANDER_DOSSIER_PLAN.md): one station-wide, dimensioned,
    local-first model of the human, unifying signals that today are thin + scattered. This is the durable
-   BELIEF layer — a small set of named dimensions (identity / stack / goals / style / standing_orders),
+   BELIEF layer — a small set of named dimensions (identity / stack / goals / style / standing_orders / pain),
    each holding human-readable beliefs with provenance — that compose into every agent's system prompt so
    the whole station knows the Commander. (The live affinity vector in profile.js is the SEPARATE "what
    you work on" signal; this engine never rewrites it — the store reads it for the panel only.)
@@ -26,7 +26,8 @@
     { key: 'stack',           label: 'Stack & tools',   lead: 'Stack & tools' },
     { key: 'goals',           label: 'Goals',           lead: 'Goals' },
     { key: 'style',           label: 'Working style',   lead: 'Working style' },
-    { key: 'standing_orders', label: 'Standing orders', lead: 'Standing orders' }
+    { key: 'standing_orders', label: 'Standing orders', lead: 'Standing orders' },
+    { key: 'pain',            label: 'Pain points',     lead: 'Pain points (what eats their time / the work they want gone)' }
   ];
   const DIM_KEYS = DIMS.map(d => d.key);
   // which onboarding doc seeds which dimension (the Commander already authored these at the awakening).

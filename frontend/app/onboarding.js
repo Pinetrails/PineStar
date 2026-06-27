@@ -101,6 +101,23 @@ const Onboarding = (() => {
           ? (lead ? 'got it — that’s context.md. i can see the ground i’m standing on now.' : 'noted. i can picture it now.')
           : (lead ? 'fine — i’ll read the room as we go and fill it in myself.' : 'fine. i’ll read the room as we go.') },
 
+      // PAIN — the highest-signal thing the station can learn (the work the Commander wants GONE). It seeds no
+      // .md doc; it writes STRAIGHT to the station-wide dossier (build:()=>null + dossierDim), so every later
+      // pitch/idea/seed can aim at a real recurring chore. Optional + skippable — never trap them on it.
+      { dossierDim: 'pain', optional: true,
+        prompt: 'and the one i’ll lean on most — what did you do this week you wish you never had to do again?',
+        options: [
+          { label: 'Repetitive busywork', value: 'Loses time to repetitive busywork they wish were automated.' },
+          { label: 'Context-switching', value: 'Loses time to constant context-switching between tools.' },
+          { label: 'Wrangling data by hand', value: 'Loses time wrangling, cleaning, or moving data by hand.' },
+          { label: 'Skip for now', value: '', skip: true }
+        ],
+        custom: true, customLabel: 'name it in my own words', placeholder: 'the chore you’d hand off in a heartbeat…',
+        build: () => null,
+        ack: t => t
+          ? 'noted — that’s exactly the kind of thing i’m for. it’s on my list now.'
+          : 'no? we’ll find it. the work tells on itself eventually.' },
+
       { field: 'manual', optional: true,
         prompt: lead ? 'last thing — any hard rules? what i should always do, or never.' : 'last thing — any rules i should hold to?',
         options: [
@@ -116,8 +133,10 @@ const Onboarding = (() => {
           ? (lead ? 'locked into operating-manual.md.' : 'locked in. those are mine to keep.')
           : (lead ? 'no rules yet — i’ll use my judgment.' : 'no rules? i’ll keep us out of trouble.') }
     ];
-    // (reserved) a pre-specced wake skips the mission beats; the orchestrator authors them live.
-    return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual') : all;
+    // (reserved) a pre-specced wake skips the mission beats; the orchestrator authors them live. The PAIN beat
+    // is also skipped on a recruited wake — the dossier is station-wide, so the Commander answers it once (at the
+    // first/orchestrator awakening), never again per new hire.
+    return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual' && !s.dossierDim) : all;
   }
 
   // enterGame has already put the room in darkness + frozen the newborn facing AWAY (World.beginAwakening),
@@ -285,6 +304,9 @@ const Onboarding = (() => {
       }
       const text = isSkip ? '' : String(res.value).trim();
       if (!isSkip && commit) { const patch = s.build(text); if (patch) commit(patch); }
+      // a beat that targets a dossier dimension (not a config .md) writes its answer STRAIGHT to the station-wide
+      // dossier — same authoring path the COMMANDER panel uses (recomposes the live prompt + persists at the edge).
+      if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert(s.dossierDim, { text, source: 'onboarding' });
       // seed the user-affinity profile from the stated PURPOSE so day-one suggestions aren't blank (the engine
       // ignores this once real usage accrues). Cheap, explicit, no inference.
       if (!isSkip && s.field === 'purpose' && typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') ProfileStore.seed(Classify.getTag(text));
