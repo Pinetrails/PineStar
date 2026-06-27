@@ -151,7 +151,7 @@
       return ln.length > share ? ln.slice(0, Math.max(0, share - 1)).replace(/\s+\S*$/, '') + '…' : ln;
     }).join('\n');
     // last-resort hard guarantee for a pathologically small cap (e.g. a test cap below the header length).
-    if (body.length > cap) body = body.slice(0, cap - 1).replace(/\s+\S*$/, '') + '…';
+    if (body.length > cap) body = body.slice(0, Math.max(0, cap - 1)).replace(/\s+\S*$/, '') + '…';
     return body;
   }
 

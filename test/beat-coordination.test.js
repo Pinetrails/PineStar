@@ -29,6 +29,16 @@ A.ok(/SeedStore\.propose\(\);\s*return;/.test(chatSrc.slice(iSeed, iCuriosity)),
 // the whole gentle-nudge slot stands down when a focused Dialogue panel (First Pitch / awakening / tutorial) is open.
 const iWire = chatSrc.indexOf('function wireCuriosity');
 A.ok(iWire > 0 && chatSrc.slice(iWire, iSuggest).indexOf('Dialogue.isOpen') >= 0, 'wireCuriosity stands down when a focused Dialogue panel is open (guard before any gentle nudge)');
+// Slice 8 minors (chat.js is DOM-flow, not node-loadable — locked at the source like the guards above):
+// the post-run slot fires ONLY for the HERO's runs — a summoned worker's clean run must not trigger a hero nudge.
+A.ok(iWire > 0 && /\(p\.agentId\s*\|\|\s*'agent'\)\s*!==\s*'agent'\)\s*return;/.test(chatSrc.slice(iWire, iWire + 700)), 'wireCuriosity early-returns for a non-hero agentId (a summoned worker run fires no hero nudge)');
+// a new gentle beat retires any prior unanswered one (no cross-run nudge stacking), and clearNudge is exported
+// so the First Pitch can retire a live nudge before its focused panel opens over it.
+const iCurNudge = chatSrc.indexOf('function curiosityNudge');
+const iGentle = chatSrc.indexOf('function nudge(');
+A.ok(iCurNudge > 0 && /clearNudge\(\);/.test(chatSrc.slice(iCurNudge, iCurNudge + 220)), 'curiosityNudge retires a prior nudge before creating a new one');
+A.ok(iGentle > 0 && /clearNudge\(\);/.test(chatSrc.slice(iGentle, iGentle + 220)), 'the gentle nudge() retires a prior nudge before creating a new one');
+A.ok(/return\s*\{[^}]*\bclearNudge\b/.test(chatSrc), 'clearNudge is exported (so pitchstore can retire a live nudge before the First Pitch panel opens)');
 
 /* ---------- 2. behavioral: the real SuggestStore decision drives the mutual exclusion ---------- */
 global.Pitch = require('../frontend/app/pitch.js');

@@ -121,6 +121,7 @@ global.DossierStore = _ds;
     A.eq(call.isTask, false, 'the pitch is a reason-only call (isTask:false)');
     A.eq(call.placed, [], 'the pitch call gets NO capabilities (placed:[]) — it cannot touch tools');
     A.eq(call.agentId, 'agent', 'the pitch runs as the hero');
+    A.eq(call.internal, true, 'the pitch is flagged internal → harness.js suppresses its run.start/end bus re-emit (the self-talk never counts as a shipped task in XP/quests/throughput)');
     const directive = call.messages[0].content;
     A.ok(/PITCH:/.test(directive) && directive.indexOf('recipe:morning-brief') >= 0, 'the directive carries the strict format + the real recipe shelf');
     A.ok(directive.indexOf('run code') >= 0, 'the directive lists the agent\'s real capabilities');
