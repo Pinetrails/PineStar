@@ -17,7 +17,7 @@ const SeedStore = (() => {
   function init() { sessionProposed = 0; }
   function reset() { sessionProposed = 0; }
 
-  const enabled = () => (typeof MintStore === 'undefined' || !MintStore.enabled) ? true : !!MintStore.enabled();
+  const enabled = () => (typeof MintStore === 'undefined' || typeof MintStore.enabled !== 'function') ? true : !!MintStore.enabled();
 
   // the freshest mint candidate turned into a seed proposal (or null). Mint already filters minted/dismissed.
   function pick() {

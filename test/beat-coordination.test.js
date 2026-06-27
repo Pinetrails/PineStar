@@ -20,6 +20,12 @@ A.ok(iSuggest > 0, 'chat.js consults SuggestStore.willSuggest() in the post-run 
 A.ok(iCuriosity > 0, 'chat.js still consults CuriosityStore.consider()');
 A.ok(iSuggest < iCuriosity, 'a due suggestion is checked BEFORE curiosity (it takes the one beat; curiosity stands down)');
 A.ok(/SuggestStore\.fire\(\);\s*return;/.test(chatSrc.slice(iSuggest, iCuriosity)), 'a due suggestion fires and RETURNS, so curiosity never also runs that task');
+// Slice 5: a seed offer sits BETWEEN suggestion and curiosity, with the same early-return discipline.
+const iSeed = chatSrc.indexOf('SeedStore.willPropose()');
+A.ok(iSeed > 0, 'chat.js consults SeedStore.willPropose() in the post-run beat slot');
+A.ok(iSuggest < iSeed, 'a seed offer is checked AFTER suggestion (suggestion keeps priority)');
+A.ok(iSeed < iCuriosity, 'a seed offer is checked BEFORE curiosity (seed takes the one beat over a get-to-know-you ask)');
+A.ok(/SeedStore\.propose\(\);\s*return;/.test(chatSrc.slice(iSeed, iCuriosity)), 'a seed offer fires and RETURNS, so curiosity never also runs that task');
 
 /* ---------- 2. behavioral: the real SuggestStore decision drives the mutual exclusion ---------- */
 global.Pitch = require('../frontend/app/pitch.js');
@@ -38,9 +44,11 @@ SuggestStore.init({ getSystem: () => 'SYS', getCaps: () => [], getRecentTask: ()
 // a faithful copy of chat.js's arbiter precedence (locked above by the source guard): a due idea takes the beat;
 // otherwise curiosity is consulted. We don't call the async fire() here — the precedence is a synchronous decision.
 let curiosityConsulted = false;
+let stubSeedWill = false, seedProposed = false;   // a stub seed gate (real SeedStore behavior is locked in seedstore.test.js)
 function postRunBeat() {
-  curiosityConsulted = false;
+  curiosityConsulted = false; seedProposed = false;
   if (SuggestStore.willSuggest()) return 'suggestion';   // (chat.js calls SuggestStore.fire(); return; here)
+  if (stubSeedWill) { seedProposed = true; return 'seed'; }   // (chat.js calls SeedStore.propose(); return; here)
   curiosityConsulted = true;                              // (chat.js falls through to CuriosityStore.consider())
   return 'curiosity';
 }
@@ -64,5 +72,17 @@ bus.emit('agent.run.end', { reason: 'done', agentId: 'agent' });   // cooldown m
 A.eq(SuggestStore.willSuggest(), false, 'no idea when nothing new was learned');
 A.eq(postRunBeat(), 'curiosity', 'curiosity proceeds when no idea is due');
 A.ok(curiosityConsulted, 'curiosity is consulted when the suggestion stands down');
+
+/* ---------- 3. the 4-way precedence: suggestion > seed > curiosity, one beat per task ---------- */
+// (SuggestStore.willSuggest() is false here — the "nothing new" state above.)
+stubSeedWill = true;
+A.eq(postRunBeat(), 'seed', 'when no idea is due but a seed is ripe, the seed takes the beat');
+A.eq(curiosityConsulted, false, 'curiosity stands down when a seed fires (never both on one task)');
+// suggestion still outranks a ripe seed
+dsFam = 0.6; bus.emit('agent.run.end', { reason: 'done', agentId: 'agent' });   // make an idea due again
+A.eq(SuggestStore.willSuggest(), true, 'an idea is due again');
+A.eq(postRunBeat(), 'suggestion', 'a due suggestion outranks a ripe seed (suggestion keeps priority)');
+A.eq(seedProposed, false, 'the seed stands down when a suggestion fires');
+stubSeedWill = false;
 
 A.report('beat-coordination.test');

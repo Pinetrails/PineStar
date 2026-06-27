@@ -18,7 +18,7 @@ global.MintStore = {
 
 let saved = [];
 global.Recipes = {
-  paramsFromTemplate: t => (/\{\w+\}/.test(t) ? [{ key: 'input', label: 'input', placeholder: '…', required: true }] : []),
+  paramsFromTemplate: t => (/\{\w+\}/.test(t) ? [{ key: 'input', label: 'Input', placeholder: '', required: true }] : []),
   draft: o => Object.assign({ name: '', emoji: '▸', tagline: '', blurb: '', accent: '#7bc88a', tags: null, params: [], task: '' }, o),
   saveCustom: r => { if (!r.name) throw new Error('a recipe needs a name'); const s = Object.assign({ id: 'custom-recipe-x', custom: true }, r); saved.push(s); return s; }
 };
