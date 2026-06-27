@@ -615,7 +615,9 @@ const World = (() => {
     self.pathPts = null; self.target = null; self.glance = null;
     if (!dest || !geo) return false;
     const cur = tileOf(self.px, self.py);
-    const p = geo.path(cur.x, cur.y, dest.x, dest.y, blocked);
+    const blockers = movementBlockers(self, blocked);
+    if (tileBlockedFor(blockers, dest.x, dest.y)) return false;
+    const p = geo.path(cur.x, cur.y, dest.x, dest.y, blockers);
     if (!p) return false;
     self.pathPts = p; self.pathIdx = 0; self.state = 'walk';
     nextWaypoint();
@@ -726,8 +728,11 @@ const World = (() => {
       if (!tileInZone(zone, x, y)) continue;                 // off-zone target — never stroll out of the body's area
       if (!geo.walkable(x, y, blocked)) continue;
       if (avoid.has(x + ',' + y)) continue;                  // don't stroll to a belt tile
-      let p = geo.path(cur.x, cur.y, x, y, avoid);           // prefer a belt-free route
-      if (!p) p = geo.path(cur.x, cur.y, x, y, blocked);     // fall back: a belt bridges the only way across
+      const avoidLive = movementBlockers(self, avoid);
+      const blockedLive = movementBlockers(self, blocked);
+      if (tileBlockedFor(blockedLive, x, y)) continue;
+      let p = geo.path(cur.x, cur.y, x, y, avoidLive);       // prefer a belt/body-free route
+      if (!p) p = geo.path(cur.x, cur.y, x, y, blockedLive); // fall back: a belt bridges the only way across
       if (p && p.length) { self.goal = null; self.pathPts = p; self.pathIdx = 0; self.state = 'walk'; nextWaypoint(); return; }
     }
     self.idleUntil = now + 800;
@@ -796,6 +801,24 @@ const World = (() => {
   // an in-place beat). When Zones is absent the wrapper returns null; treat that as "uncaged" so a
   // module load failure can never freeze the agent — true(in-zone) for every tile.
   function tileInZone(zone, tx, ty) { return (typeof Zones === 'undefined') ? true : Zones.inZone(zone, tx, ty); }
+  function movementBlockers(body, base) {
+    const s = new Set(base || []);
+    const mark = (b) => {
+      if (!b || b === body || b.unplaced) return;
+      const t = tileOf(b.px, b.py);
+      s.add(t.x + ',' + t.y);
+      if (b.target) {
+        const tt = tileOf(b.target.x, b.target.y);
+        s.add(tt.x + ',' + tt.y);
+      }
+    };
+    mark(agent);
+    for (const b of crew) mark(b);
+    return s;
+  }
+  function tileBlockedFor(blockers, tx, ty) {
+    return blockers && blockers.has(tx + ',' + ty);
+  }
 
   /* ---------- crew movement helper ----------
      A crew body walks to its assigned chair when working (stepCrewToSeat below). When NOT working it now runs the
@@ -818,7 +841,9 @@ const World = (() => {
     }
     if (!b.target) {   // plot a fresh path to the chair tile
       const cur = tileOf(b.px, b.py);
-      const p = geo.path(cur.x, cur.y, s.tx, s.ty, blocked);
+      const blockers = movementBlockers(b, blocked);
+      if (tileBlockedFor(blockers, s.tx, s.ty)) { b.state = 'idle'; b.sitting = false; return; }
+      const p = geo.path(cur.x, cur.y, s.tx, s.ty, blockers);
       if (p && p.length) { b.pathPts = p; b.pathIdx = 0; crewNextWaypoint(b); }
       else { b.px = foot.x; b.py = foot.y; b.sitting = true; b.dir = 'north'; b.state = 'idle'; return; }   // unreachable → snap into the seat
     }
