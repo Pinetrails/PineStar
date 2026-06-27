@@ -17,7 +17,7 @@ const REQUIRE_GREEN = argSet.has('--require-green');
 const REQUIRE_READY = argSet.has('--require-ready');
 const STAMP = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
 const OUT = resolve(process.env.STARNET_PHASE5_DIR || join(ROOT, '.dogfood', 'phase5-' + STAMP));
-const LATEST = join(ROOT, '.dogfood', 'phase5-latest');
+const LATEST = resolve(process.env.STARNET_PHASE5_LATEST_DIR || join(ROOT, '.dogfood', 'phase5-latest'));
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const nodeCmd = process.execPath;
 const STEP_TIMEOUT_MS = coerceTimeoutMs(process.env.STARNET_PHASE5_STEP_TIMEOUT_MS || 1200000);
@@ -452,6 +452,7 @@ async function runOnce(loop) {
 }
 
 function writeSummary(allResults, loopsRun) {
+  ensureDir(OUT);
   const latest = allResults.filter(r => r.loop === loopsRun);
   const pass = latest.filter(r => r.status === 'pass').length;
   const fail = latest.filter(r => r.status === 'fail').length;
@@ -459,13 +460,15 @@ function writeSummary(allResults, loopsRun) {
   const skipped = latest.filter(r => r.status === 'skip').length;
   const decision = readJson(phase5DecisionFile());
   const health = evidenceHealth();
-  const replacementReady = !!(decision && decision.decision === 'ready-to-replace' && health.strictReady);
   const verdict = fail ? 'red' : blocked ? 'blocked' : 'green';
+  const evidenceReplacementReady = !!(decision && decision.decision === 'ready-to-replace' && health.strictReady);
+  const replacementReady = evidenceReplacementReady && verdict === 'green';
   const json = {
     generatedAt: nowIso(),
     phase: 5,
     verdict,
     replacementReady,
+    evidenceReplacementReady,
     decision: decision && decision.decision || '',
     loopsRun,
     outDir: OUT,
@@ -551,4 +554,3 @@ console.log('[phase5] replacementReady=' + summary.replacementReady + ' decision
 if (summary.verdict === 'red') process.exit(1);
 if ((REQUIRE_GREEN || WANT_LIVE) && summary.verdict !== 'green') process.exit(2);
 if (REQUIRE_READY && !summary.replacementReady) process.exit(2);
-
