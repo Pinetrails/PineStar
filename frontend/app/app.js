@@ -961,6 +961,7 @@ const App = (() => {
     Workstreams.reset();   // a fresh General stream for the new agent
     if (typeof PitchStore !== 'undefined') PitchStore.reset();   // a brand-new hero re-earns its First Pitch (own key)
     if (typeof SuggestStore !== 'undefined') SuggestStore.reset();   // …and a fresh ongoing-suggestion cadence
+    if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
@@ -1077,6 +1078,7 @@ const App = (() => {
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
+    if (typeof SeedStore !== 'undefined') SeedStore.init();   // SELF-GROWING SEED: reset the one-offer-per-session budget
     // FIRST PITCH: once the agent has done one real task and knows enough about the Commander, it proactively
     // proposes ONE buildable thing to make next (pitch.js engine). Read-only bus citizen; self-persists its own
     // fire-once flag (no save.js change). It reasons the pitch from the LIVE system prompt (which already carries

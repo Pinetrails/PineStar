@@ -567,6 +567,9 @@ const Chat = (() => {
         // ONE post-run beat — gently — and curiosity stands down for the run (the agent never stacks an idea AND a
         // question on the same task). Shares this slot's guards (busy/interview/onboarding/intake/turn-in) for free.
         if (typeof SuggestStore !== 'undefined' && SuggestStore.willSuggest && SuggestStore.fire && SuggestStore.willSuggest()) { SuggestStore.fire(); return; }
+        // SELF-GROWING SEED (Slice 5): if a recurring pattern is ripe, the agent offers to author it as a one-tap
+        // seed — takes this one beat (after a suggestion, before curiosity) so it never stacks two asks on a task.
+        if (typeof SeedStore !== 'undefined' && SeedStore.willPropose && SeedStore.propose && SeedStore.willPropose()) { SeedStore.propose(); return; }
         if (typeof CuriosityStore === 'undefined') return;
         const dim = CuriosityStore.consider();
         if (!dim) return;
