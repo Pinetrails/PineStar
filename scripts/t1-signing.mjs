@@ -102,10 +102,10 @@ foreach ($p in $paths) {
     path = $sig.Path
     status = $sig.Status.ToString()
     statusMessage = $sig.StatusMessage
-    signerSubject = if ($cert) { $cert.Subject } else { '' }
-    signerThumbprint = if ($cert) { $cert.Thumbprint } else { '' }
-    notBefore = if ($cert) { $cert.NotBefore.ToUniversalTime().ToString('o') } else { '' }
-    notAfter = if ($cert) { $cert.NotAfter.ToUniversalTime().ToString('o') } else { '' }
+    signerSubject = $(if ($cert) { $cert.Subject } else { '' })
+    signerThumbprint = $(if ($cert) { $cert.Thumbprint } else { '' })
+    notBefore = $(if ($cert) { $cert.NotBefore.ToUniversalTime().ToString('o') } else { '' })
+    notAfter = $(if ($cert) { $cert.NotAfter.ToUniversalTime().ToString('o') } else { '' })
   }
 }
 $out | ConvertTo-Json -Depth 5
@@ -120,7 +120,20 @@ $out | ConvertTo-Json -Depth 5
   if (result.exitCode !== 0) {
     return paths.map(p => ({ path: p, status: 'CheckFailed', statusMessage: result.output.trim(), signerSubject: '', signerThumbprint: '' }));
   }
-  const parsed = JSON.parse(result.output || '[]');
+  let output = String(result.output || '');
+  output = output.replace(/^#< CLIXML\r?\n/, '');
+  const xmlAt = output.indexOf('<Objs Version=');
+  if (xmlAt >= 0) output = output.slice(0, xmlAt);
+  const start = output.search(/[\[{]/);
+  if (start < 0) {
+    return paths.map(p => ({ path: p, status: 'CheckFailed', statusMessage: result.output.trim(), signerSubject: '', signerThumbprint: '' }));
+  }
+  const jsonText = output.slice(start).trim();
+  const end = Math.max(jsonText.lastIndexOf(']'), jsonText.lastIndexOf('}'));
+  if (end < 0) {
+    return paths.map(p => ({ path: p, status: 'CheckFailed', statusMessage: result.output.trim(), signerSubject: '', signerThumbprint: '' }));
+  }
+  const parsed = JSON.parse(jsonText.slice(0, end + 1) || '[]');
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 function updaterStatus(installer) {
