@@ -111,6 +111,7 @@
     lines.push('- It MUST be buildable here: either it maps to one of the recipes below, or it is achievable with the capabilities you actually have. Never propose something you cannot deliver.');
     lines.push('- It must be specific to this Commander — tie it to what you know about their goals and world.');
     lines.push('- If you know what eats their time or the work they want gone (their pain points), aim the pitch straight at removing that — killing a real recurring chore is the most valuable thing you can build for someone.');
+    lines.push('- If you know something they keep meaning to do but never reach (their ambitions), aim instead at moving them toward THAT — the best pitch closes the gap between what drains them and what they actually want.');
     lines.push('- Name the ONE thing only they can give you to make it truly theirs (their context, taste, or a key fact). That is the gap.');
     if (recent) lines.push('- You just did this for them: "' + recent + '". Build on that if it fits.');
     if (recipes.length) {

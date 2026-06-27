@@ -118,6 +118,23 @@ const Onboarding = (() => {
           ? 'noted — that’s exactly the kind of thing i’m for. it’s on my list now.'
           : 'no? we’ll find it. the work tells on itself eventually.' },
 
+      // AMBITION — the matched PULL to pain's push: what the Commander keeps meaning to do but never reaches.
+      // Same dossier-direct write (dossierDim + build:()=>null, no .md doc). pain + ambition = the exact gap the
+      // agent exists to close, and the setup for a sharp First Pitch. Optional + skippable.
+      { dossierDim: 'ambition', optional: true,
+        prompt: 'now the other direction — what’s something you keep meaning to get to, but never find the time for?',
+        options: [
+          { label: 'A project on the back burner', value: 'Has a project they keep meaning to start but never find time for.' },
+          { label: 'Something to automate', value: 'Keeps meaning to automate a recurring task but never gets to it.' },
+          { label: 'A skill to pick up', value: 'Keeps meaning to learn or build a new skill but never finds the time.' },
+          { label: 'Skip for now', value: '', skip: true }
+        ],
+        custom: true, customLabel: 'name it in my own words', placeholder: 'the thing you’d finally get to with a hand that never clocks out…',
+        build: () => null,
+        ack: t => t
+          ? 'now that — that’s where i want to take you. noted.'
+          : 'fair. we’ll find it once we get moving.' },
+
       { field: 'manual', optional: true,
         prompt: lead ? 'last thing — any hard rules? what i should always do, or never.' : 'last thing — any rules i should hold to?',
         options: [

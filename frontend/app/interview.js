@@ -51,6 +51,16 @@
         { label: 'skip', value: '', skip: true }
       ] },
 
+    { dim: 'ambition',
+      pre: 'and the other direction —',
+      ask: 'what’s something you keep meaning to do but never find the time for?',
+      chips: [
+        { label: 'A project on the back burner', value: 'Has a project they keep meaning to start but never find time for.' },
+        { label: 'Something to automate', value: 'Keeps meaning to automate a recurring task but never gets to it.' },
+        { label: 'A skill to pick up', value: 'Keeps meaning to learn or build a new skill but never finds the time.' },
+        { label: 'skip', value: '', skip: true }
+      ] },
+
     { dim: 'style',
       pre: 'how you want me to carry myself when i work for you —',
       ask: 'terse or thorough? ask-first, or run-with-it?',

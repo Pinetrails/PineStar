@@ -11,7 +11,7 @@ const D = require('../frontend/app/dossier.js');
 /* ---------- fresh shape ---------- */
 const f = D.fresh();
 A.eq(f.v, 1, 'fresh() is v1');
-A.eq(Object.keys(f.dims).sort(), ['goals', 'identity', 'pain', 'stack', 'standing_orders', 'style'], 'fresh() has all six dimensions, each empty');
+A.eq(Object.keys(f.dims).sort(), ['ambition', 'goals', 'identity', 'pain', 'stack', 'standing_orders', 'style'], 'fresh() has all seven dimensions, each empty');
 A.eq(f.dims.identity, [], 'a fresh dimension is an empty array');
 A.eq(f.seededFrom, {}, 'fresh() has seeded nothing');
 
@@ -101,6 +101,9 @@ A.eq(D.composeBlock(cb, {}), block1, 'composeBlock is byte-identical for identic
 // the pain lead — the one hand-written, non-trivial lead — must compose so every agent SEES the Commander's pain (Slice 6)
 D.upsert(cb, 'pain', { text: 'writing standup reports by hand' }, 3);
 A.ok(D.composeBlock(cb, {}).indexOf('Pain points (what eats their time') >= 0, 'composeBlock renders the pain lead so downstream pitches see the Commander pain');
+// the ambition lead — pain's matched pull — must compose too so pitches can aim at what the Commander actually wants (Slice 7)
+D.upsert(cb, 'ambition', { text: 'launch a newsletter' }, 4);
+A.ok(D.composeBlock(cb, {}).indexOf('Ambitions (what they keep meaning to do') >= 0, 'composeBlock renders the ambition lead so downstream pitches see the Commander ambitions');
 // the cap backs off on a word boundary and never throws
 const big = D.fresh();
 for (let i = 0; i < 6; i++) D.upsert(big, 'identity', { text: 'word'.repeat(20) + ' ' + i }, i);
@@ -111,12 +114,12 @@ A.ok(capped.length <= 120, 'composeBlock honors the maxChars cap');
 const sm0 = D.summary(D.fresh(), {});
 A.eq(sm0.familiarity, 0, 'a cold dossier is 0% familiar');
 A.eq(sm0.known, [], 'a cold dossier knows no dimensions');
-A.eq(sm0.blank.length, 6, 'a cold dossier has six blank dimensions');
+A.eq(sm0.blank.length, 7, 'a cold dossier has seven blank dimensions');
 const smX = D.fresh();
 D.upsert(smX, 'identity', { text: 'a' }, 1);
 D.upsert(smX, 'stack', { text: 'b' }, 2);
 const sm = D.summary(smX, { observed: { dominant: 'code' } });
-A.eq(sm.familiarity, 2 / 6, 'familiarity = fraction of dimensions with at least one belief');
+A.eq(sm.familiarity, 2 / 7, 'familiarity = fraction of dimensions with at least one belief');
 A.eq(sm.counts.identity, 1, 'summary reports per-dimension counts');
 A.eq(sm.total, 2, 'summary totals the beliefs');
 A.eq(sm.observed.dominant, 'code', 'summary passes the observed affinity through for the panel');
