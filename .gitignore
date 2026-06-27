@@ -32,6 +32,9 @@ src-tauri/binaries/
 # visual-harness screenshot output — regenerated scratch from uishoot/uiplay/uiresidue/uisummon
 # (each run writes a SHOT_DIR with a nested _profile chrome user-data-dir). Never committed.
 .uishots*/
+.mock-shot/
+.qa_tmp/
+.tmpshot/
 .uiplay/
 .uiresidue/
 .uisummon/
