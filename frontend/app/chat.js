@@ -519,6 +519,7 @@ const Chat = (() => {
   }
   function curiosityNudge(dim) {
     if (!log) return;
+    clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');   // a quiet aside, NOT the lit headline (.reply) — it was reading as a 2nd reply
     r.body.textContent = '✦ one curious thing — i still don’t know your ' + dimLabel(dim).toLowerCase() + '. want to tell me? it sharpens how every agent here works for you.';
     autoscroll();
@@ -542,6 +543,7 @@ const Chat = (() => {
   // [{label,value,skip}]; onPick(item) fires on a choice (the choice row removes itself on pick).
   function nudge(text, options, onPick) {
     if (!log) return null;
+    clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');
     r.body.textContent = String(text == null ? '' : text);
     autoscroll();
@@ -554,6 +556,7 @@ const Chat = (() => {
     curiosityWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
+      if ((p.agentId || 'agent') !== 'agent') return;   // only the HERO's runs drive the hero-dossier beat — a summoned worker's run must not fire a curiosity/suggestion/seed nudge
       const runId = p.runId || p.id;
       setTimeout(() => {
         if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
@@ -1153,5 +1156,5 @@ const Chat = (() => {
     return () => { killed = true; };
   }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine, nudge };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine, nudge, clearNudge };
 })();

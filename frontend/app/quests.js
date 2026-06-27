@@ -32,7 +32,7 @@
 
     // 1) a waiting idea — the single most actionable thing (only ever open).
     if (input.pendingIdea) {
-      open.push({ id: 'idea', kind: 'idea', title: 'An idea is waiting', desc: 'your agent has a tailored build to suggest — open COMMS to hear it.', reward: 'a real, working build', status: 'open' });
+      open.push({ id: 'idea', kind: 'idea', title: 'An idea is waiting', desc: 'your agent has a tailored build in mind — finish a task and it’ll offer it in COMMS.', reward: 'a real, working build', status: 'open' });
     }
 
     // 2) get-to-know-you quests — one per dossier dimension.

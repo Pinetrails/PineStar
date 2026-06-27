@@ -26,7 +26,7 @@ const list = Q.build({ milestones: ms, dossierDims: dims, pendingIdea: true });
 A.eq(list[0].kind, 'idea', 'a pending idea is the first quest');
 A.eq(list[0].status, 'open', 'the idea quest is open');
 A.eq(list[0].title, 'An idea is waiting', 'the idea quest has the expected title');
-A.ok(/open COMMS/i.test(list[0].desc), 'the idea quest tells the user where to hear it');
+A.ok(/finish a task/i.test(list[0].desc) && /COMMS/i.test(list[0].desc), 'the idea quest honestly tells the user HOW to hear it (finish a task → offered in COMMS), not the misleading "open COMMS"');
 A.eq(list[0].reward, 'a real, working build', 'the idea quest pays out a real build');
 
 /* ---------- open before done ---------- */

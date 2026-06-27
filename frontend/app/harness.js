@@ -134,7 +134,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, signal, streamId, workbench, placed }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, signal, streamId, workbench, placed, internal }) {
     const key = getKey(), model = getModel(), provider = getProv();
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -176,7 +176,13 @@ const Harness = (() => {
         if (!s) continue;
         let ev; try { ev = JSON.parse(s); } catch (_) { continue; }
         const name = ev.name, payload = ev.payload || {};
-        if (typeof U !== 'undefined' && U.bus) { try { U.bus.emit(name, payload); } catch (_) {} }
+        // INTERNAL reason-only calls (the pitch/suggest self-talk) still cost real tokens — agent.cost flows through
+        // so SPEND stays honest — but must NOT register as a delivered task: drop their run.start/run.end re-emit so
+        // XP / tasksDone / FloorStats products / the quest log / the suggestion cooldown never count the agent
+        // thinking to itself (truthful-telemetry + honest-loot). The caller's own promise result is unaffected — the
+        // switch below still latches runId/endReason locally from these same events.
+        const suppressBus = internal && (name === 'agent.run.start' || name === 'agent.run.end');
+        if (!suppressBus && typeof U !== 'undefined' && U.bus) { try { U.bus.emit(name, payload); } catch (_) {} }
         switch (name) {
           // latch the LEAD's runId on the FIRST run.start only. Stage 2: a delegated worker's run.start/end/error
           // are forwarded onto THIS (the lead's) stream for the floor animation — they still reach U.bus above, but

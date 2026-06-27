@@ -962,6 +962,8 @@ const App = (() => {
     if (typeof PitchStore !== 'undefined') PitchStore.reset();   // a brand-new hero re-earns its First Pitch (own key)
     if (typeof SuggestStore !== 'undefined') SuggestStore.reset();   // …and a fresh ongoing-suggestion cadence
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
+    if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
+    if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)

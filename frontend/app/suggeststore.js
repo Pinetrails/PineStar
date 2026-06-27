@@ -60,6 +60,12 @@ const SuggestStore = (() => {
     if (state.lastFamiliarity == null && pitchDone()) {
       const fam = familiarityNow();
       if (fam != null) state.lastFamiliarity = fam;   // baseline = what it knew when it graduated
+    } else if (state.lastFamiliarity != null) {
+      // RE-FLOOR on a DROP: if familiarity fell below the baseline (e.g. a dossier dim was ADDED so the fraction
+      // shrank — 5→7 dims — or a belief was forgotten), lower the baseline to now. Otherwise a one-time denominator
+      // change could leave familiarity permanently ≤ baseline and freeze ongoing ideas forever for pre-existing saves.
+      const fam = familiarityNow();
+      if (fam != null && fam < state.lastFamiliarity) state.lastFamiliarity = fam;
     }
     save();
   }
@@ -94,7 +100,7 @@ const SuggestStore = (() => {
       const caps = deps.getCaps ? deps.getCaps() : [];
       const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '' });
       const system = deps.getSystem ? deps.getSystem() : '';
-      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [] });
+      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
       if (!parsed) { state.tasksSinceLast = 0; save(); return; }   // model hiccup → back off a full cooldown, don't hammer
 

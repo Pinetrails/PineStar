@@ -75,9 +75,10 @@ const PitchStore = (() => {
       const system = deps.getSystem ? deps.getSystem() : '';
       const name = deps.getName ? deps.getName() : 'AGENT';
 
+      if (typeof Chat !== 'undefined' && Chat.clearNudge) Chat.clearNudge();   // retire any stale gentle nudge from a prior run before the focused panel opens over it
       Dialogue.open({ name });
       await Dialogue.say('give me a second — now that i know you a little, let me think about what would actually be worth building for you…');
-      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [] });
+      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
       if (!parsed) {   // graceful: no usable pitch (model hiccup / unparseable) → say nothing, stay un-pitched so a later run can retry
         if (Dialogue.isOpen()) Dialogue.close();

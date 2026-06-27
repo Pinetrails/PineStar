@@ -6,6 +6,7 @@
 'use strict';
 const A = require('./_assert.js');
 global.Seeds = require('../frontend/app/seeds.js');
+global.Pitch = require('../frontend/app/pitch.js');   // for the loop-closure check: a saved seed becomes pitchable
 
 let cands = [{ key: 'k1', count: 4, template: 'draft notes for {input}', hasToken: true, lastText: 'draft notes for v2' }];
 let minted = [], dismissed = [], enabled = true;
@@ -20,7 +21,8 @@ let saved = [];
 global.Recipes = {
   paramsFromTemplate: t => (/\{\w+\}/.test(t) ? [{ key: 'input', label: 'Input', placeholder: '', required: true }] : []),
   draft: o => Object.assign({ name: '', emoji: '▸', tagline: '', blurb: '', accent: '#7bc88a', tags: null, params: [], task: '' }, o),
-  saveCustom: r => { if (!r.name) throw new Error('a recipe needs a name'); const s = Object.assign({ id: 'custom-recipe-x', custom: true }, r); saved.push(s); return s; }
+  saveCustom: r => { if (!r.name) throw new Error('a recipe needs a name'); const s = Object.assign({ id: 'custom-recipe-x', custom: true }, r); saved.push(s); return s; },
+  list: () => saved.map(r => ({ id: r.id, name: r.name, tagline: r.tagline }))   // the shelf the pitch/suggest engine offers from
 };
 
 const chat = { nudges: [], nudge(t, o, cb) { this.nudges.push({ t, o, cb }); } };
@@ -50,6 +52,14 @@ A.eq(saved[0].task, 'draft notes for {input}', 'the saved recipe keeps the {inpu
 A.ok(saved[0].params.some(p => p.required), 'the saved recipe has a REQUIRED gap param (Recipes derives it)');
 A.eq(minted[0], 'k1', 'the minted shape is marked so it never re-proposes');
 A.ok(notes.length >= 1, 'a confirmation toast fires');
+
+/* ---------- LOOP CLOSURE (Slice 8 #16): a SAVED seed becomes PITCHABLE — it lands on Recipes.list(), the exact
+   shelf the First Pitch / ongoing-suggestion engine offers from. usage → mint → seed → save → Recipes.list →
+   the pitch directive can now propose it. This is the self-growing-shelf promise; nothing locked it before. */
+const shelf = Recipes.list();
+A.ok(shelf.some(r => r.id === saved[0].id), 'a saved seed lands on the Recipes shelf (Recipes.list)');
+const loopDir = Pitch.buildDirective({ recipes: shelf, capabilities: [] });
+A.ok(loopDir.indexOf('recipe:' + saved[0].id) >= 0, 'the saved seed is now offerable by the pitch/suggest engine (the loop closes)');
 
 /* ---------- one offer per session (anti-nag) ---------- */
 A.eq(SeedStore.willPropose(), false, 'budget spent → no second seed offer this session');

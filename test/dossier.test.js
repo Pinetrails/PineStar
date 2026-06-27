@@ -109,6 +109,21 @@ const big = D.fresh();
 for (let i = 0; i < 6; i++) D.upsert(big, 'identity', { text: 'word'.repeat(20) + ' ' + i }, i);
 const capped = D.composeBlock(big, { maxChars: 120 });
 A.ok(capped.length <= 120, 'composeBlock honors the maxChars cap');
+// REGRESSION (Slice 8 #4/#5): all 7 dims populated at realistic lengths must NOT silently drop the pitch-critical
+// pain+ambition from the prompt at the production DEFAULT cap — the whole arc depends on the agent SEEING them.
+// (The old 800-char single tail-cut dropped the LAST dims, i.e. pain+ambition, in this exact steady-state case.)
+const seven = D.fresh();
+const longish = base => (base + ' ').repeat(20).trim();   // multi-word dim content (clipped to TEXT_CHARS by upsert)
+D.upsert(seven, 'identity', { text: longish('builds AI tooling solo, content creator') }, 1);
+D.upsert(seven, 'stack', { text: longish('typescript node rust vanilla js') }, 2);
+D.upsert(seven, 'goals', { text: longish('ship the harness to thousands') }, 3);
+D.upsert(seven, 'style', { text: longish('terse fast high signal run with it') }, 4);
+D.upsert(seven, 'standing_orders', { text: longish('cite sources never irreversible without asking') }, 5);
+D.upsert(seven, 'pain', { text: 'writing standup reports by hand every morning' }, 6);
+D.upsert(seven, 'ambition', { text: 'finally launch the newsletter' }, 7);
+const sevenBlock = D.composeBlock(seven, {});   // production DEFAULT cap (no maxChars)
+A.ok(sevenBlock.indexOf('Pain points (what eats their time') >= 0, 'composeBlock keeps the PAIN lead with all 7 dims at the default cap (no silent drop)');
+A.ok(sevenBlock.indexOf('Ambitions (what they keep meaning to do') >= 0, 'composeBlock keeps the AMBITION lead with all 7 dims at the default cap');
 
 /* ---------- summary: honest counts + fraction-of-dimensions familiarity ---------- */
 const sm0 = D.summary(D.fresh(), {});

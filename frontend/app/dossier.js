@@ -38,7 +38,12 @@
     { doc: 'manual',  dim: 'standing_orders' }   // operating-manual.md = standing rules
   ];
 
-  const BLOCK_CHARS = 800;   // default cap on the composed system-prompt block (keeps the prefix lean)
+  const BLOCK_CHARS = 1200;  // default cap on the composed system-prompt block. Sized for all 7 dims at realistic
+                             // belief lengths (was 800 for ~5 dims, which silently dropped the last dims, incl. the
+                             // pitch-critical pain+ambition); the sidecar tolerates up to 4096.
+  // compose order for the SYSTEM-PROMPT block (distinct from the DIMS panel/render order): highest-signal dims
+  // first, so if the cap ever forces a trim the bulky doc-seeded dims yield BEFORE goals/pain/ambition.
+  const COMPOSE_ORDER = ['goals', 'pain', 'ambition', 'identity', 'stack', 'style', 'standing_orders'];
   const TEXT_CHARS = 280;    // a single belief is capped (mirrors the §5.2 memory-record content cap)
 
   function isKey(k) { return DIM_KEYS.indexOf(k) >= 0; }
@@ -130,14 +135,22 @@
   function composeBlock(dossier, opts) {
     opts = opts || {};
     const cap = Number.isFinite(opts.maxChars) ? opts.maxChars : BLOCK_CHARS;
-    const lines = [];
-    for (const d of DIMS) {
-      const bs = beliefs(dossier, d.key);
-      if (!bs.length) continue;
-      lines.push('- ' + d.lead + ': ' + bs.map(b => b.text).join('; '));
-    }
-    if (!lines.length) return '';
-    let body = 'WHAT YOU KNOW ABOUT YOUR COMMANDER (the station has learned this — honor it; if anything here is wrong, the Commander will correct it):\n' + lines.join('\n');
+    // known dims in compose-PRIORITY order (pitch-critical first) so a trim never silently loses the keystone dims.
+    const known = COMPOSE_ORDER.map(k => DIMS.find(d => d.key === k)).filter(d => d && beliefs(dossier, d.key).length);
+    if (!known.length) return '';
+    const head = 'WHAT YOU KNOW ABOUT YOUR COMMANDER (the station has learned this — honor it; if anything here is wrong, the Commander will correct it):';
+    const lineOf = d => '- ' + d.lead + ': ' + beliefs(dossier, d.key).map(b => b.text).join('; ');
+    let body = head + '\n' + known.map(lineOf).join('\n');
+    if (body.length <= cap) return body;   // fast path: everything fits (the common case)
+    // OVER BUDGET: give every KNOWN dim a fair share so a bulky doc-seeded dim can't crowd out a later one. (A single
+    // tail-cut used to drop pain+ambition — the two dims the whole arc exists to use — entirely + silently.) Each dim
+    // keeps its lead + as many beliefs as its share allows; so every known dim stays represented in the prompt.
+    const share = Math.max(0, Math.floor((cap - head.length - known.length) / known.length));
+    body = head + '\n' + known.map(d => {
+      const ln = lineOf(d);
+      return ln.length > share ? ln.slice(0, Math.max(0, share - 1)).replace(/\s+\S*$/, '') + '…' : ln;
+    }).join('\n');
+    // last-resort hard guarantee for a pathologically small cap (e.g. a test cap below the header length).
     if (body.length > cap) body = body.slice(0, cap - 1).replace(/\s+\S*$/, '') + '…';
     return body;
   }
