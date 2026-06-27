@@ -25,6 +25,9 @@ const list = Q.build({ milestones: ms, dossierDims: dims, pendingIdea: true });
 /* ---------- the idea is the first, most-actionable quest ---------- */
 A.eq(list[0].kind, 'idea', 'a pending idea is the first quest');
 A.eq(list[0].status, 'open', 'the idea quest is open');
+A.eq(list[0].title, 'An idea is waiting', 'the idea quest has the expected title');
+A.ok(/open COMMS/i.test(list[0].desc), 'the idea quest tells the user where to hear it');
+A.eq(list[0].reward, 'a real, working build', 'the idea quest pays out a real build');
 
 /* ---------- open before done ---------- */
 const statuses = list.map(q => q.status);
@@ -57,9 +60,10 @@ A.eq(sum.open, 3, 'three open quests (idea + stack + pack_rat)');
 A.eq(sum.done, 3, 'three done quests (identity + goals + first_light)');
 
 /* ---------- malformed entries are skipped, never crash; a key-only dim falls back to the key ---------- */
-const malformed = Q.build({ milestones: [null, { id: '' }], dossierDims: [{ key: 'x' }, null, {}] });
-A.eq(malformed.length, 1, 'null/empty entries are skipped; only the key-only dim yields a quest');
+const malformed = Q.build({ milestones: [null, { id: '' }], dossierDims: [{ key: 'x' }, null, {}, { key: null, label: 'Name' }] });
+A.eq(malformed.length, 1, 'null/empty/keyless entries are skipped; only the valid-key dim yields a quest');
 A.eq(malformed[0].id, 'dim:x', 'a dim with a key but no label still makes a quest (key as the label)');
+A.ok(!malformed.some(q => q.id === 'dim:null'), 'a dim with a null key never produces a dim:null quest');
 
 /* ---------- deterministic ---------- */
 A.eq(JSON.stringify(Q.build({ milestones: ms, dossierDims: dims, pendingIdea: true })), JSON.stringify(list), 'build is deterministic for the same input');

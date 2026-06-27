@@ -1881,7 +1881,7 @@ const StationUI = (() => {
       : '';
     body.innerHTML = '<div class="gx">'
       + meterHtml
-      + '<div class="sub" style="margin:4px 0 10px;opacity:.72;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
+      + '<div class="dim" style="margin:4px 0 10px;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
       + '<div class="gx-tros">' + (open.map(tro).join('') || '<p class="dim">all caught up.</p>') + '</div>'
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'

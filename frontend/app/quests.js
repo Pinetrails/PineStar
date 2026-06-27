@@ -37,7 +37,8 @@
 
     // 2) get-to-know-you quests — one per dossier dimension.
     for (const d of dims) {
-      const label = String((d && d.label) || (d && d.key) || '').trim();
+      if (!d || !d.key) continue;   // a dimension needs a real key — no key, no quest (never a 'dim:null')
+      const label = String(d.label || d.key).trim();
       if (!label) continue;
       const q = { id: 'dim:' + d.key, kind: 'dossier', title: 'Tell the station your ' + label.toLowerCase(), desc: 'every agent on the station will know this about you.', reward: 'sharper, personalized agents', status: d.known ? 'done' : 'open' };
       (d.known ? done : open).push(q);
@@ -58,7 +59,7 @@
     const arr = Array.isArray(list) ? list : [];
     let open = 0, done = 0;
     for (const q of arr) { if (q && q.status === 'done') done++; else if (q) open++; }
-    return { open, done, total: arr.length };
+    return { open, done, total: open + done };   // total counts only real quests, so open + done === total always holds
   }
 
   return { build, summary };
