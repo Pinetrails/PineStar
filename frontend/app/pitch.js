@@ -160,15 +160,24 @@
     ];
   }
 
+  // normalize an LLM-produced title into a clean sentence fragment: trim it, drop any trailing ASCII period(s)
+  // the model tacked on, then end with exactly ONE full stop — UNLESS the title already ends in deliberate terminal
+  // punctuation (? ! …), which we keep. This is the one tested home for the "title + period" join so neither the
+  // First Pitch beat nor the ongoing-suggestion nudge can ever double-punctuate ("build a dashboard..").
+  function titleSentence(t) {
+    const s = String(t == null ? '' : t).trim().replace(/\.+$/, '');
+    return s + (/[.!?…]$/.test(s) ? '' : '.');
+  }
+
   // the spoken pitch line, in the awakening's wry-genius lowercase voice — the famous beat lives here so it has one
   // tested home. Composes only from the parsed fields; omits the gap clause cleanly when the agent gave none.
   function present(parsed) {
     if (!parsed || !parsed.title) return '';
-    let s = 'i think i know what we should build first — ' + parsed.title + '.';
+    let s = 'i think i know what we should build first — ' + titleSentence(parsed.title);
     if (parsed.why) s += ' ' + parsed.why;
     if (parsed.gap) s += ' the one thing i need from you to make it yours: ' + parsed.gap;
     return s;
   }
 
-  return { fresh, shouldPitch, shouldSuggest, buildDirective, parsePitch, choices, present, REQUIRE_DIMS, MIN_KNOWN, MAX_RECIPES, SUGGEST_MIN_GAP, SUGGEST_SESSION_CAP };
+  return { fresh, shouldPitch, shouldSuggest, buildDirective, parsePitch, choices, present, titleSentence, REQUIRE_DIMS, MIN_KNOWN, MAX_RECIPES, SUGGEST_MIN_GAP, SUGGEST_SESSION_CAP };
 });

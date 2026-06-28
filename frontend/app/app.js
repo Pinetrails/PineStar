@@ -1092,7 +1092,12 @@ const App = (() => {
       getSystem: () => agent ? agent.systemPrompt : '',
       getName: () => agent ? agent.name : 'AGENT',
       getCaps: () => ((typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps('agent') : []).map(c => (typeof c === 'string' ? { id: c, label: c } : c)),
-      getRecentTask: () => { const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
+      // was the run that just ended a REAL task (tools available), not casual chat? Chat's run-meta ledger records
+      // this at run start (the bus run.end payload doesn't carry it). Gates the First Pitch on earned work.
+      wasTaskRun: (runId) => { const m = (typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; return !!(m && m.isTask); },
+      // the title of the run that just finished — prefer the ENDED run's recorded title (so a mid-run stream switch
+      // can't mislabel it), falling back to the active workstream when the runId is unknown (e.g. a direct call).
+      getRecentTask: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) return m.title; const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
       launchRecipe: launchRecipe,
       launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('First build') : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
     };

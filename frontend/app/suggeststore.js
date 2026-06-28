@@ -106,7 +106,7 @@ const SuggestStore = (() => {
 
       const why = parsed.why ? (' ' + parsed.why) : '';
       const gap = parsed.gap ? (' i’d need one thing from you: ' + parsed.gap) : '';
-      const line = '✦ a fresh idea — ' + parsed.title + '.' + why + gap;
+      const line = '✦ a fresh idea — ' + Pitch.titleSentence(parsed.title) + why + gap;   // shared title→sentence join (no double period)
       Chat.nudge(line, [{ label: 'let’s build it', value: 'build' }, { label: 'not now', value: 'no', skip: true }], choice => {
         if (choice && choice.value === 'build') doBuild(parsed);
       });

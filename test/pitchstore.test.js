@@ -57,13 +57,13 @@ global.Dialogue = dlg;
 const hn = { calls: [], next: { text: '' }, chat(args) { this.calls.push(args); return Promise.resolve(this.next); } };
 global.Harness = hn;
 
-let launchedRecipe = null, launchedDirective = null;
+let launchedRecipe = null, launchedDirective = null, recentTaskArg = '__unset__';
 const SYSTEM = 'SYSTEM PROMPT\nWHAT YOU KNOW ABOUT YOUR COMMANDER: goals — ship the dossier.';
 const deps = {
   getSystem: () => SYSTEM,
   getName: () => 'NOVA',
   getCaps: () => [{ id: 'computer', label: 'run code' }],
-  getRecentTask: () => 'wrote a hello file',
+  getRecentTask: (runId) => { recentTaskArg = runId; return 'wrote a hello file'; },   // capture the runId fire() threads in (#18)
   launchRecipe: (r) => { launchedRecipe = r; },
   launchDirective: (t) => { launchedDirective = t; }
 };
@@ -106,6 +106,13 @@ const _ds = global.DossierStore;
 global.DossierStore = undefined;
 A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: false, reason: 'missing:goals' }, 'no dossier yet → stays quiet (missing goals), never throws');
 global.DossierStore = _ds;
+
+/* ---------- the not-task gate (#17): only a REAL task graduates the agent, never casual chat ---------- */
+deps.wasTaskRun = (runId) => runId === 'task-run';   // app.js injects this, backed by Chat's run-meta ledger
+A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent', runId: 'chat-run' }), { go: false, reason: 'not-task' }, 'a casual chat run (not a task) never fires the First Pitch');
+A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent', runId: 'task-run' }), { go: true, reason: 'ready' }, 'a genuine task run passes the gate');
+delete deps.wasTaskRun;   // restore back-compat (dep absent → check skipped) so the fire-path tests below are unaffected
+A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: true, reason: 'ready' }, 'with no wasTaskRun dep wired the gate is skipped (back-compat)');
 
 (async () => {
   try {
@@ -189,9 +196,11 @@ global.DossierStore = _ds;
     clearFakes(); PitchStore.reset();
     hn.next = { text: 'PITCH: y\nBUILD: workflow' };
     dlg.nextChoice = { value: 'other' };
-    bus.emit('agent.run.end', { reason: 'done', agentId: 'agent' });
+    recentTaskArg = '__unset__';
+    bus.emit('agent.run.end', { reason: 'done', agentId: 'agent', runId: 'R-42' });
     await tick(10);
     A.eq(hn.calls.length, 1, 'emitting agent.run.end actually runs the pitch (onRunEnd → fire)');
+    A.eq(recentTaskArg, 'R-42', 'fire() threads the ENDED run\'s runId into getRecentTask (#18 — names the right run, not the displayed stream)');
 
     clearFakes(); PitchStore.reset();
     dlg._open = true;   // an open Dialogue must block a real emit, not just a direct decide()

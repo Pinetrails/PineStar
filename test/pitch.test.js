@@ -80,6 +80,19 @@ A.ok(P.present({ title: 'x' }).indexOf('the one thing i need') < 0, 'present() o
 A.eq(P.present(null), '', 'present(null) → empty string');
 A.eq(P.present({ title: '' }), '', 'present() of a titleless pitch → empty string');
 
+/* ---------- titleSentence(): the shared title→sentence join (no double-period) ---------- */
+A.eq(P.titleSentence('build a dashboard'), 'build a dashboard.', 'a bare title gets exactly one full stop');
+A.eq(P.titleSentence('build a dashboard.'), 'build a dashboard.', 'a model-supplied trailing period does NOT double up');
+A.eq(P.titleSentence('build a dashboard...'), 'build a dashboard.', 'trailing dots collapse to a single full stop');
+A.eq(P.titleSentence('  spaced out  '), 'spaced out.', 'the title is trimmed before the stop');
+A.eq(P.titleSentence('a watcher, really?'), 'a watcher, really?', 'a deliberate question mark is preserved (no period appended)');
+A.eq(P.titleSentence('do it now!'), 'do it now!', 'a deliberate exclamation is preserved');
+A.eq(P.titleSentence('wait…'), 'wait…', 'a real ellipsis is preserved');
+// present() routes through titleSentence — a period-terminated pitch never renders ".."
+const dot = P.present({ title: 'a daily standup note.' });
+A.ok(dot.indexOf('..') < 0, 'present() never double-punctuates when the model ends the title with a period');
+A.ok(dot.indexOf('a daily standup note.') >= 0, 'present() keeps the single clean full stop');
+
 /* ---------- end-to-end: a reply to the real directive parses into an offered recipe ---------- */
 const reply = 'PITCH: a morning brief on your project\nWHY: matches your goal\nBUILD: recipe:morning-brief\nGAP: the topic to watch';
 const parsed = P.parsePitch(reply);

@@ -2,7 +2,9 @@
    quests — without inventing anything. It is a read PROJECTION over three real sources:
      • xp.js MILESTONES   — real achievements (tasks shipped, memories reused…); earned = a done quest.
      • the Commander dossier — each still-blank dimension is a "get to know you" quest; known = done.
-     • a pending agent idea  — the First Pitch / an ongoing suggestion waiting = one actionable quest.
+     • a pending agent idea  — an ONGOING suggestion currently waiting in COMMS = one actionable quest. (The one-time
+       First Pitch is NOT surfaced here: it fires the instant it's earned — it never sits "waiting" — so it has no
+       quest-log state. Only the recurring SuggestStore.willSuggest cadence produces a waiting idea.)
 
    THE LAW (inherited from xp.js): every quest cashes out in a REAL capability or outcome — never a fake XP
    currency — and the log NEVER gates anything. It reveals the order of progress; it does not withhold. So an
@@ -22,7 +24,8 @@
   // build the ordered quest list. input:
   //   milestones  — Xp.milestones(stats) → [{ id, label, hint, earned }]
   //   dossierDims — [{ key, label, known }] (the store joins Dossier.DIMS with DossierStore.summary())
-  //   pendingIdea — true when the agent has a tailored build waiting (SuggestStore.willSuggest() / a First Pitch due)
+  //   pendingIdea — true when an ONGOING suggestion is due (SuggestStore.willSuggest()). The First Pitch is excluded
+  //                 on purpose: it fires immediately on graduation, so it's never a "waiting" log entry.
   // OPEN quests (actionable now) come first, then DONE (the trophy shelf). Each quest names its REAL reward.
   function build(input) {
     input = input || {};

@@ -52,6 +52,11 @@ const PitchStore = (() => {
     p = p || {};
     if (p.reason !== 'done') return { go: false, reason: 'not-done' };          // only a cleanly completed task graduates
     if ((p.agentId || 'agent') !== 'agent') return { go: false, reason: 'not-hero' };   // summoned crew never pitch
+    // GRADUATION IS EARNED BY REAL WORK, NOT CHATTER. The agent.run.end payload carries no isTask flag, so app.js
+    // injects wasTaskRun(runId) (backed by Chat's run-meta ledger). Only a genuine TASK (tools available) graduates
+    // the agent from order-taker to advisor — a casual question/answer never triggers the First Pitch. (Back-compat:
+    // when the dep is absent — e.g. the pure decide() unit test — the check is skipped and prior behavior holds.)
+    if (deps.wasTaskRun && !deps.wasTaskRun(p.runId)) return { go: false, reason: 'not-task' };
     if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return { go: false, reason: 'onboarding' };
     if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return { go: false, reason: 'intake' };
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return { go: false, reason: 'dialogue-open' };   // never stomp the awakening/tutorial panel
@@ -60,10 +65,12 @@ const PitchStore = (() => {
     return Pitch.shouldPitch({ firstTaskDone: true, alreadyPitched: state.pitched, knownDims: known });
   }
 
-  function onRunEnd(p) { if (decide(p).go) fire(); }
+  function onRunEnd(p) { if (decide(p).go) fire(p); }
 
-  // run the directive → parse → present the beat → route the choice. Awaitable so the test can drive it.
-  async function fire() {
+  // run the directive → parse → present the beat → route the choice. Awaitable so the test can drive it. `p` is the
+  // triggering agent.run.end payload; its runId lets getRecentTask name the run that ACTUALLY just finished (not
+  // whatever workstream happens to be on screen — they differ if the Commander switched streams mid-run).
+  async function fire(p) {
     if (firing || !ready()) return;
     if (typeof Harness === 'undefined' || !Harness.chat || typeof Dialogue === 'undefined') return;
     firing = true;
@@ -71,7 +78,7 @@ const PitchStore = (() => {
       const recipes = (typeof Recipes !== 'undefined' && Recipes.list)
         ? Recipes.list().map(r => ({ id: r.id, name: r.name, tagline: r.tagline })) : [];
       const caps = deps.getCaps ? deps.getCaps() : [];
-      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '' });
+      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask(p && p.runId) : '' });
       const system = deps.getSystem ? deps.getSystem() : '';
       const name = deps.getName ? deps.getName() : 'AGENT';
 

@@ -46,6 +46,10 @@ const Chat = (() => {
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
+  const RUN_META = new Map();   // runId -> { isTask, title } recorded at run START. The bus agent.run.end payload
+                                // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
+                                // read this to tell a real TASK from casual chat AND to name the run that actually just
+                                // finished. Capped FIFO so a long session can't leak runIds.
   const el = id => document.getElementById(id);
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
@@ -944,7 +948,7 @@ const Chat = (() => {
       const { text: reply, error, endReason } = await Harness.chat({
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
-        onRunId: id => { Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
@@ -1156,5 +1160,9 @@ const Chat = (() => {
     return () => { killed = true; };
   }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine, nudge, clearNudge };
+  // read-only lookup of a run's start-time metadata ({ isTask, title }) by runId, or null. Used by the proactive
+  // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
+  function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
+
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine, nudge, clearNudge, runMeta };
 })();
