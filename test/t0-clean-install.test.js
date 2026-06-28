@@ -27,8 +27,14 @@ function proof(hash, bytes, overrides) {
     machineKind: 'windows-sandbox',
     cleanMachine: true,
     installer: { sha256: hash, bytes },
-    install: { succeeded: true, method: 'manual' },
-    launch: { succeeded: true, observedWindowTitle: 'StarNet' },
+    install: { succeeded: true, method: 'manual', installLocation: 'C:\\Users\\WDAGUtilityAccount\\AppData\\Local\\Programs\\StarNet' },
+    launch: {
+      succeeded: true,
+      observedWindowTitle: 'StarNet',
+      exePath: 'C:\\Users\\WDAGUtilityAccount\\AppData\\Local\\Programs\\StarNet\\skynet-desktop.exe',
+      startupRoot: 'C:\\Users\\WDAGUtilityAccount\\AppData\\Local\\Programs\\StarNet',
+      workspaceRoot: 'C:\\Users\\WDAGUtilityAccount\\AppData\\Roaming\\ai.skynet.harness\\workspaces'
+    },
     notes: []
   }, overrides || {});
 }
@@ -105,6 +111,31 @@ try {
     const status = JSON.parse(fs.readFileSync(path.join(out, 't0-clean-install-status.json'), 'utf8'));
     assert.equal(status.verdict, 'red');
     assert.equal(status.nextAction.id, 't0.3-matching-clean-machine-evidence');
+  }
+
+  {
+    const evidence = path.join(tmp, 'smoke-proof.json');
+    fs.writeFileSync(evidence, JSON.stringify(proof(hash, bytes, {
+      install: { succeeded: true, method: 'manual', installLocation: 'C:\\Users\\andro\\AppData\\Local\\Programs\\StarNetT4UpdateSmoke-20260628-065002' },
+      launch: {
+        succeeded: true,
+        observedWindowTitle: 'StarNet',
+        exePath: 'C:\\Users\\andro\\AppData\\Local\\Programs\\StarNetT4UpdateSmoke-20260628-065002\\skynet-desktop.exe',
+        startupRoot: 'C:\\Users\\andro\\AppData\\Local\\Programs\\StarNetT4UpdateSmoke-20260628-065002',
+        workspaceRoot: 'C:\\Users\\andro\\AppData\\Local\\Programs\\StarNetT4UpdateSmoke-20260628-065002\\sidecar\\workspaces'
+      }
+    }), null, 2));
+    const out = path.join(tmp, 'smoke-red-out');
+    const res = run(['--evidence=' + evidence], {
+      STARNET_T0_INSTALLER_EXE: installer,
+      STARNET_T0_CLEAN_INSTALL_DIR: out,
+      STARNET_T0_CLEAN_INSTALL_LATEST_DIR: path.join(tmp, 'smoke-red-latest'),
+      STARNET_T0_CLEAN_SURFACE_MOCK: surfaceYes
+    });
+    assert.equal(res.status, 1, res.stderr || res.stdout);
+    const status = JSON.parse(fs.readFileSync(path.join(out, 't0-clean-install-status.json'), 'utf8'));
+    assert.equal(status.verdict, 'red');
+    assert.match(status.failures.join('\n'), /smoke-test install path|installation directory/);
   }
 
   {

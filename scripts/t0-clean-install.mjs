@@ -129,6 +129,23 @@ function parseEvidence(file) {
 function evidenceBool(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
 }
+function evidenceString(value) {
+  return String(value == null ? '' : value).trim().replace(/^"+|"+$/g, '');
+}
+function normPath(value) {
+  return evidenceString(value).replace(/\//g, '\\').replace(/\\+$/g, '').toLowerCase();
+}
+function isSubPath(child, parent) {
+  const c = normPath(child);
+  const p = normPath(parent);
+  return !!c && !!p && (c === p || c.startsWith(p + '\\'));
+}
+function hasSmokeInstallMarker(value) {
+  return /starnett\d[^\\\/]*smoke/i.test(evidenceString(value));
+}
+function isWindowsAppDataPath(value) {
+  return /[\\\/]appdata[\\\/](local|roaming)[\\\/]/i.test(evidenceString(value));
+}
 function validateEvidence(parsed, installerInfo) {
   const errors = parsed.errors.slice();
   const doc = parsed.doc || {};
@@ -143,6 +160,23 @@ function validateEvidence(parsed, installerInfo) {
   if (installerInfo && Number(installer.bytes || 0) && Number(installer.bytes) !== installerInfo.bytes) errors.push('Evidence installer.bytes does not match the current NSIS installer.');
   if (!evidenceBool(doc.install && doc.install.succeeded)) errors.push('Evidence install.succeeded must be true.');
   if (!evidenceBool(doc.launch && doc.launch.succeeded)) errors.push('Evidence launch.succeeded must be true.');
+  const installLocation = evidenceString(doc.install && doc.install.installLocation);
+  const exePath = evidenceString(doc.launch && doc.launch.exePath);
+  const workspaceRoot = evidenceString(doc.launch && (doc.launch.workspaceRoot || doc.launch.workspaces));
+  if (!installLocation) errors.push('Evidence install.installLocation is missing.');
+  if (!exePath) errors.push('Evidence launch.exePath is missing.');
+  if (!workspaceRoot) errors.push('Evidence launch.workspaceRoot is missing.');
+  const hygienePaths = [
+    ['install.installLocation', installLocation],
+    ['launch.exePath', exePath],
+    ['launch.workspaceRoot', workspaceRoot],
+    ['launch.startupRoot', doc.launch && doc.launch.startupRoot],
+    ['launch.resourceDir', doc.launch && doc.launch.resourceDir]
+  ].map(([label, value]) => [label, evidenceString(value)]).filter(([, value]) => value);
+  const smokePath = hygienePaths.find(([, value]) => hasSmokeInstallMarker(value));
+  if (smokePath) errors.push('Evidence points at a StarNet smoke-test install path: ' + smokePath[0] + '.');
+  if (installLocation && workspaceRoot && isSubPath(workspaceRoot, installLocation)) errors.push('Evidence launch.workspaceRoot must not live under the installation directory.');
+  if (workspaceRoot && !isWindowsAppDataPath(workspaceRoot)) errors.push('Evidence launch.workspaceRoot must live under Windows AppData.');
   const proof = {
     schema: doc.schema || '',
     generatedAt: doc.generatedAt || '',
@@ -152,6 +186,13 @@ function validateEvidence(parsed, installerInfo) {
     installer: doc.installer || {},
     install: doc.install || {},
     launch: doc.launch || {},
+    installHygiene: {
+      installLocation,
+      exePath,
+      workspaceRoot,
+      workspaceInsideInstall: !!(installLocation && workspaceRoot && isSubPath(workspaceRoot, installLocation)),
+      smokeInstallPath: smokePath ? { field: smokePath[0], path: smokePath[1] } : null
+    },
     notes: Array.isArray(doc.notes) ? doc.notes : []
   };
   return { ready: errors.length === 0, errors, proof };

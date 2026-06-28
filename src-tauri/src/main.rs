@@ -31,6 +31,7 @@ struct AppState {
     ipc_token: String,
     api_token: String,
     root: PathBuf,
+    workspaces: PathBuf,
     startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
 }
@@ -124,6 +125,19 @@ fn startup_log_path(app: &tauri::AppHandle) -> Option<PathBuf> {
         let _ = std::fs::create_dir_all(&dir);
         dir.join("startup.log")
     })
+}
+
+fn workspace_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .map(|dir| strip_verbatim(&dir).join("workspaces"))
+        .unwrap_or_else(|_| {
+            let base = std::env::var_os("LOCALAPPDATA")
+                .or_else(|| std::env::var_os("APPDATA"))
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."));
+            base.join("ai.skynet.harness").join("workspaces")
+        })
 }
 
 fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
@@ -239,6 +253,8 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         .env("SKYNET_PORT", state.port.to_string())
         .env("SKYNET_IPC_TOKEN", &state.ipc_token)
         .env("SKYNET_API_TOKEN", &state.api_token)
+        .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
+        .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
         .current_dir(&state.root);
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
@@ -518,13 +534,16 @@ fn main() {
             // into the bundled webview below, so the desktop UI never has to fetch the token over an open route.
             let api_token = uuid::Uuid::new_v4().to_string();
             let startup_log = startup_log_path(app.handle());
+            let workspaces = workspace_path(app.handle());
+            let _ = std::fs::create_dir_all(&workspaces);
             log_startup(
                 &startup_log,
                 format!(
-                    "startup exe={:?} resource_dir={:?} root={} port={}",
+                    "startup exe={:?} resource_dir={:?} root={} workspaces={} port={}",
                     std::env::current_exe(),
                     app.path().resource_dir(),
                     root.display(),
+                    workspaces.display(),
                     port
                 ),
             );
@@ -533,6 +552,7 @@ fn main() {
                 ipc_token,
                 api_token: api_token.clone(),
                 root,
+                workspaces,
                 startup_log,
                 sidecar: Mutex::new(None),
             };
