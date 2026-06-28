@@ -45,6 +45,8 @@ const Chat = (() => {
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
+  let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
+  const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const RUN_META = new Map();   // runId -> { isTask, title } recorded at run START. The bus agent.run.end payload
                                 // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
@@ -156,7 +158,7 @@ const Chat = (() => {
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
-    proposalRunsSeen.clear(); wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
+    proposalRunsSeen.clear(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
@@ -209,6 +211,7 @@ const Chat = (() => {
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
+    activeTurnin = null; turninQueue.length = 0;   // the visible review deck belongs to the current COMMS DOM
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
     if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
     if (log) log.innerHTML = '';
@@ -426,28 +429,72 @@ const Chat = (() => {
   function proposalCard(batch, ws) {
     if (!batch || !batch.proposals || !batch.proposals.length) return;
     clearNudge();   // ONE post-run beat at a time: the turn-in owns the moment, so retire any curiosity nudge that beat it here
+    if (activeTurnin && (!activeTurnin.node || !activeTurnin.node.isConnected)) activeTurnin = null;
+    if (activeTurnin) {
+      turninQueue.push(batch);
+      updateTurninQueueNote();
+      autoscroll();
+      return;
+    }
+    renderTurninBatch(batch);
+  }
+
+  function updateTurninQueueNote() {
+    if (!activeTurnin || !activeTurnin.queueNote) return;
+    const waiting = turninQueue.length;
+    activeTurnin.queueNote.textContent = waiting ? waiting + ' more review ' + (waiting > 1 ? 'batches' : 'batch') + ' waiting' : '';
+    activeTurnin.queueNote.hidden = !waiting;
+  }
+
+  function showNextTurnin() {
+    if (activeTurnin) return;
+    const next = turninQueue.shift();
+    if (next) renderTurninBatch(next);
+  }
+
+  function renderTurninBatch(batch) {
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin');
     const n = batch.proposals.length;
-    head.body.appendChild(document.createTextNode('◈ ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — keep ' + (n > 1 ? 'them' : 'it') + '?'));
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    const queueNote = document.createElement('span'); queueNote.className = 'turnin-queue'; queueNote.hidden = true;
+    const slot = document.createElement('span'); slot.className = 'turnin-slot';
+    head.body.appendChild(title);
+    head.body.appendChild(queueNote);
+    head.body.appendChild(slot);
 
-    let remaining = n;
-    // a card is settled → it fades out; when the last one goes, the whole header retires with it (no empty husk).
-    function onItemGone() { if (--remaining <= 0) vanish(head.d); }
+    const state = { node: head.d, queueNote, index: 0 };
+    activeTurnin = state;
+    updateTurninQueueNote();
 
-    for (const prop of batch.proposals) {
+    function finishBatch() {
+      activeTurnin = null;
+      vanish(head.d, showNextTurnin);
+    }
+    function updateTitle() {
+      title.textContent = '◈ ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — review ' + (state.index + 1) + ' of ' + n;
+    }
+    function renderCurrent() {
+      const prop = batch.proposals[state.index];
+      if (!prop) { finishBatch(); return; }
+      updateTitle();
+      slot.innerHTML = '';
       const item = document.createElement('div'); item.className = 'turnin-item';
       const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = KIND_TAG[prop.kind] || 'NOTE';
       const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = prop.content;
       const btns = document.createElement('span'); btns.className = 'consent-btns';
       item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
-      head.body.appendChild(item);
+      slot.appendChild(item);
 
       let decided = false;
       function settle(label, isDeny) {
         decided = true; btns.remove();
         const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
         item.appendChild(tag);
-        setTimeout(() => vanish(item, onItemGone), 600);   // flash the verdict, then the card retires for good — vanish entirely
+        setTimeout(() => vanish(item, () => {
+          state.index += 1;
+          if (state.index >= n) finishBatch();
+          else { renderCurrent(); autoscroll(); }
+        }), 600);   // flash the verdict, then advance the deck instead of stacking more cards
       }
       async function submit(verdict, content, label, isDeny) {
         if (decided) return; decided = true;
@@ -478,6 +525,7 @@ const Chat = (() => {
       }
       renderChoices();
     }
+    renderCurrent();
     autoscroll();   // the inline card IS the prompt — no extra toast (it just doubled the noise the card already shows)
   }
 
