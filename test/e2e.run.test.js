@@ -102,6 +102,12 @@ function boot(port, env, attemptsLeft) {
     const ends = events.filter(e => e.name === 'agent.run.end');
     A.eq(ends.length, 1, 'exactly one agent.run.end');
     A.eq(ends[0].payload.reason, 'done', 'the run completes with reason done');
+    const firstReq = mock.requests[0] || {};
+    const firstSystem = (((firstReq.messages || [])[0] || {}).content) || '';
+    A.ok(firstSystem.indexOf('[RUNTIME]') >= 0, 'runtime identity block reaches the provider system prompt');
+    A.ok(firstSystem.indexOf('Provider: openrouter') >= 0, 'runtime block names the selected provider');
+    A.ok(firstSystem.indexOf('Requested model at run start: test/model') >= 0, 'runtime block names the requested model');
+    A.ok(firstSystem.indexOf('If the Commander asks what model') >= 0, 'runtime block tells the agent to answer model/provider questions from host state');
 
     // H1.1: the run's full dialogue was persisted to the durable transcript (not just title+final) — fetch it back.
     const tr = await (await fetch(B + '/api/transcript?stream=global&agent=e2e&limit=20', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();

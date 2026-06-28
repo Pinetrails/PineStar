@@ -51,6 +51,7 @@ const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
 const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
+const { runtimeIdentityBlock } = require('./runtimeinfo.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
@@ -1864,6 +1865,7 @@ async function handleRun(req, res) {
 async function runOnce(o) {
   const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
   const usingCodex = (o.provider === 'codex' || o.provider === 'openai-codex');
+  const providerId = usingCodex ? 'codex' : 'openrouter';
   let model = String((o && o.model) || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
@@ -2163,7 +2165,8 @@ async function runOnce(o) {
   // only (same gate as capsummary — a Commander is present to help and the build UI exists). Sits right
   // BEFORE the authoritative <capabilities_ground_truth>, which it defers to, so the two never disagree.
   const manualBlock = (surface === 'interactive') ? starnetManual() : '';
-  const sys = (system || '') + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  const runtimeBlock = runtimeIdentityBlock({ provider: providerId, model, agentId, runId, surface, trigger, fallbackModels });
+  const sys = (system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
