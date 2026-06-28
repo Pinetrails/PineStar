@@ -5,6 +5,7 @@
 
 const Save = (() => {
   const KEY = 'starnet.save';
+  const PRE_MIGRATE_BACKUP_KEY = 'starnet.save.pre-migrate.backup';
   const LEGACY_SCHEMA = 'skynet.save';   // Skynet→StarNet rename: saves written before the rename carry this schema tag (the
   const SCHEMA = 'starnet.save';         // legacymigrate boot pass copies the OLD `skynet.save` localStorage KEY forward; load() still accepts the old TAG inside the value).
   const CURRENT = 5;
@@ -53,12 +54,21 @@ const Save = (() => {
     return doc;
   }
 
+  function backupBeforeMigrate(raw, doc) {
+    try {
+      const v = Number(doc && doc.version || 0);
+      if (v >= CURRENT) return;
+      if (!localStorage.getItem(PRE_MIGRATE_BACKUP_KEY)) localStorage.setItem(PRE_MIGRATE_BACKUP_KEY, raw);
+    } catch (_) {}
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return null;
       let doc = JSON.parse(raw);
       if (!doc || (doc.schema !== SCHEMA && doc.schema !== LEGACY_SCHEMA) || !doc.agent) return null;
+      backupBeforeMigrate(raw, doc);
       return migrate(doc);
     } catch (e) { console.warn('[save] load failed:', e); return null; }
   }
@@ -74,5 +84,5 @@ const Save = (() => {
   function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
   function has() { try { return !!localStorage.getItem(KEY); } catch (e) { return false; } }
 
-  return { load, write, clear, has, CURRENT };
+  return { load, write, clear, has, CURRENT, PRE_MIGRATE_BACKUP_KEY };
 })();
