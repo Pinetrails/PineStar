@@ -45,7 +45,29 @@ A.ok(/s\.dossierDim\b[\s\S]{0,200}DossierStore\.upsert\(s\.dossierDim/.test(src)
   'startQuestions writes a dossierDim answer straight to DossierStore.upsert');
 
 /* ---------- a recruited (specialty) wake skips the pain beat (the dossier is station-wide, asked once) ---------- */
-A.ok(/specialty\s*\?[\s\S]{0,160}!s\.dossierDim/.test(src),
+A.ok(/specialty\s*\?[\s\S]{0,200}!s\.dossierDim/.test(src),
   'a pre-specced wake filters out dossierDim beats (pain is asked once, at the orchestrator awakening)');
+
+/* ---------- the autonomy cadence beat: a posturePreset beat with VALID preset ids, routed to AutonomyStore ---------- */
+const Au = require('../frontend/app/autonomy.js');
+const presetIds = Au.cadencePresets().map(p => p.id);
+A.ok(/posturePreset:\s*true/.test(src), 'the awakening has the autonomy cadence beat (posturePreset)');
+// bound the cadence beat by the next beat marker so we read only ITS options (no bleed into the manual beat).
+const ps = src.indexOf('posturePreset: true');
+const after = src.slice(ps + 1);
+const nextMark = ['field:', 'dossierDim:'].map(m => after.indexOf(m)).filter(j => j >= 0);
+const cadSeg = src.slice(ps, nextMark.length ? ps + 1 + Math.min(...nextMark) : src.length).replace(/\/\/[^\n]*/g, '');
+A.ok(/optional:\s*true/.test(cadSeg), 'the cadence beat is optional/skippable (Decide later → the safe floor)');
+const optVals = [...cadSeg.matchAll(/value:\s*'([^']*)'/g)].map(m => m[1]);
+const nonEmpty = optVals.filter(v => v !== '');
+A.ok(nonEmpty.length >= 4, 'the cadence beat offers the four concrete posture choices');
+for (const v of nonEmpty) A.ok(presetIds.indexOf(v) >= 0, 'cadence option "' + v + '" is a real autonomy cadence preset id (no silent-drop typo)');
+A.ok(optVals.indexOf('') >= 0, 'the cadence beat has a skip option (Decide later)');
+// startQuestions routes a posturePreset answer to AutonomyStore.applyPreset (the opening posture is written through)
+A.ok(/s\.posturePreset\b[\s\S]{0,220}AutonomyStore\.applyPreset\(text\)/.test(src),
+  'startQuestions writes a posturePreset answer to AutonomyStore.applyPreset');
+// a recruited (specialty) wake skips the cadence beat too (posture is station-wide for now, asked once)
+A.ok(/specialty\s*\?[\s\S]{0,200}!s\.posturePreset/.test(src),
+  'a pre-specced wake filters out the posturePreset beat (asked once, at the orchestrator awakening)');
 
 A.report('onboarding.test');

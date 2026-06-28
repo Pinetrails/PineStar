@@ -135,6 +135,25 @@ const Onboarding = (() => {
           ? 'now that — that’s where i want to take you. noted.'
           : 'fair. we’ll find it once we get moving.' },
 
+      // AUTONOMY CADENCE — sets the OPENING posture: how much the station runs on its own while you're away. Not a
+      // dossier dim and not a .md doc — the picked option's value is a cadence-preset id written straight to
+      // AutonomyStore.applyPreset (autonomy.js). Concrete, picture-able choices only (the awakening-question rule);
+      // even 'run free' caps Reach at sandbox there. Asked once, at the orchestrator awakening (the posture is
+      // station-wide for now), and always retunable from the station SETTINGS panel.
+      { posturePreset: true, optional: true,
+        prompt: 'one more thing — while you’re away, how much should i run on my own?',
+        options: [
+          { label: 'Wait for me', value: 'wait' },
+          { label: 'Line up suggestions', value: 'suggest' },
+          { label: 'Quietly build & leave on my desk', value: 'build' },
+          { label: 'Run free toward my goals', value: 'free' },
+          { label: 'Decide later', value: '', skip: true }
+        ],
+        build: () => null,
+        ack: t => t
+          ? 'set — and you can retune that any time from my station panel.'
+          : 'no rush — i’ll wait for you, and you can dial it up whenever.' },
+
       { field: 'manual', optional: true,
         prompt: lead ? 'last thing — any hard rules? what i should always do, or never.' : 'last thing — any rules i should hold to?',
         options: [
@@ -153,7 +172,7 @@ const Onboarding = (() => {
     // (reserved) a pre-specced wake skips the mission beats; the orchestrator authors them live. The PAIN beat
     // is also skipped on a recruited wake — the dossier is station-wide, so the Commander answers it once (at the
     // first/orchestrator awakening), never again per new hire.
-    return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual' && !s.dossierDim) : all;
+    return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual' && !s.dossierDim && !s.posturePreset) : all;
   }
 
   // enterGame has already put the room in darkness + frozen the newborn facing AWAY (World.beginAwakening),
@@ -324,6 +343,9 @@ const Onboarding = (() => {
       // a beat that targets a dossier dimension (not a config .md) writes its answer STRAIGHT to the station-wide
       // dossier — same authoring path the COMMANDER panel uses (recomposes the live prompt + persists at the edge).
       if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert(s.dossierDim, { text, source: 'onboarding' });
+      // the autonomy cadence beat writes the chosen OPENING posture straight to AutonomyStore (the option value is a
+      // cadence-preset id). Skipping ('Decide later') leaves the safe floor — fully wait-for-me.
+      if (!isSkip && s.posturePreset && typeof AutonomyStore !== 'undefined' && AutonomyStore.applyPreset) AutonomyStore.applyPreset(text);
       // seed the user-affinity profile from the stated PURPOSE so day-one suggestions aren't blank (the engine
       // ignores this once real usage accrues). Cheap, explicit, no inference.
       if (!isSkip && s.field === 'purpose' && typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') ProfileStore.seed(Classify.getTag(text));

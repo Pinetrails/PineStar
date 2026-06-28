@@ -1071,6 +1071,23 @@ const StationUI = (() => {
       '<h4 class="ms-h">API KEYS</h4>' +
       '<div class="key-list">' + keysHtml() + '</div>' +
       '<p class="set-about">Keys live locally on this machine and are sent only to the STARNET sidecar (127.0.0.1) per request — never anywhere else. They are shown masked; the full secret is never displayed. (The shipped desktop build moves keys behind the OS keychain.)</p>' +
+      // AUTONOMY — the "alive between sessions" dial: two independent axes (autonomy.js). Reuses the theme-picker
+      // button idiom (.set-themes/.set-theme) so it needs no new CSS. The live describe() line keeps it honest.
+      '<h4 class="ms-h">AUTONOMY <span class="dim">— how much it runs on its own while you’re away</span></h4>' +
+      '<p class="set-about" id="auto-desc">' + esc((typeof AutonomyStore !== 'undefined' && AutonomyStore.describe) ? AutonomyStore.describe() : '') + '</p>' +
+      '<div class="set-row"><span class="dim">INITIATIVE — does it start work on its own</span></div>' +
+      '<div class="set-themes" id="auto-init">' +
+        '<button class="set-theme" data-init="wait" title="nothing runs unless you ask">WAIT</button>' +
+        '<button class="set-theme" data-init="propose" title="lines up suggestions you approve — never acts on its own">SUGGEST</button>' +
+        '<button class="set-theme" data-init="leash" title="does a few small grounded jobs a day on its own">BUILD</button>' +
+        '<button class="set-theme" data-init="free" title="picks &amp; does work toward your goals while you’re away">FREE</button>' +
+      '</div>' +
+      '<div class="set-row"><span class="dim">REACH — how far an unattended action may go</span></div>' +
+      '<div class="set-themes" id="auto-reach">' +
+        '<button class="set-theme" data-reach="observe" title="read / research only — writes nothing">OBSERVE</button>' +
+        '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
+        '<button class="set-theme" data-reach="reach" title="can send, publish, or spend — the unsupervised ceiling">REACH-OUT</button>' +
+      '</div>' +
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
       '</div>' +
@@ -1091,6 +1108,20 @@ const StationUI = (() => {
     }));
     const bind = (id, key) => body.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
     bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
+    // AUTONOMY dial — retune Initiative / Reach in place (AutonomyStore persists; no rerender so it won't wipe an
+    // open key editor). The describe() line repaints live so the posture is always honestly spelled out.
+    if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {
+      const initWrap = body.querySelector('#auto-init'), reachWrap = body.querySelector('#auto-reach'), autoDesc = body.querySelector('#auto-desc');
+      const paintAuto = () => {
+        const a = AutonomyStore.summary() || {};
+        if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
+        if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
+        if (autoDesc) autoDesc.textContent = AutonomyStore.describe();
+      };
+      if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setInitiative(b.dataset.init); paintAuto(); sfx('click'); }));
+      if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setReach(b.dataset.reach); paintAuto(); sfx('click'); }));
+      paintAuto();
+    }
     if (typeof Updates !== 'undefined' && Updates.wireSettings) Updates.wireSettings(body);
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
     const clr = body.querySelector('#set-clear');
