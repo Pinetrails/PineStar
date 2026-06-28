@@ -965,6 +965,7 @@ const App = (() => {
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)
+    if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
@@ -1105,6 +1106,23 @@ const App = (() => {
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
+    // SELF-INITIATION (Slice 2): the agent proposes recurring standing JOBS grounded in the dossier → the Commander
+    // approves → each becomes a scheduled cron routine (POST /api/cron, the same endpoint the ROUTINES panel uses).
+    if (typeof AutoJobStore !== 'undefined') AutoJobStore.init({
+      getSystem: () => agent ? agent.systemPrompt : '',
+      getName: () => agent ? agent.name : 'AGENT',
+      getBeliefs: () => {
+        const out = {};
+        if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return out;
+        for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders']) {
+          const arr = (DossierStore.beliefs(k) || []).map(b => b && b.text).filter(Boolean);
+          if (arr.length) out[k] = arr;
+        }
+        return out;
+      },
+      getExistingJobs: () => fetch('/api/cron', { cache: 'no-store' }).then(r => r.ok ? r.json() : { jobs: [] }).then(j => (j.jobs || []).map(x => x && x.name).filter(Boolean)).catch(() => []),
+      scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false }))
+    });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity

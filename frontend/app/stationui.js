@@ -1471,6 +1471,8 @@ const StationUI = (() => {
         'With no one watching, ungranted file writes are denied silently unless you have pre-approved them. ' +
         '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
       '<div id="rt-gate" class="set-about"></div>' +
+      // SELF-INITIATION (autonomy Slice 2): let the agent propose standing jobs grounded in what it knows about you.
+      '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ HAVE YOUR AGENT PROPOSE STANDING JOBS</button>' +
       '<div id="rt-list" class="mc-list">loading…</div>' +
       '<h4 class="ms-h">ADD A ROUTINE</h4>' +
       '<div class="mc-form">' +
@@ -1537,6 +1539,20 @@ const StationUI = (() => {
           : '<div class="fb-empty">NO ROUTINES YET.<br><span>Add one below to put your agent to work on a schedule.</span></div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage routines.</div>'; }
     }
+
+    // SELF-INITIATION: the agent reasons out a few standing-job proposals from the dossier, the Commander approves
+    // the ones they want (a Dialogue beat), and each approved one is created via POST /api/cron — then we refresh
+    // the list so the new routines appear inline. An explicit ask, always allowed (it's the manual counterpart to
+    // the one-time proactive offer). Falls back gracefully if the engine/store isn't present.
+    const propBtn = body.querySelector('#rt-propose');
+    if (propBtn) propBtn.addEventListener('click', async () => {
+      if (typeof AutoJobStore === 'undefined' || !AutoJobStore.propose) { notify('self-initiation is unavailable', 'warn'); return; }
+      propBtn.disabled = true; sfx('click');
+      try {
+        const r = await AutoJobStore.propose();
+        if (r && r.scheduled) { notify(r.scheduled + ' standing job' + (r.scheduled === 1 ? '' : 's') + ' scheduled', 'good'); refresh(); }
+      } catch (_) {} finally { propBtn.disabled = false; }
+    });
 
     // live schedule preview (debounced) — the honest "next fires", straight from the server math.
     let pvTimer = null;
