@@ -1472,7 +1472,7 @@ const StationUI = (() => {
         '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
       '<div id="rt-gate" class="set-about"></div>' +
       // SELF-INITIATION (autonomy Slice 2): let the agent propose standing jobs grounded in what it knows about you.
-      '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ HAVE YOUR AGENT PROPOSE STANDING JOBS</button>' +
+      '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ SUGGEST ROUTINES</button>' +
       '<div id="rt-list" class="mc-list">loading…</div>' +
       '<h4 class="ms-h">ADD A ROUTINE</h4>' +
       '<div class="mc-form">' +
@@ -1550,7 +1550,7 @@ const StationUI = (() => {
       propBtn.disabled = true; sfx('click');
       try {
         const r = await AutoJobStore.propose();
-        if (r && r.scheduled) { notify(r.scheduled + ' standing job' + (r.scheduled === 1 ? '' : 's') + ' scheduled', 'good'); refresh(); }
+        if (r && r.scheduled) { notify(r.scheduled + ' routine' + (r.scheduled === 1 ? '' : 's') + ' scheduled', 'good'); refresh(); }
       } catch (_) {} finally { propBtn.disabled = false; }
     });
 
