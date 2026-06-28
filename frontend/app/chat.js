@@ -47,6 +47,7 @@ const Chat = (() => {
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
+  const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const RUN_META = new Map();   // runId -> { isTask, title } recorded at run START. The bus agent.run.end payload
                                 // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
@@ -158,7 +159,7 @@ const Chat = (() => {
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
-    proposalRunsSeen.clear(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
+    proposalRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
@@ -211,7 +212,7 @@ const Chat = (() => {
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
-    activeTurnin = null; turninQueue.length = 0;   // the visible review deck belongs to the current COMMS DOM
+    activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
     if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
     if (log) log.innerHTML = '';
@@ -567,6 +568,7 @@ const Chat = (() => {
   function clearNudge() {
     if (!activeNudge) return;
     const a = activeNudge; activeNudge = null;
+    if (a.choiceRow) activeChoiceRows.delete(a.choiceRow);
     vanish(a.choiceRow); vanish(a.row);
   }
   function curiosityNudge(dim) {
@@ -894,7 +896,7 @@ const Chat = (() => {
 
   async function send(text, opts) {
     const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
-    if (interview) { interview(text); return; }   // THE AWAKENING owns the input: route the answer to onboarding, no model call
+    if (interview) { clearChoices(); interview(text); return; }   // THE AWAKENING owns the input: typed answers retire any stale chip row
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
@@ -1142,11 +1144,13 @@ const Chat = (() => {
   function beginInterview(onAnswer, opts) {
     interview = onAnswer || null;
     opts = opts || {};
+    clearChoices();
     if (input) input.placeholder = opts.placeholder || 'answer to wake your agent…';
     status(opts.status || 'waking…');
   }
   function endInterview() {
     interview = null;
+    clearChoices();
     if (input) input.placeholder = 'speak to your agent…';
     status('online');
   }
@@ -1165,14 +1169,20 @@ const Chat = (() => {
     try { const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
   }
   // a row of tappable suggestion pills in COMMS; picking one (or typing) is an answer. onPick gets the item.
+  function clearChoices() {
+    for (const r of Array.from(activeChoiceRows)) { if (r && r.parentNode) r.remove(); }
+    activeChoiceRows.clear();
+  }
   function choices(items, onPick) {
     if (!log) return;
     clearEmptyState();
+    clearChoices();   // chips are a focused prompt, never a background layer behind the next question
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
+    activeChoiceRows.add(rowEl);
     let done = false;
     (items || []).forEach(it => {
       const b = document.createElement('button'); b.className = 'choice'; b.textContent = it.label;
-      b.onclick = () => { if (done) return; done = true; rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
+      b.onclick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
       rowEl.appendChild(b);
     });
     log.appendChild(rowEl); autoscroll();
@@ -1212,5 +1222,5 @@ const Chat = (() => {
   // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
   function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, typeLine, nudge, clearNudge, runMeta };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, runMeta };
 })();
