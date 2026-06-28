@@ -48,8 +48,9 @@
 
   const rankOf = (axis, v) => axis.indexOf(v);
 
-  // the persisted shape. DEFAULT = the safe floor: fully wait-for-me, Sandbox ceiling. Reach is still stored at
-  // 'wait' so that later RAISING initiative inherits a posture the Commander actually set, never a surprise ceiling.
+  // the persisted shape. DEFAULT = the safe floor: fully wait-for-me, Sandbox ceiling. Reach is stored (at
+  // 'sandbox') even while initiative is 'wait', so later RAISING initiative inherits a ceiling the Commander
+  // actually set — never a surprise reach.
   function fresh() { return { v: 1, initiative: 'wait', reach: 'sandbox', leashPerDay: DEFAULT_LEASH }; }
 
   function clampLeash(n) {
