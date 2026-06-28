@@ -7,7 +7,7 @@
 const A = require('./_assert.js');
 const path = require('path');
 const shell = require('../sidecar/tools/builtin/shell.js');
-const { makeShellTool, buildMarkedCmd, parseMarker, withinJail } = shell;
+const { makeShellTool, buildMarkedCmd, parseMarker, withinJail, normalizeWinCwd, resolveShellCwd } = shell;
 
 // a fake spawn: records each call's cwd, and on close emits stdout = out + the marker for a configured cwd/ec.
 function makeFake() {
@@ -53,6 +53,18 @@ function makeFake() {
     A.ok(withinJail(path, jail, jail), 'the jail root itself is in-jail');
     A.ok(!withinJail(path, path.resolve(path.sep + 'etc'), jail), 'an absolute outside path is out-of-jail');
   }
+  {
+    const W = path.win32;
+    const root = 'C:\\Users\\andro\\AppData\\Local\\StarNet\\workspaces';
+    const jail = W.join(root, 'agent');
+    const ext = 'C:\\Users\\andro\\Desktop\\GALAGA';
+    const fakeFs = { existsSync: function () { return true; }, statSync: function () { return { isDirectory: function () { return true; } }; } };
+    A.eq(normalizeWinCwd(W, '/c/Users/andro/Desktop/GALAGA', true), ext, 'win cwd normalizes /c/Users to C:\\Users');
+    A.eq(resolveShellCwd({ pathMod: W, fs: fakeFs, requested: '/c/Users/andro/Desktop/GALAGA', current: jail, jailRoot: jail, root: root, isWin: true, allowExternal: true }), ext, 'external cwd can be resolved when local shell access allows it');
+    let denied = false;
+    try { resolveShellCwd({ pathMod: W, fs: fakeFs, requested: W.join(root, 'other'), current: jail, jailRoot: jail, root: root, isWin: true, allowExternal: true }); } catch (_) { denied = true; }
+    A.ok(denied, 'cwd cannot target another StarNet workspace sibling');
+  }
 
   // ---- integration via the fake spawn ----
   const ROOT = path.join('shelltest-root');
@@ -91,6 +103,31 @@ function makeFake() {
   let threw = false;
   try { await execTool.run({ cmd: 'cd ..' }, ctx); } catch (e) { threw = /refused/.test(String(e.message)); }
   A.ok(threw, 'cd .. past the jail root is refused (escapesWorkspace)');
+
+  // Step 6: a Windows local environment can run from a user-named host folder via structured cwd, not `cd /c/...`.
+  {
+    const W = path.win32;
+    const root = 'C:\\Users\\andro\\AppData\\Local\\StarNet\\workspaces';
+    const jailWin = W.join(root, 'agent');
+    const ext = 'C:\\Users\\andro\\Desktop\\GALAGA';
+    const calls = [];
+    const fakeEnv = {
+      backendId: 'local',
+      ensureWorkspace: function () { return jailWin; },
+      getCwd: function () { return jailWin; },
+      rememberCwd: function () {},
+      execute: function (o) {
+        calls.push(o);
+        return Promise.resolve({ out: 'ok\n__SK_CWD__' + ext + '__SK_EC__0__SK_END__', exitCode: 0, ms: 0, truncated: false, timedOut: false, aborted: false });
+      }
+    };
+    const fakeFs = { existsSync: function () { return true; }, statSync: function () { return { isDirectory: function () { return true; } }; } };
+    const tool = makeShellTool({ environment: fakeEnv, fs: fakeFs, pathMod: W, root: root, clock: { now: function () { return 0; } }, platform: 'win32' }).execTool;
+    await tool.run({ cmd: 'dir', cwd: '/c/Users/andro/Desktop/GALAGA' }, { agentId: 'agent' });
+    A.eq(calls[0].cwd, ext, 'structured cwd starts the command in the user-named Desktop folder');
+    await tool.run({ cmd: 'dir' }, { agentId: 'agent' });
+    A.eq(calls[1].cwd, ext, 'external cwd persists across later local shell calls');
+  }
 
   A.report('shell-session.test');
 })().catch(function (e) { console.error(e); process.exit(1); });

@@ -2130,6 +2130,7 @@ async function runOnce(o) {
       + 'do not invent facts, figures, or links. '
       + 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append, and record '
       + 'durable facts you\'ll want later with notebook_write. '
+      + (wireNames.indexOf('shell_exec') >= 0 ? 'If the Commander names a local folder to work in, call shell_exec with its cwd field set to that exact folder and then use relative shell commands there; do not guess Bash-style /c paths for Windows. ' : '')
       + 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you '
       + 'are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. '
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
