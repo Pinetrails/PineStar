@@ -75,6 +75,23 @@ try {
   }
 
   {
+    const evidence = path.join(tmp, 'bom-proof.json');
+    fs.writeFileSync(evidence, '\ufeff' + JSON.stringify(proof(hash, bytes), null, 2), 'utf8');
+    const out = path.join(tmp, 'bom-green-out');
+    const res = run(['--evidence', evidence], {
+      STARNET_T0_INSTALLER_EXE: installer,
+      STARNET_T0_CLEAN_INSTALL_DIR: out,
+      STARNET_T0_CLEAN_INSTALL_LATEST_DIR: path.join(tmp, 'bom-green-latest'),
+      STARNET_T0_CLEAN_SURFACE_MOCK: surfaceNone
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    const status = JSON.parse(fs.readFileSync(path.join(out, 't0-clean-install-status.json'), 'utf8'));
+    assert.equal(status.cleanInstallProofReady, true);
+    assert.equal(status.verdict, 'green');
+    assert.equal(status.nextAction, null);
+  }
+
+  {
     const evidence = path.join(tmp, 'bad-proof.json');
     fs.writeFileSync(evidence, JSON.stringify(proof('00' + hash.slice(2), bytes), null, 2));
     const out = path.join(tmp, 'red-out');
@@ -107,4 +124,4 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log('t0-clean-install.test: OK (14 assertions)');
+console.log('t0-clean-install.test: OK (18 assertions)');

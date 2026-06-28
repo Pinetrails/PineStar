@@ -22,6 +22,9 @@ function readText(file) {
 function readJson(file, fallback = null) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch (_) { return fallback; }
 }
+function stripJsonBom(text) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
 function writeJson(file, value) {
   ensureDir(dirname(file));
   writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
@@ -117,7 +120,7 @@ function parseEvidence(file) {
   if (!file) return { path: '', present: false, doc: null, errors: ['No clean-machine evidence JSON was provided.'] };
   if (!existsSync(file)) return { path: file, present: false, doc: null, errors: ['Evidence file does not exist: ' + file] };
   try {
-    const doc = JSON.parse(readFileSync(file, 'utf8'));
+    const doc = JSON.parse(stripJsonBom(readFileSync(file, 'utf8')));
     return { path: file, present: true, doc, errors: [] };
   } catch (e) {
     return { path: file, present: true, doc: null, errors: ['Evidence JSON could not be parsed: ' + (e && e.message || e)] };
