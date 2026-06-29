@@ -286,8 +286,8 @@ const App = (() => {
   /* ---------- SUMMON: wake a NEW live agent onto the crew ----------
      The backend already runs any agentId concurrently and isolates its notebook / fs / cost / caps; the
      missing piece was a frontend that mints more than one. summonAgent does exactly that: a conforming
-     agentId, a composed identity (reusing the hero's model/provider in Stage 1), its own workstream, and
-     focus — so the Commander can task it immediately and it fires a REAL independent run. */
+     agentId, a composed identity (reusing the hero's model/provider in Stage 1), and its own workstream.
+     Summoning does not steal COMMS; the Commander keeps talking to the overseer unless they switch streams. */
   // fold a specialty's preset purpose + standing orders into an agent's docs — the ONE composer shared by
   // both the wake path and summon, so a recruited identity is assembled identically everywhere.
   function applySpecialty(a, spec) {
@@ -304,7 +304,8 @@ const App = (() => {
     const seed = (spec && (spec.id || spec.name)) || 'agent';
     return (typeof AgentId !== 'undefined') ? AgentId.alloc(seed, agents) : ('summon-' + (agents.size + 1));
   }
-  function summonAgent(spec) {
+  function summonAgent(spec, opts) {
+    opts = opts || {};
     if (!agent) return null;                                   // need a base context (model/provider): a woken hero
     const id = allocAgentId(spec);
     const a = {
@@ -324,15 +325,21 @@ const App = (() => {
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     else console.warn('[summon] StationUI.setRoster missing — crew manifest not refreshed');
     try { console.log('[summon]', JSON.stringify({ id, name: a.name, skin: a.skin, hadHero: !!agent, worldSpawn: _spawned, crew: (typeof World !== 'undefined' && World.crewCount) ? World.crewCount() : '?', roster: agents.size })); } catch (e) {}
-    // a fresh workstream BOUND to the new agent; focusing it routes COMMS + the next run to this identity
-    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name) : null;
-    if (ws && typeof Workstreams.setAgent === 'function') Workstreams.setAgent(ws.id, id);
-    focusAgent(id);
-    if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
+    // a fresh workstream BOUND to the new agent, but inactive by default. Activation is the explicit
+    // "talk to this specialist directly" action; summon itself only expands the crew/roster.
+    const activate = opts.activate === true;
+    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name, { agentId: id, activate }) : null;
+    if (activate) {
+      focusAgent(id);
+      if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
+    }
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
     const _notify = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : (m) => console.log('[summon]', m);
-    _notify(a.name + ' summoned — type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).', 'good');
+    _notify(activate
+      ? a.name + ' summoned - type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).'
+      : a.name + ' summoned - overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate.',
+      'good');
     return a;
   }
   // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
@@ -428,7 +435,7 @@ const App = (() => {
       purpose: ev.purpose || (base && base.purpose) || undefined
     });
     let a = null;
-    try { a = summonAgent(spec); } catch (_) { a = null; }
+    try { a = summonAgent(spec, { activate: false }); } catch (_) { a = null; }
     if (!a) return null;
     try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
     return a.id;
