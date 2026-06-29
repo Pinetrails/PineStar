@@ -397,6 +397,17 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Toggle the main StarNet desktop window between windowed and fullscreen mode.
+#[tauri::command]
+fn starnet_toggle_fullscreen(app: AppHandle) -> Result<bool, String> {
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window unavailable".to_string())?;
+    let next = !win.is_fullscreen().map_err(|e| e.to_string())?;
+    win.set_fullscreen(next).map_err(|e| e.to_string())?;
+    Ok(next)
+}
+
 /// Desktop updater status without hitting the network. The frontend uses this to
 /// render the Update Center immediately and decide whether native updates exist.
 #[tauri::command]
@@ -506,6 +517,7 @@ fn main() {
             harness_has_key,
             harness_clear_key,
             open_external_url,
+            starnet_toggle_fullscreen,
             starnet_update_status,
             starnet_update_check,
             starnet_update_install
