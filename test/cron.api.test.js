@@ -6,6 +6,7 @@
      - POST /api/cron/preview    next-5 fire times for an interval; one for a once; 400 on garbage
      - POST /api/cron/update     edit a field + pause/resume via the enabled flag
      - POST /api/cron/run        no provider credentials -> 400 (guard, zero spend); unknown id -> 404
+     - protected-state recovery  zero cron.jobs.json, reboot, and prove routines recover from cron.jobs.json.bak
      - POST /api/cron/remove     delete; then a SECOND boot proves the job persisted to cron.jobs.json
    Mirrors sidecar.http.test.js; NOT in test:fast (a child-process boot test shouldn't gate other agents).
    Run via `npm run test:http`. */
@@ -162,6 +163,21 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(after.body.jobs.some(job => job.name === 'Renamed brief'), 'the edited name persisted');
     A.ok(after.body.jobs.some(job => job.schedule && job.schedule.kind === 'cron'), 'the cron routine persisted');
     A.ok(after.body.jobs.some(job => job.provider === 'codex'), 'the routine provider persisted');
+
+    // ---- protected-state recovery: a torn main file restores from the last-known-good .bak ----
+    const cronPath = path.join(ws, 'cron.jobs.json');
+    const cronBak = cronPath + '.bak';
+    A.ok(fs.existsSync(cronBak), 'cron.jobs.json.bak exists after routine updates');
+    const bakJobs = JSON.parse(fs.readFileSync(cronBak, 'utf8')).jobs || [];
+    A.ok(bakJobs.length >= 1, 'cron.jobs.json.bak contains routine jobs, not an empty snapshot');
+    try { child.kill(); } catch (_) {} await sleep(200);
+    fs.writeFileSync(cronPath, '');   // simulate a hard kill/torn write that left the protected main empty
+    booted = await boot(port + 200, ws, 20); child = booted.child; port = booted.port;
+    await refreshToken();
+    const recovered = await j('GET', '/api/cron');
+    A.eq(recovered.body.jobs.length, 2, 'torn cron.jobs.json recovered from .bak on boot');
+    A.ok(recovered.body.jobs.some(job => job.name === 'Renamed brief'), 'recovered routine keeps the edited name');
+    A.ok(recovered.body.jobs.some(job => job.schedule && job.schedule.kind === 'cron'), 'recovered routine keeps the cron schedule');
 
     // ---- remove: delete then confirm gone ----
     const rm = await j('POST', '/api/cron/remove', { id });

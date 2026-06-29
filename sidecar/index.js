@@ -226,7 +226,7 @@ process.on('uncaughtException', e => console.error('uncaughtException:', (e && e
 try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 
 /* ---- P2 crash-safe persistence helpers for the single-file sibling stores (roster, dossier, channel
-   secrets, codex tokens, connectors, allowlist, notebook). Each of these was a plain
+   secrets, codex tokens, connectors, allowlist, notebook, cron routines). Each of these was a plain
    writeFileSync->rename (atomic but NOT power-loss durable) with a catch-and-return-empty loader (so a
    torn/zero-length file booted the app AMNESIAC and the next write made it permanent). These route every
    write through writeFileDurable (fsync-before-rename) + a .bak last-known-good snapshot, and every load
@@ -731,16 +731,22 @@ const connectors = makeConnectorManager({
 
 /* ---- cron / scheduled routines store + tick driver (CRON Commit 4b). The job DEFINITIONS persist in a
    PROTECTED sibling of the fs jail (WORKSPACES/cron.jobs.json, the allowlist idiom above: versioned envelope,
-   atomic + DURABLE temp→fsync→rename (G4.2 — no double-fire on a crash in the advance-before-run window),
-   load→corrupt→empty fail-closed) so the agent's own fs.* tools can neither read nor rewrite
+   atomic + DURABLE temp->fsync->rename + .bak last-known-good (G4.2: no double-fire on a crash in the
+   advance-before-run window, and no silent routine wipe after a torn/corrupt main),
+   load->recover .bak; unrecoverable corrupt->quarantine+empty fail-closed) so the agent's own fs.* tools can neither read nor rewrite
    its own schedule. The cron-math + lifecycle reducer are pure (cron.js / cron-store.js); the timer, the
    now-source, id minting and this fs are the ambient half that lives ONLY here. The driver is constructed
    unconditionally (cheap, no I/O), but it only ever runs when the boot block below arms the timer behind the
    SKYNET_CRON_ENABLED gate — so with cron off this is dead weight, never a behavior change. ---- */
 const CRON_FILE = path.join(WORKSPACES, 'cron.jobs.json');
 function loadCronJobs() {
-  try { return cronStore.loadEnvelope(fs.readFileSync(CRON_FILE, 'utf8')).jobs; }
-  catch (e) { return []; }   // missing/corrupt -> nothing scheduled (fail-closed)
+  try {
+    const raw = loadResilient(CRON_FILE, 'cron');   // missing -> empty; torn/corrupt main -> recover .bak or quarantine loudly
+    return cronStore.loadEnvelope(raw).jobs;
+  } catch (e) {
+    console.warn('[cron] load failed:', (e && e.message) || e);
+    return [];
+  }
 }
 let cronJobs = loadCronJobs();
 function saveCronJobs() {   // throws on failure (the CRUD routes let it surface); the driver's setJobs catches+logs
@@ -748,9 +754,9 @@ function saveCronJobs() {   // throws on failure (the CRUD routes let it surface
   // BEFORE launching a fire) is the one place a lost/zero-length write would DOUBLE-FIRE a routine on restart,
   // so we don't just rename — we fsync the temp file's bytes to stable storage BEFORE the rename (per-pid+random
   // tmp so concurrent writers never collide), then best-effort fsync the directory after (Windows-safe). Same
-  // durability the ledger/runs appends already get; happy-path behavior (versioned envelope, atomic replace) is
-  // identical to the old temp+rename.
-  writeFileDurable({ fs: fs, path: path }, CRON_FILE, JSON.stringify(cronStore.toEnvelope(cronJobs)));
+  // durability the ledger/runs appends already get; the protected-state helper also snapshots the prior good
+  // envelope to cron.jobs.json.bak before replacing main, so a torn/corrupt main never boots as amnesiac.
+  saveResilient(CRON_FILE, cronStore.toEnvelope(cronJobs));
 }
 
 /* ---- G4.6: persisted "is the scheduler armed?" flag, so a one-click ENABLE in the UI arms the timer WITHOUT

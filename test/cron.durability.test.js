@@ -30,6 +30,7 @@ const cron = require('../sidecar/cron.js');
 const cronStore = require('../sidecar/cron-store.js');
 const { makeCronDriver } = require('../sidecar/cron-driver.js');
 const { writeFileDurable } = require('../sidecar/durable-write.js');
+const { readJsonResilient, writeJsonResilient } = require('../sidecar/durable-store.js');
 
 const T0 = 1700000000000;
 const tmpRoot = realFs.mkdtempSync(path.join(os.tmpdir(), 'cron-dur-'));
@@ -160,6 +161,30 @@ function tmpFile(name) { const f = path.join(tmpRoot, name); cleanup.push(f); re
     const notArray = tmpFile('jobs-notarray.json');
     realFs.writeFileSync(notArray, '{"version":1,"jobs":"oops"}');
     A.eq(loadCron(notArray).length, 0, 'a non-array jobs envelope fails closed');
+  }
+
+  /* ---- 4b. PROTECTED ROUTINE STORE: torn/corrupt main recovers from .bak instead of booting empty ---- */
+  {
+    const target = tmpFile('jobs-protected.json');
+    const keep = cronStore.makeJob({ id: 'keep', prompt: 'p', schedule: cron.parseSchedule('every 10m', T0) }, { id: 'keep', now: T0 });
+    const second = cronStore.makeJob({ id: 'second', prompt: 'q', schedule: cron.parseSchedule('every 30m', T0) }, { id: 'second', now: T0 });
+    const third = cronStore.makeJob({ id: 'third', prompt: 'r', schedule: cron.parseSchedule('every 1h', T0) }, { id: 'third', now: T0 });
+    const saveProtected = (jobs) => writeJsonResilient({ fs: realFs, path: path, writeDurable: writeFileDurable }, target, cronStore.toEnvelope(jobs));
+    saveProtected([keep]);
+    saveProtected([keep, second]);        // .bak = [keep]
+    saveProtected([keep, second, third]); // .bak = [keep, second], main = [keep, second, third]
+
+    realFs.writeFileSync(target, '');     // simulate a hard kill leaving the protected main zero-length
+    const recovered = readJsonResilient({ fs: realFs }, target);
+    A.eq(recovered.status, 'recovered', 'zero-length cron jobs main recovers from .bak');
+    const jobs = cronStore.loadEnvelope(recovered.value).jobs;
+    A.eq(jobs.length, 2, 'cron recovery returns the last-known-good routine set, not an empty schedule');
+    A.eq(jobs.map(j => j.id), ['keep', 'second'], 'recovered routines match the .bak snapshot');
+
+    saveProtected(jobs);
+    const afterSave = readJsonResilient({ fs: realFs }, target);
+    A.eq(afterSave.status, 'ok', 'saving after recovery restores a clean main file');
+    A.eq(cronStore.loadEnvelope(afterSave.value).jobs.length, 2, 'post-recovery save preserves recovered routines');
   }
 
   /* ---- 5. CRASH-AT-FIRE-BOUNDARY: advance-before-run persisted durably -> a restart fires ZERO ----
