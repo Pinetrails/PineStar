@@ -81,6 +81,7 @@ const { makeEnvironmentManager } = require('./environment.js');     // Hermes-st
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
+const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
@@ -1954,6 +1955,36 @@ async function runOnce(o) {
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
   }).register(registry);
+  // routine.create/list: the lead can schedule real StarNet ROUTINES through the same cron store the panel uses.
+  makeRoutineTools({
+    roster: () => agentRoster,
+    listJobs: () => cronJobs,
+    schedulerState: () => cronArmed,
+    normalizeProvider: normalizeProviderId,
+    createRoutine: (spec) => {
+      spec = spec || {};
+      const id = crypto.randomUUID();
+      const schedule = parseCronScheduleOr400(spec.schedule, Date.now(), spec.timezone);
+      let created = null;
+      withCronWrite(jobs => {
+        const next = cronStore.createJob(jobs, {
+          id: id, name: spec.name, prompt: spec.prompt, schedule: schedule,
+          agentId: spec.agentId, model: spec.model, provider: spec.provider,
+          deliver: spec.deliver, enabled: spec.enabled, repeat: spec.repeat
+        }, { id: id, now: Date.now() });
+        created = cronStore.getJob(next, id);
+        return next;
+      });
+      return created || cronStore.getJob(cronJobs, id);
+    },
+    armScheduler: (enabled) => {
+      const want = enabled === true;
+      saveCronArmed(want);
+      cronArmed = want;
+      if (want) armCron(); else disarmCron();
+      return cronArmed;
+    }
+  }).register(registry);
   throttleSearch(registry);
 
   // ---- capabilities: each placed object IS a capability grant (CAP_REGISTRY): computer = compute gate · dish =
@@ -2143,6 +2174,9 @@ async function runOnce(o) {
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
       + 'these LIVE tools: ' + wireNames.join(', ') + '. '
       + 'Actually use them — never say you cannot reach the web or files; call the tool instead. '
+      + (wireNames.indexOf('routine_create') >= 0
+        ? 'When the Commander asks for a cron, routine, scheduled/recurring task, reminder, or standing job, use routine_create/routine_list in StarNet ROUTINES; do not use shell_exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers. '
+        : '')
       + 'Ground every factual claim in what web_search / web_fetch actually return, and cite the source URLs; '
       + 'do not invent facts, figures, or links. '
       + 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append, and record '
@@ -2167,7 +2201,9 @@ async function runOnce(o) {
       + '(e.g. "create a research agent for me"): pass a class via specId (researcher, engineer, operator, scribe, '
       + 'analyst, reviewer, scout, archivist, designer, chief, liaison) or a custom name + purpose. It returns the new '
       + 'agentId, which you can immediately hand work to with team.dispatch. When the Commander asks you to create or '
-      + 'summon an agent, actually DO it with team.summon — don\'t just describe it or claim you cannot.';
+      + 'summon an agent, actually DO it with team.summon — don\'t just describe it or claim you cannot. '
+      + 'For scheduled work, create StarNet routines with routine_create; if the work clearly belongs to a specialist '
+      + '(research/news/latest => researcher/scout/analyst), target that agentId, or summon the specialist first.';
   }
   // INSTALLED SKILLS (bundled recipe library): inject the bodies of the recipes the Commander ENABLED whose
   // required objects are actually on THIS agent's floor (object = capability — the same gate the tools use). Empty

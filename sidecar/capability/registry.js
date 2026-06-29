@@ -84,7 +84,12 @@
       { capId: 'orchestrator', tool: 'team.summon', scope: 'write', requiresConsent: true, network: false },
       { capId: 'orchestrator', tool: 'team.subagents', scope: 'read', requiresConsent: false, network: false },
       { capId: 'orchestrator', tool: 'team.interrupt', scope: 'write', requiresConsent: false, network: false },
-      { capId: 'orchestrator', tool: 'team.resume', scope: 'execute', requiresConsent: false, network: true }
+      { capId: 'orchestrator', tool: 'team.resume', scope: 'execute', requiresConsent: false, network: true },
+      // ROUTINES: create StarNet scheduled jobs through the built-in cron store (the same surface as the
+      // ROUTINES panel), never through OS crontab / Windows Task Scheduler. Lead-only like the rest of
+      // orchestration; creation is consent-gated because it persists autonomous future work.
+      { capId: 'orchestrator', tool: 'routine.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'routine.create', scope: 'write', requiresConsent: true, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so
