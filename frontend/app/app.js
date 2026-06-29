@@ -1233,6 +1233,7 @@ const App = (() => {
     focusAgent(ws.agentId || 'agent');   // the focused agent follows the stream's binding (multi-agent COMMS)
     Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
+  function openWorkstream(id) { switchWorkstream(id); }
   function newWorkstream() {
     const ws = Workstreams.create(null);
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
@@ -1312,5 +1313,5 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail, summonAgent, summonForRequest };
+  return { show, refreshUsage, persist, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest };
 })();

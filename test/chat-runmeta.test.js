@@ -14,6 +14,8 @@ const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
+const appSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
+const stationSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
 
 // the ledger exists.
 A.ok(/const\s+RUN_META\s*=\s*new\s+Map\(\)/.test(src), 'chat.js declares the RUN_META ledger (Map)');
@@ -31,5 +33,12 @@ A.ok(/RUN_META\.size\s*>\s*\d+[\s\S]{0,40}RUN_META\.delete/.test(src), 'the ledg
 // it is exposed read-only as Chat.runMeta and the public API returns it.
 A.ok(/function\s+runMeta\s*\(\s*id\s*\)/.test(src), 'a runMeta(id) accessor is defined');
 A.ok(/return\s*\{[^}]*\brunMeta\b[^}]*\}/.test(src), 'runMeta is exported on the Chat public API');
+
+// multi-agent COMMS routing stays centralized: task-board opens must route through App.openWorkstream(), which
+// performs the focusAgent + Chat.load pair. Direct StationUI Workstreams.switch()+Chat.load calls caused identity
+// drift for specialist-bound streams.
+A.ok(/function\s+openWorkstream\s*\(\s*id\s*\)/.test(appSrc), 'App exposes a canonical openWorkstream(id) helper');
+A.ok(/return\s*\{[^}]*\bopenWorkstream\b[^}]*\}/.test(appSrc), 'openWorkstream is exported on the App public API');
+A.ok(/App\.openWorkstream/.test(stationSrc), 'StationUI task-board opens delegate to App.openWorkstream');
 
 A.report('chat-runmeta.test');
