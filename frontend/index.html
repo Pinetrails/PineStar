@@ -201,6 +201,22 @@
       <input id="chat-input" maxlength="500" placeholder="speak to your agent…" autocomplete="off" aria-label="Message your agent">
       <!-- INTERRUPT: cancel just the active stream's run (also bound to Esc while COMMS is focused); hidden unless busy -->
       <button id="chat-stop" class="chat-stop" type="button" title="Stop the running turn (Esc)" aria-label="Stop the running turn" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
+      <button id="model-dock-toggle" class="model-dock-toggle" type="button" title="Model selector" aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
+        <span class="model-dock-sigil" aria-hidden="true">M</span><span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
+      </button>
+      <div id="model-dock" class="model-dock" role="dialog" aria-label="Model selector" hidden>
+        <div class="model-dock-head">
+          <span id="model-dock-provider" class="model-dock-provider">OPENROUTER</span>
+          <b id="model-dock-current-model" class="model-dock-current-model">-</b>
+        </div>
+        <input id="model-dock-search" class="model-dock-search" type="text" placeholder="Search models" autocomplete="off" spellcheck="false" aria-label="Search models">
+        <div id="model-dock-efforts" class="model-dock-efforts" role="listbox" aria-label="Reasoning effort"></div>
+        <div id="model-dock-list" class="model-dock-list scrolly" role="listbox" aria-label="Available models"></div>
+        <div class="model-dock-foot">
+          <button id="model-dock-refresh" type="button">REFRESH</button>
+          <button id="model-dock-settings" type="button">SETTINGS</button>
+        </div>
+      </div>
       <button id="voice-toggle" class="voice-toggle" title="agent voice" aria-label="Agent voice" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2L8 3.2v9.6L4.5 10h-2z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M10.4 6.3a2.7 2.7 0 0 1 0 3.4"/><path d="M12.1 4.7a5 5 0 0 1 0 6.6"/></g></svg></button>
       <button id="voice-mode" class="voice-toggle voice-mode" title="voice mode" aria-label="Voice mode (hands-free)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.6 3.4H13.4V10H7L4 12.6V10H2.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><g fill="currentColor"><circle cx="5.5" cy="6.7" r=".85"/><circle cx="8" cy="6.7" r=".85"/><circle cx="10.5" cy="6.7" r=".85"/></g></svg></button>
       <button id="chat-mic" class="mic-btn" title="push to talk" aria-label="Push to talk" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 7.4a4.4 4.4 0 0 0 8.8 0"/><path d="M8 11.8v2.6"/><path d="M5.5 14.4h5"/></g></svg></button>
@@ -314,6 +330,7 @@
 <script src="app/specialties.js"></script>
 <script src="app/recipes.js"></script>
 <script src="app/classicons.js"></script>
+<script src="app/modeldock.js"></script>
 <script src="app/chat.js"></script>
 <script src="app/voice.js"></script>
 <script src="app/stationui.js"></script>

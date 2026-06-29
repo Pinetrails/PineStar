@@ -135,6 +135,18 @@
     }
     return out.length ? out : null;
   }
+  function normalizeCodexReasoningEffort(value) {
+    const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const map = {
+      off: 'none', none: 'none', no: 'none', disabled: 'none',
+      min: 'low', minimal: 'low',
+      low: 'low',
+      med: 'medium', mid: 'medium', medium: 'medium',
+      high: 'high',
+      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh', max: 'xhigh'
+    };
+    return map[key] || 'medium';
+  }
 
   function makeCodexProvider(opts) {
     opts = opts || {};
@@ -142,20 +154,21 @@
     if (!doFetch) throw new Error('codex provider requires fetch (Node 18+) or opts.fetch');
     const token = opts.token || '';
     const baseUrl = (opts.baseUrl || BASE).replace(/\/$/, '');
-    const reasoningEffort = opts.reasoningEffort || 'medium';
+    const reasoningEffort = normalizeCodexReasoningEffort(opts.reasoningEffort || 'medium');
 
     function buildBody(req) {
       const { instructions, rest } = extractInstructions(req.messages || []);
+      const effort = normalizeCodexReasoningEffort(req.reasoningEffort || reasoningEffort);
       const body = {
         model: req.model || DEFAULT_MODEL,
         instructions: instructions || 'You are a helpful assistant.',
         input: messagesToInput(rest),
         store: false,
         stream: true,
-        // ask the backend to echo encrypted reasoning so multi-turn chains stay coherent
-        reasoning: { effort: reasoningEffort, summary: 'auto' },
-        include: ['reasoning.encrypted_content']
+        reasoning: { effort, summary: 'auto' }
       };
+      // Ask the backend to echo encrypted reasoning so multi-turn chains stay coherent when thinking is enabled.
+      if (effort !== 'none') body.include = ['reasoning.encrypted_content'];
       const tools = toResponsesTools(req.tools);
       if (tools) { body.tools = tools; body.tool_choice = 'auto'; body.parallel_tool_calls = true; }
       return body;
@@ -381,5 +394,5 @@
     };
   }
 
-  return { makeCodexProvider, STATIC_MODELS, DEFAULT_MODEL, _internals: { messagesToInput, extractInstructions, toResponsesTools, normalizeUsage } };
+  return { makeCodexProvider, STATIC_MODELS, DEFAULT_MODEL, _internals: { messagesToInput, extractInstructions, toResponsesTools, normalizeUsage, normalizeCodexReasoningEffort } };
 });

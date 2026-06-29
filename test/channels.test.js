@@ -59,6 +59,7 @@ A.eq(C.runIdOf('b'), 'run-B', 'b keeps its own runId');
 A.eq(C.snapshot('a').acc, 'alpha one', 'a accumulates its own tokens');
 A.eq(C.snapshot('b').acc, 'beta', 'b accumulates its own tokens (no cross-contamination)');
 A.eq(C.snapshot('a').tools.length, 1, 'a has its own tool line');
+A.eq(C.statusOf('a'), 'working…', 'a tool line moves the stream from thinking to working');
 A.eq(C.snapshot('b').tools[0].isErr, true, 'b tool line keeps its error flag');
 A.eq(C.pendingOf('a'), null, 'a has no pending approval');
 A.eq(C.pendingOf('b').promptId, 'p1', 'b holds its own live consent');

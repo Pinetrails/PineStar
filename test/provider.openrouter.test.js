@@ -115,13 +115,31 @@ async function collect(provider, req) { const out = []; for await (const e of pr
   // I. supportsTools reflects the warmed catalog; unknown -> null (never a false refusal)
   {
     const modelsFetch = async () => new Response(JSON.stringify({ data: [
-      { id: 'tooly', supported_parameters: ['tools'] }, { id: 'plain', supported_parameters: [] }
+      { id: 'tooly', supported_parameters: ['tools'] },
+      { id: 'brainy', supported_parameters: ['tools', 'reasoning_effort'], reasoningEfforts: ['low', 'high'] },
+      { id: 'plain', supported_parameters: [] }
     ] }), { status: 200 });
     const p = makeOpenRouterProvider({ fetch: modelsFetch });
     await p.listModels();
     A.eq(p.supportsTools('tooly'), true, 'tool-capable model -> true');
     A.eq(p.supportsTools('plain'), false, 'non-tool model -> false');
     A.eq(p.supportsTools('unknown-xyz'), null, 'unknown model -> null (do not false-refuse)');
+    A.eq(p.reasoningEfforts('brainy'), ['low', 'high'], 'declared reasoning efforts are exposed');
+    A.eq(p.reasoningEfforts('plain'), ['none'], 'non-reasoning model exposes only reasoning off');
+  }
+
+  // I2. reasoning effort is sent only for reasoning-capable models and clamps to the closest supported level.
+  {
+    const calls = [];
+    const capFetch = async (url, opts) => {
+      calls.push({ url, body: opts && opts.body ? JSON.parse(opts.body) : null });
+      return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    await collect(makeOpenRouterProvider({ fetch: capFetch, key: 'k', reasoningEffort: 'max' }), { model: 'brainy', messages: [] });
+    A.eq(calls[0].body.reasoning, { effort: 'high' }, 'max clamps down to the strongest declared reasoning effort');
+    calls.length = 0;
+    await collect(makeOpenRouterProvider({ fetch: capFetch, key: 'k', reasoningEffort: 'high' }), { model: 'plain', messages: [] });
+    A.eq(calls[0].body.reasoning, undefined, 'non-reasoning model omits the reasoning block');
   }
 
   // J. REGRESSION LOCK: a cancel during the PRE-STREAM request (POST / retry backoff) ends cleanly as a

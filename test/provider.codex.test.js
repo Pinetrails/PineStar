@@ -114,6 +114,21 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.body.input[0], { role: 'user', content: [{ type: 'input_text', text: 'hi' }] }, 'user turn -> input_text part');
     A.eq(captured.body.tools[0], { type: 'function', name: 'fetch', description: 'd', strict: false, parameters: { type: 'object' } }, 'chat tool -> Responses function tool');
     A.eq(captured.body.tool_choice, 'auto', 'tool_choice auto when tools present');
+    A.eq(captured.body.reasoning, { effort: 'medium', summary: 'auto' }, 'default reasoning effort is medium');
+    A.eq(captured.body.include, ['reasoning.encrypted_content'], 'reasoning carry-over requested when thinking is on');
+  }
+
+  // C1b. Codex effort aliases clamp to the backend scale; reasoning-off skips encrypted reasoning carry-over.
+  {
+    const bodies = [];
+    const f = async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(['data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }); };
+    await collect(makeCodexProvider({ fetch: f, token: 'ACCESS', reasoningEffort: 'max' }), { model: 'gpt-5.3-codex', messages: [] });
+    await collect(makeCodexProvider({ fetch: f, token: 'ACCESS', reasoningEffort: 'medium' }), { model: 'gpt-5.3-codex', messages: [], reasoningEffort: 'none' });
+    A.eq(_internals.normalizeCodexReasoningEffort('minimal'), 'low', 'minimal maps to Codex low');
+    A.eq(bodies[0].reasoning, { effort: 'xhigh', summary: 'auto' }, 'max maps to Codex xhigh');
+    A.eq(bodies[0].include, ['reasoning.encrypted_content'], 'reasoning carry-over remains on for xhigh');
+    A.eq(bodies[1].reasoning, { effort: 'none', summary: 'auto' }, 'per-request reasoning can turn thinking off');
+    A.eq(bodies[1].include, undefined, 'reasoning-off omits encrypted reasoning include');
   }
 
   // C2. input conversion internals: assistant text + tool_calls, and a tool result message

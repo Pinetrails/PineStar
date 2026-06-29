@@ -228,13 +228,24 @@ const Chat = (() => {
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
   function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
-  function status(s) { if (statusEl) statusEl.textContent = s; }
+  function status(s) {
+    if (!statusEl) return;
+    statusEl.textContent = s;
+    const low = String(s || '').toLowerCase();
+    statusEl.classList.remove('status-thinking', 'status-working', 'status-approval', 'status-stopping', 'status-online');
+    statusEl.classList.add(low.indexOf('approval') >= 0 ? 'status-approval'
+      : low.indexOf('stopping') >= 0 ? 'status-stopping'
+      : low.indexOf('working') >= 0 ? 'status-working'
+      : low.indexOf('thinking') >= 0 ? 'status-thinking'
+      : 'status-online');
+  }
   // derive the DISPLAYED stream's status from real state, so a low-priority write (a finishing turn) can't
   // clobber the high-priority 'awaiting your approval…' after a switch-back. One source of truth.
   function syncStatus() {
     if (interview) { status('waking…'); stopElapsedTimer(); return; }
     const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
-    status(p ? 'awaiting your approval…' : (isBusy() ? 'working…' : 'online'));
+    const channelStatus = (activeWs && typeof Channels !== 'undefined' && Channels.statusOf) ? Channels.statusOf(activeWs.id) : '';
+    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : 'online'));
     // keep the elapsed readout matched to the DISPLAYED stream — switching to a busy stream picks up its
     // live count, switching to an idle one clears it. (send() also starts it the instant a run begins.)
     if (isBusy()) ensureElapsedTimer(); else stopElapsedTimer();
@@ -943,7 +954,8 @@ const Chat = (() => {
     function walkToDesk() {   // idempotent: the FIRST real tool action of the turn sends THIS agent to its station
       if (walkedToDesk) return; walkedToDesk = true;
       if (World.setActivityFor) World.setActivityFor(turnAgentId, 'task'); else World.setActivity('task');
-      if (isActiveWs(ws)) status('working…');
+      if (typeof Channels !== 'undefined' && Channels.setStatus) Channels.setStatus(ws.id, 'working…');
+      if (isActiveWs(ws)) syncStatus();
     }
     // turn to face the Commander and listen (no camera yank); a spoken CHAT also softly frames the agent.
     if (World.setActivityFor) World.setActivityFor(turnAgentId, 'talk'); else World.setActivity('talk');

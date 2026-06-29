@@ -920,17 +920,31 @@ function normalizeProvider(provider) {
   return (provider === 'codex' || provider === 'openai-codex') ? 'codex' : 'openrouter';
 }
 function providerUsesCodex(provider) { return normalizeProvider(provider) === 'codex'; }
+function normalizeReasoningEffort(value) {
+  const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const map = {
+    off: 'none', none: 'none', no: 'none', disabled: 'none',
+    min: 'minimal', minimal: 'minimal',
+    low: 'low',
+    med: 'medium', mid: 'medium', medium: 'medium',
+    high: 'high',
+    extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh',
+    max: 'max'
+  };
+  return map[key] || 'medium';
+}
 
 function startTelegram(token, key, model, agentCfg) {
   stopTelegram();
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
+  const reasoningEffort = normalizeReasoningEffort(cfg.reasoningEffort || 'medium');
   const prev = (channelSecrets && channelSecrets.telegram) || {};
   // Persist the SAME agentId + composed system prompt the app uses, so a Telegram run IS the same agent
   // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
   // LIVE by the hub each message, so /sync can refresh them (dossier edits) without a reconnect.
   channelSecrets = Object.assign({}, channelSecrets, { telegram: {
-    token: token, key: key, model: model, provider: provider, enabled: true,
+    token: token, key: key, model: model, provider: provider, reasoningEffort: reasoningEffort, enabled: true,
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
@@ -943,7 +957,7 @@ function startTelegram(token, key, model, agentCfg) {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);
       const key = provider === 'openrouter' ? (t.key || runtimeKey) : '';
-      return { key, model: t.model, provider, agentId: t.agentId, system: t.system };
+      return { key, model: t.model, provider, reasoningEffort: normalizeReasoningEffort(t.reasoningEffort || 'medium'), agentId: t.agentId, system: t.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), maxMessageLength: 4096,
@@ -1114,6 +1128,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
+  if (req.method === 'GET' && req.url === '/api/models/openrouter') return handleOpenRouterModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
@@ -1185,7 +1200,7 @@ server.listen(PORT, '127.0.0.1', () => {
     const envTok = String(ENV('TELEGRAM_TOKEN') || '').trim();
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (t.enabled && t.token && t.model && (providerUsesCodex(t.provider) || t.key || runtimeKey)) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider }); console.log('  · telegram auto-started from saved config'); }
+    if (t.enabled && t.token && t.model && (providerUsesCodex(t.provider) || t.key || runtimeKey)) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
@@ -1729,6 +1744,7 @@ async function handleRun(req, res) {
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
+  const reasoningEffort = normalizeReasoningEffort((body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort))) || 'medium');
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
@@ -1833,7 +1849,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask, provider, fallbackModels,
+      key, model, system, messages, agentId, isTask, provider, reasoningEffort, fallbackModels,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent, summon: summonRequest,   // team.summon → live summonAgent() round-trip
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
@@ -1866,6 +1882,7 @@ async function runOnce(o) {
   const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
   const usingCodex = (o.provider === 'codex' || o.provider === 'openai-codex');
   const providerId = usingCodex ? 'codex' : 'openrouter';
+  const reasoningEffort = normalizeReasoningEffort(o.reasoningEffort || o.reasoning_effort || (o.reasoning && o.reasoning.effort) || 'medium');
   let model = String((o && o.model) || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
@@ -1932,7 +1949,7 @@ async function runOnce(o) {
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
   makeOrchestrationTools({
-    runOnce, roster: () => agentRoster, key, model, provider: o.provider, subagents,
+    runOnce, roster: () => agentRoster, key, model, provider: o.provider, reasoningEffort, subagents,
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
@@ -2001,9 +2018,9 @@ async function runOnce(o) {
       emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
       return;
     }
-    provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token: codexToken });
+    provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token: codexToken, reasoningEffort });
   } else {
-    provider = selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key, baseUrl: OPENROUTER_BASE });
+    provider = selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key, baseUrl: OPENROUTER_BASE, reasoningEffort });
   }
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
@@ -2022,7 +2039,7 @@ async function runOnce(o) {
   if (!usingCodex) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== key);
-    rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk, baseUrl: OPENROUTER_BASE }), model, credKey: rk }));
+    rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk, baseUrl: OPENROUTER_BASE, reasoningEffort }), model, credKey: rk }));
   }
   const fallbacks = rotationFallbacks.concat(fallbackModels.map(m => ({ provider, model: m })));
 
@@ -2348,6 +2365,7 @@ async function handleChannelConnect(req, res) {
   const token = String(body.token || '').trim() || String(saved.token || '');
   const key = String(body.key || '').trim() || String(saved.key || '') || (provider === 'openrouter' ? runtimeKey : '');
   const model = String(body.model || '').trim() || String(saved.model || '');
+  const reasoningEffort = normalizeReasoningEffort(body.reasoningEffort || body.reasoning_effort || saved.reasoningEffort || 'medium');
   // the app's REAL agent identity, so Telegram runs as the same agent (shared memory) with the same voice.
   const agentId = String(body.agentId || '').trim() || String(saved.agentId || '');
   const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');
@@ -2355,7 +2373,7 @@ async function handleChannelConnect(req, res) {
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
   if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
   if (!providerUsesCodex(provider) && !key) return json(400, { error: 'connect your agent first (OpenRouter key + model are required)' });
-  try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   json(200, { connected: true, state: telegramStatus.state });
 }
 
@@ -2372,6 +2390,7 @@ async function handleChannelSync(req, res) {
   if (typeof body.system === 'string') patch.system = body.system;
   if (typeof body.model === 'string' && body.model.trim()) patch.model = body.model.trim();
   if (typeof body.provider === 'string' && body.provider.trim()) patch.provider = normalizeProvider(body.provider.trim());
+  if (body.reasoningEffort || body.reasoning_effort) patch.reasoningEffort = normalizeReasoningEffort(body.reasoningEffort || body.reasoning_effort);
   if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, t, patch) });
@@ -2445,6 +2464,28 @@ function handleCodexStatus(req, res) {
 // GET /api/auth/codex/models — the ACCOUNT's real Codex model list (live-discovered with a fresh token), so
 // the connect screen offers exactly the slugs the backend will accept. Falls back to the provider's curated
 // list (and reports the error) when not connected / discovery fails, so the dropdown is never empty.
+async function handleOpenRouterModels(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: OPENROUTER_BASE });
+    const models = await provider.listModels();
+    json(200, {
+      models: models.map(m => ({
+        id: m.id,
+        name: m.name || m.id,
+        context_length: m.context_length || 0,
+        pricing: m.pricing || null,
+        supportsTools: m.supportsTools !== false,
+        supportsReasoning: !!m.supportsReasoning,
+        supported_parameters: Array.isArray(m.supported_parameters) ? m.supported_parameters : [],
+        reasoningEfforts: Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : []
+      }))
+    });
+  } catch (e) {
+    json(200, { models: [], error: (e && e.message) || 'OpenRouter catalog unavailable' });
+  }
+}
+
 async function handleCodexModels(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {

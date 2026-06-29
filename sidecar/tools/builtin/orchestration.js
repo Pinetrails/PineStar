@@ -4,7 +4,7 @@
    synthesize. CONTRACT-FREE: no shared/events.js change — children emit the SAME frozen agent.run.* events,
    forwarded (lifecycle + cost only) onto the lead's bus so the floor can ANIMATE the handoff.
 
-   makeOrchestrationTools({ runOnce, roster, key, model, provider, perWorker, newId, maxWorkers })
+   makeOrchestrationTools({ runOnce, roster, key, model, provider, reasoningEffort, perWorker, newId, maxWorkers })
      runOnce   : the SAME run host the browser/cron use (injected to avoid a require cycle) — async (o) -> result
      roster    : () -> Map(agentId -> { system, name, model }) — the live crew identities (pushed by the browser)
      key       : this run's API key (per-run)        model : the lead's model (worker fallback)
@@ -52,6 +52,7 @@
     const key = deps.key;
     const model = deps.model;
     const provider = deps.provider || null;
+    const reasoningEffort = deps.reasoningEffort || 'medium';
     const subagents = deps.subagents || null;
     // the LEAD's OWN base identity (system prompt), threaded from the run host so team.spawn can clone it. Empty
     // string when absent → a spawned subagent still runs, just without an inherited persona.
@@ -115,7 +116,7 @@
           let result;
           try {
             result = await runOnce({
-              key, provider,
+              key, provider, reasoningEffort,
               model: (job.ident && job.ident.model) || model,
               system: (job.ident && job.ident.system) || '',
               messages: [{ role: 'user', content: job.prompt }],
@@ -211,7 +212,7 @@
             let result;
             try {
               result = await runOnce({
-                key, provider, model,                       // the lead's OWN model — a clone of self
+                key, provider, reasoningEffort, model,      // the lead's OWN model — a clone of self
                 system: selfSystem,                         // the lead's OWN base identity; the clone's runOnce
                                                             // composes its own caps for its (narrowed) toolset
                 messages: [{ role: 'user', content: prompt }],
@@ -318,7 +319,7 @@
         let result;
         try {
           result = await runOnce({
-            key, provider,
+            key, provider, reasoningEffort,
             model: (ident && ident.model) || model,
             system: (ident && ident.system) || '',
             messages: [{ role: 'user', content: rec.prompt || '' }],

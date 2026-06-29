@@ -75,7 +75,12 @@
   function setStatus(wsId, s) { const c = get(wsId); c.status = s; return s; }
   function appendToken(wsId, d) { const c = get(wsId); c.acc += (d == null ? '' : d); return c.acc; }
   function setAcc(wsId, text) { const c = get(wsId); c.acc = (text == null ? '' : String(text)); return c.acc; }
-  function addTool(wsId, text, isErr) { const c = get(wsId); c.tools.push({ text: String(text == null ? '' : text), isErr: !!isErr }); return c.tools.length; }
+  function addTool(wsId, text, isErr) {
+    const c = get(wsId);
+    c.tools.push({ text: String(text == null ? '' : text), isErr: !!isErr });
+    c.status = 'working…';
+    return c.tools.length;
+  }
   function setPending(wsId, p) { const c = get(wsId); c.pending = p || null; if (p) c.status = 'awaiting your approval…'; return c.pending; }
   function clearPending(wsId) { const c = peek(wsId); if (c) { c.pending = null; c.status = c.busy ? 'working…' : 'online'; } }
 
