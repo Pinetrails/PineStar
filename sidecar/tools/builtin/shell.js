@@ -63,6 +63,42 @@
   function withinJail(P, cwd, jailRoot) {
     try { const r = P.resolve(cwd), j = P.resolve(jailRoot); return r === j || r.indexOf(j + P.sep) === 0; } catch (_) { return false; }
   }
+  function pathInside(P, child, parent) {
+    try {
+      let c = P.resolve(child), p = P.resolve(parent);
+      if (P.sep === '\\') { c = c.toLowerCase(); p = p.toLowerCase(); }
+      return c === p || c.indexOf(p + P.sep) === 0;
+    } catch (_) { return false; }
+  }
+  function normalizeWinCwd(P, cwd, isWin) {
+    cwd = String(cwd == null ? '' : cwd).trim();
+    if (!isWin) return cwd;
+    const m = cwd.match(/^\/([a-zA-Z])(?:\/|$)(.*)$/);
+    if (!m) return cwd;
+    const tail = m[2] ? m[2].replace(/[\\/]+/g, '\\') : '';
+    return m[1].toUpperCase() + ':\\' + tail;
+  }
+  function resolveShellCwd(opts) {
+    opts = opts || {};
+    const P = opts.pathMod, fs = opts.fs, requested = opts.requested;
+    const current = opts.current, jailRoot = opts.jailRoot, root = opts.root;
+    const isWin = !!opts.isWin, allowExternal = !!opts.allowExternal;
+    let raw = String(requested == null ? '' : requested).trim();
+    if (!raw) return current;
+    if (/[\0\r\n]/.test(raw)) throw new Error('cwd contains a control character');
+    if (/^\\\\[^\s\\]/.test(raw)) throw new Error('UNC cwd paths are not allowed');
+    raw = normalizeWinCwd(P, raw, isWin);
+    const abs = P.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw) ? P.resolve(raw) : P.resolve(current, raw);
+    if (!withinJail(P, abs, jailRoot) && !allowExternal) throw new Error('cwd must stay inside your workspace');
+    if (!withinJail(P, abs, jailRoot) && root && pathInside(P, abs, root))
+      throw new Error('cwd cannot point at another agent or protected StarNet workspace sibling');
+    if (fs && fs.existsSync && !fs.existsSync(abs)) throw new Error('cwd does not exist: ' + raw);
+    if (fs && fs.statSync) {
+      try { if (!fs.statSync(abs).isDirectory()) throw new Error('cwd is not a directory: ' + raw); }
+      catch (e) { if (e && /^cwd is not a directory/.test(e.message || '')) throw e; throw new Error('cwd is not accessible: ' + raw); }
+    }
+    return abs;
+  }
 
   // best-effort tree-kill: child.kill() reaps the shell; on Windows taskkill /T also reaps its grandchildren.
   function killTree(spawn, child, isWin) {
@@ -115,7 +151,7 @@
   function makeShellTool(deps) {
     deps = deps || {};
     const environment = deps.environment || null;
-    const spawn = deps.spawn, fs = deps.fs, P = deps.pathMod, ROOT = deps.root;
+    const spawn = deps.spawn, fs = deps.fs || null, P = deps.pathMod || (typeof require === 'function' ? require('node:path') : null), ROOT = deps.root || '';
     const bg = deps.bg || null;   // H2.2: the singleton background-process manager (shellbg.js); null -> bg disabled
     if (!environment && (typeof spawn !== 'function' || !fs || !P || !ROOT)) throw new Error('shell.js requires { spawn, fs, pathMod, root } or { environment }');
     const redact = typeof deps.redact === 'function' ? deps.redact : (s) => s;
@@ -133,9 +169,9 @@
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
         + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands run INSIDE your own '
         + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
-        + 'paths are refused. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
+        + 'paths are refused in cmd; pass cwd to run from a specific existing folder instead. On Windows local shells, cwd accepts C:\\Users\\... or /c/Users/... and commands use cmd.exe syntax. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
         + '(e.g. a dev server) — it returns immediately with a handle; check it with shell.bg.status, stop it with shell.bg.kill.',
-      schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, timeoutMs: { type: 'number' }, background: { type: 'boolean' } } },
+      schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, cwd: { type: 'string' }, timeoutMs: { type: 'number' }, background: { type: 'boolean' } } },
       run: function (args, ctx) {
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
@@ -148,7 +184,16 @@
         // that is still in-jail and still exists; otherwise fall back to the jail root.
         const sess = sessions.get(aid);
         let cwd = environment ? environment.getCwd(aid) : jailRoot;
+        if (sess && sess.cwd) {
+          try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment && environment.backendId === 'local' }); }
+          catch (_) {}
+        }
         if (!environment && sess && sess.cwd && withinJail(P, sess.cwd, jailRoot) && (!fs.existsSync || fs.existsSync(sess.cwd))) cwd = sess.cwd;
+        if (args && args.cwd != null) {
+          if (environment && environment.backendId !== 'local') throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
+          cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment ? environment.backendId === 'local' : false });
+          sessions.set(aid, { cwd: cwd });
+        }
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
         // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
@@ -170,7 +215,11 @@
         return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
           const pm = parseMarker(res.out);
-          if (environment && pm.cwd) environment.rememberCwd(aid, pm.cwd);
+          if (environment && pm.cwd && environment.backendId !== 'local') environment.rememberCwd(aid, pm.cwd);
+          else if (environment && pm.cwd && withinJail(P, pm.cwd, jailRoot)) environment.rememberCwd(aid, pm.cwd);
+          else if (environment && pm.cwd && environment.backendId === 'local') {
+            try { sessions.set(aid, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true }) }); } catch (_) {}
+          }
           else if (pm.cwd && withinJail(P, pm.cwd, jailRoot)) sessions.set(aid, { cwd: pm.cwd });
           const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
@@ -224,10 +273,10 @@
 
     return {
       execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
-      _internals: { escapesWorkspace: escapesWorkspace, killTree: killTree, safeAgentId: safeAgentId },
+      _internals: { escapesWorkspace: escapesWorkspace, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
       register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
 });
