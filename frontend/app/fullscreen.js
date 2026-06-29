@@ -10,6 +10,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
   'use strict';
 
+  let pendingToggle = null;
+
   function tauriCore(win) {
     return win && win.__TAURI__ && win.__TAURI__.core && typeof win.__TAURI__.core.invoke === 'function'
       ? win.__TAURI__.core
@@ -18,10 +20,14 @@
 
   function tauriWindow(win) {
     const api = win && win.__TAURI__;
-    if (!api || !api.window) return null;
-    if (typeof api.window.getCurrentWindow === 'function') return api.window.getCurrentWindow();
-    if (api.window.Window && typeof api.window.Window.getCurrent === 'function') return api.window.Window.getCurrent();
-    if (api.window.appWindow) return api.window.appWindow;
+    if (!api) return null;
+    const windowApi = api.window || api.webviewWindow;
+    if (!windowApi) return null;
+    if (typeof windowApi.getCurrentWindow === 'function') return windowApi.getCurrentWindow();
+    if (typeof windowApi.getCurrentWebviewWindow === 'function') return windowApi.getCurrentWebviewWindow();
+    if (windowApi.Window && typeof windowApi.Window.getCurrent === 'function') return windowApi.Window.getCurrent();
+    if (windowApi.WebviewWindow && typeof windowApi.WebviewWindow.getCurrent === 'function') return windowApi.WebviewWindow.getCurrent();
+    if (windowApi.appWindow) return windowApi.appWindow;
     return null;
   }
 
@@ -87,9 +93,12 @@
   function handleKeydown(ev, win, doc) {
     if (!isF11(ev) || ev.repeat) return false;
     stopEvent(ev);
-    toggle(win || root, doc).catch(err => {
+    if (pendingToggle) return true;
+    pendingToggle = toggle(win || root, doc).catch(err => {
       const consoleRef = (win && win.console) || (root && root.console);
       if (consoleRef && typeof consoleRef.warn === 'function') consoleRef.warn('[fullscreen] toggle failed', err);
+    }).finally(() => {
+      pendingToggle = null;
     });
     return true;
   }
