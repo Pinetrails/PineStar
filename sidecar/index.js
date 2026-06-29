@@ -2180,7 +2180,24 @@ async function runOnce(o) {
   const hasWebTools = wireNames.indexOf('web_search') >= 0 || wireNames.indexOf('web_fetch') >= 0;
   const hasWriteTools = wireNames.indexOf('fs_write') >= 0 || wireNames.indexOf('fs_append') >= 0 ||
     wireNames.indexOf('fs_edit') >= 0 || wireNames.indexOf('fs_patch') >= 0;
+  const hasReadTools = wireNames.indexOf('fs_read') >= 0 || wireNames.indexOf('fs_list') >= 0 ||
+    wireNames.indexOf('fs_search') >= 0;
+  const hasPatchTool = wireNames.indexOf('fs_patch') >= 0;
+  const hasShellExec = wireNames.indexOf('shell_exec') >= 0;
+  const hasVerifyRun = wireNames.indexOf('verify_run') >= 0;
+  const hasBgStatus = wireNames.indexOf('shell_bg_status') >= 0;
+  const hasBrowserTools = wireNames.some(n => /^browser_/.test(n));
   const hasNotebookWrite = wireNames.indexOf('notebook_write') >= 0;
+  const workDisciplineNote = ''
+    + (hasShellExec ? 'When the Commander names a local project folder, first anchor shell_exec.cwd to that exact folder, then keep later shell paths relative to it. After a path or cwd failure, run one small working-directory diagnostic plus a listing, and change strategy instead of retrying the same bad path. ' : '')
+    + (hasReadTools ? 'Inspect before editing with fs_search/fs_list/fs_read, or one small shell diagnostic when the file tools cannot see the project; do not guess file contents or shotgun failed paths. ' : '')
+    + (hasWriteTools ? (hasPatchTool
+      ? 'For source changes, prefer fs_patch for multi-line edits and fs_edit only for small exact replacements. Avoid temporary patch scripts, giant quoted shell rewrites, or minified/quoting-mangled edits unless the normal file tools cannot do the job; leave code readable. '
+      : 'For source changes, prefer fs_edit/fs_write over giant quoted shell rewrites, and leave code readable. ') : '')
+    + ((hasVerifyRun || hasShellExec) ? 'After edits, run the narrowest real verification that proves the change: verify_run when it matches the project, otherwise shell_exec for syntax/build/tests. ' : '')
+    + (hasShellExec && hasBgStatus ? 'For dev servers, start them with shell_exec background:true, then call shell_bg_status to confirm the handle is alive before finalizing. ' : '')
+    + (hasBrowserTools ? 'For browser, UI, or game changes, use browser_navigate plus browser_console/browser_snapshot/browser_vision when available; a syntax check alone is not enough to prove browser behavior. ' : '')
+    + ((hasShellExec || hasWriteTools || hasBrowserTools) ? 'Final reports must name changed files, verification commands/results, and any running server URL/background id or remaining limitation. ' : '');
   const toolNote = (isTask && wireNames.length)
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
       + 'these LIVE tools: ' + wireNames.join(', ') + '. '
@@ -2192,7 +2209,8 @@ async function runOnce(o) {
       + 'do not invent facts, figures, or links. '
       + (hasWriteTools ? 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append. ' : '')
       + (hasNotebookWrite ? 'Record durable facts you\'ll want later with notebook_write. ' : '')
-      + (wireNames.indexOf('shell_exec') >= 0 ? 'If the Commander names a local folder to work in, call shell_exec with its cwd field set to that exact folder and then use relative shell commands there; do not guess Bash-style /c paths for Windows. ' : '')
+      + workDisciplineNote
+      + (hasShellExec ? 'Do not guess Bash-style /c paths for Windows when the Commander gave you a real Windows path. ' : '')
       + (hasWriteTools ? 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. ' : '')
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
       + 'final report of what you found/did' + (hasWriteTools ? ' and which files you saved.' : '.')

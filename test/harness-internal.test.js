@@ -45,4 +45,17 @@ A.ok(src.includes("fetchModelCatalog(OR + '/models', 'data')"), 'Harness.listMod
 A.ok(src.includes("params.indexOf('tools') >= 0"), 'Harness.listModels derives tool support from supported_parameters when needed');
 A.ok(/saved\s*&&\s*saved\.agent[\s\S]{0,180}Harness\.listModels\(\)/.test(app), 'auto-resume warms the model catalog before entering the game');
 
+// Hermes-style work discipline: task runs should push the model into a stable build loop instead of repeated
+// failed path guesses, shell-quoted source rewrites, or syntax-only verification.
+A.ok(/const\s+workDisciplineNote\s*=/.test(sidecar), 'sidecar builds a dedicated work-discipline prompt block');
+A.ok(/anchor shell_exec\.cwd to that exact folder/.test(sidecar), 'work discipline anchors shell cwd before project commands');
+A.ok(/change strategy instead of retrying the same bad path/.test(sidecar), 'work discipline discourages repeated bad path attempts');
+A.ok(/Inspect before editing with fs_search\/fs_list\/fs_read/.test(sidecar), 'work discipline requires inspection before editing');
+A.ok(/prefer fs_patch for multi-line edits/.test(sidecar), 'work discipline prefers structured patch edits for source changes');
+A.ok(/Avoid temporary patch scripts/.test(sidecar), 'work discipline steers away from throwaway patch scripts');
+A.ok(/run the narrowest real verification/.test(sidecar), 'work discipline requires targeted verification');
+A.ok(/shell_exec background:true/.test(sidecar) && /shell_bg_status/.test(sidecar), 'work discipline checks background dev servers');
+A.ok(/browser_navigate plus browser_console\/browser_snapshot\/browser_vision/.test(sidecar), 'work discipline asks browser-capable runs to verify UI/browser behavior');
+A.ok(/Final reports must name changed files, verification commands\/results/.test(sidecar), 'work discipline requires concrete final evidence');
+
 A.report('harness-internal.test');

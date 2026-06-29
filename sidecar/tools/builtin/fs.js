@@ -163,7 +163,7 @@
 
     const editTool = {
       name: 'fs.edit', capability: 'cabinet', scope: 'write', requiresConsent: true, timeoutMs: 10000,
-      description: 'Edit a workspace file by exact text replacement: every occurrence of "find" becomes "replace". Errors if "find" is absent — read the file first so your "find" matches exactly.',
+      description: 'Edit a workspace file by exact text replacement: every occurrence of "find" becomes "replace". Use for small, exact changes; prefer fs.patch for multi-line source edits. Errors if "find" is absent — read the file first so your "find" matches exactly.',
       schema: { type: 'object', required: ['path', 'find', 'replace'], properties: { path: { type: 'string' }, find: { type: 'string' }, replace: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
@@ -186,7 +186,7 @@
 
     const patchTool = {
       name: 'fs.patch', capability: 'cabinet', scope: 'write', requiresConsent: true, timeoutMs: 15000,
-      description: 'Apply a V4A multi-hunk patch inside your workspace. Validates every path and hunk before writing, so a failed hunk leaves files unchanged.',
+      description: 'Apply a V4A multi-hunk patch inside your workspace. Prefer this for multi-line source edits instead of temporary patch scripts or shell-quoted rewrites. Validates every path and hunk before writing, so a failed hunk leaves files unchanged.',
       schema: { type: 'object', required: ['patch'], properties: { patch: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
