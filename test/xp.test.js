@@ -1,5 +1,5 @@
 /* node test/xp.test.js - the AGENT-GROWTH model.
-   XP/levels are satisfaction-gated: only explicit positive user feedback mints XP.
+   XP/levels are satisfaction-gated: only explicit positive user turn-in feedback mints XP.
    Operational events still update counters and milestones, but cannot level an agent by themselves.
    Negative feedback calibrates confidence down without subtracting XP or levels. */
 'use strict';
@@ -20,6 +20,8 @@ const feedback = (delta, reason) => ({ name: 'memory.feedback', payload: { agent
 const keep = () => feedback(2, 'kept');
 const edit = () => feedback(1, 'edited');
 const discard = () => feedback(-1, 'discarded');
+const helpful = () => feedback(2, 'helpful');
+const unhelpful = () => feedback(-1, 'unhelpful');
 const toolOk = runId => ({ name: 'agent.tool_result', payload: { agentId: 'a', runId, callId: 'c', ok: true, isError: false } });
 const delivered = () => ({ name: 'workitem.delivered', payload: { agentId: 'a', workitemId: 'w', finalQueueId: 'q' } });
 
@@ -58,7 +60,8 @@ A.eq(run([{ name: 'channel.delivery', payload: { ok: true } }]).stats.xp, 0, 'ch
 A.eq(Xp.applyEvent(Xp.fresh(), edit()).awards.xp, 10, 'edited/positive feedback delta 1 awards 10 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), keep()).awards.xp, 20, 'kept/positive feedback delta 2 awards 20 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), discard()).awards.xp, 0, 'negative feedback awards no xp');
-A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 50, 'a huge finite feedback delta is capped at +50 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'kept')).awards.xp, 50, 'a huge finite kept-feedback delta is capped at +50 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 0, 'unknown memory.feedback reasons do not award xp');
 
 // ---- confidence: bidirectional EWMA over explicit feedback, honest cold-start ----
 A.eq(Xp.compute(Xp.fresh()).known, false, 'fresh agent is calibrating, not known');
@@ -80,8 +83,14 @@ A.eq(dropped.stats.xp, three.stats.xp, 'negative feedback does not subtract xp')
 A.eq(dropped.stats.counters.negativeFeedback, 1, 'negative feedback counter records misses');
 
 const zeroFeedback = run([feedback(0, 'neutral')]);
-A.eq(zeroFeedback.stats.samples, 0, 'zero feedback delta is not a satisfaction sample');
-A.eq(zeroFeedback.stats.xp, 0, 'zero feedback delta awards no xp');
+A.eq(zeroFeedback.stats.samples, 0, 'unknown feedback reason is not a satisfaction sample');
+A.eq(zeroFeedback.stats.xp, 0, 'unknown feedback reason awards no xp');
+
+const notebookRatings = run([helpful(), unhelpful()]);
+A.eq(notebookRatings.stats.samples, 0, 'notebook feedback ratings are not satisfaction samples');
+A.eq(notebookRatings.stats.xp, 0, 'notebook feedback ratings do not mint xp');
+A.eq(notebookRatings.stats.counters.positiveFeedback || 0, 0, 'notebook helpful does not count as user approval');
+A.eq(notebookRatings.stats.counters.negativeFeedback || 0, 0, 'notebook unhelpful does not count as user rejection');
 
 // cancelled = the user aborted; not a satisfaction verdict -> no xp, no confidence sample
 const canc = run([{ name: 'agent.run.end', payload: { reason: 'cancelled', turns: 0, usd: 0 } }]);
@@ -159,7 +168,7 @@ const rb = Xp.applyEvent(bad, keep());
 A.ok(Number.isFinite(rb.stats.xp) && Number.isFinite(rb.stats.confidence) && Number.isFinite(rb.stats.level), 'applyEvent sanitizes non-finite stats');
 A.eq(Xp.levelForXp(Infinity), 1, 'levelForXp(Infinity) -> 1, never Infinity');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(Infinity, 'bad')).awards.xp, 0, 'non-finite feedback delta -> 0 xp');
-A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 50, 'huge finite feedback delta remains capped at +50 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'kept')).awards.xp, 50, 'huge finite kept-feedback delta remains capped at +50 xp');
 
 // ---- milestone CATALOGUE (render-state for the trophy case): every badge, with earned flags + unlock hints ----
 const catFresh = Xp.milestones(Xp.fresh());

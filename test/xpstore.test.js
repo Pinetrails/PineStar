@@ -45,6 +45,9 @@ function approve(agentId, n) {
 function reject(agentId, n) {
   bus.emit('memory.feedback', { agentId, id: agentId + '-bad-' + n, delta: -1, reason: 'discarded' });
 }
+function notebookRating(agentId, n, rating, delta) {
+  bus.emit('memory.feedback', { agentId, id: agentId + '-note-' + n, delta, reason: rating });
+}
 
 for (let i = 1; i <= 4; i++) done('researcher', i);
 
@@ -74,6 +77,21 @@ reject('researcher', 1);
 A.eq(researcher.stats.xp, beforeRejectXp, 'negative feedback does not subtract xp');
 A.eq(researcher.stats.counters.negativeFeedback, 1, 'negative feedback is recorded on the owning agent');
 A.ok(persists > beforeRejectPersists, 'negative feedback persists even without a level-up');
+
+const beforeNotebook = {
+  xp: researcher.stats.xp,
+  samples: researcher.stats.samples,
+  positive: researcher.stats.counters.positiveFeedback,
+  negative: researcher.stats.counters.negativeFeedback,
+  persists,
+};
+notebookRating('researcher', 1, 'helpful', 2);
+notebookRating('researcher', 2, 'unhelpful', -1);
+A.eq(researcher.stats.xp, beforeNotebook.xp, 'notebook ratings do not award or subtract XP');
+A.eq(researcher.stats.samples, beforeNotebook.samples, 'notebook ratings do not calibrate satisfaction');
+A.eq(researcher.stats.counters.positiveFeedback, beforeNotebook.positive, 'notebook helpful is not a user approval receipt');
+A.eq(researcher.stats.counters.negativeFeedback, beforeNotebook.negative, 'notebook unhelpful is not a user rejection receipt');
+A.eq(persists, beforeNotebook.persists, 'notebook ratings do not persist unchanged XP stats');
 
 focused = researcher;
 for (let i = 1; i <= 4; i++) done('agent', i);

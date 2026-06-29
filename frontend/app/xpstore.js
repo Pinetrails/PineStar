@@ -13,7 +13,7 @@ const XpStore = (() => {
   let persistFn = () => {};
   let wired = false;
 
-  // the real events that feed growth. Only explicit positive memory.feedback mints XP; operational events
+  // the real events that feed growth. Only explicit turn-in memory.feedback mints XP; operational events
   // update counters/milestones so the dossier still shows shipped work without leveling from chatter.
   const FEED = ['agent.run.end', 'agent.tool_result', 'memory.write', 'memory.used', 'memory.feedback', 'workitem.delivered', 'channel.delivery'];
 
@@ -28,6 +28,12 @@ const XpStore = (() => {
   function eventAgentId(payload) {
     const id = payload && typeof payload.agentId === 'string' ? payload.agentId.trim() : '';
     return id || 'agent';
+  }
+
+  function isSatisfactionFeedback(name, payload) {
+    if (name !== 'memory.feedback' || typeof Xp === 'undefined' || !Xp.scoreEvent) return false;
+    const sc = Xp.scoreEvent(name, payload || {});
+    return !!(sc && sc.quality !== null && sc.quality !== undefined);
   }
 
   function resolveAgent(agentId) {
@@ -84,9 +90,9 @@ const XpStore = (() => {
     for (const id of ra.awards.milestones) announceMilestone(id);   // agent-scoped milestones
     if (rs.awards.levelUp) celebrateStation(rs.awards.levelTo);
 
-    // persist at run end (captures counters) and on any explicit feedback/level-up/milestone. Feedback can
+    // persist at run end (captures counters) and on explicit user turn-in feedback/level-up/milestone. Feedback can
     // arrive after the run stream has closed, so it must persist on its own even when it does not level up.
-    if (name === 'agent.run.end' || name === 'memory.feedback' || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length || rs.awards.milestones.length) { try { persistFn(); } catch (_) {} }
+    if (name === 'agent.run.end' || isSatisfactionFeedback(name, payload) || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length || rs.awards.milestones.length) { try { persistFn(); } catch (_) {} }
   }
 
   function init(opts) {

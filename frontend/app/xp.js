@@ -25,12 +25,21 @@
   const ALPHA = 0.25;       // EWMA weight — how fast satisfaction tracks recent feedback
   const SEED_CONF = 50;     // neutral starting confidence (held, not shown, until calibrated)
   const MIN_SAMPLES = 3;    // user feedback samples needed before confidence is "known"
-  const FEEDBACK_XP_PER_DELTA = 10; // explicit positive user feedback is the only XP mint
+  const FEEDBACK_XP_PER_DELTA = 10; // explicit positive user turn-in feedback is the only XP mint
   const FEEDBACK_XP_CAP = 50;       // cap one feedback event so one huge delta cannot jump many levels
 
+  function feedbackReason(p) {
+    return String((p && p.reason) || '').trim().toLowerCase();
+  }
+  function turnInFeedbackQuality(reason) {
+    if (reason === 'kept' || reason === 'edited') return 1;
+    if (reason === 'discarded') return 0;
+    return null;
+  }
+
   // ---- XP + satisfaction per event ----
-  // XP comes ONLY from explicit positive user feedback. Operational events still feed counters/milestones
-  // below, but a completed run, tool result, or delivery never levels an agent by itself.
+  // XP comes ONLY from explicit positive user turn-in feedback. Operational events and notebook/tool memory
+  // ratings still feed their own systems, but a completed run, tool result, or delivery never levels an agent.
   // returns { xp, quality } : xp is positive-only (failures/negative feedback never subtract);
   // quality in [0,1] feeds satisfaction confidence, or null when the event carries no user judgment.
   function scoreEvent(name, p) {
@@ -51,9 +60,11 @@
       case 'memory.write':       return { xp: 0, quality: null };
       case 'memory.used':        return { xp: 0, quality: null };
       case 'memory.feedback': {
+        const quality = turnInFeedbackQuality(feedbackReason(p));
+        if (quality === null) return { xp: 0, quality: null };
         const d = (typeof p.delta === 'number' && Number.isFinite(p.delta)) ? p.delta : 0;
         const eff = Math.min(Math.max(d, 0), 10);
-        return { xp: d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA)) : 0, quality: d > 0 ? 1 : (d < 0 ? 0 : null) };
+        return { xp: quality > 0 && d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA)) : 0, quality };
       }
       case 'workitem.delivered': return { xp: 0, quality: null };
       case 'channel.delivery':   return { xp: 0, quality: null };
@@ -145,9 +156,9 @@
     else if (name === 'memory.write') bump(s.counters, 'memWrites');
     else if (name === 'memory.used') bump(s.counters, 'memReused');
     else if (name === 'memory.feedback') {
-      const d = (typeof p.delta === 'number' && Number.isFinite(p.delta)) ? p.delta : 0;
-      if (d > 0) bump(s.counters, 'positiveFeedback');
-      else if (d < 0) bump(s.counters, 'negativeFeedback');
+      const quality = turnInFeedbackQuality(feedbackReason(p));
+      if (quality === 1) bump(s.counters, 'positiveFeedback');
+      else if (quality === 0) bump(s.counters, 'negativeFeedback');
     }
     else if (name === 'workitem.delivered') bump(s.counters, 'delivered');
 
