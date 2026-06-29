@@ -407,5 +407,6 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(afterOk.lastStatus, 'ok', 'lastStatus ok after the retry succeeds');
   }
 
+  require('./cron.run-now.test.js');
   A.report('cron.tick');
 })();
