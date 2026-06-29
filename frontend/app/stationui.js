@@ -375,7 +375,7 @@ const StationUI = (() => {
   function agBrief(a) {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
-    // BRIEF is operational telemetry; the full Level/XP/Confidence/milestone readout lives in the GROWTH tab.
+    // BRIEF is operational telemetry; the full Level/XP/Satisfaction/milestone readout lives in the GROWTH tab.
     return '<div class="stat-grid">' +
       '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
       '</div>' +
@@ -387,9 +387,9 @@ const StationUI = (() => {
       '<div class="ag-foot-row">on station since <b>' + since + '</b></div>';
   }
 
-  // GROWTH tab — the premium agent-growth dossier: XP ladder, a physical confidence gauge (honest "—"
+  // GROWTH tab — the premium agent-growth dossier: XP ladder, a physical satisfaction gauge (honest "—"
   // while calibrating), the milestone trophy case, and the station-prestige rollup. All read off the pure
-  // Xp engine; the confidence marker rides the agent's own suit colour so it reads as "this unit's measure".
+  // Xp engine; the satisfaction marker rides the agent's own suit colour so it reads as "this unit's measure".
   function agGrowth(a) {
     if (typeof Xp === 'undefined' || !a.stats) return '<p class="dim">Growth metrics unavailable.</p>';
     const g = Xp.compute(a.stats);
@@ -405,7 +405,7 @@ const StationUI = (() => {
         '<span class="gx-val" style="font-size:15px;">' + g.inLevel + ' <span class="gx-dim">/</span> ' + g.span + ' <span class="gx-dim" style="font-size:11px;">XP</span></span></div>' +
       '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + g.pct + '%;"></div><div class="gx-mark" style="left:' + g.pct + '%;"></div></div>' +
       '<div class="gx-row"><span class="gx-val gx-dim" style="font-size:12px;">' + g.toNext + ' XP TO LV ' + (g.level + 1) + '</span><span class="gx-val" style="color:var(--ph);font-size:13px;">' + g.pct + '%</span></div>' +
-      '<div class="gx-well"><span class="gx-lbl">Tasks done</span><span class="v">' + g.tasksDone + '</span></div>' +
+      '<div class="gx-well"><span class="gx-lbl">Positive feedback</span><span class="v">' + g.positiveFeedback + '</span></div>' +
       '</div>';
 
     const confnum = g.known ? (g.confidence + '<span style="font-size:18px;color:var(--ph-dim);">%</span>') : '—';
@@ -415,13 +415,13 @@ const StationUI = (() => {
       '</div>';
     const confidence =
       '<div>' +
-      '<div class="gx-sec"><span class="gx-ref">B</span><span class="gx-title">Confidence</span><span class="gx-tag">EWMA &middot; n' + (g.known ? '&ge;' + Xp.MIN_SAMPLES : '=' + g.samples) + '</span></div>' +
+      '<div class="gx-sec"><span class="gx-ref">B</span><span class="gx-title">Satisfaction</span><span class="gx-tag">FEEDBACK EWMA &middot; n' + (g.known ? '&ge;' + Xp.MIN_SAMPLES : '=' + g.samples) + '</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
         '<span class="gx-confnum' + (g.known ? '' : ' cal') + '">' + confnum + '</span>' +
         '<span class="gx-band' + (g.known ? '' : ' cal') + '">' + (g.known ? g.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
       gauge +
       '<div class="gx-zlabels"><span>BUILD</span><span>STEADY</span><span>RELIABLE</span><span class="hot">TRUST</span></div>' +
-      '<div class="gx-well' + (g.bonus ? ' gold' : '') + '"><span class="gx-lbl">XP trust bonus</span><span class="v">' + (g.bonus ? '+' + g.bonus + '%' : '—') + '</span></div>' +
+      '<div class="gx-well' + (g.bonus ? ' gold' : '') + '"><span class="gx-lbl">Feedback bonus</span><span class="v">' + (g.bonus ? '+' + g.bonus + '%' : '—') + '</span></div>' +
       '</div>';
 
     const tros = cat.map(m =>
@@ -445,7 +445,7 @@ const StationUI = (() => {
           '<div class="gx-row" style="margin-bottom:6px;"><span class="gx-val" style="font-size:13px;">' + s.xp.toLocaleString() + ' <span class="gx-dim">/</span> ' + Xp.xpForLevel(s.level + 1).toLocaleString() + ' <span class="gx-dim" style="font-size:11px;">XP</span></span><span class="gx-val" style="color:var(--gold);font-size:13px;">' + s.pct + '%</span></div>' +
           '<div class="gx-trk"><div class="gx-gfill" style="width:' + s.pct + '%;"></div></div>' +
           '<div class="gx-row" style="margin-top:7px;"><span class="gx-val gx-dim" style="font-size:11px;">' + s.toNext.toLocaleString() + ' XP TO LV ' + (s.level + 1) + '</span>' +
-            '<span class="gx-mono" style="font-size:10px;color:var(--ph-dim);">' + s.tasksDone + ' TASKS &middot; <span style="color:var(--ph);">' + (s.known ? s.band.toUpperCase() : 'CALIBRATING') + '</span></span></div>' +
+            '<span class="gx-mono" style="font-size:10px;color:var(--ph-dim);">' + s.positiveFeedback + ' APPROVALS &middot; <span style="color:var(--ph);">' + (s.known ? s.band.toUpperCase() : 'CALIBRATING') + '</span></span></div>' +
         '</div>' +
       '</div></div>'
     ) : '';

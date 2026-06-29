@@ -13,15 +13,16 @@ const XpStore = (() => {
   let persistFn = () => {};
   let wired = false;
 
-  // the REAL outcomes that feed growth. run.end + channel.delivery + memory.feedback move CONFIDENCE
-  // (reliability); the rest are XP-only (tool successes are per-run capped in the engine). All flow on U.bus.
+  // the real events that feed growth. Only explicit positive memory.feedback mints XP; operational events
+  // update counters/milestones so the dossier still shows shipped work without leveling from chatter.
   const FEED = ['agent.run.end', 'agent.tool_result', 'memory.write', 'memory.used', 'memory.feedback', 'workitem.delivered', 'channel.delivery'];
 
   const MILESTONE_TEXT = {
     first_light: 'Milestone — first task shipped',
+    approved: 'Milestone — first positive feedback',
     pack_rat: 'Milestone — first memory reused',
     centurion: 'Milestone — 100 tasks shipped',
-    trusted: 'Milestone — reliability reached TRUSTED',
+    trusted: 'Milestone — satisfaction reached TRUSTED',
   };
 
   function eventAgentId(payload) {
@@ -83,9 +84,9 @@ const XpStore = (() => {
     for (const id of ra.awards.milestones) announceMilestone(id);   // agent-scoped milestones
     if (rs.awards.levelUp) celebrateStation(rs.awards.levelTo);
 
-    // persist at run end (captures the whole run's accrual) and on any level-up/milestone — not on every
-    // mid-run tool tick (onTurn already saves per turn; this just avoids chatty writes).
-    if (name === 'agent.run.end' || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length || rs.awards.milestones.length) { try { persistFn(); } catch (_) {} }
+    // persist at run end (captures counters) and on any explicit feedback/level-up/milestone. Feedback can
+    // arrive after the run stream has closed, so it must persist on its own even when it does not level up.
+    if (name === 'agent.run.end' || name === 'memory.feedback' || ra.awards.levelUp || rs.awards.levelUp || ra.awards.milestones.length || rs.awards.milestones.length) { try { persistFn(); } catch (_) {} }
   }
 
   function init(opts) {

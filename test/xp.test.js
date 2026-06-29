@@ -1,7 +1,7 @@
-/* node test/xp.test.js — the AGENT-GROWTH model. Pure transform from REAL run outcomes to two
-   honest meters: a MONOTONIC XP/Level ladder and a BIDIRECTIONAL confidence (reliability) EWMA.
-   Honesty rules under test: confidence reports "calibrating" (never a number) until MIN_SAMPLES
-   real signals exist; failures earn 0 XP but never subtract; a level is never lost. */
+/* node test/xp.test.js - the AGENT-GROWTH model.
+   XP/levels are satisfaction-gated: only explicit positive user feedback mints XP.
+   Operational events still update counters and milestones, but cannot level an agent by themselves.
+   Negative feedback calibrates confidence down without subtracting XP or levels. */
 'use strict';
 const A = require('./_assert.js');
 const Xp = require('../frontend/app/xp.js');
@@ -15,7 +15,13 @@ function run(events, start) {
 }
 const done = usd => ({ name: 'agent.run.end', payload: { reason: 'done', turns: 1, usd: usd == null ? 1 : usd } });
 const errd = () => ({ name: 'agent.run.end', payload: { reason: 'error', turns: 1, usd: 0 } });
-const memUsed = () => ({ name: 'memory.used', payload: { id: 'm1' } });
+const memUsed = () => ({ name: 'memory.used', payload: { agentId: 'a', runId: 'r', id: 'm1' } });
+const feedback = (delta, reason) => ({ name: 'memory.feedback', payload: { agentId: 'a', id: 'm1', delta, reason: reason || 'kept' } });
+const keep = () => feedback(2, 'kept');
+const edit = () => feedback(1, 'edited');
+const discard = () => feedback(-1, 'discarded');
+const toolOk = runId => ({ name: 'agent.tool_result', payload: { agentId: 'a', runId, callId: 'c', ok: true, isError: false } });
+const delivered = () => ({ name: 'workitem.delivered', payload: { agentId: 'a', workitemId: 'w', finalQueueId: 'q' } });
 
 // ---- the curve: cumulative XP to REACH level n = 25*n*(n-1) ----
 A.eq(Xp.xpForLevel(1), 0, 'L1 = 0 xp');
@@ -38,53 +44,71 @@ const f0 = Xp.fresh();
 const r0 = Xp.applyEvent(f0, done());
 A.eq(f0.xp, 0, 'input xp untouched');
 A.eq(f0.confidence, 50, 'input confidence untouched');
-A.eq(r0.stats.xp, 15, 'done awards 15 xp');
+A.eq(r0.stats.xp, 0, 'done awards no xp without user feedback');
+A.eq(r0.stats.counters.tasksDone, 1, 'done still updates the shipped-task counter');
 
-// ---- XP per outcome ----
-A.eq(Xp.applyEvent(Xp.fresh(), done(0.2)).stats.xp, 20, 'cheap done = 15 + 5 efficiency bonus');
-A.eq(Xp.applyEvent(Xp.fresh(), done(0.9)).stats.xp, 15, 'pricey done = base 15, no bonus');
+// ---- XP per event: only positive feedback mints XP ----
+A.eq(Xp.applyEvent(Xp.fresh(), done(0.2)).stats.xp, 0, 'cheap done still earns no xp');
+A.eq(Xp.applyEvent(Xp.fresh(), done(0.9)).stats.xp, 0, 'pricey done still earns no xp');
 A.eq(run([errd()]).stats.xp, 0, 'error earns no xp');
-A.eq(run([memUsed()]).stats.xp, 8, 'memory.used awards 8 xp (reuse is the prized behaviour)');
+A.eq(run([memUsed()]).stats.xp, 0, 'memory.used earns no xp');
+A.eq(run([toolOk('r1')]).stats.xp, 0, 'tool success earns no xp');
+A.eq(run([delivered()]).stats.xp, 0, 'workitem delivery earns no xp without user feedback');
+A.eq(run([{ name: 'channel.delivery', payload: { ok: true } }]).stats.xp, 0, 'channel delivery earns no xp without user feedback');
+A.eq(Xp.applyEvent(Xp.fresh(), edit()).awards.xp, 10, 'edited/positive feedback delta 1 awards 10 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), keep()).awards.xp, 20, 'kept/positive feedback delta 2 awards 20 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), discard()).awards.xp, 0, 'negative feedback awards no xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 50, 'a huge finite feedback delta is capped at +50 xp');
 
-// ---- confidence: bidirectional EWMA, honest cold-start ----
+// ---- confidence: bidirectional EWMA over explicit feedback, honest cold-start ----
 A.eq(Xp.compute(Xp.fresh()).known, false, 'fresh agent is calibrating, not known');
-A.eq(Xp.compute(Xp.fresh()).confLabel, '—', 'calibrating shows a dash, never a fabricated number');
+A.eq(Xp.compute(Xp.fresh()).confidence, null, 'calibrating exposes no fabricated percent');
 
-const three = run([done(), done(), done()]);
-A.ok(Math.abs(three.stats.confidence - 78.90625) < 1e-6, 'confidence EWMA climbs to 78.90625 over 3 done runs');
-A.eq(Xp.compute(three.stats).known, true, 'known once MIN_SAMPLES real signals exist');
-A.eq(three.stats.samples, 3, '3 reliability samples');
+const noJudgment = run([done(), toolOk('r1'), memUsed(), delivered()]);
+A.eq(noJudgment.stats.samples, 0, 'operational events are not satisfaction samples');
+A.eq(noJudgment.stats.confidence, 50, 'operational events leave confidence untouched');
 
-const dropped = run([errd()], three.stats);
-A.ok(dropped.stats.confidence < three.stats.confidence, 'an error LOWERS confidence (moves both ways)');
+const three = run([keep(), keep(), keep()]);
+A.ok(Math.abs(three.stats.confidence - 78.90625) < 1e-6, 'confidence EWMA climbs to 78.90625 over 3 positive feedback samples');
+A.eq(Xp.compute(three.stats).known, true, 'known once MIN_SAMPLES feedback samples exist');
+A.eq(three.stats.samples, 3, '3 feedback samples');
+A.eq(three.stats.counters.positiveFeedback, 3, 'positive feedback counter records approvals');
 
-// memory.used carries no reliability signal — XP only, no confidence move
-const mem = run([memUsed()]);
-A.eq(mem.stats.samples, 0, 'memory.used is not a reliability sample');
-A.eq(mem.stats.confidence, 50, 'memory.used leaves confidence untouched');
+const dropped = run([discard()], three.stats);
+A.ok(dropped.stats.confidence < three.stats.confidence, 'negative feedback LOWERS confidence (moves both ways)');
+A.eq(dropped.stats.xp, three.stats.xp, 'negative feedback does not subtract xp');
+A.eq(dropped.stats.counters.negativeFeedback, 1, 'negative feedback counter records misses');
 
-// cancelled = the user aborted; not the agent's fault → no xp, no reliability sample
+const zeroFeedback = run([feedback(0, 'neutral')]);
+A.eq(zeroFeedback.stats.samples, 0, 'zero feedback delta is not a satisfaction sample');
+A.eq(zeroFeedback.stats.xp, 0, 'zero feedback delta awards no xp');
+
+// cancelled = the user aborted; not a satisfaction verdict -> no xp, no confidence sample
 const canc = run([{ name: 'agent.run.end', payload: { reason: 'cancelled', turns: 0, usd: 0 } }]);
 A.eq(canc.stats.xp, 0, 'cancelled earns no xp');
-A.eq(canc.stats.samples, 0, 'cancelled is not a reliability sample');
+A.eq(canc.stats.samples, 0, 'cancelled is not a satisfaction sample');
 
-// ---- levels are monotonic; level-up fires on threshold crossing ----
-const four = run([done(), done(), done(), done()]);
-A.eq(four.stats.xp, 65, '4 done = 65 xp (first 3 are base 15; the 4th, now calibrated+reliable, gets +30%)');
-A.eq(four.stats.level, 2, '65 xp -> level 2');
-A.eq(four.awards[0].levelUp, false, 'no level-up on the first run');
-A.ok(four.awards[3].levelUp === true && four.awards[3].levelTo === 2, 'level-up fires crossing 50 xp');
+// ---- levels are monotonic; level-up fires only from positive feedback crossing a threshold ----
+const twoKeeps = run([keep(), keep()]);
+A.eq(twoKeeps.stats.xp, 40, '2 keeps = 40 xp');
+A.eq(twoKeeps.stats.level, 1, '40 xp stays level 1');
+const thirdKeep = run([keep()], twoKeeps.stats);
+A.eq(thirdKeep.stats.xp, 60, 'third keep crosses the level-2 threshold');
+A.eq(thirdKeep.stats.level, 2, '60 xp -> level 2');
+A.ok(thirdKeep.awards[0].levelUp === true && thirdKeep.awards[0].levelTo === 2, 'level-up fires crossing 50 xp');
 
-const afterFail = run([errd(), errd()], four.stats);
-A.eq(afterFail.stats.level, 2, 'a level is NEVER lost on failure');
+const afterBad = run([errd(), discard(), errd()], thirdKeep.stats);
+A.eq(afterBad.stats.level, 2, 'a level is NEVER lost on failure or negative feedback');
 
-// ---- milestones fire exactly once ----
-A.ok(four.awards[0].milestones.indexOf('first_light') !== -1, 'first_light on first shipped task');
-A.eq(four.awards[1].milestones.indexOf('first_light'), -1, 'first_light does not re-fire');
+// ---- milestones fire exactly once, independently of XP ----
+const firstTask = run([done()]);
+A.ok(firstTask.awards[0].milestones.indexOf('first_light') !== -1, 'first_light on first shipped task');
+A.eq(run([done()], firstTask.stats).awards[0].milestones.indexOf('first_light'), -1, 'first_light does not re-fire');
+A.ok(run([keep()]).awards[0].milestones.indexOf('approved') !== -1, 'approved on first positive feedback');
 A.ok(run([memUsed()]).awards[0].milestones.indexOf('pack_rat') !== -1, 'pack_rat on first memory reuse');
 
 // ---- compute(): render-state for the gauges ----
-const g = Xp.compute({ xp: 100, level: 2, lifetimeXp: 100, confidence: 70, samples: 5, counters: {}, milestones: [] });
+const g = Xp.compute({ xp: 100, level: 2, lifetimeXp: 100, confidence: 70, samples: 5, counters: { positiveFeedback: 7, negativeFeedback: 2, tasksDone: 3 }, milestones: [] });
 A.eq(g.level, 2, 'compute reads level');
 A.eq(g.span, 100, 'L2->L3 span = 100');
 A.eq(g.inLevel, 50, 'inLevel = 100 - 50');
@@ -93,47 +117,49 @@ A.eq(g.pct, 50, '50% through level 2');
 A.eq(g.known, true, 'known with 5 samples');
 A.eq(g.confLabel, '70%', 'confLabel renders the percent');
 A.eq(g.band, 'reliable', '70% -> reliable band');
-A.eq(g.bonus, 30, 'compute exposes the +30% XP trust bonus');
-A.eq(Xp.compute(Xp.fresh()).bonus, 0, 'no XP bonus while calibrating');
+A.eq(g.bonus, 30, 'compute exposes the +30% feedback bonus');
+A.eq(g.positiveFeedback, 7, 'compute surfaces positive feedback count');
+A.eq(g.negativeFeedback, 2, 'compute surfaces negative feedback count');
+A.eq(Xp.compute(Xp.fresh()).bonus, 0, 'no feedback bonus while calibrating');
 
-// ---- confidence-scaled XP: reliable agents grow faster, never a penalty ----
-const cal = { xp:0, level:1, lifetimeXp:0, confidence:90, samples:5, counters:{}, milestones:[], run:{id:null,toolXp:0} };
-A.eq(Xp.applyEvent(cal, done(1)).awards.xp, 23, 'trusted (90%): 15 base x1.5 = 23');
-A.eq(Xp.applyEvent(Object.assign({}, cal, {confidence:70}), done(1)).awards.xp, 20, 'reliable (70%): 15 x1.3 = 20');
-A.eq(Xp.applyEvent(Object.assign({}, cal, {confidence:30}), done(1)).awards.xp, 15, 'low confidence: base only, never a penalty');
-A.eq(Xp.applyEvent(Object.assign({}, cal, {samples:1}), done(1)).awards.xp, 15, 'uncalibrated: no bonus regardless of confidence');
+// ---- confidence-scaled feedback XP: satisfied agents grow faster, never a penalty ----
+const cal = { xp: 0, level: 1, lifetimeXp: 0, confidence: 90, samples: 5, counters: {}, milestones: [], run: { id: null, toolXp: 0 } };
+A.eq(Xp.applyEvent(cal, edit()).awards.xp, 15, 'trusted (90%): feedback 10 base x1.5 = 15');
+A.eq(Xp.applyEvent(Object.assign({}, cal, { confidence: 70 }), edit()).awards.xp, 13, 'reliable (70%): feedback 10 x1.3 = 13');
+A.eq(Xp.applyEvent(Object.assign({}, cal, { confidence: 30 }), edit()).awards.xp, 10, 'low confidence: feedback earns base only, never a penalty');
+A.eq(Xp.applyEvent(Object.assign({}, cal, { samples: 1 }), edit()).awards.xp, 10, 'uncalibrated: no bonus regardless of confidence');
 
-// ---- per-run tool-success cap (anti-grind); tool results are XP-only (no reliability sample) ----
+// ---- high-frequency tool successes are counters only, not growth ----
 let ts = Xp.fresh();
-const tool = runId => { ts = Xp.applyEvent(ts, { name:'agent.tool_result', payload:{ runId, callId:'c', ok:true, isError:false } }).stats; };
-for (let i=0;i<15;i++) tool('r1');
-A.eq(ts.xp, 10, '15 tool successes in one run cap at 10 xp');
-A.eq(ts.samples, 0, 'tool results carry no reliability sample');
+for (let i = 0; i < 15; i++) ts = Xp.applyEvent(ts, toolOk('r1')).stats;
+A.eq(ts.xp, 0, '15 tool successes still award 0 xp');
+A.eq(ts.samples, 0, 'tool results carry no satisfaction sample');
 A.eq(ts.confidence, 50, 'tool results never move confidence');
-for (let i=0;i<5;i++) tool('r2');
-A.eq(ts.xp, 15, 'a new run refreshes the tool-xp cap (+5)');
+A.eq(ts.counters.toolsOk, 15, 'tool successes still update operational counters');
 
 // ---- expanded milestone table ----
 let ms = Xp.fresh();
-for (let i=0;i<10;i++) ms = Xp.applyEvent(ms, { name:'memory.write', payload:{ agentId:'a', runId:'r', id:'m'+i, kind:'fact' } }).stats;
+for (let i = 0; i < 10; i++) ms = Xp.applyEvent(ms, { name: 'memory.write', payload: { agentId: 'a', runId: 'r', id: 'm' + i, kind: 'fact' } }).stats;
+A.eq(ms.xp, 0, 'memory writes do not mint xp');
 A.ok(ms.milestones.indexOf('archivist') !== -1, 'archivist at 10 memory writes');
-const nightShift = Xp.applyEvent(Xp.fresh(), { name:'workitem.delivered', payload:{ workitemId:'w', finalQueueId:'q' } });
+const nightShift = Xp.applyEvent(Xp.fresh(), delivered());
+A.eq(nightShift.stats.xp, 0, 'delivery milestone does not mint xp');
 A.ok(nightShift.awards.milestones.indexOf('night_shift') !== -1, 'night_shift on first external delivery');
-const near = { xp:2249, level:9, lifetimeXp:2249, confidence:50, samples:0, counters:{}, milestones:[], run:{id:null,toolXp:0} };
-const vr = Xp.applyEvent(near, done(1));
-A.eq(vr.stats.level, 10, 'crossing 2250 xp -> level 10');
+const near = { xp: 2249, level: 9, lifetimeXp: 2249, confidence: 50, samples: 0, counters: {}, milestones: [], run: { id: null, toolXp: 0 } };
+const vr = Xp.applyEvent(near, keep());
+A.eq(vr.stats.level, 10, 'positive feedback crossing 2250 xp -> level 10');
 A.ok(vr.awards.milestones.indexOf('veteran') !== -1, 'veteran milestone at level 10');
 
 // ---- defensive: a corrupted / hand-edited save must never poison the meters with NaN/Infinity ----
 const bad = { xp: Infinity, level: Infinity, lifetimeXp: NaN, confidence: Infinity, samples: NaN, counters: {}, milestones: [], run: {} };
 const cb = Xp.compute(bad);
 A.ok(Number.isFinite(cb.level) && Number.isFinite(cb.pct) && Number.isFinite(cb.toNext), 'compute() never emits NaN/Infinity from a corrupted save');
-A.eq(cb.confLabel, '—', 'corrupted confidence -> calibrating dash, never "NaN%"');
-const rb = Xp.applyEvent(bad, done(1));
+A.eq(cb.confidence, null, 'corrupted confidence -> calibrating null, never NaN');
+const rb = Xp.applyEvent(bad, keep());
 A.ok(Number.isFinite(rb.stats.xp) && Number.isFinite(rb.stats.confidence) && Number.isFinite(rb.stats.level), 'applyEvent sanitizes non-finite stats');
 A.eq(Xp.levelForXp(Infinity), 1, 'levelForXp(Infinity) -> 1, never Infinity');
-A.eq(Xp.applyEvent(Xp.fresh(), { name:'memory.feedback', payload:{ agentId:'a', id:'m', delta: Infinity } }).awards.xp, 0, 'non-finite feedback delta -> 0 xp');
-A.eq(Xp.applyEvent(Xp.fresh(), { name:'memory.feedback', payload:{ agentId:'a', id:'m', delta: 1000 } }).awards.xp, 50, 'a huge finite feedback delta is capped at +50 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(Infinity, 'bad')).awards.xp, 0, 'non-finite feedback delta -> 0 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 50, 'huge finite feedback delta remains capped at +50 xp');
 
 // ---- milestone CATALOGUE (render-state for the trophy case): every badge, with earned flags + unlock hints ----
 const catFresh = Xp.milestones(Xp.fresh());
@@ -143,17 +169,19 @@ A.ok(catFresh.every(m => m.label && m.hint), 'every badge carries a label + unlo
 const fl = catFresh.find(m => m.id === 'first_light');
 A.eq(fl.label, 'FIRST LIGHT', 'first_light label surfaced for the UI');
 A.eq(fl.hint, 'ship 1 task', 'locked first_light shows its unlock hint');
-const catEarned = Xp.milestones(run([memUsed(), done()]).stats);   // memory reuse + a shipped task
-const flE = catEarned.find(m => m.id === 'first_light');
-A.eq(flE.earned, true, 'first_light reads earned once a task ships');
+const catEarned = Xp.milestones(run([memUsed(), done(), keep()]).stats);
+A.eq(catEarned.find(m => m.id === 'first_light').earned, true, 'first_light reads earned once a task ships');
 A.eq(catEarned.find(m => m.id === 'pack_rat').earned, true, 'pack_rat reads earned after a reuse');
+A.eq(catEarned.find(m => m.id === 'approved').earned, true, 'approved reads earned after positive feedback');
 A.eq(catEarned.find(m => m.id === 'veteran').earned, false, 'unmet milestones stay locked');
 A.eq(Xp.milestones(null).filter(m => m.earned).length, 0, 'milestones(null) is safe and all-locked');
 
-// ---- compute() exposes tasksDone + samples for the dossier ----
-const cg = Xp.compute(run([done(), done(), done()]).stats);
+// ---- compute() exposes tasksDone + samples + feedback receipts for the dossier ----
+const cg = Xp.compute(run([done(), done(), done(), keep(), discard()]).stats);
 A.eq(cg.tasksDone, 3, 'compute surfaces shipped-task count');
-A.eq(cg.samples, 3, 'compute surfaces the reliability sample count');
+A.eq(cg.samples, 2, 'compute surfaces the feedback sample count');
+A.eq(cg.positiveFeedback, 1, 'compute surfaces positive feedback count');
+A.eq(cg.negativeFeedback, 1, 'compute surfaces negative feedback count');
 A.eq(Xp.compute(Xp.fresh()).tasksDone, 0, 'fresh agent has 0 tasks done');
 
 A.report('xp.test');
