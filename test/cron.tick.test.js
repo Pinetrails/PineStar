@@ -19,6 +19,7 @@ const { makeClock } = require('../shared/clock-rng.js');
 const cron = require('../sidecar/cron.js');
 const cronStore = require('../sidecar/cron-store.js');
 const { makeCronDriver } = require('../sidecar/cron-driver.js');
+require('./cron.run-now.test.js');
 
 const T0 = 1700000000000;
 const flush = () => new Promise(r => setImmediate(r));   // let the launch->finishFire promise chain settle

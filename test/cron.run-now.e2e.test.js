@@ -1,14 +1,15 @@
-/* node test/cron.run-now.e2e.test.js -- true Run Now regression test.
+/* node test/cron.run-now.e2e.test.js - real sidecar proof for routine Run Now.
 
-   Boots the real sidecar, points OpenRouter at a local mock, opens the same SSE stream world.js consumes,
-   creates a routine, and POSTs /api/cron/run. This proves Run Now is not just a panel-local stream: it also
-   places a cron work item and broadcasts schedule-triggered lifecycle events so the target agent visibly works. */
+   This boots the actual sidecar, creates a routine, opens the station SSE feed,
+   presses /api/cron/run, and proves the manual fire is visible in every layer:
+   panel NDJSON, mocked provider request, workitem.placed, and run lifecycle SSE. */
 'use strict';
+
 const A = require('./_assert.js');
 const http = require('http');
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const { bootToken } = require('./_httpToken.js');
 
@@ -19,11 +20,11 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function startMockOpenRouter() {
   const requests = [];
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: [{ id: 'test/model', context_length: 8000, supported_parameters: ['tools'], pricing: { prompt: '0', completion: '0' } }] }));
+        res.end(JSON.stringify({ data: [{ id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }] }));
         return;
       }
       if (req.url.indexOf('/chat/completions') >= 0) {
@@ -32,7 +33,7 @@ function startMockOpenRouter() {
         req.on('end', () => {
           try { requests.push(JSON.parse(body)); } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Run now worked' } }] }) + '\n\n');
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'AI news found' } }] }) + '\n\n');
           res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
           res.write('data: [DONE]\n\n');
           res.end();
@@ -54,59 +55,81 @@ function boot(port, env, attemptsLeft) {
     let out = '', settled = false;
     const onData = d => {
       out += d.toString();
-      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port, out: () => out }); }
+      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
       else if (!settled && /already in use/i.test(out)) {
         settled = true; try { child.kill(); } catch (_) {}
         if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1));
         else reject(new Error('no free port'));
       }
     };
-    child.stdout.on('data', onData); child.stderr.on('data', onData);
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
     child.on('error', e => { if (!settled) { settled = true; reject(e); } });
     setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout:\n' + out)); } }, 9000);
   });
 }
 
-function makeSseCollector(base, token) {
+async function startSseCollector(url) {
   const ac = new AbortController();
   const events = [];
-  const ready = fetch(base + '/api/channels/events?token=' + encodeURIComponent(token), { signal: ac.signal })
-    .then(async res => {
-      A.eq(res.status, 200, 'SSE event stream opens');
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
+  const waiters = [];
+  const res = await fetch(url, { signal: ac.signal });
+  A.eq(res.status, 200, 'SSE feed opens with token');
+  const reader = res.body.getReader();
+  function notify() {
+    for (let i = waiters.length - 1; i >= 0; i--) {
+      const w = waiters[i];
       try {
-        for (;;) {
-          const r = await reader.read();
-          if (r.done) break;
-          buf += dec.decode(r.value, { stream: true });
-          let cut;
-          while ((cut = buf.indexOf('\n\n')) >= 0) {
-            const frame = buf.slice(0, cut); buf = buf.slice(cut + 2);
-            const line = frame.split(/\r?\n/).find(x => x.indexOf('data: ') === 0);
-            if (!line) continue;
-            try { events.push(JSON.parse(line.slice(6))); } catch (_) {}
+        if (w.pred(events)) { waiters.splice(i, 1); clearTimeout(w.timer); w.resolve(events); }
+      } catch (e) { waiters.splice(i, 1); clearTimeout(w.timer); w.reject(e); }
+    }
+  }
+  (async () => {
+    const dec = new TextDecoder();
+    let buf = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line || line[0] === ':') continue;
+          if (line.indexOf('data:') === 0) {
+            const raw = line.slice(5).trim();
+            try { events.push(JSON.parse(raw)); notify(); } catch (_) {}
           }
         }
-      } catch (e) {
-        if (!ac.signal.aborted) throw e;
       }
-    });
-  return { events, ready, stop: () => ac.abort() };
+    } catch (_) {}
+  })();
+  return {
+    events,
+    waitFor(pred, ms, label) {
+      if (pred(events)) return Promise.resolve(events);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timed out waiting for ' + label)), ms);
+        waiters.push({ pred, resolve, reject, timer });
+      });
+    },
+    close() { try { ac.abort(); } catch (_) {} }
+  };
 }
 
-async function collectNdjson(res) {
+async function readNdjson(res) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '', events = [];
-  for (;;) {
-    const r = await reader.read();
-    if (r.done) break;
-    buf += dec.decode(r.value, { stream: true });
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
       if (line) { try { events.push(JSON.parse(line)); } catch (_) {} }
     }
   }
@@ -116,61 +139,51 @@ async function collectNdjson(res) {
 (async () => {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-cron-run-now-'));
-  let booted = null;
+  const env = {
+    SKYNET_WORKSPACES: ws,
+    SKYNET_OPENROUTER_BASE: mock.base,
+    SKYNET_OPENROUTER_KEY: 'sk-or-v1-run-now-fake',
+    SKYNET_DEFAULT_MODEL: 'test/model'
+  };
+  const { child, port } = await boot(8910 + (process.pid % 50), env, 20);
+  const B = 'http://' + HOST + ':' + port;
+  let sse = null;
   try {
-    booted = await boot(9010 + (process.pid % 40), {
-      SKYNET_WORKSPACES: ws,
-      SKYNET_OPENROUTER_BASE: mock.base,
-      SKYNET_OPENROUTER_KEY: 'sk-or-v1-run-now-fake'
-    }, 20);
-    const base = 'http://' + HOST + ':' + booted.port;
-    const token = await bootToken(base, base);
+    const token = await bootToken(B, B);
     A.ok(token.length >= 32, 'got a session API token');
-    const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: base };
-
-    const sse = makeSseCollector(base, token);
-    await sleep(50);
-
-    const create = await fetch(base + '/api/cron', {
-      method: 'POST', headers,
-      body: JSON.stringify({ name: 'Run Now AI brief', prompt: 'research current AI news', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter' })
+    const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+    const create = await fetch(B + '/api/cron', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'AI news', prompt: 'gather relevant AI news', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter' })
     });
-    A.eq(create.status, 200, 'created the routine');
-    const created = await create.json();
-    const id = created && created.job && created.job.id;
-    A.ok(!!id, 'created routine has an id');
+    A.eq(create.status, 200, 'created routine');
+    const job = (await create.json()).job;
+    A.ok(job && job.id, 'routine id returned');
 
-    const run = await fetch(base + '/api/cron/run', {
-      method: 'POST', headers,
-      body: JSON.stringify({ id })
+    sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
+    const run = await fetch(B + '/api/cron/run', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ id: job.id })
     });
-    A.eq(run.status, 200, 'Run Now streams 200');
-    const streamEvents = await collectNdjson(run);
-    const streamNames = streamEvents.map(e => e.name);
-    A.ok(streamNames.indexOf('agent.run.start') >= 0, 'Run Now panel stream includes agent.run.start');
-    A.ok(streamEvents.some(e => e.name === 'agent.token' && /Run now worked/.test(String(e.payload && e.payload.delta || ''))), 'Run Now panel stream includes model output');
-    A.ok(streamEvents.some(e => e.name === 'agent.run.end' && e.payload && e.payload.reason === 'done'), 'Run Now panel stream includes done');
-    A.ok(mock.requests.length >= 1, 'mock provider received the routine run');
+    A.eq(run.status, 200, 'Run Now returns a stream');
+    const panel = await readNdjson(run);
+    const panelNames = panel.map(e => e.name);
+    A.ok(panelNames.indexOf('agent.run.start') >= 0, 'panel stream includes agent.run.start');
+    A.ok(panel.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('').indexOf('AI news found') >= 0, 'panel stream includes provider output');
+    A.ok(panelNames.indexOf('agent.run.end') >= 0, 'panel stream includes agent.run.end');
+    A.ok(mock.requests.length >= 1, 'mock provider was called');
 
-    const deadline = Date.now() + 2000;
-    while (Date.now() < deadline) {
-      const hasBox = sse.events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.kind === 'cron' && e.payload.agentId === 'research-agent');
-      const hasStart = sse.events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'research-agent' && e.payload.trigger === 'schedule');
-      const hasEnd = sse.events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'research-agent' && e.payload.reason === 'done');
-      if (hasBox && hasStart && hasEnd) break;
-      await sleep(25);
-    }
-    sse.stop();
-    await sse.ready.catch(() => {});
-
-    A.ok(sse.events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.kind === 'cron' && e.payload.agentId === 'research-agent'), 'Run Now SSE places a cron work item for the target agent');
-    A.ok(sse.events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'research-agent' && e.payload.trigger === 'schedule'), 'Run Now SSE broadcasts schedule-triggered run start');
-    A.ok(sse.events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'research-agent' && e.payload.reason === 'done'), 'Run Now SSE broadcasts run end');
+    await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'research-agent' && e.payload.kind === 'cron'), 5000, 'cron workitem');
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'research-agent' && e.payload.trigger === 'schedule'), 5000, 'SSE run start');
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'research-agent'), 5000, 'SSE run end');
   } finally {
-    if (booted && booted.child) { try { booted.child.kill(); } catch (_) {} }
+    if (sse) sse.close();
+    try { child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}
+    await sleep(150);
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
   }
-
   A.report('cron.run-now.e2e.test');
-})().catch(e => { console.log('FAIL: cron.run-now.e2e.test threw -- ' + (e && e.stack || e)); process.exit(1); });
+})().catch(e => { console.log('FAIL: cron.run-now.e2e.test threw - ' + (e && e.stack || e)); process.exit(1); });

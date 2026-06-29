@@ -814,8 +814,7 @@ const cronBus = { emit: (name, payload) => {
 } };
 const cronEmitValidated = makeEmitter(cronBus, e => console.warn('[cron-event]', e.kind, e.event, (e.errors || []).join(';')));
 const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redact(payload)); } catch (_) { return false; } };
-
-function placeCronWorkitem(agentId, prompt) {
+function placeCronWorkitem(agentId, prompt, runId) {
   try {
     const preview = String(prompt || '').replace(/\s+/g, ' ').slice(0, 40);
     chanEmit('workitem.placed', { workitemId: crypto.randomUUID(), queueId: agentId, agentId, kind: 'cron', preview, queueDepth: 0, ts: Date.now() });
@@ -854,9 +853,7 @@ const cronDriver = makeCronDriver({
   // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
   // crate arrives at the agent's bay and (with the run-lifecycle binding in world.js) the agent goes to work.
   // The agentId is the job's (server-authoritative), so the box lands on exactly the agent the run executes as.
-  placeWorkitem: (agentId, prompt, runId) => {
-    placeCronWorkitem(agentId, prompt);
-  },
+  placeWorkitem: placeCronWorkitem,
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
   persona: (agentId) => cronSystemFor(agentId)
@@ -1630,7 +1627,7 @@ async function handleCronRun(req, res) {
     else if (name === 'agent.run.end') state.reason = p.reason;
   };
   try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
-  placeCronWorkitem(job.agentId, job.prompt);
+  placeCronWorkitem(job.agentId, job.prompt, runId);
   try {
     await runOnce({
       key: key, model: model, system: cronSystemFor(job.agentId), messages: [{ role: 'user', content: String(job.prompt || '') }],
@@ -1902,13 +1899,13 @@ async function runOnce(o) {
   const prompt = o.prompt;
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
   const trigger = o.trigger || 'directive';
-  // P1 (WIRING_AUDIT slice 2): a server-initiated run (telegram/routed) has NO browser-local copy of its
+  // P1 (WIRING_AUDIT slice 2): a server-initiated run (telegram/routed/manual-cron) has NO browser-local copy of its
   // lifecycle, so the station floor never lights for it. When a caller opts in via o.broadcast, ALSO mirror the
   // run-lifecycle events to the floor over SSE. Gated on the explicit flag — NOT on trigger — so the hero's
-  // directive run does not double-count; scheduled cron forwards through cronEmit, while manual Run Now opts in
-  // here because its primary stream is local to the ROUTINES panel. Restricted to run.start/cost/end so
-  // agent.token/tool noise never floods the SSE bus. Re-using the
-  // name `emit` means every existing emit(...) call site below tees automatically, with no per-site change.
+  // directive run never double-counts. Scheduled cron forwards lifecycle via its cron driver emit sink; manual
+  // Run Now opts into broadcast because its primary stream is panel-local. Restricted to run.start/cost/end so
+  // agent.token/tool noise never floods the SSE bus. Re-using the name `emit` means every existing emit(...) call
+  // site below tees automatically, with no per-site change.
   const rawEmit = o.emit;
   const emit = o.broadcast
     ? (name, payload) => {
