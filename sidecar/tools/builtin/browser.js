@@ -295,7 +295,7 @@
     const read = (name, description, schema, run) => ({ name, capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
     const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
     const tools = [
-      read('browser.navigate', 'Navigate the controlled browser to a public http(s) URL. Private, loopback, intranet, and unsafe redirects are refused.', { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
+      read('browser.navigate', 'Navigate the controlled browser to a public http(s) URL. Private, loopback, intranet, and unsafe redirects are refused, so local dev servers need shell/HTTP verification instead.', { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
         async a => ({ content: 'Browser navigated to ' + await session.navigate(a.url), summary: 'navigated' })),
       read('browser.snapshot', 'Return a structured snapshot of visible interactive elements. Element refs expire after the next snapshot.', { type: 'object', properties: { limit: { type: 'number' } } },
         async a => {
