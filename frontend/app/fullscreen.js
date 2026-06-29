@@ -16,6 +16,15 @@
       : null;
   }
 
+  function tauriWindow(win) {
+    const api = win && win.__TAURI__;
+    if (!api || !api.window) return null;
+    if (typeof api.window.getCurrentWindow === 'function') return api.window.getCurrentWindow();
+    if (api.window.Window && typeof api.window.Window.getCurrent === 'function') return api.window.Window.getCurrent();
+    if (api.window.appWindow) return api.window.appWindow;
+    return null;
+  }
+
   function isF11(ev) {
     return !!ev && (ev.key === 'F11' || ev.code === 'F11' || ev.keyCode === 122 || ev.which === 122);
   }
@@ -44,6 +53,25 @@
   function toggle(win, doc) {
     win = win || root;
     doc = doc || (win && win.document) || (root && root.document);
+    const appWindow = tauriWindow(win);
+    if (appWindow && typeof appWindow.isFullscreen === 'function' && typeof appWindow.setFullscreen === 'function') {
+      return Promise.resolve(appWindow.isFullscreen()).then(on => {
+        const next = !on;
+        return Promise.resolve(appWindow.setFullscreen(next)).then(() => next);
+      }).catch(err => {
+        if (win && win.console && typeof win.console.warn === 'function') {
+          win.console.warn('[fullscreen] Tauri window API toggle failed, trying command fallback', err);
+        }
+        const core = tauriCore(win);
+        if (!core) return toggleBrowser(doc);
+        return Promise.resolve(core.invoke('starnet_toggle_fullscreen')).catch(commandErr => {
+          if (win && win.console && typeof win.console.warn === 'function') {
+            win.console.warn('[fullscreen] native toggle failed, falling back to browser fullscreen', commandErr);
+          }
+          return toggleBrowser(doc);
+        });
+      });
+    }
     const core = tauriCore(win);
     if (core) {
       return Promise.resolve(core.invoke('starnet_toggle_fullscreen')).catch(err => {

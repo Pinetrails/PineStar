@@ -30,6 +30,29 @@ const Fullscreen = require('../frontend/app/fullscreen.js');
   A.eq(invoked, 'starnet_toggle_fullscreen', 'desktop F11 calls the native Tauri fullscreen command');
   A.ok(ev.prevented && ev.stopped, 'F11 is consumed before browser chrome handles it');
 
+  let fullscreen = false;
+  invoked = '';
+  const apiWin = {
+    __TAURI__: {
+      core: {
+        invoke(cmd) { invoked = cmd; return Promise.resolve(true); }
+      },
+      window: {
+        getCurrentWindow() {
+          return {
+            isFullscreen() { return Promise.resolve(fullscreen); },
+            setFullscreen(next) { fullscreen = next; return Promise.resolve(); }
+          };
+        }
+      }
+    }
+  };
+  A.eq(await Fullscreen.toggle(apiWin, null), true, 'Tauri window API enters fullscreen');
+  A.eq(fullscreen, true, 'Tauri window API sets fullscreen true');
+  A.eq(await Fullscreen.toggle(apiWin, null), false, 'Tauri window API exits fullscreen');
+  A.eq(fullscreen, false, 'Tauri window API sets fullscreen false');
+  A.eq(invoked, '', 'Tauri window API is preferred before the custom command');
+
   invoked = '';
   A.eq(Fullscreen.handleKeydown({ key: 'F11', repeat: true }, tauriWin, null), false, 'held F11 repeats are ignored');
   A.eq(invoked, '', 'held F11 does not rapid-toggle fullscreen');
