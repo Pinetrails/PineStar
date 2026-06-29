@@ -32,7 +32,7 @@ A.ok(unk.title.indexOf('cold cache') < 0, 'unknown cache -> not asserted cold');
 
 // ---- unknown / missing reason degrades safely, never throws ----
 A.notThrows(() => SlagLog.diagnose(undefined, null), 'missing reason+ctx safe');
-A.eq(SlagLog.diagnose('weird', {}).title, 'wasted spend', 'unknown reason -> generic post-mortem');
+A.eq(SlagLog.diagnose('weird', {}).title, 'unproductive run', 'unknown reason -> generic post-mortem');
 
 // ---- line(): a single-line summary for a notification ----
 const ln = SlagLog.line(SlagLog.diagnose('refusal', {}));

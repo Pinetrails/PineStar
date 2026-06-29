@@ -1,7 +1,6 @@
 /* STARNET — warroom.js : the LIVING WAR-ROOM visible layer.
 
    Implements the war-room concept ON the real app, on top of the per-agent Channels gate:
-     · a REACTOR spend gauge in the top bar (bound to real lifetime spend),
      · an always-visible APPROVAL HOTSPOT pinned above COMMS — tool-consent can never scroll off
        (read live from Channels' pending consent; the buttons resolve the REAL run via Harness.consent),
      · CREW instrument-cluster dots that pulse with real per-agent activity,
@@ -15,33 +14,6 @@
   const $ = s => document.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const sfx = n => { try { if (typeof SFX === 'object' && SFX[n]) SFX[n](); } catch (_) {} };
-
-  /* ---------------- REACTOR spend gauge (top bar) ---------------- */
-  const RSEGS = 14;
-  let lastCost = -1;
-  function buildReactor() {
-    const stats = $('#topbar .tb-stats'); if (!stats || $('#reactor')) return;
-    const r = document.createElement('div');
-    r.className = 'tb-stat reactor'; r.id = 'reactor';
-    r.title = 'REACTOR — live spend draw (the gauge climbs with real cost)';
-    let bars = '';
-    for (let i = 0; i < RSEGS; i++) bars += '<span class="rseg" style="height:' + (5 + i * 1.1) + 'px"></span>';
-    r.innerHTML = '<span class="rlab">⚡</span><span class="rbars">' + bars + '</span>';
-    const station = $('#tb-station');
-    if (station) stats.insertBefore(r, station); else stats.appendChild(r);
-  }
-  function tickReactor() {
-    const r = $('#reactor'); if (!r) return;
-    let cost = 0; try { cost = (typeof Harness !== 'undefined' && Harness.totals && Harness.totals().cost) || 0; } catch (_) {}
-    const segs = r.querySelectorAll('.rseg'); const N = segs.length;
-    const frac = 1 - Math.exp(-cost / 0.5);   // asymptotic: more spend -> fuller, never overflows the bar
-    const lit = Math.round(frac * N);
-    for (let i = 0; i < N; i++) segs[i].className = 'rseg' + (i < lit ? (i >= N - 2 ? ' on hot' : ' on') : '');
-    if (lastCost >= 0 && cost > lastCost + 1e-9) {
-      r.classList.add('bloom'); clearTimeout(tickReactor._t); tickReactor._t = setTimeout(() => r.classList.remove('bloom'), 320);
-    }
-    lastCost = cost;
-  }
 
   /* ---------------- APPROVAL HOTSPOT (pinned above COMMS) ---------------- */
   let lastKey = null;   // wsId:promptId of the rendered consent, so we only rebuild on a real change
@@ -158,10 +130,10 @@
   function boot() {
     // NOTE: the old top APPROVALS hotspot is gone — approvals now render INLINE at the bottom of COMMS
     // (chat.js permissionRow), classic-harness style, in the conversation flow where the agent paused.
-    buildReactor(); buildCinema();
+    buildCinema();
     tick(); setInterval(tick, 300);
   }
-  function tick() { try { tickReactor(); tickCrew(); } catch (_) {} }
+  function tick() { try { tickCrew(); } catch (_) {} }
   if (document.readyState !== 'loading') boot();
   else document.addEventListener('DOMContentLoaded', boot);
 })();

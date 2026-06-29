@@ -1061,7 +1061,7 @@ const Chat = (() => {
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done') {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
-            : endReason === 'budget' ? 'reached this run\'s cost limit'
+            : endReason === 'budget' ? 'reached this run\'s limit'
             : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
             : 'stopped (' + endReason + ')'));
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
@@ -1072,7 +1072,7 @@ const Chat = (() => {
         if (!isTask && isActiveWs(ws)) World.say(replyText);
         // SHIPPED (P1): a clean finish delivers the work-item → the ONE outbound product crate + the weight-3
         // profile/XP ship-signal + the "tasks shipped" milestone. Only on done/undefined — a max_iters/budget/
-        // error/refusal stop is wasted spend (the agent.run.end SLAG path owns that); abort/hard-error never
+        // error/refusal stop is an unproductive run (the agent.run.end SLAG path owns that); abort/hard-error never
         // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
         if (!endReason || endReason === 'done') wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
       }

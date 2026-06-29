@@ -12,11 +12,11 @@ const Harness = (() => {
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
-  let modelMap = {};   // id -> { id, name, pricing, context_length }
-  // the agent's CURRENT context-window occupancy = the most recent turn's real prompt_tokens
-  // (agent.cost.tokensIn). Distinct from totals.tokens (lifetime in+out). Ephemeral runtime state,
-  // not persisted — on resume it stays 0 until the next real turn measures the live context.
-  let lastTokensIn = 0;
+  let modelMap = {};   // id -> { id, name, pricing, context_length, supportsTools }
+  // Per-agent context-window occupancy = the latest real prompt_tokens for that same agent/model.
+  // Distinct from totals.tokens (lifetime in+out), and not persisted across resumes.
+  let contextByAgent = {};   // agentId -> { used, model, runId }
+  let runModels = {};        // runId -> model from agent.run.start, for events that omit model
 
   // Desktop (Tauri) build: the BYOK key lives in the OS keychain — never in localStorage and
   // never returned to this WebView. Rust stores it and injects it into the sidecar's env at spawn
@@ -113,27 +113,55 @@ const Harness = (() => {
   }
 
   /* the model's real max context-window length (tokens) from the catalog, or 0 if unknown.
-     The browser already fetches the full OpenRouter /models payload — context_length is right
-     there next to pricing; we just stopped throwing it away. */
+     The sidecar's model endpoint carries OpenRouter context_length through to the browser; if
+     that endpoint is unavailable we fall back to the public OpenRouter catalog. */
   function contextLimitOf(id) {
     const m = modelMap[id];
     return (m && m.context_length) || 0;
   }
 
-  /* live context-window occupancy for the CURRENT agent's model: how full is the window right now.
-     used = the latest real prompt_tokens; limit = the model's max context. Both come from real
-     provider/catalog data — the gauge (CtxGauge) renders "calibrating" until both are known. */
-  function contextState() {
-    return { used: lastTokensIn, limit: contextLimitOf(getModel()) };
+  /* Last measured context-window occupancy for an agent/model. If the selected model changed or no
+     provider prompt_tokens reading exists yet, measured:false prevents a stale percentage. */
+  function contextState(agentId) {
+    const aid = agentId || 'agent';
+    const selectedModel = getModel();
+    const rec = contextByAgent[aid] || null;
+    const model = selectedModel || (rec && rec.model) || '';
+    const measured = !!(rec && rec.model === model && rec.used > 0);
+    return { agentId: aid, model, used: measured ? rec.used : 0, limit: contextLimitOf(model), measured };
+  }
+
+  function normalizeModel(m) {
+    const params = Array.isArray(m && m.supported_parameters) ? m.supported_parameters.slice() : [];
+    return {
+      id: m && m.id,
+      name: (m && (m.name || m.id)) || '',
+      pricing: (m && m.pricing) || null,
+      context_length: (m && +m.context_length) || 0,
+      supportsTools: (m && typeof m.supportsTools === 'boolean') ? m.supportsTools : (params.length ? params.indexOf('tools') >= 0 : true),
+      supportsReasoning: !!(m && m.supportsReasoning),
+      supported_parameters: params,
+      reasoningEfforts: Array.isArray(m && m.reasoningEfforts) ? m.reasoningEfforts.slice() : []
+    };
+  }
+
+  async function fetchModelCatalog(url, field) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const raw = (j && j[field]) || [];
+    return raw.map(normalizeModel).filter(m => m.id);
   }
 
   /* public model catalog (no key required) — populates the connect dropdown */
   async function listModels() {
     try {
-      const r = await fetch(OR + '/models', { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const j = await r.json();
-      const list = (j.data || []).map(m => ({ id: m.id, name: m.name, pricing: m.pricing, context_length: m.context_length || 0 }));
+      let list;
+      try {
+        list = await fetchModelCatalog('/api/models/openrouter', 'models');
+      } catch (_) {
+        list = await fetchModelCatalog(OR + '/models', 'data');
+      }
       list.sort((a, b) => a.id.localeCompare(b.id));
       modelMap = {};
       for (const m of list) modelMap[m.id] = m;
@@ -191,8 +219,8 @@ const Harness = (() => {
         if (!s) continue;
         let ev; try { ev = JSON.parse(s); } catch (_) { continue; }
         const name = ev.name, payload = ev.payload || {};
-        // INTERNAL reason-only calls (the pitch/suggest self-talk) still cost real tokens — agent.cost flows through
-        // so SPEND stays honest — but must NOT register as a delivered task: drop their run.start/run.end re-emit so
+        // INTERNAL reason-only calls (the pitch/suggest self-talk) still produce usage events, but must NOT
+        // register as delivered tasks: drop their run.start/run.end re-emit so
         // XP / tasksDone / FloorStats products / the quest log / the suggestion cooldown never count the agent
         // thinking to itself (truthful-telemetry + honest-loot). The caller's own promise result is unaffected — the
         // switch below still latches runId/endReason locally from these same events.
@@ -202,7 +230,10 @@ const Harness = (() => {
           // latch the LEAD's runId on the FIRST run.start only. Stage 2: a delegated worker's run.start/end/error
           // are forwarded onto THIS (the lead's) stream for the floor animation — they still reach U.bus above, but
           // must NOT hijack the lead's runId / endReason / errMsg (keyed below to the lead's runId).
-          case 'agent.run.start': if (!runId) { runId = payload.runId; onRunId && onRunId(runId); } break;
+          case 'agent.run.start':
+            if (payload.runId && payload.model) runModels[payload.runId] = payload.model;
+            if (!runId) { runId = payload.runId; onRunId && onRunId(runId); }
+            break;
           case 'agent.token': full += payload.delta; onToken && onToken(payload.delta); break;
           case 'agent.tool_call': onToolCall && onToolCall(payload); break;
           case 'agent.tool_result': onToolResult && onToolResult(payload); break;
@@ -216,13 +247,20 @@ const Harness = (() => {
           case 'agent.cost':
             totals.tokens += (payload.tokensIn || 0) + (payload.tokensOut || 0);
             totals.cost += payload.usd || 0;
-            // the newest prompt_tokens IS the live context occupancy — keep the last real reading
-            if (payload.tokensIn) lastTokensIn = payload.tokensIn;
+            // The newest prompt_tokens is the live context reading for this event's agent/model.
+            if (payload.tokensIn > 0) {
+              const aid = payload.agentId || 'agent';
+              const m = payload.model || runModels[payload.runId] || getModel();
+              contextByAgent[aid] = { used: payload.tokensIn, model: m, runId: payload.runId || '' };
+            }
             lastUsage = { total_tokens: (payload.tokensIn || 0) + (payload.tokensOut || 0), cost: payload.usd };
             onUsage && onUsage(lastUsage); break;
           case 'capdenied': errMsg = errMsg || ('no ' + (payload.need || 'capability') + ' — ' + (payload.reason || '')); break;
           case 'agent.run.error': if (!payload.runId || payload.runId === runId) errMsg = payload.message; break;   // the lead's own error (a worker's rides the tool result)
-          case 'agent.run.end': if (!payload.runId || payload.runId === runId) endReason = payload.reason; break;   // the lead's own end, not a forwarded worker's
+          case 'agent.run.end':
+            if (payload.runId) delete runModels[payload.runId];
+            if (!payload.runId || payload.runId === runId) endReason = payload.reason;
+            break;   // the lead's own end, not a forwarded worker's
         }
       }
     }
@@ -321,6 +359,6 @@ const Harness = (() => {
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
-    resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; lastTokensIn = 0; }
+    resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; contextByAgent = {}; runModels = {}; }
   };
 })();

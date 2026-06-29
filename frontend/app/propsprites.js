@@ -906,9 +906,9 @@ const PropSprites = (() => {
     const off = Math.floor(now / 200) % 8;
     // dim ghost pass behind the live quote
     ctx.fillStyle = '#2c5218'; ctx.font = '7px monospace';
-    ctx.fillText('$' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off + 14, y + 9);
+    ctx.fillText('Q' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off + 14, y + 9);
     ctx.fillStyle = '#9bff4a';
-    ctx.fillText('$' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off, y + 9);
+    ctx.fillText('Q' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off, y + 9);
     ctx.restore();
     scanl(x + 2, y + 4, w - 4, 5, 0.14);
     glow(x + 2, y + 4, w - 4, 5, '#9bff4a', 0.05 + 0.02 * Math.sin(now / 700));

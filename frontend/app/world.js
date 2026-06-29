@@ -2347,7 +2347,6 @@ const World = (() => {
   }
   let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
   let slaglog = null, lastCacheFrac = null;   // SlagLog: wasted-spend post-mortems + the last reconciled cache ratio (for the diagnosis)
-  let lastRunDoneUsd = 0;   // the most recent 'done' run's REAL reconciled cost — sizes the banked PRODUCT crate
 
   // a belt tile on/adjacent to a footprint (its tiles + a 1-tile ring), used as a box spawn point (local frame)
   function beltTileNear(tx, ty, tw, th) {
@@ -2412,10 +2411,8 @@ const World = (() => {
     const p = payload || {};
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
     // ride inbound work as ORE — a UNIFORM raw chunk: every incoming request is one identical piece of raw
-    // material on the line. We deliberately DON'T size it (the old message-length mass faked a cost the box
-    // can't carry — the inbound box is consumed at run START, before any cost exists). The only mass that means
-    // real money is the green PRODUCT crate (sized by reconciled cost in outboundMessage); product-vs-slag is
-    // the rewarded signal, bound to real outcomes — never to this. (WIRING_AUDIT P4: lie #5.)
+    // material on the line. We deliberately DON'T size it; product-vs-slag is the rewarded signal,
+    // bound to real outcomes, never to this inbound request. (WIRING_AUDIT P4: lie #5.)
     p.box = 'ore';
     if (p.weight == null) p.weight = 0.3;
     if (t) convey.enqueueAt(t.x, t.y, p);
@@ -2442,17 +2439,17 @@ const World = (() => {
     if (!convey) return;
     const t = outboundBeltTile(payload && payload.agentId);
     // the reply rode out and was actually sent (workitem.delivered fires only after a successful send),
-    // so this box is a banked PRODUCT (green). Its MASS = the just-finished run's REAL reconciled cost
-    // (lastRunDoneUsd), so an expensive run banks a visibly heavier crate. Failed/superseded runs emit none.
-    const w = (typeof FloorStats !== 'undefined' && FloorStats.costWeight) ? FloorStats.costWeight(lastRunDoneUsd).weight : 0;
+    // so this box is a banked PRODUCT (green). Failed/superseded runs emit none.
+    const w = 0.3;
     if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: w, workitemId: (payload && payload.workitemId) || '' });
   }
-  // a wasteful run produced no deliverable — ride a red-hot SLAG crate off the PRODUCING agent's bay (carrying
-  // its post-mortem one-liner) so spend that yielded nothing is VISIBLE leaving the line, not just a number.
+  // an unproductive run produced no deliverable — ride a red-hot SLAG crate off the PRODUCING agent's bay
+  // carrying its post-mortem one-liner, so the failed outcome is visible leaving the line.
   function enqueueSlag(diag, aid) {
     if (!convey) return;
     const t = outboundBeltTile(aid);
-    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'slag', postmortem: (diag && (diag.title + ' — ' + diag.fix)) || 'wasted spend' });
+    const clean = s => String(s || '').replace(/\bspend\b/ig, 'run resources').replace(/\bdollars?\b/ig, 'limits');
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'slag', postmortem: (diag && (clean(diag.title) + ' - ' + clean(diag.fix))) || 'unproductive run' });
   }
   /* ---------- crew bodies (the OTHER agents, standing at their bays) ---------- */
   // a LIGHT body: the full agent field-shape (so SPRITES.drawBody/drawFallback never choke) but STATIC —
@@ -2679,15 +2676,18 @@ const World = (() => {
     U.bus.on('agent.run.end', p => {
       if (floor) floor.onEvent('agent.run.end', p, Date.now());
       const r = p && p.reason;
-      if (r === 'done') lastRunDoneUsd = Math.max(0, +(p && p.usd) || 0);   // remember this run's real cost for its product crate's mass
+      // A clean finish is shown by a product crate; crate mass is intentionally fixed in the UI.
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
-      // WASTED SPEND: pulse the SLAG cell, then turn the loss into a lesson — a real post-mortem in the
+      // UNPRODUCTIVE RUN: pulse the SLAG cell, then turn the failed outcome into a lesson — a real post-mortem in the
       // notifications panel + a red-hot slag crate that rides off the line (if a desk belt exists). The
-      // lesson lands regardless of belts (the run wasted spend either way; the belt only SHOWS it).
+      // lesson lands regardless of belts; the belt only shows it.
       lastSlagAt = performance.now();
       if (!slaglog) return;
       const diag = slaglog.record(r, { cacheFrac: lastCacheFrac, turns: p && p.turns, usd: p && p.usd });
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('⚠ SLAG · ' + SlagLog.line(diag), 'warn');
+      if (typeof StationUI !== 'undefined' && StationUI.notify) {
+        const clean = s => String(s || '').replace(/\bspend\b/ig, 'run resources').replace(/\bdollars?\b/ig, 'limits');
+        StationUI.notify('⚠ SLAG · ' + clean(SlagLog.line(diag)), 'warn');
+      }
       enqueueSlag(diag, p && p.agentId);
     });
     // Stage 2: WATCH the lead delegate. A team.dispatch tool call opens a delegation window (until its tool_result);
@@ -2811,15 +2811,14 @@ const World = (() => {
   }
 
   /* THE FLOOR ECONOMY READOUT — the running station made legible at a glance (the Factorio dashboard).
-     Four real, folded numbers (FloorStats): YIELD (productive-run rate), SPEND (reconciled dollars this
-     session), CACHE (the prompt-cache "smelter" signal), SLAG (runs that burned spend for nothing — it
+     Four real, folded numbers (FloorStats): YIELD (productive-run rate), RUNS (decisive runs),
+     CACHE (the prompt-cache "smelter" signal), SLAG (runs that produced no deliverable — it
      pulses red the instant a fresh waste run lands). Honest by construction: yield/cache show "—" until
      they have a real sample. Stacks just above the INTAKE queue gauge; stays hidden on a quiet floor. */
-  function fmtUsd(u) { u = +u || 0; return u >= 1 ? '$' + u.toFixed(2) : '$' + u.toFixed(4); }
   function drawFloorStats(now) {
     if (!floor) return;
     const fs = floor.snapshot(Date.now());   // live wall-clock anchor so throughput decays honestly when deliveries stop
-    if (fs.runs === 0 && fs.delivered === 0 && fs.spendUsd === 0) return;   // nothing has happened yet — stay dark
+    if (fs.runs === 0 && fs.delivered === 0) return;   // nothing has happened yet - stay dark
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
     const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 160, bh = 46;
@@ -2834,7 +2833,7 @@ const World = (() => {
     };
     const cA = x + 7, cB = x + bw / 2 + 3, r1 = y + 10, r2 = y + 23, r3 = y + 36;
     cell(cA, r1, 'YIELD', fs.yieldKnown ? fs.yieldPct + '%' : '—', fs.yieldKnown ? (fs.yieldFrac >= 0.6 ? '#62c487' : '#e8c860') : '#5a6a62');
-    cell(cB, r1, 'SPEND', fmtUsd(fs.spendUsd), '#aeb9c4');
+    cell(cB, r1, 'RUNS', String(fs.runs), '#aeb9c4');
     cell(cA, r2, 'CACHE', fs.cacheKnown ? fs.cachePct + '%' : '—', fs.cacheKnown ? (fs.cacheFrac >= 0.4 ? '#5ad0ff' : '#7a8a82') : '#5a6a62');
     const flash = (now - lastSlagAt) < 900 && (Math.floor((now - lastSlagAt) / 150) % 2 === 0);   // fresh-slag pulse
     cell(cB, r2, 'SLAG', String(fs.slag), fs.slag > 0 ? (flash ? '#ff9a7a' : '#ef6a4a') : '#3f8a5a');

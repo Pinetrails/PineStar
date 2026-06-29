@@ -1,13 +1,12 @@
 /* STARNET — floorstats.js : the FACTORY-FLOOR economy readout (pure, testable).
 
-   Folds the harness's already-frozen cost/outcome events into ONE render-agnostic
+   Folds the harness's already-frozen usage/outcome events into ONE render-agnostic
    snapshot the live floor HUD reads at a glance — so the running station is legible
    the way a Factorio belt is: you look, and you know. Four numbers:
-     - SPEND : real dollars burned this session (reconciled agent.cost.usd).
+     - RUNS  : real task outcomes observed this session.
      - YIELD : the productive-run rate — products / decisive runs. The "are my agents
                actually finishing useful work, or thrashing?" number.
-     - SLAG  : runs that burned spend for nothing (max_iters / budget / error / refusal)
-               + the dollars they wasted. The thing you optimise DOWN.
+     - SLAG  : runs that ended without a deliverable (max_iters / budget / error / refusal).
      - CACHE : cachedTokens / promptTokens — the prompt-cache "smelter" signal. A stable
                system-prompt + memory fence runs the cache hot (~10× cheaper input);
                thrash it and this craters. An invisible win, made visible.
@@ -18,7 +17,7 @@
                waiting crates at the bay, so a bottleneck's LENGTH is the real pending work.
 
    Truthful by construction (the workstreams.js telemetry rule): every number is a fold
-   of REAL events — agent.cost (RECONCILED usd + cachedTokens), agent.run.end (the
+   of REAL events — agent.cost (reconciled usage + cachedTokens), agent.run.end (the
    decisive reason), workitem.delivered (a real outbound delivery). Nothing is estimated
    or invented; a metric with no samples yet reports known:false so the HUD shows "—"
    instead of a fabricated figure (the same honesty rule ctxgauge.js applies to context).
@@ -33,7 +32,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // agent.run.end.reason buckets. 'done' banks a PRODUCT; these four burned spend for nothing → SLAG.
+  // agent.run.end.reason buckets. 'done' banks a PRODUCT; these four ended without a deliverable → SLAG.
   // 'cancelled' is a human stop (not waste) and counts as NEITHER — it never inflates the slag tally.
   const SLAG_REASONS = { max_iters: 1, budget: 1, error: 1, refusal: 1 };
 

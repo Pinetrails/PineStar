@@ -49,7 +49,14 @@ A.ok(cold.frac === 0 && cold.pct === 0, 'unknown -> no fill asserted');
 A.eq(cold.level, 'unknown', 'unknown level');
 A.eq(cold.pctLabel, '—', 'unknown -> dash, never a number');
 A.eq(cold.label, '64k', 'unknown still shows the real used count');
-A.eq(compute(0, 0).label, '—', 'nothing known at all -> dash');
+A.eq(compute(0, 0).label, '--', 'nothing known at all -> dash');
+
+// ---- unmeasured current model: context length can be known while prompt tokens are not ----
+const unmeasured = compute(64000, 128000, { measured: false });
+A.ok(unmeasured.known === false && unmeasured.measured === false, 'unmeasured -> not known');
+A.eq(unmeasured.level, 'unknown', 'unmeasured level');
+A.eq(unmeasured.label, '-- / 128k', 'unmeasured shows limit without pretending used tokens');
+A.eq(unmeasured.pctLabel, '—', 'unmeasured -> no percentage asserted');
 
 // ---- defensive coercion: garbage in -> safe, never a crash or NaN ----
 A.eq(compute(-5, 128000).level, 'idle', 'negative used coerces to 0');

@@ -1,7 +1,7 @@
 /* STARNET — stationui.js : the station-management HUD.
    Ports the v7 pip-boy chrome (floating terminal windows, crew manifest,
    bottom-bar panels) but wires every readout to REAL harness data — the
-   present agent, real lifetime spend/tokens from Harness, the real tool
+   present agent, the current measured context window, the real tool
    surface, a real persisted task board. No simulated numbers, no fake
    progress bars (truthful-telemetry mandate). State that the user owns
    (task board · UI settings · notifications) persists to localStorage. */
@@ -322,7 +322,7 @@ const StationUI = (() => {
   }
 
   /* ============== AGENTS — DOSSIER ==============
-     Two sub-tabs. BRIEF is live telemetry (real lifetime spend). CONFIG is the agent's actual
+     Two sub-tabs. BRIEF is live agent status. CONFIG is the agent's actual
      markdown config files — identity.md / purpose.md / operating-manual.md compose the EXACT
      system prompt the model runs on, so editing one here re-shapes the agent for real (App's
      applyAgentConfig, injected as access.config.apply). memory.md is the agent's own notebook —
@@ -356,7 +356,7 @@ const StationUI = (() => {
     return ((a && a.name) || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
   }
 
-  function agHead(a, act, price) {
+  function agHead(a, act) {
     const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
     const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
@@ -369,26 +369,22 @@ const StationUI = (() => {
       // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
       ((typeof Specialties !== 'undefined' && a.specialtyId) ? (function () { var s = Specialties.get(a.specialtyId); return s ? '<span class="tag">' + esc(s.emoji + ' ' + s.name) + '</span>' : ''; })() : '') +
       '<span class="tag model">' + esc(a.model || '—') + '</span>' +
-      (price ? '<span class="tag dim">$' + price.in.toFixed(2) + '/$' + price.out.toFixed(2) + '/1M</span>' : '') +
       '</div></div></div>';
   }
 
   function agBrief(a) {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
-    const fmtTok = n => { n = Number(n) || 0; return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); };
     // BRIEF is operational telemetry; the full Level/XP/Confidence/milestone readout lives in the GROWTH tab.
     return '<div class="stat-grid">' +
       '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
-      '<div class="stat-cell"><div class="stat-val">' + fmtTok(t.tokens) + '</div><div class="stat-lbl">TOKENS</div></div>' +
-      '<div class="stat-cell"><div class="stat-val pos">$' + Number(t.cost || 0).toFixed(4) + '</div><div class="stat-lbl">SPENT</div></div>' +
       '</div>' +
       '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
       (a.purpose
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
         : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
-      '<div class="ag-foot-row">on station since <b>' + since + '</b> · all figures are real spend</div>';
+      '<div class="ag-foot-row">on station since <b>' + since + '</b></div>';
   }
 
   // GROWTH tab — the premium agent-growth dossier: XP ladder, a physical confidence gauge (honest "—"
@@ -646,14 +642,13 @@ const StationUI = (() => {
     if (sel >= present.length) sel = 0;
     const a = present[sel];
     const act = activity();
-    const price = (typeof Harness === 'object' && Harness.priceOf) ? Harness.priceOf(a.model) : null;
     const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills(a && a.id) : agTab === 'growth' ? agGrowth(a) : agTab === 'memory' ? agMemory(a) : agBrief(a);
     body.innerHTML =
       '<div class="ag-wrap"><div class="ag-list">' +
       present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '">' +
         '<span style="color:' + x.color + '">●</span> ' + esc(x.name) + '</div>').join('') +
       '</div><div class="ag-detail">' +
-      agHead(a, act, price) +
+      agHead(a, act) +
       '<div class="ag-tabs">' +
       '<button class="ag-tab ' + (agTab === 'brief' ? 'sel' : '') + '" data-tab="brief">BRIEF</button>' +
       '<button class="ag-tab ' + (agTab === 'growth' ? 'sel' : '') + '" data-tab="growth">GROWTH</button>' +
@@ -825,7 +820,7 @@ const StationUI = (() => {
   }
   function persistWS() { if (typeof App !== 'undefined' && App.persist) App.persist(); }
   // a board mutation must refresh BOTH views — App.refreshRail re-renders the rail AND calls back into
-  // refreshBoard() here, so one call keeps the rail, the board and the cost chip in lockstep.
+    // refreshBoard() here, so one call keeps the rail and the board in lockstep.
   function sync() { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); else rerender('tasks'); }
 
   function addTask(title) {
@@ -864,7 +859,6 @@ const StationUI = (() => {
   }
 
   function card(s) {
-    const cost = (s.cost && s.cost.usd) ? '$' + s.cost.usd.toFixed(4) : '';
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
     const acts = s.lane === 'todo'
       ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
@@ -874,7 +868,7 @@ const StationUI = (() => {
     return '<div class="kb-card" data-id="' + s.id + '">' +
       '<div class="kb-title">' + esc(s.title || 'untitled') + '</div>' +
       '<div class="kb-meta"><span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
-      (runs ? '<span>' + runs + '</span>' : '') + (cost ? '<span class="pos">' + cost + '</span>' : '') + '</div>' +
+      (runs ? '<span>' + runs + '</span>' : '') + '</div>' +
       '<div class="kb-acts">' + acts + '</div></div>';
   }
   function buildTasks(body) {
@@ -1086,7 +1080,7 @@ const StationUI = (() => {
       '<div class="set-themes" id="auto-reach">' +
         '<button class="set-theme" data-reach="observe" title="read / research only — writes nothing">OBSERVE</button>' +
         '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
-        '<button class="set-theme" data-reach="reach" title="can send, publish, or spend — the unsupervised ceiling">REACH-OUT</button>' +
+        '<button class="set-theme" data-reach="reach" title="can send, publish, or contact external services">REACH-OUT</button>' +
       '</div>' +
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
@@ -1168,15 +1162,16 @@ const StationUI = (() => {
   // the desk core used. Honest: an unknown limit paints empty + "—" (calibrating).
   function ctxTick() {
     const g = $('#ctx-gauge'); if (!g) return;
-    if (typeof Harness === 'undefined' || !Harness.contextState || typeof CtxGauge === 'undefined') return;
-    const cs = Harness.contextState();
-    const s = CtxGauge.compute(cs.used, cs.limit);
+    if (typeof CtxGauge === 'undefined') return;
+    const cs = access.context ? access.context() : ((typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState() : null);
+    if (!cs) return;
+    const s = CtxGauge.compute(cs.used, cs.limit, { measured: cs.measured !== false });
     g.dataset.level = s.level;
     const fill = g.querySelector('.ctx-fill'); if (fill) fill.style.width = (s.known ? s.pct : 0) + '%';
     const num = g.querySelector('.ctx-num'); if (num) num.textContent = s.pctLabel;
     const cap = g.querySelector('.ctx-cap'); if (cap) cap.textContent = s.label;
-    g.title = 'CONTEXT — ' + (s.known ? s.label + '  ·  ' + s.pctLabel + ' of the model’s max context'
-                                       : 'calibrating (the model’s max context length is still unknown)');
+    g.title = 'CONTEXT - ' + (s.known ? s.label + ' - ' + s.pctLabel + ' of the model max context'
+      : (s.limit ? 'waiting for a measured prompt on this agent/model' : 'calibrating model context length'));
   }
   let compactWired = false;
   function wireCompactBeat() {
@@ -1702,9 +1697,9 @@ const StationUI = (() => {
 
   /* ============== LOGBOOK — the reviewable run-history + SLAG post-mortems (the durable record) ==============
      Two read-only surfaces the audit found were written-but-never-read: RUNS folds the append-only run-history
-     logbook (GET /api/runs — every finished run's outcome/cost/reason), and SLAG renders World.slagLog() — the
-     wasted-spend post-mortems (cause + fix) that used to live only as a fading toast. (WIRING_AUDIT P7.) */
-  const LB_REASON = { done: '✓ done', max_iters: '⟳ looped out', budget: '$ over budget', cancelled: '⏹ cancelled', error: '✕ error', refusal: '⊘ refused' };
+     logbook (GET /api/runs — every finished run's outcome/reason), and SLAG renders World.slagLog() — the
+     unproductive-run post-mortems (cause + fix) that used to live only as a fading toast. (WIRING_AUDIT P7.) */
+  const LB_REASON = { done: '✓ done', max_iters: '⟳ looped out', budget: 'over budget', cancelled: '⏹ cancelled', error: '✕ error', refusal: '⊘ refused' };
   function buildLogbook(body) {
     const agentId = (present[sel] && present[sel].id) || 'agent';
     body.innerHTML =
@@ -1716,7 +1711,6 @@ const StationUI = (() => {
       '<div id="lb-list" class="mc-list">loading…</div>';
     const listEl = body.querySelector('#lb-list'), aboutEl = body.querySelector('#lb-about');
     let tab = 'runs';
-    function spendText(x) { return (x && x.unmetered) ? 'subscription / unmetered' : ('$' + (Number(x && x.usd) || 0).toFixed(4)); }
     function runRow(r) {
       const when = r.ts ? esc(fmtRel(new Date(r.ts).toISOString())) : '';
       const rl = LB_REASON[r.reason] || esc(r.reason || 'done');
@@ -1727,31 +1721,35 @@ const StationUI = (() => {
       const cls = sid ? 'mc-row lb-run-open' : 'mc-row';
       const attr = sid ? ' data-stream="' + sid + '" title="click to open this run\'s transcript"' : '';
       return '<div class="' + cls + '"' + attr + '><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + (sid ? ' · ▸ transcript' : '') + '</span></div>' +
-        '<div class="mc-url dim">' + rl + ' · ' + model + ' · ' + esc(spendText(r)) + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + (r.tokens ? (' · ' + r.tokens + ' tok') : '') + '</div>' +
+        '<div class="mc-url dim">' + rl + ' · ' + model + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + '</div>' +
         (sid ? '<div class="lb-tx" hidden></div>' : '') + '</div>';
     }
     function insightsHtml(j) {
       j = j || {};
       if (!j.totalRuns) return '<div class="fb-empty">NO DATA YET.<br><span>Insights appear once this agent finishes some runs.</span></div>';
-      const unmetered = Number(j.unmeteredRuns) || 0;
-      const unmeteredBit = unmetered ? (' · ' + unmetered + ' subscription / unmetered') : '';
-      const ov = '<div class="mc-row"><div class="mc-top"><b>' + j.totalRuns + ' run' + (j.totalRuns === 1 ? '' : 's') + ' · $' + (Number(j.totalUsd) || 0).toFixed(4) + ' metered</b></div>' +
-        '<div class="mc-url dim">avg $' + (Number(j.avgUsdPerRun) || 0).toFixed(4) + '/metered run · ' + (j.successPct == null ? '—' : j.successPct + '% success') + ' · ' + (j.totalTokens || 0) + ' tok' + unmeteredBit + '</div></div>';
+      const ov = '<div class="mc-row"><div class="mc-top"><b>' + j.totalRuns + ' run' + (j.totalRuns === 1 ? '' : 's') + '</b></div>' +
+        '<div class="mc-url dim">' + (j.successPct == null ? '—' : j.successPct + '% success') + '</div></div>';
       const models = (j.byModel || []).slice(0, 8).map(m =>
-        '<div class="mc-row"><div class="mc-top"><b>' + esc(m.model) + '</b> <span class="dim">' + m.runs + ' run' + (m.runs === 1 ? '' : 's') + '</span></div>' +
-        '<div class="mc-url dim">' + (m.unmetered ? 'subscription / unmetered' : ('$' + (Number(m.usd) || 0).toFixed(4) + ' metered')) + ' · ' + (m.tokens || 0) + ' tok' + (m.unmeteredRuns ? (' · ' + m.unmeteredRuns + ' unmetered') : '') + '</div></div>').join('');
+        '<div class="mc-row"><div class="mc-top"><b>' + esc(m.model) + '</b> <span class="dim">' + m.runs + ' run' + (m.runs === 1 ? '' : 's') + '</span></div></div>').join('');
       const reasons = Object.keys(j.byReason || {}).map(k => esc(k) + ' ' + j.byReason[k]).join(' · ');
       return ov + '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">BY MODEL</div>' + (models || '<div class="mc-detail dim">—</div>') +
         '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">OUTCOMES</div><div class="mc-detail dim">' + (reasons || '—') + '</div>';
     }
+    function noSpendText(s) {
+      return String(s || '')
+        .replace(/\bspend\b/ig, 'run resources')
+        .replace(/\bdollars?\b/ig, 'limits')
+        .replace(/billed at full price every turn/ig, 'processed cold every turn')
+        .replace(/~10× cheaper input/ig, 'more efficient input');
+    }
     function slagRow(d) {
-      return '<div class="mc-row"><div class="mc-top"><b style="color:var(--bad)">⚠ ' + esc(d.title || 'wasted spend') + '</b></div>' +
-        '<div class="mc-url dim">' + esc(d.cause || '') + '</div>' +
-        (d.fix ? '<div class="mc-detail">→ ' + esc(d.fix) + '</div>' : '') + '</div>';
+      return '<div class="mc-row"><div class="mc-top"><b style="color:var(--bad)">⚠ ' + esc(noSpendText(d.title || 'unproductive run')) + '</b></div>' +
+        '<div class="mc-url dim">' + esc(noSpendText(d.cause || '')) + '</div>' +
+        (d.fix ? '<div class="mc-detail">→ ' + esc(noSpendText(d.fix)) + '</div>' : '') + '</div>';
     }
     async function refresh() {
       if (tab === 'runs') {
-        aboutEl.innerHTML = 'Every finished run, newest first — what it produced, what it cost, and why it ended. The durable record behind the spend.';
+        aboutEl.innerHTML = 'Every finished run, newest first — what it produced and why it ended.';
         try {
           const j = await (await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100')).json();
           const runs = (j && j.runs) || [];
@@ -1772,13 +1770,13 @@ const StationUI = (() => {
           }));
         } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see run history.</div>'; }
       } else if (tab === 'slag') {
-        aboutEl.innerHTML = 'Wasted-spend post-mortems: every run that burned dollars without a deliverable, diagnosed into a real, fixable cause. Optimise these down.';
+        aboutEl.innerHTML = 'Post-mortems for runs that ended without a deliverable, diagnosed into a real, fixable cause.';
         let slag = [];
         try { if (typeof World !== 'undefined' && World.slagLog) slag = World.slagLog().slice().reverse(); } catch (_) {}
-        listEl.innerHTML = slag.length ? slag.map(slagRow).join('') : '<div class="fb-empty">NO SLAG — clean line.<br><span>A post-mortem appears here when a run burns spend without producing a result.</span></div>';
+        listEl.innerHTML = slag.length ? slag.map(slagRow).join('') : '<div class="fb-empty">NO SLAG — clean line.<br><span>A post-mortem appears here when a run ends without producing a result.</span></div>';
       } else {
-        // H3.3: aggregate usage — overview + per-model spend + outcomes, folded from the run history (GET /api/insights).
-        aboutEl.innerHTML = 'How this agent spends: total runs and cost, average per run, success rate, and where the money goes by model.';
+        // H3.3: aggregate outcomes folded from the run history (GET /api/insights).
+        aboutEl.innerHTML = 'Run totals, success rate, and model distribution.';
         try {
           const j = await (await fetch('/api/insights?agent=' + encodeURIComponent(agentId))).json();
           listEl.innerHTML = insightsHtml(j);

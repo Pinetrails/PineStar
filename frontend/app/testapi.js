@@ -63,8 +63,8 @@
   function reduceXp() {
     try { if (typeof Xp === 'undefined') return null; let s = Xp.fresh(); for (const e of _log) s = Xp.applyEvent(s, { name: e.name, payload: e.payload }).stats; return Xp.compute(s); } catch (_) { return null; }
   }
-  // a raw, dependency-free sum of the cost firehose — mirrors Harness.totals() shape so the SPEND/TOKENS
-  // HUD chips can be checked even if FloorStats is unavailable.
+  // a raw, dependency-free sum of the usage firehose, mirrored from Harness.totals() so dev checks
+  // can compare against what actually happened on the bus.
   function reduceTotals() {
     let cost = 0, tokensIn = 0, tokensOut = 0, calls = 0;
     for (const e of _log) {
@@ -73,7 +73,7 @@
     }
     return { cost, tokens: tokensIn + tokensOut, tokensIn, tokensOut, calls };
   }
-  function ctx() { try { if (typeof CtxGauge === 'undefined' || typeof Harness === 'undefined') return null; const cs = Harness.contextState(); return CtxGauge.compute(cs.used, cs.limit); } catch (_) { return null; } }
+  function ctx() { try { if (typeof CtxGauge === 'undefined' || typeof Harness === 'undefined') return null; const cs = Harness.contextState(); return CtxGauge.compute(cs.used, cs.limit, { measured: cs.measured !== false }); } catch (_) { return null; } }
 
   // ---- HUD truthfulness: displayed (DOM) vs reduced-over-events ----
   // Parse a HUD chip's text into a number, honoring k/M/B suffixes ("234.9k" -> 234900, "Lv 3" -> 3).
@@ -88,19 +88,16 @@
   }
   function displayedHud() {
     const txt = (id) => { const el = document.getElementById(id); return el ? (el.textContent || '').trim() : null; };
-    const c = txt('gt-cost'), t = txt('gt-tok'), s = txt('gt-station');
+    const s = txt('gt-station');
     return {
-      cost: { text: c, value: parseNum(c) },        // SPEND, e.g. "$0.000000"
-      tokens: { text: t, value: parseNum(t) },      // TOKENS, e.g. "0" / "234.9k"
       station: { text: s, value: parseNum(s) },     // STATION, e.g. "Lv 3"
     };
   }
   const captureBaseline = () => { if (!baseline) baseline = displayedHud(); return baseline; };
 
   // Returns the displayed values, the baseline captured at log-start, the reduced (event-derived) values,
-  // and PASS/FAIL checks. For a fresh dev-seed session the baseline spend/tokens are 0, so displayed must
-  // EQUAL the reduced session totals exactly (no-app-lies). Station level is cumulative-with-history, so it
-  // is checked as a monotonic lower bound (session XP can only have raised it; it must be >= baseline).
+  // and PASS/FAIL checks. Station level is cumulative-with-history, so it is checked as a monotonic
+  // lower bound (session XP can only have raised it; it must be >= baseline).
   function hud() {
     const displayed = displayedHud();
     const base = baseline || displayed;
@@ -112,11 +109,7 @@
       const ok = displayedV != null && expectedV != null && (mode === 'gte' ? displayedV >= expectedV - (tol || 0) : Math.abs(displayedV - expectedV) <= (tol || 0));
       checks.push({ metric, displayed: displayedV, expected: expectedV, mode: mode || 'eq', ok });
     };
-    const baseCost = (base.cost && base.cost.value) || 0;
-    const baseTok = (base.tokens && base.tokens.value) || 0;
     const baseSta = (base.station && base.station.value) || 1;
-    chk('spendUsd', displayed.cost.value, baseCost + (floor ? floor.spendUsd : totals.cost), 5e-4, 'eq');
-    chk('tokens', displayed.tokens.value, baseTok + totals.tokens, 100, 'eq');      // tolerance absorbs k-suffix rounding
     chk('stationLevel', displayed.station.value, Math.max(baseSta, xp ? xp.level : 1), 0, 'gte');
     return { displayed, baseline: base, reduced: { totals, floor, xp, ctx: ctx() }, checks, allOk: checks.every((c) => c.ok) };
   }

@@ -136,7 +136,7 @@
     if (s.initiative === 'propose') return 'Lines up suggestions for you to approve — never acts on its own.';
     const reachWord = s.reach === 'observe' ? 'research only (writes nothing)'
       : s.reach === 'sandbox' ? 'builds locally, nothing leaves the machine'
-      : 'can send, publish, or spend';
+      : 'can send, publish, or contact external services';
     const how = s.initiative === 'leash' ? ('up to ' + s.leashPerDay + ' small jobs a day') : 'freely toward your goals';
     return 'Works on its own ' + how + ' — ' + reachWord + '. You see everything it did.';
   }

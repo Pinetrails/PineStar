@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '../frontend/app/harness.js'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
 const sidecar = fs.readFileSync(path.join(__dirname, '../sidecar/index.js'), 'utf8');
 
 // chat() accepts the `internal` flag the callers pass.
@@ -36,5 +37,12 @@ A.ok(/const\s+hasWriteTools\s*=/.test(sidecar), 'sidecar derives hasWriteTools f
 A.ok(/hasWebTools\s*\?\s*'Ground every current factual claim/.test(sidecar), 'web/source guidance is conditional on web tools');
 A.ok(/hasWriteTools\s*\?\s*'Save substantive deliverables/.test(sidecar), 'file-saving guidance is conditional on write tools');
 A.ok(!/never say you cannot reach the web or files/.test(sidecar), 'old blanket web/files claim is gone');
+
+// The browser must prefer the same-origin sidecar catalog so local/dev runs get the exact context_length
+// the backend already warmed, with direct OpenRouter only as a fallback.
+A.ok(src.includes("fetchModelCatalog('/api/models/openrouter', 'models')"), 'Harness.listModels prefers the sidecar OpenRouter catalog');
+A.ok(src.includes("fetchModelCatalog(OR + '/models', 'data')"), 'Harness.listModels keeps the direct OpenRouter catalog as fallback');
+A.ok(src.includes("params.indexOf('tools') >= 0"), 'Harness.listModels derives tool support from supported_parameters when needed');
+A.ok(/saved\s*&&\s*saved\.agent[\s\S]{0,180}Harness\.listModels\(\)/.test(app), 'auto-resume warms the model catalog before entering the game');
 
 A.report('harness-internal.test');

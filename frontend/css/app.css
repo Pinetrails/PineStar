@@ -1148,7 +1148,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .key-empty { font-size: 13px; color: var(--ph); padding: 4px 2px; display: flex; flex-direction: column; gap: 6px; }
 .key-empty p { margin: 0; font-size: 12px; color: var(--text); opacity: 0.75; }
 
-/* ---------- WORKSTREAMS rail (left) + per-stream cost chip (COMMS) ---------- */
+/* ---------- WORKSTREAMS rail (left) ---------- */
 #ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; }
 .ws-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -1175,14 +1175,12 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-dot.lane-shipped { background: var(--gold); }
 .ws-title { flex: 1; min-width: 0; font-size: 14px; color: var(--ph); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-row.sel .ws-title { color: var(--ph-bright); }
-.ws-c { font-size: 11px; color: var(--gold); letter-spacing: .5px; flex: 0 0 auto; }
 
 #chat-panel h3 .h3-right { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; flex: 0 1 auto; overflow: hidden; }
 #chat-panel h3 #chat-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #chat-status.status-thinking { color: var(--ph-bright); text-shadow: 0 0 7px var(--ph-glow2); }
 #chat-status.status-working, #chat-status.status-approval { color: var(--gold); text-shadow: 0 0 7px rgba(255,211,74,.4); }
 #chat-status.status-stopping { color: var(--bad); text-shadow: 0 0 7px rgba(255,74,61,.35); }
-.ws-cost { color: var(--ink); opacity: .85; font-size: 13px; letter-spacing: .5px; flex: 0 0 auto; }
 
 /* COMMS PROCESSING TIMER — a small engraved readout in the amber header that counts a turn's REAL
    wall-clock (thinking → working → done). Monospace with a fixed min-width so the ticking seconds

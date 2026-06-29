@@ -82,7 +82,7 @@ A.ok(/approve|suggestions/i.test(Au.describe({ initiative: 'propose' })), 'descr
 A.ok(/3 small jobs/i.test(Au.describe({ initiative: 'leash', reach: 'sandbox', leashPerDay: 3 })), 'describe(leash) names the daily allowance');
 A.ok(/freely toward your goals/i.test(Au.describe({ initiative: 'free', reach: 'sandbox' })), 'describe(free) says it works freely');
 A.ok(/nothing leaves the machine/i.test(Au.describe({ initiative: 'free', reach: 'sandbox' })), 'describe(sandbox) is explicit that nothing leaves');
-A.ok(/send|publish|spend/i.test(Au.describe({ initiative: 'free', reach: 'reach' })), 'describe(reach) is explicit it can act externally');
+A.ok(/send|publish|external/i.test(Au.describe({ initiative: 'free', reach: 'reach' })), 'describe(reach) is explicit it can act externally');
 A.ok(Au.describe({ initiative: 'free', reach: 'reach' }).indexOf('see everything it did') >= 0, 'describe always promises legibility (you see everything)');
 
 /* ---------- purity / determinism ---------- */

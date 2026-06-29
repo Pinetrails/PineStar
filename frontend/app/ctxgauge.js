@@ -42,11 +42,14 @@
   }
 
   // used = tokens in the latest real request (prompt_tokens); limit = the model's max context.
+  // opts.measured === false means no authoritative prompt_tokens reading exists for this agent/model yet.
   // Returns a pure, render-agnostic snapshot. level ∈ unknown | idle | ok | warn | crit.
-  function compute(used, limit) {
+  function compute(used, limit, opts) {
+    opts = opts || {};
+    const measured = opts.measured !== false;
     used = clampInt(used);
     limit = clampInt(limit);
-    const known = limit > 0;
+    const known = measured && limit > 0;
     let frac = 0;
     if (known) { frac = used / limit; if (frac > 1) frac = 1; if (frac < 0) frac = 0; }
     const pct = Math.round(frac * 100);
@@ -57,8 +60,9 @@
     else if (frac >= WARN) level = 'warn';
     else level = 'ok';
     return {
-      known, used, limit, frac, pct, level,
-      label: known ? (fmtTokens(used) + ' / ' + fmtTokens(limit)) : (used ? fmtTokens(used) : '—'),
+      known, measured, used, limit, frac, pct, level,
+      label: known ? (fmtTokens(used) + ' / ' + fmtTokens(limit))
+        : (limit ? ('-- / ' + fmtTokens(limit)) : (used ? fmtTokens(used) : '--')),
       pctLabel: known ? (pct + '%') : '—'
     };
   }

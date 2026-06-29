@@ -11,7 +11,7 @@
    STARNET — "Living War-Room" LAYOUT MOCKUP (throwaway, self-contained).
    Reuses the real app's phosphor/CRT tokens (style.css) so it feels native.
    Everything here is fake/canned data — it exists only to test the LAYOUT and
-   the new interactions: sticky approval hotspot, reactor spend gauge, crew
+   the new interactions: sticky approval hotspot, context gauge, crew
    instrument-cluster, Ctrl+1..9 agent-select w/ camera pan, Alt+A jump-to-
    approval, docked tabs (no floating soup), and a "cinema" fullscreen toggle.
    ========================================================================= */
@@ -72,15 +72,15 @@ body::before{ content:''; position:fixed; inset:0; pointer-events:none; z-index:
 .tb-stat{ color:var(--ph-dim); font-size:14px; letter-spacing:1px; }
 .tb-stat b{ color:var(--ph-bright); font-weight:normal; margin-left:5px; }
 .tb-spacer{ flex:1; }
-/* reactor-style spend gauge in the top bar */
-.reactor{ display:flex; align-items:center; gap:8px; }
-.reactor .lab{ color:var(--ph-dim); font-size:13px; letter-spacing:1px; }
-.reactor .bars{ display:flex; align-items:flex-end; gap:2px; height:22px; }
-.reactor .seg{ width:6px; background:var(--ph-faint); align-self:flex-end; }
-.reactor .seg.on{ background:var(--ph); box-shadow:0 0 6px var(--ph-glow2); }
-.reactor .seg.hot{ background:var(--bad); box-shadow:0 0 8px rgba(255,92,77,.6); }
-.reactor.bloom .seg.on{ background:var(--ph-bright); box-shadow:0 0 10px var(--ph-glow); }
-.reactor .val{ color:var(--gold); font-size:16px; letter-spacing:.5px; min-width:84px; }
+/* context gauge in the top bar */
+.ctxmock{ display:flex; align-items:center; gap:8px; }
+.ctxmock .lab{ color:var(--ph-dim); font-size:13px; letter-spacing:1px; }
+.ctxmock .bars{ display:flex; align-items:flex-end; gap:2px; height:22px; }
+.ctxmock .seg{ width:6px; background:var(--ph-faint); align-self:flex-end; }
+.ctxmock .seg.on{ background:var(--ph); box-shadow:0 0 6px var(--ph-glow2); }
+.ctxmock .seg.hot{ background:var(--bad); box-shadow:0 0 8px rgba(255,92,77,.6); }
+.ctxmock.bloom .seg.on{ background:var(--ph-bright); box-shadow:0 0 10px var(--ph-glow); }
+.ctxmock .val{ color:var(--gold); font-size:16px; letter-spacing:.5px; min-width:42px; }
 .btn{ font-family:inherit; color:var(--ph); background:var(--panel2);
   border:2px solid var(--ph-dim); padding:5px 12px; cursor:pointer; text-transform:uppercase;
   letter-spacing:1px; line-height:1; text-shadow:0 0 6px var(--ph-glow2); font-size:14px; }
@@ -220,12 +220,11 @@ body::before{ content:''; position:fixed; inset:0; pointer-events:none; z-index:
     <span class="tb-stat">AGENT<b id="tb-agent">ULTRON</b></span>
     <span class="tb-stat">MODEL<b>opus-4.8</b></span>
     <div class="tb-spacer"></div>
-    <div class="reactor" id="reactor" title="reactor spend gauge — climbs with real spend">
-      <span class="lab">⚡SPEND</span>
-      <span class="bars" id="reactor-bars"></span>
-      <span class="val" id="reactor-val">$0.000000</span>
+    <div class="ctxmock" id="ctxmock" title="context gauge">
+      <span class="lab">CTX</span>
+      <span class="bars" id="ctx-bars"></span>
+      <span class="val" id="ctx-val">18%</span>
     </div>
-    <span class="tb-stat">TOKENS<b id="tb-tok">0</b></span>
     <button class="btn" onclick="alert('(mockup) DISCONNECT')">⏏ DISC</button>
   </header>
 
@@ -234,9 +233,9 @@ body::before{ content:''; position:fixed; inset:0; pointer-events:none; z-index:
     <ul id="crew"></ul>
     <div class="hdr rail-sub"><span>▮ WORKSTREAMS</span><span class="dim">+ NEW</span></div>
     <ul id="ws">
-      <li class="ws-row"><span class="wsdot"></span>General<span class="wsc">$0.04</span></li>
-      <li class="ws-row"><span class="wsdot" style="background:var(--gold)"></span>refactor chat.js<span class="wsc">$0.11</span></li>
-      <li class="ws-row"><span class="wsdot"></span>research: voices<span class="wsc">$0.02</span></li>
+      <li class="ws-row"><span class="wsdot"></span>General<span class="wsc">3 runs</span></li>
+      <li class="ws-row"><span class="wsdot" style="background:var(--gold)"></span>refactor chat.js<span class="wsc">active</span></li>
+      <li class="ws-row"><span class="wsdot"></span>research: voices<span class="wsc">1 run</span></li>
     </ul>
   </aside>
 
@@ -319,7 +318,7 @@ const AG = [
 ];
 let sel = 0;                 // selected agent (camera focus)
 let pending = null;          // { agentIdx, tool, args } or null
-let cost = 0, tokens = 0;    // fake telemetry that climbs
+let ctxLevel = 18;           // fake context percentage for the layout mockup
 let camX = 0, camXtarget = 0, zoom = 1, zoomTarget = 1;
 
 /* ============================ crew rail ============================ */
@@ -399,7 +398,7 @@ function resolveApproval(decision){
     + '<div class="ah-result' + (denied ? ' deny' : '') + '">' + (denied ? '✕ denied' : '✓ ' + decision) + ' · ' + a.name + '</div>'
     + '<div class="ah-body">no pending approvals — agents are cleared to act within policy.</div>';
   addChat('agent', a.name + (denied ? ' acknowledged the denial.' : ' resumed — write approved (' + decision + ').'), true);
-  bumpSpend(0.0008);
+  pulseContext(3);
   renderCrew();
 }
 function jumpToApproval(){
@@ -428,7 +427,7 @@ function streamReply(text){
   d.appendChild(w); d.appendChild(b); d.appendChild(c); logEl.appendChild(d);
   let i=0; const t = setInterval(()=>{
     b.textContent += text[i++] || ''; logEl.scrollTop = logEl.scrollHeight;
-    bumpSpend(0.00002); tokens += 2; refreshTok();
+    pulseContext(1);
     if(i >= text.length){ clearInterval(t); c.remove(); }
   }, 22);
 }
@@ -438,7 +437,7 @@ document.getElementById('chat-in').addEventListener('keydown', e=>{
     addChat('user', v);
     AG[sel].state = 'think'; AG[sel].what = 'thinking…'; renderCrew();
     document.getElementById('comms-status').textContent = 'thinking…';
-    setTimeout(()=>{ addChat('agent','▶ web.search ' + (v.length>22?v.slice(0,22)+'…':v), true); bumpSpend(0.0004); }, 500);
+    setTimeout(()=>{ addChat('agent','▶ web.search ' + (v.length>22?v.slice(0,22)+'…':v), true); pulseContext(2); }, 500);
     setTimeout(()=>{ addChat('agent','◀ web.search · 6 results (412ms)', true); }, 1100);
     setTimeout(()=>{
       streamReply('Acknowledged, Commander. On it — I\'ll report back with what I find.');
@@ -449,21 +448,20 @@ document.getElementById('chat-in').addEventListener('keydown', e=>{
 });
 
 /* ============================ telemetry ============================ */
-const bars = document.getElementById('reactor-bars');
+const bars = document.getElementById('ctx-bars');
 const SEGN = 16;
 for(let i=0;i<SEGN;i++){ const s=document.createElement('span'); s.className='seg'; s.style.height=(6+i*1.0)+'px'; bars.appendChild(s); }
 const segEls = [...bars.children];
-function refreshReactor(){
-  const frac = Math.min(cost / 0.05, 1);     // 5 cents = full reactor (mockup scale)
+function refreshContext(){
+  const frac = Math.max(0, Math.min(ctxLevel / 100, 1));
   const lit = Math.round(frac * SEGN);
   segEls.forEach((s,i)=>{ s.className = 'seg' + (i<lit ? (i>=SEGN-3?' on hot':' on') : ''); });
-  document.getElementById('reactor-val').textContent = '$' + cost.toFixed(6);
+  document.getElementById('ctx-val').textContent = Math.round(frac * 100) + '%';
 }
-function refreshTok(){ document.getElementById('tb-tok').textContent = tokens.toLocaleString(); }
-function bumpSpend(d){
-  cost += d; refreshReactor();
-  document.getElementById('reactor').classList.add('bloom');
-  clearTimeout(bumpSpend._t); bumpSpend._t = setTimeout(()=>document.getElementById('reactor').classList.remove('bloom'), 260);
+function pulseContext(d){
+  ctxLevel = Math.min(96, ctxLevel + d); refreshContext();
+  document.getElementById('ctxmock').classList.add('bloom');
+  clearTimeout(pulseContext._t); pulseContext._t = setTimeout(()=>document.getElementById('ctxmock').classList.remove('bloom'), 260);
 }
 function setPill(text, color){ const p=document.getElementById('pill'); p.textContent=text; p.style.color=color; p.style.borderColor=color; }
 function toast(msg){ const c=document.getElementById('cine-hint'); c.textContent=msg; c.style.display='block';
@@ -503,7 +501,7 @@ function closeDock(){ openDock=null; document.getElementById('dock').classList.r
 function toggleCinema(){ document.getElementById('app').classList.toggle('cinema'); }
 const THEMES=['theme-amber','theme-green','theme-blue']; let ti=0;
 function cycleTheme(){ document.body.classList.remove(THEMES[ti]); ti=(ti+1)%THEMES.length;
-  document.body.classList.add(THEMES[ti]); readPalette(); refreshReactor(); }
+  document.body.classList.add(THEMES[ti]); readPalette(); refreshContext(); }
 
 /* ============================ keyboard ============================ */
 window.addEventListener('keydown', e=>{
@@ -592,10 +590,10 @@ function render(ts){
   ctx.globalAlpha=1;
   // back wall
   px(0,0,VW,18,'#0d0a06'); px(0,17,VW,1,PAL.dim);
-  // wall reactor gauge (climbs with spend) — the diegetic spend instrument
+  // wall context gauge
   const gx=286, gy=4, gw=8, gh=12;
   px(gx-1,gy-1,gw+2,gh+2,'#000'); px(gx,gy,gw,gh,'#1a0f04');
-  const frac=Math.min(cost/0.05,1); const fillH=Math.round(gh*frac);
+  const frac=Math.max(0,Math.min(ctxLevel/100,1)); const fillH=Math.round(gh*frac);
   px(gx, gy+gh-fillH, gw, fillH, frac>0.8?PAL.bad:PAL.ph);
   ctx.globalAlpha=.5; px(gx, gy+gh-fillH, gw, 1, PAL.bright); ctx.globalAlpha=1;
   // desk + monitor (ULTRON's station)
@@ -618,13 +616,13 @@ function render(ts){
   const a=AG[sel]; ctx.strokeStyle=PAL.bright; ctx.globalAlpha=.7; ctx.lineWidth=0.6;
   ctx.strokeRect(a.x-7, a.y-20, 14, 22); ctx.globalAlpha=1;
 
-  // idle spend drift so the reactor breathes
-  cost += 0.0000008; if((ts|0)%30===0) refreshReactor();
+  // gentle mockup drift so the gauge breathes without claiming exact telemetry
+  ctxLevel = Math.max(12, ctxLevel - 0.002); if((ts|0)%30===0) refreshContext();
   requestAnimationFrame(render);
 }
 
 /* ============================ boot ============================ */
-renderCrew(); renderApproval(); refreshReactor(); refreshTok();
+renderCrew(); renderApproval(); refreshContext();
 addChat('agent','Station online. 3 agents on deck. Awaiting orders, Commander.', true);
 selectAgent(0);
 requestAnimationFrame(render);

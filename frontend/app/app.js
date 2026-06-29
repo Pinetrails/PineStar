@@ -34,15 +34,8 @@ const App = (() => {
   }
 
   function refreshUsage() {
-    const t = Harness.totals();
-    el('gt-cost').textContent = '$' + t.cost.toFixed(6);
-    el('gt-tok').textContent = String(t.tokens);
-    const wc = el('ws-cost');
-    if (wc && typeof Workstreams !== 'undefined') {
-      const a = Workstreams.active();
-      const c = a ? Workstreams.costOf(a.id) : null;
-      wc.textContent = (c && c.usd) ? '$' + c.usd.toFixed(4) + ' · this stream' : '';
-    }
+    // Broad lifetime token totals are intentionally not surfaced in the chrome.
+    // The bottom-bar context gauge owns prompt-context display from measured usage events.
   }
 
   /* ---------- agent config DOCS (the markdown files the Commander writes) ----------
@@ -586,10 +579,10 @@ const App = (() => {
   function updateHint() {
     const id = el('in-model').value.trim(), hint = el('model-hint');
     syncModelPicks();   // keep the recommended-chip highlight in lockstep with whatever's in the field
-    if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription — no per-token cost'; return; }
-    const p = Harness.priceOf(id);
-    if (p) hint.innerHTML = 'pricing: <b>$' + p.in.toFixed(2) + '</b> /1M in · <b>$' + p.out.toFixed(2) + '</b> /1M out';
-    else hint.textContent = id ? 'custom slug — live cost shown as you spend' : 'pick or type a model slug';
+    if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription'; return; }
+    const limit = Harness.contextLimitOf ? Harness.contextLimitOf(id) : 0;
+    const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n || 0));
+    hint.textContent = id ? (limit ? ('context window: ' + fmt(limit) + ' tokens') : 'custom model slug') : 'pick or type a model slug';
   }
 
   /* ---------- provider toggle + ChatGPT (Codex OAuth) sign-in ---------- */
@@ -605,7 +598,7 @@ const App = (() => {
     el('key-block').classList.toggle('hidden', isCodex);
     el('codex-block').classList.toggle('hidden', !isCodex);
     // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
-    // ChatGPT-sub path (no key at all), so hide it there. The codex block carries its own "no per-token cost" note.
+    // ChatGPT-sub path (no key at all), so hide it there.
     { const bn = el('byok-note'); if (bn) bn.classList.toggle('hidden', isCodex); }
     if (isCodex) {
       loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
@@ -1094,6 +1087,7 @@ const App = (() => {
     if (typeof StationUI !== 'undefined') {
       StationUI.enter(liveAgents(), {
         totals: () => Harness.totals(),
+        context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
         config: { apply: applyAgentConfig }   // dossier edits to identity/purpose/manual .md re-shape the live prompt
       });
@@ -1214,11 +1208,9 @@ const App = (() => {
     const activeId = Workstreams.activeId();
     ul.innerHTML = Workstreams.list().map(w => {
       const title = w.title || 'General';
-      const c = (w.cost && w.cost.usd) ? '$' + w.cost.usd.toFixed(4) : '';
       return '<li class="ws-row' + (w.id === activeId ? ' sel' : '') + '" data-id="' + w.id + '">' +
         '<span class="ws-dot lane-' + w.lane + '"></span>' +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
-        (c ? '<span class="ws-c">' + c + '</span>' : '') +
         '</li>';
     }).join('');
     ul.querySelectorAll('.ws-row').forEach(li => li.onclick = () => switchWorkstream(li.dataset.id));
@@ -1298,6 +1290,7 @@ const App = (() => {
     if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
     if (saved && saved.reasoningEffort && Harness.setReasoningEffort) Harness.setReasoningEffort(saved.reasoningEffort);
     if (saved && saved.agent) {
+      if (Harness.getProv && Harness.getProv() !== 'codex' && Harness.listModels) await Harness.listModels();
       // AUTO-RESUME: a saved station goes STRAIGHT back into the world when creds are available — an OpenRouter
       // key in hand, the desktop keychain holds one (configured), OR the Codex provider (OAuth tokens live
       // server-side; a missing/expired one surfaces as a run error that prompts re-sign-in). No title screen.

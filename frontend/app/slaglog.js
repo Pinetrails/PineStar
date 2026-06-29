@@ -39,22 +39,22 @@
           fix: 'Tighten the ask, or give its bay the tool it kept reaching for — a cabinet for files, a console for compute.' };
       case 'budget':
         if (cacheKnown && Number(ctx.cacheFrac) < COLD_CACHE)
-          return { reason, title: 'budget burned on a cold cache',
-            cause: 'Spend hit the cap with the prompt-cache cold (' + cachePct + '%) — input was billed at full price every turn.',
-            fix: 'Keep the system prompt + memory fence STABLE so the cache runs hot (~10× cheaper input).' };
+          return { reason, title: 'budget cap on a cold cache',
+            cause: 'The run hit its cap with the prompt-cache cold (' + cachePct + '%), so repeated input could not reuse much cache.',
+            fix: 'Keep the system prompt + memory fence STABLE so repeated input can reuse cache.' };
         return { reason, title: 'hit the budget cap',
-          cause: 'The run reached its dollar envelope before it delivered.',
+          cause: 'The run reached its envelope before it delivered.',
           fix: 'Raise the budget for this kind of order, or split it into smaller work-items.' };
       case 'error':
         return { reason, title: 'errored out',
-          cause: 'The run failed partway — the spend bought a broken attempt.',
+          cause: 'The run failed partway, so no useful work was produced.',
           fix: 'Check the agent log for the failing tool or step, then fix the cause before re-running.' };
       case 'refusal':
         return { reason, title: 'the model refused',
           cause: 'The model declined the task, so no work was produced.',
           fix: 'Rephrase the request, or route this lane to an agent equipped for it.' };
       default:
-        return { reason: reason || 'unknown', title: 'wasted spend',
+        return { reason: reason || 'unknown', title: 'unproductive run',
           cause: 'A run ended without a deliverable.',
           fix: 'Review the run and adjust the task or the bay.' };
     }
