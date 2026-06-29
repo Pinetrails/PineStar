@@ -78,6 +78,7 @@
     // re-delegate, capping depth at one), plus the per-worker/day/global budget caps and the concurrency ceiling.
     orchestrator: [
       { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'orchestrator', tool: 'team.spawn', scope: 'execute', requiresConsent: false, network: true },
       // team.summon CREATES a new crew member — a stronger, outward-visible mutation than delegating to existing
       // crew, so unlike team.dispatch it IS consent-gated (the APPROVAL-mode confirm beat). Lead-only by the same
       // orchestrator conferral; a delegated worker never gets the orchestrator object and so can never summon.

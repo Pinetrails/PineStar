@@ -34,12 +34,14 @@ const { starnetManual } = require('../sidecar/manual.js');
   // 5) the user-facing surfaces are named so the agent points at the right control
   A.ok(/REFIT/.test(m), 'names REFIT (the builder)');
   A.ok(/COMMS/.test(m), 'names COMMS (where you task an agent)');
+  A.ok(/ROUTINES/.test(m), 'names ROUTINES (built-in scheduled work)');
   A.ok(/Recruitment Bay/.test(m), 'names the Recruitment Bay (summon)');
   A.ok(/APPROVAL/.test(m), 'names APPROVAL/APPROVALS');
 
   // 6) troubleshooting cues a stuck Commander actually hits
   A.ok(/NO COMPUTE/.test(m), 'troubleshoots the NO COMPUTE / needs-a-workstation case');
   A.ok(/place the matching prop/i.test(m), 'tells the agent to place the matching prop for a missing power');
+  A.ok(/Windows Task Scheduler/.test(m) && /OS crontab/.test(m), 'routine guidance points away from OS schedulers');
 
   // 7) hygiene: no template leakage
   A.ok(!/undefined|null|\[object/.test(m), 'no junk leaks into the manual');

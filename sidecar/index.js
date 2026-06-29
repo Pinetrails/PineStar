@@ -2170,22 +2170,25 @@ async function runOnce(o) {
 
   // tell the model, plainly + capability-driven, that it has real tools right now (so it never claims it can't act)
   const wireNames = toolDefs.map(d => d.function.name);
+  const hasWebTools = wireNames.indexOf('web_search') >= 0 || wireNames.indexOf('web_fetch') >= 0;
+  const hasWriteTools = wireNames.indexOf('fs_write') >= 0 || wireNames.indexOf('fs_append') >= 0 ||
+    wireNames.indexOf('fs_edit') >= 0 || wireNames.indexOf('fs_patch') >= 0;
+  const hasNotebookWrite = wireNames.indexOf('notebook_write') >= 0;
   const toolNote = (isTask && wireNames.length)
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
       + 'these LIVE tools: ' + wireNames.join(', ') + '. '
-      + 'Actually use them — never say you cannot reach the web or files; call the tool instead. '
+      + 'Actually use the listed tools when relevant; never claim a listed tool is unavailable. '
       + (wireNames.indexOf('routine_create') >= 0
         ? 'When the Commander asks for a cron, routine, scheduled/recurring task, reminder, or standing job, use routine_create/routine_list in StarNet ROUTINES; do not use shell_exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers. '
         : '')
-      + 'Ground every factual claim in what web_search / web_fetch actually return, and cite the source URLs; '
+      + (hasWebTools ? 'Ground every current factual claim in what web_search / web_fetch actually return, and cite the source URLs; ' : '')
       + 'do not invent facts, figures, or links. '
-      + 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append, and record '
-      + 'durable facts you\'ll want later with notebook_write. '
+      + (hasWriteTools ? 'Save substantive deliverables (reports, code, notes) to your workspace with fs_write / fs_append. ' : '')
+      + (hasNotebookWrite ? 'Record durable facts you\'ll want later with notebook_write. ' : '')
       + (wireNames.indexOf('shell_exec') >= 0 ? 'If the Commander names a local folder to work in, call shell_exec with its cwd field set to that exact folder and then use relative shell commands there; do not guess Bash-style /c paths for Windows. ' : '')
-      + 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you '
-      + 'are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. '
+      + (hasWriteTools ? 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. ' : '')
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
-      + 'final report of what you found/did and which files you saved.'
+      + 'final report of what you found/did' + (hasWriteTools ? ' and which files you saved.' : '.')
     : '';
   // Stage 2/3: a LEAD run is told it can DELEGATE to existing crew (team.dispatch, listed FRESH from the roster
   // the browser pushed via /api/roster) AND SUMMON new specialists (team.summon). Only the lead gets this (it alone
@@ -2197,6 +2200,8 @@ async function runOnce(o) {
     for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
     if (lines.length) teamNote += '\n• DELEGATE to your existing specialist crew with team.dispatch — call it with '
       + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+    teamNote += '\n• SPAWN temporary same-identity subagents with team.spawn for one-off parallel subtasks when no named specialist is needed. '
+      + 'Use background:true for watchable long-running spawned workers, then inspect/control them with team.subagents, team.interrupt, and team.resume.';
     teamNote += '\n• SUMMON a NEW specialist with team.summon when the Commander wants an agent you don\'t have yet '
       + '(e.g. "create a research agent for me"): pass a class via specId (researcher, engineer, operator, scribe, '
       + 'analyst, reviewer, scout, archivist, designer, chief, liaison) or a custom name + purpose. It returns the new '

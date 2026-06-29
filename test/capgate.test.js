@@ -106,8 +106,10 @@ function station(objsByRoom, assignedRoom) {
 
   // F5. only the LEAD gets the orchestrator/team.dispatch object (a delegated worker can never re-delegate).
   A.ok(officeReach({ surface: 'interactive', lead: true }).tools.indexOf('team.dispatch') >= 0, 'F5: the lead gets team.dispatch');
+  A.ok(officeReach({ surface: 'interactive', lead: true }).tools.indexOf('team.spawn') >= 0, 'F5: the lead gets team.spawn');
   A.ok(officeReach({ surface: 'interactive', lead: true }).tools.indexOf('routine.create') >= 0, 'F5: the lead gets routine.create');
   A.eq(officeReach({ surface: 'interactive', lead: false }).tools.indexOf('team.dispatch'), -1, 'F5: a non-lead worker does not');
+  A.eq(officeReach({ surface: 'interactive', lead: false }).tools.indexOf('team.spawn'), -1, 'F5: a non-lead worker cannot spawn subagents');
   A.eq(officeReach({ surface: 'interactive', lead: false }).tools.indexOf('routine.create'), -1, 'F5: a non-lead worker cannot create routines');
 }
 

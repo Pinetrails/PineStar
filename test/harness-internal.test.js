@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '../frontend/app/harness.js'), 'utf8');
+const sidecar = fs.readFileSync(path.join(__dirname, '../sidecar/index.js'), 'utf8');
 
 // chat() accepts the `internal` flag the callers pass.
 A.ok(/function chat\(\{[^}]*\binternal\b[^}]*\}\)/.test(src), 'Harness.chat accepts an `internal` flag');
@@ -26,5 +27,14 @@ A.ok(!/agent\.cost/.test(m[1]), 'suppressBus does NOT cover agent.cost — real 
 
 // the U.bus re-emit is actually gated on the guard.
 A.ok(/if\s*\(\s*!suppressBus\b[\s\S]{0,80}U\.bus\.emit\(/.test(src), 'the U.bus re-emit is gated on !suppressBus');
+
+// Harness self-knowledge: the backend prompt note must be driven by the actual wire tool list, not by
+// blanket claims such as "you can always use web/files". The authoritative capability block appears later,
+// but the two should not fight each other.
+A.ok(/const\s+hasWebTools\s*=/.test(sidecar), 'sidecar derives hasWebTools from the wire tool list');
+A.ok(/const\s+hasWriteTools\s*=/.test(sidecar), 'sidecar derives hasWriteTools from the wire tool list');
+A.ok(/hasWebTools\s*\?\s*'Ground every current factual claim/.test(sidecar), 'web/source guidance is conditional on web tools');
+A.ok(/hasWriteTools\s*\?\s*'Save substantive deliverables/.test(sidecar), 'file-saving guidance is conditional on write tools');
+A.ok(!/never say you cannot reach the web or files/.test(sidecar), 'old blanket web/files claim is gone');
 
 A.report('harness-internal.test');
