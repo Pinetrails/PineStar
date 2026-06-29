@@ -62,9 +62,10 @@ const World = (() => {
   // so a worker run that starts inside it animates; both are driven purely by existing agent.* bus events.
   const handoffBoxes = [];
   let delegateLead = null, delegateCall = null;
-  // AGENT GROWTH HUD: the hero's live Xp.compute() snapshot pushed in by XpStore (drives the name-tag "Lv N"
-  // chip + the gold level-up ripple). The station headline lives in the top-bar STATION chip, not the canvas.
+  // AGENT GROWTH HUD: per-agent Xp.compute() snapshots pushed in by XpStore (drives the hero name-tag "Lv N"
+  // chip and any body's gold level-up ripple). The station headline lives in the top-bar STATION chip.
   let xpAgent = null, levelUpAt = 0;
+  const xpByAgent = new Map();
   const CREW_COLORS = ['#5ad0ff', '#ff8a5a', '#7df08a', '#e0a0ff', '#ffd45a', '#5affd0', '#ff6a9a'];
   const crewColor = aid => CREW_COLORS[U.hash('' + aid) % CREW_COLORS.length];
   const footOf = (lx, ly) => ({ x: lx * T + T / 2, y: ly * T + T - 1 });
@@ -355,7 +356,7 @@ const World = (() => {
     if (slaglog) slaglog.reset();       // W1: wasted-spend post-mortems
     if (convey) convey.reset();         // W2: drop the prior agent's in-flight belt crates
     chanQueues.clear(); serverLit.clear();   // W3: no phantom backlog gauge / no body stuck "working" from a prior run
-    xpAgent = null;                     // W4: name-tag level chip re-seeds from XpStore on enterGame
+    xpAgent = null; xpByAgent.clear();  // W4: name-tag level chip re-seeds from XpStore on enterGame
     levelUpAt = 0; lastSlagAt = -1e9; lastOutboxFlash = -1e9;   // W4: one-shot beats don't replay into the newborn
     agent = {
       id: a.id, name: a.name, color: a.color || '#5ad0ff', skin: a.skin || DATA.DEFAULT_SKIN,
@@ -2185,11 +2186,12 @@ const World = (() => {
         ctx.save(); ctx.globalAlpha = wp * 0.7; ctx.strokeStyle = who.color; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.ellipse(who.px, who.py, 7 + 1.5 * Math.sin(now / 360), 3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
-      // the LEVEL-UP pulse — the same sonar ring as waking, but GOLD, fired by XpStore on a level gain (hero only)
-      if (who === agent && levelUpAt && now - levelUpAt < 1500) {
+      // the LEVEL-UP pulse: the same sonar ring as waking, but GOLD, fired on this body's level gain.
+      const lva = (who && who.levelUpAt) || ((who === agent) ? levelUpAt : 0);
+      if (lva && now - lva < 1500) {
         ctx.save(); ctx.strokeStyle = '#ffd45a';
         for (let k = 0; k < 3; k++) {
-          const tk = (now - levelUpAt) / 1300 - k * 0.18;
+          const tk = (now - lva) / 1300 - k * 0.18;
           if (tk <= 0 || tk >= 1) continue;
           ctx.globalAlpha = (1 - tk) * 0.7 * (1 - k * 0.2); ctx.lineWidth = Math.max(0.5, 1.6 - tk);
           ctx.beginPath(); ctx.ellipse(who.px, who.py, 5 + tk * 26, 2.5 + tk * 11, 0, 0, Math.PI * 2); ctx.stroke();
@@ -2234,8 +2236,9 @@ const World = (() => {
     const Wc = cv.width / dpr, Hc = cv.height / dpr;
     const suit = agent.color || '#ffaa33';
     const name = String(agent.name || '');
-    const lvl = (xpAgent && xpAgent.level) ? ('Lv ' + xpAgent.level) : null;
-    const frac = (xpAgent && typeof xpAgent.frac === 'number') ? Math.max(0, Math.min(1, xpAgent.frac)) : 0;
+    const xp = (agent && xpByAgent.get(agent.id)) || xpAgent;
+    const lvl = (xp && xp.level) ? ('Lv ' + xp.level) : null;
+    const frac = (xp && typeof xp.frac === 'number') ? Math.max(0, Math.min(1, xp.frac)) : 0;
 
     const nameSz = 17, lvlSz = 16;
     ctx.font = nameSz + 'px ' + PLATE_FONT; const nameW = ctx.measureText(name).width;
@@ -2840,14 +2843,23 @@ const World = (() => {
   }
 
   return { init, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit, pauseBridge, resumeBridge,
-    // AGENT GROWTH: XpStore pushes the hero's pre-computed Xp.compute() snapshot here (station arg unused —
-    // the colony headline is the top-bar STATION chip); pulseLevelUp fires the gold ring.
-    setXp: (a) => { xpAgent = a || null; },
-    pulseLevelUp: (level) => {
+    // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
+    // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
+    setXp: (agentId, a) => {
+      if (a === undefined && (agentId == null || typeof agentId === 'object')) { a = agentId; agentId = agent && agent.id; }   // old one-arg shape
+      const id = agentId || (agent && agent.id) || 'agent';
+      if (a) xpByAgent.set(id, a); else xpByAgent.delete(id);
+      xpAgent = agent ? (xpByAgent.get(agent.id) || null) : null;
+    },
+    pulseLevelUp: (agentId, level) => {
+      if (level === undefined && typeof agentId === 'number') { level = agentId; agentId = agent && agent.id; }   // old one-arg shape
       const now = performance.now();   // one clock read so the ripple + caption share an origin
-      levelUpAt = now;
+      const b = bodyForAgent(agentId || (agent && agent.id)) || (!agentId ? agent : null);
+      if (!b) return;
+      b.levelUpAt = now;
+      if (b === agent) levelUpAt = now;
       // a brief "LEVEL N" caption rides the gold ripple — but never stomp a live, NON-EMPTY (real) message bubble
-      if (agent && level != null && !(agent.say && agent.say.text && agent.say.until > now)) agent.say = { text: 'LEVEL ' + level, until: now + 2600 };
+      if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer } },

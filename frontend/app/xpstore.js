@@ -24,9 +24,21 @@ const XpStore = (() => {
     trusted: 'Milestone — reliability reached TRUSTED',
   };
 
+  function eventAgentId(payload) {
+    const id = payload && typeof payload.agentId === 'string' ? payload.agentId.trim() : '';
+    return id || 'agent';
+  }
+
+  function resolveAgent(agentId) {
+    let a = null;
+    try { a = getAgent(agentId); } catch (_) { a = null; }
+    if (!a && agentId === 'agent') { try { a = getAgent(); } catch (_) {} }   // back-compat for old no-arg callers
+    return a || null;
+  }
+
   function pushToWorld(a) {
     if (typeof World === 'undefined' || !World.setXp || typeof Xp === 'undefined') return;
-    World.setXp(a && a.stats ? Xp.compute(a.stats) : null);   // station headline now rides the top-bar chip (pushTopbar)
+    World.setXp(a && a.id ? a.id : 'agent', a && a.stats ? Xp.compute(a.stats) : null);   // station headline now rides the top-bar chip (pushTopbar)
   }
 
   // the always-on STATION level chip in the top bar — the colony's headline number.
@@ -37,7 +49,7 @@ const XpStore = (() => {
   }
 
   function celebrateAgent(a, level) {
-    if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(level);
+    if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(a && a.id ? a.id : 'agent', level);
     if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((a.name || 'Agent') + ' reached Level ' + level, 'gold');
     if (typeof Tutorial !== 'undefined' && Tutorial.onLevelUp) Tutorial.onLevelUp(level);   // first-touch coachmark: what leveling means
@@ -54,7 +66,8 @@ const XpStore = (() => {
 
   // fold one real event into BOTH the agent's stats and the station rollup (same engine, same path).
   function onEvent(name, payload) {
-    const a = getAgent();
+    const agentId = eventAgentId(payload);
+    const a = resolveAgent(agentId);
     if (!a || typeof Xp === 'undefined') return;
     if (!a.stats) a.stats = Xp.fresh();
     if (!station) station = Xp.fresh();
@@ -82,7 +95,7 @@ const XpStore = (() => {
     // resumed rollup from the save, else a fresh one. NB: fall back to fresh (not the prior in-memory
     // station) so creating a NEW agent mid-session doesn't inherit the previous colony's XP.
     station = (opts.station && typeof opts.station === 'object') ? opts.station : (typeof Xp !== 'undefined' ? Xp.fresh() : null);
-    const a = getAgent();
+    const a = resolveAgent('agent');
     if (a && !a.stats && typeof Xp !== 'undefined') a.stats = Xp.fresh();   // seed new OR migrated-but-empty agents
     pushToWorld(a);
     pushTopbar();
@@ -97,3 +110,5 @@ const XpStore = (() => {
 
   return { init, stationStats, onEvent };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { XpStore };

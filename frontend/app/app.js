@@ -232,7 +232,8 @@ const App = (() => {
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
-             approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs, createdAt: a.createdAt };
+             approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
+             stats: a.stats || null, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
   // DATA only — world bodies are spawned in enterGame once World.init has run.
@@ -243,7 +244,7 @@ const App = (() => {
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
                   approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
-                  docs: s.docs, createdAt: s.createdAt || Date.now() };
+                  docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
       a.systemPrompt = composeSystemPrompt(a);
       agents.set(a.id, a);
@@ -1093,7 +1094,7 @@ const App = (() => {
     }
     // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: () => agent, station: pendingStationStats, persist: persist }); pendingStationStats = null; }
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, station: pendingStationStats, persist: persist }); pendingStationStats = null; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.
