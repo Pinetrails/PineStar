@@ -135,8 +135,9 @@
     }
     return out.length ? out : null;
   }
+  const DEFAULT_REASONING_EFFORT = 'low';
   function normalizeCodexReasoningEffort(value) {
-    const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const key = String(value || DEFAULT_REASONING_EFFORT).trim().toLowerCase().replace(/[\s_-]+/g, '');
     const map = {
       off: 'none', none: 'none', no: 'none', disabled: 'none',
       min: 'low', minimal: 'low',
@@ -145,7 +146,7 @@
       high: 'high',
       extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh', max: 'xhigh'
     };
-    return map[key] || 'medium';
+    return map[key] || DEFAULT_REASONING_EFFORT;
   }
 
   function makeCodexProvider(opts) {
@@ -154,7 +155,7 @@
     if (!doFetch) throw new Error('codex provider requires fetch (Node 18+) or opts.fetch');
     const token = opts.token || '';
     const baseUrl = (opts.baseUrl || BASE).replace(/\/$/, '');
-    const reasoningEffort = normalizeCodexReasoningEffort(opts.reasoningEffort || 'medium');
+    const reasoningEffort = normalizeCodexReasoningEffort(opts.reasoningEffort || DEFAULT_REASONING_EFFORT);
 
     function buildBody(req) {
       const { instructions, rest } = extractInstructions(req.messages || []);
@@ -394,5 +395,5 @@
     };
   }
 
-  return { makeCodexProvider, STATIC_MODELS, DEFAULT_MODEL, _internals: { messagesToInput, extractInstructions, toResponsesTools, normalizeUsage, normalizeCodexReasoningEffort } };
+  return { makeCodexProvider, STATIC_MODELS, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, _internals: { messagesToInput, extractInstructions, toResponsesTools, normalizeUsage, normalizeCodexReasoningEffort } };
 });

@@ -114,7 +114,7 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.body.input[0], { role: 'user', content: [{ type: 'input_text', text: 'hi' }] }, 'user turn -> input_text part');
     A.eq(captured.body.tools[0], { type: 'function', name: 'fetch', description: 'd', strict: false, parameters: { type: 'object' } }, 'chat tool -> Responses function tool');
     A.eq(captured.body.tool_choice, 'auto', 'tool_choice auto when tools present');
-    A.eq(captured.body.reasoning, { effort: 'medium', summary: 'auto' }, 'default reasoning effort is medium');
+    A.eq(captured.body.reasoning, { effort: 'low', summary: 'auto' }, 'default reasoning effort is low');
     A.eq(captured.body.include, ['reasoning.encrypted_content'], 'reasoning carry-over requested when thinking is on');
   }
 

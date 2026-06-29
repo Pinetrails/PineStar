@@ -934,12 +934,18 @@ function normalizeReasoningEffort(value) {
   };
   return map[key] || 'medium';
 }
+function defaultReasoningEffortForProvider(provider) {
+  return providerUsesCodex(provider) ? 'low' : 'medium';
+}
+function resolveReasoningEffort(provider, value) {
+  return normalizeReasoningEffort(value || defaultReasoningEffortForProvider(provider));
+}
 
 function startTelegram(token, key, model, agentCfg) {
   stopTelegram();
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
-  const reasoningEffort = normalizeReasoningEffort(cfg.reasoningEffort || 'medium');
+  const reasoningEffort = resolveReasoningEffort(provider, cfg.reasoningEffort);
   const prev = (channelSecrets && channelSecrets.telegram) || {};
   // Persist the SAME agentId + composed system prompt the app uses, so a Telegram run IS the same agent
   // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
@@ -958,7 +964,7 @@ function startTelegram(token, key, model, agentCfg) {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);
       const key = provider === 'openrouter' ? (t.key || runtimeKey) : '';
-      return { key, model: t.model, provider, reasoningEffort: normalizeReasoningEffort(t.reasoningEffort || 'medium'), agentId: t.agentId, system: t.system };
+      return { key, model: t.model, provider, reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), maxMessageLength: 4096,
@@ -1745,7 +1751,8 @@ async function handleRun(req, res) {
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
-  const reasoningEffort = normalizeReasoningEffort((body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort))) || 'medium');
+  const runProvider = normalizeProvider(provider);
+  const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
@@ -1883,7 +1890,7 @@ async function runOnce(o) {
   const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
   const usingCodex = (o.provider === 'codex' || o.provider === 'openai-codex');
   const providerId = usingCodex ? 'codex' : 'openrouter';
-  const reasoningEffort = normalizeReasoningEffort(o.reasoningEffort || o.reasoning_effort || (o.reasoning && o.reasoning.effort) || 'medium');
+  const reasoningEffort = resolveReasoningEffort(providerId, o.reasoningEffort || o.reasoning_effort || (o.reasoning && o.reasoning.effort));
   let model = String((o && o.model) || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
@@ -2406,7 +2413,7 @@ async function handleChannelConnect(req, res) {
   const token = String(body.token || '').trim() || String(saved.token || '');
   const key = String(body.key || '').trim() || String(saved.key || '') || (provider === 'openrouter' ? runtimeKey : '');
   const model = String(body.model || '').trim() || String(saved.model || '');
-  const reasoningEffort = normalizeReasoningEffort(body.reasoningEffort || body.reasoning_effort || saved.reasoningEffort || 'medium');
+  const reasoningEffort = resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || saved.reasoningEffort);
   // the app's REAL agent identity, so Telegram runs as the same agent (shared memory) with the same voice.
   const agentId = String(body.agentId || '').trim() || String(saved.agentId || '');
   const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');

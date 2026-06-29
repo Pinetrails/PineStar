@@ -87,6 +87,7 @@ async function run() {
     A.eq(sends, ['codex-ok'], 'Codex Telegram config runs without an API key');
     A.eq(lastRun.provider, 'codex', 'provider=codex passed into runOnce');
     A.eq(lastRun.key, '', 'Codex run does not receive an API key placeholder');
+    A.eq(lastRun.reasoningEffort, 'low', 'Codex channel default reasoning effort is low');
   }
 
   // ---- C. error / capdenied surfaced; assistant turn NOT persisted on error ----

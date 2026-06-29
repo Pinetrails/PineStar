@@ -86,6 +86,10 @@ const Harness = (() => {
   const setModel = m => localStorage.setItem(LS.model, m || '');
   const getProv = () => localStorage.getItem(LS.prov) || 'openrouter';
   const setProv = p => localStorage.setItem(LS.prov, p || 'openrouter');
+  function defaultReasoningEffortForProvider(provider) {
+    const p = String(provider || getProv() || 'openrouter').toLowerCase();
+    return (p === 'codex' || p === 'openai-codex') ? 'low' : 'medium';
+  }
   function normalizeReasoningEffort(value) {
     const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
     const map = {
@@ -99,7 +103,7 @@ const Harness = (() => {
     };
     return map[key] || 'medium';
   }
-  const getReasoningEffort = () => normalizeReasoningEffort(localStorage.getItem(LS.effort) || 'medium');
+  const getReasoningEffort = provider => normalizeReasoningEffort(localStorage.getItem(LS.effort) || defaultReasoningEffortForProvider(provider));
   const setReasoningEffort = e => localStorage.setItem(LS.effort, normalizeReasoningEffort(e));
 
   /* per-million pricing for a model id, if known from the catalog */
@@ -178,7 +182,7 @@ const Harness = (() => {
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
   async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, signal, streamId, workbench, placed, internal }) {
-    const key = getKey(), model = getModel(), provider = getProv(), reasoningEffort = getReasoningEffort();
+    const key = getKey(), model = getModel(), provider = getProv(), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
     if (provider !== 'codex' && !DESKTOP && !DEVMODE && !key) throw new Error('no API key set');

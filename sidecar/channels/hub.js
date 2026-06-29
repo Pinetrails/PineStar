@@ -117,7 +117,7 @@
       const sec = secrets() || {};
       const provider = (sec.provider === 'codex' || sec.provider === 'openai-codex') ? 'codex' : 'openrouter';
       const usingCodex = provider === 'codex';
-      const reasoningEffort = sec.reasoningEffort || sec.reasoning_effort || 'medium';
+      const reasoningEffort = sec.reasoningEffort || sec.reasoning_effort || (usingCodex ? 'low' : 'medium');
       // Phase B routing: the placed floor (a posted RoutingPlan) decides WHICH agent runs. resolveAgent
       // returns the bay-bound agentId, or null -> fall through to today's resolution so real work NEVER stalls.
       const tag = getTag ? getTag(msg.text) : undefined;
