@@ -37,7 +37,7 @@ function sha256(file) {
 function fileInfo(file) {
   if (!file || !existsSync(file) || !statSync(file).isFile()) return null;
   const st = statSync(file);
-  return { path: resolve(file), bytes: st.size, sha256: sha256(file), mtime: st.mtime.toISOString() };
+  return { path: resolve(file), bytes: st.size, sha256: sha256(file), mtime: st.mtime.toISOString(), mtimeMs: st.mtimeMs };
 }
 function mdEscape(s) {
   return String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
@@ -185,6 +185,7 @@ function checkArtifacts(loop) {
   const manifestFile = manifestPath();
   const manifestInfo = fileInfo(manifestFile);
   if (!sig) return step('t5.2-signed-updater-artifacts', 'T5.2', 'Signed updater artifacts and manifest are valid', 'blocked', 'Updater .sig artifact is missing next to the current installer.', { loop, artifacts: { installer, signature: null, manifest: manifestInfo } });
+  if (sig.mtimeMs < installer.mtimeMs) return step('t5.2-signed-updater-artifacts', 'T5.2', 'Signed updater artifacts and manifest are valid', 'blocked', 'Updater .sig artifact is older than the current installer. Rebuild with the Tauri signing private key before publishing latest.json.', { loop, artifacts: { installer, signature: sig, manifest: manifestInfo } });
   if (!manifestInfo) return step('t5.2-signed-updater-artifacts', 'T5.2', 'Signed updater artifacts and manifest are valid', 'blocked', 'Production latest.json manifest is missing. Generate it with scripts/starnet-release-manifest.mjs after signing.', { loop, artifacts: { installer, signature: sig, manifest: null } });
   const validation = validateManifest(manifestFile, installer, sigFile);
   writeJson(join(OUT, 'validated-latest-json.json'), validation.manifest || { errors: validation.errors });

@@ -84,8 +84,30 @@ try {
   }
 
   {
+    const staleSigOut = path.join(tmp, 'stale-sig-out');
+    fs.writeFileSync(installer + '.sig', 'stale updater signature');
+    fs.utimesSync(installer + '.sig', new Date('2026-06-28T00:00:00.000Z'), new Date('2026-06-28T00:00:00.000Z'));
+    fs.utimesSync(installer, new Date('2026-06-29T00:00:00.000Z'), new Date('2026-06-29T00:00:00.000Z'));
+    const res = run(['--public'], {
+      STARNET_T1_APP_EXE: app,
+      STARNET_T1_INSTALLER_EXE: installer,
+      STARNET_T1_SIGNING_DIR: staleSigOut,
+      STARNET_T1_SIGNING_LATEST_DIR: path.join(tmp, 'stale-sig-latest'),
+      STARNET_T1_AUTHENTICODE_MOCK: mockSignatures(app, installer, 'Valid')
+    });
+    assert.equal(res.status, 2, res.stderr || res.stdout);
+    const status = JSON.parse(fs.readFileSync(path.join(staleSigOut, 't1-signing-status.json'), 'utf8'));
+    const updater = status.results.find(r => r.id === 't1.3-tauri-updater-signature');
+    assert.equal(status.publicReleaseReady, false);
+    assert.equal(updater.status, 'blocked');
+    assert.match(updater.reason, /older than the current installer/);
+    assert.equal(status.nextAction.id, 't1.3-tauri-updater-signature');
+  }
+
+  {
     const signedOut = path.join(tmp, 'signed-out');
     fs.writeFileSync(installer + '.sig', 'fake updater signature');
+    fs.utimesSync(installer + '.sig', new Date('2026-06-29T00:01:00.000Z'), new Date('2026-06-29T00:01:00.000Z'));
     const res = run(['--public'], {
       STARNET_T1_APP_EXE: app,
       STARNET_T1_INSTALLER_EXE: installer,
@@ -103,4 +125,4 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log('t1-signing.test: OK (15 assertions)');
+console.log('t1-signing.test: OK (20 assertions)');

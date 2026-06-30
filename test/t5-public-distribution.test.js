@@ -109,6 +109,26 @@ try {
   };
 
   {
+    fs.utimesSync(installer + '.sig', new Date('2026-06-28T00:00:00.000Z'), new Date('2026-06-28T00:00:00.000Z'));
+    fs.utimesSync(installer, new Date('2026-06-29T00:00:00.000Z'), new Date('2026-06-29T00:00:00.000Z'));
+    const goodProof = path.join(tmp, 'good-proof-for-stale-sig.json');
+    writeJson(goodProof, proof(hash, bytes, '0.1.0'));
+    const out = path.join(tmp, 'stale-sig-out');
+    const res = run(['--distribution-evidence', goodProof], Object.assign({}, baseEnv, {
+      STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out,
+      STARNET_T5_PUBLIC_DISTRIBUTION_LATEST_DIR: path.join(tmp, 'stale-sig-latest')
+    }));
+    assert.equal(res.status, 2, res.stderr || res.stdout);
+    const got = JSON.parse(fs.readFileSync(path.join(out, 't5-public-distribution-status.json'), 'utf8'));
+    const artifacts = got.results.find(r => r.id === 't5.2-signed-updater-artifacts');
+    assert.equal(got.verdict, 'blocked');
+    assert.equal(artifacts.status, 'blocked');
+    assert.match(artifacts.reason, /older than the current installer/);
+    assert.equal(got.nextAction.id, 't5.2-signed-updater-artifacts');
+    fs.utimesSync(installer + '.sig', new Date('2026-06-29T00:01:00.000Z'), new Date('2026-06-29T00:01:00.000Z'));
+  }
+
+  {
     const out = path.join(tmp, 'blocked-proof-out');
     const res = run(['--loop=2'], Object.assign({}, baseEnv, {
       STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out,
@@ -177,4 +197,4 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log('t5-public-distribution.test: OK (24 assertions)');
+console.log('t5-public-distribution.test: OK (29 assertions)');

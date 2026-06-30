@@ -15,7 +15,8 @@ That requires:
 - T0 clean install, T2 state safety, T3 live release smoke, and T4 update delivery are green.
 - T1 public signing mode is green, not merely invited-beta green.
 - The current NSIS installer is discoverable and hash-recorded.
-- The NSIS installer has a non-empty Tauri updater `.sig` artifact.
+- The NSIS installer has a non-empty Tauri updater `.sig` artifact generated for the
+  current installer build.
 - A production `latest.json` updater manifest exists, is valid JSON, uses HTTPS URLs, has a `windows-x86_64` platform entry, and embeds the same signature as the `.sig` file.
 - A public distribution proof is imported with `schema=starnet.t5-public-distribution-proof.v1`.
 - The imported proof records hosted HTTPS `latest.json` and installer checks, successful HTTP status, manifest/package URL agreement, and installer hash/byte agreement.
@@ -33,6 +34,7 @@ npm.cmd run t5:public-distribution:loop
 The loop records evidence in `.dogfood/t5-public-distribution-<stamp>` and copies the latest run to `.dogfood/t5-public-distribution-latest`.
 
 If public cert procurement, Authenticode signing, updater signing, or hosted proof is missing, the loop must stay blocked. That is the intended behavior; public distribution has external lead-time dependencies that code cannot honestly fake.
+If a rebuilt installer is newer than the `.sig` next to it, the loop must also stay blocked until the updater signature is regenerated.
 
 ## Importing Public Distribution Proof
 

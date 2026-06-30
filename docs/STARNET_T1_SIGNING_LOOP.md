@@ -57,12 +57,16 @@ Allowed values are `started`, `ordered`, `validation`, `issued`, and `available`
 ## Tauri Updater Signing
 
 The updater public key is embedded in `src-tauri/tauri.conf.json`. Public update delivery
-requires a generated installer `.sig` artifact, produced by building with:
+requires a generated installer `.sig` artifact for the current installer build, produced by
+building with:
 
 ```powershell
 $env:TAURI_SIGNING_PRIVATE_KEY_PATH = "$env:USERPROFILE\.tauri\starnet-updater.key"
 npm.cmd run desktop:build
 ```
+
+If the installer is rebuilt, the `.sig` must be regenerated too. The signing gate treats a
+signature older than its installer as stale and blocks public release.
 
 Do not commit the private key. Keep it in a password manager or release vault.
 

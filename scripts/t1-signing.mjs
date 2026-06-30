@@ -140,9 +140,27 @@ function updaterStatus(installer) {
   const sigFile = installer ? installer + '.sig' : '';
   const keyPath = String(process.env.TAURI_SIGNING_PRIVATE_KEY_PATH || '').trim();
   const keyInline = String(process.env.TAURI_SIGNING_PRIVATE_KEY || '').trim();
+  const signatureFilePresent = !!(sigFile && existsSync(sigFile));
+  let signatureFileFresh = false;
+  let installerMtime = '';
+  let signatureMtime = '';
+  if (installer && existsSync(installer)) {
+    try { installerMtime = statSync(installer).mtime.toISOString(); } catch (_) {}
+  }
+  if (signatureFilePresent) {
+    try {
+      const installerStat = statSync(installer);
+      const signatureStat = statSync(sigFile);
+      signatureMtime = signatureStat.mtime.toISOString();
+      signatureFileFresh = signatureStat.mtimeMs >= installerStat.mtimeMs;
+    } catch (_) {}
+  }
   return {
     signatureFile: sigFile,
-    signatureFilePresent: !!(sigFile && existsSync(sigFile)),
+    signatureFilePresent,
+    signatureFileFresh,
+    installerMtime,
+    signatureMtime,
     privateKeyPathPresent: !!(keyPath && existsSync(keyPath)),
     privateKeyEnvPresent: !!keyInline,
     requiredEnv: 'TAURI_SIGNING_PRIVATE_KEY or TAURI_SIGNING_PRIVATE_KEY_PATH'
@@ -197,8 +215,11 @@ async function runOnce(loop) {
   }
 
   const up = updaterStatus(a.installer);
-  if (up.signatureFilePresent) {
-    results.push(step('t1.3-tauri-updater-signature', 'T1.3', 'Tauri updater signature artifact exists', 'pass', 'Updater signature artifact exists next to the installer.', { loop, updater: up }));
+  if (up.signatureFilePresent && up.signatureFileFresh) {
+    results.push(step('t1.3-tauri-updater-signature', 'T1.3', 'Tauri updater signature artifact exists', 'pass', 'Updater signature artifact exists next to the installer and is current with the installer build.', { loop, updater: up }));
+  } else if (up.signatureFilePresent) {
+    const s = acceptedOrBlocked(REQUIRE_PUBLIC, 'Updater .sig artifact is older than the current installer; rebuild with the Tauri signing private key before public update delivery.');
+    results.push(step('t1.3-tauri-updater-signature', 'T1.3', 'Tauri updater signature artifact exists', s.status, s.reason, { loop, updater: up }));
   } else {
     const s = acceptedOrBlocked(REQUIRE_PUBLIC, 'Updater .sig artifact is missing; build with the Tauri signing private key before public update delivery.');
     results.push(step('t1.3-tauri-updater-signature', 'T1.3', 'Tauri updater signature artifact exists', s.status, s.reason, { loop, updater: up }));
