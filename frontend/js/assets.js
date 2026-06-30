@@ -43,6 +43,46 @@ const SPRITES = (() => {
   function drawScaleFor(setName) {
     return SCALE[setName] || (DATA.SKINS[setName] && DATA.SKINS[setName].scale) || 2 / 3;
   }
+
+  /* foot-line measurement — every PixelLab master leaves transparent padding BELOW the feet
+     (the crew sets all sit ~23px up from the 92px canvas bottom). The contact shadow is drawn
+     at the floor anchor (b.py), so if we anchored the IMAGE bottom there, that padding pushed
+     the visible feet up off the shadow — and because the gap is `pad × scale`, the bigger skins
+     (and ULTRON) floated worst. We measure the padding once per set from a STABLE idle frame
+     (rot/blink/sit — never a walk frame, whose lifted foot would shift the body each stride) and
+     anchor the FEET to the floor instead. Auto-derived so new skins self-correct. */
+  const footPad = {};                 // set -> transparent rows below the feet, in master px
+  const DEFAULT_FOOT = 23;            // crew authoring constant; only used if a frame can't be read
+  function measureFootPad(img) {
+    try {
+      const w = img.width | 0, h = img.height | 0;
+      if (!w || !h) return DEFAULT_FOOT;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(img, 0, 0);
+      const data = x.getImageData(0, 0, w, h).data;
+      for (let y = h - 1; y >= 0; y--) {
+        const row = y * w * 4;
+        for (let px = 0; px < w; px++) {
+          if (data[row + px * 4 + 3] > 16) return (h - 1) - y;   // first opaque row from the bottom
+        }
+      }
+      return DEFAULT_FOOT;
+    } catch (e) { return DEFAULT_FOOT; }   // tainted/unreadable → safe fallback
+  }
+  function getFootPad(set) {
+    if (footPad[set] != null) return footPad[set];
+    let ref = null;
+    for (const d of ['south', 'east', 'west', 'north']) {
+      const fr = frames[set + '.rot.' + d] || frames[set + '.blink.' + d] || frames[set + '.sit.' + d];
+      if (fr && fr[0]) { ref = fr[0]; break; }
+    }
+    if (!ref) {   // last resort: any frame of the set
+      const k = Object.keys(frames).find(kk => kk.indexOf(set + '.') === 0);
+      if (k && frames[k][0]) ref = frames[k][0];
+    }
+    return (footPad[set] = ref ? measureFootPad(ref) : DEFAULT_FOOT);
+  }
   function tintFrames(agentId, key) {
     const ck = agentId + '|' + key;
     if (tinted[ck]) return tinted[ck];
@@ -127,7 +167,12 @@ const SPRITES = (() => {
     const sc = drawScaleFor(set);
     const dw = f.width * sc, dh = f.height * sc;
     const x = Math.round(b.px - dw / 2);
-    const y = Math.round(b.py - dh + 4 + bob);
+    // anchor the FEET (not the transparent image bottom) to the floor line so the contact shadow
+    // sits right under them. `fp` is the scaled padding below the feet; GROUND_BITE sinks them a
+    // hair into the shadow for a grounded look instead of leaving every skin hovering above it.
+    const GROUND_BITE = 1;
+    const fp = getFootPad(set) * sc;
+    const y = Math.round(b.py - dh + GROUND_BITE + bob + fp);
     // soft shadow scaled to the body's footprint
     const shw = Math.max(8, Math.round(dw * 0.38));
     if (set === 'ultron') {
