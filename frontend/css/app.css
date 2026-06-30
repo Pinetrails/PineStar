@@ -37,14 +37,14 @@
 .btn-sm { font-size: 15px; padding: 4px 9px; }
 .prov.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
 
-input[type=text], input[type=password], input:not([type]) {
+input[type=text], input[type=password], input:not([type]), textarea.key-input {
   width: 100%; font-family: inherit; font-size: 19px; color: var(--ph-bright);
   background: #000; border: 2px solid var(--ph-dim); padding: 7px 10px; outline: none;
   text-shadow: 0 0 5px var(--ph-glow2); box-shadow: inset 0 2px 5px rgba(0,0,0,.65);
 }
-input:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
+input:focus, textarea.key-input:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
 /* solid --ph-dim (no opacity multiplier) keeps placeholder hint text >=4.5:1 (WCAG AA) on --bg across every theme; .7 opacity dropped it to ~3.2:1 */
-input::placeholder { color: var(--ph-dim); opacity: 1; }
+input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opacity: 1; }
 
 /* (The standalone TITLE screen was removed — boot auto-resumes into the station, or opens CREATE/RESUME
    directly. The data-status line that used to live there now sits in the connect-screen footer.) */
