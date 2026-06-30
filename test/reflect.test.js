@@ -47,6 +47,16 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq(dd.proposals.length, 1, 'dupes (vs existing AND within-batch) dropped');
   A.eq(dd.proposals[0].content, 'brand new', 'the genuinely new fact survives');
 
+  // ---- §5.6 "discard = never again": the DECLINED list feeds dedup as content-only records (the exact shape
+  //      sidecar/index.js wraps declined text in: { content }). An identical re-proposal is suppressed at the
+  //      reflect layer where the guarantee actually lives; a genuinely distinct belief beside it still survives. ----
+  const declined = await reflect(run, {
+    propose: () => 'FACT: deploys the alpha service nightly\nFACT: keeps staging databases isolated',
+    clock: makeClock(0), redact, existing: [{ content: 'deploys the alpha service nightly' }]
+  });
+  A.eq(declined.proposals.length, 1, 'a previously-DISCARDED belief (content-only record) is never re-proposed');
+  A.eq(declined.proposals[0].content, 'keeps staging databases isolated', 'a distinct belief beside a declined one still surfaces');
+
   // ---- near-duplicate (paraphrase) dedup: Jaccard, not just exact text (Hermes-parity) ----
   const near = await reflect(run, {
     propose: () => 'PREFERENCE: Andrew prefers running npm start over serve\nFACT: the reactor gauge is cost-driven',

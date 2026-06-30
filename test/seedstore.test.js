@@ -9,11 +9,14 @@ global.Seeds = require('../frontend/app/seeds.js');
 global.Pitch = require('../frontend/app/pitch.js');   // for the loop-closure check: a saved seed becomes pitchable
 
 let cands = [{ key: 'k1', count: 4, template: 'draft notes for {input}', hasToken: true, lastText: 'draft notes for v2' }];
-let minted = [], dismissed = [], enabled = true;
+let nudgeCands = null;   // when non-null, the NUDGE path (nudgeCandidates) returns this — the stop-forever filter
+let minted = [], dismissed = [], proposed = [], enabled = true;
 global.MintStore = {
   candidates: () => cands,
+  nudgeCandidates: () => (nudgeCands === null ? cands : nudgeCands),
   markMinted: k => { minted.push(k); },
   markDismissed: k => { dismissed.push(k); },
+  markProposed: k => { proposed.push(k); },
   enabled: () => enabled
 };
 
@@ -31,7 +34,7 @@ let notes = [];
 global.StationUI = { notify: (m) => notes.push(m) };
 
 const { SeedStore } = require('../frontend/app/seedstore.js');
-function clearFakes() { chat.nudges = []; saved = []; minted = []; dismissed = []; notes = []; }
+function clearFakes() { chat.nudges = []; saved = []; minted = []; dismissed = []; proposed = []; notes = []; }
 
 SeedStore.init();
 
@@ -45,6 +48,7 @@ SeedStore.propose();
 A.eq(chat.nudges.length, 1, 'propose renders exactly one gentle nudge');
 A.ok(/seed/i.test(chat.nudges[0].t), 'the nudge carries the seed offer');
 A.eq(chat.nudges[0].o.length, 2, 'two choices — save / not now');
+A.eq(proposed[0], 'k1', 'propose tallies the offer (Mint.markProposed) so an IGNORED nudge stops re-offering this shape');
 chat.nudges[0].cb({ value: 'save' });
 A.eq(saved.length, 1, '"save it" → Recipes.saveCustom');
 A.eq(saved[0].name, 'Draft notes for …', 'the saved recipe is named from the seed title');
@@ -83,5 +87,13 @@ cands = [{ key: 'k1', count: 4, template: 'draft notes for {input}', hasToken: t
 clearFakes(); SeedStore.reset(); enabled = false;
 A.eq(SeedStore.willPropose(), false, 'a paused mint detector → no seed offers');
 enabled = true;
+
+/* ---------- the NUDGE reads nudgeCandidates (stop-forever filter), NOT the unfiltered candidates() the Recipes tab uses ---------- */
+clearFakes(); SeedStore.reset();
+nudgeCands = [];   // this shape has been offered-and-ignored to the ceiling → filtered OUT of the nudge path
+A.eq(SeedStore._pick(), null, 'pick() is null when the shape is filtered from the NUDGE path (offered-and-ignored)');
+A.eq(SeedStore.willPropose(), false, 'no seed nudge for an ignored-to-the-ceiling shape…');
+A.ok(MintStore.candidates().length === 1, '…even though the unfiltered candidates() (RECIPES tab) still lists it');
+nudgeCands = null;   // restore the default (nudge path mirrors candidates)
 
 A.report('seedstore.test');

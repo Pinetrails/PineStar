@@ -59,4 +59,15 @@ function makeMemoryStore(deps) {
   };
 }
 
-module.exports = { makeMemoryStore, memoryFileFor };
+// Wipe all of ONE agent's per-store memory — its kept notebook, its permanent declined reject-list, and its
+// active todo plan — so a re-commissioned hero starts clean (no prior Commander's beliefs bleed in). Best-effort
+// per key: a single unwritable file never blocks the others. Pure over the injected store, so it is unit-testable
+// without booting the server (the new-hero clean-slate is a named hard rule, not just a source-grep).
+async function resetAgentMemory(store, agentId) {
+  const id = String(agentId || 'agent');
+  for (const key of ['notebook:' + id, 'declined:' + id, 'todo:' + id]) {
+    try { await store.update(key, () => []); } catch (_) {}
+  }
+}
+
+module.exports = { makeMemoryStore, memoryFileFor, resetAgentMemory };

@@ -120,10 +120,11 @@ const SuggestStore = (() => {
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
       if (!parsed) { state.tasksSinceLast = 0; save(); return; }   // model hiccup → back off a full cooldown, don't hammer
 
-      // already pitched this idea before? skip it — back off a cooldown (like a hiccup) WITHOUT spending the
-      // session, so the next attempt has a chance to surface something genuinely fresh instead of repeating.
+      // already pitched this idea before? skip it WITHOUT spending the session — but also advance the growth baseline
+      // so a repeat needs FURTHER dossier growth before it can fire again. Otherwise a low-diversity model that keeps
+      // returning the same idea would burn an aux-model call every cooldown forever; this caps that to once per growth.
       const fp = fingerprint(parsed.title);
-      if (seenRecently(fp)) { state.tasksSinceLast = 0; save(); return; }
+      if (seenRecently(fp)) { const fam = familiarityNow(); if (fam != null) state.lastFamiliarity = fam; state.tasksSinceLast = 0; save(); return; }
 
       const why = parsed.why ? (' ' + parsed.why) : '';
       const gap = parsed.gap ? (' i’d need one thing from you: ' + parsed.gap) : '';

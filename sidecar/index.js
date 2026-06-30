@@ -68,7 +68,7 @@ const cronStore = require('./cron-store.js');              // pure CronJob lifec
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
-const { makeMemoryStore } = require('./memory-store.js'); // durable notebook:<agent> and todo:<agent> sibling stores
+const { makeMemoryStore, resetAgentMemory } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -441,7 +441,7 @@ const spotifyPending = new Map();
 const notebookStore = makeMemoryStore({
   fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
   onRecover: (key, file) => console.warn('[memory] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
-  onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : 'notebook'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : (String(key).indexOf('declined:') === 0 ? 'declined' : 'notebook')),
   warn: (...args) => console.warn.apply(console, args)
 });
 
@@ -535,6 +535,7 @@ const REFLECT_COOLDOWN_MS = 180000;    // batch rapid-fire runs: at most one tur
 const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, proposals:[{id,kind,content,scope}] }
 const latestProposalRun = new Map();   // agentId -> newest pending runId (fetch fallback when the runId is unknown)
 const lastReflectAt = new Map();       // agentId -> ts of the last reflection we fired (the cooldown gate)
+const reflectingNow = new Set();       // agentIds with a reflection in flight — closes the gap before lastReflectAt is armed
 function stashProposals(agentId, runId, proposals) {
   proposalsByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
   latestProposalRun.set(agentId, runId);
@@ -2383,10 +2384,13 @@ async function runOnce(o) {
   // aux model; it defaults to the run's own model (no behaviour change unless configured).
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
   if (o.reflect && isTask && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)
-      && (Date.now() - (lastReflectAt.get(agentId) || 0) >= REFLECT_COOLDOWN_MS)) {
+      && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= REFLECT_COOLDOWN_MS)) {
     // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
-    // so a run that yields nothing never blocks the next substantive run's turn-in.
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: usingCodex }).catch(() => {});
+    // so a run that yields nothing never blocks the next substantive run's turn-in. reflectingNow closes the window
+    // BETWEEN this gate and that arming: two same-agent runs finishing inside one reflection's round-trip would both
+    // read the un-armed timestamp and both fire — the in-flight guard makes the second cede instead.
+    reflectingNow.add(agentId);
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: usingCodex }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
   }
   return result;
 
@@ -3031,12 +3035,10 @@ async function handleMemoryReset(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const agentId = String(body.agent || body.agentId || 'agent');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
-  for (const key of ['notebook:' + agentId, 'declined:' + agentId, 'todo:' + agentId]) {
-    try { await notebookStore.update(key, () => []); } catch (_) {}   // best-effort; a fresh hero proceeds regardless
-  }
+  await resetAgentMemory(notebookStore, agentId);   // wipe notebook:/declined:/todo: (pure helper — unit-tested)
   // also drop any in-memory pending proposals for this agent so a stale turn-in can't land on the new hero
   for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
-  latestProposalRun.delete(agentId); lastReflectAt.delete(agentId);
+  latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
   return json(200, { ok: true, agent: agentId });
 }
 

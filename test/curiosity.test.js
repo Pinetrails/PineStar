@@ -51,4 +51,16 @@ A.eq(C.pick({ blank: ['identity', 'stack'], dismissed: st.dismissed, count: 0, c
 const sa = C.hydrate({ asked: { identity: 2 } });
 A.eq(C.pick({ blank: ['identity', 'stack'], dismissed: {}, asked: sa.asked, count: 0, cap: 1 }), 'stack', 'a hydrated asked-to-limit count is honored by pick');
 
+/* ---------- source-lock: the ASKED counter must reflect IGNORES only — every ANSWER path clears it ---------- */
+// curiositystore + dossierstore are browser-coupled IIFEs (localStorage / live globals), so — like newhero-reset.test.js
+// — we lock the wiring at the source: markAnswered exists + clears the dim, and DossierStore.upsert (the chokepoint
+// EVERY answer flows through: curiosity nudge, full interview, onboarding, manual +add) calls it.
+const fs = require('fs'), path = require('path');
+const csSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/curiositystore.js'), 'utf8');
+A.ok(/function markAnswered/.test(csSrc) && /delete\s+state\.asked\[/.test(csSrc), 'CuriosityStore.markAnswered clears the dimension ask count');
+A.ok(/markAnswered\b/.test(csSrc.slice(csSrc.lastIndexOf('return {'))), 'markAnswered is exported from CuriosityStore');
+const dsSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/dossierstore.js'), 'utf8');
+const upsertSeg = dsSrc.slice(dsSrc.indexOf('function upsert'), dsSrc.indexOf('function forget'));
+A.ok(/CuriosityStore\.markAnswered\(/.test(upsertSeg), 'DossierStore.upsert clears the curiosity ask tally on EVERY answer path (not just the nudge)');
+
 A.report('curiosity.test');

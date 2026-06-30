@@ -65,7 +65,14 @@ const DossierStore = (() => {
 
   // ---- mutations from the glass box — each recomposes the live prompt (onMutate) AND persists ----
   function commit() { try { onMutateFn(); } catch (_) {} try { persistFn(); } catch (_) {} pushToSidecar(); }
-  function upsert(dim, belief) { if (ready()) { Dossier.upsert(dossier, dim, belief, now()); commit(); } }
+  // upsert = the Commander answered/provided this dimension (via the curiosity nudge, the full interview, onboarding,
+  // OR the manual +add). Clearing the curiosity ignored-ask tally HERE — the single chokepoint every answer flows
+  // through — keeps the stop-forever counter reflecting IGNORES only, not a dimension the user actually engaged with.
+  function upsert(dim, belief) {
+    if (!ready()) return;
+    Dossier.upsert(dossier, dim, belief, now()); commit();
+    if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) { try { CuriosityStore.markAnswered(dim); } catch (_) {} }
+  }
   function forget(dim, id) { if (ready()) { Dossier.forget(dossier, dim, id, now()); commit(); } }
   function setPinned(dim, id, pinned) { if (ready()) { Dossier.setPinned(dossier, dim, id, pinned, now()); commit(); } }
 

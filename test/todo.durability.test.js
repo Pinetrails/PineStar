@@ -7,7 +7,7 @@
 
 const A = require('./_assert.js');
 const path = require('path');
-const { makeMemoryStore, memoryFileFor } = require('../sidecar/memory-store.js');
+const { makeMemoryStore, memoryFileFor, resetAgentMemory } = require('../sidecar/memory-store.js');
 const { makeTodoTool, formatForInjection } = require('../sidecar/tools/builtin/todo.js');
 
 function memFs() {
@@ -76,6 +76,18 @@ function memFs() {
   const inj = formatForInjection(afterRestart, 'hero');
   A.ok(/preserved across context compaction/.test(inj), 'active todo list is available for compaction reinjection');
   A.ok(inj.indexOf('run regression tests') >= 0 && inj.indexOf('audit current todo behavior') < 0, 'injection keeps pending items and omits completed ones');
+
+  /* ---------- resetAgentMemory: the new-hero clean slate (no prior Commander's state bleeds into a fresh agent) ---------- */
+  const rstore = makeMemoryStore({ fs: memFs(), path, workspaces: ROOT });
+  await rstore.update('notebook:hero', () => [{ content: 'a kept belief' }]);
+  await rstore.update('declined:hero', () => ['a permanently-rejected belief']);
+  await rstore.update('todo:hero', () => [{ id: 'x', content: 'a plan item', status: 'pending' }]);
+  await rstore.update('notebook:other', () => [{ content: 'a DIFFERENT hero belief' }]);
+  await resetAgentMemory(rstore, 'hero');
+  A.eq(rstore.get('notebook:hero'), [], 'reset wipes the kept notebook (no inherited memories)');
+  A.eq(rstore.get('declined:hero'), [], 'reset wipes the declined reject-list (no inherited suppression)');
+  A.eq(rstore.get('todo:hero'), [], 'reset wipes the active todo plan');
+  A.eq(rstore.get('notebook:other'), [{ content: 'a DIFFERENT hero belief' }], 'reset is scoped to ONE agent — a different agent is untouched');
 
   A.report('todo.durability.test');
 })();
