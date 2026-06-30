@@ -1,0 +1,218 @@
+/* sidecar/providers/registry.js - Hermes-style provider profiles.
+   Profiles are metadata only: adapters still implement the LLMProvider stream seam.
+   This keeps provider discovery, auth shape, defaults, aliases, model endpoints, and UI
+   labels in one place instead of spreading hardcoded provider ids through the host. */
+'use strict';
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.registry = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const DEFAULT_PROVIDER_ID = 'openrouter';
+
+  const PROFILES = [
+    {
+      id: 'openrouter',
+      aliases: ['or'],
+      name: 'OpenRouter',
+      label: 'OPENROUTER',
+      endpoint: 'openrouter.ai/api/v1',
+      blurb: 'one key, broad model catalog',
+      live: true,
+      adapter: 'openrouter',
+      apiMode: 'chat_completions',
+      authType: 'api_key',
+      keyRequired: true,
+      keyEnv: ['OPENROUTER_KEY', 'OPENROUTER_API_KEY'],
+      modelsRequireAuth: false,
+      baseUrl: 'https://openrouter.ai/api/v1',
+      baseUrlEnv: ['OPENROUTER_BASE'],
+      modelsPath: '/models',
+      defaultReasoningEffort: 'medium',
+      unmetered: false,
+      credentialPool: true,
+      supportsTools: 'catalog',
+      supportsReasoning: 'catalog',
+      order: 20
+    },
+    {
+      id: 'codex',
+      aliases: ['openai-codex'],
+      name: 'ChatGPT Codex',
+      label: 'CHATGPT (CODEX)',
+      endpoint: 'OAuth, ChatGPT subscription',
+      blurb: 'sign in, no API key',
+      live: true,
+      adapter: 'codex',
+      apiMode: 'codex_responses',
+      authType: 'oauth_device_code',
+      keyRequired: false,
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+      defaultReasoningEffort: 'low',
+      unmetered: true,
+      credentialPool: false,
+      supportsTools: true,
+      supportsReasoning: true,
+      order: 10
+    },
+    {
+      id: 'openai',
+      aliases: ['openai-api'],
+      name: 'OpenAI API',
+      label: 'OPENAI API',
+      endpoint: 'api.openai.com/v1',
+      blurb: 'OpenAI-compatible chat completions',
+      live: true,
+      adapter: 'openai-compatible',
+      apiMode: 'chat_completions',
+      authType: 'api_key',
+      keyRequired: true,
+      keyEnv: ['OPENAI_API_KEY'],
+      modelsRequireAuth: true,
+      baseUrl: 'https://api.openai.com/v1',
+      modelsPath: '/models',
+      defaultReasoningEffort: 'medium',
+      unmetered: false,
+      credentialPool: true,
+      supportsTools: null,
+      supportsReasoning: null,
+      order: 30
+    },
+    {
+      id: 'ollama',
+      aliases: ['ollama-local'],
+      name: 'Ollama',
+      label: 'OLLAMA',
+      endpoint: '127.0.0.1:11434/v1',
+      blurb: 'local OpenAI-compatible endpoint',
+      live: true,
+      adapter: 'openai-compatible',
+      apiMode: 'chat_completions',
+      authType: 'none',
+      keyRequired: false,
+      modelsRequireAuth: false,
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      baseUrlEnv: ['OLLAMA_BASE_URL'],
+      modelsPath: '/models',
+      defaultReasoningEffort: 'none',
+      unmetered: true,
+      credentialPool: false,
+      supportsTools: null,
+      supportsReasoning: false,
+      order: 40
+    },
+    {
+      id: 'custom',
+      aliases: ['openai-compatible', 'local', 'vllm', 'lmstudio'],
+      name: 'Custom OpenAI-Compatible',
+      label: 'CUSTOM',
+      endpoint: 'your /v1 endpoint',
+      blurb: 'bring any OpenAI-compatible endpoint',
+      live: true,
+      adapter: 'openai-compatible',
+      apiMode: 'chat_completions',
+      authType: 'api_key_optional',
+      keyRequired: false,
+      keyEnv: ['CUSTOM_OPENAI_KEY', 'OPENAI_COMPATIBLE_KEY'],
+      modelsRequireAuth: false,
+      baseUrl: '',
+      baseUrlEnv: ['CUSTOM_OPENAI_BASE_URL', 'OPENAI_COMPATIBLE_BASE_URL'],
+      modelsPath: '/models',
+      requiresBaseUrl: true,
+      defaultReasoningEffort: 'medium',
+      unmetered: false,
+      credentialPool: true,
+      supportsTools: null,
+      supportsReasoning: null,
+      order: 50
+    }
+  ];
+
+  const BY_ID = new Map();
+  const ALIASES = new Map();
+  for (const profile of PROFILES) {
+    BY_ID.set(profile.id, profile);
+    ALIASES.set(profile.id, profile.id);
+    for (const a of (profile.aliases || [])) ALIASES.set(String(a).toLowerCase(), profile.id);
+  }
+
+  function canonicalKey(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+  function getProviderProfile(value) {
+    const key = canonicalKey(value);
+    if (!key) return null;
+    const id = ALIASES.get(key);
+    return id ? BY_ID.get(id) || null : null;
+  }
+  function normalizeProviderId(value, fallback) {
+    const profile = getProviderProfile(value);
+    if (profile) return profile.id;
+    return fallback == null ? '' : String(fallback);
+  }
+  function providerUsesCodex(value) {
+    return normalizeProviderId(value, '') === 'codex';
+  }
+  function defaultReasoningEffortForProvider(value) {
+    const profile = getProviderProfile(value) || BY_ID.get(DEFAULT_PROVIDER_ID);
+    return (profile && profile.defaultReasoningEffort) || 'medium';
+  }
+  function providerRequiresKey(value) {
+    const profile = getProviderProfile(value);
+    return !!(profile && profile.keyRequired);
+  }
+  function providerRequiresBaseUrl(value) {
+    const profile = getProviderProfile(value);
+    return !!(profile && profile.requiresBaseUrl);
+  }
+  function toPublicProfile(profile) {
+    return {
+      id: profile.id,
+      aliases: (profile.aliases || []).slice(),
+      name: profile.name,
+      label: profile.label,
+      endpoint: profile.endpoint,
+      blurb: profile.blurb,
+      live: profile.live !== false,
+      apiMode: profile.apiMode,
+      authType: profile.authType,
+      keyRequired: !!profile.keyRequired,
+      keyEnv: (profile.keyEnv || []).slice(),
+      modelsRequireAuth: profile.modelsRequireAuth !== false,
+      baseUrl: profile.baseUrl || '',
+      baseUrlEnv: (profile.baseUrlEnv || []).slice(),
+      requiresBaseUrl: !!profile.requiresBaseUrl,
+      defaultReasoningEffort: profile.defaultReasoningEffort || 'medium',
+      unmetered: !!profile.unmetered,
+      supportsTools: profile.supportsTools,
+      supportsReasoning: profile.supportsReasoning,
+      credentialPool: !!profile.credentialPool
+    };
+  }
+  function listProviderProfiles(opts) {
+    opts = opts || {};
+    return PROFILES
+      .filter(p => opts.includeInactive || p.live !== false)
+      .slice()
+      .sort((a, b) => (a.order || 1000) - (b.order || 1000) || a.id.localeCompare(b.id))
+      .map(p => opts.public === false ? Object.assign({}, p) : toPublicProfile(p));
+  }
+  function providerIds(opts) {
+    return listProviderProfiles(Object.assign({}, opts, { public: false })).map(p => p.id);
+  }
+
+  return {
+    DEFAULT_PROVIDER_ID,
+    getProviderProfile,
+    listProviderProfiles,
+    normalizeProviderId,
+    providerUsesCodex,
+    defaultReasoningEffortForProvider,
+    providerRequiresKey,
+    providerRequiresBaseUrl,
+    providerIds,
+    _profiles: PROFILES
+  };
+});

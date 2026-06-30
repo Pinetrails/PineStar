@@ -40,7 +40,7 @@ A.ok(!/never say you cannot reach the web or files/.test(sidecar), 'old blanket 
 
 // The browser must prefer the same-origin sidecar catalog so local/dev runs get the exact context_length
 // the backend already warmed, with direct OpenRouter only as a fallback.
-A.ok(src.includes("fetchModelCatalog('/api/models/openrouter', 'models')"), 'Harness.listModels prefers the sidecar OpenRouter catalog');
+A.ok(src.includes("fetchModelCatalog('/api/models/' + encodeURIComponent(p) + q, 'models')"), 'Harness.listModels prefers the sidecar provider catalog');
 A.ok(src.includes("fetchModelCatalog(OR + '/models', 'data')"), 'Harness.listModels keeps the direct OpenRouter catalog as fallback');
 A.ok(src.includes("params.indexOf('tools') >= 0"), 'Harness.listModels derives tool support from supported_parameters when needed');
 A.ok(/saved\s*&&\s*saved\.agent[\s\S]{0,180}Harness\.listModels\(\)/.test(app), 'auto-resume warms the model catalog before entering the game');

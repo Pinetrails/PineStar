@@ -115,8 +115,8 @@
       // same notebook (memory), workspace, and identity — just a different session. Absent config falls back
       // to a per-chat agent (tg_<chatId>) + the default persona.
       const sec = secrets() || {};
-      const provider = (sec.provider === 'codex' || sec.provider === 'openai-codex') ? 'codex' : 'openrouter';
-      const usingCodex = provider === 'codex';
+      const provider = String(sec.provider || 'openrouter').trim().toLowerCase() || 'openrouter';
+      const usingCodex = provider === 'codex' || provider === 'openai-codex';
       const reasoningEffort = sec.reasoningEffort || sec.reasoning_effort || (usingCodex ? 'low' : 'medium');
       // Phase B routing: the placed floor (a posted RoutingPlan) decides WHICH agent runs. resolveAgent
       // returns the bay-bound agentId, or null -> fall through to today's resolution so real work NEVER stalls.
@@ -132,7 +132,7 @@
 
       try { emit('channel.inbound', { channel, chatId, agentId, userId: msg.userId || '', kind: msg.chatType === 'group' ? 'group' : 'dm' }); } catch (_) {}
 
-      if (!sec.model || (!usingCodex && !sec.key)) {
+      if (!sec.model || (!usingCodex && !sec.configured && !sec.key)) {
         await deliver(chatId, '⚠ No provider/model is configured yet. Open the STARNET app → Messaging tab and connect.', '', 'error');
         return;
       }
@@ -169,7 +169,7 @@
       const bayStation = resolveStation ? resolveStation(agentId) : null;
       try {
         await runOnce({
-          key: usingCodex ? '' : sec.key, model: sec.model, provider, reasoningEffort, system, messages, agentId, isTask,
+          key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
           emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous',
           broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
           station: bayStation || undefined

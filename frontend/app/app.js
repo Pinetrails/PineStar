@@ -198,12 +198,22 @@ const App = (() => {
     return ({ none: 'OFF', minimal: 'MIN', low: 'LOW', medium: 'MED', high: 'HIGH', xhigh: 'XHIGH', max: 'MAX' })[e] || 'MED';
   }
   function providerLabel(provider) {
-    return (provider === 'codex' || provider === 'openai-codex') ? 'GPT' : 'OPENROUTER';
+    provider = normalizeProviderId(provider);
+    const map = { codex: 'GPT', openrouter: 'OPENROUTER', openai: 'OPENAI', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    return map[provider] || String(provider || 'openrouter').toUpperCase();
+  }
+  function normalizeProviderId(provider) {
+    const p = String(provider || 'openrouter').trim().toLowerCase();
+    if (p === 'codex' || p === 'openai-codex') return 'codex';
+    if (p === 'openai' || p === 'openai-api') return 'openai';
+    if (p === 'ollama' || p === 'ollama-local') return 'ollama';
+    if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
+    return 'openrouter';
   }
   function applyQuickModel(sel) {
     if (!agent || !sel) return;
     const model = String(sel.model || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '') || '').trim();
-    const provider = (sel.provider === 'codex' || sel.provider === 'openai-codex') ? 'codex'
+    const provider = normalizeProviderId(sel.provider) === 'codex' ? 'codex'
       : ((typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter');
     const effort = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) ? Harness.normalizeReasoningEffort(sel.effort) : String(sel.effort || 'medium');
     if (effort && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
@@ -598,7 +608,7 @@ const App = (() => {
   const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
 
   function selectProviderUI(p) {
-    pickedProvider = (p === 'codex') ? 'codex' : 'openrouter';
+    pickedProvider = normalizeProviderId(p);
     document.querySelectorAll('.provider-row .prov').forEach(b => b.classList.toggle('sel', b.dataset.prov === pickedProvider));
     const isCodex = pickedProvider === 'codex';
     el('key-block').classList.toggle('hidden', isCodex);
@@ -988,12 +998,12 @@ const App = (() => {
       Harness.setModel(model); Harness.setProv('codex');
     } else {
       const key = el('in-key').value.trim();
-      const configured = !!(Harness.configured && Harness.configured());
-      if (!key && !configured) { msg.textContent = 'enter your OpenRouter API key (openrouter.ai/keys).'; return; }
+      const configured = !!(Harness.configured && Harness.configured(pickedProvider));
+      if (!key && !configured) { msg.textContent = 'enter your ' + providerLabel(pickedProvider) + ' API key.'; return; }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
       if (key) await Harness.setKey(key);
-      Harness.setModel(model); Harness.setProv('openrouter');
+      Harness.setModel(model); Harness.setProv(pickedProvider);
     }
 
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }

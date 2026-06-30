@@ -988,8 +988,9 @@ const StationUI = (() => {
   const PROVIDERS = [
     { id: 'openrouter',    name: 'OPENROUTER',        endpoint: 'openrouter.ai/api/v1',      blurb: 'one key · 300+ models',  live: true },
     { id: 'codex',         name: 'CHATGPT (CODEX)',   endpoint: 'OAuth · ChatGPT subscription', blurb: 'sign-in, no API key',  live: true },
-    { id: 'local',         name: 'LOCAL',             endpoint: '127.0.0.1 · Ollama/llama.cpp', blurb: 'run models on-device', live: false },
-    { id: 'openai-compat', name: 'OPENAI-COMPATIBLE', endpoint: 'any /v1 base URL',          blurb: 'bring a custom endpoint', live: false }
+    { id: 'openai',        name: 'OPENAI API',        endpoint: 'api.openai.com/v1',          blurb: 'OpenAI-compatible', live: true },
+    { id: 'ollama',        name: 'OLLAMA',            endpoint: '127.0.0.1:11434/v1',         blurb: 'local models', live: true },
+    { id: 'custom',        name: 'CUSTOM',            endpoint: 'any /v1 base URL',           blurb: 'bring your endpoint', live: true }
   ];
   const H = () => (typeof Harness === 'object' && Harness) ? Harness : null;
   function provName(id) { const p = PROVIDERS.find(x => x.id === id); return p ? p.name : String(id || '').toUpperCase(); }
@@ -1012,12 +1013,13 @@ const StationUI = (() => {
   function connectedKeys() {
     const h = H(); if (!h) return [];
     const out = [];
+    const active = activeProv();
     // Codex first when it's the live provider — an OAuth connection that carries a model but no API key.
     if (codexConnected()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true });
     // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
     if (h.getKey) {
-      const set = (h.configured && h.configured()) || !!h.getKey();
-      if (set) out.push({ provider: 'openrouter', key: h.getKey(), model: (h.getModel && h.getModel()) || '' });
+      const set = (h.configured && h.configured(active)) || !!h.getKey();
+      if (set && active !== 'codex') out.push({ provider: active, key: h.getKey(), model: (h.getModel && h.getModel()) || '', local: active === 'ollama' });
     }
     return out;
   }
@@ -1031,7 +1033,7 @@ const StationUI = (() => {
       // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
       const runnable = connected && p.id === active && !!ks[0].model;
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
-      const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : '○ NO KEY');
+      const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
       return '<div class="prov-card ' + cls + '">' +
         '<span class="conn-dot"></span>' +
@@ -1050,7 +1052,7 @@ const StationUI = (() => {
       return '<div class="key-empty">' +
         '<p>No API keys connected. Paste a key here to reconnect — it stays on this machine.</p>' +
         '<div class="key-edit">' +
-        '<input type="password" class="key-input" id="key-in-new" placeholder="paste OpenRouter key…" autocomplete="off" spellcheck="false">' +
+        '<input type="password" class="key-input" id="key-in-new" placeholder="paste ' + esc(provName(active)) + ' key…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="add">SAVE</button>' +
         '</div></div>';
     }
@@ -1100,7 +1102,7 @@ const StationUI = (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           if (h.setKey) h.setKey(v);
-          notify('connected ' + provName('openrouter') + ' API key', 'good');
+          notify('connected ' + provName(activeProv()) + ' API key', 'good');
           rerender('settings');
           return;
         }

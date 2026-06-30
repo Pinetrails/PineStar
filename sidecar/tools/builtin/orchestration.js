@@ -52,6 +52,7 @@
     const key = deps.key;
     const model = deps.model;
     const provider = deps.provider || null;
+    const baseUrl = deps.baseUrl || deps.base_url || '';
     const reasoningEffort = deps.reasoningEffort || 'medium';
     const subagents = deps.subagents || null;
     // the LEAD's OWN base identity (system prompt), threaded from the run host so team.spawn can clone it. Empty
@@ -116,7 +117,7 @@
           let result;
           try {
             result = await runOnce({
-              key, provider, reasoningEffort,
+              key, provider, baseUrl, reasoningEffort,
               model: (job.ident && job.ident.model) || model,
               system: (job.ident && job.ident.system) || '',
               messages: [{ role: 'user', content: job.prompt }],
@@ -212,7 +213,7 @@
             let result;
             try {
               result = await runOnce({
-                key, provider, reasoningEffort, model,      // the lead's OWN model — a clone of self
+                key, provider, baseUrl, reasoningEffort, model,      // the lead's OWN model - a clone of self
                 system: selfSystem,                         // the lead's OWN base identity; the clone's runOnce
                                                             // composes its own caps for its (narrowed) toolset
                 messages: [{ role: 'user', content: prompt }],
@@ -319,7 +320,7 @@
         let result;
         try {
           result = await runOnce({
-            key, provider, reasoningEffort,
+            key, provider, baseUrl, reasoningEffort,
             model: (ident && ident.model) || model,
             system: (ident && ident.system) || '',
             messages: [{ role: 'user', content: rec.prompt || '' }],

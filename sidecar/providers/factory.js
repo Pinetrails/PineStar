@@ -1,29 +1,72 @@
-/* sidecar/providers/factory.js — the one place a provider id maps to a concrete LLMProvider adapter.
-   Keeps runOnce() provider-agnostic: it asks for `selectProvider({ provider, ... })` and drives the
-   returned seam, never naming a wire format. Adding a provider = one case here + its adapter module.
-
-     'openrouter' (default) -> makeOpenRouterProvider({ fetch, key })          // pay-per-token API key
-     'codex'                -> makeCodexProvider({ fetch, token })             // personal ChatGPT sub (OAuth)
-
-   The Codex path takes an OAuth access_token (a JWT), NOT an API key — the caller (runOnce) is
-   responsible for refreshing it before the run; this factory just wires the token in. */
+/* sidecar/providers/factory.js - provider profile to concrete LLMProvider adapter.
+   runOnce() asks for selectProvider({ provider, ... }) and then drives the returned seam.
+   Adding an OpenAI-compatible provider is now a registry entry; adding a new wire format
+   is one adapter case here. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./openrouter.js'), require('./codex.js'));
-  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.factory = factory(root.SK.providers.openrouter, root.SK.providers.codex); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (openrouter, codex) {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = factory(
+      require('./openrouter.js'),
+      require('./codex.js'),
+      require('./openai-compatible.js'),
+      require('./registry.js')
+    );
+  } else {
+    root.SK = root.SK || {};
+    root.SK.providers = root.SK.providers || {};
+    root.SK.providers.factory = factory(root.SK.providers.openrouter, root.SK.providers.codex, root.SK.providers.openaiCompatible, root.SK.providers.registry);
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (openrouter, codex, openaiCompatible, registry) {
   'use strict';
 
-  const PROVIDER_IDS = ['openrouter', 'codex'];
+  const PROVIDER_IDS = registry.providerIds();
 
   function selectProvider(opts) {
     opts = opts || {};
-    const id = (opts.provider || 'openrouter').toLowerCase();
-    if (id === 'codex' || id === 'openai-codex') {
-      return codex.makeCodexProvider({ fetch: opts.fetch, token: opts.token, baseUrl: opts.baseUrl, reasoningEffort: opts.reasoningEffort });
+    const id = registry.normalizeProviderId(opts.provider, registry.DEFAULT_PROVIDER_ID);
+    const profile = registry.getProviderProfile(id);
+    if (!profile) throw new Error('unknown provider: ' + (opts.provider || ''));
+
+    if (profile.adapter === 'codex') {
+      return codex.makeCodexProvider({
+        fetch: opts.fetch,
+        token: opts.token,
+        baseUrl: opts.baseUrl || profile.baseUrl,
+        reasoningEffort: opts.reasoningEffort
+      });
     }
-    return openrouter.makeOpenRouterProvider({ fetch: opts.fetch, key: opts.key, baseUrl: opts.baseUrl, referer: opts.referer, reasoningEffort: opts.reasoningEffort });
+    if (profile.adapter === 'openrouter') {
+      return openrouter.makeOpenRouterProvider({
+        fetch: opts.fetch,
+        key: opts.key,
+        baseUrl: opts.baseUrl || profile.baseUrl,
+        referer: opts.referer,
+        reasoningEffort: opts.reasoningEffort
+      });
+    }
+    if (profile.adapter === 'openai-compatible') {
+      return openaiCompatible.makeOpenAICompatibleProvider({
+        fetch: opts.fetch,
+        key: opts.key,
+        baseUrl: opts.baseUrl || profile.baseUrl,
+        reasoningEffort: opts.reasoningEffort,
+        includeUsage: opts.includeUsage,
+        defaultContext: opts.defaultContext,
+        headers: opts.headers
+      });
+    }
+    throw new Error('provider adapter is not wired: ' + profile.adapter);
   }
 
-  return { selectProvider, PROVIDER_IDS };
+  return {
+    selectProvider,
+    PROVIDER_IDS,
+    getProviderProfile: registry.getProviderProfile,
+    listProviderProfiles: registry.listProviderProfiles,
+    normalizeProviderId: registry.normalizeProviderId,
+    providerUsesCodex: registry.providerUsesCodex,
+    defaultReasoningEffortForProvider: registry.defaultReasoningEffortForProvider,
+    providerRequiresKey: registry.providerRequiresKey,
+    providerRequiresBaseUrl: registry.providerRequiresBaseUrl
+  };
 });

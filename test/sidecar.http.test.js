@@ -118,6 +118,18 @@ function boot(port, workspaces, attemptsLeft) {
     const getWithTok = await fetch(B + '/api/budget/status', { headers: tok });
     A.eq(getWithTok.status, 200, 'GET /api/budget/status WITH the token -> 200');
 
+    // ---- provider registry/catalog routes: dynamic provider surface boots and remains token-gated ----
+    const providersNoTok = await fetch(B + '/api/providers');
+    A.eq(providersNoTok.status, 403, 'GET /api/providers WITHOUT a token -> 403');
+    const providers = await j('GET', '/api/providers');
+    A.eq(providers.status, 200, 'GET /api/providers -> 200');
+    A.ok(Array.isArray(providers.body.providers), 'providers route returns a list');
+    A.ok(providers.body.providers.some(p => p.id === 'openrouter'), 'providers include openrouter');
+    A.ok(providers.body.providers.some(p => p.id === 'custom'), 'providers include custom OpenAI-compatible');
+    const models = await j('GET', '/api/models/openrouter');
+    A.eq(models.status, 200, 'GET /api/models/openrouter -> 200');
+    A.ok(Array.isArray(models.body.models), 'provider model route returns a models array');
+
     // ---- SSE telemetry requires the ?token= query (EventSource cannot send a header) ----
     const sseNoTok = await fetch(B + '/api/channels/events');
     A.eq(sseNoTok.status, 403, 'GET /api/channels/events WITHOUT ?token -> 403');

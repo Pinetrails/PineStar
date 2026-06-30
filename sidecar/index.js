@@ -44,7 +44,16 @@ const { composeOffice } = require('./capability/office.js');   // THE MOAT: inte
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
-const { selectProvider } = require('./providers/factory.js');
+const {
+  selectProvider,
+  listProviderProfiles,
+  getProviderProfile,
+  normalizeProviderId: normalizeProviderIdFromRegistry,
+  providerUsesCodex: registryProviderUsesCodex,
+  defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
+  providerRequiresKey,
+  providerRequiresBaseUrl
+} = require('./providers/factory.js');
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
@@ -488,10 +497,47 @@ function cronModelFor(job) {
   return ((job && job.model) ? String(job.model).trim() : '') || rosterModel || CRON_DEFAULT_MODEL;
 }
 function normalizeProviderId(value) {
-  const p = String(value || '').trim().toLowerCase();
-  if (p === 'codex' || p === 'openai-codex') return 'codex';
-  if (p === 'openrouter') return 'openrouter';
+  return normalizeProviderIdFromRegistry(value, '');
+}
+function envFirst(names) {
+  for (const name of (Array.isArray(names) ? names : [])) {
+    const direct = process.env[name];
+    if (direct != null && String(direct).trim()) return String(direct).trim();
+    const scoped = ENV(name);
+    if (scoped != null && String(scoped).trim()) return String(scoped).trim();
+  }
   return '';
+}
+function providerRuntimeKey(provider, explicitKey) {
+  const id = normalizeProvider(provider);
+  if (registryProviderUsesCodex(id)) return '';
+  const explicit = String(explicitKey || '').trim();
+  if (explicit) return explicit;
+  const profile = getProviderProfile(id);
+  if (id === 'openrouter') return runtimeKey || envFirst(profile && profile.keyEnv);
+  return envFirst(profile && profile.keyEnv);
+}
+function providerRuntimeBaseUrl(provider, explicitBaseUrl) {
+  const explicit = String(explicitBaseUrl || '').trim();
+  if (explicit) return explicit;
+  const profile = getProviderProfile(normalizeProvider(provider));
+  return envFirst(profile && profile.baseUrlEnv) || (profile && profile.baseUrl) || '';
+}
+function providerHasCredential(provider, key, baseUrl) {
+  const id = normalizeProvider(provider);
+  if (registryProviderUsesCodex(id)) return !!(codexTokens && codexTokens.access_token);
+  if (providerRequiresBaseUrl(id) && !String(baseUrl || '').trim()) return false;
+  if (providerRequiresKey(id) && !String(key || '').trim()) return false;
+  return true;
+}
+function providerCredentialError(provider) {
+  const id = normalizeProvider(provider);
+  const profile = getProviderProfile(id);
+  const label = (profile && profile.label) || id;
+  if (registryProviderUsesCodex(id)) return 'connect ChatGPT first - a signed-in ChatGPT account + model are required';
+  if (providerRequiresBaseUrl(id)) return 'configure the ' + label + ' base URL';
+  if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
+  return 'provider is not configured';
 }
 function cronProviderFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
@@ -503,17 +549,13 @@ function cronProviderFor(job) {
   return 'openrouter';
 }
 function cronKeyFor(provider) {
-  return normalizeProviderId(provider) === 'codex' ? '' : runtimeKey;
+  return providerRuntimeKey(provider, '');
 }
 function cronHasCredential(provider, key) {
-  return normalizeProviderId(provider) === 'codex'
-    ? !!(codexTokens && codexTokens.access_token)
-    : !!key;
+  return providerHasCredential(provider, key, providerRuntimeBaseUrl(provider, ''));
 }
 function cronCredentialError(provider) {
-  return normalizeProviderId(provider) === 'codex'
-    ? 'connect ChatGPT first — a signed-in ChatGPT account + model are required to run this routine'
-    : 'connect OpenRouter first — an API key + model are required to run this routine';
+  return providerCredentialError(provider) + ' to run this routine';
 }
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
@@ -952,9 +994,9 @@ let discordStatus = { connected: false, state: 'down', detail: '' };
 const channelRegistry = makeChannelRegistry();          // H6.2: telegram + discord descriptors
 
 function normalizeProvider(provider) {
-  return (provider === 'codex' || provider === 'openai-codex') ? 'codex' : 'openrouter';
+  return normalizeProviderIdFromRegistry(provider, 'openrouter');
 }
-function providerUsesCodex(provider) { return normalizeProvider(provider) === 'codex'; }
+function providerUsesCodex(provider) { return registryProviderUsesCodex(normalizeProvider(provider)); }
 function normalizeReasoningEffort(value) {
   const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
   const map = {
@@ -969,7 +1011,7 @@ function normalizeReasoningEffort(value) {
   return map[key] || 'medium';
 }
 function defaultReasoningEffortForProvider(provider) {
-  return providerUsesCodex(provider) ? 'low' : 'medium';
+  return registryDefaultReasoningEffort(normalizeProvider(provider));
 }
 function resolveReasoningEffort(provider, value) {
   return normalizeReasoningEffort(value || defaultReasoningEffortForProvider(provider));
@@ -985,7 +1027,7 @@ function startTelegram(token, key, model, agentCfg) {
   // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
   // LIVE by the hub each message, so /sync can refresh them (dossier edits) without a reconnect.
   channelSecrets = Object.assign({}, channelSecrets, { telegram: {
-    token: token, key: key, model: model, provider: provider, reasoningEffort: reasoningEffort, enabled: true,
+    token: token, key: key, model: model, provider: provider, baseUrl: cfg.baseUrl || cfg.base_url || '', reasoningEffort: reasoningEffort, enabled: true,
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
@@ -997,8 +1039,9 @@ function startTelegram(token, key, model, agentCfg) {
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);
-      const key = provider === 'openrouter' ? (t.key || runtimeKey) : '';
-      return { key, model: t.model, provider, reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
+      const key = providerRuntimeKey(provider, t.key || '');
+      const baseUrl = providerRuntimeBaseUrl(provider, t.baseUrl || t.base_url || '');
+      return { key, model: t.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), maxMessageLength: 4096,
@@ -1085,7 +1128,7 @@ function startDiscord(token, key, model, agentCfg) {
   const provider = normalizeProvider(cfg.provider);
   const prev = (channelSecrets && channelSecrets.discord) || {};
   channelSecrets = Object.assign({}, channelSecrets, { discord: {
-    token: token, key: key, model: model, provider: provider, enabled: true,
+    token: token, key: key, model: model, provider: provider, baseUrl: cfg.baseUrl || cfg.base_url || '', enabled: true,
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
@@ -1096,8 +1139,9 @@ function startDiscord(token, key, model, agentCfg) {
       secrets: () => {
         const d = (channelSecrets && channelSecrets.discord) || {};
         const provider = normalizeProvider(d.provider);
-        const k = provider === 'openrouter' ? (d.key || runtimeKey) : '';
-        return { key: k, model: d.model, provider, agentId: d.agentId, system: d.system };
+        const k = providerRuntimeKey(provider, d.key || '');
+        const baseUrl = providerRuntimeBaseUrl(provider, d.baseUrl || d.base_url || '');
+        return { key: k, model: d.model, provider, baseUrl, configured: providerHasCredential(provider, k, baseUrl), agentId: d.agentId, system: d.system };
       },
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(),
@@ -1173,6 +1217,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
+  if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/models/openrouter') return handleOpenRouterModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
@@ -1248,7 +1294,7 @@ server.listen(PORT, '127.0.0.1', () => {
     const envTok = String(ENV('TELEGRAM_TOKEN') || '').trim();
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (t.enabled && t.token && t.model && (providerUsesCodex(t.provider) || t.key || runtimeKey)) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
+    if (t.enabled && t.token && t.model && providerHasCredential(t.provider, providerRuntimeKey(t.provider, t.key || ''), providerRuntimeBaseUrl(t.provider, t.baseUrl || t.base_url || ''))) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, baseUrl: t.baseUrl || t.base_url || '', reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
@@ -1257,7 +1303,7 @@ server.listen(PORT, '127.0.0.1', () => {
     const envTok = String(ENV('DISCORD_TOKEN') || '').trim();
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (d.enabled && d.token && d.model && (providerUsesCodex(d.provider) || d.key || runtimeKey)) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider }); console.log('  · discord auto-started from saved config'); }
+    if (d.enabled && d.token && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '' }); console.log('  · discord auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startDiscord(envTok, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
   } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
@@ -1792,7 +1838,7 @@ async function handleRun(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
-  const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
+  const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels, fallbackProviders } = body || {};
   const recurring = !!(body && body.recurring);   // the browser's mint detector saw this task SHAPE before → salience boost for reflection
   const runProvider = normalizeProvider(provider);
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
@@ -1815,11 +1861,12 @@ async function handleRun(req, res) {
   } else if (body && body.workbench) {
     extraObjects = [{ instanceId: 'wb_placed', objectType: 'workbench' }];
   }
-  const usingCodex = (provider === 'codex' || provider === 'openai-codex');   // Codex authenticates by OAuth token, not an API key
+  const usingCodex = providerUsesCodex(runProvider);   // Codex authenticates by OAuth token, not an API key
   // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and updatable
   // via /api/key). The browser build still sends body.key, which wins.
-  const key = String((body && body.key) || '').trim() || runtimeKey;
-  if (!model || (!key && !usingCodex)) { res.writeHead(400); return res.end('missing key/model'); }
+  const baseUrl = providerRuntimeBaseUrl(runProvider, body && (body.baseUrl || body.base_url));
+  const key = providerRuntimeKey(runProvider, body && body.key);
+  if (!model || !providerHasCredential(runProvider, key, baseUrl)) { res.writeHead(400); return res.end('missing key/model'); }
 
   res.writeHead(200, {
     'Content-Type': 'application/x-ndjson; charset=utf-8',
@@ -1900,7 +1947,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask, provider, reasoningEffort, fallbackModels,
+      key, model, system, messages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent, summon: summonRequest,   // team.summon → live summonAgent() round-trip
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
@@ -1932,10 +1979,13 @@ async function handleRun(req, res) {
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
   const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
-  const usingCodex = (o.provider === 'codex' || o.provider === 'openai-codex');
-  const providerId = usingCodex ? 'codex' : 'openrouter';
+  const providerId = normalizeProvider(o.provider);
+  const usingCodex = providerUsesCodex(providerId);
+  const providerUnmetered = !!((getProviderProfile(providerId) || {}).unmetered);
   const reasoningEffort = resolveReasoningEffort(providerId, o.reasoningEffort || o.reasoning_effort || (o.reasoning && o.reasoning.effort));
   let model = String((o && o.model) || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
+  const baseUrl = providerRuntimeBaseUrl(providerId, o.baseUrl || o.base_url || '');
+  const runKey = providerRuntimeKey(providerId, key);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
@@ -1978,16 +2028,17 @@ async function runOnce(o) {
 
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
-  makeWebTools({ openrouter: { apiKey: key, model } }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
+  const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
+  makeWebTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeBrowserTools({}).register(registry);   // browser.* automation: exposed only through the web/dish capability
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({ store: skillStore }).register(registry);   // H4: skill.write/list/view — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
-  // STUDIO (media skills): image_generate / image_analyze ride the SAME BYOK OpenRouter key + key the run uses.
+  // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
-  makeImageTools({ openrouter: { apiKey: key, model }, fsp, pathMod: path, root: WORKSPACES }).register(registry);
+  makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES }).register(registry);
   // JUKEBOX (Spotify): registered every run, EXPOSED via a 'jukebox' object; no-op (clear error) until the user
   // connects Spotify in Settings. The OAuth session + auto-refresh live in the station-wide spotifyStore above.
   makeSpotifyTools({ store: spotifyStore }).register(registry);
@@ -2002,7 +2053,7 @@ async function runOnce(o) {
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
   makeOrchestrationTools({
-    runOnce, roster: () => agentRoster, key, model, provider: o.provider, reasoningEffort, subagents,
+    runOnce, roster: () => agentRoster, key: runKey, model, provider: providerId, baseUrl, reasoningEffort, subagents,
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
@@ -2101,9 +2152,9 @@ async function runOnce(o) {
       emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
       return;
     }
-    provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token: codexToken, reasoningEffort });
+    provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: codexToken, baseUrl, reasoningEffort });
   } else {
-    provider = selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key, baseUrl: OPENROUTER_BASE, reasoningEffort });
+    provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key: runKey, baseUrl, reasoningEffort });
   }
   const cost = makeCostEngine({ priceOf: provider.priceOf });
 
@@ -2119,12 +2170,38 @@ async function runOnce(o) {
   // is key-independent → cost stays correct) tagged with credKey so the loop's onFallback can cool it on failure.
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
-  if (!usingCodex) {
+  const primaryProfile = getProviderProfile(providerId);
+  if (!usingCodex && primaryProfile && primaryProfile.credentialPool) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
-      .map(s => String(s || '').trim()).filter(s => s && s !== key);
-    rotationFallbacks = credPool.order(pool).map(rk => ({ provider: selectProvider({ provider: 'openrouter', fetch: globalThis.fetch, key: rk, baseUrl: OPENROUTER_BASE, reasoningEffort }), model, credKey: rk }));
+      .map(s => String(s || '').trim()).filter(s => s && s !== runKey);
+    rotationFallbacks = credPool.order(pool).map(rk => ({
+      provider: selectProvider({ provider: providerId, fetch: globalThis.fetch, key: rk, baseUrl, reasoningEffort }),
+      model, credKey: rk
+    }));
   }
-  const fallbacks = rotationFallbacks.concat(fallbackModels.map(m => ({ provider, model: m })));
+  const providerFallbacks = [];
+  const rawProviderFallbacks = Array.isArray(o.fallbackProviders) ? o.fallbackProviders : [];
+  for (const fb of rawProviderFallbacks) {
+    if (!fb || typeof fb !== 'object') continue;
+    const fbProviderId = normalizeProvider(fb.provider || providerId);
+    const fbModel = String(fb.model || '').trim();
+    if (!fbModel || (fbProviderId === providerId && fbModel === model)) continue;
+    const fbBaseUrl = providerRuntimeBaseUrl(fbProviderId, fb.baseUrl || fb.base_url || '');
+    const fbKey = providerRuntimeKey(fbProviderId, fb.key || fb.apiKey || fb.api_key || '');
+    if (!providerHasCredential(fbProviderId, fbKey, fbBaseUrl)) continue;
+    let fbProvider;
+    if (providerUsesCodex(fbProviderId)) {
+      let fbToken;
+      try { fbToken = await ensureCodexAccessToken(); } catch (_) { continue; }
+      fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, token: fbToken, baseUrl: fbBaseUrl, reasoningEffort });
+    } else {
+      fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, key: fbKey, baseUrl: fbBaseUrl, reasoningEffort });
+    }
+    providerFallbacks.push({ provider: fbProvider, model: fbModel, credKey: fbKey || null, cost: makeCostEngine({ priceOf: fbProvider.priceOf }) });
+  }
+  const fallbacks = rotationFallbacks
+    .concat(fallbackModels.map(m => ({ provider, model: m })))
+    .concat(providerFallbacks);
 
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
   //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
@@ -2360,7 +2437,7 @@ async function runOnce(o) {
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
-      credKey: usingCodex ? null : key,
+      credKey: providerUnmetered ? null : runKey,
       onFallback: ({ rotate, credKey, retryAfterMs, resetAtMs }) => {
         if (!rotate || !credKey) return;
         // H6.1: honor a server-stated wait — a relative Retry-After directly, or an absolute reset_at minus now.
@@ -2382,15 +2459,15 @@ async function runOnce(o) {
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
     // result.usd/tokens already INCLUDE the summarizer's spend (the loop folds it into spentUsd as it accrues).
     const finalModel = resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL });
-    const finalUsd = effectiveUsd({ usd: (result && result.usd) || 0, unmetered: usingCodex, unpricedUsage: result && result.unpricedUsage, priceOf: provider && provider.priceOf });
+    const finalUsd = effectiveUsd({ usd: (result && result.usd) || 0, unmetered: providerUnmetered, unpricedUsage: result && result.unpricedUsage, priceOf: provider && provider.priceOf });
     const finalTurns = (result && result.turns) || 0;
     const finalTokens = (result && result.tokens) || 0;
-    try { ledger.record({ runId, agentId, turns: finalTurns, usd: finalUsd, tokens: finalTokens, model: finalModel, unmetered: usingCodex }); } catch (_) {}
+    try { ledger.record({ runId, agentId, turns: finalTurns, usd: finalUsd, tokens: finalTokens, model: finalModel, unmetered: providerUnmetered }); } catch (_) {}
     // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: usingCodex });   // H3.2/H3.3/G6: transcript join + honest model/spend insights
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered });   // H3.2/H3.3/G6: transcript join + honest model/spend insights
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
@@ -2414,7 +2491,7 @@ async function runOnce(o) {
     // BETWEEN this gate and that arming: two same-agent runs finishing inside one reflection's round-trip would both
     // read the un-armed timestamp and both fire — the in-flight guard makes the second cede instead.
     reflectingNow.add(agentId);
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: usingCodex }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
   }
   return result;
 
@@ -2541,7 +2618,8 @@ async function handleChannelConnect(req, res) {
   const saved = (channelSecrets && channelSecrets.telegram) || {};
   const provider = normalizeProvider(body.provider || saved.provider);
   const token = String(body.token || '').trim() || String(saved.token || '');
-  const key = String(body.key || '').trim() || String(saved.key || '') || (provider === 'openrouter' ? runtimeKey : '');
+  const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(saved.key || ''));
+  const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || saved.baseUrl || saved.base_url || '');
   const model = String(body.model || '').trim() || String(saved.model || '');
   const reasoningEffort = resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || saved.reasoningEffort);
   // the app's REAL agent identity, so Telegram runs as the same agent (shared memory) with the same voice.
@@ -2550,8 +2628,8 @@ async function handleChannelConnect(req, res) {
   const name = String(body.agentName || '').trim() || String(saved.name || '');
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
   if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
-  if (!providerUsesCodex(provider) && !key) return json(400, { error: 'connect your agent first (OpenRouter key + model are required)' });
-  try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
+  try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   json(200, { connected: true, state: telegramStatus.state });
 }
 
@@ -2642,6 +2720,71 @@ function handleCodexStatus(req, res) {
 // GET /api/auth/codex/models — the ACCOUNT's real Codex model list (live-discovered with a fresh token), so
 // the connect screen offers exactly the slugs the backend will accept. Falls back to the provider's curated
 // list (and reports the error) when not connected / discovery fails, so the dropdown is never empty.
+function publicModel(m) {
+  return {
+    id: m.id,
+    name: m.name || m.id,
+    context_length: m.context_length || 0,
+    max_completion_tokens: m.max_completion_tokens || null,
+    pricing: m.pricing || null,
+    supportsTools: m.supportsTools !== false,
+    supportsReasoning: !!m.supportsReasoning,
+    supported_parameters: Array.isArray(m.supported_parameters) ? m.supported_parameters : [],
+    reasoningEfforts: Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : []
+  };
+}
+
+function handleProviders(req, res) {
+  const providers = listProviderProfiles().map(p => {
+    const key = providerRuntimeKey(p.id, '');
+    const baseUrl = providerRuntimeBaseUrl(p.id, '');
+    return Object.assign({}, p, { configured: providerHasCredential(p.id, key, baseUrl) });
+  });
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ providers }));
+}
+
+async function listModelsForProvider(providerId, opts) {
+  opts = opts || {};
+  const id = normalizeProvider(providerId);
+  const profile = getProviderProfile(id);
+  const baseUrl = providerRuntimeBaseUrl(id, opts.baseUrl || '');
+  const key = providerRuntimeKey(id, opts.key || '');
+  const needsKey = providerRequiresKey(id) && (!profile || profile.modelsRequireAuth !== false);
+  if ((providerRequiresBaseUrl(id) && !String(baseUrl || '').trim()) || (needsKey && !String(key || '').trim())) {
+    const err = new Error(providerCredentialError(id));
+    err.code = 'provider_not_configured';
+    throw err;
+  }
+  let provider;
+  if (providerUsesCodex(id)) {
+    const token = await ensureCodexAccessToken();
+    provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, baseUrl });
+  } else {
+    provider = selectProvider({ provider: id, fetch: globalThis.fetch, key, baseUrl });
+  }
+  return await provider.listModels();
+}
+
+async function handleProviderModels(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let providerId = '';
+  let baseUrl = '';
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    providerId = decodeURIComponent(u.pathname.slice('/api/models/'.length));
+    baseUrl = u.searchParams.get('baseUrl') || u.searchParams.get('base_url') || '';
+  } catch (_) {}
+  const id = normalizeProvider(providerId);
+  if (!getProviderProfile(id)) return json(404, { models: [], error: 'unknown provider' });
+  try {
+    const models = await listModelsForProvider(id, { baseUrl });
+    json(200, { provider: id, models: models.map(publicModel) });
+  } catch (e) {
+    json(200, { provider: id, models: [], error: (e && e.message) || 'model catalog unavailable', code: (e && e.code) || '' });
+  }
+}
+
 async function handleOpenRouterModels(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {

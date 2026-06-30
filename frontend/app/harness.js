@@ -8,7 +8,7 @@
 'use strict';
 
 const Harness = (() => {
-  const LS = { key: 'starnet.byok.key', model: 'starnet.byok.model', prov: 'starnet.byok.prov', effort: 'starnet.byok.reasoningEffort' };
+  const LS = { key: 'starnet.byok.key', model: 'starnet.byok.model', prov: 'starnet.byok.prov', baseUrl: 'starnet.byok.baseUrl', effort: 'starnet.byok.reasoningEffort' };
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
@@ -74,7 +74,24 @@ const Harness = (() => {
   }
   /* whether a key is set — works in both modes; never exposes the value. In dev mode the host holds the
      key (runtimeKey), so we report configured without one — that's what lets a fresh origin auto-resume. */
-  function configured() { return DESKTOP ? _configured : (DEVMODE || !!getKey()); }
+  function normalizeProviderId(provider) {
+    const p = String(provider || getProv() || 'openrouter').trim().toLowerCase();
+    if (p === 'codex' || p === 'openai-codex') return 'codex';
+    if (p === 'openai' || p === 'openai-api') return 'openai';
+    if (p === 'ollama' || p === 'ollama-local') return 'ollama';
+    if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
+    return 'openrouter';
+  }
+  function providerNeedsKey(provider) {
+    const p = normalizeProviderId(provider);
+    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+  }
+  function configured(provider) {
+    const p = normalizeProviderId(provider);
+    if (p === 'ollama') return true;
+    if (p === 'custom' && getBaseUrl()) return true;
+    return DESKTOP ? _configured : (DEVMODE || !providerNeedsKey(p) || !!getKey());
+  }
 
   // getKey() returns the real key in the browser; in desktop it returns '' (the key isn't here).
   const getKey = () => DESKTOP ? '' : (localStorage.getItem(LS.key) || '');
@@ -84,11 +101,15 @@ const Harness = (() => {
   };
   const getModel = () => localStorage.getItem(LS.model) || '';
   const setModel = m => localStorage.setItem(LS.model, m || '');
-  const getProv = () => localStorage.getItem(LS.prov) || 'openrouter';
-  const setProv = p => localStorage.setItem(LS.prov, p || 'openrouter');
+  const getProv = () => normalizeProviderId(localStorage.getItem(LS.prov) || 'openrouter');
+  const setProv = p => localStorage.setItem(LS.prov, normalizeProviderId(p || 'openrouter'));
+  const getBaseUrl = () => localStorage.getItem(LS.baseUrl) || '';
+  const setBaseUrl = u => localStorage.setItem(LS.baseUrl, u || '');
   function defaultReasoningEffortForProvider(provider) {
-    const p = String(provider || getProv() || 'openrouter').toLowerCase();
-    return (p === 'codex' || p === 'openai-codex') ? 'low' : 'medium';
+    const p = normalizeProviderId(provider);
+    if (p === 'codex') return 'low';
+    if (p === 'ollama') return 'none';
+    return 'medium';
   }
   function normalizeReasoningEffort(value) {
     const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
@@ -158,13 +179,16 @@ const Harness = (() => {
   }
 
   /* public model catalog (no key required) — populates the connect dropdown */
-  async function listModels() {
+  async function listModels(provider) {
     try {
       let list;
+      const p = normalizeProviderId(provider || getProv());
       try {
-        list = await fetchModelCatalog('/api/models/openrouter', 'models');
+        const q = (p === 'custom' && getBaseUrl()) ? ('?baseUrl=' + encodeURIComponent(getBaseUrl())) : '';
+        list = await fetchModelCatalog('/api/models/' + encodeURIComponent(p) + q, 'models');
       } catch (_) {
-        list = await fetchModelCatalog(OR + '/models', 'data');
+        if (p === 'openrouter') list = await fetchModelCatalog(OR + '/models', 'data');
+        else list = [];
       }
       list.sort((a, b) => a.id.localeCompare(b.id));
       modelMap = {};
@@ -185,12 +209,13 @@ const Harness = (() => {
     const key = getKey(), model = getModel(), provider = getProv(), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
-    if (provider !== 'codex' && !DESKTOP && !DEVMODE && !key) throw new Error('no API key set');
+    if (providerNeedsKey(provider) && !DESKTOP && !DEVMODE && !key) throw new Error('no API key set');
     if (!model) throw new Error('no model selected');
 
     let res;
     try {
       const reqBody = { model, provider, reasoningEffort, system, messages, agentId: agentId || 'agent', isTask: !!isTask, recurring: !!recurring };
+      if (getBaseUrl()) reqBody.baseUrl = getBaseUrl();
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
       // THE MOAT (FLOOR-REAL): send the agent's REAL placed capability objects so the sidecar grants exactly what's
       // on the floor (dish→web · cabinet→files · workbench→terminal · …). `placed` supersedes the legacy `workbench`
@@ -372,7 +397,7 @@ const Harness = (() => {
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
 
   return {
-    getKey, setKey, getModel, setModel, getProv, setProv, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured,
+    getKey, setKey, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     apiToken: ensureApiToken,

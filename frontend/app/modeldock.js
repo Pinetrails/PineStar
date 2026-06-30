@@ -46,13 +46,20 @@ const ModelDock = (() => {
 
   function provider() {
     const p = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
-    return p === 'codex' || p === 'openai-codex' ? 'codex' : 'openrouter';
+    return normalizeProvider(p);
   }
   function providerLabel(p) {
-    return (p === 'codex' || p === 'openai-codex') ? 'GPT / CODEX' : 'OPENROUTER';
+    p = normalizeProvider(p);
+    const map = { codex: 'GPT / CODEX', openrouter: 'OPENROUTER', openai: 'OPENAI API', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    return map[p] || String(p || 'openrouter').toUpperCase();
   }
   function normalizeProvider(p) {
-    return (p === 'codex' || p === 'openai-codex') ? 'codex' : 'openrouter';
+    p = String(p || 'openrouter').trim().toLowerCase();
+    if (p === 'codex' || p === 'openai-codex') return 'codex';
+    if (p === 'openai' || p === 'openai-api') return 'openai';
+    if (p === 'ollama' || p === 'ollama-local') return 'ollama';
+    if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
+    return 'openrouter';
   }
   function apiFetch(url, init) {
     return (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch(url, init) : fetch(url, init);
@@ -121,12 +128,14 @@ const ModelDock = (() => {
     return list.filter(m => m && m.id);
   }
 
-  function openRouterEnabled() {
-    if (provider() === 'openrouter') return true;
+  function providerEnabled(p) {
+    p = normalizeProvider(p || provider());
+    if (p === provider()) return true;
     try {
       if (typeof Harness !== 'undefined' && Harness.getKey && Harness.getKey()) return true;
-      if (typeof Harness !== 'undefined' && Harness.configured && Harness.configured()) return true;
+      if (typeof Harness !== 'undefined' && Harness.configured && Harness.configured(p)) return true;
     } catch (_) {}
+    if (p === 'ollama') return true;
     return false;
   }
 
@@ -232,16 +241,18 @@ const ModelDock = (() => {
         const j = await r.json();
         if (Array.isArray(j.models)) list = j.models.map(m => asModel(m, p));
       } else if (typeof Harness !== 'undefined' && Harness.listModels) {
-        if (!openRouterEnabled()) { cache[p] = []; return []; }
+        if (!providerEnabled(p)) { cache[p] = []; return []; }
         try {
-          const r = await apiFetch('/api/models/openrouter', { cache: 'no-store' });
+          const q = (p === 'custom' && typeof Harness !== 'undefined' && Harness.getBaseUrl && Harness.getBaseUrl())
+            ? ('?baseUrl=' + encodeURIComponent(Harness.getBaseUrl())) : '';
+          const r = await apiFetch('/api/models/' + encodeURIComponent(p) + q, { cache: 'no-store' });
           const j = await r.json();
           if (Array.isArray(j.models) && j.models.length) list = j.models.map(m => asModel(m, p));
         } catch (_) {}
-        if (!list.length) list = (await Harness.listModels()).map(m => asModel(m, p));
+        if (!list.length) list = (await Harness.listModels(p)).map(m => asModel(m, p));
       }
     } catch (_) {}
-    if (!list.length) list = (p === 'codex' ? CODEX_MODELS : OPENROUTER_FALLBACK).map(m => asModel(m, p));
+    if (!list.length && (p === 'codex' || p === 'openrouter')) list = (p === 'codex' ? CODEX_MODELS : OPENROUTER_FALLBACK).map(m => asModel(m, p));
     list.sort((a, b) => {
       if (p === 'openrouter') {
         const ga = openRouterGroupName(a), gb = openRouterGroupName(b);
@@ -256,11 +267,14 @@ const ModelDock = (() => {
   async function fetchModels(force) {
     loading = true;
     renderList();
-    const parts = await Promise.all([fetchProviderModels('codex', force), fetchProviderModels('openrouter', force)]);
-    models = mergeCurrent(parts[0].concat(parts[1]));
+    const ids = ['codex', 'openrouter', 'openai', 'ollama', 'custom'];
+    const active = provider();
+    if (ids.indexOf(active) < 0) ids.unshift(active);
+    const parts = await Promise.all(ids.map(p => fetchProviderModels(p, force)));
+    models = mergeCurrent(parts.reduce((a, b) => a.concat(b), []));
     models.sort((a, b) => {
       const pa = normalizeProvider(a.provider), pb = normalizeProvider(b.provider);
-      if (pa !== pb) return (pa === 'codex' ? 0 : 1) - (pb === 'codex' ? 0 : 1);
+      if (pa !== pb) return (pa === 'codex' ? 0 : pa === 'openrouter' ? 1 : 2) - (pb === 'codex' ? 0 : pb === 'openrouter' ? 1 : 2);
       if (pa === 'openrouter') {
         const ga = openRouterGroupName(a), gb = openRouterGroupName(b);
         if (ga !== gb) return ga.localeCompare(gb);
