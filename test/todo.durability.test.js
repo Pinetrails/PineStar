@@ -7,7 +7,7 @@
 
 const A = require('./_assert.js');
 const path = require('path');
-const { makeMemoryStore, memoryFileFor, resetAgentMemory } = require('../sidecar/memory-store.js');
+const { makeMemoryStore, memoryFileFor, resetAgentMemory, restoreDeclined } = require('../sidecar/memory-store.js');
 const { makeTodoTool, formatForInjection } = require('../sidecar/tools/builtin/todo.js');
 
 function memFs() {
@@ -88,6 +88,15 @@ function memFs() {
   A.eq(rstore.get('declined:hero'), [], 'reset wipes the declined reject-list (no inherited suppression)');
   A.eq(rstore.get('todo:hero'), [], 'reset wipes the active todo plan');
   A.eq(rstore.get('notebook:other'), [{ content: 'a DIFFERENT hero belief' }], 'reset is scoped to ONE agent — a different agent is untouched');
+
+  /* ---------- restoreDeclined: the undo-a-discard escape hatch removes ONE entry from the reject-list ---------- */
+  const dstore = makeMemoryStore({ fs: memFs(), path, workspaces: ROOT });
+  await dstore.update('declined:hero', () => ['keep this one', 'restore me', 'and keep this']);
+  A.eq(await restoreDeclined(dstore, 'hero', 'restore me'), true, 'restoreDeclined reports it removed the matched entry');
+  A.eq(dstore.get('declined:hero'), ['keep this one', 'and keep this'], 'only the matched belief is lifted off the reject-list');
+  A.eq(await restoreDeclined(dstore, 'hero', 'not present'), false, 'restoring a belief that was never declined is a no-op (removed=false)');
+  A.eq(await restoreDeclined(dstore, 'hero', '   '), false, 'a blank text restores nothing');
+  A.eq(dstore.get('declined:hero'), ['keep this one', 'and keep this'], 'the reject-list is unchanged by no-op restores');
 
   A.report('todo.durability.test');
 })();

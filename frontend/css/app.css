@@ -433,6 +433,9 @@ input::placeholder { color: var(--ph-dim); opacity: 1; }
   border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim);
 }
 .mc-rec.pinned { border-left-color: var(--gold); }
+/* the declined reject-list: dimmer + a muted red edge so it reads as "set aside, never proposed" (not an active belief) */
+.mc-rec.mc-declined { opacity: 0.78; border-left-color: var(--bad, #c0584e); background: transparent; }
+.mc-rec.mc-declined .mc-body { color: var(--ph-dim); }
 .mc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
 .mc-rectitle { color: var(--ph-bright); font-size: 13px; font-weight: 600; }
 .mc-scope { color: var(--ph-dim); font-size: 10px; letter-spacing: 0.5px; border: 1px solid var(--ph-dim); border-radius: 2px; padding: 0 4px; opacity: 0.85; }
@@ -462,6 +465,12 @@ input::placeholder { color: var(--ph-dim); opacity: 1; }
 .cd-dim { color: var(--ph-bright); font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
 .cd-dn { color: var(--ph-dim); font-size: 11px; }
 .cd-empty { color: var(--ph-dim); font-size: 12px; font-style: italic; padding: 4px 2px 6px; }
+/* the curiosity question-state readout for a blank dimension: a quiet aside + the re-enable escape hatch */
+.cd-curio { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 2px 6px; }
+.cd-curio:empty { display: none; }
+.cd-curio-lbl { color: var(--ph-dim); font-size: 11px; letter-spacing: 0.3px; }
+.cd-reenable { font: inherit; font-size: 11px; color: var(--ph); background: transparent; border: 1px dashed var(--ph-dim); border-radius: 3px; padding: 2px 8px; cursor: pointer; letter-spacing: 0.4px; }
+.cd-reenable:hover { border-color: var(--ph); border-style: solid; }
 .cd-rec { padding: 7px 10px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim); margin-bottom: 7px; }
 .cd-rec.pinned { border-left-color: var(--gold); }
 .cd-body { color: var(--ph-bright); font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }

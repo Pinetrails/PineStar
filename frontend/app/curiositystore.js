@@ -43,9 +43,28 @@ const CuriosityStore = (() => {
   // counter only ever reflects IGNORES (decision 1). Without this, a dimension answered-then-forgotten stays silenced.
   function markAnswered(dim) { if (ready() && dim && state.asked && state.asked[dim] != null) { delete state.asked[dim]; save(); } }
 
+  // observability: the question-state for ONE dimension, for the COMMANDER DOSSIER readout.
+  //   { asked:count, dismissed:bool, stopped:bool } — stopped = waved off OR asked-and-ignored to the limit.
+  function statusOf(dim) {
+    if (!ready() || !dim) return { asked: 0, dismissed: false, stopped: false };
+    const asked = Number(state.asked && state.asked[dim]) || 0;
+    const dismissed = !!(state.dismissed && state.dismissed[dim]);
+    const limit = (typeof Curiosity !== 'undefined' && Number.isFinite(Curiosity.ASK_LIMIT)) ? Curiosity.ASK_LIMIT : 2;
+    return { asked: asked, dismissed: dismissed, stopped: dismissed || asked >= limit };
+  }
+  // the escape hatch: turn a stopped/waved-off question back ON (clears both the dismissal and the ignored-ask
+  // tally), so the station may ask about this dimension again. Mirrors a Restore on the memory side.
+  function reEnable(dim) {
+    if (!ready() || !dim) return;
+    let changed = false;
+    if (state.dismissed && state.dismissed[dim]) { delete state.dismissed[dim]; changed = true; }
+    if (state.asked && state.asked[dim] != null) { delete state.asked[dim]; changed = true; }
+    if (changed) save();
+  }
+
   // S2: a NEW AGENT starts with no waved-off dimensions. Drop the self-persisted key so the next init()
   // hydrates clean (Save.clear() only wipes starnet.save — this store persists to its own key).
   function reset() { state = null; sessionCount = 0; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, consider, markShown, markDismissed, markAnswered, reset };
+  return { init, consider, markShown, markDismissed, markAnswered, statusOf, reEnable, reset };
 })();

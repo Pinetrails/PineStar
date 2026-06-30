@@ -70,4 +70,20 @@ async function resetAgentMemory(store, agentId) {
   }
 }
 
-module.exports = { makeMemoryStore, memoryFileFor, resetAgentMemory };
+// Remove ONE entry from an agent's permanent declined reject-list (the undo-a-discard escape hatch), so a belief
+// the Commander discarded by mistake can be proposed again. Returns whether anything was actually removed. Pure
+// over the injected store → unit-testable without booting the server.
+async function restoreDeclined(store, agentId, text) {
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return false;
+  let removed = false;
+  await store.update('declined:' + String(agentId || 'agent'), (stored) => {
+    const list = Array.isArray(stored) ? stored.slice() : [];
+    const i = list.indexOf(t);
+    if (i >= 0) { list.splice(i, 1); removed = true; }
+    return list;
+  });
+  return removed;
+}
+
+module.exports = { makeMemoryStore, memoryFileFor, resetAgentMemory, restoreDeclined };

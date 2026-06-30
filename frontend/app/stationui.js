@@ -508,6 +508,10 @@ const StationUI = (() => {
       '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
       '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
       '<div id="mc-list" class="mc-list"><span class="dim">reading memory core&hellip;</span></div>' +
+      // observability: the permanent reject-list (Discarded proposals never re-proposed). Hidden until non-empty.
+      '<div class="gx-sec" id="mc-declined-sec" style="display:none;"><span class="gx-ref">&#10007;</span><span class="gx-title">Declined</span><span class="gx-tag" id="mc-declined-count"></span></div>' +
+      '<div class="mc-note" id="mc-declined-note" style="display:none;">Beliefs you Discarded — the station will <b>never propose these again</b>. <b>Restore</b> one to let it be proposed in future.</div>' +
+      '<div id="mc-declined-list" class="mc-list"></div>' +
       '</div>';
   }
 
@@ -519,6 +523,38 @@ const StationUI = (() => {
       renderMemoryList(cur, records, a);
       const cnt = $('#mc-count'); if (cnt) cnt.textContent = records.length + (records.length === 1 ? ' belief' : ' beliefs');
     }).catch(() => { const cur = $('#mc-list'); if (cur) cur.textContent = 'Could not read the Memory Core.'; });
+    loadDeclined(a);   // the reject-list renders alongside (its own fetch; absent/empty → the section stays hidden)
+  }
+
+  // the permanent reject-list, shown below the stored beliefs. Each entry can be Restored (un-declined) so a
+  // belief discarded by mistake can be proposed again — the visible, reversible half of "discard = never again".
+  function loadDeclined(a) {
+    const host = $('#mc-declined-list'); if (!host || !(typeof Harness === 'object' && Harness.memoryDeclined)) return;
+    Harness.memoryDeclined(a.id).then(list => {
+      const h = $('#mc-declined-list'); if (!h) return;
+      const sec = $('#mc-declined-sec'), note = $('#mc-declined-note'), cnt = $('#mc-declined-count');
+      h.innerHTML = '';
+      const show = list.length > 0;
+      if (sec) sec.style.display = show ? '' : 'none';
+      if (note) note.style.display = show ? '' : 'none';
+      if (cnt) cnt.textContent = String(list.length);
+      for (const text of list) h.appendChild(declinedCard(text, a));
+    }).catch(() => {});
+  }
+
+  function declinedCard(text, a) {
+    const card = el('div', 'mc-rec mc-declined');
+    const bodyEl = el('div', 'mc-body'); bodyEl.textContent = text; card.appendChild(bodyEl);   // textContent — never interpreted
+    const btns = el('div', 'consent-btns mc-acts'); card.appendChild(btns);
+    let busy = false;
+    const b = el('button', 'consent-btn'); b.textContent = 'Restore'; b.title = 'allow this belief to be proposed again';
+    b.onclick = async () => {
+      if (busy) return; busy = true;
+      const r = await Harness.memoryRestore({ agentId: a.id, text });
+      if (r && r.ok) { sfx('click'); loadDeclined(a); } else busy = false;
+    };
+    btns.appendChild(b);
+    return card;
   }
 
   function renderMemoryList(host, records, a) {
@@ -1853,11 +1889,37 @@ const StationUI = (() => {
       const bs = ds.beliefs(d.key);
       const sec = el('div', 'cd-sec');
       sec.appendChild(el('div', 'cd-sech', '<span class="cd-dim">' + esc(d.label) + '</span><span class="cd-dn">' + (bs.length || '—') + '</span>'));
-      if (!bs.length) { const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e); }
+      if (!bs.length) {
+        const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e);
+        sec.appendChild(cdCurioRow(d));   // the question-state readout (asked / paused) + re-enable, when relevant
+      }
       else for (const b of bs) sec.appendChild(cdCard(d.key, b));
       sec.appendChild(cdAddRow(d.key));
       body.appendChild(sec);
     }
+  }
+
+  // the curiosity question-state for a still-blank dimension: has the station asked about it, and did the Commander
+  // wave it off / ignore it to the stop-forever limit? Shows nothing for a never-asked dimension; for a stopped one
+  // it offers a re-enable (the escape hatch, mirroring Restore on the memory side). Returns an empty fragment-row
+  // when there's nothing to say, so the caller can append unconditionally.
+  function cdCurioRow(d) {
+    const row = el('div', 'cd-curio');
+    if (typeof CuriosityStore === 'undefined' || !CuriosityStore.statusOf) return row;
+    const st = CuriosityStore.statusOf(d.key);
+    if (!st.stopped && !st.asked) return row;   // never asked → say nothing (keeps the panel quiet)
+    const lbl = el('span', 'cd-curio-lbl');
+    lbl.textContent = st.stopped
+      ? (st.dismissed ? '⏸ you waved this question off' : '⏸ the station stopped asking — you skipped it')
+      : ('· the station asked once, waiting');
+    row.appendChild(lbl);
+    if (st.stopped) {
+      const rb = el('button', 'consent-btn cd-reenable'); rb.textContent = 'ask me about this';
+      rb.title = 'turn this question back on — the station may ask about your ' + String(d.label).toLowerCase() + ' again';
+      rb.onclick = () => { CuriosityStore.reEnable(d.key); sfx('click'); notify('the station will ask about your ' + String(d.label).toLowerCase() + ' again', 'good'); rerender('commander'); };
+      row.appendChild(rb);
+    }
+    return row;
   }
 
   function cdCard(dim, b) {

@@ -360,11 +360,21 @@ const Harness = (() => {
   const memoryPin = o => memoryMutate('pin', o);
   const memoryEdit = o => memoryMutate('edit', o);
   const memoryForget = o => memoryMutate('forget', o);
+  // observability: the permanent declined reject-list (what reflection will never re-propose). [] on any failure.
+  async function memoryDeclined(agentId) {
+    try {
+      const r = await fetch('/api/memory/declined?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.declined) ? j.declined : [];
+    } catch (e) { return []; }
+  }
+  const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
 
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
-    memoryProposals, memoryTurnin, memoryReset, memoryRecords, memoryPin, memoryEdit, memoryForget,
+    memoryProposals, memoryTurnin, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,

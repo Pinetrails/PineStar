@@ -228,6 +228,35 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(ackStale.status, 200, 'POST /api/summon/ack with an unknown run -> 200 no-op');
     const ackBadJson = await fetch(B + '/api/summon/ack', { method: 'POST', headers: { 'X-StarNet-Token': apiToken }, body: '{not json' });
     A.eq(ackBadJson.status, 400, 'POST /api/summon/ack with malformed JSON -> 400');
+
+    // ---- memory observability + new-hero reset: the declined reject-list GET, the undo-a-discard restore, and the
+    //      server-side memory wipe are all token-gated, agent-validated, and wired through the real router. ----
+    const declNoTok = await fetch(B + '/api/memory/declined?agent=agent');
+    A.eq(declNoTok.status, 403, 'GET /api/memory/declined WITHOUT a token -> 403 (gated data route)');
+    const decl = await j('GET', '/api/memory/declined?agent=agent');
+    A.eq(decl.status, 200, 'GET /api/memory/declined (with token) -> 200');
+    A.ok(Array.isArray(decl.body.declined), 'declined is an array (empty for a fresh agent)');
+    const declBadAgent = await j('GET', '/api/memory/declined?agent=' + encodeURIComponent('../evil'));
+    A.eq(declBadAgent.status, 403, 'a path-traversal agent id on the declined route -> 403');
+
+    const restoreNoTok = await fetch(B + '/api/memory/declined/restore', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ agent: 'agent', text: 'x' }) });
+    A.eq(restoreNoTok.status, 403, 'POST /api/memory/declined/restore WITHOUT a token -> 403');
+    const restoreNoText = await j('POST', '/api/memory/declined/restore', { agent: 'agent' });
+    A.eq(restoreNoText.status, 400, 'restore without text -> 400');
+    const restoreMiss = await j('POST', '/api/memory/declined/restore', { agent: 'agent', text: 'never declined' });
+    A.eq(restoreMiss.status, 200, 'restore of an absent belief -> 200 (no-op)');
+    A.eq(restoreMiss.body.removed, false, 'restore reports removed=false when nothing matched');
+
+    const resetNoTok = await fetch(B + '/api/memory/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ agent: 'agent' }) });
+    A.eq(resetNoTok.status, 403, 'POST /api/memory/reset WITHOUT a token -> 403');
+    const resetBad = await j('POST', '/api/memory/reset', { agent: '../evil' });
+    A.eq(resetBad.status, 403, 'reset with a path-traversal agent id -> 403');
+    const reset = await j('POST', '/api/memory/reset', { agent: 'agent' });
+    A.eq(reset.status, 200, 'POST /api/memory/reset (with token) -> 200');
+    A.eq(reset.body.ok, true, 'reset reports ok');
+    A.eq(reset.body.agent, 'agent', 'reset echoes the agent it cleared');
+    const declAfter = await j('GET', '/api/memory/declined?agent=agent');
+    A.eq(JSON.stringify(declAfter.body.declined), '[]', 'the declined list reads empty after a reset');
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);

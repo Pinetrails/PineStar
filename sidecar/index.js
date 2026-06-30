@@ -68,7 +68,7 @@ const cronStore = require('./cron-store.js');              // pure CronJob lifec
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
-const { makeMemoryStore, resetAgentMemory } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
+const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -1193,6 +1193,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/reset') return handleMemoryReset(req, res);
+  if (req.method === 'POST' && req.url === '/api/memory/declined/restore') return handleDeclinedRestore(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/memory/declined') === 0) return serveDeclined(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/records') === 0) return serveMemoryRecords(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/pin') return handleMemoryPin(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/edit') return handleMemoryEdit(req, res);
@@ -3056,6 +3058,35 @@ function serveMemoryRecords(req, res) {
     const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r, nowMs))) : [];
     json(200, { agentId: agent, records });
   } catch (e) { json(200, { records: [] }); }
+}
+
+// GET /api/memory/declined?agent=<id> — the permanent reject-list: beliefs the Commander Discarded, which
+// reflection will never re-propose (§5.6 "discard = never again"). Read-only observability for the Memory Core
+// panel so the denylist is visible (and, via restore below, reversible). Redacted on the way out (defence-in-depth).
+function serveDeclined(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const raw = notebookStore.get('declined:' + agent);
+    const declined = Array.isArray(raw) ? raw.map(t => redact(String(t))) : [];
+    json(200, { agentId: agent, declined });
+  } catch (e) { json(200, { declined: [] }); }
+}
+
+// POST /api/memory/declined/restore { agent, text } — REMOVE one entry from the permanent reject-list so a belief
+// the Commander discarded by mistake can be proposed again (the undo-a-discard escape hatch). The user's click IS
+// the consent — they are editing their OWN visible store — so there is no permission prompt. { ok, removed }.
+async function handleDeclinedRestore(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || body.agent || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const text = String(body.text || '').trim();
+  if (!text) return json(400, { error: 'text required' });
+  const removed = await restoreDeclined(notebookStore, agentId, text);
+  json(200, { ok: true, removed });
 }
 
 // the three Memory Core mutations (pin / edit / forget). The user's click IS the consent (§5.6) — this is the
