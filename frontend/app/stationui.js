@@ -14,7 +14,7 @@ const StationUI = (() => {
   const sfx = n => { try { if (typeof SFX === 'object' && SFX[n]) SFX[n](); } catch (_) {} };
 
   const KEY = 'starnet.station.v1';
-  const THEMES = [['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['purple', '#b46bff'], ['white', '#e8f0e8']];
+  const THEMES = [['amber', '#ffaa33'], ['green', '#3dff70'], ['blue', '#46c8ff'], ['purple', '#b46bff'], ['red', '#ff4136'], ['white', '#e8f0e8']];
 
   let present = [];          // agent objects currently on the station
   const runningAgents = new Map();   // agentId -> live-run COUNT (concurrent streams can share an agentId, e.g. 'agent')
@@ -49,7 +49,7 @@ const StationUI = (() => {
   /* ---------- settings → DOM ---------- */
   function applySettings() {
     const s = store.settings;
-    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-white');
+    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white');
     document.body.classList.add('theme-' + s.theme);
     document.body.classList.toggle('no-scan', !s.scanlines);
     document.body.classList.toggle('no-flicker', !s.flicker);

@@ -69,6 +69,12 @@ body.theme-purple {
   --bg: #040208; --panel: rgba(10, 4, 20, 0.92); --panel2: #150a26; --text: #c8a9ee;
   --cam-grade: saturate(0.72) hue-rotate(8deg) contrast(1.08) brightness(0.88);
 }
+body.theme-red {
+  --ph: #ff4136; --ph-bright: #ffc9c2; --ph-dim: #b3271c; --ph-faint: #3a0c08;
+  --ink: #1f0603; --ph-glow: rgba(255, 65, 54, 0.45); --ph-glow2: rgba(255,65,54,0.14);
+  --bg: #080201; --panel: rgba(18, 4, 3, 0.92); --panel2: #1a0705; --text: #f0a89f;
+  --cam-grade: saturate(0.78) hue-rotate(-12deg) contrast(1.08) brightness(0.88);
+}
 body.theme-white {
   --ph: #e8f0e8; --ph-bright: #ffffff; --ph-dim: #97a397; --ph-faint: #2c322c;
   --ink: #0c0f0c; --ph-glow: rgba(232, 240, 232, 0.35); --ph-glow2: rgba(232,240,232,0.10);
