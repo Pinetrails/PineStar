@@ -178,6 +178,11 @@ const App = (() => {
     if (!a) return;
     agent = a;
     if (a.model && typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(a.model);
+    // #4: provider + reasoning-effort are PER-AGENT, not one global — restore them on focus so switching to an
+    // Anthropic agent right after a Codex one doesn't run the Anthropic model through the codex provider (and the
+    // dock label match). Only set when the agent actually carries them, so older agents keep today's behavior.
+    if (a.provider && typeof Harness !== 'undefined' && Harness.setProv) Harness.setProv(a.provider);
+    if (a.reasoningEffort && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(a.reasoningEffort);
     if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);   // runs carry the FOCUSED agent's identity
     const gtA = el('gt-agent'); if (gtA) gtA.textContent = a.name;
     const gtM = el('gt-model'); if (gtM) gtM.textContent = a.model;
@@ -205,9 +210,9 @@ const App = (() => {
     if (model) {
       if (typeof Harness !== 'undefined' && Harness.setProv) Harness.setProv(provider);
       if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(model);
-      agent.model = model;
+      agent.model = model; agent.provider = provider; agent.reasoningEffort = effort;   // #4: keep model+provider+effort TOGETHER on the agent
       const stored = agents.get(agent.id);
-      if (stored) stored.model = model;
+      if (stored) { stored.model = model; stored.provider = provider; stored.reasoningEffort = effort; }
       const gtM = el('gt-model'); if (gtM) gtM.textContent = model;
       syncChannels();
       pushRoster();
@@ -223,7 +228,7 @@ const App = (() => {
   }
   // the persisted shape of a crew member (systemPrompt is derived, recomposed on rehydrate).
   function serializeAgentLite(a) {
-    return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, personaId: a.personaId,
+    return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, provider: a.provider || null, reasoningEffort: a.reasoningEffort || null, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
              approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
              stats: a.stats || null, createdAt: a.createdAt };
@@ -235,6 +240,7 @@ const App = (() => {
     for (const s of savedAgents) {
       if (!s || !s.id || s.id === 'agent' || agents.has(s.id)) continue;   // hero already registered; skip dups (so the 'specialist' default below is always correct here — the orchestrator never routes through this path)
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
+                  provider: s.provider || (agent && agent.provider) || null, reasoningEffort: s.reasoningEffort || (agent && agent.reasoningEffort) || null,   // #4: per-agent provider+effort (fall back to the hero's)
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
                   approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
@@ -404,8 +410,8 @@ const App = (() => {
   let lastRosterPush = Promise.resolve();
   function pushRoster() {
     try {
-      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
-      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask') }));
+      const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask') }));   // #4: each agent's OWN provider, not one global
       lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
       return lastRosterPush;
     } catch (_) { return Promise.resolve(); }
@@ -996,6 +1002,8 @@ const App = (() => {
     // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
     // full access) drives the real consent broker, while the mission/context/orders are authored in the awakening.
     agent = { id: 'agent', name, role: 'orchestrator', color: pickedColor, skin: pickedSkin || DATA.DEFAULT_SKIN, model,
+              provider: (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter',   // #4: stamp the chosen provider+effort onto the hero so a later agent-switch can restore them
+              reasoningEffort: (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : 'medium',
               personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
               approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
     agentDocs(agent);                              // seed identity.md (overseer-aware) / purpose.md / operating-manual.md
@@ -1027,6 +1035,8 @@ const App = (() => {
     rehydrateRoster(saved.agents);                 // …then restore any summoned crew (older saves: no-op)
     if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);   // keep the provider with the agent (codex vs openrouter)
     if (saved.reasoningEffort && Harness.setReasoningEffort) Harness.setReasoningEffort(saved.reasoningEffort);
+    if (!agent.provider && saved.prov) agent.provider = saved.prov;   // #4: older hero saves stored provider only at the top level — stamp it onto the hero object so focusAgent restores it
+    if (!agent.reasoningEffort && saved.reasoningEffort) agent.reasoningEffort = saved.reasoningEffort;
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
