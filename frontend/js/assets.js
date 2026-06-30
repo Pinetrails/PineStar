@@ -167,21 +167,23 @@ const SPRITES = (() => {
     const sc = drawScaleFor(set);
     const dw = f.width * sc, dh = f.height * sc;
     const x = Math.round(b.px - dw / 2);
-    // anchor the FEET (not the transparent image bottom) to the floor line so the contact shadow
-    // sits right under them. `fp` is the scaled padding below the feet; GROUND_BITE sinks them a
-    // hair into the shadow for a grounded look instead of leaving every skin hovering above it.
-    const GROUND_BITE = 1;
+    // anchor the FEET (not the transparent image bottom) near the floor line so the contact shadow
+    // reads as sitting under them. `fp` is the scaled padding below the feet; GROUND_BITE lifts the
+    // feet a few px ABOVE the shadow so it shows just beneath them — flush (0/positive) looks sunk,
+    // and the old image-bottom anchor left every skin hovering well above it.
+    const GROUND_BITE = -3;
     const fp = getFootPad(set) * sc;
     const y = Math.round(b.py - dh + GROUND_BITE + bob + fp);
-    // soft shadow scaled to the body's footprint
-    const shw = Math.max(8, Math.round(dw * 0.38));
+    // soft shadow scaled to the body's footprint (kept narrower than the body so it reads as a
+    // tight contact pool under the feet, not a wide slab)
+    const shw = Math.max(6, Math.round(dw * 0.26));
     if (set === 'ultron') {
       // menacing red spill under the station's leader
       ctx.globalAlpha = 0.18 + 0.08 * Math.sin(nowMs / 400);
       ctx.fillStyle = '#ff4a3d';
       ctx.fillRect(Math.round(b.px) - (shw >> 1) - 2, Math.round(b.py) - 2, shw + 4, 4);
     }
-    ctx.globalAlpha = 0.30;
+    ctx.globalAlpha = 0.24;
     ctx.fillStyle = '#000';
     ctx.fillRect(Math.round(b.px) - (shw >> 1), Math.round(b.py) - 1, shw, 2);
     ctx.globalAlpha = 1;
