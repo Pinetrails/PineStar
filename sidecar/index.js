@@ -1598,7 +1598,7 @@ function parseCronAgentIdOr400(value) {
 function parseCronProviderOr400(value) {
   if (value == null || value === '') return null;
   const p = normalizeProviderId(value);
-  if (!p) { const e = new Error('provider must be openrouter or codex'); e.code = 400; throw e; }
+  if (!p) { const e = new Error('provider is not registered'); e.code = 400; throw e; }
   return p;
 }
 

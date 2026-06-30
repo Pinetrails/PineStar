@@ -989,6 +989,8 @@ const StationUI = (() => {
     { id: 'openrouter',    name: 'OPENROUTER',        endpoint: 'openrouter.ai/api/v1',      blurb: 'one key · 300+ models',  live: true },
     { id: 'codex',         name: 'CHATGPT (CODEX)',   endpoint: 'OAuth · ChatGPT subscription', blurb: 'sign-in, no API key',  live: true },
     { id: 'openai',        name: 'OPENAI API',        endpoint: 'api.openai.com/v1',          blurb: 'OpenAI-compatible', live: true },
+    { id: 'anthropic',     name: 'ANTHROPIC',         endpoint: 'api.anthropic.com/v1',       blurb: 'Claude native API', live: true },
+    { id: 'gemini',        name: 'GEMINI',            endpoint: 'generativelanguage.googleapis.com/v1beta', blurb: 'Google native API', live: true },
     { id: 'ollama',        name: 'OLLAMA',            endpoint: '127.0.0.1:11434/v1',         blurb: 'local models', live: true },
     { id: 'custom',        name: 'CUSTOM',            endpoint: 'any /v1 base URL',           blurb: 'bring your endpoint', live: true }
   ];
@@ -1000,7 +1002,7 @@ const StationUI = (() => {
   // mask a secret to a provider-recognisable prefix + last 4 — the middle is NEVER emitted.
   function maskKey(k) {
     k = String(k || ''); if (!k) return '';
-    const m = k.match(/^(sk-or-v1-|sk-or-|sk-proj-|sk-ant-|sk-)/i);
+    const m = k.match(/^(sk-or-v1-|sk-or-|sk-proj-|sk-ant-|AIza|sk-)/i);
     const head = m ? m[1] : k.slice(0, 4);
     // only append a last-4 tail when it can't overlap the (non-secret) prefix we already show
     const tail = k.length > head.length + 4 ? k.slice(-4) : '';

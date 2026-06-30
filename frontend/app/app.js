@@ -199,13 +199,15 @@ const App = (() => {
   }
   function providerLabel(provider) {
     provider = normalizeProviderId(provider);
-    const map = { codex: 'GPT', openrouter: 'OPENROUTER', openai: 'OPENAI', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    const map = { codex: 'GPT', openrouter: 'OPENROUTER', openai: 'OPENAI', anthropic: 'ANTHROPIC', gemini: 'GEMINI', ollama: 'OLLAMA', custom: 'CUSTOM' };
     return map[provider] || String(provider || 'openrouter').toUpperCase();
   }
   function normalizeProviderId(provider) {
     const p = String(provider || 'openrouter').trim().toLowerCase();
     if (p === 'codex' || p === 'openai-codex') return 'codex';
     if (p === 'openai' || p === 'openai-api') return 'openai';
+    if (p === 'anthropic' || p === 'claude') return 'anthropic';
+    if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
@@ -225,14 +227,15 @@ const App = (() => {
     const p = normalizeProviderId(provider);
     if (configured) return 'stored locally - leave blank to keep';
     if (p === 'openai') return 'sk-...  -  platform.openai.com/api-keys';
+    if (p === 'anthropic') return 'sk-ant-...  -  console.anthropic.com/settings/keys';
+    if (p === 'gemini') return 'AIza...  -  aistudio.google.com/app/apikey';
     if (p === 'custom') return 'optional API key for this endpoint';
     return 'sk-or-...  -  openrouter.ai/keys';
   }
   function applyQuickModel(sel) {
     if (!agent || !sel) return;
     const model = String(sel.model || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '') || '').trim();
-    const provider = normalizeProviderId(sel.provider) === 'codex' ? 'codex'
-      : ((typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter');
+    const provider = normalizeProviderId(sel.provider || ((typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter'));
     const effort = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort) ? Harness.normalizeReasoningEffort(sel.effort) : String(sel.effort || 'medium');
     if (effort && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(effort);
     if (model) {
@@ -507,6 +510,10 @@ const App = (() => {
       // so the screen stays usable — you can always just type the slug you use.
       const FALLBACK = p === 'openai'
         ? ['gpt-5.5', 'gpt-5.4', 'gpt-4.1']
+        : p === 'anthropic'
+          ? ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest']
+          : p === 'gemini'
+            ? ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash']
         : p === 'ollama'
           ? ['llama3.1', 'qwen2.5-coder', 'mistral']
           : ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro'];
@@ -523,12 +530,26 @@ const App = (() => {
      #in-model, which the live catalog (updateHint → priceOf) then prices or flags. The slugs match the
      curated FALLBACK list loadModels() already ships, so nothing new is fabricated. Codex hides them —
      its menu is discovered live per-account (loadCodexModels), so a static list there could mislead. */
-  const MODEL_PICKS = Object.freeze([
-    { label: 'Opus 4.8', id: 'anthropic/claude-opus-4.8', tag: 'deepest' },
-    { label: 'Sonnet 4.6', id: 'anthropic/claude-sonnet-4.6', tag: 'balanced' },
-    { label: 'GPT-5', id: 'openai/gpt-5', tag: '' },
-    { label: 'Gemini 2.5 Pro', id: 'google/gemini-2.5-pro', tag: '' }
-  ]);
+  const MODEL_PICKS = Object.freeze({
+    openrouter: [
+      { label: 'Opus 4.8', id: 'anthropic/claude-opus-4.8', tag: 'deepest' },
+      { label: 'Sonnet 4.6', id: 'anthropic/claude-sonnet-4.6', tag: 'balanced' },
+      { label: 'GPT-5', id: 'openai/gpt-5', tag: '' },
+      { label: 'Gemini 2.5 Pro', id: 'google/gemini-2.5-pro', tag: '' }
+    ],
+    openai: [
+      { label: 'GPT-5.5', id: 'gpt-5.5', tag: 'deepest' },
+      { label: 'GPT-5.4', id: 'gpt-5.4', tag: '' }
+    ],
+    anthropic: [
+      { label: 'Sonnet 4.5', id: 'claude-sonnet-4-5', tag: 'balanced' },
+      { label: 'Opus 4.1', id: 'claude-opus-4-1', tag: 'deepest' }
+    ],
+    gemini: [
+      { label: 'Gemini 2.5 Pro', id: 'gemini-2.5-pro', tag: 'deepest' },
+      { label: 'Gemini 2.5 Flash', id: 'gemini-2.5-flash', tag: 'fast' }
+    ]
+  });
   /* ---------- PHOSPHOR tint picker (the console-wide theme, surfaced at commission) ----------
      The station already ships four CRT phosphors (style.css body.theme-*) persisted by StationUI. We
      surface that choice up-front so the Commander sets the whole station's colour the moment they build
@@ -601,7 +622,7 @@ const App = (() => {
     const wrap = el('model-picks'); if (!wrap) return;
     wrap.innerHTML = '';
     if (pickedProvider === 'codex') return;   // discovered live; no static menu
-    MODEL_PICKS.forEach(m => {
+    (MODEL_PICKS[pickedProvider] || []).forEach(m => {
       const b = document.createElement('button'); b.type = 'button';
       b.className = 'mp-chip'; b.dataset.id = m.id; b.title = m.id;
       b.appendChild(document.createTextNode(m.label));

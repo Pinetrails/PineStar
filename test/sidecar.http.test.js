@@ -139,6 +139,8 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(providers.status, 200, 'GET /api/providers -> 200');
     A.ok(Array.isArray(providers.body.providers), 'providers route returns a list');
     A.ok(providers.body.providers.some(p => p.id === 'openrouter'), 'providers include openrouter');
+    A.ok(providers.body.providers.some(p => p.id === 'anthropic'), 'providers include anthropic');
+    A.ok(providers.body.providers.some(p => p.id === 'gemini'), 'providers include gemini');
     A.ok(providers.body.providers.some(p => p.id === 'custom'), 'providers include custom OpenAI-compatible');
     const models = await j('GET', '/api/models/openrouter');
     A.eq(models.status, 200, 'GET /api/models/openrouter -> 200');
@@ -154,6 +156,16 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(openAiAck.provider, 'openai', 'provider key ack names the configured provider');
     A.eq(openAiAck.configured, true, 'provider key ack reports configured');
     A.ok(JSON.stringify(openAiAck).indexOf('sk-provider-http-test-secret') < 0, 'provider key ack never echoes the secret');
+
+    const pushAnthropic = await fetch(B + '/api/key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'anthropic', key: 'sk-ant-provider-http-test-secret' })
+    });
+    A.eq(pushAnthropic.status, 200, 'POST /api/key can push an Anthropic provider key with the IPC token');
+    const anthropicAck = await pushAnthropic.json();
+    A.eq(anthropicAck.provider, 'anthropic', 'Anthropic provider key ack names the configured provider');
+    A.eq(anthropicAck.configured, true, 'Anthropic provider key ack reports configured');
 
     const pushCustomBase = await fetch(B + '/api/key', {
       method: 'POST',

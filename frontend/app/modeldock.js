@@ -4,6 +4,8 @@
 const ModelDock = (() => {
   const el = id => document.getElementById(id);
   const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
+  const ANTHROPIC_MODELS = ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest'];
+  const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
   const OPENROUTER_FALLBACK = [
     'anthropic/claude-sonnet-4.6',
     'anthropic/claude-opus-4.8',
@@ -36,6 +38,7 @@ const ModelDock = (() => {
     qwen: 'QWEN',
     cohere: 'COHERE'
   };
+  const PROVIDER_RANK = { codex: 0, openrouter: 1, openai: 2, anthropic: 3, gemini: 4, ollama: 5, custom: 6 };
 
   let opts = {};
   let wired = false;
@@ -50,13 +53,15 @@ const ModelDock = (() => {
   }
   function providerLabel(p) {
     p = normalizeProvider(p);
-    const map = { codex: 'GPT / CODEX', openrouter: 'OPENROUTER', openai: 'OPENAI API', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    const map = { codex: 'GPT / CODEX', openrouter: 'OPENROUTER', openai: 'OPENAI API', anthropic: 'ANTHROPIC', gemini: 'GEMINI', ollama: 'OLLAMA', custom: 'CUSTOM' };
     return map[p] || String(p || 'openrouter').toUpperCase();
   }
   function normalizeProvider(p) {
     p = String(p || 'openrouter').trim().toLowerCase();
     if (p === 'codex' || p === 'openai-codex') return 'codex';
     if (p === 'openai' || p === 'openai-api') return 'openai';
+    if (p === 'anthropic' || p === 'claude') return 'anthropic';
+    if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
@@ -252,7 +257,9 @@ const ModelDock = (() => {
         if (!list.length) list = (await Harness.listModels(p)).map(m => asModel(m, p));
       }
     } catch (_) {}
-    if (!list.length && (p === 'codex' || p === 'openrouter')) list = (p === 'codex' ? CODEX_MODELS : OPENROUTER_FALLBACK).map(m => asModel(m, p));
+    if (!list.length && (p === 'codex' || p === 'openrouter' || p === 'anthropic' || p === 'gemini')) {
+      list = (p === 'codex' ? CODEX_MODELS : p === 'anthropic' ? ANTHROPIC_MODELS : p === 'gemini' ? GEMINI_MODELS : OPENROUTER_FALLBACK).map(m => asModel(m, p));
+    }
     list.sort((a, b) => {
       if (p === 'openrouter') {
         const ga = openRouterGroupName(a), gb = openRouterGroupName(b);
@@ -267,14 +274,14 @@ const ModelDock = (() => {
   async function fetchModels(force) {
     loading = true;
     renderList();
-    const ids = ['codex', 'openrouter', 'openai', 'ollama', 'custom'];
+    const ids = ['codex', 'openrouter', 'openai', 'anthropic', 'gemini', 'ollama', 'custom'];
     const active = provider();
     if (ids.indexOf(active) < 0) ids.unshift(active);
     const parts = await Promise.all(ids.map(p => fetchProviderModels(p, force)));
     models = mergeCurrent(parts.reduce((a, b) => a.concat(b), []));
     models.sort((a, b) => {
       const pa = normalizeProvider(a.provider), pb = normalizeProvider(b.provider);
-      if (pa !== pb) return (pa === 'codex' ? 0 : pa === 'openrouter' ? 1 : 2) - (pb === 'codex' ? 0 : pb === 'openrouter' ? 1 : 2);
+      if (pa !== pb) return ((PROVIDER_RANK[pa] == null ? 20 : PROVIDER_RANK[pa]) - (PROVIDER_RANK[pb] == null ? 20 : PROVIDER_RANK[pb]));
       if (pa === 'openrouter') {
         const ga = openRouterGroupName(a), gb = openRouterGroupName(b);
         if (ga !== gb) return ga.localeCompare(gb);

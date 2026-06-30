@@ -23,7 +23,7 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 
 const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
 const KEYCHAIN_ACCOUNT: &str = "openrouter";
-const KEYCHAIN_PROVIDERS: [&str; 3] = ["openrouter", "openai", "custom"];
+const KEYCHAIN_PROVIDERS: [&str; 5] = ["openrouter", "openai", "anthropic", "gemini", "custom"];
 
 /// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
 /// only with the sidecar), the project root, and the live child.
@@ -377,6 +377,8 @@ fn normalize_provider(provider: &str) -> &'static str {
     match provider.trim().to_ascii_lowercase().as_str() {
         "codex" | "openai-codex" => "codex",
         "openai" | "openai-api" => "openai",
+        "anthropic" | "claude" => "anthropic",
+        "gemini" | "google" | "google-ai" | "google-gemini" => "gemini",
         "ollama" | "ollama-local" => "ollama",
         "custom" | "openai-compatible" | "local" | "vllm" | "lmstudio" => "custom",
         _ => "openrouter",
@@ -505,6 +507,12 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     }
     if let Some(key) = read_key_for("openai") {
         cmd.env("SKYNET_OPENAI_API_KEY", key);
+    }
+    if let Some(key) = read_key_for("anthropic") {
+        cmd.env("SKYNET_ANTHROPIC_API_KEY", key);
+    }
+    if let Some(key) = read_key_for("gemini") {
+        cmd.env("SKYNET_GEMINI_API_KEY", key);
     }
     if let Some(key) = read_key_for("custom") {
         cmd.env("SKYNET_CUSTOM_OPENAI_KEY", key);

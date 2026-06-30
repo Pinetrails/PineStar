@@ -9,14 +9,16 @@
       require('./openrouter.js'),
       require('./codex.js'),
       require('./openai-compatible.js'),
+      require('./anthropic.js'),
+      require('./gemini.js'),
       require('./registry.js')
     );
   } else {
     root.SK = root.SK || {};
     root.SK.providers = root.SK.providers || {};
-    root.SK.providers.factory = factory(root.SK.providers.openrouter, root.SK.providers.codex, root.SK.providers.openaiCompatible, root.SK.providers.registry);
+    root.SK.providers.factory = factory(root.SK.providers.openrouter, root.SK.providers.codex, root.SK.providers.openaiCompatible, root.SK.providers.anthropic, root.SK.providers.gemini, root.SK.providers.registry);
   }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (openrouter, codex, openaiCompatible, registry) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (openrouter, codex, openaiCompatible, anthropic, gemini, registry) {
   'use strict';
 
   const PROVIDER_IDS = registry.providerIds();
@@ -53,6 +55,22 @@
         includeUsage: opts.includeUsage,
         defaultContext: opts.defaultContext,
         headers: opts.headers
+      });
+    }
+    if (profile.adapter === 'anthropic') {
+      return anthropic.makeAnthropicProvider({
+        fetch: opts.fetch,
+        key: opts.key,
+        baseUrl: opts.baseUrl || profile.baseUrl,
+        reasoningEffort: opts.reasoningEffort
+      });
+    }
+    if (profile.adapter === 'gemini') {
+      return gemini.makeGeminiProvider({
+        fetch: opts.fetch,
+        key: opts.key,
+        baseUrl: opts.baseUrl || profile.baseUrl,
+        reasoningEffort: opts.reasoningEffort
       });
     }
     throw new Error('provider adapter is not wired: ' + profile.adapter);
