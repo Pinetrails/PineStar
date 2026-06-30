@@ -28,7 +28,7 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true }; }
+  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true, keepComputerAwake: false }; }
   function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [] }; }
   function load() {
     try {
@@ -55,6 +55,15 @@ const StationUI = (() => {
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
     if (typeof MUSIC === 'object') MUSIC.on = (s.music !== false);   // default-on adaptive score; arms on first gesture
+    syncKeepAwake(!!s.keepComputerAwake);
+  }
+
+  function syncKeepAwake(enabled, opts) {
+    if (typeof KeepAwake === 'undefined' || !KeepAwake.apply) return Promise.resolve(null);
+    return KeepAwake.apply(!!enabled, opts || {}).catch(err => {
+      if (enabled) notify('Keep Computer Awake failed: ' + ((err && err.message) || err), 'warn');
+      return (err && err.status) || null;
+    });
   }
 
   /* ---------- time ---------- */
@@ -1095,6 +1104,8 @@ const StationUI = (() => {
   /* ============== SETTINGS — connections + real CRT / theme / audio toggles ============== */
   function buildSettings(body) {
     const s = store.settings;
+    const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
+    const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
     body.innerHTML =
       '<h4 class="ms-h">PROVIDERS</h4>' +
       '<div class="prov-list">' + providersHtml() + '</div>' +
@@ -1118,6 +1129,8 @@ const StationUI = (() => {
         '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
         '<button class="set-theme" data-reach="reach" title="can send, publish, or contact external services">REACH-OUT</button>' +
       '</div>' +
+      '<h4 class="ms-h">SCHEDULED TASKS</h4>' +
+      '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">- ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
       '</div>' +
@@ -1138,6 +1151,21 @@ const StationUI = (() => {
     }));
     const bind = (id, key) => body.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
     bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
+    const awakeToggle = body.querySelector('#set-awake');
+    if (awakeToggle) awakeToggle.addEventListener('change', ev => {
+      const desired = !!ev.target.checked;
+      s.keepComputerAwake = desired;
+      save();
+      sfx('click');
+      syncKeepAwake(desired, { force: true }).then(status => {
+        if (!desired || !status || status.enabled) return;
+        s.keepComputerAwake = false;
+        save();
+        ev.target.checked = false;
+        notify(status.message || 'Keep Computer Awake could not be enabled on this desktop.', 'warn');
+        sfx('bad');
+      });
+    });
     // AUTONOMY dial — retune Initiative / Reach in place (AutonomyStore persists; no rerender so it won't wipe an
     // open key editor). The describe() line repaints live so the posture is always honestly spelled out.
     if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {

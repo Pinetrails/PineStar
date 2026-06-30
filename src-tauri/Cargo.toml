@@ -18,6 +18,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Power", "Win32_System_Threading"] }
+
 # A small, fast desktop binary — strip symbols and optimize for size in release.
 [profile.release]
 panic = "abort"

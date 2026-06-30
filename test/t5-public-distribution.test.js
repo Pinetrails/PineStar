@@ -11,6 +11,7 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const script = path.join(ROOT, 'scripts', 't5-public-distribution.mjs');
 const lint = path.join(ROOT, 'scripts', 'lint-evidence-secrets.mjs');
+const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8')).version;
 
 function cleanEnv(extra) {
   const env = Object.assign({}, process.env);
@@ -49,7 +50,7 @@ function proof(hash, bytes, version, overrides) {
     },
     hosting: {
       latestJsonUrl: 'https://updates.starnet.app/desktop/latest.json',
-      installerUrl: 'https://updates.starnet.app/desktop/StarNet_0.1.0_x64-setup.exe',
+      installerUrl: 'https://updates.starnet.app/desktop/StarNet_' + APP_VERSION + '_x64-setup.exe',
       latestStatus: 200,
       installerStatus: 200,
       manifestInstallerUrlMatches: true,
@@ -70,20 +71,20 @@ function proof(hash, bytes, version, overrides) {
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 't5-public-distribution-'));
 try {
-  const installer = path.join(tmp, 'StarNet_0.1.0_x64-setup.exe');
+  const installer = path.join(tmp, 'StarNet_' + APP_VERSION + '_x64-setup.exe');
   fs.writeFileSync(installer, 'fake installer');
   fs.writeFileSync(installer + '.sig', 'fake-updater-signature');
   const hash = hashFile(installer);
   const bytes = fs.statSync(installer).size;
   const manifest = path.join(tmp, 'latest.json');
   writeJson(manifest, {
-    version: '0.1.0',
+    version: APP_VERSION,
     notes: 'test',
     pub_date: '2026-06-28T00:00:00.000Z',
     platforms: {
       'windows-x86_64': {
         signature: 'fake-updater-signature',
-        url: 'https://updates.starnet.app/desktop/StarNet_0.1.0_x64-setup.exe'
+        url: 'https://updates.starnet.app/desktop/StarNet_' + APP_VERSION + '_x64-setup.exe'
       }
     }
   }, true);
@@ -112,7 +113,7 @@ try {
     fs.utimesSync(installer + '.sig', new Date('2026-06-28T00:00:00.000Z'), new Date('2026-06-28T00:00:00.000Z'));
     fs.utimesSync(installer, new Date('2026-06-29T00:00:00.000Z'), new Date('2026-06-29T00:00:00.000Z'));
     const goodProof = path.join(tmp, 'good-proof-for-stale-sig.json');
-    writeJson(goodProof, proof(hash, bytes, '0.1.0'));
+    writeJson(goodProof, proof(hash, bytes, APP_VERSION));
     const out = path.join(tmp, 'stale-sig-out');
     const res = run(['--distribution-evidence', goodProof], Object.assign({}, baseEnv, {
       STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out,
@@ -144,7 +145,7 @@ try {
   {
     writeJson(t1, status('green', 'publicReleaseReady', false));
     const goodProof = path.join(tmp, 'good-proof-for-blocked-t1.json');
-    writeJson(goodProof, proof(hash, bytes, '0.1.0'));
+    writeJson(goodProof, proof(hash, bytes, APP_VERSION));
     const out = path.join(tmp, 'blocked-t1-out');
     const res = run(['--distribution-evidence', goodProof], Object.assign({}, baseEnv, {
       STARNET_T5_PUBLIC_DISTRIBUTION_DIR: out,
@@ -159,7 +160,7 @@ try {
 
   {
     const badProof = path.join(tmp, 'bad-proof.json');
-    writeJson(badProof, proof(hash, bytes, '0.1.0', doc => {
+    writeJson(badProof, proof(hash, bytes, APP_VERSION, doc => {
       doc.hosting.latestStatus = 404;
     }));
     const out = path.join(tmp, 'red-out');
@@ -175,7 +176,7 @@ try {
 
   {
     const goodProof = path.join(tmp, 'good-proof.json');
-    writeJson(goodProof, proof(hash, bytes, '0.1.0'), true);
+    writeJson(goodProof, proof(hash, bytes, APP_VERSION), true);
     const out = path.join(tmp, 'green-out');
     const latest = path.join(tmp, 'green-latest');
     const res = run(['--loop=2', '--distribution-evidence=' + goodProof], Object.assign({}, baseEnv, {
