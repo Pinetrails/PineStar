@@ -129,4 +129,24 @@ A.eq(Autopilot.fileBody({ title: 'Hi', body: 'line one' }), '# Hi\n\nline one\n'
 A.eq(Autopilot.fileBody({ body: '  x  ' }), '# Draft\n\nx\n', 'fileBody defaults the title + trims');
 A.eq(Autopilot.digestLines([{ title: 'W', wrote: { path: 'drafts/w.md' } }]), ['✎ W'], 'digestLines marks a WRITTEN deliverable distinctly (✎)');
 
+/* ---------- B3: digest summary (files written + undo target) ---------- */
+{
+  const batch = [
+    { title: 'Beta checklist', at: 10, wrote: { path: 'drafts/beta-checklist.md', snapshot: 'S1' } },
+    { title: 'Some notes', at: 20 },                                                   // a desk draft (no file)
+    { title: 'Release plan', at: 30, wrote: { path: 'drafts/release-plan.md', snapshot: 'S2' } }
+  ];
+  const sum = Autopilot.digestSummary(batch);
+  A.eq([sum.wroteCount, sum.draftCount], [2, 1], 'digestSummary splits written files from desk drafts');
+  A.eq(sum.wrote.map(w => w.path), ['drafts/beta-checklist.md', 'drafts/release-plan.md'], 'written entries carry their paths');
+  A.eq(sum.undoSnapshot, 'S1', 'undoSnapshot is the EARLIEST write pre-snapshot (reverts ALL away-writes)');
+  A.eq(sum.drafted.map(d => d.title), ['Some notes'], 'drafts (no file) are listed separately');
+}
+A.eq(Autopilot.digestSummary([]).undoSnapshot, null, 'no writes → no undo target');
+A.eq(Autopilot.digestSummary([{ title: 'x', wrote: { path: 'p' } }]).undoSnapshot, null, 'a write with no snapshot id yields no undo target (honest)');
+A.eq(Autopilot.digestHeadline({ wroteCount: 2, draftCount: 1 }), '2 files written + 1 draft on your desk', 'headline reads files + drafts');
+A.eq(Autopilot.digestHeadline({ wroteCount: 1, draftCount: 0 }), '1 file written', 'headline singular file, no drafts');
+A.eq(Autopilot.digestHeadline({ wroteCount: 0, draftCount: 1 }), '1 draft on your desk', 'headline draft-only');
+A.eq(Autopilot.digestHeadline({}), 'nothing to report', 'empty headline is honest');
+
 A.report('autopilot.test');

@@ -1245,11 +1245,26 @@ const App = (() => {
       // the WELCOME-BACK digest (A3): on the first interaction after a real absence, one gold beat truthfully
       // recapping what the station did while away — composed from the draft log, no new events.
       digest: (info) => {
-        const k = info.drafts.length, mins = Math.max(1, Math.round(info.awayMs / 60000)), plural = k === 1 ? 'draft' : 'drafts';
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + k + ' ' + plural + ' on your desk', 'gold');
+        const mins = Math.max(1, Math.round(info.awayMs / 60000));
+        // B3 — report what was WRITTEN vs drafted, and offer a one-tap UNDO. The headline + the ✎/▸ lines compose
+        // ENTIRELY from the draft log (no new events). Undo = restore the EARLIEST write's pre-snapshot, which rolls
+        // the WHOLE workspace back to before any away-write — so the copy says exactly that (honest, not per-file).
+        const sum = (typeof Autopilot !== 'undefined' && Autopilot.digestSummary) ? Autopilot.digestSummary(info.drafts) : { wroteCount: 0, draftCount: (info.drafts || []).length, undoSnapshot: null };
+        const headline = (typeof Autopilot !== 'undefined' && Autopilot.digestHeadline) ? Autopilot.digestHeadline(sum) : ((info.drafts || []).length + ' on your desk');
+        const lines = (info.lines && info.lines.length) ? '\n' + info.lines.join('\n') : '';
+        const canUndo = !!(sum.wroteCount && sum.undoSnapshot);
+        const restore = (snap) => fetch('/api/checkpoint/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: (agent && agent.id) || 'agent', snapshotId: snap }) }).then(r => r.ok).catch(() => false);
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + headline, 'gold');
         if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
-          '✦ welcome back — while you were away (' + mins + 'm) i left ' + k + ' ' + plural + ' on your desk:\n' + info.lines.join('\n'),
-          [{ label: 'got it', value: 'ok', skip: true }], () => {});
+          '✦ welcome back — while you were away (' + mins + 'm): ' + headline + lines + (canUndo ? '\n(undo rolls your workspace back to before i wrote them)' : ''),
+          canUndo ? [{ label: 'got it', value: 'ok', skip: true }, { label: 'undo the writes', value: 'undo' }] : [{ label: 'got it', value: 'ok', skip: true }],
+          item => {
+            if (!item || item.value !== 'undo' || !canUndo) return;
+            restore(sum.undoSnapshot).then(ok => {
+              if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? 'rolled back the files i wrote while you were away' : 'could not roll back — the snapshot is gone', ok ? 'gold' : 'warn');
+              if (ok && typeof World !== 'undefined' && World.say) World.say('✦ rolled back my away-writes');
+            });
+          });
       }
     });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening

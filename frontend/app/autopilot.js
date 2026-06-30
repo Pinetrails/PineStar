@@ -366,11 +366,37 @@
     return '# ' + title + '\n\n' + body + '\n';
   }
 
+  // ── B3: the "while you were away" digest — report what was WRITTEN + a one-tap undo target ───────────────────
+  // split a batch of away-deliverables into the files it actually WROTE vs the desk DRAFTS, and compute the single
+  // honest rollback target: the snapshot taken BEFORE the FIRST write. Restoring it reverts EVERY away-write (each
+  // write snapshots the pre-write state, so the earliest one is the floor). Pure (no clock/rng) — composed entirely
+  // from the draft log, no new events (legibility law). Drafts are chronological (pushed in order), so the first
+  // entry carrying a `wrote` is the earliest write.
+  function digestSummary(drafts) {
+    const list = (Array.isArray(drafts) ? drafts : []).filter(d => d && d.title);
+    const wrote = list.filter(d => d.wrote && d.wrote.path);
+    const drafted = list.filter(d => !(d.wrote && d.wrote.path));
+    let undoSnapshot = null;
+    for (const d of wrote) { if (d.wrote.snapshot) { undoSnapshot = d.wrote.snapshot; break; } }   // earliest write's pre-snapshot
+    return {
+      wrote: wrote.map(d => ({ title: String(d.title).trim(), path: d.wrote.path, snapshot: d.wrote.snapshot || null, at: d.at })),
+      drafted: drafted.map(d => ({ title: String(d.title).trim(), at: d.at })),
+      wroteCount: wrote.length, draftCount: drafted.length, undoSnapshot: undoSnapshot
+    };
+  }
+  // one honest headline line for the welcome-back beat (files written + drafts left). Pure.
+  function digestHeadline(summary) {
+    const s = summary || {}; const parts = [];
+    if (s.wroteCount) parts.push(s.wroteCount + (s.wroteCount === 1 ? ' file written' : ' files written'));
+    if (s.draftCount) parts.push(s.draftCount + (s.draftCount === 1 ? ' draft' : ' drafts') + ' on your desk');
+    return parts.length ? parts.join(' + ') : 'nothing to report';
+  }
+
   return {
     idleFor, readiness, decide, newestStamp,
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
-    buildCritiqueDirective, parseCritique, digestLines,
+    buildCritiqueDirective, parseCritique, digestLines, digestSummary, digestHeadline,
     writePath, canWrite, fileBody,
     DEFAULT_IDLE_MS, DEFAULT_TICK_MS, REQUIRE_DIM, WARM_MIN, HOT_MIN, STALE_MS,
     ARCHETYPES, CANDIDATE_MAX, MIN_ACT_SCORE, CONFIDENCE_RANK

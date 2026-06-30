@@ -88,6 +88,9 @@ A.ok(/present:\s*\(d\)\s*=>/.test(appSrc), 'app.js wires the desk delivery (pres
 A.ok(/canWriteFiles:\s*\(\)\s*=>/.test(appSrc), 'app.js wires the cabinet:write consent check (B2 write gate)');
 A.ok(/hasCabinet:\s*\(\)\s*=>/.test(appSrc), 'app.js wires the placed-cabinet capability check (object=capability)');
 A.ok(/\/api\/autonomy\/write/.test(appSrc), 'app.js persists the deliverable via the consent-gated /api/autonomy/write endpoint');
+A.ok(/Autopilot\.digestSummary\(/.test(appSrc), 'B3: the welcome-back digest summarizes files written vs drafted (digestSummary)');
+A.ok(/\/api\/checkpoint\/restore/.test(appSrc), 'B3: the digest offers a one-tap UNDO via the checkpoint restore endpoint');
+A.ok(/value:\s*'undo'/.test(appSrc), 'B3: the undo action is wired into the welcome-back beat');
 
 /* ---------- A2: the ACT branch — anti-slop pipeline → draft on the desk ---------- */
 (async () => {
