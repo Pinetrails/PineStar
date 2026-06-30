@@ -34,12 +34,17 @@
   function turnInFeedbackQuality(reason) {
     if (reason === 'kept' || reason === 'edited') return 1;
     if (reason === 'discarded') return 0;
+    // The post-run "rate the work" beat (chat.js) rides this SAME mint path with a synthetic id, called
+    // directly into XpStore (never the bus / never the sidecar memory store — so memory trust is untouched).
+    if (reason === 'work_great') return 1;     // 👍 nailed it — full positive: mints size-weighted XP + confidence up
+    if (reason === 'work_ok') return 0.5;      // 👌 close — a neutral satisfaction sample only: never mints XP
+    if (reason === 'work_miss') return 0;      // 👎 missed — confidence down, no XP, and NO penalty
     return null;
   }
 
   // ---- XP + satisfaction per event ----
-  // XP comes ONLY from explicit positive user turn-in feedback. Operational events and notebook/tool memory
-  // ratings still feed their own systems, but a completed run, tool result, or delivery never levels an agent.
+  // XP comes ONLY from explicit positive user feedback — a turn-in Keep/Edit OR a 👍 "rate the work" verdict
+  // (both ride memory.feedback). Operational events still feed counters but never level an agent on their own.
   // returns { xp, quality } : xp is positive-only (failures/negative feedback never subtract);
   // quality in [0,1] feeds satisfaction confidence, or null when the event carries no user judgment.
   function scoreEvent(name, p) {
@@ -64,7 +69,9 @@
         if (quality === null) return { xp: 0, quality: null };
         const d = (typeof p.delta === 'number' && Number.isFinite(p.delta)) ? p.delta : 0;
         const eff = Math.min(Math.max(d, 0), 10);
-        return { xp: quality > 0 && d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA)) : 0, quality };
+        // ONLY a full positive (quality 1 = kept/edited/work_great) mints; a 👌 work_ok (0.5) is a satisfaction
+        // sample with no XP. Gate on >=1 so the neutral middle rung never levels an agent.
+        return { xp: quality >= 1 && d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA)) : 0, quality };
       }
       case 'workitem.delivered': return { xp: 0, quality: null };
       case 'channel.delivery':   return { xp: 0, quality: null };

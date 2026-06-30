@@ -373,6 +373,10 @@ input::placeholder { color: var(--ph-dim); opacity: 1; }
 }
 .turnin-queue[hidden] { display: none; }
 .turnin-slot { display: block; min-width: 0; }
+/* "rate the work" — the primary leveling beat: a gold label + the shared consent buttons (reused styling). */
+.turnin-rate { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 5px 0 9px; }
+.work-rate-label { color: var(--gold); font-size: 12px; letter-spacing: .4px; opacity: .95; }
+.turnin-rate .consent-btns, .cmsg.work-rate .consent-btns { margin-top: 0; }
 .turnin-item {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 7px 8px;
   margin-top: 1px; padding: 8px 9px; border-radius: 3px;

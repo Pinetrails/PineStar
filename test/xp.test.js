@@ -63,6 +63,22 @@ A.eq(Xp.applyEvent(Xp.fresh(), discard()).awards.xp, 0, 'negative feedback award
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'kept')).awards.xp, 50, 'a huge finite kept-feedback delta is capped at +50 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 0, 'unknown memory.feedback reasons do not award xp');
 
+// ---- "rate the work" verdicts ride memory.feedback (synthetic id, direct XpStore call): only 👍 mints, none penalize ----
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great')).awards.xp, 30, 'work_great delta 3 awards 30 xp (size-weighted)');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(8, 'work_great')).awards.xp, 50, 'work_great big task is capped at +50 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(5, 'work_ok')).awards.xp, 0, 'work_ok (close) never mints xp');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(5, 'work_miss')).awards.xp, 0, 'work_miss never mints xp');
+const _wg = Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great'));
+A.eq(_wg.stats.counters.positiveFeedback, 1, 'work_great counts as positive feedback (drives APPROVED milestone)');
+A.eq((_wg.stats.counters.negativeFeedback || 0), 0, 'work_great is not negative');
+const _wo = Xp.applyEvent(Xp.fresh(), feedback(5, 'work_ok'));
+A.eq((_wo.stats.counters.positiveFeedback || 0), 0, 'work_ok is neutral — not counted positive');
+A.eq((_wo.stats.counters.negativeFeedback || 0), 0, 'work_ok is neutral — not counted negative');
+A.eq(_wo.stats.samples, 1, 'work_ok still records one satisfaction sample');
+const _wm = Xp.applyEvent(Xp.fresh(), feedback(5, 'work_miss'));
+A.eq(_wm.stats.counters.negativeFeedback, 1, 'work_miss counts as negative feedback (confidence down)');
+A.ok(_wm.stats.xp === 0 && _wm.stats.lifetimeXp === 0, 'work_miss never subtracts xp (no penalty)');
+
 // ---- confidence: bidirectional EWMA over explicit feedback, honest cold-start ----
 A.eq(Xp.compute(Xp.fresh()).known, false, 'fresh agent is calibrating, not known');
 A.eq(Xp.compute(Xp.fresh()).confidence, null, 'calibrating exposes no fabricated percent');

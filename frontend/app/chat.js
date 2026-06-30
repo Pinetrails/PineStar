@@ -49,6 +49,9 @@ const Chat = (() => {
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
+  const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
+                                // beat's HONEST, un-farmable size + the delivery gate (real tools/deliverables only). FIFO-capped.
+  const workRatedRuns = new Set();   // runIds already given a 👍/👌/👎 work verdict → one rating per run, never double-mint
   const RUN_META = new Map();   // runId -> { isTask, title } recorded at run START. The bus agent.run.end payload
                                 // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
                                 // read this to tell a real TASK from casual chat AND to name the run that actually just
@@ -435,6 +438,62 @@ const Chat = (() => {
     try { approveBtn.focus(); } catch (_) {}
   }
 
+  // ── "RATE THE WORK" — the PRIMARY leveling beat. After a run that actually DID work, the Commander gives a
+  //    one-tap verdict on the OUTPUT (👍 nailed it / 👌 close / 👎 missed). 👍 mints size-weighted XP; 👌/👎 only
+  //    nudge the satisfaction meter (never a penalty, never XP). It rides memory.feedback with a SYNTHETIC id,
+  //    called DIRECTLY into XpStore — never the bus, never the sidecar memory store — so memory trust is untouched.
+  function workSizeDelta(w) {
+    if (!w) return 1;
+    const tools = Math.min(Math.max(0, w.toolsOk || 0), 8);
+    const deliv = Math.min(Math.max(0, w.delivered || 0), 3);
+    const usd = Math.max(0, w.cost || 0);
+    // honest + un-farmable: real successful tool calls + produced files + a little for spend, bucketed 1..10.
+    const raw = Math.log2(1 + tools) * 2.2 + deliv * 1.2 + Math.min(usd * 6, 3);
+    return Math.max(1, Math.min(10, Math.round(raw) || 1));
+  }
+  function rateWork(agentId, runId, verdict) {
+    if (!runId || workRatedRuns.has(runId)) return;
+    workRatedRuns.add(runId);
+    if (workRatedRuns.size > 120) workRatedRuns.delete(workRatedRuns.values().next().value);
+    const reason = verdict === 'great' ? 'work_great' : verdict === 'ok' ? 'work_ok' : 'work_miss';
+    const delta = workSizeDelta(runWork.get(runId));
+    // DIRECT call — never U.bus.emit / never /api/memory/turnin. The 'work:'+runId id resolves to NO memory
+    // record, so the sidecar memcore trust path is never touched (delta here is an XP size only).
+    if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason });
+  }
+  // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
+  function workRateControl(host, agentId, runId, onSettle) {
+    const lbl = document.createElement('span'); lbl.className = 'work-rate-label';
+    lbl.textContent = '◈ rate ' + name + '’s work — ';
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    host.appendChild(lbl); host.appendChild(btns);
+    let done = false;
+    function settle(verdict, flash, isDeny) {
+      if (done) return; done = true;
+      rateWork(agentId, runId, verdict);
+      btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = flash;
+      host.appendChild(tag);
+      if (onSettle) setTimeout(onSettle, 700);   // flash the verdict, then let the caller fade the beat
+    }
+    function mk(label, cls, verdict, flash, isDeny) {
+      const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = label;
+      b.onclick = () => settle(verdict, flash, isDeny); btns.appendChild(b);
+    }
+    mk('👍 nailed it', '', 'great', '★ +XP', false);
+    mk('👌 close', '', 'ok', 'noted', false);
+    mk('👎 missed', 'deny', 'miss', 'noted', true);
+  }
+  // STANDALONE rate-the-work beat (when a run produced NO memory proposal) — its own gold-inset row in the ONE
+  // post-run slot. Hero-only, mirroring the curiosity/suggestion beats.
+  function workRateBeat(agentId, runId) {
+    if (!log) return;
+    clearNudge();   // claim the one post-run beat slot, retiring any prior gentle nudge
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
+    workRateControl(r.body, agentId, runId, () => vanish(r.d));
+    autoscroll();
+  }
+
   // Cortex (M-mem.5b) — THE TURN-IN BEAT. After a run, reflection proposes durable memories; the Commander
   // decides Keep / Edit / Discard. Keep/Edit commit a real memory (the click IS the consent, §5.6); every
   // verdict feeds the agent's confidence. This is the gamified formation loop — the agent learns, you approve.
@@ -473,6 +532,12 @@ const Chat = (() => {
     head.body.appendChild(title);
     head.body.appendChild(queueNote);
     head.body.appendChild(slot);
+    // RATE THE WORK first (the primary leveling beat), THEN curate memories below — two honest judgments, one card.
+    if (batch.runId && !workRatedRuns.has(batch.runId)) {
+      const rate = document.createElement('div'); rate.className = 'turnin-rate';
+      head.body.insertBefore(rate, slot);
+      workRateControl(rate, batch.agentId || 'agent', batch.runId, () => vanish(rate));
+    }
 
     const state = { node: head.d, queueNote, index: 0 };
     activeTurnin = state;
@@ -632,6 +697,12 @@ const Chat = (() => {
         // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
         if (runId && proposalRunsSeen.has(runId)) return;
         if (log && log.querySelector('.turnin-item')) return;
+        // RATE THE WORK (the primary leveling beat): if this run actually did real work and isn't rated yet, it
+        // takes the one post-run slot. Gated on real tools/deliverables so a pure chat reply is never rate-prompted.
+        if (runId && !workRatedRuns.has(runId)) {
+          const w = runWork.get(runId);
+          if (w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)) { workRateBeat(p.agentId || 'agent', runId); return; }
+        }
         // FIRE ON SALIENCE, not after every run: a basic conversational turn (not a task) earns NO proactive beat —
         // the station only reaches for a suggestion / seed / get-to-know-you question after it did real WORK. This
         // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
@@ -980,6 +1051,7 @@ const Chat = (() => {
     aborters.set(ws.id, ac);
     const callNames = {};   // callId -> tool name (the frozen agent.tool_result has no name field)
     const seenDeliv = {};   // title -> true (one openable row per produced file)
+    let runToolsOk = 0, runDeliv = 0, thisRunId = null;   // per-run work tally → the "rate the work" beat's size + delivery gate
     activeLiveRow = streamingAgent();
     let acc = '';
     // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
@@ -1015,18 +1087,18 @@ const Chat = (() => {
       const { text: reply, error, endReason } = await Harness.chat({
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
-        onRunId: id => { try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
-        onToolResult: ev => { const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) { breakLive(); toolLine(t, ev.isError); } },
+        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) { breakLive(); toolLine(t, ev.isError); } },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
           // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the Hermes model), not
           // from the backend's kind — so a .mp4/.webm the agent writes becomes an inline player and a .png a
           // thumbnail, with no backend change. Unknown extensions fall back to the plain clickable row.
           if ((ev.kind === 'file' || ev.kind === 'image') && !seenDeliv[ev.title]) {
-            seenDeliv[ev.title] = true;
+            seenDeliv[ev.title] = true; runDeliv++;
             const mk = mediaKindOf(ev.title);
             if (isActiveWs(ws)) {
               breakLive();
@@ -1080,6 +1152,8 @@ const Chat = (() => {
         // error/refusal stop is an unproductive run (the agent.run.end SLAG path owns that); abort/hard-error never
         // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
         if (!endReason || endReason === 'done') wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
+        // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
+        if (thisRunId) { const cost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: cost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); }
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
