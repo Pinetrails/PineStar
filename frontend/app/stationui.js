@@ -1468,6 +1468,9 @@ const StationUI = (() => {
       '<input id="tg-token" type="password" class="key-input" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">' +
       '<div class="set-save"><button class="bb sm" id="tg-connect">⏼ CONNECT</button> ' +
       '<button class="bb sm danger" id="tg-disconnect">⏏ DISCONNECT</button></div>' +
+      // B4 — opt in to a Telegram ping when an autonomous (cron) routine runs on its own and produces work. Default
+      // off (anti-spam); the global flag persists server-side so the cron path reads it. Only meaningful once connected.
+      '<label class="set-row" style="margin-top:6px"><input type="checkbox" id="tg-notify"> PING ME WHEN I WORK ON MY OWN <span class="dim">— message me when a routine runs autonomously and produces something</span></label>' +
       '<div id="tg-msg" class="msg"></div>';
 
     const statusEl = body.querySelector('#tg-status');
@@ -1481,6 +1484,7 @@ const StationUI = (() => {
       statusEl.textContent = conn ? ('● CONNECTED — polling' + (st.state && st.state !== 'up' ? ' (' + st.state + ')' : ''))
         : configured ? ('○ saved but offline — click CONNECT to reconnect' + (st.detail ? ' — ' + st.detail : ''))
         : '○ not connected';
+      const nb = body.querySelector('#tg-notify'); if (nb) nb.checked = !!(st && st.notifyAutonomous);   // B4 opt-in reflects server state
     }
     async function refresh() {
       try { const r = await fetch('/api/channels/telegram/status'); paint(await r.json()); }
@@ -1528,6 +1532,12 @@ const StationUI = (() => {
       refresh();
     });
     body.querySelector('#tg-token').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); body.querySelector('#tg-connect').click(); } });
+    // B4 — toggle the global "ping me when I work on my own" opt-in (persisted server-side; the cron path reads it).
+    const notifyBox = body.querySelector('#tg-notify');
+    if (notifyBox) notifyBox.addEventListener('change', async () => {
+      try { await fetch('/api/channels/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: notifyBox.checked }) }); sfx('click'); msgEl.textContent = notifyBox.checked ? '✓ i’ll ping you when i work on my own' : 'autonomous pings off'; }
+      catch (_) { msgEl.textContent = 'could not reach the sidecar'; }
+    });
     refresh();
   }
 

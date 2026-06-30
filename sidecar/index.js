@@ -77,6 +77,7 @@ const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
@@ -898,6 +899,21 @@ const cronBus = { emit: (name, payload) => {
 } };
 const cronEmitValidated = makeEmitter(cronBus, e => console.warn('[cron-event]', e.kind, e.event, (e.errors || []).join(';')));
 const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redact(payload)); } catch (_) { return false; } };
+// B4 — autonomous notifications: when a cron run PRODUCES WORK, ping the Commander's connected channel(s). The
+// opt-in is a single global flag (channelSecrets.notifyAutonomous, default off) — chatsFor returns [] when off, so
+// the notifier engine stays opt-in-agnostic. send/chatsFor read telegram/discord/channelSecrets LIVE (closures), so
+// they resolve correctly even though the channel adapters connect after this point in boot.
+const autoNotifier = makeAutoNotifier({
+  send: (chatId, text) => { const ch = telegram || discord; return (ch && ch.adapter) ? ch.adapter.send(chatId, text) : Promise.resolve({ ok: false }); },
+  chatsFor: (agentId) => {
+    if (!(channelSecrets && channelSecrets.notifyAutonomous)) return [];   // global opt-in gate (default off — anti-spam)
+    try { const map = channelStore.loadChatMap(); return Object.keys(map.chats || {}).filter(cid => map.chats[cid] && map.chats[cid].agentId === agentId); } catch (_) { return []; }
+  },
+  jobName: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.name) || 'a routine'; },
+  jobAgent: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.agentId) || null; }
+});
+// feed every cron event to the notifier alongside the validated SSE/console emit; it never throws into the cron pass.
+const cronEmitNotify = (name, payload) => { const r = cronEmit(name, payload); try { autoNotifier.onEvent(name, payload); } catch (_) {} return r; };
 function placeCronWorkitem(agentId, prompt, runId) {
   try {
     const preview = String(prompt || '').replace(/\s+/g, ' ').slice(0, 40);
@@ -925,7 +941,7 @@ const cronDriver = makeCronDriver({
     } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); }
   },
   runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
-  emit: cronEmit, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
+  emit: cronEmitNotify, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
   getKey: (provider) => cronKeyFor(provider),
   providerForJob: (job) => cronProviderFor(job),
   hasCredential: (provider, key) => cronHasCredential(provider, key),
@@ -1217,6 +1233,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
   if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/notify') return handleChannelNotify(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
@@ -2719,7 +2736,19 @@ async function handleChannelDisconnect(req, res) {
 function handleChannelStatus(req, res) {
   const t = (channelSecrets && channelSecrets.telegram) || {};
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: !!t.token, state: telegramStatus.state, detail: telegramStatus.detail || '' }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: !!t.token, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
+}
+
+// POST /api/channels/notify { on } — the GLOBAL opt-in (default off): ping a connected channel when an AUTONOMOUS
+// (cron) run produces work. Persisted in channelSecrets so the server-side cron path reads it at fire time. Token-
+// gated like every /api route; no chatId needed (the notifier fans out to the agent's connected chats).
+async function handleChannelNotify(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const on = !!body.on;
+  channelSecrets = Object.assign({}, channelSecrets, { notifyAutonomous: on });
+  try { saveChannelSecrets(channelSecrets); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'persist failed' })); }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, notifyAutonomous: on }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
