@@ -9,6 +9,14 @@
       "autoPort": false
     },
     {
+      "name": "integrated-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dev/seed.js", "--keep"],
+      "port": 8786,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8786", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+    },
+    {
       "name": "ws-titles-dev",
       "runtimeExecutable": "node",
       "runtimeArgs": ["C:/Users/andro/gen-trees/ws-titles-status/sidecar/index.js"],
