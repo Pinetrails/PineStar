@@ -2484,8 +2484,11 @@ async function handleAutonomyWrite(req, res) {
   const sessionKey = 'autowrite-' + Date.now();
   const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId), surface: 'autonomous' });
   // CHECKPOINT NET: snapshot BEFORE the write (mirrors the runOnce dispatch wrapper) so it's one rollback away.
+  // Keep the snapshot id EVEN when created:false — an unchanged workspace returns the existing HEAD, which is a
+  // valid, restorable PRE-write rollback point (the common case for a fresh drafts/* write). Discarding it on
+  // created:false would leave B3 with no undo target exactly when nothing else had changed.
   let snapshot = null;
-  try { const snap = await checkpointStore.snapshot(agentId, { runId: sessionKey, turn: 0, label: 'fs.write' }); if (snap && snap.created) snapshot = snap.id; } catch (_) { /* a checkpoint hiccup must never block the write */ }
+  try { const snap = await checkpointStore.snapshot(agentId, { runId: sessionKey, turn: 0, label: 'fs.write' }); if (snap && snap.id) snapshot = snap.id; } catch (_) { /* a checkpoint hiccup must never block the write */ }
   const call = { name: 'fs.write', args: { path: rel, content: content }, id: sessionKey };
   const r = await reg.dispatch(call, { agentId: agentId, consent: consent, emit: function () {}, timeoutMs: 10000 });
   if (r && r.ok) return sendJson(200, { ok: true, path: rel, snapshot: snapshot, summary: r.summary });
