@@ -1,25 +1,31 @@
 /* STARNET — autopilotstore.js : the thin live wiring around the pure idle self-direction engine (autopilot.js).
-   Slice A of the autonomy layer — the first thing that makes the posture dial actually drive the floor.
+   Slice A of the autonomy layer — the thing that makes the posture dial actually drive the floor.
 
    It is the EDGE the pure engine isn't allowed to be: it owns the live clock, the "Commander is interacting"
-   stamping, and the periodic idle check, and it hands the EARN decision off to the chat curiosity nudge. Mirrors
-   the discipline of autonomystore.js / autojobstore.js:
+   stamping, the periodic idle check, the model runs, and the desk hand-off. Mirrors autonomystore.js /
+   autojobstore.js discipline:
    - READ-ONLY citizen of the app — it takes NO U.bus dependency and NEVER emits (lint-emits stays green).
-   - All decision logic lives in the pure Autopilot engine; this is glue: stamp activity, tick, dispatch.
-   - node-exportable for its test (inject `now` + a fake `offerCuriosity`; pass install:false to skip the DOM).
+   - All DECISION logic lives in the pure Autopilot engine; this is glue: stamp activity, tick, dispatch, deliver.
+   - node-exportable for its test (inject now + fakes for chat/present; install:false skips the DOM).
 
-   SLICE A1 ships the EARN branch only: when the Commander goes idle with autonomy enabled, the station asks ONE
-   gentle get-to-know-you question (reusing the curiosity nudge, which already caps itself at one per session). The
-   ACT branch (pick + do a small reason/draft job) lands in Slice A2 — until then an act-eligible idle still does
-   the safe, useful thing (earns one more piece of context), so a freshly-enabled dial is never inert.
+   TWO branches, by readiness (the flywheel):
+   - EARN (Slice A1): idle + autonomy enabled but not yet act-ready → ask ONE gentle get-to-know-you question
+     (reuses the curiosity nudge + its per-session anti-nag cap). Learn first.
+   - ACT (Slice A2): idle + the dial permits acting + the dossier is hot + today's leash has budget → run the pure
+     anti-slop pipeline (propose grounded candidates → score-and-pick-best with the confidence gate → do the one
+     job) as TWO SILENT reason-only runs (internal:true, no tools — safe by construction), then leave the draft on
+     the Commander's desk. Nothing is auto-sent or auto-applied; Reach stays sandbox (Stage B raises it).
 
-   It persists NOTHING of its own in A1 — the anti-nag memory already lives in CuriosityStore (its own key), and
-   idle/armed are ephemeral session state. (A2 adds the leash-per-day accounting that needs its own key.) */
+   Persists a small own-key slice (leash-per-day accounting + a capped draft log for the "while you were away"
+   digest). lastActivity/armed/acting are ephemeral session state. */
 'use strict';
 const AutopilotStore = (() => {
+  const KEY = 'starnet.autopilot.v1';
   let deps = {};
+  let state = null;         // persisted: { v, day, acted, drafts:[{title,archetype,at,body}] }
   let lastActivity = 0;     // wall-clock of the Commander's last interaction (set by noteActivity)
   let armed = false;        // false = this idle EPISODE still has its one autopilot beat; true = spent until next activity
+  let acting = false;       // an async ACT run is in flight (guards re-entry across ticks)
   let installed = false;    // the DOM listeners + interval are installed exactly once
   let timer = null;
 
@@ -28,14 +34,37 @@ const AutopilotStore = (() => {
     try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {}
     return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0;
   };
+  const dayOf = (t) => Math.floor((Number(t) || 0) / 86400000);   // a UTC day bucket — deterministic, no Date needed
 
-  // gather the live inputs the pure engine needs (posture booleans, the readiness tier, idleness).
+  function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
+  function hydrate(raw) {
+    const s = { v: 1, day: dayOf(now()), acted: 0, drafts: [] };
+    if (raw && typeof raw === 'object') {
+      if (Number.isFinite(raw.day)) s.day = raw.day;
+      if (Number.isFinite(raw.acted) && raw.acted >= 0) s.acted = Math.floor(raw.acted);
+      if (Array.isArray(raw.drafts)) s.drafts = raw.drafts.filter(x => x && x.title).slice(-10);
+    }
+    return s;
+  }
+  // a new day rolls the leash budget back to full.
+  function rolloverDay() { if (!state) return; const t = dayOf(now()); if (state.day !== t) { state.day = t; state.acted = 0; save(); } }
+  // remaining leash actions today (caps BOTH leash and free — free runs toward goals, but within the daily leash).
+  function budgetLeft() {
+    if (!state) return Infinity;
+    rolloverDay();
+    let cap = 3;
+    try { const p = deps.getPosture ? deps.getPosture() : null; if (p && Number.isFinite(p.leashPerDay)) cap = p.leashPerDay; } catch (_) {}
+    return Math.max(0, cap - (state.acted || 0));
+  }
+
+  // gather the live inputs the pure engine needs (posture booleans, the readiness tier + usable dims, idleness).
   function gather() {
     const posture = (() => { try { return (deps.getPosture ? deps.getPosture() : null) || {}; } catch (_) { return {}; } })();
     const summary = (() => { try { return (deps.getDossier ? deps.getDossier() : null) || {}; } catch (_) { return {}; } })();
     const beliefs = (dim) => { try { return deps.getBeliefs ? (deps.getBeliefs(dim) || []) : []; } catch (_) { return []; } };
     const t = now();
-    const rd = ready() ? Autopilot.readiness(summary, beliefs, t, {}) : { tier: 'cold' };
+    const rd = ready() ? Autopilot.readiness(summary, beliefs, t, {}) : { tier: 'cold', usableDims: [] };
     const idle = ready() ? Autopilot.idleFor(t, lastActivity, deps.idleMs) : false;
     return { posture, rd, idle, t };
   }
@@ -49,32 +78,86 @@ const AutopilotStore = (() => {
       actsUnattended: !!g.posture.actsUnattended,
       idle: g.idle,
       tier: g.rd.tier,
-      budgetLeft: Infinity   // A1: the earn branch is not leash-budgeted (curiosity self-caps). A2 wires real per-day budget for ACT.
+      budgetLeft: budgetLeft()
     });
   }
 
   // ONE autopilot beat per idle episode. Re-arms when the Commander next interacts (noteActivity).
   function tick() {
-    if (!ready() || armed) return null;
+    if (!ready() || armed || acting) return null;
     const d = decideNow();
     if (!d.go) return d;
-    armed = true;   // spend this idle episode's single beat (A2 replaces per-episode arming with leash-budgeted re-fire)
-    // A1 ships EARN; ACT lands in A2. Until then an act-eligible idle still earns one more piece of context rather
-    // than doing nothing — a freshly-enabled dial must never feel inert.
-    earn();
+    armed = true;   // spend this idle episode's single beat (re-armed by activity)
+    if (d.mode === 'act') { act(); }   // async, fire-and-forget; `acting` guards overlap
+    else { earn(); }
     return d;
   }
 
-  // the EARN branch: hand off to the chat curiosity nudge (it picks a still-blank dim, shows the gentle ask, and
-  // shares the per-session anti-nag cap — so this can never stack with or double-ask the post-run nudge).
+  // the EARN branch (A1): hand off to the chat curiosity nudge (picks a still-blank dim, shows the gentle ask,
+  // shares the per-session anti-nag cap — so it can never stack with or double-ask the post-run nudge).
   function earn() { try { if (typeof deps.offerCuriosity === 'function') deps.offerCuriosity(); } catch (_) {} }
+
+  // build the { dim:[texts] } grounding map the directives want, from the injected belief accessor.
+  function beliefMap() {
+    const out = {};
+    for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders', 'style']) {
+      try { const arr = (deps.getBeliefs ? (deps.getBeliefs(k) || []) : []).map(b => b && b.text).filter(Boolean); if (arr.length) out[k] = arr; } catch (_) {}
+    }
+    return out;
+  }
+
+  // record a delivered draft: consume one leash unit + append to the capped draft log (the A3 digest reads these).
+  function recordDraft(sel, deliverable) {
+    rolloverDay();
+    state.acted = (state.acted || 0) + 1;
+    state.drafts = state.drafts || [];
+    state.drafts.push({ title: deliverable.title, archetype: sel.archetype, at: now(), body: String(deliverable.body || '').slice(0, 4000) });
+    if (state.drafts.length > 10) state.drafts = state.drafts.slice(-10);
+    save();
+  }
+
+  // THE ACT BRANCH (A2): two SILENT reason-only runs (no tools, internal — safe + uncounted) through the pure
+  // anti-slop pipeline, then leave the draft on the desk. Awaitable for the test. Stands down honestly (no draft,
+  // no leash spent) when nothing grounds out or nothing clears the confidence gate — idle-doing-nothing beats slop.
+  async function act() {
+    if (acting || !ready() || typeof deps.chat !== 'function') return { delivered: false, reason: 'unavailable' };
+    acting = true;
+    try {
+      const g = gather();
+      const eligible = Autopilot.eligibleArchetypes(g.rd.usableDims);
+      if (!eligible.length) return { delivered: false, reason: 'no-archetype' };
+      const beliefs = beliefMap();
+      const system = (() => { try { return deps.getSystem ? deps.getSystem() : ''; } catch (_) { return ''; } })();
+      const name = (() => { try { return deps.getName ? deps.getName() : 'AGENT'; } catch (_) { return 'AGENT'; } })();
+
+      // 1) PROPOSE — a few grounded, achievable-now candidates (silent reasoning).
+      const cRes = await deps.chat({ system, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, eligible }) }], agentId: 'agent', isTask: false, placed: [], internal: true });
+      const candidates = (cRes && !cRes.error) ? Autopilot.parseCandidates(cRes.text, { eligible, beliefs }) : [];
+      // 2) SELECT — score-and-pick-best + the confidence gate.
+      const sel = Autopilot.scoreAndSelect(candidates);
+      if (!sel.selected) return { delivered: false, reason: sel.reason };
+
+      // 3) DO — produce the finished draft (silent reasoning).
+      const dRes = await deps.chat({ system, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name }) }], agentId: 'agent', isTask: false, placed: [], internal: true });
+      const deliverable = (dRes && !dRes.error) ? Autopilot.parseDeliverable(dRes.text, { fallbackTitle: sel.selected.title }) : null;
+      if (!deliverable) return { delivered: false, reason: 'no-deliverable' };
+
+      // 4) DELIVER — record (leash + draft log) and surface to the desk.
+      recordDraft(sel.selected, deliverable);
+      try { if (typeof deps.present === 'function') deps.present({ title: deliverable.title, body: deliverable.body, archetype: sel.selected.archetype, grounds: sel.selected.grounds }); } catch (_) {}
+      return { delivered: true, title: deliverable.title, archetype: sel.selected.archetype };
+    } catch (_) {
+      return { delivered: false, reason: 'error' };
+    } finally {
+      acting = false;
+    }
+  }
 
   // the Commander interacted — reset the idle clock and re-arm the next idle beat.
   function noteActivity() { lastActivity = now(); armed = false; }
 
   // install the edge ONCE: stamp activity on real input, and re-check idleness on an interval. Guarded so a
-  // resume/re-enter never double-installs, and skipped entirely under node (no document/setInterval) + when the
-  // caller passes install:false (the test drives tick()/noteActivity() by hand).
+  // resume/re-enter never double-installs, and skipped under node (no document/setInterval) + when install:false.
   function install() {
     if (installed) return;
     installed = true;
@@ -89,18 +172,20 @@ const AutopilotStore = (() => {
     }
   }
 
-  // opts: { now(), getPosture(), getDossier(), getBeliefs(dim), offerCuriosity(), idleMs, tickMs, install:bool }
+  // opts: { now(), getPosture(), getDossier(), getBeliefs(dim), getSystem(), getName(), offerCuriosity(), chat(opts),
+  //         present(draft), idleMs, tickMs, install:bool }
   function init(opts) {
     deps = opts || {};
+    state = hydrate(load());
     lastActivity = now();   // a freshly-entered station starts ACTIVE (no instant idle fire on load)
-    armed = false;
+    armed = false; acting = false;
     if (!deps || deps.install !== false) install();
   }
 
-  // a brand-new hero starts with no inherited idle/armed state. (No own key in A1 — nothing persisted to clear.)
-  function reset() { lastActivity = now(); armed = false; }
+  // a brand-new hero starts clean: drop the own key + the in-memory idle state.
+  function reset() { state = hydrate(null); lastActivity = now(); armed = false; acting = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, tick, noteActivity, decideNow, reset, _state: () => ({ lastActivity, armed, installed }) };
+  return { init, tick, act, noteActivity, decideNow, reset, _state: () => ({ lastActivity, armed, acting, installed }), _draftState: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { AutopilotStore };

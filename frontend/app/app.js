@@ -1183,16 +1183,33 @@ const App = (() => {
     });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     // AUTOPILOT (autonomy Slice A — the idle self-direction driver): when the Commander goes idle with autonomy
-    // enabled, the station EARNS context (asks one gentle get-to-know-you question) — the first thing that makes
-    // the posture dial actually drive the floor. The decision is pure (autopilot.js); this is the edge — the live
-    // clock, the activity listeners + idle tick (installed once), and the curiosity hand-off. It reads the posture
-    // and the (confirmed-only) dossier, never writes either. The ACT branch (doing reason/draft work) lands in A2.
+    // enabled, the station either EARNS context (asks one gentle get-to-know-you question — A1) or, once the dial
+    // permits acting AND the dossier is hot AND today's leash has budget, it ACTS — runs the anti-slop pipeline as
+    // two SILENT reason-only runs (no tools → safe) and leaves a draft on the desk (A2). The decision is pure
+    // (autopilot.js); this is the edge — the live clock, the activity listeners + idle tick (installed once), the
+    // curiosity hand-off, the model runs, and the desk delivery. It reads the posture + the (confirmed-only)
+    // dossier, never writes either. Reach stays sandbox — nothing is auto-sent or auto-applied (Stage B raises it).
     if (typeof AutopilotStore !== 'undefined') AutopilotStore.init({
       now: () => Date.now(),
       getPosture: () => (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) ? AutonomyStore.summary() : null,
       getDossier: () => (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null,
       getBeliefs: (dim) => (typeof DossierStore !== 'undefined' && DossierStore.beliefs) ? DossierStore.beliefs(dim) : [],
-      offerCuriosity: () => (typeof Chat !== 'undefined' && Chat.offerCuriosity) ? Chat.offerCuriosity() : false
+      offerCuriosity: () => (typeof Chat !== 'undefined' && Chat.offerCuriosity) ? Chat.offerCuriosity() : false,
+      getSystem: () => agent ? agent.systemPrompt : '',
+      getName: () => agent ? agent.name : 'AGENT',
+      // the autopilot's reason-only runs: no `placed` (no tools) + internal (silent) → safe + uncounted by construction.
+      chat: (o) => (typeof Harness !== 'undefined' && Harness.chat) ? Harness.chat(o) : Promise.resolve({ error: 'no-harness' }),
+      // leave the finished draft on the Commander's desk: a persistent toast + the live "working" cue + a gentle
+      // COMMS beat that, on accept, posts the draft into the feed. Nothing is auto-applied or sent.
+      present: (d) => {
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('drafted while you were away: ' + d.title, 'gold');
+        if (typeof World !== 'undefined' && World.say) World.say('✦ left a draft on your desk');
+        if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
+          '✦ while you were away i drafted “' + d.title + '”. want to see it?',
+          [{ label: 'show me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }],
+          item => { if (item && item.value === 'yes' && typeof Chat.localLine === 'function') { Chat.localLine('▤ ' + d.title); Chat.localLine(d.body); } }
+        );
+      }
     });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     if (typeof ModelDock !== 'undefined') ModelDock.init({ apply: applyQuickModel });

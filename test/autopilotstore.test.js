@@ -83,5 +83,72 @@ A.ok(/offerCuriosity/.test(chatSrc.slice(chatSrc.lastIndexOf('return {'))), 'cha
 const appSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
 A.ok(/AutopilotStore\.init\(/.test(appSrc), 'app.js initialises AutopilotStore');
 A.ok(/offerCuriosity:\s*\(\)\s*=>/.test(appSrc), 'app.js wires Chat.offerCuriosity into the autopilot earn branch');
+A.ok(/chat:\s*\(o\)\s*=>/.test(appSrc), 'app.js wires Harness.chat into the autopilot act branch (reason-only runs)');
+A.ok(/present:\s*\(d\)\s*=>/.test(appSrc), 'app.js wires the desk delivery (present) for finished drafts');
 
-A.report('autopilotstore.test');
+/* ---------- A2: the ACT branch — anti-slop pipeline → draft on the desk ---------- */
+(async () => {
+  let presented = null;
+  const hotDossier = { known: ['goals', 'stack', 'pain', 'identity'], blank: [], familiarity: 4 / 7 };
+  const hotBeliefs = {
+    goals: [{ text: 'ship the StarNet beta to 100 users', updatedAt: nowMs }],
+    pain: [{ text: 'manual release notes eat my fridays', updatedAt: nowMs }],
+    stack: [{ text: 'node and plain js', updatedAt: nowMs }],
+    identity: [{ text: 'andro, solo builder', updatedAt: nowMs }]
+  };
+  const baseDeps = (chat) => ({
+    install: false, now: () => nowMs,
+    getPosture: () => ({ enabled: true, actsUnattended: true, leashPerDay: 2 }),
+    getDossier: () => hotDossier,
+    getBeliefs: (dim) => hotBeliefs[dim] || [],
+    getSystem: () => 'SYS', getName: () => 'NOVA',
+    offerCuriosity: () => true,
+    chat, present: (d) => { presented = d; },
+    idleMs: IDLE
+  });
+  // a good model: proposes one grounded high-confidence candidate, then produces a titled draft.
+  const goodChat = async ({ messages }) => {
+    const c = messages[0].content;
+    if (/Propose up to/.test(c)) return { text: 'JOB: Beta launch checklist\nKIND: advance-goal\nGROUNDS: ship the StarNet beta to 100 users\nCONFIDENCE: high\nSPEC: a pre-launch checklist' };
+    if (/Do this ONE job/.test(c)) return { text: 'TITLE: Beta launch checklist\n1. Freeze the build\n2. Tag the release\n3. Smoke test' };
+    return { text: '' };
+  };
+
+  AutopilotStore.init(baseDeps(goodChat));
+  const r1 = await AutopilotStore.act();
+  A.eq([r1.delivered, r1.archetype], [true, 'advance-goal'], 'a hot + leash idle act delivers a grounded advance-goal draft');
+  A.eq(presented && presented.title, 'Beta launch checklist', 'the draft is surfaced to the desk (present called with the deliverable)');
+  A.ok(presented && /Freeze the build/.test(presented.body), 'the surfaced draft carries the run-produced body');
+  A.eq(AutopilotStore._draftState().acted, 1, 'a delivered act consumes one leash unit');
+  A.eq(AutopilotStore._draftState().drafts.length, 1, 'the draft is logged for the while-you-were-away digest');
+
+  // BUDGET: leashPerDay 2 → after the 2nd act the idle decision downgrades to EARN (binding budget).
+  await AutopilotStore.act();
+  AutopilotStore.noteActivity(); nowMs += IDLE;
+  const dBudget = AutopilotStore.decideNow();
+  A.eq([dBudget.mode, dBudget.binding], ['earn', 'budget'], "today's leash spent → the idle decision falls back to earn (budget binding)");
+
+  // a NEW DAY restores the leash budget → acting resumes.
+  nowMs += 86400000;
+  A.eq(AutopilotStore.decideNow().mode, 'act', 'a new day rolls the leash back → acting resumes');
+
+  // CONFIDENCE GATE: all-low candidates → no act, no leash spent, nothing surfaced.
+  presented = null;
+  const lowChat = async ({ messages }) => /Propose up to/.test(messages[0].content)
+    ? { text: 'JOB: maybe tweak something\nKIND: advance-goal\nGROUNDS: ship the StarNet beta to 100 users\nCONFIDENCE: low\nSPEC: vague' }
+    : { text: 'TITLE: t\nbody' };
+  AutopilotStore.init(baseDeps(lowChat));
+  const r2 = await AutopilotStore.act();
+  A.eq([r2.delivered, r2.reason], [false, 'low-confidence'], 'all-low candidates → no act (the confidence gate: idle-doing-nothing beats slop)');
+  A.eq(AutopilotStore._draftState().acted, 0, 'a gated deliberation spends no leash');
+  A.eq(presented, null, 'nothing is surfaced when the confidence gate stands the agent down');
+
+  // GROUNDING VETO: an invented-grounds proposal never becomes a candidate → no act.
+  const ungroundedChat = async ({ messages }) => /Propose up to/.test(messages[0].content)
+    ? { text: 'JOB: rewrite everything\nKIND: advance-goal\nGROUNDS: migrate the whole product to a brand new platform\nCONFIDENCE: high\nSPEC: a plan' }
+    : { text: 'TITLE: t\nbody' };
+  AutopilotStore.init(baseDeps(ungroundedChat));
+  A.eq((await AutopilotStore.act()).delivered, false, 'an invented-grounds proposal is vetoed → no act');
+
+  A.report('autopilotstore.test');
+})();
