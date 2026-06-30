@@ -153,6 +153,38 @@
     return hasUser && hasAgent && chars >= minChars;
   }
 
+  // did the run do REAL WORK — i.e. actually reach for a tool (the project's honest "real work" signal: a tool-role
+  // result, or an assistant turn carrying tool_calls)? A run answered purely from the model's own knowledge did not.
+  function usedTools(messages) {
+    for (const m of (Array.isArray(messages) ? messages : [])) {
+      if (!m) continue;
+      if (m.role === 'tool') return true;
+      if (Array.isArray(m.tool_calls) && m.tool_calls.length) return true;
+    }
+    return false;
+  }
+
+  // SALIENCE GATE (decision 3 — "fire on the worth of the work"). PURELY ADDITIVE over the old worthReflecting floor:
+  // it keeps the same real-exchange baseline (so nothing that reflected before is suppressed — decision 2: never
+  // silently drop a memory the user would want), and ADDS two reasons a SHORT run still earns a reflection pass:
+  // real tool work, or a RECURRING task shape. What's "durable vs basic" is decided downstream by reflect()'s value
+  // floor + the model's NONE reply — NOT by a char count here (a char gate can't tell a terse durable preference
+  // from a quick Q&A, so using one to suppress would drop real short memories).
+  function reflectSalient(messages, recurring) {
+    const arr = Array.isArray(messages) ? messages : [];
+    let chars = 0, hasUser = false, hasAgent = false;
+    for (const m of arr) {
+      if (!m || typeof m.content !== 'string') continue;
+      if (m.role === 'user') { hasUser = true; chars += m.content.length; }
+      else if (m.role === 'assistant') { hasAgent = true; chars += m.content.length; }
+    }
+    const tools = usedTools(arr);
+    if (!hasUser || (!hasAgent && !tools)) return false;   // need a user turn + (a reply OR real tool work)
+    if (recurring) return true;                            // recurring shape — pick up on it even when terse (decision 3)
+    if (tools) return true;                                // real tool work — worth a durable-fact pass even when terse
+    return chars >= MIN_REFLECT_CHARS;                     // else the SAME real-exchange floor as before (no regression)
+  }
+
   // Map a Kept/Edited proposal into the §5.2 notebook record shape — so rank()/renderRecall AND the legacy
   // title/body readers (notebook.read, the dossier) all render it. `content` (the possibly user-edited belief)
   // mirrors into `body`; `title` is the kind label so a list of typed memories reads cleanly. Stats stay 0 —
@@ -181,5 +213,5 @@
     return null;   // unknown verdict -> no feedback
   }
 
-  return { reflect, buildPrompt, parse, worthReflecting, recordFromProposal, feedbackFor, KIND_LABEL };
+  return { reflect, buildPrompt, parse, worthReflecting, usedTools, reflectSalient, recordFromProposal, feedbackFor, KIND_LABEL };
 });

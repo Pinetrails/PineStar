@@ -4,7 +4,7 @@
    run), and determinism. Auto-proposals are candidates only — nothing is written here. */
 'use strict';
 const A = require('./_assert.js');
-const { reflect, parse, buildPrompt, worthReflecting, recordFromProposal, feedbackFor } = require('../sidecar/reflect.js');
+const { reflect, parse, buildPrompt, worthReflecting, usedTools, reflectSalient, recordFromProposal, feedbackFor } = require('../sidecar/reflect.js');
 const { redact } = require('../sidecar/context.js');
 const { makeClock } = require('../shared/clock-rng.js');
 
@@ -110,6 +110,25 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq(worthReflecting([{ role: 'user', content: 'x'.repeat(500) }]), false, 'no agent turn -> not worth reflecting');
   A.eq(worthReflecting([{ role: 'assistant', content: 'x'.repeat(500) }]), false, 'no user turn -> not worth reflecting');
   A.eq(worthReflecting(null), false, 'garbage in -> not worth reflecting (never throws)');
+
+  // ---- usedTools: did the run reach for a tool (real work), via a tool-role result or assistant tool_calls? ----
+  A.eq(usedTools([{ role: 'user', content: 'fix it' }, { role: 'tool', content: 'patched' }]), true, 'a tool-role turn counts as real work');
+  A.eq(usedTools([{ role: 'assistant', content: '', tool_calls: [{ id: 't1' }] }]), true, 'an assistant turn with tool_calls counts as real work');
+  A.eq(usedTools([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hey' }]), false, 'a pure-conversation run used no tools');
+  A.eq(usedTools(null), false, 'garbage in -> no tools (never throws)');
+
+  // ---- reflectSalient (decision 3): PURELY ADDITIVE over the 200-char floor — real work / recurrence let a SHORT
+  //      run reflect, while the one-off path keeps the same floor so a real short preference is never dropped (dec. 2) ----
+  const tiny = [{ role: 'user', content: 'x'.repeat(40) }, { role: 'assistant', content: 'x'.repeat(40) }];   // 80 chars < 200
+  A.eq(reflectSalient(tiny, false), false, 'a trivial one-off (under the real-exchange floor, no tools, not recurring) stays silent');
+  A.eq(reflectSalient(tiny, true), true, 'the SAME trivial exchange, but RECURRING, earns the beat even when terse (decision 3)');
+  const midOneOff = [{ role: 'user', content: 'x'.repeat(150) }, { role: 'assistant', content: 'x'.repeat(150) }];   // 300 chars >= 200
+  A.eq(reflectSalient(midOneOff, false), true, 'a 200-599 char one-off STILL reflects — a short durable preference is never silently dropped (decision 2)');
+  const toolRun = [{ role: 'user', content: 'fix the bug' }, { role: 'assistant', content: 'done', tool_calls: [{ id: 't1' }] }, { role: 'tool', content: 'ok' }];
+  A.eq(reflectSalient(toolRun, false), true, 'a run that did REAL tool work earns the beat even when short + one-off (decision 3)');
+  A.eq(reflectSalient([{ role: 'assistant', content: 'x'.repeat(400) }], true), false, 'no user turn -> not salient even if recurring');
+  A.eq(reflectSalient([{ role: 'user', content: 'fix it' }, { role: 'tool', content: 'patched' }], false), true, 'a user turn + real tool work (no assistant prose) is salient');
+  A.eq(reflectSalient(null, false), false, 'garbage in -> not salient (never throws)');
 
   // recordFromProposal: a Kept proposal becomes the §5.2 notebook record (content mirrors into body for the
   // legacy title/body readers; title is the kind label; stats start at 0; provenance + clock injected).

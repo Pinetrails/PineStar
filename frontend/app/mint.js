@@ -21,7 +21,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const THRESHOLD = 3;        // a shape must recur this many times before it's proposed
+  const THRESHOLD = 3;        // a shape must recur this many times before it's proposed AS A SEED
+  const RECUR_MIN = 2;        // a shape seen this many times is "recurring" — the salience signal for the memory beat
   const MAX_EXAMPLES = 6;     // distinct example directives kept per shape (for template induction)
   const MAX_CANDIDATES = 3;   // never surface more than this many proposals at once (anti-spam)
   const MIN_WORDS = 2;        // ignore trivially short directives ("go", "hi") — no shape worth learning
@@ -137,6 +138,16 @@
     return out.slice(0, MAX_CANDIDATES);
   }
 
+  // how many times this directive's SHAPE has been seen (0 if shapeless/unknown). Drives the "recurring" salience
+  // signal for the memory beat — a lower bar (RECUR_MIN) than the seed THRESHOLD, since "seen before" ≠ "mint a recipe".
+  function seenCount(state, text) {
+    if (!state || !state.shapes) return 0;
+    const key = normalizeShape(text);
+    if (!key) return 0;
+    const s = state.shapes[key];
+    return s ? (s.count || 0) : 0;
+  }
+
   function markMinted(state, key) { if (state && state.shapes && state.shapes[key]) state.shapes[key].minted = true; return state; }
   function markDismissed(state, key) { if (state && state.shapes && state.shapes[key]) state.shapes[key].dismissed = true; return state; }
   // tally that a shape was OFFERED as a seed nudge (whether or not the user acted). candidates(opts.maxProposed)
@@ -181,8 +192,8 @@
   }
 
   return {
-    THRESHOLD, MAX_CANDIDATES, MAX_SHAPES,
-    normalizeShape, fresh, observe, induceTemplate, candidates,
+    THRESHOLD, RECUR_MIN, MAX_CANDIDATES, MAX_SHAPES,
+    normalizeShape, fresh, observe, induceTemplate, candidates, seenCount,
     markMinted, markDismissed, markProposed, setEnabled, forget, hydrate
   };
 });

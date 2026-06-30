@@ -51,7 +51,7 @@ const codexTokenStore = require('./providers/codex-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
-const { reflect, worthReflecting, recordFromProposal, feedbackFor } = require('./reflect.js');
+const { reflect, reflectSalient, recordFromProposal, feedbackFor } = require('./reflect.js');
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -1783,6 +1783,7 @@ async function handleRun(req, res) {
   try { body = JSON.parse(await readBody(req, 2 << 20)); }
   catch (e) { res.writeHead(400); return res.end('bad json'); }
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels } = body || {};
+  const recurring = !!(body && body.recurring);   // the browser's mint detector saw this task SHAPE before → salience boost for reflection
   const runProvider = normalizeProvider(provider);
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
@@ -1895,6 +1896,7 @@ async function handleRun(req, res) {
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
+      recurring,      // salience signal: did the mint detector see this task shape before? (decision 3)
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
                       // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
     });
@@ -2395,7 +2397,7 @@ async function runOnce(o) {
   // low-value run yields nothing and raises no beat (§5.6). REFLECT_MODEL optionally points reflection at a cheaper
   // aux model; it defaults to the run's own model (no behaviour change unless configured).
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
-  if (o.reflect && isTask && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)
+  if (o.reflect && isTask && result && result.reason === 'done' && !signal.aborted && reflectSalient(result.messages, o.recurring)
       && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= REFLECT_COOLDOWN_MS)) {
     // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
     // so a run that yields nothing never blocks the next substantive run's turn-in. reflectingNow closes the window

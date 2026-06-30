@@ -45,6 +45,9 @@ const MintStore = (() => {
   // the GENTLE seed nudge reads this (not candidates()): it hides a shape already offered-and-ignored enough times,
   // so an ignored seed stops looping across sessions. The RECIPES tab keeps using candidates() (no ceiling).
   function nudgeCandidates() { return ready() ? Mint.candidates(state, { now: now(), maxProposed: SEED_MAX_PROPOSED }) : []; }
+  // is this directive's task SHAPE recurring (seen >= RECUR_MIN times)? The salience signal the memory beat reads to
+  // honour "basic one-off stays silent, recurring work earns the ask". Call AFTER observe() so it counts this run.
+  function recurringNow(text) { return ready() ? Mint.seenCount(state, text) >= Mint.RECUR_MIN : false; }
   function markMinted(key) { if (ready()) { Mint.markMinted(state, key); persist(); } }
   function markDismissed(key) { if (ready()) { Mint.markDismissed(state, key); persist(); } }
   function markProposed(key) { if (ready()) { Mint.markProposed(state, key); persist(); } }
@@ -56,5 +59,5 @@ const MintStore = (() => {
   function reset() { state = null; try { if (typeof localStorage !== 'undefined') localStorage.removeItem(KEY); } catch (_) {} }
   function serialize() { return ready() ? JSON.parse(JSON.stringify(state)) : null; }
 
-  return { init, observe, candidates, nudgeCandidates, markMinted, markDismissed, markProposed, enabled, setEnabled, forget, reset, serialize };
+  return { init, observe, candidates, nudgeCandidates, recurringNow, markMinted, markDismissed, markProposed, enabled, setEnabled, forget, reset, serialize };
 })();

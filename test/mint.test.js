@@ -89,6 +89,19 @@ const cm = M.fresh();
 for (let s = 0; s < 6; s++) for (let i = 0; i < 3; i++) M.observe(cm, 'Verb' + s + ' the thing number ' + i, s * 10 + i);
 A.ok(M.candidates(cm).length <= M.MAX_CANDIDATES, 'never more than MAX_CANDIDATES proposals at once');
 
+/* ---------- seenCount: the recurrence signal that drives the memory beat's salience (RECUR_MIN < seed THRESHOLD) ---------- */
+A.eq(M.RECUR_MIN, 2, 'a shape is "recurring" once seen twice (a lower bar than the seed THRESHOLD)');
+A.ok(M.RECUR_MIN < M.THRESHOLD, 'recurring (memory beat) fires sooner than minting a seed recipe');
+const cseen = M.fresh();
+A.eq(M.seenCount(cseen, 'Brief me on AI'), 0, 'an unseen shape has count 0 (a basic one-off → memory beat stays quiet)');
+M.observe(cseen, 'Brief me on AI', 1);
+A.eq(M.seenCount(cseen, 'Brief me on rust'), 1, 'first occurrence of a shape → count 1 (still below the recurring bar)');
+M.observe(cseen, 'Brief me on rust', 2);
+A.eq(M.seenCount(cseen, 'Brief me on go'), 2, 'second same-shape directive → count 2 (now recurring → memory beat fires)');
+A.ok(M.seenCount(cseen, 'Brief me on go') >= M.RECUR_MIN, 'the shape clears the recurring bar after two sightings');
+A.eq(M.seenCount(cseen, 'hi'), 0, 'a shapeless directive has no recurrence count');
+A.eq(M.seenCount(null, 'Brief me on AI'), 0, 'a missing state → count 0 (never throws)');
+
 /* ---------- markProposed + maxProposed: the seed nudge stops re-offering an ignored shape ---------- */
 const cprop = M.fresh();
 for (let i = 0; i < 3; i++) M.observe(cprop, 'Tidy the inbox folder ' + i, i);

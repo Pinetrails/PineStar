@@ -1007,8 +1007,14 @@ const Chat = (() => {
     // fold the interest tag of a real task into the local user-affinity profile (the signal classify.js
     // already computes here and otherwise discards). Captures only a derived {code|research|general}
     // count — never the message text. Gated on the user's learning flag inside the store.
-    if (isTask && typeof ProfileStore !== 'undefined') ProfileStore.observeMessage(text);
-    if (isTask && typeof MintStore !== 'undefined') MintStore.observe(text);   // notice recurring jobs → propose minting them as one-tap missions
+    // observe ONLY a genuine new directive — never on RETRY (re-running the same text must not double-count the
+    // shape, which would inflate the recurrence signal and let a true one-off wrongly fire the memory beat).
+    if (!retry && isTask && typeof ProfileStore !== 'undefined') ProfileStore.observeMessage(text);
+    if (!retry && isTask && typeof MintStore !== 'undefined') MintStore.observe(text);   // notice recurring jobs → propose minting them as one-tap missions
+    // SALIENCE (decision 3): has this task SHAPE recurred? Read AFTER observe so it counts this run (the read itself is
+    // safe on retry — it doesn't mutate the count). Passed to the run so the server fires the memory turn-in on
+    // recurring work even when a terse exchange otherwise wouldn't, while a basic one-off is left to reflect()'s floor.
+    const recurring = !!(isTask && typeof MintStore !== 'undefined' && MintStore.recurringNow && MintStore.recurringNow(text));
     // VOICE: the speaker toggle (🔊) controls whether the agent SPEAKS its reply (and in the short,
     // spoken style — voiceModeRules appended below). It does NOT control the desk trip: the walk is driven
     // by REAL tool use (walkToDesk, below), so the speaker setting can't suppress it. When voice is on, a
@@ -1085,7 +1091,7 @@ const Chat = (() => {
     };
     try {
       const { text: reply, error, endReason } = await Harness.chat({
-        system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, signal: ac.signal, streamId: ws.id,
+        system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
