@@ -5,6 +5,9 @@
    download — the fetch only runs when the script is executed directly). */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 (async () => {
   const m = await import('../scripts/prepare-node.mjs');
@@ -52,6 +55,21 @@ const A = require('./_assert.js');
   A.eq(m.pickSha(sums, 'win-x64/node.exe'), 'deadbeef'.repeat(8), 'pickSha finds the win entry');
   A.eq(m.pickSha(sums, 'node-v22.12.0-linux-x64.tar.gz'), 'a'.repeat(64), 'pickSha finds the linux entry');
   A.throws(() => m.pickSha(sums, 'node-v22.12.0-darwin-arm64.tar.gz'), 'pickSha throws on a missing entry');
+
+  // ---- packaging hygiene: ignored sidecar runtime state must never be bundled into the installer ----
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prepare-node-hygiene-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'sidecar'), { recursive: true });
+    A.notThrows(() => m.assertNoBundledRuntimeState(tmp), 'empty sidecar is packageable');
+    fs.mkdirSync(path.join(tmp, 'sidecar', 'workspaces'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'sidecar', 'workspaces', 'agent.save.json'), '{}');
+    A.throws(() => m.assertNoBundledRuntimeState(tmp), 'sidecar/workspaces blocks desktop packaging');
+    fs.rmSync(path.join(tmp, 'sidecar', 'workspaces'), { recursive: true, force: true });
+    fs.mkdirSync(path.join(tmp, 'sidecar', 'workspaces.preground-bak'), { recursive: true });
+    A.throws(() => m.assertNoBundledRuntimeState(tmp), 'sidecar/workspaces.* backups block desktop packaging');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 
   A.report('prepare-node.test');
 })().catch(e => { console.error(e); process.exit(1); });

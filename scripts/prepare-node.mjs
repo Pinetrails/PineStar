@@ -10,7 +10,7 @@
 // Override version:    SKYNET_BUNDLE_NODE=v22.12.0
 //
 // Windows ships Node as a bare node.exe; macOS/Linux ship a .tar.gz whose bin/node we extract via `tar`.
-import { createWriteStream, mkdirSync, existsSync, rmSync, renameSync, readFileSync, chmodSync } from 'node:fs';
+import { createWriteStream, mkdirSync, existsSync, rmSync, renameSync, readFileSync, chmodSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { get } from 'node:https';
 import { join, dirname } from 'node:path';
@@ -102,7 +102,21 @@ export function pickSha(sumsBody, entry) {
   throw new Error(`missing ${entry} in SHASUMS256.txt`);
 }
 
+// Build hygiene: Tauri copies the whole sidecar resource directory, including gitignored files.
+// Refuse to package machine-local runtime state such as sidecar/workspaces/agent.save.json.
+export function assertNoBundledRuntimeState(rootDir = join(dirname(fileURLToPath(import.meta.url)), '..')) {
+  const sidecarDir = join(rootDir, 'sidecar');
+  if (!existsSync(sidecarDir)) return;
+  const bad = readdirSync(sidecarDir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && /^workspaces(?:[.-].*)?$/i.test(e.name))
+    .map(e => join(sidecarDir, e.name));
+  if (bad.length) {
+    throw new Error('refusing to build desktop bundle with runtime workspace state under sidecar: ' + bad.join(', '));
+  }
+}
+
 async function main(target) {
+  assertNoBundledRuntimeState();
   const r = resolveTarget(target);
   const here = dirname(fileURLToPath(import.meta.url));
   const outDir = join(here, '..', 'src-tauri', 'binaries');

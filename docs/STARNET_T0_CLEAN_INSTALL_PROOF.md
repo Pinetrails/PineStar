@@ -14,6 +14,9 @@ That requires:
 - The evidence installer hash matches the current NSIS installer hash.
 - The evidence records install success.
 - The evidence records first launch success.
+- The evidence records the install location, launched executable, and sidecar workspace root.
+- The sidecar workspace root must live under Windows AppData, never under the installation directory.
+- The install/executable/workspace paths must not point at a StarNet T3/T4 smoke-test install.
 
 A not a dev-box run does not count. A reinstall on the development checkout, a second local Windows user, or a cleared AppData profile can be useful smoke, but it is not T0 proof.
 
@@ -49,11 +52,15 @@ After running the current installer on a clean machine, create a JSON file with 
   },
   "install": {
     "succeeded": true,
-    "method": "manual"
+    "method": "manual",
+    "installLocation": "C:\\Users\\WDAGUtilityAccount\\AppData\\Local\\Programs\\StarNet"
   },
   "launch": {
     "succeeded": true,
-    "observedWindowTitle": "StarNet"
+    "observedWindowTitle": "StarNet",
+    "exePath": "C:\\Users\\WDAGUtilityAccount\\AppData\\Local\\Programs\\StarNet\\skynet-desktop.exe",
+    "startupRoot": "C:\\Users\\WDAGUtilityAccount\\AppData\\Local\\Programs\\StarNet",
+    "workspaceRoot": "C:\\Users\\WDAGUtilityAccount\\AppData\\Roaming\\ai.skynet.harness\\workspaces"
   },
   "notes": []
 }
