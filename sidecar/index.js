@@ -138,9 +138,13 @@ function rejectBadApiToken(req, res) {
   if (apiauth.apiTokenOk(req, API_TOKEN)) return false;
   res.writeHead(403); res.end('forbidden token'); return true;
 }
-// Desktop build: the live BYOK key — seeded from the OS keychain via env at spawn, and updated
+// Desktop build: live BYOK keys are seeded from the OS keychain via env at spawn, and updated
 // in place via the token-guarded POST /api/key (the parent shell pushes changes; no restart).
+// runtimeKey remains the OpenRouter back-compat alias for older routes/tool shims.
+const runtimeKeys = Object.create(null);
+const runtimeBaseUrls = Object.create(null);
 let runtimeKey = String(ENV('OPENROUTER_KEY') || '').trim();
+if (runtimeKey) runtimeKeys.openrouter = runtimeKey;
 // OpenRouter base URL override (env SKYNET_OPENROUTER_BASE). Default undefined -> the provider's own
 // https://openrouter.ai/api/v1. Lets a user point at an OR-compatible proxy, and lets the boot+run E2E aim
 // the provider at a local mock so the real streaming path is tested end-to-end without a live key.
@@ -513,14 +517,19 @@ function providerRuntimeKey(provider, explicitKey) {
   if (registryProviderUsesCodex(id)) return '';
   const explicit = String(explicitKey || '').trim();
   if (explicit) return explicit;
+  const runtime = String(runtimeKeys[id] || '').trim();
+  if (runtime) return runtime;
   const profile = getProviderProfile(id);
   if (id === 'openrouter') return runtimeKey || envFirst(profile && profile.keyEnv);
   return envFirst(profile && profile.keyEnv);
 }
 function providerRuntimeBaseUrl(provider, explicitBaseUrl) {
+  const id = normalizeProvider(provider);
   const explicit = String(explicitBaseUrl || '').trim();
   if (explicit) return explicit;
-  const profile = getProviderProfile(normalizeProvider(provider));
+  const runtime = String(runtimeBaseUrls[id] || '').trim();
+  if (runtime) return runtime;
+  const profile = getProviderProfile(id);
   return envFirst(profile && profile.baseUrlEnv) || (profile && profile.baseUrl) || '';
 }
 function providerHasCredential(provider, key, baseUrl) {
@@ -1284,7 +1293,7 @@ server.listen(PORT, '127.0.0.1', () => {
   if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
-  makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: OPENROUTER_BASE }).listModels().then(
+  makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
@@ -1373,13 +1382,54 @@ async function handleBudgetResume(req, res) {
   json(200, { resumed: scope, cap, status: budget.status(Date.now()) });
 }
 
-/* desktop key push: the parent shell sets the live BYOK key here (token-gated), so changing the
-   key never restarts the sidecar. SKYNET_IPC_TOKEN is a per-launch secret only the shell knows. */
+function setProviderRuntimeConfig(provider, patch) {
+  const id = normalizeProviderIdFromRegistry(provider, '');
+  if (!id || !getProviderProfile(id)) return null;
+  patch = patch || {};
+  if (Object.prototype.hasOwnProperty.call(patch, 'key')) {
+    const key = String(patch.key || '').trim();
+    if (key) runtimeKeys[id] = key;
+    else delete runtimeKeys[id];
+    if (id === 'openrouter') runtimeKey = key;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'baseUrl')) {
+    const baseUrl = String(patch.baseUrl || '').trim();
+    if (baseUrl) runtimeBaseUrls[id] = baseUrl;
+    else delete runtimeBaseUrls[id];
+  }
+  return id;
+}
+
+/* desktop key push: the parent shell sets live BYOK/provider config here (token-gated), so changing a
+   key never restarts the sidecar. Legacy text/plain bodies still update the OpenRouter key. */
 async function handleSetKey(req, res) {
   const token = String(ENV('IPC_TOKEN') || '');
   if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
-  try { runtimeKey = String(await readBody(req, 1 << 14) || '').trim(); } catch (_) {}
-  res.writeHead(200); return res.end('ok');
+  let raw = '';
+  try { raw = String(await readBody(req, 1 << 16) || ''); } catch (_) {}
+  let provider = 'openrouter';
+  let patch = { key: raw };
+  const trimmed = raw.trim();
+  if (trimmed && (trimmed[0] === '{' || trimmed[0] === '[')) {
+    try {
+      const body = JSON.parse(trimmed);
+      if (body && typeof body === 'object' && !Array.isArray(body)) {
+        provider = body.provider || body.id || provider;
+        patch = {};
+        if (Object.prototype.hasOwnProperty.call(body, 'key')) patch.key = body.key;
+        if (Object.prototype.hasOwnProperty.call(body, 'apiKey')) patch.key = body.apiKey;
+        if (Object.prototype.hasOwnProperty.call(body, 'api_key')) patch.key = body.api_key;
+        if (Object.prototype.hasOwnProperty.call(body, 'baseUrl')) patch.baseUrl = body.baseUrl;
+        if (Object.prototype.hasOwnProperty.call(body, 'base_url')) patch.baseUrl = body.base_url;
+      }
+    } catch (_) {}
+  }
+  const id = setProviderRuntimeConfig(provider, patch);
+  if (!id) { res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ error: 'unknown provider' })); }
+  const key = providerRuntimeKey(id, '');
+  const baseUrl = providerRuntimeBaseUrl(id, '');
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  return res.end(JSON.stringify({ ok: true, provider: id, configured: providerHasCredential(id, key, baseUrl) }));
 }
 
 /* ---- /api/connectors: the Connectors panel manages MCP servers. A token is accepted here, persisted to the
@@ -2738,7 +2788,7 @@ function handleProviders(req, res) {
   const providers = listProviderProfiles().map(p => {
     const key = providerRuntimeKey(p.id, '');
     const baseUrl = providerRuntimeBaseUrl(p.id, '');
-    return Object.assign({}, p, { configured: providerHasCredential(p.id, key, baseUrl) });
+    return Object.assign({}, p, { configured: providerHasCredential(p.id, key, baseUrl), currentBaseUrl: baseUrl || '' });
   });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ providers }));
@@ -2788,7 +2838,7 @@ async function handleProviderModels(req, res) {
 async function handleOpenRouterModels(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
-    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: OPENROUTER_BASE });
+    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE });
     const models = await provider.listModels();
     json(200, {
       models: models.map(m => ({

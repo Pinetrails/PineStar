@@ -36,7 +36,8 @@ const Harness = (() => {
       localStorage.setItem('starnet.byok.prov', String(DEV.prov || 'openrouter'));
     } catch (_) {}
   }
-  let _configured = false;   // desktop: cached "is a key stored?" (loaded by init())
+  let _configured = false;   // desktop back-compat alias for "is the OpenRouter key stored?"
+  let _configuredByProvider = Object.create(null);
   let apiToken = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
 
@@ -70,7 +71,23 @@ const Harness = (() => {
   async function init() {
     await ensureApiToken();
     if (!DESKTOP) return;
-    try { _configured = await invoke('harness_has_key'); } catch (_) { _configured = false; }
+    let loaded = false;
+    try {
+      const status = await invoke('harness_provider_key_status');
+      if (Array.isArray(status)) {
+        _configuredByProvider = Object.create(null);
+        status.forEach(s => {
+          const p = normalizeProviderId(s && s.provider);
+          _configuredByProvider[p] = !!(s && s.configured);
+        });
+        _configured = !!_configuredByProvider.openrouter;
+        loaded = true;
+      }
+    } catch (_) {}
+    if (!loaded) {
+      try { _configured = await invoke('harness_has_key'); } catch (_) { _configured = false; }
+      _configuredByProvider.openrouter = _configured;
+    }
   }
   /* whether a key is set — works in both modes; never exposes the value. In dev mode the host holds the
      key (runtimeKey), so we report configured without one — that's what lets a fresh origin auto-resume. */
@@ -82,6 +99,26 @@ const Harness = (() => {
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
   }
+  function providerSlot(base, provider) {
+    return base + '.' + normalizeProviderId(provider || getProv());
+  }
+  function readScoped(base, provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const scoped = localStorage.getItem(providerSlot(base, p));
+    if (scoped != null) return scoped;
+    return p === 'openrouter' ? (localStorage.getItem(base) || '') : '';
+  }
+  function writeScoped(base, provider, value) {
+    const p = normalizeProviderId(provider || getProv());
+    const v = value == null ? '' : String(value);
+    localStorage.setItem(providerSlot(base, p), v);
+    if (p === 'openrouter') localStorage.setItem(base, v);
+  }
+  function setDesktopConfigured(provider, value) {
+    const p = normalizeProviderId(provider || getProv());
+    _configuredByProvider[p] = !!value;
+    if (p === 'openrouter') _configured = !!value;
+  }
   function providerNeedsKey(provider) {
     const p = normalizeProviderId(provider);
     return p !== 'codex' && p !== 'ollama' && p !== 'custom';
@@ -89,22 +126,36 @@ const Harness = (() => {
   function configured(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'ollama') return true;
-    if (p === 'custom' && getBaseUrl()) return true;
-    return DESKTOP ? _configured : (DEVMODE || !providerNeedsKey(p) || !!getKey());
+    if (p === 'custom' && getBaseUrl(p)) return true;
+    return DESKTOP ? !!(_configuredByProvider[p] || (p === 'openrouter' && _configured)) : (DEVMODE || !providerNeedsKey(p) || !!getKey(p));
   }
 
   // getKey() returns the real key in the browser; in desktop it returns '' (the key isn't here).
-  const getKey = () => DESKTOP ? '' : (localStorage.getItem(LS.key) || '');
-  const setKey = k => {
-    if (DESKTOP) { _configured = !!(k && String(k).trim()); return invoke('harness_store_key', { key: k || '' }); }
-    localStorage.setItem(LS.key, k || '');
+  const getKey = provider => DESKTOP ? '' : readScoped(LS.key, provider);
+  const setKey = (k, provider) => {
+    const p = normalizeProviderId(provider || getProv());
+    if (DESKTOP) {
+      setDesktopConfigured(p, !!(k && String(k).trim()));
+      return invoke('harness_store_provider_key', { provider: p, key: k || '', baseUrl: getBaseUrl(p) || '' })
+        .catch(e => {
+          if (p === 'openrouter') return invoke('harness_store_key', { key: k || '' });
+          throw e;
+        });
+    }
+    writeScoped(LS.key, p, k || '');
   };
   const getModel = () => localStorage.getItem(LS.model) || '';
   const setModel = m => localStorage.setItem(LS.model, m || '');
   const getProv = () => normalizeProviderId(localStorage.getItem(LS.prov) || 'openrouter');
   const setProv = p => localStorage.setItem(LS.prov, normalizeProviderId(p || 'openrouter'));
-  const getBaseUrl = () => localStorage.getItem(LS.baseUrl) || '';
-  const setBaseUrl = u => localStorage.setItem(LS.baseUrl, u || '');
+  const getBaseUrl = provider => readScoped(LS.baseUrl, provider);
+  const setBaseUrl = (u, provider) => {
+    const p = normalizeProviderId(provider || getProv());
+    writeScoped(LS.baseUrl, p, u || '');
+    if (DESKTOP) {
+      return invoke('harness_store_provider_key', { provider: p, baseUrl: u || '' }).catch(() => {});
+    }
+  };
   function defaultReasoningEffortForProvider(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'codex') return 'low';
@@ -124,8 +175,8 @@ const Harness = (() => {
     };
     return map[key] || 'medium';
   }
-  const getReasoningEffort = provider => normalizeReasoningEffort(localStorage.getItem(LS.effort) || defaultReasoningEffortForProvider(provider));
-  const setReasoningEffort = e => localStorage.setItem(LS.effort, normalizeReasoningEffort(e));
+  const getReasoningEffort = provider => normalizeReasoningEffort(readScoped(LS.effort, provider) || defaultReasoningEffortForProvider(provider));
+  const setReasoningEffort = (e, provider) => writeScoped(LS.effort, provider || getProv(), normalizeReasoningEffort(e));
 
   /* per-million pricing for a model id, if known from the catalog */
   function priceOf(id) {
@@ -184,7 +235,7 @@ const Harness = (() => {
       let list;
       const p = normalizeProviderId(provider || getProv());
       try {
-        const q = (p === 'custom' && getBaseUrl()) ? ('?baseUrl=' + encodeURIComponent(getBaseUrl())) : '';
+        const q = (p === 'custom' && getBaseUrl(p)) ? ('?baseUrl=' + encodeURIComponent(getBaseUrl(p))) : '';
         list = await fetchModelCatalog('/api/models/' + encodeURIComponent(p) + q, 'models');
       } catch (_) {
         if (p === 'openrouter') list = await fetchModelCatalog(OR + '/models', 'data');
@@ -206,7 +257,7 @@ const Harness = (() => {
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
   async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, workbench, placed, internal }) {
-    const key = getKey(), model = getModel(), provider = getProv(), reasoningEffort = getReasoningEffort(provider);
+    const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
     if (providerNeedsKey(provider) && !DESKTOP && !DEVMODE && !key) throw new Error('no API key set');
@@ -215,7 +266,7 @@ const Harness = (() => {
     let res;
     try {
       const reqBody = { model, provider, reasoningEffort, system, messages, agentId: agentId || 'agent', isTask: !!isTask, recurring: !!recurring };
-      if (getBaseUrl()) reqBody.baseUrl = getBaseUrl();
+      if (getBaseUrl(provider)) reqBody.baseUrl = getBaseUrl(provider);
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
       // THE MOAT (FLOOR-REAL): send the agent's REAL placed capability objects so the sidecar grants exactly what's
       // on the floor (dish→web · cabinet→files · workbench→terminal · …). `placed` supersedes the legacy `workbench`

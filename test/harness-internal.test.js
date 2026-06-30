@@ -43,6 +43,9 @@ A.ok(!/never say you cannot reach the web or files/.test(sidecar), 'old blanket 
 A.ok(src.includes("fetchModelCatalog('/api/models/' + encodeURIComponent(p) + q, 'models')"), 'Harness.listModels prefers the sidecar provider catalog');
 A.ok(src.includes("fetchModelCatalog(OR + '/models', 'data')"), 'Harness.listModels keeps the direct OpenRouter catalog as fallback');
 A.ok(src.includes("params.indexOf('tools') >= 0"), 'Harness.listModels derives tool support from supported_parameters when needed');
+A.ok(src.includes("providerSlot(base, provider)"), 'Harness stores key/base-url settings in provider-scoped localStorage slots');
+A.ok(src.includes("invoke('harness_store_provider_key'"), 'desktop Harness pushes provider-scoped key updates to Tauri');
+A.ok(src.includes('getKey(provider)') || /const\s+getKey\s*=\s*provider\s*=>/.test(src), 'Harness.getKey accepts a provider argument');
 A.ok(/saved\s*&&\s*saved\.agent[\s\S]{0,180}Harness\.listModels\(\)/.test(app), 'auto-resume warms the model catalog before entering the game');
 
 // Hermes-style work discipline: task runs should push the model into a stable build loop instead of repeated

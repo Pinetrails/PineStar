@@ -19,6 +19,7 @@ const { bootToken } = require('./_httpToken.js');
 
 const HOST = '127.0.0.1';
 const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
+const IPC_TOKEN = 'ipc-provider-config-test-token';
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -26,7 +27,20 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function boot(port, workspaces, attemptsLeft) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, { SKYNET_PORT: String(port), SKYNET_WORKSPACES: workspaces }),
+      env: Object.assign({}, process.env, {
+        SKYNET_PORT: String(port),
+        SKYNET_WORKSPACES: workspaces,
+        SKYNET_IPC_TOKEN: IPC_TOKEN,
+        OPENAI_API_KEY: '',
+        STARNET_OPENAI_API_KEY: '',
+        SKYNET_OPENAI_API_KEY: '',
+        CUSTOM_OPENAI_KEY: '',
+        STARNET_CUSTOM_OPENAI_KEY: '',
+        SKYNET_CUSTOM_OPENAI_KEY: '',
+        CUSTOM_OPENAI_BASE_URL: '',
+        STARNET_CUSTOM_OPENAI_BASE_URL: '',
+        SKYNET_CUSTOM_OPENAI_BASE_URL: ''
+      }),
       stdio: ['ignore', 'pipe', 'pipe']
     });
     let out = '', settled = false;
@@ -129,6 +143,30 @@ function boot(port, workspaces, attemptsLeft) {
     const models = await j('GET', '/api/models/openrouter');
     A.eq(models.status, 200, 'GET /api/models/openrouter -> 200');
     A.ok(Array.isArray(models.body.models), 'provider model route returns a models array');
+
+    const pushOpenAi = await fetch(B + '/api/key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'openai', key: 'sk-provider-http-test-secret' })
+    });
+    A.eq(pushOpenAi.status, 200, 'POST /api/key can push an OpenAI provider key with the IPC token');
+    const openAiAck = await pushOpenAi.json();
+    A.eq(openAiAck.provider, 'openai', 'provider key ack names the configured provider');
+    A.eq(openAiAck.configured, true, 'provider key ack reports configured');
+    A.ok(JSON.stringify(openAiAck).indexOf('sk-provider-http-test-secret') < 0, 'provider key ack never echoes the secret');
+
+    const pushCustomBase = await fetch(B + '/api/key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'custom', baseUrl: 'http://127.0.0.1:65530/v1' })
+    });
+    A.eq(pushCustomBase.status, 200, 'POST /api/key can push custom provider base URL with the IPC token');
+    const configuredProviders = await j('GET', '/api/providers');
+    const openaiProvider = configuredProviders.body.providers.find(p => p.id === 'openai');
+    const customProvider = configuredProviders.body.providers.find(p => p.id === 'custom');
+    A.eq(!!(openaiProvider && openaiProvider.configured), true, 'OpenAI provider is configured after scoped key push');
+    A.eq(!!(customProvider && customProvider.configured), true, 'Custom provider is configured after scoped base URL push');
+    A.ok(JSON.stringify(configuredProviders.body).indexOf('sk-provider-http-test-secret') < 0, 'provider list never leaks the pushed secret');
 
     // ---- SSE telemetry requires the ?token= query (EventSource cannot send a header) ----
     const sseNoTok = await fetch(B + '/api/channels/events');

@@ -132,7 +132,7 @@ const ModelDock = (() => {
     p = normalizeProvider(p || provider());
     if (p === provider()) return true;
     try {
-      if (typeof Harness !== 'undefined' && Harness.getKey && Harness.getKey()) return true;
+      if (typeof Harness !== 'undefined' && Harness.getKey && Harness.getKey(p)) return true;
       if (typeof Harness !== 'undefined' && Harness.configured && Harness.configured(p)) return true;
     } catch (_) {}
     if (p === 'ollama') return true;
@@ -243,8 +243,8 @@ const ModelDock = (() => {
       } else if (typeof Harness !== 'undefined' && Harness.listModels) {
         if (!providerEnabled(p)) { cache[p] = []; return []; }
         try {
-          const q = (p === 'custom' && typeof Harness !== 'undefined' && Harness.getBaseUrl && Harness.getBaseUrl())
-            ? ('?baseUrl=' + encodeURIComponent(Harness.getBaseUrl())) : '';
+          const q = (p === 'custom' && typeof Harness !== 'undefined' && Harness.getBaseUrl && Harness.getBaseUrl(p))
+            ? ('?baseUrl=' + encodeURIComponent(Harness.getBaseUrl(p))) : '';
           const r = await apiFetch('/api/models/' + encodeURIComponent(p) + q, { cache: 'no-store' });
           const j = await r.json();
           if (Array.isArray(j.models) && j.models.length) list = j.models.map(m => asModel(m, p));

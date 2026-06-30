@@ -210,6 +210,24 @@ const App = (() => {
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
   }
+  function providerNeedsKey(provider) {
+    const p = normalizeProviderId(provider);
+    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+  }
+  function providerUsesKeyBox(provider) {
+    const p = normalizeProviderId(provider);
+    return p !== 'codex' && p !== 'ollama';
+  }
+  function providerNeedsBaseUrl(provider) {
+    return normalizeProviderId(provider) === 'custom';
+  }
+  function providerKeyPlaceholder(provider, configured) {
+    const p = normalizeProviderId(provider);
+    if (configured) return 'stored locally - leave blank to keep';
+    if (p === 'openai') return 'sk-...  -  platform.openai.com/api-keys';
+    if (p === 'custom') return 'optional API key for this endpoint';
+    return 'sk-or-...  -  openrouter.ai/keys';
+  }
   function applyQuickModel(sel) {
     if (!agent || !sel) return;
     const model = String(sel.model || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '') || '').trim();
@@ -397,8 +415,10 @@ const App = (() => {
         provider,
         reasoningEffort
       };
-      const key = (typeof Harness !== 'undefined' && Harness.getKey) ? Harness.getKey() : '';
+      const key = (typeof Harness !== 'undefined' && Harness.getKey) ? Harness.getKey(provider) : '';
       if (key) body.key = key;
+      const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? Harness.getBaseUrl(provider) : '';
+      if (baseUrl) body.baseUrl = baseUrl;
       fetch('/api/channels/telegram/sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -467,10 +487,11 @@ const App = (() => {
   }
 
   /* ---------- connect screen ---------- */
-  async function loadModels() {
+  async function loadModels(provider) {
+    const p = normalizeProviderId(provider || pickedProvider);
     const dl = el('model-list'), countEl = el('model-count'), inp = el('in-model');
     el('model-hint').textContent = 'loading model catalog…';
-    const list = await Harness.listModels();
+    const list = await Harness.listModels(p);
     dl.innerHTML = '';
     for (const m of list) { const o = document.createElement('option'); o.value = m.id; dl.appendChild(o); }
     if (list.length) {
@@ -484,7 +505,11 @@ const App = (() => {
       // catalog unreachable (no network to openrouter.ai, or fetch blocked): DON'T leave the field
       // looking like it's still loading. Seed a few common slugs and make the placeholder actionable
       // so the screen stays usable — you can always just type the slug you use.
-      const FALLBACK = ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro'];
+      const FALLBACK = p === 'openai'
+        ? ['gpt-5.5', 'gpt-5.4', 'gpt-4.1']
+        : p === 'ollama'
+          ? ['llama3.1', 'qwen2.5-coder', 'mistral']
+          : ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro'];
       for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
       countEl.textContent = '(catalog offline — type or pick a slug)';
       if (!inp.value) { inp.value = FALLBACK[0]; inp.placeholder = 'type a model slug — e.g. gpt-5.5'; }   // default-fill even offline so WAKE works; the Commander can overtype
@@ -611,7 +636,23 @@ const App = (() => {
     pickedProvider = normalizeProviderId(p);
     document.querySelectorAll('.provider-row .prov').forEach(b => b.classList.toggle('sel', b.dataset.prov === pickedProvider));
     const isCodex = pickedProvider === 'codex';
-    el('key-block').classList.toggle('hidden', isCodex);
+    const keyBlock = el('key-block'), keyInput = el('in-key');
+    const baseBlock = el('base-url-block'), baseInput = el('in-base-url');
+    const configured = !!(Harness.configured && Harness.configured(pickedProvider));
+    keyBlock.classList.toggle('hidden', !providerUsesKeyBox(pickedProvider));
+    if (keyInput) {
+      keyInput.value = Harness.getKey ? Harness.getKey(pickedProvider) : '';
+      keyInput.placeholder = providerKeyPlaceholder(pickedProvider, configured && !keyInput.value);
+    }
+    if (baseBlock) baseBlock.classList.toggle('hidden', !providerNeedsBaseUrl(pickedProvider));
+    if (baseInput) {
+      baseInput.value = (Harness.getBaseUrl && Harness.getBaseUrl(pickedProvider)) || '';
+      baseInput.onchange = () => {
+        if (Harness.setBaseUrl) Harness.setBaseUrl(baseInput.value.trim(), pickedProvider);
+        loadModels(pickedProvider);
+      };
+      baseInput.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); onWake(); } };
+    }
     el('codex-block').classList.toggle('hidden', !isCodex);
     // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
     // ChatGPT-sub path (no key at all), so hide it there.
@@ -621,7 +662,7 @@ const App = (() => {
       refreshCodexStatus();
     } else {
       stopCodexPoll(); codexFlow = null;
-      loadModels();
+      loadModels(pickedProvider);
     }
     buildModelPicks();        // recommended chips (OpenRouter only; clears itself on the codex path)
   }
@@ -994,15 +1035,19 @@ const App = (() => {
     if (!model) { msg.textContent = 'choose or type a model slug.'; return; }
     if (pickedProvider === 'codex') {
       if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return; }
-      Harness.setKey('');                                   // the Codex path authenticates by OAuth token, not a key
       Harness.setModel(model); Harness.setProv('codex');
     } else {
       const key = el('in-key').value.trim();
+      const baseUrl = el('in-base-url') ? el('in-base-url').value.trim() : '';
+      if (providerNeedsBaseUrl(pickedProvider)) {
+        if (!baseUrl) { msg.textContent = 'enter your Custom /v1 base URL.'; return; }
+        if (Harness.setBaseUrl) await Harness.setBaseUrl(baseUrl, pickedProvider);
+      }
       const configured = !!(Harness.configured && Harness.configured(pickedProvider));
-      if (!key && !configured) { msg.textContent = 'enter your ' + providerLabel(pickedProvider) + ' API key.'; return; }
+      if (providerNeedsKey(pickedProvider) && !key && !configured) { msg.textContent = 'enter your ' + providerLabel(pickedProvider) + ' API key.'; return; }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
-      if (key) await Harness.setKey(key);
+      if (key) await Harness.setKey(key, pickedProvider);
       Harness.setModel(model); Harness.setProv(pickedProvider);
     }
 

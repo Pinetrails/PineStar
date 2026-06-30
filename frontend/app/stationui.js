@@ -1018,8 +1018,8 @@ const StationUI = (() => {
     if (codexConnected()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true });
     // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
     if (h.getKey) {
-      const set = (h.configured && h.configured(active)) || !!h.getKey();
-      if (set && active !== 'codex') out.push({ provider: active, key: h.getKey(), model: (h.getModel && h.getModel()) || '', local: active === 'ollama' });
+      const set = (h.configured && h.configured(active)) || !!h.getKey(active);
+      if (set && active !== 'codex') out.push({ provider: active, key: h.getKey(active), baseUrl: h.getBaseUrl ? h.getBaseUrl(active) : '', model: (h.getModel && h.getModel()) || '', local: active === 'ollama' });
     }
     return out;
   }
@@ -1035,7 +1035,7 @@ const StationUI = (() => {
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
       const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
-      return '<div class="prov-card ' + cls + '">' +
+      return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
@@ -1071,11 +1071,22 @@ const StationUI = (() => {
           ' · <span class="key-stat">no API key needed</span></div>' +
           '</div></div>';
       }
+      if (k.local) {
+        return '<div class="key-row">' +
+          '<span class="conn-dot"></span>' +
+          '<div class="key-main">' +
+          '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
+          '<code class="key-mask" title="local OpenAI-compatible endpoint">Local endpoint</code></div>' +
+          '<div class="key-meta">model <b>' + esc(k.model || 'â€”') + '</b> Â· ' +
+          (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
+          ' Â· <span class="key-stat">no API key needed</span></div>' +
+          '</div></div>';
+      }
       return '<div class="key-row">' +
         '<span class="conn-dot"></span>' +
         '<div class="key-main">' +
         '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
-        '<code class="key-mask" title="shown masked — the full key is never displayed">' + esc(maskKey(k.key)) + '</code></div>' +
+        '<code class="key-mask" title="shown masked when a key exists — the full key is never displayed">' + esc(k.key ? maskKey(k.key) : (k.baseUrl || 'keyless endpoint')) + '</code></div>' +
         '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
         (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') + '</div>' +
         '</div>' +
@@ -1101,7 +1112,7 @@ const StationUI = (() => {
           const inp = body.querySelector('#key-in-new');
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
-          if (h.setKey) h.setKey(v);
+          if (h.setKey) h.setKey(v, activeProv());
           notify('connected ' + provName(activeProv()) + ' API key', 'good');
           rerender('settings');
           return;
@@ -1115,11 +1126,11 @@ const StationUI = (() => {
           const inp = body.querySelector('#key-in-' + i);
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
-          if (h.setKey) h.setKey(v);
+          if (h.setKey) h.setKey(v, row.provider);
           notify('updated ' + provName(row.provider) + ' API key', 'good');
           rerender('settings');
         } else if (act === 'rm') {
-          if (b.dataset.armed) { if (h.setKey) h.setKey(''); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); sfx('bad'); rerender('settings'); return; }
+          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); sfx('bad'); rerender('settings'); return; }
           b.dataset.armed = '1'; b.textContent = '✕ CONFIRM'; sfx('bad');
           setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '✕ REMOVE'; } }, 5000);
         }
@@ -1135,6 +1146,26 @@ const StationUI = (() => {
   }
 
   /* ============== SETTINGS — connections + real CRT / theme / audio toggles ============== */
+  function wireProviderActions(body) {
+    body.querySelectorAll('.prov-card[data-provider]').forEach(card => {
+      const activate = () => {
+        const h = H();
+        const p = card.dataset.provider;
+        if (!h || !p || !h.setProv) return;
+        h.setProv(p);
+        notify('selected ' + provName(p) + ' provider', 'good');
+        sfx('click');
+        rerender('settings');
+      };
+      card.addEventListener('click', activate);
+      card.addEventListener('keydown', ev => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        ev.preventDefault();
+        activate();
+      });
+    });
+  }
+
   function buildSettings(body) {
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
@@ -1190,6 +1221,7 @@ const StationUI = (() => {
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
+    wireProviderActions(body);
     wireKeyActions(body);
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
     body.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
@@ -1414,8 +1446,9 @@ const StationUI = (() => {
       if (!token && !configured) { sfx('bad'); msgEl.textContent = 'paste your @BotFather token first'; return; }
       const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const usingCodex = provider === 'codex' || provider === 'openai-codex';
-      const key = (typeof Harness !== 'undefined' && Harness.getKey()) || '';
-      const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
+      const key = (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey(provider) || '') : '';
+      const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? (Harness.getBaseUrl(provider) || '') : '';
+      const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured(provider));
       const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
       if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); msgEl.textContent = 'connect your agent (provider + model) on the title screen first'; return; }
       // hand the sidecar the REAL agent identity so Telegram is the SAME agent: the agentId the app uses for runs
@@ -1427,7 +1460,7 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       msgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, agentId, system, agentName }) });
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, baseUrl, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }

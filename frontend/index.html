@@ -74,10 +74,17 @@
             <div class="provider-row ov-prov">
               <button class="prov sel" data-prov="openrouter">OPENROUTER</button>
               <button class="prov" data-prov="codex">CHATGPT SUB</button>
+              <button class="prov" data-prov="openai">OPENAI</button>
+              <button class="prov" data-prov="ollama">OLLAMA</button>
+              <button class="prov" data-prov="custom">CUSTOM</button>
             </div>
 
             <div id="key-block">
               <input id="in-key" type="password" placeholder="sk-or-…  —  openrouter.ai/keys" autocomplete="off" spellcheck="false">
+            </div>
+
+            <div id="base-url-block" class="hidden">
+              <input id="in-base-url" type="text" placeholder="https://your-host.example/v1" autocomplete="off" spellcheck="false">
             </div>
 
             <div id="codex-block" class="hidden">
