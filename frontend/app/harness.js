@@ -273,7 +273,7 @@ const Harness = (() => {
       // boolean; an old caller passing only `workbench` still grants the terminal.
       if (Array.isArray(placed) && placed.length) reqBody.placed = placed;
       else if (workbench) reqBody.workbench = true;
-      if (!DESKTOP && !DEVMODE) reqBody.key = key;   // dev: omit so the sidecar uses its env key (runtimeKey)
+      if (!DESKTOP && !DEVMODE && provider !== 'codex') reqBody.key = key;   // dev/desktop/Codex keep secrets server-side
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },

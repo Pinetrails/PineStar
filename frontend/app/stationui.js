@@ -995,6 +995,8 @@ const StationUI = (() => {
   const H = () => (typeof Harness === 'object' && Harness) ? Harness : null;
   function provName(id) { const p = PROVIDERS.find(x => x.id === id); return p ? p.name : String(id || '').toUpperCase(); }
   function activeProv() { const h = H(); return (h && h.getProv && h.getProv()) || 'openrouter'; }
+  let codexConnectionKnown = null;
+  let codexConnectionChecking = false;
   // mask a secret to a provider-recognisable prefix + last 4 — the middle is NEVER emitted.
   function maskKey(k) {
     k = String(k || ''); if (!k) return '';
@@ -1004,12 +1006,25 @@ const StationUI = (() => {
     const tail = k.length > head.length + 4 ? k.slice(-4) : '';
     return head + '••••••••' + tail;
   }
-  // the REAL connected keys, read from the BYOK store. Today that's a single OpenRouter key;
-  // the shape is a LIST so extra providers slot in later without touching this view.
-  // Codex authenticates by ChatGPT OAuth (no API key). The runnable signal is the persisted provider the runs
-  // actually use — getProv()==='codex'. (QA-1: without this the panel reported "No API keys connected" while a
-  // Codex session was live and running.)
-  function codexConnected() { const h = H(); return !!(h && h.getProv && h.getProv() === 'codex'); }
+  // the REAL connected providers: OpenRouter from the BYOK store, Codex from sidecar OAuth status.
+  // They are additive, so signing into ChatGPT must not occupy the OpenRouter key slot.
+  function refreshCodexConnectionStatus() {
+    if (codexConnectionChecking || typeof fetch !== 'function') return;
+    codexConnectionChecking = true;
+    fetch('/api/auth/codex/status', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { connected: false })
+      .then(j => {
+        const next = !!(j && j.connected);
+        if (codexConnectionKnown !== next) { codexConnectionKnown = next; rerender('settings'); }
+      })
+      .catch(() => {})
+      .finally(() => { codexConnectionChecking = false; });
+  }
+  function codexConnected() {
+    if (codexConnectionKnown !== null) return !!codexConnectionKnown;
+    const h = H();
+    return !!(h && h.getProv && h.getProv() === 'codex');
+  }
   function connectedKeys() {
     const h = H(); if (!h) return [];
     const out = [];
@@ -1017,13 +1032,31 @@ const StationUI = (() => {
     // Codex first when it's the live provider — an OAuth connection that carries a model but no API key.
     if (codexConnected()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true });
     // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
-    if (h.getKey) {
-      const set = (h.configured && h.configured(active)) || !!h.getKey(active);
-      if (set && active !== 'codex') out.push({ provider: active, key: h.getKey(active), baseUrl: h.getBaseUrl ? h.getBaseUrl(active) : '', model: (h.getModel && h.getModel()) || '', local: active === 'ollama' });
+    function addProvider(provider) {
+      if (!provider || provider === 'codex' || out.some(k => k.provider === provider)) return;
+      const set = (h.configured && h.configured(provider)) || !!(h.getKey && h.getKey(provider));
+      if (set) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
     }
+    addProvider(active);
+    if (active !== 'openrouter') addProvider('openrouter');
     return out;
   }
   function keysFor(id) { return connectedKeys().filter(x => x.provider === id); }
+  function providerAcceptsKey(provider) {
+    provider = provider || activeProv();
+    return provider !== 'codex' && provider !== 'ollama';
+  }
+  function addKeyHtml(provider, empty) {
+    provider = provider || 'openrouter';
+    return '<div class="key-empty">' +
+      '<p>' + (empty
+        ? 'No API keys connected. Paste a key here to reconnect - it stays on this machine.'
+        : 'Add a ' + esc(provName(provider)) + ' key while keeping your ChatGPT sign-in connected.') + '</p>' +
+      '<div class="key-edit">' +
+      '<input type="password" class="key-input" id="key-in-new" placeholder="paste ' + esc(provName(provider)) + ' key..." autocomplete="off" spellcheck="false">' +
+      '<button class="bb sm" data-act="add" data-provider="' + esc(provider) + '">SAVE</button>' +
+      '</div></div>';
+  }
 
   function providersHtml() {
     const active = activeProv();
@@ -1047,6 +1080,10 @@ const StationUI = (() => {
   }
   function keysHtml() {
     const keys = connectedKeys(), active = activeProv();
+    const addProvider = active === 'codex' ? 'openrouter' : active;
+    const hasAddProvider = keys.some(k => k.provider === addProvider);
+    if (!keys.length) return providerAcceptsKey(addProvider) ? addKeyHtml(addProvider, true) : '<div class="key-empty"><p>No API keys connected.</p></div>';
+/*
     if (!keys.length) {
       // reachable in-session via REMOVE — let the user reconnect right here, no CONNECT-screen round-trip.
       return '<div class="key-empty">' +
@@ -1057,6 +1094,8 @@ const StationUI = (() => {
         '</div></div>';
     }
     return keys.map((k, i) => {
+*/
+    const rows = keys.map((k, i) => {
       // ACTIVE only when the key can actually run: selected provider AND a model is set (never overstate runnability).
       const runnable = k.provider === active && !!k.model;
       // Codex (OAuth) has no API key to mask/edit/remove — render it honestly as a sign-in connection.
@@ -1098,7 +1137,9 @@ const StationUI = (() => {
         '<input type="password" class="key-input" id="key-in-' + i + '" placeholder="paste new ' + esc(provName(k.provider)) + ' key…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="save" data-i="' + i + '">SAVE</button>' +
         '</div>';
-    }).join('');
+    });
+    if (providerAcceptsKey(addProvider) && !hasAddProvider) rows.push(addKeyHtml(addProvider, false));
+    return rows.join('');
   }
   // edit-in-place / guarded remove for a stored key. Mirrors the CLEAR arm/confirm pattern
   // (no native dialogs inside the phosphor terminal). All writes go through the Harness store.
@@ -1112,8 +1153,9 @@ const StationUI = (() => {
           const inp = body.querySelector('#key-in-new');
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
-          if (h.setKey) h.setKey(v, activeProv());
-          notify('connected ' + provName(activeProv()) + ' API key', 'good');
+          const provider = b.dataset.provider || activeProv();
+          if (h.setKey) h.setKey(v, provider);
+          notify('connected ' + provName(provider) + ' API key', 'good');
           rerender('settings');
           return;
         }
@@ -1167,6 +1209,7 @@ const StationUI = (() => {
   }
 
   function buildSettings(body) {
+    refreshCodexConnectionStatus();
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
     const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
