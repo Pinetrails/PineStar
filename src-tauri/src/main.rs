@@ -34,6 +34,7 @@ struct AppState {
     workspaces: PathBuf,
     startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
+    keep_awake: Mutex<KeepAwakeState>,
 }
 
 impl AppState {
@@ -48,6 +49,135 @@ impl AppState {
 }
 
 struct PendingUpdate(Mutex<Option<Update>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KeepAwakeStatus {
+    desktop: bool,
+    supported: bool,
+    enabled: bool,
+    message: Option<String>,
+}
+
+#[cfg(windows)]
+struct KeepAwakeHandle {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    _reason: Vec<u16>,
+}
+
+#[cfg(windows)]
+unsafe impl Send for KeepAwakeHandle {}
+
+#[cfg(windows)]
+impl KeepAwakeHandle {
+    fn create() -> Result<Self, String> {
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, GetLastError, INVALID_HANDLE_VALUE,
+        };
+        use windows_sys::Win32::System::Power::{
+            PowerCreateRequest, PowerSetRequest, PowerRequestSystemRequired,
+        };
+        use windows_sys::Win32::System::Threading::{
+            REASON_CONTEXT, REASON_CONTEXT_0, POWER_REQUEST_CONTEXT_SIMPLE_STRING,
+        };
+
+        let mut reason: Vec<u16> = "StarNet scheduled tasks are allowed to run while the app is open"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let context = REASON_CONTEXT {
+            Version: 0,
+            Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
+            Reason: REASON_CONTEXT_0 {
+                SimpleReasonString: reason.as_mut_ptr(),
+            },
+        };
+        let handle = unsafe { PowerCreateRequest(&context) };
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            let code = unsafe { GetLastError() };
+            return Err(format!("PowerCreateRequest failed with Windows error {code}"));
+        }
+        if unsafe { PowerSetRequest(handle, PowerRequestSystemRequired) } == 0 {
+            let code = unsafe { GetLastError() };
+            unsafe {
+                CloseHandle(handle);
+            }
+            return Err(format!("PowerSetRequest failed with Windows error {code}"));
+        }
+        Ok(Self {
+            handle,
+            _reason: reason,
+        })
+    }
+}
+
+#[cfg(windows)]
+impl Drop for KeepAwakeHandle {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Power::{
+            PowerClearRequest, PowerRequestSystemRequired,
+        };
+
+        unsafe {
+            let _ = PowerClearRequest(self.handle, PowerRequestSystemRequired);
+            let _ = CloseHandle(self.handle);
+        }
+    }
+}
+
+#[cfg(windows)]
+struct KeepAwakeState {
+    request: Option<KeepAwakeHandle>,
+}
+
+#[cfg(windows)]
+impl KeepAwakeState {
+    fn new() -> Self {
+        Self { request: None }
+    }
+
+    fn status(&self) -> KeepAwakeStatus {
+        KeepAwakeStatus {
+            desktop: true,
+            supported: true,
+            enabled: self.request.is_some(),
+            message: None,
+        }
+    }
+
+    fn set_enabled(&mut self, enabled: bool) -> Result<KeepAwakeStatus, String> {
+        if enabled && self.request.is_none() {
+            self.request = Some(KeepAwakeHandle::create()?);
+        } else if !enabled {
+            self.request = None;
+        }
+        Ok(self.status())
+    }
+}
+
+#[cfg(not(windows))]
+struct KeepAwakeState;
+
+#[cfg(not(windows))]
+impl KeepAwakeState {
+    fn new() -> Self {
+        Self
+    }
+
+    fn status(&self) -> KeepAwakeStatus {
+        KeepAwakeStatus {
+            desktop: true,
+            supported: false,
+            enabled: false,
+            message: Some("Keep Computer Awake is currently supported on Windows desktop builds.".to_string()),
+        }
+    }
+
+    fn set_enabled(&mut self, _enabled: bool) -> Result<KeepAwakeStatus, String> {
+        Ok(self.status())
+    }
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -503,6 +633,30 @@ fn starnet_toggle_fullscreen(app: AppHandle) -> Result<bool, String> {
     Ok(next)
 }
 
+/// Prevent idle system sleep while StarNet is open. This does not force the
+/// display to stay on; it only keeps scheduled tasks from being paused by OS sleep.
+#[tauri::command]
+fn starnet_set_keep_awake(
+    enabled: bool,
+    state: State<AppState>,
+) -> Result<KeepAwakeStatus, String> {
+    state
+        .keep_awake
+        .lock()
+        .map_err(|_| "keep-awake state is unavailable".to_string())?
+        .set_enabled(enabled)
+}
+
+/// Read the current native keep-awake state without changing the OS assertion.
+#[tauri::command]
+fn starnet_keep_awake_status(state: State<AppState>) -> Result<KeepAwakeStatus, String> {
+    Ok(state
+        .keep_awake
+        .lock()
+        .map_err(|_| "keep-awake state is unavailable".to_string())?
+        .status())
+}
+
 /// Desktop updater status without hitting the network. The frontend uses this to
 /// render the Update Center immediately and decide whether native updates exist.
 #[tauri::command]
@@ -613,6 +767,8 @@ fn main() {
             harness_clear_key,
             open_external_url,
             starnet_toggle_fullscreen,
+            starnet_set_keep_awake,
+            starnet_keep_awake_status,
             starnet_update_status,
             starnet_update_check,
             starnet_update_install
@@ -650,6 +806,7 @@ fn main() {
                 workspaces,
                 startup_log,
                 sidecar: Mutex::new(None),
+                keep_awake: Mutex::new(KeepAwakeState::new()),
             };
             let _ = spawn_sidecar(&state);
             app.manage(state);
