@@ -5,6 +5,7 @@
 'use strict';
 const A = require('./_assert.js');
 const auth = require('../sidecar/providers/codex-auth.js');
+const tokenStore = require('../sidecar/providers/codex-token-store.js');
 
 const json = (obj, status) => new Response(JSON.stringify(obj), { status: status || 200, headers: { 'Content-Type': 'application/json' } });
 // records every call so we can assert the request shape, and replies from a queue/handler
@@ -152,6 +153,36 @@ function jwt(claims) {
     A.eq(auth.accessTokenIsExpiring(fresh, 120, now), false, 'a token 10min out is fresh');
     A.eq(auth.accessTokenIsExpiring(stale, 120, now), true, 'a token 30s out is expiring (inside 120s skew)');
     A.eq(auth.accessTokenIsExpiring('opaque-no-exp', 120, now), false, 'an opaque token without exp is treated as fresh');
+  }
+
+  // F. token-store migration: a desktop workspace-root move must not strand an existing ChatGPT OAuth login.
+  {
+    const pathMod = require('node:path');
+    const currentRoot = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Roaming', 'ai.skynet.harness', 'workspaces');
+    const legacyRoot = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local', 'StarNet', 'workspaces');
+    const sidecarDir = pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local', 'StarNet', 'sidecar');
+    const files = tokenStore.candidateCodexTokenFiles({
+      pathMod, currentWorkspaces: currentRoot, defaultWorkspaces: () => legacyRoot, sidecarDir,
+      env: { LOCALAPPDATA: pathMod.join('C:\\', 'Users', 'u', 'AppData', 'Local') }
+    });
+    A.eq(files[0], pathMod.join(currentRoot, 'codex', 'tokens.json'), 'current workspace is checked first');
+    A.ok(files.indexOf(pathMod.join(legacyRoot, 'codex', 'tokens.json')) >= 0, 'legacy StarNet workspace token is a candidate');
+    A.ok(files.indexOf(pathMod.join(sidecarDir, 'workspaces', 'codex', 'tokens.json')) >= 0, 'old install-sidecar workspace token is a candidate');
+
+    const currentFile = files[0];
+    const legacyFile = pathMod.join(legacyRoot, 'codex', 'tokens.json');
+    const store = {};
+    store[legacyFile] = { access_token: 'acc', refresh_token: 'ref', auth_mode: 'chatgpt' };
+    let saved = null, migrated = null;
+    const loaded = tokenStore.loadCodexTokensWithMigration({
+      currentFile, candidateFiles: files, pathMod,
+      load: file => store[file] || null,
+      save: (file, raw) => { saved = { file, raw }; store[file] = raw; },
+      onMigrate: from => { migrated = from; }
+    });
+    A.eq(loaded.access_token, 'acc', 'loads a valid token from the legacy workspace');
+    A.eq(saved.file, currentFile, 'persists migrated tokens into the active workspace');
+    A.eq(migrated, legacyFile, 'reports the legacy source used for migration');
   }
 
   A.report('provider.codex-auth.test');

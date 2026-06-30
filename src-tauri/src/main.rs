@@ -140,6 +140,85 @@ fn workspace_path(app: &tauri::AppHandle) -> PathBuf {
         })
 }
 
+fn same_path(a: &Path, b: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        a == b
+    }
+}
+
+fn push_unique_path(out: &mut Vec<PathBuf>, path: PathBuf) {
+    if out.iter().any(|p| same_path(p, &path)) {
+        return;
+    }
+    out.push(path);
+}
+
+fn legacy_workspace_paths(root: &Path, current: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let appdata_bases = [
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
+        std::env::var_os("APPDATA").map(PathBuf::from),
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+    ];
+    for base in appdata_bases.into_iter().flatten() {
+        push_unique_path(&mut out, base.join("StarNet").join("workspaces"));
+        push_unique_path(&mut out, base.join("Skynet").join("workspaces"));
+        push_unique_path(&mut out, base.join("ai.skynet.harness").join("workspaces"));
+    }
+    push_unique_path(
+        &mut out,
+        strip_verbatim(root).join("sidecar").join("workspaces"),
+    );
+    push_unique_path(&mut out, strip_verbatim(root).join("workspaces"));
+    out.into_iter()
+        .filter(|path| !same_path(path, current))
+        .collect()
+}
+
+fn copy_missing_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let meta = std::fs::symlink_metadata(src)?;
+    if meta.file_type().is_symlink() {
+        return Ok(());
+    }
+    if meta.is_file() {
+        if !dst.exists() {
+            if let Some(parent) = dst.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let _ = std::fs::copy(src, dst)?;
+        }
+        return Ok(());
+    }
+    if !meta.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        copy_missing_dir(&entry.path(), &dst.join(entry.file_name()))?;
+    }
+    Ok(())
+}
+
+fn migrate_workspace_data(current: &Path, legacy_roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut migrated = Vec::new();
+    let _ = std::fs::create_dir_all(current);
+    for legacy in legacy_roots {
+        if !legacy.is_dir() {
+            continue;
+        }
+        if copy_missing_dir(legacy, current).is_ok() {
+            migrated.push(legacy.clone());
+        }
+    }
+    migrated
+}
+
 fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
     let Some(path) = path else {
         return;
@@ -547,15 +626,19 @@ fn main() {
             let api_token = uuid::Uuid::new_v4().to_string();
             let startup_log = startup_log_path(app.handle());
             let workspaces = workspace_path(app.handle());
-            let _ = std::fs::create_dir_all(&workspaces);
+            let migrated_workspaces = migrate_workspace_data(
+                &workspaces,
+                &legacy_workspace_paths(&root, &workspaces),
+            );
             log_startup(
                 &startup_log,
                 format!(
-                    "startup exe={:?} resource_dir={:?} root={} workspaces={} port={}",
+                    "startup exe={:?} resource_dir={:?} root={} workspaces={} migrated_from={:?} port={}",
                     std::env::current_exe(),
                     app.path().resource_dir(),
                     root.display(),
                     workspaces.display(),
+                    migrated_workspaces,
                     port
                 ),
             );

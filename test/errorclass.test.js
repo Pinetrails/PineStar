@@ -159,6 +159,12 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(F(new Error('sidecar HTTP 403')).kind, 'auth', '403 -> auth');
   A.eq(F(new Error('invalid api key')).kind, 'auth', '"invalid api key" -> auth');
 
+  v = F(new Error('ChatGPT sign-in needed: Not signed in to ChatGPT'));
+  A.eq(v.kind, 'oauth', 'ChatGPT sign-in error -> oauth');
+  A.eq(v.retryable, false, 'oauth auth is not a blind retry');
+  A.eq(v.action, 'settings', 'oauth points at Settings');
+  A.ok(/ChatGPT sign-in/i.test(v.userMessage), 'oauth friendly headline names ChatGPT sign-in');
+
   // capability denied -> NOT retryable, action = skills
   v = F(new Error('no web — capability is off'));
   A.eq(v.kind, 'capdenied', 'capdenied forwarded string -> capdenied');
@@ -235,6 +241,7 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(B(new Error('sidecar HTTP 429')).kind, 'rate_limit', 'browser: 429 -> rate_limit');
   A.eq(B(new Error('sidecar HTTP 401')).kind, 'auth', 'browser: 401 -> auth');
   A.eq(B(new Error('invalid api key')).kind, 'auth', 'browser: invalid api key -> auth');
+  A.eq(B(new Error('ChatGPT sign-in needed: codex_not_connected')).kind, 'oauth', 'browser: ChatGPT sign-in -> oauth');
   A.eq(B(new Error('sidecar HTTP 402')).kind, 'billing', 'browser: 402 -> billing');
   A.eq(B(new Error('sidecar HTTP 404')).kind, 'model_not_found', 'browser: 404 -> model_not_found');
   A.eq(B(new Error('sidecar HTTP 504')).kind, 'timeout', 'browser: 504 -> timeout');

@@ -38,6 +38,7 @@
     network:       { retryable: true,  action: null,       msg: "Can't reach the StarNet sidecar — make sure it's still running." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is rate-limiting — wait a few seconds and retry.' },
     auth:          { retryable: false, action: 'settings', msg: 'Your model key was rejected — check it in Settings.' },
+    oauth:         { retryable: false, action: 'settings', msg: 'Your ChatGPT sign-in is missing or expired — check the ChatGPT connection in Settings.' },
     billing:       { retryable: false, action: 'settings', msg: "Your model provider says the account is out of credit — check billing in Settings." },
     capdenied:     { retryable: false, action: 'skills',   msg: "This needs a capability that's currently off — enable it in SKILLS." },
     timeout:       { retryable: true,  action: null,       msg: 'That took too long and timed out — try again.' },
@@ -75,6 +76,7 @@
     const low = String(raw || '').toLowerCase();
     // Harness pre-flight guards ("no API key set" / "no model selected"): a misconfig, not a fault — point at
     // Settings instead of offering a doomed retry. (Match before capdenied, which the em-dash-less strings miss.)
+    if (/chatgpt.*sign-?in|sign-?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|chatgpt subscription.*connect/.test(low)) return 'oauth';
     if (/no api key set|no model selected/.test(low)) return 'auth';
     // a forwarded capability denial ("no web — …" / "capdenied")
     if (/\bcapdenied\b/.test(low) || /^no\s+\w+\s+—/.test(low) || /needs a capability|capability.*(off|denied)/.test(low)) return 'capdenied';
@@ -114,7 +116,9 @@
     let kind = null;
     // Harness pre-flight misconfig ("no API key set" / "no model selected") is UI-level — catch before delegating
     // (the sidecar classifier never sees these) so both paths point at Settings, not a blind retry.
-    if (/no api key set|no model selected/.test(raw.toLowerCase())) {
+    if (/chatgpt.*sign-?in|sign-?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|chatgpt subscription.*connect/.test(raw.toLowerCase())) {
+      kind = 'oauth';
+    } else if (/no api key set|no model selected/.test(raw.toLowerCase())) {
       kind = 'auth';
     } else if (/\bcapdenied\b/.test(raw.toLowerCase()) || /^no\s+\w+\s+—/.test(raw.toLowerCase()) || /needs a capability/.test(raw.toLowerCase())) {
       // a capability denial is UI-level (the sidecar classifier doesn't model it) — catch it before delegating.

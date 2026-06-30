@@ -47,6 +47,7 @@ const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const { selectProvider } = require('./providers/factory.js');
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
+const codexTokenStore = require('./providers/codex-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
@@ -660,7 +661,16 @@ const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, c
 //      are NEVER placed on the event bus. Shape: { access_token, refresh_token, last_refresh, auth_mode }. ----
 const CODEX_TOKENS_FILE = path.join(WORKSPACES, 'codex', 'tokens.json');
 function loadCodexTokens() {
-  try { const raw = loadResilient(CODEX_TOKENS_FILE, 'codex'); return (raw && typeof raw === 'object' && raw.access_token) ? raw : null; }
+  try {
+    return codexTokenStore.loadCodexTokensWithMigration({
+      currentFile: CODEX_TOKENS_FILE,
+      candidateFiles: codexTokenStore.candidateCodexTokenFiles({ pathMod: path, env: process.env, currentWorkspaces: WORKSPACES, defaultWorkspaces, sidecarDir: __dirname }),
+      pathMod: path,
+      load: (file, tag) => loadResilient(file, tag),
+      save: (_file, raw) => saveCodexTokens(raw),
+      onMigrate: (from, to) => console.warn('[codex] migrated ChatGPT OAuth tokens from legacy workspace ' + from + ' to ' + to + '.')
+    });
+  }
   catch (e) { return null; }
 }
 function saveCodexTokens(obj) {
