@@ -9,6 +9,14 @@
       "autoPort": false
     },
     {
+      "name": "ws-titles-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/ws-titles-status/sidecar/index.js"],
+      "port": 8788,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8788", "DEV": "1" }
+    },
+    {
       "name": "skin-test",
       "runtimeExecutable": "node",
       "runtimeArgs": ["C:/Users/andro/gen-trees/skins/sidecar/index.js"],
@@ -21,6 +29,13 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "http-server", "frontend", "-c-1", "-p", "8087"],
       "port": 8087
+    },
+    {
+      "name": "portrait-verify",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "frontend", "-c-1"],
+      "port": 8187,
+      "autoPort": true
     },
     {
       "name": "design-system",
@@ -107,18 +122,28 @@
       "port": 8126
     },
     {
-      "name": "comms-msg-actions-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "http-server", "C:/Users/andro/gen-trees/comms-msg-actions/frontend", "-c-1", "-p", "8130"],
-      "port": 8130
-    },
-    {
       "name": "tutorial-fix-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": ["C:/Users/andro/gen-trees/tutorial-fix/dev/seed.js"],
       "port": 8811,
       "autoPort": false,
       "env": { "SKYNET_PORT": "8811", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+    },
+    {
+      "name": "modelfix",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/modelfix/sidecar/index.js"],
+      "port": 8799,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8799" }
+    },
+    {
+      "name": "rate-work",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/rate-work/sidecar/index.js"],
+      "port": 8798,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8798" }
     }
   ]
 }
