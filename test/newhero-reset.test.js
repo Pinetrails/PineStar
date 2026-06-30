@@ -22,7 +22,7 @@ const enter = src.indexOf('enterGame(', i);
 A.ok(enter > i, 'onWake reaches enterGame() (the new-hero path)');
 const seg = src.slice(i, enter);
 
-for (const store of ['PitchStore', 'SuggestStore', 'SeedStore', 'CuriosityStore', 'MintStore', 'AutonomyStore', 'AutoJobStore', 'AutopilotStore']) {
+for (const store of ['PitchStore', 'SuggestStore', 'SeedStore', 'CuriosityStore', 'MintStore', 'AutonomyStore', 'AutoJobStore', 'AutopilotStore', 'PermissionsStore']) {
   A.ok(new RegExp('\\b' + store + '\\.reset\\(\\)').test(seg),
     'new-hero onWake resets ' + store + ' — no prior-Commander state bleeds into a fresh agent');
 }

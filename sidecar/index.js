@@ -55,6 +55,7 @@ const { reflect, reflectSalient, recordFromProposal, feedbackFor } = require('./
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
+const { makeGrantManager } = require('./permgrants.js');
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
@@ -607,6 +608,11 @@ function persistAllowlist(nextAllow) {   // throws on failure -> the broker degr
   saveResilient(ALLOWLIST_FILE, { version: 1, allow: nextAllow });   // fsync-durable + .bak; throws on a real write failure
 }
 const grantsPermanent = loadAllowlist();   // process-wide, restored from disk
+// the standing-grant manager behind the Permissions Panel (B1): proactively grant / see / revoke the curated,
+// LOCAL-only danger classes (cabinet:write = autonomous file writes). It mutates the SAME grantsPermanent Set
+// every per-run broker reads, so a grant takes effect for the very next autonomous run with no restart; persist
+// is the same fail-closed durable sink the broker's 'always' path uses.
+const grantManager = makeGrantManager({ grantsPermanent, persist: persistAllowlist });
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
 // single click stops the prompts for the rest of this session but RESETS on sidecar restart — never persisted
@@ -1147,6 +1153,9 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
+  if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
+  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
@@ -2425,6 +2434,31 @@ async function handleConsent(req, res) {
   const finish = pend && pend.get(body.promptId);
   if (finish) finish(decision);
   res.writeHead(200); res.end('ok');
+}
+
+// GET /api/permissions — the Permissions Panel's read: every standing grant the agent can use without asking
+// (honest — includes any non-curated class blessed via a past prompt) + the curated catalog the panel may add.
+// Privileged: behind the same x-starnet-token + loopback gate as every other /api route (apiauth, not TOKEN_EXEMPT).
+function handlePermissionsList(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(grantManager.snapshot()));
+}
+// POST /api/permissions/grant { key } — proactively PRE-BLESS a curated, LOCAL-only capability (cabinet:write)
+// so an autonomous run can use it with no mid-run prompt. Refuses any non-curated/exec/network class; fail-closed
+// (returns 400 ok:false) if the durable write throws, so the grant never silently "takes" without persisting.
+async function handlePermissionsGrant(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const r = grantManager.grant(body && body.key);
+  res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(r));
+}
+// POST /api/permissions/revoke { key } — withdraw ANY standing grant (consent is always revocable, even a
+// non-curated class). Fail-closed: a torn persist keeps the grant rather than reporting a phantom revoke.
+async function handlePermissionsRevoke(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const r = grantManager.revoke(body && body.key);
+  res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(r));
 }
 
 // POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran

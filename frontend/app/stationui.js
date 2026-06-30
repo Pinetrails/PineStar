@@ -1160,6 +1160,20 @@ const StationUI = (() => {
         '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
         '<button class="set-theme" data-reach="reach" title="can send, publish, or contact external services">REACH-OUT</button>' +
       '</div>' +
+      // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
+      // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
+      // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
+      '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
+      '<p class="set-about" id="perm-desc"></p>' +
+      '<div class="set-row"><span class="dim">LEVEL — from fully hands-off to fully autonomous</span></div>' +
+      '<div class="set-themes" id="perm-level">' +
+        '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">NEVER</button>' +
+        '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
+        '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">DRAFT FOR ME</button>' +
+        '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FULLY AUTONOMOUS</button>' +
+      '</div>' +
+      '<div class="set-row"><span class="dim">STANDING GRANTS — capabilities it may use unattended (revocable any time)</span></div>' +
+      '<div class="key-list" id="perm-grants"></div>' +
       '<h4 class="ms-h">SCHEDULED TASKS</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">- ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
@@ -1197,6 +1211,9 @@ const StationUI = (() => {
         sfx('bad');
       });
     });
+    // PERMISSIONS panel repaint hook — set by the permissions block below; called whenever the granular dial
+    // changes so the level highlight + #perm-desc stay in sync with the posture. No-op until that block wires it.
+    let syncPerm = function () {};
     // AUTONOMY dial — retune Initiative / Reach in place (AutonomyStore persists; no rerender so it won't wipe an
     // open key editor). The describe() line repaints live so the posture is always honestly spelled out.
     if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {
@@ -1206,10 +1223,55 @@ const StationUI = (() => {
         if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
         if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
         if (autoDesc) autoDesc.textContent = AutonomyStore.describe();
+        try { syncPerm(); } catch (_) {}   // keep the permissions level highlight + blurb in step with the dial
       };
       if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setInitiative(b.dataset.init); paintAuto(); sfx('click'); }));
       if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setReach(b.dataset.reach); paintAuto(); sfx('click'); }));
       paintAuto();
+    }
+    // PERMISSIONS panel — the never→fully-autonomous LEVEL chooser + the OS-style standing-grant list
+    // (permissionsstore). Grants live server-side, so paint from cache now, refresh from the sidecar, repaint. A
+    // level click sets BOTH posture + the write grant (so it repaints the dial); the dial syncs back via syncPerm.
+    if (typeof PermissionsStore !== 'undefined' && PermissionsStore.snapshot) {
+      const levelWrap = body.querySelector('#perm-level'), grantsWrap = body.querySelector('#perm-grants'), permDesc = body.querySelector('#perm-desc');
+      const pdesc = (lvl) => (typeof Permissions !== 'undefined' && Permissions.describeLevel) ? Permissions.describeLevel(lvl) : '';
+      const plabel = (k) => (typeof Permissions !== 'undefined' && Permissions.catalogLabel) ? Permissions.catalogLabel(k) : k;
+      const pcurated = () => (typeof Permissions !== 'undefined' && Permissions.grantableKeys) ? Permissions.grantableKeys() : [];
+      const repaintDial = () => {
+        if (typeof AutonomyStore === 'undefined' || !AutonomyStore.summary) return;
+        const a = AutonomyStore.summary() || {};
+        const iw = body.querySelector('#auto-init'), rw = body.querySelector('#auto-reach'), ad = body.querySelector('#auto-desc');
+        if (iw) iw.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
+        if (rw) rw.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
+        if (ad && AutonomyStore.describe) ad.textContent = AutonomyStore.describe();
+      };
+      const renderGrants = (snap) => {
+        const curated = pcurated(); const rows = [];
+        curated.forEach(k => {
+          const on = snap.grants.indexOf(k) >= 0;
+          rows.push('<div class="set-row"><span>' + (on ? '✓ ' : '') + esc(plabel(k)) + '</span> <button class="bb sm' + (on ? ' danger' : '') + '" data-perm-' + (on ? 'revoke' : 'grant') + '="' + esc(k) + '">' + (on ? 'REVOKE' : 'GRANT') + '</button></div>');
+        });
+        snap.grants.filter(k => curated.indexOf(k) < 0).forEach(k => {
+          rows.push('<div class="set-row"><span class="dim">' + esc(k) + '</span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">REVOKE</button></div>');
+        });
+        if (!rows.length) rows.push('<p class="set-about">No standing permissions — it can draft, but can’t change anything on its own yet.</p>');
+        return rows.join('');
+      };
+      const wireGrants = () => {
+        if (!grantsWrap) return;
+        grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
+        grantsWrap.querySelectorAll('[data-perm-revoke]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm); sfx('click'); }));
+      };
+      const repaintPerm = () => {
+        const snap = PermissionsStore.snapshot();
+        if (permDesc) permDesc.textContent = pdesc(snap.level);
+        if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
+        if (grantsWrap) { grantsWrap.innerHTML = renderGrants(snap); wireGrants(); }
+      };
+      syncPerm = repaintPerm;
+      if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.setLevel(b.dataset.level)).then(() => { repaintPerm(); repaintDial(); }); sfx('click'); }));
+      repaintPerm();
+      if (PermissionsStore.refresh) Promise.resolve(PermissionsStore.refresh()).then(repaintPerm).catch(() => {});
     }
     if (typeof Updates !== 'undefined' && Updates.wireSettings) Updates.wireSettings(body);
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
