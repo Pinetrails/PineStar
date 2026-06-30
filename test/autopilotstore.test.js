@@ -111,6 +111,7 @@ A.ok(/present:\s*\(d\)\s*=>/.test(appSrc), 'app.js wires the desk delivery (pres
     const c = messages[0].content;
     if (/Propose up to/.test(c)) return { text: 'JOB: Beta launch checklist\nKIND: advance-goal\nGROUNDS: ship the StarNet beta to 100 users\nCONFIDENCE: high\nSPEC: a pre-launch checklist' };
     if (/Do this ONE job/.test(c)) return { text: 'TITLE: Beta launch checklist\n1. Freeze the build\n2. Tag the release\n3. Smoke test' };
+    if (/SELF-REVIEW/.test(c)) return { text: 'VERDICT: ship\nNOTE: solid' };
     return { text: '' };
   };
 
@@ -149,6 +150,61 @@ A.ok(/present:\s*\(d\)\s*=>/.test(appSrc), 'app.js wires the desk delivery (pres
     : { text: 'TITLE: t\nbody' };
   AutopilotStore.init(baseDeps(ungroundedChat));
   A.eq((await AutopilotStore.act()).delivered, false, 'an invented-grounds proposal is vetoed → no act');
+
+  /* ---------- A3: self-critique ---------- */
+  // the agent can DROP its own draft on review (no delivery, no leash spent).
+  const dropChat = async ({ messages }) => {
+    const c = messages[0].content;
+    if (/Propose up to/.test(c)) return { text: 'JOB: x\nKIND: advance-goal\nGROUNDS: ship the StarNet beta to 100 users\nCONFIDENCE: high\nSPEC: s' };
+    if (/Do this ONE job/.test(c)) return { text: 'TITLE: Draft\nbody' };
+    if (/SELF-REVIEW/.test(c)) return { text: 'VERDICT: drop\nNOTE: padding, not worth their time' };
+    return { text: '' };
+  };
+  AutopilotStore.init(baseDeps(dropChat));
+  const rDrop = await AutopilotStore.act();
+  A.eq([rDrop.delivered, rDrop.reason], [false, 'self-rejected'], 'self-critique can DROP its own draft (verify-before-done, turned inward)');
+  A.eq(AutopilotStore._draftState().acted, 0, 'a self-rejected draft consumes no leash');
+
+  // the agent can REVISE and ship the corrected draft.
+  presented = null;
+  const reviseChat = async ({ messages }) => {
+    const c = messages[0].content;
+    if (/Propose up to/.test(c)) return { text: 'JOB: x\nKIND: advance-goal\nGROUNDS: ship the StarNet beta to 100 users\nCONFIDENCE: high\nSPEC: s' };
+    if (/Do this ONE job/.test(c)) return { text: 'TITLE: First draft\noriginal body' };
+    if (/SELF-REVIEW/.test(c)) return { text: 'VERDICT: revise\nNOTE: tightened\nTITLE: Revised draft\nbetter body' };
+    return { text: '' };
+  };
+  AutopilotStore.init(baseDeps(reviseChat));
+  const rRev = await AutopilotStore.act();
+  A.eq([rRev.delivered, rRev.verdict], [true, 'revise'], 'self-critique can REVISE and ship the corrected draft');
+  A.eq(presented && presented.title, 'Revised draft', 'the surfaced draft is the revised version');
+  A.ok(presented && /better body/.test(presented.body), 'the revised body is what reaches the desk');
+
+  /* ---------- A3: the welcome-back digest ---------- */
+  let digested = null;
+  AutopilotStore.init(Object.assign(baseDeps(goodChat), { digest: (info) => { digested = info; }, digestAwayMs: 300000 }));
+  nowMs += 60000;                 // a minute of idle passes, then the autopilot works
+  await AutopilotStore.act();
+  nowMs += 400000;                // ~6.6 min later the Commander returns
+  AutopilotStore.noteActivity();
+  A.ok(digested && digested.drafts.length >= 1, 'returning after a real absence shows the welcome-back digest of drafts made while away');
+  // a brief glance away does NOT trigger it
+  digested = null;
+  AutopilotStore.noteActivity();   // near-zero gap now
+  A.eq(digested, null, 'a return with no real absence shows no digest (anti-nag)');
+
+  /* ---------- A3: the learn hook re-weights selection ---------- */
+  const tieChat = async ({ messages }) => {
+    const c = messages[0].content;
+    if (/Propose up to/.test(c)) return { text: 'JOB: advance\nKIND: advance-goal\nGROUNDS: ship the StarNet beta to 100 users\nCONFIDENCE: high\nSPEC: s\n\nJOB: pain\nKIND: kill-pain\nGROUNDS: manual release notes eat my fridays\nCONFIDENCE: high\nSPEC: s' };
+    if (/Do this ONE job/.test(c)) return { text: 'TITLE: D\nbody' };
+    if (/SELF-REVIEW/.test(c)) return { text: 'VERDICT: ship' };
+    return { text: '' };
+  };
+  AutopilotStore.init(Object.assign(baseDeps(tieChat), { getPosture: () => ({ enabled: true, actsUnattended: true, leashPerDay: 9 }) }));
+  A.eq((await AutopilotStore.act()).archetype, 'advance-goal', 'with no learning, a tie picks advance-goal (the fixed order)');
+  AutopilotStore.rate('kill-pain', true); AutopilotStore.rate('kill-pain', true);   // net +2 → +0.5 selection bias
+  A.eq((await AutopilotStore.act()).archetype, 'kill-pain', 'after the Commander likes kill-pain twice, it wins the tie — the learn hook re-weights selection per Commander');
 
   A.report('autopilotstore.test');
 })();

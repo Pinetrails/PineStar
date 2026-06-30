@@ -1207,8 +1207,24 @@ const App = (() => {
         if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
           '✦ while you were away i drafted “' + d.title + '”. want to see it?',
           [{ label: 'show me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }],
-          item => { if (item && item.value === 'yes' && typeof Chat.localLine === 'function') { Chat.localLine('▤ ' + d.title); Chat.localLine(d.body); } }
+          item => {
+            if (!item || item.value !== 'yes') return;
+            if (typeof Chat.localLine === 'function') { Chat.localLine('▤ ' + d.title); Chat.localLine(d.body); }
+            // LEARN HOOK (A3): a one-tap useful/not on the work it just showed → AutopilotStore.rate re-weights selection per Commander.
+            if (typeof Chat.nudge === 'function') Chat.nudge('was that worth doing?',
+              [{ label: 'useful', value: 'up' }, { label: 'not really', value: 'down', skip: true }],
+              r => { if (typeof AutopilotStore !== 'undefined' && AutopilotStore.rate) AutopilotStore.rate(d.archetype, !!(r && r.value === 'up')); });
+          }
         );
+      },
+      // the WELCOME-BACK digest (A3): on the first interaction after a real absence, one gold beat truthfully
+      // recapping what the station did while away — composed from the draft log, no new events.
+      digest: (info) => {
+        const k = info.drafts.length, mins = Math.max(1, Math.round(info.awayMs / 60000)), plural = k === 1 ? 'draft' : 'drafts';
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + k + ' ' + plural + ' on your desk', 'gold');
+        if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
+          '✦ welcome back — while you were away (' + mins + 'm) i left ' + k + ' ' + plural + ' on your desk:\n' + info.lines.join('\n'),
+          [{ label: 'got it', value: 'ok', skip: true }], () => {});
       }
     });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening

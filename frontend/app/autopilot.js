@@ -246,19 +246,23 @@
   function scoreAndSelect(candidates, opts) {
     opts = opts || {};
     const minScore = Number.isFinite(opts.minScore) ? opts.minScore : MIN_ACT_SCORE;
+    const weights = (opts.weights && typeof opts.weights === 'object') ? opts.weights : {};   // per-user LEARN bias (A3)
     const list = Array.isArray(candidates) ? candidates.slice() : [];
     if (!list.length) return { selected: null, score: 0, reason: 'no-candidates', dropped: 0 };
     const order = {}; ARCHETYPES.forEach((a, i) => { order[a.id] = i; });
-    const scoreOf = (c) => CONFIDENCE_RANK[c.confidence] || 1;
+    const rawConf = (c) => CONFIDENCE_RANK[c.confidence] || 1;
+    // SELECTION score = confidence + a small per-user LEARN bias (re-weighting over time is the uncopyable moat).
+    // The bias is capped BELOW a confidence step, so learning sways ties / near-ties but never promotes a
+    // low-confidence idea — the confidence GATE below always reads RAW confidence, so learning can't let slop through.
+    const selScore = (c) => rawConf(c) + (Number(weights[c.archetype]) || 0);
     let best = list[0];
     for (const c of list) {
-      const s = scoreOf(c), bs = scoreOf(best);
+      const s = selScore(c), bs = selScore(best);
       if (s > bs) best = c;
       else if (s === bs && (order[c.archetype] != null ? order[c.archetype] : 99) < (order[best.archetype] != null ? order[best.archetype] : 99)) best = c;
     }
-    const bestScore = scoreOf(best);
-    if (bestScore < minScore) return { selected: null, score: bestScore, reason: 'low-confidence', dropped: list.length };
-    return { selected: best, score: bestScore, reason: 'selected', dropped: list.length - 1 };
+    if (rawConf(best) < minScore) return { selected: null, score: rawConf(best), reason: 'low-confidence', dropped: list.length };
+    return { selected: best, score: selScore(best), reason: 'selected', dropped: list.length - 1 };
   }
 
   // THE DO DIRECTIVE — the reason-only task that actually does the selected job and ends with a titled draft.
@@ -292,10 +296,61 @@
     return { title: title.slice(0, 80), body };
   }
 
+  /* ---- Slice A3: self-critique before delivery, + the "while you were away" digest ---- */
+
+  // THE CRITIQUE DIRECTIVE — the reason-only self-review run: the agent adversarially checks its OWN draft against
+  // the spec + the Commander's style/standing-orders before it hits the desk ("verify before done", turned inward).
+  // The honest outcomes: ship (good), revise (then give the corrected draft), drop (not worth their time).
+  function buildCritiqueDirective(deliverable, selected, ctx) {
+    deliverable = deliverable || {}; selected = selected || {}; ctx = ctx || {};
+    const lines = [];
+    lines.push('INTERNAL — SELF-REVIEW. Before this draft reaches the Commander, review it adversarially and honestly.');
+    lines.push('The job: ' + String(selected.title || '').trim() + (selected.spec ? ' — done when: ' + String(selected.spec).trim() : ''));
+    if (ctx.style) lines.push('Their working style: ' + ctx.style);
+    if (ctx.standingOrders) lines.push('Their standing orders (must respect): ' + ctx.standingOrders);
+    lines.push('The draft:');
+    lines.push('TITLE: ' + String(deliverable.title || '').trim());
+    lines.push(String(deliverable.body || '').trim());
+    lines.push('Does it satisfy the job, respect their style/orders, and avoid padding or guessing? Be strict — a draft that wastes their time is worse than no draft at all.');
+    lines.push('Reply EXACTLY:');
+    lines.push('VERDICT: <ship | revise | drop>');
+    lines.push('NOTE: <one line — why, or what you changed>');
+    lines.push('If (and only if) revise, then give the corrected draft below, as:');
+    lines.push('TITLE: <title>');
+    lines.push('<the corrected draft>');
+    return lines.join('\n');
+  }
+
+  // parse the self-review. Fails OPEN to 'ship' on a format miss (never lose good work over a parse), and on
+  // 'revise' pulls the corrected draft (the TITLE: block) back through parseDeliverable.
+  function parseCritique(text, opts) {
+    opts = opts || {};
+    const raw = String(text == null ? '' : text);
+    const vm = /^\s*VERDICT\s*:\s*(ship|revise|drop)\b/im.exec(raw);
+    const verdict = vm ? vm[1].toLowerCase() : 'ship';
+    const nm = /^\s*NOTE\s*:\s*(.+?)\s*$/im.exec(raw);
+    const note = nm ? nm[1].trim() : '';
+    let revised = null;
+    if (verdict === 'revise') {
+      const ti = raw.search(/^\s*TITLE\s*:/im);
+      if (ti >= 0) revised = parseDeliverable(raw.slice(ti), { fallbackTitle: opts.fallbackTitle });
+    }
+    return { verdict, note, revised };
+  }
+
+  // the "while you were away" digest body — one line per draft. The digest composes ENTIRELY from the draft log
+  // (no new events), upholding the legibility law: you always see, truthfully, what ran while you were gone.
+  function digestLines(drafts) {
+    const out = [];
+    for (const d of (Array.isArray(drafts) ? drafts : [])) if (d && d.title) out.push('▸ ' + String(d.title).trim());
+    return out;
+  }
+
   return {
     idleFor, readiness, decide, newestStamp,
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
+    buildCritiqueDirective, parseCritique, digestLines,
     DEFAULT_IDLE_MS, DEFAULT_TICK_MS, REQUIRE_DIM, WARM_MIN, HOT_MIN, STALE_MS,
     ARCHETYPES, CANDIDATE_MAX, MIN_ACT_SCORE, CONFIDENCE_RANK
   };

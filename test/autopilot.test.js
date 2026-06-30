@@ -100,4 +100,20 @@ A.ok(/Freeze the build/.test(del.body), 'deliverable body is the rest after the 
 A.eq(Autopilot.parseDeliverable('', { fallbackTitle: 'x' }), null, 'an empty run output yields no deliverable');
 A.eq(Autopilot.parseDeliverable('just a draft, no title line', { fallbackTitle: 'Fallback' }).title, 'Fallback', 'a missing TITLE falls back to the selected job title');
 
+/* ---------- A3: self-critique + digest + the learn bias ---------- */
+A.eq(Autopilot.parseCritique('VERDICT: ship\nNOTE: good').verdict, 'ship', 'critique ship is parsed');
+A.eq(Autopilot.parseCritique('VERDICT: drop\nNOTE: not worth it').verdict, 'drop', 'critique drop is parsed');
+A.eq(Autopilot.parseCritique('garbage, no verdict line').verdict, 'ship', 'a format miss fails OPEN to ship (never lose good work over a parse)');
+const cr = Autopilot.parseCritique('VERDICT: revise\nNOTE: tightened it\nTITLE: Tighter checklist\n1. do x\n2. do y', { fallbackTitle: 'x' });
+A.eq([cr.verdict, cr.revised.title], ['revise', 'Tighter checklist'], 'a revise verdict carries the corrected draft');
+A.ok(/do x/.test(cr.revised.body), 'the revised body is parsed');
+const qd = Autopilot.buildCritiqueDirective({ title: 'T', body: 'B' }, { title: 'Job', spec: 'a checklist' }, { style: 'terse', standingOrders: 'cite sources' });
+A.ok(/VERDICT/.test(qd) && /terse/.test(qd) && /cite sources/.test(qd) && /a checklist/.test(qd), 'the critique directive carries the spec + style + standing orders + the verdict format');
+A.eq(Autopilot.digestLines([{ title: 'A' }, { title: 'B' }, { nope: 1 }]), ['▸ A', '▸ B'], 'digestLines is one line per titled draft (composed from the log)');
+// the LEARN bias sways a tie but never the gate
+const tieLearn = [{ title: 'a', archetype: 'advance-goal', grounds: 'g', confidence: 'high', spec: 's' }, { title: 'b', archetype: 'kill-pain', grounds: 'g', confidence: 'high', spec: 's' }];
+A.eq(Autopilot.scoreAndSelect(tieLearn).selected.archetype, 'advance-goal', 'without learning, a tie breaks by fixed order (advance)');
+A.eq(Autopilot.scoreAndSelect(tieLearn, { weights: { 'kill-pain': 0.5 } }).selected.archetype, 'kill-pain', 'a learned preference (within the cap) wins a confidence tie');
+A.eq(Autopilot.scoreAndSelect([{ title: 'a', archetype: 'scout', grounds: 'g', confidence: 'low', spec: 's' }], { weights: { scout: 0.5 } }).selected, null, 'a learn bias never promotes a low-confidence idea through the gate (gate reads RAW confidence)');
+
 A.report('autopilot.test');

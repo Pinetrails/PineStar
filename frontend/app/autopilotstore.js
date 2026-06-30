@@ -39,11 +39,12 @@ const AutopilotStore = (() => {
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   function hydrate(raw) {
-    const s = { v: 1, day: dayOf(now()), acted: 0, drafts: [] };
+    const s = { v: 1, day: dayOf(now()), acted: 0, drafts: [], learn: {} };
     if (raw && typeof raw === 'object') {
       if (Number.isFinite(raw.day)) s.day = raw.day;
       if (Number.isFinite(raw.acted) && raw.acted >= 0) s.acted = Math.floor(raw.acted);
       if (Array.isArray(raw.drafts)) s.drafts = raw.drafts.filter(x => x && x.title).slice(-10);
+      if (raw.learn && typeof raw.learn === 'object') for (const k in raw.learn) { const e = raw.learn[k] || {}; s.learn[k] = { up: Math.max(0, Math.floor(Number(e.up)) || 0), down: Math.max(0, Math.floor(Number(e.down)) || 0) }; }
     }
     return s;
   }
@@ -106,6 +107,22 @@ const AutopilotStore = (() => {
     return out;
   }
 
+  // THE LEARN HOOK (A3): the Commander's per-draft useful/not feedback, tallied per archetype. learnWeights() turns
+  // it into a small selection bias (capped below a confidence step) so scoreAndSelect gets better at picking FOR
+  // THIS Commander over time — the compounding, uncopyable moat. Wired now; the weighting stays deliberately gentle.
+  function rate(archetype, useful) {
+    if (!state || !archetype) return;
+    state.learn = state.learn || {};
+    const e = state.learn[archetype] = state.learn[archetype] || { up: 0, down: 0 };
+    if (useful) e.up++; else e.down++;
+    save();
+  }
+  function learnWeights() {
+    const w = {}; const L = (state && state.learn) || {};
+    for (const k in L) { const e = L[k] || {}; const net = (e.up || 0) - (e.down || 0); w[k] = Math.max(-0.5, Math.min(0.5, net * 0.25)); }
+    return w;
+  }
+
   // record a delivered draft: consume one leash unit + append to the capped draft log (the A3 digest reads these).
   function recordDraft(sel, deliverable) {
     rolloverDay();
@@ -133,19 +150,28 @@ const AutopilotStore = (() => {
       // 1) PROPOSE — a few grounded, achievable-now candidates (silent reasoning).
       const cRes = await deps.chat({ system, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, eligible }) }], agentId: 'agent', isTask: false, placed: [], internal: true });
       const candidates = (cRes && !cRes.error) ? Autopilot.parseCandidates(cRes.text, { eligible, beliefs }) : [];
-      // 2) SELECT — score-and-pick-best + the confidence gate.
-      const sel = Autopilot.scoreAndSelect(candidates);
+      // 2) SELECT — score-and-pick-best (+ the per-user LEARN bias) + the confidence gate.
+      const sel = Autopilot.scoreAndSelect(candidates, { weights: learnWeights() });
       if (!sel.selected) return { delivered: false, reason: sel.reason };
 
       // 3) DO — produce the finished draft (silent reasoning).
       const dRes = await deps.chat({ system, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name }) }], agentId: 'agent', isTask: false, placed: [], internal: true });
-      const deliverable = (dRes && !dRes.error) ? Autopilot.parseDeliverable(dRes.text, { fallbackTitle: sel.selected.title }) : null;
+      let deliverable = (dRes && !dRes.error) ? Autopilot.parseDeliverable(dRes.text, { fallbackTitle: sel.selected.title }) : null;
       if (!deliverable) return { delivered: false, reason: 'no-deliverable' };
+
+      // 3b) SELF-CRITIQUE — review the draft against the spec + their style/orders before it hits the desk
+      // ("verify before done", turned inward). It can drop its own work (not worth their time) or ship a revision.
+      const style = (beliefs.style || []).join('; ');
+      const standingOrders = (beliefs.standing_orders || []).join('; ');
+      const qRes = await deps.chat({ system, messages: [{ role: 'user', content: Autopilot.buildCritiqueDirective(deliverable, sel.selected, { style, standingOrders }) }], agentId: 'agent', isTask: false, placed: [], internal: true });
+      const crit = (qRes && !qRes.error) ? Autopilot.parseCritique(qRes.text, { fallbackTitle: deliverable.title }) : { verdict: 'ship', note: '' };
+      if (crit.verdict === 'drop') return { delivered: false, reason: 'self-rejected' };
+      if (crit.verdict === 'revise' && crit.revised) deliverable = crit.revised;
 
       // 4) DELIVER — record (leash + draft log) and surface to the desk.
       recordDraft(sel.selected, deliverable);
-      try { if (typeof deps.present === 'function') deps.present({ title: deliverable.title, body: deliverable.body, archetype: sel.selected.archetype, grounds: sel.selected.grounds }); } catch (_) {}
-      return { delivered: true, title: deliverable.title, archetype: sel.selected.archetype };
+      try { if (typeof deps.present === 'function') deps.present({ title: deliverable.title, body: deliverable.body, archetype: sel.selected.archetype, grounds: sel.selected.grounds, note: crit.note }); } catch (_) {}
+      return { delivered: true, title: deliverable.title, archetype: sel.selected.archetype, verdict: crit.verdict };
     } catch (_) {
       return { delivered: false, reason: 'error' };
     } finally {
@@ -153,8 +179,25 @@ const AutopilotStore = (() => {
     }
   }
 
-  // the Commander interacted — reset the idle clock and re-arm the next idle beat.
-  function noteActivity() { lastActivity = now(); armed = false; }
+  // the Commander interacted — reset the idle clock, re-arm the next idle beat, and (if they were really away and
+  // the autopilot worked) show the welcome-back digest.
+  function noteActivity() {
+    const prev = lastActivity;
+    lastActivity = now();
+    armed = false;
+    maybeDigest(prev, lastActivity);
+  }
+  // WELCOME-BACK DIGEST: on the first interaction after a real absence, recap the drafts the autopilot left while
+  // they were away — composed PURELY from the draft log (no new events; legibility law upheld). Fires once per
+  // return (the next noteActivity has a near-zero gap), gated on a minimum away span so a brief glance never triggers it.
+  function maybeDigest(awaySince, backAt) {
+    if (!state || !ready() || typeof deps.digest !== 'function') return;
+    const thr = Number.isFinite(deps.digestAwayMs) ? deps.digestAwayMs : 300000;   // ~5 min "actually away"
+    if (!(Number.isFinite(awaySince) && (backAt - awaySince) >= thr)) return;
+    const fresh = (state.drafts || []).filter(d => d && Number(d.at) > awaySince);
+    if (!fresh.length) return;
+    try { deps.digest({ awayMs: backAt - awaySince, drafts: fresh, lines: Autopilot.digestLines(fresh) }); } catch (_) {}
+  }
 
   // install the edge ONCE: stamp activity on real input, and re-check idleness on an interval. Guarded so a
   // resume/re-enter never double-installs, and skipped under node (no document/setInterval) + when install:false.
@@ -185,7 +228,7 @@ const AutopilotStore = (() => {
   // a brand-new hero starts clean: drop the own key + the in-memory idle state.
   function reset() { state = hydrate(null); lastActivity = now(); armed = false; acting = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, tick, act, noteActivity, decideNow, reset, _state: () => ({ lastActivity, armed, acting, installed }), _draftState: () => state };
+  return { init, tick, act, noteActivity, decideNow, reset, rate, _state: () => ({ lastActivity, armed, acting, installed }), _draftState: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { AutopilotStore };
