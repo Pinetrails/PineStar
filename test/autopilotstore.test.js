@@ -85,6 +85,9 @@ A.ok(/AutopilotStore\.init\(/.test(appSrc), 'app.js initialises AutopilotStore')
 A.ok(/offerCuriosity:\s*\(\)\s*=>/.test(appSrc), 'app.js wires Chat.offerCuriosity into the autopilot earn branch');
 A.ok(/chat:\s*\(o\)\s*=>/.test(appSrc), 'app.js wires Harness.chat into the autopilot act branch (reason-only runs)');
 A.ok(/present:\s*\(d\)\s*=>/.test(appSrc), 'app.js wires the desk delivery (present) for finished drafts');
+A.ok(/canWriteFiles:\s*\(\)\s*=>/.test(appSrc), 'app.js wires the cabinet:write consent check (B2 write gate)');
+A.ok(/hasCabinet:\s*\(\)\s*=>/.test(appSrc), 'app.js wires the placed-cabinet capability check (object=capability)');
+A.ok(/\/api\/autonomy\/write/.test(appSrc), 'app.js persists the deliverable via the consent-gated /api/autonomy/write endpoint');
 
 /* ---------- A2: the ACT branch — anti-slop pipeline → draft on the desk ---------- */
 (async () => {
@@ -205,6 +208,44 @@ A.ok(/present:\s*\(d\)\s*=>/.test(appSrc), 'app.js wires the desk delivery (pres
   A.eq((await AutopilotStore.act()).archetype, 'advance-goal', 'with no learning, a tie picks advance-goal (the fixed order)');
   AutopilotStore.rate('kill-pain', true); AutopilotStore.rate('kill-pain', true);   // net +2 → +0.5 selection bias
   A.eq((await AutopilotStore.act()).archetype, 'kill-pain', 'after the Commander likes kill-pain twice, it wins the tie — the learn hook re-weights selection per Commander');
+
+  /* ---------- B2: the act path WRITES a real local file when permitted ---------- */
+  let writeCalls = [];
+  const writeOkDeps = (over) => Object.assign(baseDeps(goodChat), {
+    getPosture: () => ({ enabled: true, actsUnattended: true, leashPerDay: 9 }),
+    canWriteFiles: () => true, hasCabinet: () => true,
+    writeFile: async (req) => { writeCalls.push(req); return { ok: true, path: req.path, snapshot: 'snap1' }; }
+  }, over || {});
+
+  // permitted: cabinet:write granted + a cabinet placed + the write succeeds → a REAL file lands.
+  presented = null; writeCalls = [];
+  AutopilotStore.init(writeOkDeps());
+  const rW = await AutopilotStore.act();
+  A.eq([rW.delivered, rW.wrote], [true, true], 'permitted (grant + cabinet) → the deliverable is WRITTEN, not just drafted');
+  A.eq(writeCalls.length, 1, 'exactly one write per act');
+  A.eq(writeCalls[0].path, 'drafts/beta-launch-checklist.md', 'the write path is the deterministic slug of the title');
+  A.ok(/^# Beta launch checklist\n\n/.test(writeCalls[0].content), 'the file body is the H1 title + the deliverable body');
+  A.ok(presented && presented.wrote && presented.wrote.path === 'drafts/beta-launch-checklist.md', 'present() learns the file was written (desk copy + B3 undo)');
+  A.ok(AutopilotStore._draftState().drafts.slice(-1)[0].wrote, 'the draft-log entry records the write (digest ✎ marker + undo)');
+
+  // NOT permitted: no cabinet placed (object=capability) → falls back to a desk draft, no write attempted.
+  writeCalls = []; presented = null;
+  AutopilotStore.init(writeOkDeps({ hasCabinet: () => false }));
+  const rNoCab = await AutopilotStore.act();
+  A.eq([rNoCab.delivered, rNoCab.wrote], [true, false], 'granted but NO cabinet placed → draft-only (still delivered), no write');
+  A.eq(writeCalls.length, 0, 'no write attempted without a placed cabinet (keeps B1 honesty true)');
+
+  // NOT permitted: no grant → draft-only.
+  writeCalls = [];
+  AutopilotStore.init(writeOkDeps({ canWriteFiles: () => false }));
+  A.eq((await AutopilotStore.act()).wrote, false, 'no cabinet:write grant → draft-only, no write');
+  A.eq(writeCalls.length, 0, 'no write attempted without the grant');
+
+  // write FAILS server-side (e.g. broker denied) → graceful fallback to a desk draft (still delivered, no lost work).
+  presented = null;
+  AutopilotStore.init(writeOkDeps({ writeFile: async () => ({ ok: false, reason: 'denied' }) }));
+  const rFail = await AutopilotStore.act();
+  A.eq([rFail.delivered, rFail.wrote], [true, false], 'a server-denied/failed write degrades gracefully to a desk draft');
 
   A.report('autopilotstore.test');
 })();

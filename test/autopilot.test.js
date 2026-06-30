@@ -116,4 +116,17 @@ A.eq(Autopilot.scoreAndSelect(tieLearn).selected.archetype, 'advance-goal', 'wit
 A.eq(Autopilot.scoreAndSelect(tieLearn, { weights: { 'kill-pain': 0.5 } }).selected.archetype, 'kill-pain', 'a learned preference (within the cap) wins a confidence tie');
 A.eq(Autopilot.scoreAndSelect([{ title: 'a', archetype: 'scout', grounds: 'g', confidence: 'low', spec: 's' }], { weights: { scout: 0.5 } }).selected, null, 'a learn bias never promotes a low-confidence idea through the gate (gate reads RAW confidence)');
 
+/* ---------- B2: write path / gate / file body ---------- */
+A.eq(Autopilot.writePath('Beta Launch Checklist!'), 'drafts/beta-launch-checklist.md', 'writePath slugs the title deterministically under drafts/');
+A.eq(Autopilot.writePath(''), 'drafts/draft.md', 'writePath falls back to draft.md on an empty title');
+A.eq(Autopilot.writePath('   ***   '), 'drafts/draft.md', 'writePath falls back when the title has no alnum');
+A.eq(/^drafts\/[a-z0-9-]+\.md$/.test(Autopilot.writePath('A '.repeat(60))), true, 'writePath is always a safe relative drafts/*.md path (clamped, no escape)');
+A.eq(Autopilot.canWrite({ granted: true, cabinetPlaced: true }), true, 'canWrite needs BOTH the grant + a placed cabinet');
+A.eq(Autopilot.canWrite({ granted: true, cabinetPlaced: false }), false, 'granted but no cabinet → no write (object=capability; draft-only)');
+A.eq(Autopilot.canWrite({ granted: false, cabinetPlaced: true }), false, 'cabinet but no grant → no write (consent missing)');
+A.eq(Autopilot.canWrite({}), false, 'canWrite defaults closed');
+A.eq(Autopilot.fileBody({ title: 'Hi', body: 'line one' }), '# Hi\n\nline one\n', 'fileBody = H1 title + body');
+A.eq(Autopilot.fileBody({ body: '  x  ' }), '# Draft\n\nx\n', 'fileBody defaults the title + trims');
+A.eq(Autopilot.digestLines([{ title: 'W', wrote: { path: 'drafts/w.md' } }]), ['✎ W'], 'digestLines marks a WRITTEN deliverable distinctly (✎)');
+
 A.report('autopilot.test');

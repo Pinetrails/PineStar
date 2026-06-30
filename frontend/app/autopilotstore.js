@@ -13,8 +13,9 @@
      (reuses the curiosity nudge + its per-session anti-nag cap). Learn first.
    - ACT (Slice A2): idle + the dial permits acting + the dossier is hot + today's leash has budget → run the pure
      anti-slop pipeline (propose grounded candidates → score-and-pick-best with the confidence gate → do the one
-     job) as TWO SILENT reason-only runs (internal:true, no tools — safe by construction), then leave the draft on
-     the Commander's desk. Nothing is auto-sent or auto-applied; Reach stays sandbox (Stage B raises it).
+     job) as SILENT reason-only runs (internal:true, no tools — safe by construction). It then leaves a desk draft —
+     OR (B2) writes a REAL local file when the Commander has GRANTED cabinet:write AND placed a cabinet (server-side:
+     consent-gated, jailed, checkpointed/reversible). Still nothing is sent, published, or spent — writes stay local.
 
    Persists a small own-key slice (leash-per-day accounting + a capped draft log for the "while you were away"
    digest). lastActivity/armed/acting are ephemeral session state. */
@@ -124,11 +125,13 @@ const AutopilotStore = (() => {
   }
 
   // record a delivered draft: consume one leash unit + append to the capped draft log (the A3 digest reads these).
-  function recordDraft(sel, deliverable) {
+  function recordDraft(sel, deliverable, wrote) {
     rolloverDay();
     state.acted = (state.acted || 0) + 1;
     state.drafts = state.drafts || [];
-    state.drafts.push({ title: deliverable.title, archetype: sel.archetype, at: now(), body: String(deliverable.body || '').slice(0, 4000) });
+    const entry = { title: deliverable.title, archetype: sel.archetype, at: now(), body: String(deliverable.body || '').slice(0, 4000) };
+    if (wrote && wrote.path) entry.wrote = { path: String(wrote.path), snapshot: wrote.snapshot || null };   // B2: a real file landed (digest ✎ marker + B3 undo)
+    state.drafts.push(entry);
     if (state.drafts.length > 10) state.drafts = state.drafts.slice(-10);
     save();
   }
@@ -168,10 +171,24 @@ const AutopilotStore = (() => {
       if (crit.verdict === 'drop') return { delivered: false, reason: 'self-rejected' };
       if (crit.verdict === 'revise' && crit.revised) deliverable = crit.revised;
 
-      // 4) DELIVER — record (leash + draft log) and surface to the desk.
-      recordDraft(sel.selected, deliverable);
-      try { if (typeof deps.present === 'function') deps.present({ title: deliverable.title, body: deliverable.body, archetype: sel.selected.archetype, grounds: sel.selected.grounds, note: crit.note }); } catch (_) {}
-      return { delivered: true, title: deliverable.title, archetype: sel.selected.archetype, verdict: crit.verdict };
+      // 4) WRITE (B2) — if the Commander GRANTED cabinet:write AND placed a cabinet (object=capability), persist the
+      // finished, self-critiqued deliverable as a REAL local file (server-side: consent-gated + jailed +
+      // checkpointed/reversible). Otherwise it stays a desk draft (Stage A). The write never sends/publishes/spends.
+      let wrote = null;
+      try {
+        const granted = (typeof deps.canWriteFiles === 'function') ? !!deps.canWriteFiles() : false;
+        const cabinet = (typeof deps.hasCabinet === 'function') ? !!deps.hasCabinet() : false;
+        if (Autopilot.canWrite({ granted: granted, cabinetPlaced: cabinet }) && typeof deps.writeFile === 'function') {
+          const rel = Autopilot.writePath(deliverable.title);
+          const wr = await deps.writeFile({ path: rel, content: Autopilot.fileBody(deliverable) });
+          if (wr && wr.ok) wrote = { path: wr.path || rel, snapshot: wr.snapshot || null };
+        }
+      } catch (_) {}
+
+      // 5) DELIVER — record (leash + draft log, incl. the write outcome) and surface to the desk.
+      recordDraft(sel.selected, deliverable, wrote);
+      try { if (typeof deps.present === 'function') deps.present({ title: deliverable.title, body: deliverable.body, archetype: sel.selected.archetype, grounds: sel.selected.grounds, note: crit.note, wrote: wrote }); } catch (_) {}
+      return { delivered: true, title: deliverable.title, archetype: sel.selected.archetype, verdict: crit.verdict, wrote: !!wrote };
     } catch (_) {
       return { delivered: false, reason: 'error' };
     } finally {

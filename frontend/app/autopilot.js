@@ -342,8 +342,28 @@
   // (no new events), upholding the legibility law: you always see, truthfully, what ran while you were gone.
   function digestLines(drafts) {
     const out = [];
-    for (const d of (Array.isArray(drafts) ? drafts : [])) if (d && d.title) out.push('▸ ' + String(d.title).trim());
+    for (const d of (Array.isArray(drafts) ? drafts : [])) if (d && d.title) out.push((d && d.wrote ? '✎ ' : '▸ ') + String(d.title).trim());
     return out;
+  }
+
+  // ── B2: the act path WRITES a real local file (under the cabinet:write grant) ────────────────────────────────
+  // turn a deliverable TITLE into a safe, deterministic workspace path under drafts/. Pure: a slug of the title
+  // (lowercased, non-alnum → '-', clamped), so the same deliverable maps to the same file. The server STILL
+  // re-jails it (resolveInside) and the hardline floor blocks .env/.git — this just keeps the path tidy + legible.
+  function writePath(title) {
+    const slug = String(title == null ? '' : title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    return 'drafts/' + (slug || 'draft') + '.md';
+  }
+  // the write GATE: the autopilot may write a real file ONLY with BOTH the cabinet:write CONSENT (granted) AND the
+  // cabinet CAPABILITY (a Filing Cabinet placed) — object=capability. Either missing → draft-only (Stage A). This
+  // is the policy that keeps B1's "needs a Filing Cabinet placed to take effect" promise honest for the auto flow.
+  function canWrite(opts) { opts = opts || {}; return !!opts.granted && !!opts.cabinetPlaced; }
+  // compose the file BODY from the finished deliverable: the title as an H1 + the body. Pure (no clock/rng).
+  function fileBody(deliverable) {
+    const d = deliverable || {};
+    const title = (String(d.title == null ? '' : d.title).trim()) || 'Draft';
+    const body = String(d.body == null ? '' : d.body).trim();
+    return '# ' + title + '\n\n' + body + '\n';
   }
 
   return {
@@ -351,6 +371,7 @@
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
     buildCritiqueDirective, parseCritique, digestLines,
+    writePath, canWrite, fileBody,
     DEFAULT_IDLE_MS, DEFAULT_TICK_MS, REQUIRE_DIM, WARM_MIN, HOT_MIN, STALE_MS,
     ARCHETYPES, CANDIDATE_MAX, MIN_ACT_SCORE, CONFIDENCE_RANK
   };

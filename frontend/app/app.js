@@ -1213,17 +1213,28 @@ const App = (() => {
       getName: () => agent ? agent.name : 'AGENT',
       // the autopilot's reason-only runs: no `placed` (no tools) + internal (silent) → safe + uncounted by construction.
       chat: (o) => (typeof Harness !== 'undefined' && Harness.chat) ? Harness.chat(o) : Promise.resolve({ error: 'no-harness' }),
-      // leave the finished draft on the Commander's desk: a persistent toast + the live "working" cue + a gentle
-      // COMMS beat that, on accept, posts the draft into the feed. Nothing is auto-applied or sent.
+      // B2 — the real-write hand-off. canWriteFiles = the cabinet:write CONSENT (PermissionsStore); hasCabinet = the
+      // cabinet CAPABILITY actually placed (World.heroCaps — object=capability); BOTH required (Autopilot.canWrite).
+      // writeFile = the token-gated, consent-broker-gated, checkpointed server write (/api/autonomy/write). A failed
+      // or denied write just degrades to a desk draft (the act() branch handles the fallback).
+      canWriteFiles: () => { try { return (typeof PermissionsStore !== 'undefined' && PermissionsStore.snapshot) ? (PermissionsStore.snapshot().grants || []).indexOf('cabinet:write') >= 0 : false; } catch (_) { return false; } },
+      hasCabinet: () => { try { return (typeof World !== 'undefined' && World.heroCaps) ? (World.heroCaps((agent && agent.id) || 'agent') || []).indexOf('cabinet') >= 0 : false; } catch (_) { return false; } },
+      writeFile: (req) => fetch('/api/autonomy/write', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: (agent && agent.id) || 'agent', path: req.path, content: req.content }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false })),
+      // leave the result on the Commander's desk: a persistent toast + the live "working" cue + a gentle COMMS beat
+      // that, on accept, posts the work into the feed. If it WROTE a real file (B2) the copy says so + names the path;
+      // otherwise it's a desk draft. Either way nothing is sent/published/spent.
       present: (d) => {
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('drafted while you were away: ' + d.title, 'gold');
-        if (typeof World !== 'undefined' && World.say) World.say('✦ left a draft on your desk');
+        const didWrite = !!(d && d.wrote && d.wrote.path);
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((didWrite ? 'wrote a file while you were away: ' : 'drafted while you were away: ') + d.title, 'gold');
+        if (typeof World !== 'undefined' && World.say) World.say(didWrite ? '✦ saved a file to your workspace' : '✦ left a draft on your desk');
         if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
-          '✦ while you were away i drafted “' + d.title + '”. want to see it?',
+          didWrite
+            ? ('✦ while you were away i wrote “' + d.title + '” to your workspace (' + d.wrote.path + '). want to see it?')
+            : ('✦ while you were away i drafted “' + d.title + '”. want to see it?'),
           [{ label: 'show me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }],
           item => {
             if (!item || item.value !== 'yes') return;
-            if (typeof Chat.localLine === 'function') { Chat.localLine('▤ ' + d.title); Chat.localLine(d.body); }
+            if (typeof Chat.localLine === 'function') { Chat.localLine((didWrite ? '✎ ' : '▤ ') + d.title + (didWrite ? '  ·  ' + d.wrote.path : '')); Chat.localLine(d.body); }
             // LEARN HOOK (A3): a one-tap useful/not on the work it just showed → AutopilotStore.rate re-weights selection per Commander.
             if (typeof Chat.nudge === 'function') Chat.nudge('was that worth doing?',
               [{ label: 'useful', value: 'up' }, { label: 'not really', value: 'down', skip: true }],

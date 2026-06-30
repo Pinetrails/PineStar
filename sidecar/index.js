@@ -1156,6 +1156,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
@@ -2459,6 +2460,36 @@ async function handlePermissionsRevoke(req, res) {
   const r = grantManager.revoke(body && body.key);
   res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(r));
+}
+
+// POST /api/autonomy/write { agentId?, path, content } — autonomy Stage B / B2. Deterministically write a PRE-VETTED
+// autopilot deliverable into the agent's workspace, gated by the REAL consent broker on the AUTONOMOUS surface:
+// cabinet:write grant clears the cache tier → allow; the hardline floor still blocks .env/.git; an ungranted write
+// default-denies ("silence is not consent"). The workspace is CHECKPOINTED first, so the write is one rollback away.
+// It reuses the SAME registry + fs tools + broker + checkpoint pieces runOnce assembles — the security comes from
+// REUSE, never a hand-rolled allow. Privileged (token-gated like every /api route; not TOKEN_EXEMPT). NOTE: the
+// cabinet-OBJECT-placed requirement (the B1 honesty story) is the autopilot's client-side gate (Autopilot.canWrite);
+// the server's authoritative boundary here is the cabinet:write GRANT + the fs-jail + the hardline floor.
+async function handleAutonomyWrite(req, res) {
+  const sendJson = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const agentId = String(body.agentId || 'agent');
+  const rel = body.path, content = body.content;
+  if (typeof rel !== 'string' || !rel || typeof content !== 'string') return sendJson(400, { ok: false, reason: 'missing path or content' });
+  // a one-off registry carrying the cabinet (fs) tools — assembled exactly like runOnce (same makeFsTools args).
+  const reg = makeRegistry();
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20 }, redact }).register(reg);
+  // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
+  // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
+  const sessionKey = 'autowrite-' + Date.now();
+  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId), surface: 'autonomous' });
+  // CHECKPOINT NET: snapshot BEFORE the write (mirrors the runOnce dispatch wrapper) so it's one rollback away.
+  let snapshot = null;
+  try { const snap = await checkpointStore.snapshot(agentId, { runId: sessionKey, turn: 0, label: 'fs.write' }); if (snap && snap.created) snapshot = snap.id; } catch (_) { /* a checkpoint hiccup must never block the write */ }
+  const call = { name: 'fs.write', args: { path: rel, content: content }, id: sessionKey };
+  const r = await reg.dispatch(call, { agentId: agentId, consent: consent, emit: function () {}, timeoutMs: 10000 });
+  if (r && r.ok) return sendJson(200, { ok: true, path: rel, snapshot: snapshot, summary: r.summary });
+  return sendJson((r && r.summary === 'denied') ? 403 : 400, { ok: false, path: rel, reason: (r && (r.content || r.summary)) || 'write failed' });
 }
 
 // POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran
