@@ -20,6 +20,14 @@ const StationBake = (() => {
   const NFACE = 9, NCAP = 4, FACEW = 4, WALLH = 12;
   const wallTop = '#4a463a', wallFace = '#2b2820', wallDk = '#1d1a14', hullC = '#191712';
 
+  /* live-tunable lighting — the CRT LAB (crtlab.js, dev-gated) writes these and calls
+     World.rebake() to re-run the bake. These ARE the shipped defaults.
+       ambient  = how dark the unlit station is (0=fully lit · 1=black)
+       pool     = how brightly the ceiling lamps carve their light pools back out
+       room/corridor/door = baseline lift inside each space type
+       floor    = warmth of the additive light pool painted on the floor */
+  const LIGHT = { ambient: 0.76, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.54, corridor: 0.42, door: 0.5, floor: 0.26 };
+
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
     tr: { cx: 0, cy: 1, a0: 1.5 * Math.PI, a1: 2 * Math.PI },
@@ -199,7 +207,7 @@ const StationBake = (() => {
       for (let i = 0; i < count; i++) {
         const lx = X + RW * (i + 0.5) / count, ly = Y + T * 1.6;
         const gw = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
-        gw.addColorStop(0, 'rgba(248,238,214,0.16)'); gw.addColorStop(0.6, 'rgba(248,238,214,0.05)'); gw.addColorStop(1, 'rgba(248,238,214,0)');
+        gw.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')'); gw.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')'); gw.addColorStop(1, 'rgba(250,236,206,0)');
         b.fillStyle = gw; b.fillRect(Math.max(X, lx - rad * 0.7), Y, Math.min(rad * 1.4, RW), Math.min(rad * 1.2, RH));
         lampPos.push({ x: lx, y: ly, r: rad * 1.4 });
       }
@@ -272,7 +280,7 @@ const StationBake = (() => {
   function buildLightMap() {
     const lightCv = canvas(CW, CH);
     const L = translatedContext(lightCv);
-    L.fillStyle = 'rgba(10,8,4,0.62)';
+    L.fillStyle = 'rgba(' + LIGHT.ambR + ',' + LIGHT.ambG + ',' + LIGHT.ambB + ',' + LIGHT.ambient + ')';   // darker ambient: the station leans on its OWN lights (the lamp cuts below punch brighter pools out of this)
     for (const r of G.allRects) L.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(L, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
     L.globalCompositeOperation = 'destination-out';
@@ -283,13 +291,13 @@ const StationBake = (() => {
     };
     for (const r of G.allRects) {
       const X = r.x1 * T, Y = r.y1 * T, RW = (r.x2 - r.x1 + 1) * T, RH = (r.y2 - r.y1 + 1) * T;
-      if (G.isCorridor(r.z)) { cut(X + RW / 2, Y + RH / 2, Math.max(RW, RH) * 0.5, 0.42); continue; }
+      if (G.isCorridor(r.z)) { cut(X + RW / 2, Y + RH / 2, Math.max(RW, RH) * 0.5, LIGHT.corridor); continue; }
       const n = Math.max(1, Math.round(RW / (RH * 1.4)));
-      for (let i = 0; i < n; i++) cut(X + RW * (i + 0.5) / n, Y + RH * 0.42, Math.max(RH * 0.78, RW / n * 0.62), 0.5);
+      for (let i = 0; i < n; i++) cut(X + RW * (i + 0.5) / n, Y + RH * 0.42, Math.max(RH * 0.78, RW / n * 0.62), LIGHT.room);
     }
-    for (const l of lampPos) cut(l.x, l.y, l.r, 0.8);
+    for (const l of lampPos) cut(l.x, l.y, l.r, LIGHT.pool);   // lamps punch bright pools out of the darker ambient → the lights carry the room
     // doorway light spill so corridors and rooms read as connected
-    for (const [x1, y1, x2, y2] of G.doorDefs) cut((x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T, T * 1.6, 0.5);
+    for (const [x1, y1, x2, y2] of G.doorDefs) cut((x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T, T * 1.6, LIGHT.door);
     L.globalCompositeOperation = 'source-over';
     const flickers = [];
     for (let i = 0; i < lampPos.length; i += 2) flickers.push(lampPos[i]);
@@ -554,7 +562,7 @@ const StationBake = (() => {
     else if (baked && baked.lightCv) ctx.drawImage(baked.lightCv, ox, oy);
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX };
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX, LIGHT };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;

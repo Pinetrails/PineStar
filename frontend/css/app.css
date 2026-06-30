@@ -206,7 +206,27 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
   background: var(--bg);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 60px rgba(0,0,0,.9);
 }
-#stage { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+/* the live feed graded into the terminal (warms/tints the world so it reads as a
+   security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
+#stage { display: block; width: 100%; height: 100%; image-rendering: pixelated; filter: var(--cam-grade); }
+
+/* ---- CRT TUBE FACE: a curved-glass overlay so the feed reads as a convex tube.
+   Pure overlay (specular sweep + bowed corner vignette + edge rim) — the pixel
+   canvas underneath stays crisp; only the glass implies the bulge. Sits above the
+   canvas but UNDER .cam-hud (z3) so REC/FEED labels stay legible. Toggle off with
+   body.no-curve. True geometric barrel-warp would need a shader pass, not CSS. */
+#stage-wrap::before {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 9px;
+  background:
+    radial-gradient(ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17), transparent 52%),   /* bright specular sweep across the top of the glass */
+    radial-gradient(ellipse 142% 136% at 50% 48%, transparent 50%, rgba(0,0,0,0.34) 82%, rgba(0,0,0,0.82) 100%);  /* deep bowed corner vignette → strong convex tube */
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.6), inset 0 2px 1px rgba(255,243,220,0.11), inset 0 0 0 1px rgba(255,238,210,0.04);   /* tube rim + top edge glass highlight */
+}
+body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
+
+/* NOTE: the feed scanlines are rendered IN-CANVAS now (world.js drawCRT) at device-pixel
+   resolution — crisp + bold where a CSS overlay washed out to a faint haze. The CSS layer
+   only carries the curved glass (::before) + the faint global lines on the surrounding chrome. */
 
 /* camera HUD overlay (reused v7 idiom) */
 .cam-hud { position: absolute; inset: 0; pointer-events: none; font-size: 14px; color: var(--ph); z-index: 3; }

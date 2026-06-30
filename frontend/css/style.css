@@ -20,8 +20,10 @@
   --gold: #ffd34a;
   --text: #eec88f;
   --ok: #7bc88a;              /* the "online / success" status green — CRT-muted (not neon) so it reads as good without breaking the amber-phosphor grade; tokenized so every surface themes through it */
-  /* color grade applied to the station feed so the world sits inside the terminal */
-  --cam-grade: saturate(0.8) sepia(0.12) hue-rotate(-5deg) contrast(1.08) brightness(0.9);
+  /* color grade applied to the station feed so the world sits inside the terminal.
+     brightness kept at 1.0 — the darkness now comes from the in-world lightmap (localized,
+     realistic pools) rather than a flat global dim, so lit areas stay bright ("not too dark"). */
+  --cam-grade: saturate(0.82) sepia(0.12) hue-rotate(-5deg) contrast(1.10) brightness(1.06);
 
   /* ============================================================
      DESIGN SYSTEM SCALE — the one scale everything snaps to.
@@ -47,7 +49,7 @@ body.theme-amber {
   --ph: #ffaa33; --ph-bright: #ffd9a3; --ph-dim: #b9791c; --ph-faint: #1e1404;
   --ink: #190f02; --ph-glow: rgba(255, 170, 51, 0.5); --ph-glow2: rgba(255,170,51,0.14);
   --bg: #030201; --panel: rgba(5, 3, 1, 0.95); --panel2: #0c0704; --text: #eec88f;
-  --cam-grade: saturate(0.8) sepia(0.12) hue-rotate(-5deg) contrast(1.08) brightness(0.9);
+  --cam-grade: saturate(0.82) sepia(0.12) hue-rotate(-5deg) contrast(1.10) brightness(1.06);
 }
 body.theme-green {
   --ph: #3dff70; --ph-bright: #ccffdb; --ph-dim: #1fae4e; --ph-faint: #0c3a1d;
@@ -122,9 +124,33 @@ body {
 /* ====== CRT GLASS: scanlines + bezel vignette + slow roll band ====== */
 body::after { /* scanlines + aperture-grille over EVERYTHING */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 950;
+  /* BEAM scanlines: a soft dark trough between bright line-cores (graded stops,
+     not a hard 1px bar) so it reads as an electron beam, not venetian blinds —
+     and the soft edges alias far less on fractional-DPI displays. 3px pitch. */
   background:
-    repeating-linear-gradient(0deg, rgba(0,0,0,0.26) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(90deg, rgba(255,80,40,0.035) 0 1px, rgba(40,180,120,0.022) 1px 2px, rgba(60,120,255,0.035) 2px 3px);
+    repeating-linear-gradient(0deg,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 1px,
+      rgba(0,0,0,0.13) 1.5px,
+      rgba(0,0,0,0.30) 2px,
+      rgba(0,0,0,0.13) 2.5px,
+      rgba(0,0,0,0) 3px),
+    repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1px, rgba(40,180,120,0.02) 1px 2px, rgba(60,120,255,0.03) 2px 3px);
+}
+/* hi-DPI: widen the pitch so the line + trough each land on whole device pixels
+   instead of merging into a flat gray haze on dense / scaled displays. */
+@media (min-resolution: 1.75dppx) {
+  body::after {
+    background:
+      repeating-linear-gradient(0deg,
+        rgba(0,0,0,0) 0px,
+        rgba(0,0,0,0) 1.5px,
+        rgba(0,0,0,0.13) 2.2px,
+        rgba(0,0,0,0.28) 3px,
+        rgba(0,0,0,0.13) 3.8px,
+        rgba(0,0,0,0) 4.5px),
+      repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1.5px, rgba(40,180,120,0.02) 1.5px 3px, rgba(60,120,255,0.03) 3px 4.5px);
+  }
 }
 body.no-scan::after { display: none; }
 body::before { /* curved-glass vignette + corner darkening */

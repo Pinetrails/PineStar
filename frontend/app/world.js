@@ -26,6 +26,10 @@ const World = (() => {
 
   /* ---------- canvas + camera ---------- */
   let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null, listenersBound = false;   // listenersBound: init() can run again per new agent — bind canvas/window/doc handlers + the SSE bridge ONCE
+  // live-tunable CRT knobs — drawCRT/drawGlows read these every frame so the dev CRT LAB
+  // (crtlab.js, dev-gated) can tune them live. These ARE the shipped defaults: bold scanlines,
+  // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
+  const CRT = { scan: 0.43, pitch: 2, fade: 0, glow: 0.08 };
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -2002,15 +2006,41 @@ const World = (() => {
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
     drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
+    drawCRT(now);   // CRT scanlines + roll band over the whole feed (screen-space, absolutely last)
 
     if (running) raf = requestAnimationFrame(frame);
+  }
+
+  // ---- CRT "FADE" FILTER (screen-space, drawn last over the whole feed) --------
+  // A LIGHT touch, not bold bars: very faint NEUTRAL scanlines (no warm tint — the warm
+  // beam-cores were what cast the yellow) + a soft cool matte wash that lifts the blacks a
+  // hair for that faded old-screen look. Rendered in-canvas at device-pixel res so the
+  // line texture stays crisp. Honors body.no-scan. Tunables flagged below.
+  function drawCRT(now) {
+    if (!cv || document.body.classList.contains('no-scan')) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const dpr = window.devicePixelRatio || 1;
+    const W = cv.width, H = cv.height;
+    const pitch = Math.max(2, Math.round(CRT.pitch * dpr));   // scanline spacing (device px)
+    const line = Math.max(1, Math.round(dpr));               // line thickness (device px)
+    if (CRT.scan > 0) {                               // faint neutral scanlines — CRT.scan
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(0,0,0,' + CRT.scan + ')';
+      for (let y = 0; y < H; y += pitch) ctx.fillRect(0, y, W, line);
+    }
+    if (CRT.fade > 0) {                               // soft faded matte (cool-neutral, no yellow) — CRT.fade
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(' + Math.round(11 * CRT.fade) + ',' + Math.round(12 * CRT.fade) + ',' + Math.round(15 * CRT.fade) + ',1)';
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   function drawGlows(now) {
     if (!cache || !cache.flickers) return;
     ctx.globalCompositeOperation = 'lighter';
     for (const f of cache.flickers) {
-      const a = Math.max(0, 0.085 * (0.55 + 0.45 * Math.sin(now / 210 + f.x) * Math.sin(now / 83 + f.y)));
+      const a = Math.max(0, CRT.glow * (0.55 + 0.45 * Math.sin(now / 210 + f.x) * Math.sin(now / 83 + f.y)));
       const g = ctx.createRadialGradient(f.x, f.y, 1, f.x, f.y, f.r * 0.7);
       g.addColorStop(0, 'rgba(240,230,206,' + a + ')'); g.addColorStop(1, 'rgba(240,230,206,0)');
       ctx.fillStyle = g; ctx.fillRect(f.x - f.r * 0.7, f.y - f.r * 0.7, f.r * 1.4, f.r * 1.4);
@@ -2841,7 +2871,7 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit, pauseBridge, resumeBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
