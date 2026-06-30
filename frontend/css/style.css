@@ -576,7 +576,7 @@ body.no-scan .crt-scan { display: none; }
 .ag-detail { flex: 1; min-width: 0; }
 .ag-head { display: flex; gap: 10px; align-items: flex-start; }
 #ag-portrait {
-  width: 52px; height: 68px; image-rendering: pixelated;
+  width: 88px; height: 116px; image-rendering: pixelated;
   border: 2px solid var(--ph-dim); background: #02080a; flex-shrink: 0;
 }
 .ag-name { font-size: 25px; letter-spacing: 4px; }

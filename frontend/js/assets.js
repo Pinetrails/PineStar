@@ -177,16 +177,20 @@ const SPRITES = (() => {
     // soft shadow scaled to the body's footprint (kept narrower than the body so it reads as a
     // tight contact pool under the feet, not a wide slab)
     const shw = Math.max(6, Math.round(dw * 0.26));
-    if (set === 'ultron') {
-      // menacing red spill under the station's leader
-      ctx.globalAlpha = 0.18 + 0.08 * Math.sin(nowMs / 400);
-      ctx.fillStyle = '#ff4a3d';
-      ctx.fillRect(Math.round(b.px) - (shw >> 1) - 2, Math.round(b.py) - 2, shw + 4, 4);
+    // the contact shadow (and ULTRON's red spill) is a GROUND cue — skip it for off-floor renders
+    // like the dossier portrait (b.noShadow), where there's no floor and it scales into a blocky bar.
+    if (!b.noShadow) {
+      if (set === 'ultron') {
+        // menacing red spill under the station's leader
+        ctx.globalAlpha = 0.18 + 0.08 * Math.sin(nowMs / 400);
+        ctx.fillStyle = '#ff4a3d';
+        ctx.fillRect(Math.round(b.px) - (shw >> 1) - 2, Math.round(b.py) - 2, shw + 4, 4);
+      }
+      ctx.globalAlpha = 0.24;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(Math.round(b.px) - (shw >> 1), Math.round(b.py) - 1, shw, 2);
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 0.24;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(Math.round(b.px) - (shw >> 1), Math.round(b.py) - 1, shw, 2);
-    ctx.globalAlpha = 1;
     const prevSmooth = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
     if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';

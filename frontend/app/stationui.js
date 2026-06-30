@@ -361,7 +361,7 @@ const StationUI = (() => {
     const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
     return '<div class="ag-hero">' +
-      '<div class="ag-portrait-wrap"><canvas id="ag-portrait" width="52" height="68"></canvas></div>' +
+      '<div class="ag-portrait-wrap"><canvas id="ag-portrait" width="84" height="112"></canvas></div>' +
       '<div class="ag-info">' +
       '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>' +
       '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
@@ -704,14 +704,45 @@ const StationUI = (() => {
   }
   function drawPortrait(cv, a) {
     if (!cv) return;
-    const pctx = cv.getContext('2d'); pctx.imageSmoothingEnabled = false;
+    const pctx = cv.getContext('2d');
     pctx.clearRect(0, 0, cv.width, cv.height);
-    if (typeof SPRITES === 'object' && SPRITES.ready) {
-      SPRITES.drawBody(pctx, { id: a.id, px: cv.width / 2, py: cv.height - 4, dir: 'south', color: a.color, state: 'idle', sitting: false, working: false, phase: 0 }, performance.now());
-    } else {
-      pctx.fillStyle = a.color; pctx.fillRect(cv.width / 2 - 5, 20, 10, 30);
-      pctx.fillStyle = '#f0e6c0'; pctx.fillRect(cv.width / 2 - 4, 10, 8, 9);
+    if (!(typeof SPRITES === 'object' && SPRITES.ready)) {
+      // procedural fallback (sprites not yet loaded) — a simple body+head sized to the larger frame.
+      pctx.imageSmoothingEnabled = false;
+      pctx.fillStyle = a.color; pctx.fillRect(cv.width / 2 - 9, cv.height - 64, 18, 44);
+      pctx.fillStyle = '#f0e6c0'; pctx.fillRect(cv.width / 2 - 7, cv.height - 80, 14, 16);
+      return;
     }
+    // drawBody sizes sprites for the FLOOR: each skin at its own small footprint scale (ULTRON ~0.6, most
+    // skins ~0.37) on a 92px master that's mostly transparent — reused as-is the body lands tiny and adrift
+    // in the frame, and DIFFERENTLY sized per skin. For the portrait we want every agent to FILL the frame
+    // the same, independent of how small it walks on the floor. So: render the body once to an offscreen
+    // buffer (real skin, noShadow), crop to its actual non-transparent bounds, then blit it in scaled to
+    // fill — preserving aspect and foot-anchoring to the bottom. (3× master in the buffer keeps detail.)
+    const buf = drawPortrait._buf || (drawPortrait._buf = document.createElement('canvas'));
+    const BW = 200, BH = 200; buf.width = BW; buf.height = BH;
+    const bctx = buf.getContext('2d');
+    bctx.clearRect(0, 0, BW, BH);
+    bctx.save();
+    bctx.translate(BW / 2, BH - 14);
+    bctx.scale(3, 3);
+    SPRITES.drawBody(bctx, { id: a.id, skin: a.skin, px: 0, py: 0, dir: 'south', color: a.color, state: 'idle', sitting: false, working: false, phase: 0, noShadow: true }, performance.now());
+    bctx.restore();
+    // measure the drawn body's real bounds (alpha > 16), so the fit ignores the master's transparent padding
+    const d = bctx.getImageData(0, 0, BW, BH).data;
+    let minX = BW, minY = BH, maxX = 0, maxY = 0, any = false;
+    for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+      if (d[(y * BW + x) * 4 + 3] > 16) { any = true; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    }
+    if (!any) return;
+    const sw = maxX - minX + 1, sh = maxY - minY + 1;
+    // fit into the frame with a small margin, aspect preserved, feet to the bottom
+    const padX = 8, padTop = 8, padBot = 6;
+    const k = Math.min((cv.width - padX * 2) / sw, (cv.height - padTop - padBot) / sh);
+    const dw = sw * k, dh = sh * k;
+    pctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in pctx) pctx.imageSmoothingQuality = 'high';
+    pctx.drawImage(buf, minX, minY, sw, sh, (cv.width - dw) / 2, cv.height - padBot - dh, dw, dh);
   }
   function openAgent(i) { sel = i; if (open.agents) rerender('agents'); else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '600px', feature: true }); }
 
