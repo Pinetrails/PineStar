@@ -82,13 +82,19 @@ const PermissionsStore = (() => {
     if (deps.load !== false) { try { refresh(); } catch (_) {} }
   }
 
-  // a brand-new hero starts LOCKED DOWN: drop the cache and best-effort revoke the curated autonomous grants, so a
-  // fresh station can never inherit a previous one's standing permission to write files unattended (re-grant via
-  // the panel). Non-curated grants are left to the user to manage. Safe + sync-callable under node.
+  // a brand-new hero starts LOCKED DOWN: drop the cache and revoke the curated autonomous grants, so a fresh station
+  // can never inherit a previous one's standing permission to write files unattended (re-grant via the panel).
+  // RETURNS A PROMISE so onWake can AWAIT the lockdown before the new agent enters the game — closing the window
+  // where a fresh Commander could briefly inherit the prior write grant (the posture reset to 'wait' is the backstop;
+  // this makes the claimed lockdown authoritative, not fire-and-forget). Sync-safe + node-safe (resolves immediately
+  // with no api wired); the revoke calls are still INITIATED synchronously. Non-curated grants are left to the user.
   function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
     grants = []; grantable = []; loaded = false;
-    if (deps.api && typeof deps.api.revoke === 'function') { for (const k of keys) { try { deps.api.revoke(k); } catch (_) {} } }
+    if (!deps.api || typeof deps.api.revoke !== 'function') return Promise.resolve();
+    const jobs = [];
+    for (const k of keys) { try { jobs.push(Promise.resolve(deps.api.revoke(k)).catch(() => {})); } catch (_) {} }
+    return Promise.all(jobs);
   }
 
   return { init, refresh, snapshot, currentLevel, setLevel, grant, revoke, reset, _grants: () => grants.slice() };

@@ -34,4 +34,9 @@ ok(/repaintDial\(\)/.test(src), 'a level change repaints the granular dial too')
 // guarded behind a typeof check so an older bundle without the store never throws
 ok(/typeof PermissionsStore !== 'undefined'/.test(src), 'permissions block is feature-guarded');
 
+// HONESTY (review S1): a granted-but-inert capability (cabinet:write with no cabinet placed) must be flagged via the
+// live placed-caps check, never shown as a silent "writes files" lie (object=capability).
+ok(/heroCaps/.test(src), 'panel reads the agent live placed caps (World.heroCaps) to judge effectiveness');
+ok(/grantEffective|objectHint/.test(src), 'panel flags a granted-but-inert capability with a place-the-object hint');
+
 console.log('permissions-ui.test.js OK —', n, 'assertions');

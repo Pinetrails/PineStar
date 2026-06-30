@@ -39,7 +39,7 @@
     {
       key: 'cabinet:write',
       label: 'Write files on its own',
-      desc: "Create and edit files in its own workspace while you're away. Stays inside the workspace — .env/.git are always protected — and every change is checkpointed, so you can undo anything it does."
+      desc: "Create and edit files in its own workspace while you're away. Needs a Filing Cabinet placed in its room to actually take effect. Stays inside the workspace — .env/.git are always protected — and every change is checkpointed, so you can undo anything it does."
     }
   ];
 
@@ -56,7 +56,7 @@
     never:   "Stays put. Never acts on its own — you drive everything.",
     suggest: "Lines up ideas while you're away; nothing happens until you approve it.",
     draft:   "Acts on its own and leaves finished drafts on your desk — but never writes files, sends, or spends.",
-    full:    "Acts on its own AND writes real files into its workspace while you're away. Everything it does is logged and reversible; it still can't send, publish, spend, or run commands."
+    full:    "Acts on its own AND writes real files into its workspace (once it has a Filing Cabinet to write into) — everything it does is logged and reversible. It still can't send, publish, spend, or run commands."
   };
 
   function isLevel(x) { return LEVELS.indexOf(x) >= 0; }
@@ -72,6 +72,17 @@
   // a human line for ANY standing grant — curated ones get their catalog desc; a non-curated class (blessed via
   // a past interactive prompt) still gets a truthful, revocable line so nothing the agent can do is hidden.
   function describeGrant(key) { const e = catalogEntry(key); return e ? e.desc : (String(key || '') + ' — granted earlier; you can revoke it here.'); }
+
+  // some grants only take EFFECT once a matching station OBJECT is placed (object=capability): cabinet:write needs a
+  // Filing Cabinet in the agent's room — the grant is the CONSENT, the placed object is the CAPABILITY. The panel
+  // uses this so a granted-but-inert capability is shown honestly (with a "place a cabinet" nudge), never as a
+  // silent "writes files" that does nothing — the exact "app lies" beat this project refuses.
+  const GRANT_OBJECT = { 'cabinet:write': 'cabinet' };
+  function grantObject(key) { return GRANT_OBJECT[key] || null; }                 // the cap-object a grant needs, or null
+  function objectHint(key) { return key === 'cabinet:write' ? 'needs a Filing Cabinet placed in its room to take effect' : ''; }
+  // is a grant actually in EFFECT given the agent's live placed caps? caps = World.heroCaps() (cap-object ids). A
+  // grant with no object requirement is always effective; a null caps (unknown) is treated as effective (no false alarm).
+  function grantEffective(key, caps) { const need = grantObject(key); if (!need) return true; if (!Array.isArray(caps)) return true; return caps.indexOf(need) >= 0; }
 
   // keep only well-formed danger keys (capability:scope). Defensive against a malformed api payload.
   function normalizeGrants(arr) {
@@ -110,6 +121,7 @@
     LEVELS, CATALOG, PLANS,
     isLevel, normalizeLevel, levelPlan, describeLevel,
     grantableKeys, isGrantable, catalogEntry, catalogLabel, describeGrant,
+    grantObject, objectHint, grantEffective,
     normalizeGrants, levelFromState, reconcileToLevel
   };
 });

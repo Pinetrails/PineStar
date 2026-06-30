@@ -87,9 +87,11 @@ const wire = (h) => PermissionsStore.init({ api: h.api, getPosture: h.getPosture
   {
     const h = harness(['cabinet:write'], { initiative: 'free', actsUnattended: true }); wire(h);
     await PermissionsStore.refresh();
-    PermissionsStore.reset();
-    eq(PermissionsStore._grants(), [], 'reset cleared the cache');
-    ok(h.calls.revoke.includes('cabinet:write'), 'reset best-effort revoked the write grant (a fresh hero starts locked)');
+    const p = PermissionsStore.reset();
+    eq(PermissionsStore._grants(), [], 'reset cleared the cache synchronously');
+    ok(h.calls.revoke.includes('cabinet:write'), 'reset revoked the write grant (a fresh hero starts locked)');
+    ok(p && typeof p.then === 'function', 'reset returns an awaitable promise so onWake can await the lockdown (no inherit-window)');
+    await p;
   }
 
   // --- read-only citizen: never emits, no bus dependency ---

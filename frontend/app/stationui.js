@@ -1245,11 +1245,18 @@ const StationUI = (() => {
         if (rw) rw.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
         if (ad && AutonomyStore.describe) ad.textContent = AutonomyStore.describe();
       };
+      // the agent's LIVE placed caps (cabinet→files …) — so a granted-but-inert capability is shown honestly with a
+      // "place a cabinet" nudge instead of a silent "writes files" lie (object=capability: the grant is consent, the
+      // placed object is the capability). null = unknown → no false alarm.
+      const permAgent = () => (typeof Workstreams !== 'undefined' && Workstreams.active && Workstreams.active() && Workstreams.active().agentId) || 'agent';
+      const heroCapsNow = () => (typeof World !== 'undefined' && World.heroCaps) ? (World.heroCaps(permAgent()) || []) : null;
       const renderGrants = (snap) => {
-        const curated = pcurated(); const rows = [];
+        const curated = pcurated(); const caps = heroCapsNow(); const rows = [];
         curated.forEach(k => {
           const on = snap.grants.indexOf(k) >= 0;
-          rows.push('<div class="set-row"><span>' + (on ? '✓ ' : '') + esc(plabel(k)) + '</span> <button class="bb sm' + (on ? ' danger' : '') + '" data-perm-' + (on ? 'revoke' : 'grant') + '="' + esc(k) + '">' + (on ? 'REVOKE' : 'GRANT') + '</button></div>');
+          const eff = (typeof Permissions !== 'undefined' && Permissions.grantEffective) ? Permissions.grantEffective(k, caps) : true;
+          const hint = (on && !eff && typeof Permissions !== 'undefined' && Permissions.objectHint) ? Permissions.objectHint(k) : '';
+          rows.push('<div class="set-row"><span>' + (on ? '✓ ' : '') + esc(plabel(k)) + (hint ? ' <span class="dim">— ' + esc(hint) + '</span>' : '') + '</span> <button class="bb sm' + (on ? ' danger' : '') + '" data-perm-' + (on ? 'revoke' : 'grant') + '="' + esc(k) + '">' + (on ? 'REVOKE' : 'GRANT') + '</button></div>');
         });
         snap.grants.filter(k => curated.indexOf(k) < 0).forEach(k => {
           rows.push('<div class="set-row"><span class="dim">' + esc(k) + '</span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">REVOKE</button></div>');
