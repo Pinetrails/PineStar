@@ -18,7 +18,8 @@
 'use strict';
 const SuggestStore = (() => {
   const KEY = 'starnet.suggest.v1';
-  let state = null;        // { v:1, lastFamiliarity:number|null, tasksSinceLast:int }
+  const RECENT_CAP = 8;    // remember the last N pitched-idea fingerprints so the agent never re-pitches the same idea
+  let state = null;        // { v:1, lastFamiliarity:number|null, tasksSinceLast:int, recent:[fingerprint] }
   let deps = {};           // accessors/actions injected by app.js
   let sessionShown = 0;    // ideas shown THIS session (in-memory; resets each app run)
   let firing = false;      // re-entrancy guard while an idea is mid-flight
@@ -27,11 +28,26 @@ const SuggestStore = (() => {
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   const ready = () => typeof Pitch !== 'undefined' && state;
 
+  // a stable fingerprint of an idea (its title), so a re-pitched same/near-same idea is recognised and skipped:
+  // lowercase, keep alphanumeric tokens >=3 chars, sort + unique → reordered/padded restatements still match.
+  function fingerprint(title) {
+    const toks = String(title == null ? '' : title).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+    return Array.from(new Set(toks)).sort().join(' ');
+  }
+  function seenRecently(fp) { return !!fp && Array.isArray(state.recent) && state.recent.indexOf(fp) >= 0; }
+  function rememberIdea(fp) {
+    if (!fp) return;
+    if (!Array.isArray(state.recent)) state.recent = [];
+    state.recent.push(fp);
+    while (state.recent.length > RECENT_CAP) state.recent.shift();
+  }
+
   function hydrate(raw) {
-    const s = { v: 1, lastFamiliarity: null, tasksSinceLast: 0 };
+    const s = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] };
     if (raw && typeof raw === 'object') {
       if (Number.isFinite(raw.lastFamiliarity)) s.lastFamiliarity = raw.lastFamiliarity;
       if (Number.isFinite(raw.tasksSinceLast) && raw.tasksSinceLast >= 0) s.tasksSinceLast = raw.tasksSinceLast;
+      if (Array.isArray(raw.recent)) s.recent = raw.recent.filter(x => typeof x === 'string').slice(-RECENT_CAP);
     }
     return s;
   }
@@ -104,6 +120,11 @@ const SuggestStore = (() => {
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
       if (!parsed) { state.tasksSinceLast = 0; save(); return; }   // model hiccup → back off a full cooldown, don't hammer
 
+      // already pitched this idea before? skip it — back off a cooldown (like a hiccup) WITHOUT spending the
+      // session, so the next attempt has a chance to surface something genuinely fresh instead of repeating.
+      const fp = fingerprint(parsed.title);
+      if (seenRecently(fp)) { state.tasksSinceLast = 0; save(); return; }
+
       const why = parsed.why ? (' ' + parsed.why) : '';
       const gap = parsed.gap ? (' i’d need one thing from you: ' + parsed.gap) : '';
       const line = '✦ a fresh idea — ' + Pitch.titleSentence(parsed.title) + why + gap;   // shared title→sentence join (no double period)
@@ -112,6 +133,7 @@ const SuggestStore = (() => {
       });
 
       sessionShown++;                                   // spend this session's single idea (anti-nag)
+      rememberIdea(fp);                                 // record the idea so it's never re-pitched as a "fresh idea"
       const fam = familiarityNow();
       if (fam != null) state.lastFamiliarity = fam;     // advance the baseline so the NEXT idea needs further growth
       state.tasksSinceLast = 0;                         // restart the cooldown
@@ -141,7 +163,7 @@ const SuggestStore = (() => {
   }
 
   // S2: a brand-new hero starts fresh (no baseline, no cooldown carryover). Own key, like curiositystore.
-  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0 }; sessionShown = 0; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] }; sessionShown = 0; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
   return { init, reset, onRunEnd, willSuggest, fire, _state: () => state, _session: () => sessionShown };

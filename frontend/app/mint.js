@@ -72,7 +72,7 @@
         for (const k in state.shapes) { const c = state.shapes[k]; if (c.count < wc || (c.count === wc && (c.lastAt || 0) < wt)) { wk = k; wc = c.count; wt = c.lastAt || 0; } }
         if (wk) delete state.shapes[wk];
       }
-      s = state.shapes[key] = { count: 0, examples: [], minted: false, dismissed: false, lastAt: 0 };
+      s = state.shapes[key] = { count: 0, examples: [], minted: false, dismissed: false, lastAt: 0, proposed: 0 };
     }
     const raw = String(text == null ? '' : text).trim();
     s.count += 1;
@@ -116,14 +116,19 @@
   }
 
   // the proposals worth surfacing: shapes at/over THRESHOLD, not already minted or dismissed, newest first, capped.
+  // opts.maxProposed (default ∞): the GENTLE seed nudge passes a small ceiling so a shape it has already offered-
+  // and-been-ignored that many times stops surfacing AS A NUDGE — the manual RECIPES tab calls candidates() with
+  // no ceiling, so those shapes still show there (the user can always go find them; we just stop interrupting).
   function candidates(state, opts) {
     opts = opts || {};
     if (!state || !state.enabled || !state.shapes) return [];
     const threshold = typeof opts.threshold === 'number' ? opts.threshold : THRESHOLD;
+    const maxProposed = typeof opts.maxProposed === 'number' ? opts.maxProposed : Infinity;
     const out = [];
     for (const key in state.shapes) {
       const s = state.shapes[key];
       if (!s || s.minted || s.dismissed || s.count < threshold) continue;
+      if ((s.proposed || 0) >= maxProposed) continue;   // offered-and-ignored enough — stop nudging this shape
       const ind = induceTemplate(s.examples);
       if (!ind.template) continue;
       out.push({ key, count: s.count, lastAt: s.lastAt || 0, template: ind.template, hasToken: ind.hasToken, lastText: s.examples[s.examples.length - 1] || '' });
@@ -134,6 +139,9 @@
 
   function markMinted(state, key) { if (state && state.shapes && state.shapes[key]) state.shapes[key].minted = true; return state; }
   function markDismissed(state, key) { if (state && state.shapes && state.shapes[key]) state.shapes[key].dismissed = true; return state; }
+  // tally that a shape was OFFERED as a seed nudge (whether or not the user acted). candidates(opts.maxProposed)
+  // uses this to stop re-offering an ignored shape — the durable counterpart to the in-memory per-session cap.
+  function markProposed(state, key) { if (state && state.shapes && state.shapes[key]) state.shapes[key].proposed = (state.shapes[key].proposed || 0) + 1; return state; }
 
   function setEnabled(state, on) { if (state) state.enabled = !!on; return state; }
   function forget(state) { const keep = state && typeof state.enabled === 'boolean' ? state.enabled : true; return { v: 1, shapes: {}, enabled: keep }; }
@@ -155,7 +163,8 @@
           examples,
           minted: !!r.minted,
           dismissed: !!r.dismissed,
-          lastAt: Number.isFinite(Number(r.lastAt)) ? Number(r.lastAt) : 0
+          lastAt: Number.isFinite(Number(r.lastAt)) ? Number(r.lastAt) : 0,
+          proposed: Number.isFinite(Number(r.proposed)) && Number(r.proposed) > 0 ? Math.floor(Number(r.proposed)) : 0
         };
       }
     }
@@ -174,6 +183,6 @@
   return {
     THRESHOLD, MAX_CANDIDATES, MAX_SHAPES,
     normalizeShape, fresh, observe, induceTemplate, candidates,
-    markMinted, markDismissed, setEnabled, forget, hydrate
+    markMinted, markDismissed, markProposed, setEnabled, forget, hydrate
   };
 });

@@ -191,6 +191,26 @@ global.DossierStore.summary = _summ;
     await SuggestStore.fire();
     A.eq(SuggestStore.willSuggest(), false, 'after a model hiccup, the cooldown reset holds off the next idea');
 
+    /* ---------- content dedup: the SAME idea is never re-pitched as a "fresh idea" ---------- */
+    clearFakes(); SuggestStore.reset();
+    SuggestStore._state().lastFamiliarity = 0.4; SuggestStore._state().tasksSinceLast = 5; dsFam = 0.6; pitchDoneFlag = true;
+    hn.next = { text: 'PITCH: a weekly digest of your repo activity\nWHY: you ship often\nBUILD: workflow' };
+    await SuggestStore.fire();
+    A.eq(chat.nudges.length, 1, 'a fresh idea renders a nudge');
+    A.eq(SuggestStore._session(), 1, 'the fresh idea spends the session');
+    // re-arm the cadence and pitch the SAME idea again — it must be recognised and skipped
+    SuggestStore._state().tasksSinceLast = 5; dsFam = 0.8;
+    hn.next = { text: 'PITCH: a weekly digest of your repo activity\nWHY: still ship often\nBUILD: workflow' };
+    await SuggestStore.fire();
+    A.eq(chat.nudges.length, 1, 'the SAME idea is NOT re-pitched (no second nudge — content dedup)');
+    A.eq(SuggestStore._session(), 1, 'a deduped repeat does not spend another session slot');
+    A.eq(SuggestStore._state().tasksSinceLast, 0, 'a deduped repeat backs off a cooldown (tries again later for something fresh)');
+    // a genuinely DIFFERENT idea still gets through
+    SuggestStore._state().tasksSinceLast = 5; dsFam = 0.9;
+    hn.next = { text: 'PITCH: a daily standup summarizer\nWHY: different need\nBUILD: workflow' };
+    await SuggestStore.fire();
+    A.eq(chat.nudges.length, 2, 'a genuinely different idea still surfaces');
+
     A.report('suggeststore.test');
   } catch (e) {
     A.ok(false, 'unexpected throw: ' + (e && e.stack || e));

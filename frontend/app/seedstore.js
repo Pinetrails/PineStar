@@ -19,11 +19,15 @@ const SeedStore = (() => {
 
   const enabled = () => (typeof MintStore === 'undefined' || typeof MintStore.enabled !== 'function') ? true : !!MintStore.enabled();
 
-  // the freshest mint candidate turned into a seed proposal (or null). Mint already filters minted/dismissed.
+  // the freshest mint candidate turned into a seed proposal (or null). Mint already filters minted/dismissed; the
+  // NUDGE path (nudgeCandidates) additionally hides a shape already offered-and-ignored enough times, so an ignored
+  // seed stops looping across sessions. Falls back to candidates() where nudgeCandidates isn't available.
   function pick() {
-    if (typeof Seeds === 'undefined' || typeof MintStore === 'undefined' || !MintStore.candidates) return null;
+    if (typeof Seeds === 'undefined' || typeof MintStore === 'undefined') return null;
+    const list = MintStore.nudgeCandidates || MintStore.candidates;
+    if (typeof list !== 'function') return null;
     if (!enabled()) return null;   // honor the learning pause
-    const cands = MintStore.candidates() || [];
+    const cands = list.call(MintStore) || [];
     for (const c of cands) { const s = Seeds.fromCandidate(c); if (s) return s; }
     return null;
   }
@@ -37,6 +41,9 @@ const SeedStore = (() => {
     if (typeof Chat === 'undefined' || !Chat.nudge) return;
     const s = pick(); if (!s) return;
     sessionProposed++;   // spend the session's one seed offer whether or not they save (anti-nag)
+    // durably tally the offer so an IGNORED nudge (no click) stops re-surfacing this shape across sessions — the
+    // counterpart to the curiosity stop-forever. Save/dismiss below set the stronger minted/dismissed flags.
+    if (typeof MintStore !== 'undefined' && MintStore.markProposed) MintStore.markProposed(s.key);
     let handled = false;   // one-shot: a double-click on the choice can't double-author the recipe
     Chat.nudge(s.line, (typeof Seeds !== 'undefined' ? Seeds.choices() : []), choice => {
       if (handled) return; handled = true;

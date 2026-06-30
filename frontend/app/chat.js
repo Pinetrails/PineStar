@@ -642,7 +642,7 @@ const Chat = (() => {
         if (typeof CuriosityStore === 'undefined') return;
         const dim = CuriosityStore.consider();
         if (!dim) return;
-        CuriosityStore.markShown();            // spend this session's single nudge whether or not they answer
+        CuriosityStore.markShown(dim);         // spend the session nudge AND durably tally this dim's ask (ignored asks stop it for good)
         curiosityNudge(dim);
       }, 650);   // let the reply finish rendering before the nudge slots in below it
     });

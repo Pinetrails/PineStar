@@ -89,6 +89,21 @@ const cm = M.fresh();
 for (let s = 0; s < 6; s++) for (let i = 0; i < 3; i++) M.observe(cm, 'Verb' + s + ' the thing number ' + i, s * 10 + i);
 A.ok(M.candidates(cm).length <= M.MAX_CANDIDATES, 'never more than MAX_CANDIDATES proposals at once');
 
+/* ---------- markProposed + maxProposed: the seed nudge stops re-offering an ignored shape ---------- */
+const cprop = M.fresh();
+for (let i = 0; i < 3; i++) M.observe(cprop, 'Tidy the inbox folder ' + i, i);
+const pk = M.candidates(cprop)[0].key;
+A.eq(M.candidates(cprop, { maxProposed: 2 }).length, 1, 'a never-offered shape is offerable under the nudge ceiling');
+M.markProposed(cprop, pk);
+A.eq(cprop.shapes[pk].proposed, 1, 'markProposed tallies one offer');
+A.eq(M.candidates(cprop, { maxProposed: 2 }).length, 1, 'still offerable after one ignored offer (under the ceiling)');
+M.markProposed(cprop, pk);
+A.eq(cprop.shapes[pk].proposed, 2, 'markProposed tallies the second offer');
+A.eq(M.candidates(cprop, { maxProposed: 2 }).length, 0, 'the seed NUDGE stops offering a shape ignored to the ceiling');
+A.eq(M.candidates(cprop).length, 1, 'but the unfiltered candidates() (RECIPES tab) still shows it');
+// proposed survives a round-trip
+A.eq(M.hydrate(JSON.parse(JSON.stringify(cprop))).shapes[pk].proposed, 2, 'hydrate carries the proposed count');
+
 /* ---------- forget / hydrate ---------- */
 const f = M.forget(c0);
 A.eq(Object.keys(f.shapes).length, 0, 'forget wipes the tracked shapes');

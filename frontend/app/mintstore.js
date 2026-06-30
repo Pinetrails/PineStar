@@ -40,9 +40,14 @@ const MintStore = (() => {
     persist();
   }
 
+  const SEED_MAX_PROPOSED = 2;   // a seed nudge stops re-offering a shape after this many ignored offers (stop-forever)
   function candidates() { return ready() ? Mint.candidates(state, { now: now() }) : []; }
+  // the GENTLE seed nudge reads this (not candidates()): it hides a shape already offered-and-ignored enough times,
+  // so an ignored seed stops looping across sessions. The RECIPES tab keeps using candidates() (no ceiling).
+  function nudgeCandidates() { return ready() ? Mint.candidates(state, { now: now(), maxProposed: SEED_MAX_PROPOSED }) : []; }
   function markMinted(key) { if (ready()) { Mint.markMinted(state, key); persist(); } }
   function markDismissed(key) { if (ready()) { Mint.markDismissed(state, key); persist(); } }
+  function markProposed(key) { if (ready()) { Mint.markProposed(state, key); persist(); } }
   function enabled() { return ready() ? !!state.enabled : true; }
   function setEnabled(on) { if (ready()) { Mint.setEnabled(state, on); persist(); } }
   function forget() { if (ready()) { state = Mint.forget(state); persist(); } }
@@ -51,5 +56,5 @@ const MintStore = (() => {
   function reset() { state = null; try { if (typeof localStorage !== 'undefined') localStorage.removeItem(KEY); } catch (_) {} }
   function serialize() { return ready() ? JSON.parse(JSON.stringify(state)) : null; }
 
-  return { init, observe, candidates, markMinted, markDismissed, enabled, setEnabled, forget, reset, serialize };
+  return { init, observe, candidates, nudgeCandidates, markMinted, markDismissed, markProposed, enabled, setEnabled, forget, reset, serialize };
 })();
