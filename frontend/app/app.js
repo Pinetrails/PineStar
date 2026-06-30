@@ -1018,6 +1018,7 @@ const App = (() => {
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
+    if (typeof AutopilotStore !== 'undefined') AutopilotStore.reset();   // …and a fresh idle autopilot (no inherited idle/armed state — its decision is re-earned by the new Commander's posture + dossier)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
@@ -1181,6 +1182,18 @@ const App = (() => {
       scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false }))
     });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
+    // AUTOPILOT (autonomy Slice A — the idle self-direction driver): when the Commander goes idle with autonomy
+    // enabled, the station EARNS context (asks one gentle get-to-know-you question) — the first thing that makes
+    // the posture dial actually drive the floor. The decision is pure (autopilot.js); this is the edge — the live
+    // clock, the activity listeners + idle tick (installed once), and the curiosity hand-off. It reads the posture
+    // and the (confirmed-only) dossier, never writes either. The ACT branch (doing reason/draft work) lands in A2.
+    if (typeof AutopilotStore !== 'undefined') AutopilotStore.init({
+      now: () => Date.now(),
+      getPosture: () => (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) ? AutonomyStore.summary() : null,
+      getDossier: () => (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null,
+      getBeliefs: (dim) => (typeof DossierStore !== 'undefined' && DossierStore.beliefs) ? DossierStore.beliefs(dim) : [],
+      offerCuriosity: () => (typeof Chat !== 'undefined' && Chat.offerCuriosity) ? Chat.offerCuriosity() : false
+    });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     if (typeof ModelDock !== 'undefined') ModelDock.init({ apply: applyQuickModel });
     syncChannels();   // if a Telegram bot auto-started from saved config, refresh it to THIS agent's live identity

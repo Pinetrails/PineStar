@@ -723,6 +723,27 @@ const Chat = (() => {
       }, 650);   // let the reply finish rendering before the nudge slots in below it
     });
   }
+  // IDLE-DRIVEN curiosity (the autopilot EARN-CONTEXT branch, autonomy Slice A): the SAME gentle get-to-know-you
+  // ask the post-run slot makes, but triggered when the Commander goes IDLE with autonomy enabled — so turning the
+  // dial up makes the station proactively LEARN about them between tasks. Shares the curiosity anti-nag (the
+  // per-session CAP in CuriosityStore + the single activeNudge), so it can never stack with, or double-ask
+  // alongside, the post-run nudge. Defined AFTER wireCuriosity so the post-run slot stays the first occurrence of
+  // the suggestion→seed→curiosity precedence (beat-coordination.test locks that ordering by position). Returns
+  // true iff a nudge was actually shown (the bool just aids testing).
+  function offerCuriosity() {
+    if (!log) return false;
+    if (isBusy() || interview) return false;                                                       // mid-run / mid-interview
+    if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return false;
+    if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return false;
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return false;     // a focused panel is up
+    if (activeNudge) return false;                                                                  // a gentle beat is already live — one at a time
+    if (typeof CuriosityStore === 'undefined') return false;
+    const dim = CuriosityStore.consider();                                                          // null once the session cap is spent / nothing live to ask
+    if (!dim) return false;
+    CuriosityStore.markShown(dim);                                                                  // spend the session nudge + durably tally the ask (shared with the post-run path)
+    curiosityNudge(dim);
+    return true;
+  }
 
   function renderHistory() {
     const h = activeWs ? activeWs.history : [];
@@ -1370,5 +1391,5 @@ const Chat = (() => {
   // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
   function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, runMeta };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta };
 })();
