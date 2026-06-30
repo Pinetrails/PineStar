@@ -39,10 +39,13 @@ const CuriosityStore = (() => {
     if (ready() && dim) { if (!state.asked || typeof state.asked !== 'object') state.asked = {}; state.asked[dim] = (Number(state.asked[dim]) || 0) + 1; save(); }
   }
   function markDismissed(dim) { if (ready() && dim) { state.dismissed[dim] = true; save(); } }   // never raise it again
+  // the dimension was actually ANSWERED (or genuinely re-emptied) — clear its ignored-ask tally so the stop-forever
+  // counter only ever reflects IGNORES (decision 1). Without this, a dimension answered-then-forgotten stays silenced.
+  function markAnswered(dim) { if (ready() && dim && state.asked && state.asked[dim] != null) { delete state.asked[dim]; save(); } }
 
   // S2: a NEW AGENT starts with no waved-off dimensions. Drop the self-persisted key so the next init()
   // hydrates clean (Save.clear() only wipes starnet.save — this store persists to its own key).
   function reset() { state = null; sessionCount = 0; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, consider, markShown, markDismissed, reset };
+  return { init, consider, markShown, markDismissed, markAnswered, reset };
 })();

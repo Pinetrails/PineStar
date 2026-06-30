@@ -27,4 +27,9 @@ for (const store of ['PitchStore', 'SuggestStore', 'SeedStore', 'CuriosityStore'
     'new-hero onWake resets ' + store + ' — no prior-Commander state bleeds into a fresh agent');
 }
 
+// SERVER-SIDE bleed: the frontend stores above are localStorage; the notebook + the NEW declined denylist live on
+// the sidecar. onWake must ALSO wipe them, or a fresh hero inherits a stranger's kept/declined memories (app-lie).
+A.ok(/Harness\.memoryReset\(/.test(seg),
+  'new-hero onWake wipes SERVER-SIDE memory (notebook/declined/todo) so no prior-Commander memory bleeds into a fresh agent');
+
 A.report('newhero-reset.test');

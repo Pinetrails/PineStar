@@ -573,6 +573,9 @@ async function runReflection(o) {
     const out = await reflect({ agentId, runId, messages }, { propose, redact, existing: existing.concat(declinedRecs), clock: { now: () => Date.now() }, max: 5 });
     const proposals = (out && out.proposals) || [];
     if (proposals.length) {
+      // arm the cooldown ONLY when a beat actually fires — so a trivial/floored/all-deduped run (zero proposals)
+      // never spends the window and blocks a following substantive run's turn-in (honours "always confirm").
+      lastReflectAt.set(agentId, Date.now());
       stashProposals(agentId, runId, proposals.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' })));
       for (const p of proposals) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
     }
@@ -1188,6 +1191,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/transcript') === 0) return serveTranscript(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
+  if (req.method === 'POST' && req.url === '/api/memory/reset') return handleMemoryReset(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/records') === 0) return serveMemoryRecords(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/pin') return handleMemoryPin(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/edit') return handleMemoryEdit(req, res);
@@ -2380,7 +2384,8 @@ async function runOnce(o) {
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
   if (o.reflect && isTask && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)
       && (Date.now() - (lastReflectAt.get(agentId) || 0) >= REFLECT_COOLDOWN_MS)) {
-    lastReflectAt.set(agentId, Date.now());
+    // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
+    // so a run that yields nothing never blocks the next substantive run's turn-in.
     runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: usingCodex }).catch(() => {});
   }
   return result;
@@ -3015,6 +3020,24 @@ async function handleMemoryTurnin(req, res) {
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
   json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
+}
+
+// POST /api/memory/reset { agent } — wipe a hero's SERVER-SIDE memory on new-hero commission, so a fresh Commander
+// never inherits a stranger's kept memories (notebook:), pending plan (todo:), or — new in this change — permanently
+// declined proposals (declined:). The frontend's onWake already resets the browser advice stores; this closes the
+// matching server-side bleed (the project's "a fresh agent must not inherit a stranger's state" hard rule).
+async function handleMemoryReset(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agent || body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  for (const key of ['notebook:' + agentId, 'declined:' + agentId, 'todo:' + agentId]) {
+    try { await notebookStore.update(key, () => []); } catch (_) {}   // best-effort; a fresh hero proceeds regardless
+  }
+  // also drop any in-memory pending proposals for this agent so a stale turn-in can't land on the new hero
+  for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
+  latestProposalRun.delete(agentId); lastReflectAt.delete(agentId);
+  return json(200, { ok: true, agent: agentId });
 }
 
 // GET /api/memory/records?agent=<id> — the FULL §5.2 records for the Memory Core panel (the /api/notebook

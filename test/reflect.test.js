@@ -72,6 +72,8 @@ const { makeClock } = require('../shared/clock-rng.js');
   const floored = await reflect(run, { propose: () => 'FACT: we discussed it\nFACT: deploys the alpha service with npm publish', clock: makeClock(0), redact });
   A.eq(floored.proposals.length, 1, 'a durable belief survives while the trivia beside it is floored');
   A.eq(floored.proposals[0].content, 'deploys the alpha service with npm publish', 'the surviving proposal is the substantive one');
+  // a terse belief naming a SHORT tech token (Go/AI/Vim) must survive — the floor counts 2-char significant words
+  A.eq((await reflect(run, { propose: () => 'PREFERENCE: prefers Go and Vim', clock: makeClock(0), redact })).proposals.length, 1, 'a terse belief with a 2-char tech name survives the floor');
 
   // ---- NOTE is no longer an accepted kind (it was the low-value catch-all that drove the trivia complaint) ----
   A.eq((await reflect(run, { propose: () => 'NOTE: some loose observation about the run', clock: makeClock(0), redact })).proposals.length, 0, 'NOTE-tagged lines are ignored (dropped from the contract)');

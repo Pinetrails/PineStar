@@ -85,10 +85,17 @@
   // Reject content that is too short to be a durable belief, carries too few significant words, or is run-specific
   // narration ("we discussed X", "the task was Y"). Conservative on purpose — better to drop a borderline line than
   // to keep cluttering the turn-in beat with trivia (the user's "remembers things that don't matter" complaint).
+  // significant-word count for the FLOOR only: like simTokens but admits 2-char tech names (Go, AI, ML, Vi) so a
+  // terse-but-real belief ("prefers Go", "expert in AI") isn't swallowed. Dedup still uses the stricter >=3 simTokens.
+  function floorTokens(s) {
+    const set = new Set();
+    for (const t of String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/)) if (t.length >= 2 && !SIM_STOP.has(t)) set.add(t);
+    return set.size;
+  }
   function lowValue(content) {
     const c = String(content == null ? '' : content).trim();
     if (c.length < MIN_CONTENT) return true;
-    if (simTokens(c).size < MIN_TOKENS) return true;
+    if (floorTokens(c) < MIN_TOKENS) return true;
     if (TRANSIENT.test(c)) return true;
     return false;
   }

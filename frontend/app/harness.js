@@ -335,6 +335,12 @@ const Harness = (() => {
       return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
     } catch (e) { return { ok: false }; }
   }
+  // wipe a hero's SERVER-SIDE memory (notebook/declined/todo) on new-hero commission, so a fresh Commander never
+  // inherits a stranger's kept memories or permanently-declined proposals. Fire-and-forget; a fresh hero proceeds
+  // regardless (the browser advice stores are already reset locally).
+  async function memoryReset(agentId) {
+    try { await fetch('/api/memory/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: agentId || 'agent' }) }); } catch (e) {}
+  }
 
   // Cortex (M-mem.6) — the Memory Core: the FULL provenance-bearing §5.2 records (kind/sourceRunId/useCount/
   // trust/pinned/timestamps), which the slim /api/notebook view drops. [] on any failure.
@@ -358,7 +364,7 @@ const Harness = (() => {
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
-    memoryProposals, memoryTurnin, memoryRecords, memoryPin, memoryEdit, memoryForget,
+    memoryProposals, memoryTurnin, memoryReset, memoryRecords, memoryPin, memoryEdit, memoryForget,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,
