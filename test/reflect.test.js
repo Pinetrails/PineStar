@@ -61,9 +61,22 @@ const { makeClock } = require('../shared/clock-rng.js');
   });
   A.eq(nearBatch.proposals.length, 1, 'a within-batch paraphrase of an earlier proposal is dropped');
 
-  // ---- count cap: never dump a wall at the turn-in beat ----
-  const wall = await reflect(run, { propose: () => 'FACT: a\nFACT: b\nFACT: c\nFACT: d\nFACT: e\nFACT: f', clock: makeClock(0), redact, max: 3 });
+  // ---- count cap: never dump a wall at the turn-in beat (substantive facts so the value floor passes them) ----
+  const wall = await reflect(run, { propose: () => 'FACT: deploys the alpha service nightly\nFACT: prefers dark-mode editors\nFACT: keeps staging databases separate\nFACT: runs tests before every merge\nFACT: tags releases with semver\nFACT: archives old logs weekly', clock: makeClock(0), redact, max: 3 });
   A.eq(wall.proposals.length, 3, 'proposal count capped at max');
+
+  // ---- value floor: trivia + run-specific narration is dropped (the "remembers things that don't matter" fix) ----
+  A.eq((await reflect(run, { propose: () => 'FACT: ok', clock: makeClock(0), redact })).proposals.length, 0, 'too-short content is dropped by the value floor');
+  A.eq((await reflect(run, { propose: () => 'FACT: we discussed the deployment today', clock: makeClock(0), redact })).proposals.length, 0, 'run-specific narration ("we discussed…") is dropped');
+  A.eq((await reflect(run, { propose: () => 'FACT: the task was to fix the bug', clock: makeClock(0), redact })).proposals.length, 0, 'transient "the task was…" narration is dropped');
+  const floored = await reflect(run, { propose: () => 'FACT: we discussed it\nFACT: deploys the alpha service with npm publish', clock: makeClock(0), redact });
+  A.eq(floored.proposals.length, 1, 'a durable belief survives while the trivia beside it is floored');
+  A.eq(floored.proposals[0].content, 'deploys the alpha service with npm publish', 'the surviving proposal is the substantive one');
+
+  // ---- NOTE is no longer an accepted kind (it was the low-value catch-all that drove the trivia complaint) ----
+  A.eq((await reflect(run, { propose: () => 'NOTE: some loose observation about the run', clock: makeClock(0), redact })).proposals.length, 0, 'NOTE-tagged lines are ignored (dropped from the contract)');
+  A.eq(parse('NOTE: x\nFACT: deploys the alpha service nightly').length, 1, 'parse() ignores NOTE, keeps FACT');
+  A.eq(parse('NOTE: x').length, 0, 'a lone NOTE parses to nothing');
 
   // ---- NONE / empty / untagged / thrown / missing-propose -> no proposals, never throws ----
   A.eq((await reflect(run, { propose: () => 'NONE', clock: makeClock(0), redact })).proposals.length, 0, 'NONE -> nothing');

@@ -14,13 +14,20 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const KIND = { FACT: 'fact', SKILL: 'skill', PREFERENCE: 'profile', PROFILE: 'profile', NOTE: 'note' };
+  // Accepted kinds match the advertised FACT/PREFERENCE/SKILL contract. NOTE was dropped: it was a loose
+  // catch-all the model used for run-specific chatter ("we discussed X"), which is exactly the low-value noise
+  // the Commander complained about. KIND_LABEL keeps 'note' for legacy KEPT records, but reflection no longer mints it.
+  const KIND = { FACT: 'fact', SKILL: 'skill', PREFERENCE: 'profile', PROFILE: 'profile' };
   const KIND_LABEL = { fact: 'Fact', skill: 'Skill', profile: 'Preference', note: 'Note' };
   const MAX_CONTENT = 280;        // a memory is a short durable belief, not a transcript
+  const MIN_CONTENT = 8;          // below this it isn't a durable belief — a value floor against trivia
+  const MIN_TOKENS = 2;           // a belief needs at least this many significant (non-stopword) words
   const DEFAULT_MAX = 5;          // never dump a wall of proposals at the turn-in beat
   const PROMPT_CAP = 4000;        // chars of recent exchange fed to the aux model
   const MIN_REFLECT_CHARS = 200;  // skip reflection on trivial exchanges (one cheap call still costs)
-  const LINE = /^\s*[-*•]?\s*(FACT|SKILL|PREFERENCE|PROFILE|NOTE)\s*[:\-—]\s*(.+?)\s*$/i;
+  const LINE = /^\s*[-*•]?\s*(FACT|SKILL|PREFERENCE|PROFILE)\s*[:\-—]\s*(.+?)\s*$/i;
+  // transient openers that mark a line as run-specific narration rather than a durable belief — dropped by the floor.
+  const TRANSIENT = /^(the user (said|asked|wanted|mentioned|requested)|we (discussed|talked|covered|went over)|in this (run|task|session|conversation)|this (run|task|session)|today (i|we)|the (task|conversation) (was|is))\b/i;
 
   // strip a recall fence the model may have echoed, so a forged <recalled-memory> block can't be reflected
   // into a durable memory (mirrors context.stripRecallFence — kept inline so reflect stays standalone).
@@ -49,7 +56,8 @@
       const m = LINE.exec(ln);
       if (!m) continue;
       const content = m[2].trim();
-      if (content) out.push({ kind: KIND[m[1].toUpperCase()] || 'note', content: content });
+      const kind = KIND[m[1].toUpperCase()];
+      if (content && kind) out.push({ kind: kind, content: content });
     }
     return out;
   }
@@ -71,6 +79,18 @@
     if (!A.size || !B.size) return 0;
     let inter = 0; for (const t of A) if (B.has(t)) inter++;
     return inter / (A.size + B.size - inter);
+  }
+
+  // the VALUE FLOOR: a deterministic backstop against the low-value memories the prompt alone failed to suppress.
+  // Reject content that is too short to be a durable belief, carries too few significant words, or is run-specific
+  // narration ("we discussed X", "the task was Y"). Conservative on purpose — better to drop a borderline line than
+  // to keep cluttering the turn-in beat with trivia (the user's "remembers things that don't matter" complaint).
+  function lowValue(content) {
+    const c = String(content == null ? '' : content).trim();
+    if (c.length < MIN_CONTENT) return true;
+    if (simTokens(c).size < MIN_TOKENS) return true;
+    if (TRANSIENT.test(c)) return true;
+    return false;
   }
 
   // reflect(run, {propose, clock, redact, existing, max}) -> { proposals[], prompt }
@@ -97,6 +117,7 @@
       if (content.length > MAX_CONTENT) content = content.slice(0, MAX_CONTENT - 1) + '…';
       const key = content.toLowerCase();
       if (!content || seen[key]) continue;        // drop empties + EXACT dupes (vs existing AND earlier proposals)
+      if (lowValue(content)) continue;            // drop trivia / run-specific narration (the value floor)
       let near = false;                           // drop PARAPHRASE dupes (Jaccard) vs the same set
       for (const pt of priorTexts) { if (jaccard(pt, content) >= SIM_THRESHOLD) { near = true; break; } }
       if (near) continue;

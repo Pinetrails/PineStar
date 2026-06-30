@@ -43,7 +43,9 @@ function memFs() {
 
   A.eq(memoryFileFor(ROOT, path, 'notebook:hero'), path.join(ROOT, 'hero.notebook.json'), 'notebook keys map to notebook sibling files');
   A.eq(memoryFileFor(ROOT, path, 'todo:hero'), path.join(ROOT, 'hero.todo.json'), 'todo keys map to todo sibling files');
+  A.eq(memoryFileFor(ROOT, path, 'declined:hero'), path.join(ROOT, 'hero.declined.json'), 'declined keys map to declined sibling files');
   A.throws(() => memoryFileFor(ROOT, path, 'todo:../bad'), 'invalid todo agent ids are rejected');
+  A.throws(() => memoryFileFor(ROOT, path, 'declined:../bad'), 'invalid declined agent ids are rejected');
   A.throws(() => memoryFileFor(ROOT, path, 'other:hero'), 'unknown memory keys are rejected');
 
   const fs = memFs();

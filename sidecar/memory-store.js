@@ -1,9 +1,10 @@
 /* sidecar/memory-store.js - durable per-agent memory KV routing.
 
-   The notebook and todo tools intentionally share one injected store contract, but they do not share the
-   same on-disk file: notebook:<agent> is durable long-term memory, while todo:<agent> is the active task
-   plan that must survive restarts/compaction. Unknown keys are rejected instead of being accidentally
-   mapped into a notebook filename. */
+   The notebook, todo, and declined stores intentionally share one injected store contract, but they do not
+   share the same on-disk file: notebook:<agent> is durable long-term memory, todo:<agent> is the active task
+   plan that must survive restarts/compaction, and declined:<agent> is the permanent reject-list of memory
+   proposals the Commander Discarded (so reflection never re-proposes them — §5.6 "discard = never again").
+   Unknown keys are rejected instead of being accidentally mapped into a notebook filename. */
 'use strict';
 
 const { makeDurableJsonStore } = require('./durable-store.js');
@@ -18,6 +19,7 @@ function memoryFileFor(workspaces, pathMod, key) {
   const k = String(key || '');
   if (k.indexOf('notebook:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^notebook:/) + '.notebook.json');
   if (k.indexOf('todo:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^todo:/) + '.todo.json');
+  if (k.indexOf('declined:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^declined:/) + '.declined.json');
   throw new Error('unsupported memory store key: ' + k);
 }
 

@@ -530,8 +530,11 @@ const saveStore = makeSaveStore({ fs, pathMod: path, root: WORKSPACES, clock: { 
    events ride the always-on SSE bus (chanEmit) -> the browser U.bus -> XP + the dossier. */
 const REFLECT_TIMEOUT_MS = 30000;
 const PROPOSALS_CAP = 64;
+const DECLINED_CAP = 200;   // permanent per-agent reject-list of Discarded proposals (FIFO) fed into reflection dedup
+const REFLECT_COOLDOWN_MS = 180000;    // batch rapid-fire runs: at most one turn-in beat per agent per few minutes
 const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, proposals:[{id,kind,content,scope}] }
 const latestProposalRun = new Map();   // agentId -> newest pending runId (fetch fallback when the runId is unknown)
+const lastReflectAt = new Map();       // agentId -> ts of the last reflection we fired (the cooldown gate)
 function stashProposals(agentId, runId, proposals) {
   proposalsByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
   latestProposalRun.set(agentId, runId);
@@ -563,7 +566,11 @@ async function runReflection(o) {
   try {
     const stored = notebookStore.get('notebook:' + agentId);
     const existing = Array.isArray(stored) ? stored : [];
-    const out = await reflect({ agentId, runId, messages }, { propose, redact, existing, clock: { now: () => Date.now() }, max: 5 });
+    // §5.6 "discard = never again": fold the permanently-declined proposals into the dedup corpus so reflect()
+    // never re-proposes a belief the Commander already rejected (stored as plain text → wrapped so textOf reads it).
+    const declined = notebookStore.get('declined:' + agentId);
+    const declinedRecs = Array.isArray(declined) ? declined.map(t => ({ content: String(t) })) : [];
+    const out = await reflect({ agentId, runId, messages }, { propose, redact, existing: existing.concat(declinedRecs), clock: { now: () => Date.now() }, max: 5 });
     const proposals = (out && out.proposals) || [];
     if (proposals.length) {
       stashProposals(agentId, runId, proposals.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' })));
@@ -2364,12 +2371,17 @@ async function runOnce(o) {
     budget.clearLive(runId);
   }
 
-  // Cortex M-mem.5b: post-run reflection (browser runs only; the hub omits o.reflect). Fire-and-forget so the
-  // reply has no added latency and the input isn't held — proposals arrive a beat later over the SSE bus as a
-  // Keep/Edit/Discard turn-in. Gated to a COMPLETED run with a substantive exchange; reflect() dedups vs the
-  // store and never auto-writes (§5.6). result.messages is the live conversation (the agent's replies included).
-  if (o.reflect && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)) {
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: usingCodex }).catch(() => {});
+  // Cortex M-mem.5b: post-run reflection — fire on SALIENCE, not after every run (the "beat too often" fix). Only a
+  // real TASK run (isTask — never conversational chatter) that COMPLETED, with a substantive exchange, and OUTSIDE
+  // the per-agent cooldown, earns a Keep/Edit/Discard beat. Fire-and-forget so the reply has no added latency;
+  // reflect() then applies a value floor + dedups vs the notebook AND the permanent declined list, so a one-off or
+  // low-value run yields nothing and raises no beat (§5.6). REFLECT_MODEL optionally points reflection at a cheaper
+  // aux model; it defaults to the run's own model (no behaviour change unless configured).
+  const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
+  if (o.reflect && isTask && result && result.reason === 'done' && !signal.aborted && worthReflecting(result.messages)
+      && (Date.now() - (lastReflectAt.get(agentId) || 0) >= REFLECT_COOLDOWN_MS)) {
+    lastReflectAt.set(agentId, Date.now());
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: usingCodex }).catch(() => {});
   }
   return result;
 
@@ -2973,8 +2985,17 @@ async function handleMemoryTurnin(req, res) {
 
   let writtenId = null;
   if (verdict === 'discard') {
-    // no record is written; the negative feedback still calibrates confidence (a quality=0 sample). The proposal's
-    // transient id won't match a stored record — that's fine; this signal is "the agent's pick was rejected".
+    // §5.6 "discard = never again": no NOTEBOOK record is written, but the rejected text IS recorded to the
+    // permanent per-agent declined list (capped FIFO) so reflection's dedup suppresses it forever — without this,
+    // the same low-value proposal re-surfaces on the next run. The negative feedback still calibrates confidence.
+    try {
+      await notebookStore.update('declined:' + agentId, (stored) => {
+        const list = Array.isArray(stored) ? stored.slice() : [];
+        const text = String(prop.content || '').trim();
+        if (text && list.indexOf(text) < 0) { list.push(text); while (list.length > DECLINED_CAP) list.shift(); }
+        return list;
+      });
+    } catch (_) {}   // a failed reject-list write must never fail the turn-in
     chanEmit('memory.feedback', { agentId, id: prop.id, delta: fb.delta, reason: fb.reason });
     return json(200, { ok: true, verdict, id: null });
   }

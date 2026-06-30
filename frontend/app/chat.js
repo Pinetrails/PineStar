@@ -632,6 +632,11 @@ const Chat = (() => {
         // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
         if (runId && proposalRunsSeen.has(runId)) return;
         if (log && log.querySelector('.turnin-item')) return;
+        // FIRE ON SALIENCE, not after every run: a basic conversational turn (not a task) earns NO proactive beat —
+        // the station only reaches for a suggestion / seed / get-to-know-you question after it did real WORK. This
+        // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
+        const meta = runId ? runMeta(runId) : null;
+        if (meta && !meta.isTask) return;
         // ONGOING SUGGESTION (Slice 3): if the station has learned something new and an idea is due, it takes this
         // ONE post-run beat — gently — and curiosity stands down for the run (the agent never stacks an idea AND a
         // question on the same task). Shares this slot's guards (busy/interview/onboarding/intake/turn-in) for free.
