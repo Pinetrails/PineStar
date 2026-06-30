@@ -97,6 +97,14 @@ const Harness = (() => {
     if (p === 'openai' || p === 'openai-api') return 'openai';
     if (p === 'anthropic' || p === 'claude') return 'anthropic';
     if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
+    if (p === 'xai' || p === 'x-ai' || p === 'grok') return 'xai';
+    if (p === 'groq') return 'groq';
+    if (p === 'mistral' || p === 'mistralai') return 'mistral';
+    if (p === 'deepseek') return 'deepseek';
+    if (p === 'together' || p === 'together-ai') return 'together';
+    if (p === 'fireworks' || p === 'fireworks-ai') return 'fireworks';
+    if (p === 'perplexity' || p === 'pplx' || p === 'sonar') return 'perplexity';
+    if (p === 'cerebras') return 'cerebras';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';

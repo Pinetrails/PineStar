@@ -65,5 +65,22 @@ module.exports = (async () => {
     A.eq(p.supportsTools('local-model'), true, 'tool support from supported_parameters');
   }
 
+  // provider profile paths can override the default /chat/completions and /models endpoints
+  {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url, init });
+      if (init && init.method === 'POST') {
+        return new Response('data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      }
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    };
+    const p = makeOpenAICompatibleProvider({ fetch: fetchImpl, baseUrl: 'https://example.test/root/', chatPath: 'responses', modelsPath: 'catalog/models' });
+    await collect(p, { model: 'm', messages: [] });
+    await p.listModels();
+    A.eq(calls[0].url, 'https://example.test/root/responses', 'custom chat path is honored');
+    A.eq(calls[1].url, 'https://example.test/root/catalog/models', 'custom models path is honored');
+  }
+
   A.report('provider.openai-compatible.test');
 })();

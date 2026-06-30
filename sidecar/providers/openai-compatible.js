@@ -28,6 +28,11 @@
   function cleanBaseUrl(value) {
     return String(value || DEFAULT_BASE).trim().replace(/\/+$/, '');
   }
+  function cleanPath(value, fallback) {
+    const path = String(value || fallback || '').trim();
+    if (!path) return '';
+    return path.charAt(0) === '/' ? path : '/' + path;
+  }
   function headerBag(key, extra) {
     const h = Object.assign({ 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, extra || {});
     if (key) h.Authorization = 'Bearer ' + key;
@@ -56,6 +61,8 @@
     if (!doFetch) throw new Error('openai-compatible provider requires fetch (Node 18+) or opts.fetch');
     const key = opts.key || '';
     const baseUrl = cleanBaseUrl(opts.baseUrl);
+    const chatPath = cleanPath(opts.chatPath, '/chat/completions');
+    const modelsPath = cleanPath(opts.modelsPath, '/models');
     const includeUsage = opts.includeUsage === true;
     const defaultContext = Number(opts.defaultContext || 0) || 0;
     let catalog = null;
@@ -138,7 +145,7 @@
         if (signal && signal.aborted) throw abortError();
         let res;
         try {
-          res = await doFetch(baseUrl + '/chat/completions', {
+          res = await doFetch(baseUrl + chatPath, {
             method: 'POST',
             headers: headerBag(key, opts.headers),
             body: JSON.stringify(body),
@@ -167,7 +174,7 @@
       if (!catalogPromise) {
         catalogPromise = (async () => {
           try {
-            const res = await doFetch(baseUrl + '/models', { headers: key ? { Authorization: 'Bearer ' + key } : {} });
+            const res = await doFetch(baseUrl + modelsPath, { headers: key ? { Authorization: 'Bearer ' + key } : {} });
             if (!res.ok) return [];
             const j = await res.json();
             const raw = Array.isArray(j.data) ? j.data : (Array.isArray(j.models) ? j.models : []);

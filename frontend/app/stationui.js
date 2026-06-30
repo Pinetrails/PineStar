@@ -991,6 +991,14 @@ const StationUI = (() => {
     { id: 'openai',        name: 'OPENAI API',        endpoint: 'api.openai.com/v1',          blurb: 'OpenAI-compatible', live: true },
     { id: 'anthropic',     name: 'ANTHROPIC',         endpoint: 'api.anthropic.com/v1',       blurb: 'Claude native API', live: true },
     { id: 'gemini',        name: 'GEMINI',            endpoint: 'generativelanguage.googleapis.com/v1beta', blurb: 'Google native API', live: true },
+    { id: 'xai',           name: 'XAI',               endpoint: 'api.x.ai/v1',                blurb: 'Grok API', live: true },
+    { id: 'groq',          name: 'GROQ',              endpoint: 'api.groq.com/openai/v1',     blurb: 'fast inference', live: true },
+    { id: 'mistral',       name: 'MISTRAL',           endpoint: 'api.mistral.ai/v1',          blurb: 'Mistral API', live: true },
+    { id: 'deepseek',      name: 'DEEPSEEK',          endpoint: 'api.deepseek.com',           blurb: 'DeepSeek API', live: true },
+    { id: 'together',      name: 'TOGETHER',          endpoint: 'api.together.ai/v1',         blurb: 'Together API', live: true },
+    { id: 'fireworks',     name: 'FIREWORKS',         endpoint: 'api.fireworks.ai/inference/v1', blurb: 'Fireworks API', live: true },
+    { id: 'perplexity',    name: 'PERPLEXITY',        endpoint: 'api.perplexity.ai',          blurb: 'Sonar API', live: true },
+    { id: 'cerebras',      name: 'CEREBRAS',          endpoint: 'api.cerebras.ai/v1',         blurb: 'Cerebras API', live: true },
     { id: 'ollama',        name: 'OLLAMA',            endpoint: '127.0.0.1:11434/v1',         blurb: 'local models', live: true },
     { id: 'custom',        name: 'CUSTOM',            endpoint: 'any /v1 base URL',           blurb: 'bring your endpoint', live: true }
   ];
@@ -1002,7 +1010,7 @@ const StationUI = (() => {
   // mask a secret to a provider-recognisable prefix + last 4 — the middle is NEVER emitted.
   function maskKey(k) {
     k = String(k || ''); if (!k) return '';
-    const m = k.match(/^(sk-or-v1-|sk-or-|sk-proj-|sk-ant-|AIza|sk-)/i);
+    const m = k.match(/^(sk-or-v1-|sk-or-|sk-proj-|sk-ant-|gsk_|xai-|pplx-|AIza|sk-)/i);
     const head = m ? m[1] : k.slice(0, 4);
     // only append a last-4 tail when it can't overlap the (non-secret) prefix we already show
     const tail = k.length > head.length + 4 ? k.slice(-4) : '';
@@ -1036,11 +1044,13 @@ const StationUI = (() => {
     // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
     function addProvider(provider) {
       if (!provider || provider === 'codex' || out.some(k => k.provider === provider)) return;
+      if (provider === 'ollama' && provider !== active) return;
       const set = (h.configured && h.configured(provider)) || !!(h.getKey && h.getKey(provider));
       if (set) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
     }
     addProvider(active);
     if (active !== 'openrouter') addProvider('openrouter');
+    PROVIDERS.forEach(p => addProvider(p.id));
     return out;
   }
   function keysFor(id) { return connectedKeys().filter(x => x.provider === id); }

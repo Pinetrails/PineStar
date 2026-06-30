@@ -6,6 +6,16 @@ const ModelDock = (() => {
   const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
   const ANTHROPIC_MODELS = ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest'];
   const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+  const HOSTED_FALLBACKS = {
+    xai: ['grok-4.3', 'grok-4-fast', 'grok-4'],
+    groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+    mistral: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
+    deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'],
+    together: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8', 'deepseek-ai/DeepSeek-V3'],
+    fireworks: ['accounts/fireworks/models/deepseek-v3p1', 'accounts/fireworks/models/kimi-k2p5', 'accounts/fireworks/models/llama-v3p3-70b-instruct'],
+    perplexity: ['sonar-pro', 'sonar', 'sonar-reasoning-pro'],
+    cerebras: ['llama-4-scout-17b-16e-instruct', 'llama3.1-8b', 'qwen-3-coder-480b']
+  };
   const OPENROUTER_FALLBACK = [
     'anthropic/claude-sonnet-4.6',
     'anthropic/claude-opus-4.8',
@@ -38,7 +48,7 @@ const ModelDock = (() => {
     qwen: 'QWEN',
     cohere: 'COHERE'
   };
-  const PROVIDER_RANK = { codex: 0, openrouter: 1, openai: 2, anthropic: 3, gemini: 4, ollama: 5, custom: 6 };
+  const PROVIDER_RANK = { codex: 0, openrouter: 1, openai: 2, anthropic: 3, gemini: 4, xai: 5, groq: 6, mistral: 7, deepseek: 8, together: 9, fireworks: 10, perplexity: 11, cerebras: 12, ollama: 13, custom: 14 };
 
   let opts = {};
   let wired = false;
@@ -53,7 +63,7 @@ const ModelDock = (() => {
   }
   function providerLabel(p) {
     p = normalizeProvider(p);
-    const map = { codex: 'GPT / CODEX', openrouter: 'OPENROUTER', openai: 'OPENAI API', anthropic: 'ANTHROPIC', gemini: 'GEMINI', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    const map = { codex: 'GPT / CODEX', openrouter: 'OPENROUTER', openai: 'OPENAI API', anthropic: 'ANTHROPIC', gemini: 'GEMINI', xai: 'XAI', groq: 'GROQ', mistral: 'MISTRAL', deepseek: 'DEEPSEEK', together: 'TOGETHER', fireworks: 'FIREWORKS', perplexity: 'PERPLEXITY', cerebras: 'CEREBRAS', ollama: 'OLLAMA', custom: 'CUSTOM' };
     return map[p] || String(p || 'openrouter').toUpperCase();
   }
   function normalizeProvider(p) {
@@ -62,6 +72,14 @@ const ModelDock = (() => {
     if (p === 'openai' || p === 'openai-api') return 'openai';
     if (p === 'anthropic' || p === 'claude') return 'anthropic';
     if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
+    if (p === 'xai' || p === 'x-ai' || p === 'grok') return 'xai';
+    if (p === 'groq') return 'groq';
+    if (p === 'mistral' || p === 'mistralai') return 'mistral';
+    if (p === 'deepseek') return 'deepseek';
+    if (p === 'together' || p === 'together-ai') return 'together';
+    if (p === 'fireworks' || p === 'fireworks-ai') return 'fireworks';
+    if (p === 'perplexity' || p === 'pplx' || p === 'sonar') return 'perplexity';
+    if (p === 'cerebras') return 'cerebras';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
@@ -166,9 +184,17 @@ const ModelDock = (() => {
     const id = String((item && item.id) || '').toLowerCase();
     const name = String((item && item.name) || '').toLowerCase();
     if (p === 'codex') return 'gpt';
+    if (p === 'xai') return 'grok';
+    if (p === 'mistral') return 'mistral';
+    if (p === 'deepseek') return 'deepseek';
+    if (p === 'perplexity') return 'perplexity';
     if (/^(openai|openai-internal)\//.test(id) || /\bgpt[-\s]?\d|\bgpt\b|codex/.test(id + ' ' + name)) return 'gpt';
     if (/^anthropic\//.test(id) || /claude/.test(id + ' ' + name)) return 'anthropic';
     if (/^google\//.test(id) || /gemini/.test(id + ' ' + name)) return 'google';
+    if (/grok/.test(id + ' ' + name)) return 'grok';
+    if (/mistral|mixtral|ministral/.test(id + ' ' + name)) return 'mistral';
+    if (/deepseek/.test(id + ' ' + name)) return 'deepseek';
+    if (/sonar|perplexity/.test(id + ' ' + name)) return 'perplexity';
     return 'other';
   }
 
@@ -192,7 +218,7 @@ const ModelDock = (() => {
       return set.has('reasoning') || set.has('reasoning_effort') || set.has('include_reasoning');
     }
     const fam = modelFamily(item);
-    return fam === 'gpt' || fam === 'anthropic' || fam === 'google';
+    return fam === 'gpt' || fam === 'anthropic' || fam === 'google' || fam === 'grok' || fam === 'deepseek';
   }
 
   function effortOptionsFor(item) {
@@ -257,8 +283,8 @@ const ModelDock = (() => {
         if (!list.length) list = (await Harness.listModels(p)).map(m => asModel(m, p));
       }
     } catch (_) {}
-    if (!list.length && (p === 'codex' || p === 'openrouter' || p === 'anthropic' || p === 'gemini')) {
-      list = (p === 'codex' ? CODEX_MODELS : p === 'anthropic' ? ANTHROPIC_MODELS : p === 'gemini' ? GEMINI_MODELS : OPENROUTER_FALLBACK).map(m => asModel(m, p));
+    if (!list.length && (p === 'codex' || p === 'openrouter' || p === 'anthropic' || p === 'gemini' || HOSTED_FALLBACKS[p])) {
+      list = (p === 'codex' ? CODEX_MODELS : p === 'anthropic' ? ANTHROPIC_MODELS : p === 'gemini' ? GEMINI_MODELS : HOSTED_FALLBACKS[p] || OPENROUTER_FALLBACK).map(m => asModel(m, p));
     }
     list.sort((a, b) => {
       if (p === 'openrouter') {
@@ -274,7 +300,7 @@ const ModelDock = (() => {
   async function fetchModels(force) {
     loading = true;
     renderList();
-    const ids = ['codex', 'openrouter', 'openai', 'anthropic', 'gemini', 'ollama', 'custom'];
+    const ids = ['codex', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
     const active = provider();
     if (ids.indexOf(active) < 0) ids.unshift(active);
     const parts = await Promise.all(ids.map(p => fetchProviderModels(p, force)));

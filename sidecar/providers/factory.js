@@ -51,6 +51,8 @@
         fetch: opts.fetch,
         key: opts.key,
         baseUrl: opts.baseUrl || profile.baseUrl,
+        chatPath: profile.chatPath,
+        modelsPath: profile.modelsPath,
         reasoningEffort: opts.reasoningEffort,
         includeUsage: opts.includeUsage,
         defaultContext: opts.defaultContext,

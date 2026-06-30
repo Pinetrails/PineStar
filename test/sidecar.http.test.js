@@ -37,6 +37,33 @@ function boot(port, workspaces, attemptsLeft) {
         CUSTOM_OPENAI_KEY: '',
         STARNET_CUSTOM_OPENAI_KEY: '',
         SKYNET_CUSTOM_OPENAI_KEY: '',
+        XAI_API_KEY: '',
+        STARNET_XAI_API_KEY: '',
+        SKYNET_XAI_API_KEY: '',
+        X_AI_API_KEY: '',
+        STARNET_X_AI_API_KEY: '',
+        SKYNET_X_AI_API_KEY: '',
+        GROQ_API_KEY: '',
+        STARNET_GROQ_API_KEY: '',
+        SKYNET_GROQ_API_KEY: '',
+        MISTRAL_API_KEY: '',
+        STARNET_MISTRAL_API_KEY: '',
+        SKYNET_MISTRAL_API_KEY: '',
+        DEEPSEEK_API_KEY: '',
+        STARNET_DEEPSEEK_API_KEY: '',
+        SKYNET_DEEPSEEK_API_KEY: '',
+        TOGETHER_API_KEY: '',
+        STARNET_TOGETHER_API_KEY: '',
+        SKYNET_TOGETHER_API_KEY: '',
+        FIREWORKS_API_KEY: '',
+        STARNET_FIREWORKS_API_KEY: '',
+        SKYNET_FIREWORKS_API_KEY: '',
+        PERPLEXITY_API_KEY: '',
+        STARNET_PERPLEXITY_API_KEY: '',
+        SKYNET_PERPLEXITY_API_KEY: '',
+        CEREBRAS_API_KEY: '',
+        STARNET_CEREBRAS_API_KEY: '',
+        SKYNET_CEREBRAS_API_KEY: '',
         CUSTOM_OPENAI_BASE_URL: '',
         STARNET_CUSTOM_OPENAI_BASE_URL: '',
         SKYNET_CUSTOM_OPENAI_BASE_URL: ''
@@ -141,6 +168,9 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(providers.body.providers.some(p => p.id === 'openrouter'), 'providers include openrouter');
     A.ok(providers.body.providers.some(p => p.id === 'anthropic'), 'providers include anthropic');
     A.ok(providers.body.providers.some(p => p.id === 'gemini'), 'providers include gemini');
+    for (const id of ['xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras']) {
+      A.ok(providers.body.providers.some(p => p.id === id), 'providers include ' + id);
+    }
     A.ok(providers.body.providers.some(p => p.id === 'custom'), 'providers include custom OpenAI-compatible');
     const models = await j('GET', '/api/models/openrouter');
     A.eq(models.status, 200, 'GET /api/models/openrouter -> 200');
@@ -167,6 +197,16 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(anthropicAck.provider, 'anthropic', 'Anthropic provider key ack names the configured provider');
     A.eq(anthropicAck.configured, true, 'Anthropic provider key ack reports configured');
 
+    const pushXai = await fetch(B + '/api/key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'grok', key: 'xai-provider-http-test-secret' })
+    });
+    A.eq(pushXai.status, 200, 'POST /api/key can push an xAI provider key by alias with the IPC token');
+    const xaiAck = await pushXai.json();
+    A.eq(xaiAck.provider, 'xai', 'xAI provider key ack names the canonical provider');
+    A.eq(xaiAck.configured, true, 'xAI provider key ack reports configured');
+
     const pushCustomBase = await fetch(B + '/api/key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
@@ -175,10 +215,13 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(pushCustomBase.status, 200, 'POST /api/key can push custom provider base URL with the IPC token');
     const configuredProviders = await j('GET', '/api/providers');
     const openaiProvider = configuredProviders.body.providers.find(p => p.id === 'openai');
+    const xaiProvider = configuredProviders.body.providers.find(p => p.id === 'xai');
     const customProvider = configuredProviders.body.providers.find(p => p.id === 'custom');
     A.eq(!!(openaiProvider && openaiProvider.configured), true, 'OpenAI provider is configured after scoped key push');
+    A.eq(!!(xaiProvider && xaiProvider.configured), true, 'xAI provider is configured after scoped key push');
     A.eq(!!(customProvider && customProvider.configured), true, 'Custom provider is configured after scoped base URL push');
     A.ok(JSON.stringify(configuredProviders.body).indexOf('sk-provider-http-test-secret') < 0, 'provider list never leaks the pushed secret');
+    A.ok(JSON.stringify(configuredProviders.body).indexOf('xai-provider-http-test-secret') < 0, 'provider list never leaks the pushed xAI secret');
 
     // ---- SSE telemetry requires the ?token= query (EventSource cannot send a header) ----
     const sseNoTok = await fetch(B + '/api/channels/events');

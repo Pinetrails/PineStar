@@ -23,7 +23,35 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 
 const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
 const KEYCHAIN_ACCOUNT: &str = "openrouter";
-const KEYCHAIN_PROVIDERS: [&str; 5] = ["openrouter", "openai", "anthropic", "gemini", "custom"];
+const KEYCHAIN_PROVIDERS: [&str; 13] = [
+    "openrouter",
+    "openai",
+    "anthropic",
+    "gemini",
+    "xai",
+    "groq",
+    "mistral",
+    "deepseek",
+    "together",
+    "fireworks",
+    "perplexity",
+    "cerebras",
+    "custom",
+];
+const SIDECAR_PROVIDER_KEY_ENVS: [(&str, &str); 12] = [
+    ("openai", "SKYNET_OPENAI_API_KEY"),
+    ("anthropic", "SKYNET_ANTHROPIC_API_KEY"),
+    ("gemini", "SKYNET_GEMINI_API_KEY"),
+    ("xai", "SKYNET_XAI_API_KEY"),
+    ("groq", "SKYNET_GROQ_API_KEY"),
+    ("mistral", "SKYNET_MISTRAL_API_KEY"),
+    ("deepseek", "SKYNET_DEEPSEEK_API_KEY"),
+    ("together", "SKYNET_TOGETHER_API_KEY"),
+    ("fireworks", "SKYNET_FIREWORKS_API_KEY"),
+    ("perplexity", "SKYNET_PERPLEXITY_API_KEY"),
+    ("cerebras", "SKYNET_CEREBRAS_API_KEY"),
+    ("custom", "SKYNET_CUSTOM_OPENAI_KEY"),
+];
 
 /// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
 /// only with the sidecar), the project root, and the live child.
@@ -379,6 +407,14 @@ fn normalize_provider(provider: &str) -> &'static str {
         "openai" | "openai-api" => "openai",
         "anthropic" | "claude" => "anthropic",
         "gemini" | "google" | "google-ai" | "google-gemini" => "gemini",
+        "xai" | "x-ai" | "grok" => "xai",
+        "groq" => "groq",
+        "mistral" | "mistralai" => "mistral",
+        "deepseek" => "deepseek",
+        "together" | "together-ai" => "together",
+        "fireworks" | "fireworks-ai" => "fireworks",
+        "perplexity" | "pplx" | "sonar" => "perplexity",
+        "cerebras" => "cerebras",
         "ollama" | "ollama-local" => "ollama",
         "custom" | "openai-compatible" | "local" | "vllm" | "lmstudio" => "custom",
         _ => "openrouter",
@@ -505,17 +541,10 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
     }
-    if let Some(key) = read_key_for("openai") {
-        cmd.env("SKYNET_OPENAI_API_KEY", key);
-    }
-    if let Some(key) = read_key_for("anthropic") {
-        cmd.env("SKYNET_ANTHROPIC_API_KEY", key);
-    }
-    if let Some(key) = read_key_for("gemini") {
-        cmd.env("SKYNET_GEMINI_API_KEY", key);
-    }
-    if let Some(key) = read_key_for("custom") {
-        cmd.env("SKYNET_CUSTOM_OPENAI_KEY", key);
+    for (provider, env_name) in SIDECAR_PROVIDER_KEY_ENVS {
+        if let Some(key) = read_key_for(provider) {
+            cmd.env(env_name, key);
+        }
     }
     #[cfg(windows)]
     {

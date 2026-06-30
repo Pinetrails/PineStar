@@ -77,6 +77,14 @@
               <button class="prov" data-prov="openai">OPENAI</button>
               <button class="prov" data-prov="anthropic">ANTHROPIC</button>
               <button class="prov" data-prov="gemini">GEMINI</button>
+              <button class="prov" data-prov="xai">XAI</button>
+              <button class="prov" data-prov="groq">GROQ</button>
+              <button class="prov" data-prov="mistral">MISTRAL</button>
+              <button class="prov" data-prov="deepseek">DEEPSEEK</button>
+              <button class="prov" data-prov="together">TOGETHER</button>
+              <button class="prov" data-prov="fireworks">FIREWORKS</button>
+              <button class="prov" data-prov="perplexity">PERPLEXITY</button>
+              <button class="prov" data-prov="cerebras">CEREBRAS</button>
               <button class="prov" data-prov="ollama">OLLAMA</button>
               <button class="prov" data-prov="custom">CUSTOM</button>
             </div>
@@ -105,7 +113,7 @@
             <div class="ov-model-lab"><label>MODEL <span class="dim" id="model-count"></span></label></div>
             <input id="in-model" list="model-list" placeholder="loading models…" autocomplete="off" spellcheck="false">
             <datalist id="model-list"></datalist>
-            <!-- one-tap recommended slugs (OpenRouter only). Each chip just prefills #in-model; the live catalog hint then prices it. -->
+            <!-- one-tap recommended slugs. Each chip just prefills #in-model; the live catalog hint then prices it. -->
             <div id="model-picks" class="model-picks" aria-label="Recommended models"></div>
             <div id="model-hint" class="dim hint">—</div>
             <p id="byok-note" class="muted byok-note">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>

@@ -199,7 +199,23 @@ const App = (() => {
   }
   function providerLabel(provider) {
     provider = normalizeProviderId(provider);
-    const map = { codex: 'GPT', openrouter: 'OPENROUTER', openai: 'OPENAI', anthropic: 'ANTHROPIC', gemini: 'GEMINI', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    const map = {
+      codex: 'GPT',
+      openrouter: 'OPENROUTER',
+      openai: 'OPENAI',
+      anthropic: 'ANTHROPIC',
+      gemini: 'GEMINI',
+      xai: 'XAI',
+      groq: 'GROQ',
+      mistral: 'MISTRAL',
+      deepseek: 'DEEPSEEK',
+      together: 'TOGETHER',
+      fireworks: 'FIREWORKS',
+      perplexity: 'PERPLEXITY',
+      cerebras: 'CEREBRAS',
+      ollama: 'OLLAMA',
+      custom: 'CUSTOM'
+    };
     return map[provider] || String(provider || 'openrouter').toUpperCase();
   }
   function normalizeProviderId(provider) {
@@ -208,6 +224,14 @@ const App = (() => {
     if (p === 'openai' || p === 'openai-api') return 'openai';
     if (p === 'anthropic' || p === 'claude') return 'anthropic';
     if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
+    if (p === 'xai' || p === 'x-ai' || p === 'grok') return 'xai';
+    if (p === 'groq') return 'groq';
+    if (p === 'mistral' || p === 'mistralai') return 'mistral';
+    if (p === 'deepseek') return 'deepseek';
+    if (p === 'together' || p === 'together-ai') return 'together';
+    if (p === 'fireworks' || p === 'fireworks-ai') return 'fireworks';
+    if (p === 'perplexity' || p === 'pplx' || p === 'sonar') return 'perplexity';
+    if (p === 'cerebras') return 'cerebras';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
@@ -229,6 +253,14 @@ const App = (() => {
     if (p === 'openai') return 'sk-...  -  platform.openai.com/api-keys';
     if (p === 'anthropic') return 'sk-ant-...  -  console.anthropic.com/settings/keys';
     if (p === 'gemini') return 'AIza...  -  aistudio.google.com/app/apikey';
+    if (p === 'xai') return 'xai-...  -  console.x.ai';
+    if (p === 'groq') return 'gsk_...  -  console.groq.com/keys';
+    if (p === 'mistral') return 'Mistral API key';
+    if (p === 'deepseek') return 'sk-...  -  platform.deepseek.com/api_keys';
+    if (p === 'together') return 'Together API key';
+    if (p === 'fireworks') return 'Fireworks API key';
+    if (p === 'perplexity') return 'pplx-...  -  perplexity.ai/settings/api';
+    if (p === 'cerebras') return 'Cerebras API key';
     if (p === 'custom') return 'optional API key for this endpoint';
     return 'sk-or-...  -  openrouter.ai/keys';
   }
@@ -490,6 +522,21 @@ const App = (() => {
   }
 
   /* ---------- connect screen ---------- */
+  const FALLBACK_MODELS = Object.freeze({
+    openai: ['gpt-5.5', 'gpt-5.4', 'gpt-4.1'],
+    anthropic: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest'],
+    gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    xai: ['grok-4.3', 'grok-4-fast', 'grok-4'],
+    groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+    mistral: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
+    deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'],
+    together: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8', 'deepseek-ai/DeepSeek-V3'],
+    fireworks: ['accounts/fireworks/models/deepseek-v3p1', 'accounts/fireworks/models/kimi-k2p5', 'accounts/fireworks/models/llama-v3p3-70b-instruct'],
+    perplexity: ['sonar-pro', 'sonar', 'sonar-reasoning-pro'],
+    cerebras: ['llama-4-scout-17b-16e-instruct', 'llama3.1-8b', 'qwen-3-coder-480b'],
+    ollama: ['llama3.1', 'qwen2.5-coder', 'mistral'],
+    openrouter: ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro']
+  });
   async function loadModels(provider) {
     const p = normalizeProviderId(provider || pickedProvider);
     const dl = el('model-list'), countEl = el('model-count'), inp = el('in-model');
@@ -508,15 +555,7 @@ const App = (() => {
       // catalog unreachable (no network to openrouter.ai, or fetch blocked): DON'T leave the field
       // looking like it's still loading. Seed a few common slugs and make the placeholder actionable
       // so the screen stays usable — you can always just type the slug you use.
-      const FALLBACK = p === 'openai'
-        ? ['gpt-5.5', 'gpt-5.4', 'gpt-4.1']
-        : p === 'anthropic'
-          ? ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest']
-          : p === 'gemini'
-            ? ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash']
-        : p === 'ollama'
-          ? ['llama3.1', 'qwen2.5-coder', 'mistral']
-          : ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro'];
+      const FALLBACK = FALLBACK_MODELS[p] || FALLBACK_MODELS.openrouter;
       for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
       countEl.textContent = '(catalog offline — type or pick a slug)';
       if (!inp.value) { inp.value = FALLBACK[0]; inp.placeholder = 'type a model slug — e.g. gpt-5.5'; }   // default-fill even offline so WAKE works; the Commander can overtype
@@ -548,6 +587,38 @@ const App = (() => {
     gemini: [
       { label: 'Gemini 2.5 Pro', id: 'gemini-2.5-pro', tag: 'deepest' },
       { label: 'Gemini 2.5 Flash', id: 'gemini-2.5-flash', tag: 'fast' }
+    ],
+    xai: [
+      { label: 'Grok 4.3', id: 'grok-4.3', tag: '' },
+      { label: 'Grok 4 Fast', id: 'grok-4-fast', tag: 'fast' }
+    ],
+    groq: [
+      { label: 'GPT OSS 120B', id: 'openai/gpt-oss-120b', tag: 'fast' },
+      { label: 'Llama 3.3 70B', id: 'llama-3.3-70b-versatile', tag: '' }
+    ],
+    mistral: [
+      { label: 'Mistral Large', id: 'mistral-large-latest', tag: '' },
+      { label: 'Mistral Small', id: 'mistral-small-latest', tag: 'fast' }
+    ],
+    deepseek: [
+      { label: 'DeepSeek Chat', id: 'deepseek-chat', tag: '' },
+      { label: 'Reasoner', id: 'deepseek-reasoner', tag: 'reasoning' }
+    ],
+    together: [
+      { label: 'Llama 3.3 70B', id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', tag: '' },
+      { label: 'Qwen Coder', id: 'Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8', tag: 'code' }
+    ],
+    fireworks: [
+      { label: 'DeepSeek V3', id: 'accounts/fireworks/models/deepseek-v3p1', tag: '' },
+      { label: 'Kimi K2', id: 'accounts/fireworks/models/kimi-k2p5', tag: '' }
+    ],
+    perplexity: [
+      { label: 'Sonar Pro', id: 'sonar-pro', tag: 'search' },
+      { label: 'Sonar', id: 'sonar', tag: '' }
+    ],
+    cerebras: [
+      { label: 'Llama 4 Scout', id: 'llama-4-scout-17b-16e-instruct', tag: 'fast' },
+      { label: 'Llama 3.1 8B', id: 'llama3.1-8b', tag: '' }
     ]
   });
   /* ---------- PHOSPHOR tint picker (the console-wide theme, surfaced at commission) ----------
