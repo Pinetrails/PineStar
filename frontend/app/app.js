@@ -1213,19 +1213,93 @@ const App = (() => {
   //  and the other config docs through applyAgentConfig; see onboarding.js + enterGame.)
 
   /* ---------- workstreams rail (left) ---------- */
+  // A rail row is ONE LINE — exactly as compact as before — but now carries LIVE STATE: the dot pulses while a run
+  // is in flight on that stream (gold when it's paused awaiting your approval), and a right-aligned time token
+  // reads the live elapsed while busy or a relative "last worked" stamp when idle. The busy signal is read
+  // straight from Channels (channels.js) — the same per-workstream run-state the COMMS header trusts — so it's
+  // honest by construction and needs no new backend wiring: the rail already re-renders at run start + finish, and
+  // a 1s ticker keeps the seconds moving. The full status word ("working…"/"awaiting your approval…") lives in the
+  // row's hover tooltip so the one-line layout never has to spell it out.
+  let railTicker = 0;
+  function railFmtElapsed(ms) {
+    const s = Math.floor((ms < 0 ? 0 : ms) / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60), r = s % 60;
+    return m + ':' + (r < 10 ? '0' : '') + r;   // 4s · 42s · 1:05
+  }
+  function railRelTime(ms) {                     // compact right-edge stamp: now · 2m · 1h · 3d
+    if (!ms) return '';
+    const d = Date.now() - ms;
+    if (d < 60000) return 'now';                 // under a minute reads "now" (never "0m")
+    const m = Math.floor(d / 60000);
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    return Math.floor(h / 24) + 'd';
+  }
+  // the live presentation of one row: the dot class (pulsing run / gold attention / idle lane color), the compact
+  // right-edge meta (elapsed while busy, relative stamp when idle), and the busy/attn flags + full status word for
+  // the hover tooltip. Pure read of Channels + the record — no mutation.
+  function railRowState(w) {
+    if (typeof Channels !== 'undefined' && Channels.isBusy(w.id)) {
+      const status = Channels.statusOf(w.id);
+      const attn = /approval/.test(status);
+      const started = Channels.startedAtOf(w.id);
+      return { dot: 'ws-dot ' + (attn ? 'attn' : 'running'), meta: started ? railFmtElapsed(Date.now() - started) : '…', busy: true, attn, status };
+    }
+    return { dot: 'ws-dot lane-' + w.lane, meta: railRelTime(w.lastActiveAt), busy: false, attn: false, status: '' };
+  }
+  function rowClass(w, st, activeId) {
+    return 'ws-row' + (w.id === activeId ? ' sel' : '') + (st.busy ? ' busy' : '') + (st.attn ? ' attn' : '');
+  }
   function renderRail() {
     const ul = el('workstreams');
     if (!ul || typeof Workstreams === 'undefined') return;
     const activeId = Workstreams.activeId();
     ul.innerHTML = Workstreams.list().map(w => {
       const title = w.title || 'General';
-      return '<li class="ws-row' + (w.id === activeId ? ' sel' : '') + '" data-id="' + w.id + '">' +
-        '<span class="ws-dot lane-' + w.lane + '"></span>' +
+      const st = railRowState(w);
+      const tip = title + (st.busy ? ' · ' + st.status : '');
+      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" title="' + U.esc(tip) + '">' +
+        '<span class="' + st.dot + '"></span>' +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
+        '<span class="ws-meta">' + U.esc(st.meta) + '</span>' +
         '</li>';
     }).join('');
     ul.querySelectorAll('.ws-row').forEach(li => li.onclick = () => switchWorkstream(li.dataset.id));
+    armRailTicker();
     if (typeof StationUI !== 'undefined' && StationUI.refreshBoard) StationUI.refreshBoard();
+  }
+  // ONE always-on 1s heartbeat keeps the rail truthful while in-game: the busy elapsed counts up AND the idle
+  // "last worked" stamps age (2m → 3m) even when nothing is running. It's cheap — every write is change-detected,
+  // so a quiet rail does a handful of string compares a second and touches no DOM. It self-stops the moment the
+  // rail is gone or the station screen is left (and disconnect() stops it outright); renderRail re-arms on re-entry.
+  // Refreshes each row IN PLACE (no innerHTML rebuild) so a click or the scroll position is never reset; the
+  // pulsing dot itself is pure CSS — this only swaps the dot CLASS, the right-edge time token, and the row classes.
+  function updateRailLive() {
+    const ul = el('workstreams'); const game = el('screen-game');
+    if (!ul || typeof Workstreams === 'undefined' || !game || !game.classList.contains('active')) { stopRailTicker(); return; }
+    const activeId = Workstreams.activeId();
+    ul.querySelectorAll('.ws-row').forEach(li => {
+      const w = Workstreams.get(li.dataset.id); if (!w) return;
+      const st = railRowState(w);
+      const dot = li.querySelector('.ws-dot'); if (dot && dot.className !== st.dot) dot.className = st.dot;
+      const meta = li.querySelector('.ws-meta'); if (meta && meta.textContent !== st.meta) meta.textContent = st.meta;
+      const cls = rowClass(w, st, activeId); if (li.className !== cls) li.className = cls;
+    });
+  }
+  function armRailTicker() { if (!railTicker) railTicker = setInterval(updateRailLive, 1000); }
+  function stopRailTicker() { if (railTicker) { clearInterval(railTicker); railTicker = 0; } }
+  // A backgrounded tab FREEZES/intensively-throttles its timers, so the live clock stalls while you're away. The
+  // instant the station is visible again, snap every row back to truth (and re-arm the heartbeat) so the elapsed
+  // and "last worked" stamps are never caught stale — they jump straight to correct, not after the next tick.
+  // Registered once for the page lifetime; the in-game guard keeps it inert on the title/connect screens.
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      const game = el('screen-game');
+      if (game && game.classList.contains('active')) renderRail();
+    });
   }
   // switching mid-run is fine now: each workstream keeps its own run-state in Channels (channels.js) and
   // Chat.load re-renders the in-flight stream on switch — the run you left keeps streaming in the background.
@@ -1245,7 +1319,7 @@ const App = (() => {
   // DISCONNECT (the ⏏ button) tears down the live game but NEVER wipes data and NEVER lands on a dead title
   // screen — it persists, then re-enters via reentry(): straight back into the station if creds are still in
   // hand, otherwise the RESUME-mode connect screen. The agent is always preserved.
-  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
+  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); stopRailTicker(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
 
   /* ---------- creation ---------- */
   // Guarded: a genuine FRESH start (no save) wipes any stale resume pointer and opens CREATE YOUR OVERSEER.

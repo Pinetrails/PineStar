@@ -987,6 +987,11 @@ const Chat = (() => {
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
+    // FIRST-TURN TITLE UPGRADE: is THIS the stream's first user turn (still on its machine-derived placeholder)?
+    // Captured BEFORE we push this message, so after the run lands we can replace the truncated first-sentence
+    // title with a model-written summary. General is excluded — it stays the untitled chat home.
+    const firstTurn = (typeof Workstreams !== 'undefined') && ws.id !== Workstreams.generalId()
+      && !ws.history.some(m => m && m.role === 'user');
     Channels.begin(ws.id, Date.now());   // stamp the run start so the COMMS elapsed timer counts real wall-clock
     // P1: drop this directive's INTAKE ore box on the belt + start its DWELL clock (mirrors the Telegram
     // admit shape). queueId === agentId so the box routes to the hero / bound desk in world.js.
@@ -1063,7 +1068,7 @@ const Chat = (() => {
     // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
     // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
-    let spokenIdx = 0, finalReply = '';
+    let spokenIdx = 0, finalReply = '', titleOk = false;
     const pushSpeech = (finalize, finalText) => {
       if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
       const src = finalize ? (finalText || acc) : acc;
@@ -1140,6 +1145,7 @@ const Chat = (() => {
       } else {
         const replyText = reply || acc;
         finalReply = replyText;
+        titleOk = !!replyText.trim();   // a real, non-empty reply landed → this stream is eligible for a summary title
         if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText });   // never persist an empty turn
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done') {
@@ -1210,6 +1216,9 @@ const Chat = (() => {
       App.refreshUsage();
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       if (onTurn) onTurn();
+      // FIRST-TURN TITLE: replace the instant first-sentence placeholder with a model-written summary. Quiet
+      // (internal call, off the floor/telemetry) and fire-and-forget so it never delays this turn's teardown.
+      if (firstTurn && titleOk) maybeRetitle(ws, text, finalReply);
       // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
       // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
       if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
@@ -1218,6 +1227,48 @@ const Chat = (() => {
       // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).
       setTimeout(() => flushQueued(ws.id), 0);
     }
+  }
+
+  /* QUIET TITLE SUMMARY — one tiny internal model call (no tools, suppressed from the floor + telemetry exactly
+     like the pitch/suggest self-talk: internal:true drops its run.start/run.end so it never counts as a delivered
+     task, walks a sprite, or earns XP) that turns a new stream's first message into a 3-6 word title. Best-effort:
+     any failure or an unparseable reply silently leaves the instant first-sentence placeholder in place. The tiny
+     usage delta is folded into THIS stream's per-conversation cost so the telemetry stays truthful. */
+  async function maybeRetitle(ws, userText, replyText) {
+    if (typeof Harness === 'undefined' || typeof Workstreams === 'undefined' || !ws) return;
+    const cur = Workstreams.get(ws.id);
+    if (!cur || cur.titleAuto === false || ws.id === Workstreams.generalId()) return;   // never stomp a manual rename / title General
+    const sys = 'You generate a terse title for a work session. Reply with ONLY a 3 to 6 word title that summarizes'
+      + ' what the user wants done. Use Title Case. No surrounding quotes, no trailing punctuation, no preamble —'
+      + ' output the title and nothing else.';
+    const prompt = String(userText || '').replace(/\s+/g, ' ').slice(0, 500)
+      + (replyText ? ('\n\nAssistant reply (context only): ' + String(replyText).replace(/\s+/g, ' ').slice(0, 200)) : '');
+    if (!prompt.trim()) return;
+    const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton)
+    let res;
+    try {
+      res = await Harness.chat({ system: sys, messages: [{ role: 'user', content: prompt }], agentId: ws.agentId || 'agent', isTask: false, placed: [], internal: true });
+    } catch (_) { return; }   // network/hiccup → keep the placeholder, no noise
+    // fold the quiet call's REAL usage into the origin stream (same truthful-telemetry path as a normal turn)
+    try { const a = Harness.totals(); Workstreams.addCost(ws.id, { tokens: a.tokens - before.tokens, usd: a.cost - before.cost, calls: a.calls - before.calls }); } catch (_) {}
+    if (!res || res.error) return;
+    const t = cleanTitle(res.text);
+    if (t && Workstreams.retitle(ws.id, t)) {
+      if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
+      if (onTurn) onTurn();   // persist the upgraded title
+    }
+  }
+  /* scrub a model title reply to a clean short label: first non-empty line, strip wrapping quotes/asterisks, drop
+     trailing punctuation, collapse whitespace, length-cap, and reject an obvious non-title (a refusal or a whole
+     sentence) so a bad reply leaves the placeholder rather than writing garbage into the rail. */
+  function cleanTitle(raw) {
+    let t = String(raw == null ? '' : raw).trim();
+    if (!t) return '';
+    t = (t.split(/\r?\n/).find(l => l.trim()) || '').trim();   // first non-empty line only
+    t = t.replace(/^["'`*\s]+|["'`*\s]+$/g, '').replace(/[\s.:;,—–-]+$/g, '').replace(/\s+/g, ' ').trim();
+    if (!t || t.length > 64) return '';                        // empty or a paragraph came back → keep placeholder
+    if (/\b(sorry|cannot|can't|unable|as an ai|here(?:'s| is)|i (?:can|am|will|would))\b/i.test(t)) return '';   // refusal / chatty
+    return t;
   }
 
   /* DISCONNECT (or any teardown) cancels the in-flight billable run: abort the fetch (the sidecar's

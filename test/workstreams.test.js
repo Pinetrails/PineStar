@@ -66,6 +66,27 @@ const longT = W.deriveTitle('research the global semiconductor supply chain and 
 A.ok(longT.length <= 61 && /…$/.test(longT) && !/ …$/.test(longT), 'long title trims at a word boundary with an ellipsis, no mid-word cut');
 A.eq(W.deriveTitle('x'.repeat(90)).length, 61, 'an unbroken 90-char token hard-caps to 60 + ellipsis');
 
+/* ---------- title upgrade: retitle replaces the placeholder; a manual rename locks it forever ---------- */
+W.reset();
+const tg = W.generalId();
+const up = W.create(null);
+A.eq(up.titleAuto, true, 'a fresh stream starts title-auto (eligible for the summary upgrade)');
+A.ok(W.autoTitle(up.id, 'help me find a budget mechanical keyboard') === true, 'instant placeholder set from first message');
+A.eq(up.titleAuto, true, 'the auto placeholder keeps the stream eligible for the upgrade');
+A.ok(W.retitle(up.id, '  Budget   Keyboard Hunt  ') === true, 'retitle upgrades the auto placeholder');
+A.eq(up.title, 'Budget Keyboard Hunt', 'retitle collapses whitespace and applies the summary');
+A.eq(up.titleAuto, true, 'still auto after a machine upgrade (a later refine could re-run)');
+A.ok(W.rename(up.id, 'My Keyboard Project') === true, 'manual rename applies');
+A.eq(up.titleAuto, false, 'a manual rename LOCKS the title (titleAuto=false)');
+A.ok(W.retitle(up.id, 'Something Else') === false, 'retitle never stomps a manually-renamed title');
+A.eq(up.title, 'My Keyboard Project', 'the human title survives a later upgrade attempt');
+A.ok(W.retitle(tg, 'General Summary') === false, 'General is never titled by an upgrade');
+A.eq(W.get(tg).title, null, 'General stays untitled (the chat home)');
+A.ok(W.retitle(up.id, '   ') === false && up.title === 'My Keyboard Project', 'an empty summary is a no-op');
+const dumpedAuto = JSON.parse(JSON.stringify(W.serialize()));
+W.init(dumpedAuto);
+A.eq(W.get(up.id).titleAuto, false, 'titleAuto survives a save/load round-trip (the manual lock persists)');
+
 /* ---------- hybrid-honest lanes: a real run auto-advances todo->active ---------- */
 W.reset();
 const c = W.create('write a report');

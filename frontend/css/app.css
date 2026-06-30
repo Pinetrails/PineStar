@@ -1178,16 +1178,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   display: flex; flex-direction: column; gap: 4px;
 }
 .ws-row {
-  display: flex; align-items: center; gap: 7px; padding: 5px 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: pointer;
   border-left: 2px solid var(--ph-dim); background: rgba(0,0,0,.28);
 }
 .ws-row:hover { background: var(--ph-faint); border-left-color: var(--ph); }
 .ws-row.sel { border-left-color: var(--ph-bright); background: var(--ph-faint); }
+.ws-row.busy { border-left-color: var(--ph-bright); }
 .ws-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ph-dim); }
 .ws-dot.lane-active { background: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); }
 .ws-dot.lane-shipped { background: var(--gold); }
+/* LIVE: a run is in flight on this stream (phosphor pulse), or it is paused awaiting your approval (gold pulse) */
+.ws-dot.running { background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
+.ws-dot.attn { background: var(--gold); animation: wsPulse 1.15s ease-in-out infinite; }
+@keyframes wsPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 7px var(--ph-glow); }
+  50% { opacity: .3; box-shadow: 0 0 2px var(--ph-glow); }
+}
 .ws-title { flex: 1; min-width: 0; font-size: 14px; color: var(--ph); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-row.sel .ws-title { color: var(--ph-bright); }
+/* compact right-edge meta: live elapsed while busy (bright / gold when it needs you), a dim "last worked" stamp when idle */
+.ws-meta { flex: 0 0 auto; font-size: 11px; line-height: 1; color: var(--ph-dim); letter-spacing: .3px; font-variant-numeric: tabular-nums; }
+.ws-meta:empty { display: none; }
+.ws-row.busy .ws-meta { color: var(--ph-bright); }
+.ws-row.attn .ws-meta { color: var(--gold); }
 
 #chat-panel h3 .h3-right { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; flex: 0 1 auto; overflow: hidden; }
 #chat-panel h3 #chat-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

@@ -57,6 +57,10 @@
       cost: { tokens: +c.tokens || 0, usd: +c.usd || 0, calls: +c.calls || 0 },
       pinned: !!opts.pinned,
       archived: !!opts.archived,
+      // true = a machine-derived placeholder title, eligible for the one-shot LLM summary upgrade after the
+      // stream's first run. A manual rename() flips it false so the upgrade (and any future auto-title) can
+      // never stomp a title the human chose. Defaults true; preserved verbatim through init()'s re-normalize.
+      titleAuto: opts.titleAuto != null ? !!opts.titleAuto : true,
       createdAt: opts.createdAt || t,
       lastActiveAt: opts.lastActiveAt || t
     };
@@ -114,7 +118,8 @@
     if (opts.activate !== false) activeId = w.id;   // board "add" passes {activate:false} so it won't hijack the active chat
     return w;
   }
-  function rename(id, title) { const w = find(id); if (!w) return false; w.title = title ? clamp(title, 80) : null; return true; }
+  // a MANUAL rename: locks the title (titleAuto=false) so the auto-summary upgrade never overwrites it.
+  function rename(id, title) { const w = find(id); if (!w) return false; w.title = title ? clamp(title, 80) : null; w.titleAuto = false; return true; }
   // bind this stream to an agent (the multi-agent summon seam). The id must match the backend's agentId
   // grammar (^[A-Za-z0-9_-]{1,40}$) — an invalid id is rejected so a stream can never route to a bad path.
   function setAgent(id, agentId) {
@@ -157,13 +162,25 @@
     if (sp > 0) cut = cut.slice(0, sp);             // never cut mid-word
     return cut.replace(/[\s,.;:!?-]+$/, '') + '…';
   }
-  // name an untitled, non-General stream from its first user message (no-op otherwise).
+  // name an untitled, non-General stream from its first user message (no-op otherwise). This is the INSTANT
+  // placeholder (first-sentence truncation); retitle() later upgrades it to a model-written summary.
   function autoTitle(id, text) {
     const w = find(id);
     if (!w || w.id === generalId || w.title != null) return false;
     const tt = deriveTitle(text);
     if (!tt) return false;
-    w.title = tt; return true;
+    w.title = tt; w.titleAuto = true; return true;
+  }
+  // UPGRADE an auto-derived placeholder to a concise model-written summary (chat.js fires this once, after a
+  // new stream's first run, passing a 3-6 word LLM title). Honors the human: a stream whose title was MANUALLY
+  // renamed (titleAuto === false) is never stomped, and General is never titled. Returns false (no change) when
+  // locked / General / the summary is empty — so a model hiccup just leaves the instant placeholder in place.
+  function retitle(id, title) {
+    const w = find(id);
+    if (!w || w.id === generalId || w.titleAuto === false) return false;
+    const tt = clamp(String(title == null ? '' : title).trim().replace(/\s+/g, ' '), 80);
+    if (!tt) return false;
+    w.title = tt; w.titleAuto = true; return true;
   }
 
   // ---------- runs · deliverables · cost (filed onto the stream that spawned them) ----------
@@ -239,7 +256,7 @@
     init, reset, serialize, all, list, search,
     create, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, pin, archive, del, touch,
-    autoTitle, deriveTitle,
+    autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
     LANES
