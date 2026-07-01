@@ -355,6 +355,19 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg.agent .body a { color: var(--gold); text-decoration: underline; }
 .cmsg.agent .body a:hover { color: var(--ph-bright); }
 
+/* END-OF-RUN RECAP (work-visibility): a passive work-log REPORT in the .tool register — what the run
+   produced (files/images/channel sends) + cost/duration/model. Never a beat: it stays in the log like a
+   tool line (no vanish), and only shows when there ARE artifacts or the run ended abnormally. */
+.cmsg.recap .recap-line { display: block; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
+.cmsg.recap .recap-head { color: var(--gold); letter-spacing: .4px; }
+.cmsg.recap .recap-foot { font-size: 12px; opacity: .85; }
+.recap-copy {
+  font: inherit; font-size: 12px; cursor: pointer;
+  color: var(--ph-dim); background: transparent; border: none;
+  margin-left: 6px; padding: 0 2px; opacity: .75;
+}
+.recap-copy:hover { color: var(--ph-bright); opacity: 1; }
+
 /* live consent prompt — the agent paused for approval, INLINE in the flow where it happened (this
    replaced the always-on top APPROVALS panel). A clear gold frame so it reads as "act on me now". */
 .cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(255,211,74,.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }

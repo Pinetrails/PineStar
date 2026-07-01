@@ -641,6 +641,74 @@ const Chat = (() => {
     fileBlobUrl(title, agentId).then(u => { blobUrl = u; el.src = u; }).catch(() => openFallback(r.body, 'open ' + kind, '', title, agentId));
     autoscroll();
   }
+
+  /* ── END-OF-RUN RECAP (work-visibility slice 1) — a passive REPORT card in the run's own message flow.
+     On run end we fetch the run's recorded outcome (GET /api/runs?agent=&runId= — the sidecar's append-only
+     artifacts ledger, recorded by runOnce) and, ONLY when the run produced artifacts or ended abnormally,
+     render ONE compact work-log card: an outcome line (title/reason), the artifact list, and cost + duration
+     + model. It is NOT an ask: it never touches the single post-run beat slot (no clearNudge, no .turnin /
+     .nudge class, nothing the beat guards match) and it stays in the log like tool lines do — no vanish().
+     A quiet artifact-less clean finish renders nothing: the existing reply/⏹ flow already said everything. */
+  function fmtRecapCost(entry) {
+    if (entry.unmetered) return 'subscription';
+    const v = Number(entry.usd) || 0;
+    if (v <= 0) return '';                                   // a free/unpriced run shows no fake $0
+    return '$' + (v >= 0.01 ? v.toFixed(2) : v.toFixed(4));
+  }
+  function fmtBytes(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
+  function recapArtifactLine(a, agentId) {
+    const d = document.createElement('div'); d.className = 'recap-line';
+    if (a.kind === 'message') { d.textContent = '✉ sent to ' + (a.target || 'a channel'); return d; }
+    const path = String(a.path || '');
+    d.appendChild(document.createTextNode(a.kind === 'image' ? '▤ made ' : '▤ wrote '));
+    const link = document.createElement('a');
+    wireBlobOpen(link, path, agentId);                       // the same jailed /api/file open every deliverable row uses
+    link.className = 'deliverable-link';
+    link.textContent = path.split(/[\\/]/).pop() || path;    // filename shown, full path on hover
+    link.title = path;
+    d.appendChild(link);
+    if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
+    // reveal the path: click-to-copy of the workspace path (no shell-open pattern exists in this frontend —
+    // per the design contract we don't invent new Tauri permissions for it).
+    const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
+    cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
+    cp.onclick = () => copyText(path).then(ok => { if (!ok) return; cp.textContent = '✓'; setTimeout(() => { cp.textContent = '⧉'; }, 1100); });
+    d.appendChild(cp);
+    return d;
+  }
+  const RECAP_MAX_ROWS = 12;   // a monster run lists the first dozen + a "+N more" note (the RUNS panel has the rest)
+  function recapCard(entry, arts, agentId, durMs) {
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('recap');
+    const done = (entry.reason || 'done') === 'done';
+    const head = document.createElement('div'); head.className = 'recap-line recap-head';
+    head.textContent = (done ? '◈ delivered' : '◈ ended: ' + entry.reason) + (entry.title ? ' — ' + brief(entry.title) : '');
+    r.body.appendChild(head);
+    for (const a of arts.slice(0, RECAP_MAX_ROWS)) r.body.appendChild(recapArtifactLine(a, agentId));
+    if (arts.length > RECAP_MAX_ROWS) {
+      const more = document.createElement('div'); more.className = 'recap-line';
+      more.textContent = '… +' + (arts.length - RECAP_MAX_ROWS) + ' more';
+      r.body.appendChild(more);
+    }
+    const foot = document.createElement('div'); foot.className = 'recap-line recap-foot';
+    foot.textContent = [fmtRecapCost(entry), durMs > 0 ? fmtMs(durMs) : '', (entry.model && entry.model !== '(unknown)') ? entry.model : ''].filter(Boolean).join(' · ');
+    if (foot.textContent) r.body.appendChild(foot);
+    autoscroll();
+  }
+  async function renderRunRecap(ws, runId, durMs) {
+    try {
+      const agentId = ws.agentId || 'agent';
+      const res = await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&runId=' + encodeURIComponent(runId), { cache: 'no-store' });
+      if (!res.ok) return;
+      const j = await res.json();
+      const entry = (j && Array.isArray(j.runs)) ? j.runs.find(x => x && x.runId === runId) : null;
+      if (!entry) return;                                              // truthful: no recorded entry, no recap
+      const arts = Array.isArray(entry.artifacts) ? entry.artifacts : [];   // a legacy row fails open to []
+      if (!arts.length && (entry.reason || 'done') === 'done') return;      // quiet clean finish — leave the flow untouched
+      if (!isActiveWs(ws)) return;   // the work-log register renders on the on-screen stream only, same as tool lines
+      recapCard(entry, arts, agentId, durMs);
+    } catch (_) { /* the recap is best-effort — it must never disturb the turn teardown */ }
+  }
+
   // a live consent prompt: the agent wants to do something that needs approval (a file write today). The run is
   // PAUSED on the sidecar until the Commander answers — once / always (this kind) / full access (everything this
   // session) / deny. Answering resumes the stream automatically.
@@ -1616,6 +1684,9 @@ const Chat = (() => {
         // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
         // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
         if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, steps: runToolsOk, cost: runCost });
+        // WORK VISIBILITY: a passive recap of what this run PRODUCED, fetched from the run's recorded
+        // artifacts ledger. A report, not an ask — it never claims the post-run beat slot. Fire-and-forget.
+        if (thisRunId) renderRunRecap(ws, thisRunId, Date.now() - wiPlacedTs);
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
