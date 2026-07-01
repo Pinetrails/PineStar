@@ -1162,6 +1162,7 @@ const App = (() => {
     if (typeof SuggestStore !== 'undefined') SuggestStore.reset();   // …and a fresh ongoing-suggestion cadence
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
+    if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
@@ -1288,6 +1289,11 @@ const App = (() => {
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
+    // QUEST MEMORY (G1a): durable quest state — firstSeenAt/completedAt per quest + dismissed-forever — and
+    // the open→done completion celebration (quest sting + gold toast + row flourish; NEVER XP). Self-persists
+    // to its own key. Init AFTER XpStore/DossierStore so its first fold sees the real projection as a quiet
+    // baseline (a resumed save backfills already-done quests without a celebration storm).
+    if (typeof QuestStateStore !== 'undefined') QuestStateStore.init();
     if (typeof SeedStore !== 'undefined') SeedStore.init();   // SELF-GROWING SEED: reset the one-offer-per-session budget
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.init();   // AUTONOMY POSTURE: hydrate the "alive between sessions" dial (own key; the awakening cadence beat + the station dial are its writers)
     // FIRST PITCH: once the agent has done one real task and knows enough about the Commander, it proactively
