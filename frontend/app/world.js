@@ -3029,6 +3029,17 @@ const World = (() => {
     // REWIND: the rare, important "we rolled the workspace back" beat. checkpoint.created is frequent + quiet
     // (the workbench already pulses on shell), so only the restore is toasted.
     U.bus.on('checkpoint.restored', () => hudNote('↶ rewound to an earlier restore point', 'warn'));
+    // G0.5 BUDGET MADE VISIBLE: budget.threshold was alarm-audio only. The payload is the frozen
+    // { scope: run|day|global, usd, cap } triple (sidecar/budget.js, one emit per scope+band crossing
+    // per run) — the band isn't carried, so derive it from the numbers: at/over cap = stopped.
+    U.bus.on('budget.threshold', p => {
+      if (!p || !isFinite(+p.usd) || !isFinite(+p.cap) || +p.cap <= 0) return;
+      const usd = +p.usd, cap = +p.cap;
+      const scopeWord = p.scope === 'run' ? 'this run' : (p.scope === 'day' ? 'today' : 'the global pool');
+      const money = v => '$' + (Math.round(v * 100) / 100).toFixed(2);
+      if (usd >= cap) hudNote('⛔ budget cap hit for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap), 'warn');
+      else hudNote('⚠ budget warning for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap) + ' (' + Math.round(usd / cap * 100) + '%)', 'warn');
+    });
     // G0.4 CAPDENIED MADE VISIBLE: the run genuinely STOPPED at the capability gate (loop.js emits this
     // before ending the run) — flash the acting agent's desk red + say it plainly. Today this was
     // audio-only; the fix-it quest generator built on it is G1b's, not ours.
