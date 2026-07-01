@@ -61,11 +61,37 @@
         <div class="ov-pickrow"><span class="ov-pick-lab">SKIN</span><div id="skin-picker" class="skin-picker ov-skins"></div></div>
       </div>
 
-      <!-- RIGHT — THE CONFIG: name · brain · approval · personality (brain sits right under the name) -->
+      <!-- RIGHT — THE CONFIG: name · personality · approval · brain — HOOK-FIRST order: the fun, zero-friction
+           identity choices come first so the user invests before they hit the key/model block (the highest-friction
+           step), which sits LAST, directly above the WAKE button it feeds. -->
       <div class="ov-cfg">
         <div class="ov-field">
           <label>OVERSEER NAME</label>
           <input id="in-name" class="ov-nm-in" maxlength="18" placeholder="name your overseer" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="ov-field">
+          <label>PERSONALITY <span class="dim">— how it talks to you (change it any time later)</span></label>
+          <div id="voice-archetypes" class="ov-vchips" role="group" aria-label="Personality"></div>
+          <div id="voice-preview" class="voice-preview ov-vpreview"></div>
+          <!-- FINE-TUNE: trait dials + a free-text voice note, behind a reveal so casual players just pick a chip.
+               All inputs stay in the DOM so onWake() reads them whether the section is open or closed. -->
+          <button type="button" id="adv-toggle" class="adv-toggle ov-vtune" aria-expanded="false" aria-controls="adv-body">
+            <span class="adv-caret">▸</span> fine-tune the voice <span class="dim">— dials &amp; your own words (optional)</span>
+          </button>
+          <div id="adv-body" class="adv-body" hidden>
+            <div id="voice-traits" class="voice-traits"></div>
+            <label>EXTRAS</label>
+            <div id="voice-toggles" class="voice-toggles"></div>
+            <label>IN YOUR OWN WORDS <span class="dim">— optional; this overrides the preset where they conflict</span></label>
+            <textarea id="voice-custom" class="voice-custom" rows="2" placeholder="e.g. talks like a calm senior engineer — concise, a little dry, no hype" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <div class="ov-field">
+          <label>APPROVAL <span class="dim">— how much it can do on its own; change it any time later</span></label>
+          <div id="approval-picker" class="ov-cards ov-approve" role="group" aria-label="Approval mode"></div>
+          <div class="ov-crewnote">the consent gate is real — <b>FULL ACCESS</b> skips the prompts, but a hard safety floor still blocks the most dangerous actions.</div>
         </div>
 
         <div class="ov-field ov-field-brain">
@@ -117,30 +143,6 @@
             <div id="model-picks" class="model-picks" aria-label="Recommended models"></div>
             <div id="model-hint" class="dim hint">—</div>
             <p id="byok-note" class="muted byok-note">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
-          </div>
-        </div>
-
-        <div class="ov-field">
-          <label>APPROVAL <span class="dim">— how much it can do on its own; change it any time later</span></label>
-          <div id="approval-picker" class="ov-cards ov-approve" role="group" aria-label="Approval mode"></div>
-          <div class="ov-crewnote">the consent gate is real — <b>FULL ACCESS</b> skips the prompts, but a hard safety floor still blocks the most dangerous actions.</div>
-        </div>
-
-        <div class="ov-field">
-          <label>PERSONALITY <span class="dim">— how it talks to you (change it any time later)</span></label>
-          <div id="voice-archetypes" class="ov-vchips" role="group" aria-label="Personality"></div>
-          <div id="voice-preview" class="voice-preview ov-vpreview"></div>
-          <!-- FINE-TUNE: trait dials + a free-text voice note, behind a reveal so casual players just pick a chip.
-               All inputs stay in the DOM so onWake() reads them whether the section is open or closed. -->
-          <button type="button" id="adv-toggle" class="adv-toggle ov-vtune" aria-expanded="false" aria-controls="adv-body">
-            <span class="adv-caret">▸</span> fine-tune the voice <span class="dim">— dials &amp; your own words (optional)</span>
-          </button>
-          <div id="adv-body" class="adv-body" hidden>
-            <div id="voice-traits" class="voice-traits"></div>
-            <label>EXTRAS</label>
-            <div id="voice-toggles" class="voice-toggles"></div>
-            <label>IN YOUR OWN WORDS <span class="dim">— optional; this overrides the preset where they conflict</span></label>
-            <textarea id="voice-custom" class="voice-custom" rows="2" placeholder="e.g. talks like a calm senior engineer — concise, a little dry, no hype" spellcheck="false"></textarea>
           </div>
         </div>
       </div>
