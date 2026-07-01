@@ -38,6 +38,37 @@ Loops must not collide — multiple sidecars may run at once. Each crew boots si
 | 8950–8959 | Beginner Run |
 | 8960+ | Ad-hoc / manual |
 
+## Green Guardian (lane Q1)
+
+One cycle = pin trunk into a **dedicated** checkout and run the four detectors against it:
+`test:fast` → `shoot` → `golden` → `audit`. One deduped ledger finding per regression
+(fingerprinted per failing suite/frame/assertion so the same defect never re-nags), the
+row above refreshed, nonzero exit on any red. Run it:
+
+```
+npm run qa:guardian            # one cycle; exits nonzero if trunk is red/blocked
+npm run qa:guardian -- --skip-visual   # test:fast + audit only (no Chrome; CI-lite)
+npm run qa:guardian:watch      # poll trunk HEAD; run a cycle when it moves
+```
+
+**Pinned checkout (read-only law).** Gates NEVER run in the integration tree or another
+agent's worktree. The Guardian owns a detached `git worktree` at `../_qa-guardian-pin`
+(override with `SKYNET_GUARDIAN_PIN`), `git reset --hard`'d to the current trunk head each
+cycle (created + `npm install`'d on first run). Sidecar/CDP ports stay in the Guardian
+range: shoot `8940/9340`, golden `8941/9341`, audit `8942/9342`.
+
+**STATUS.md + findings target the guardian's OWN repo, not the pin.** The row above and
+`qa/findings/*.json` are written into the qa/ dir of the repo the guardian *script* lives
+in (resolved from `import.meta.url`), so the dashboard reflects live state and survives the
+pinned checkout's next `reset --hard`. Evidence (logs, flagged golden PNGs, gate reports)
+is copied into `.bugloops/guardian-<stamp>/` for the same reason. Findings are filed
+through `scripts/qa/ledger.mjs --add` so dedup / known-refusal stays the ONE implementation.
+
+**No-fake-green.** A step that cannot run (git/npm/spawn failure, timeout, missing report)
+files a **P0 BLOCKED** finding loudly and the cycle exits nonzero — it never silently
+passes. Scheduling (Task Scheduler vs. a `/loop` session) is lane Q5's job; this script is
+schedule-agnostic.
+
 ## Ledger quick reference
 
 ```
