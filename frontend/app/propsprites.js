@@ -3990,11 +3990,14 @@ const PropSprites = (() => {
   function pulseProp(id, cap) { if (!id) return; propPulse[id] = { at: now, cap: cap || '' }; }
   function propFired(id) { const s = id && propPulse[id]; return (s && s.at) ? Math.max(0, 1 - (now - s.at) / PULSE_MS) : 0; }
 
-  /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens. */
-  function draw(f, work) {
+  /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens.
+     `live` (G0.3, optional) carries the seated agent's TRUTHFUL activity: { heat } — real token/tool
+     flow, 0..1 with ~2s decay (world.js heatFor). Only ever passed for a lit assigned workstation. */
+  function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
     const X = f.x * TILE, Y = f.y * TILE, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
     const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
+    if (live) { o.heat = +live.heat || 0; }
     if (f.t === 'connector_portal') {                 // a bound portal rides its connector's live state
       const cid = f.connectorId || null;
       o.bound = !!cid;
@@ -4003,6 +4006,12 @@ const PropSprites = (() => {
     }
     if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
     fn(X, Y, W, H, o);
+    // G0.3 ACTIVITY-HEAT WASH: real token/tool flow burns the working screens brighter + shimmers faster
+    // (the monitors live in the prop's upper band); a stalled run cools back to the base work-glow in ~2s.
+    if (o.work && o.heat > 0) {
+      const hshim = 0.72 + 0.28 * Math.sin(now / (170 - 110 * o.heat));
+      glow(X + 1, Y - 4, W - 2, Math.min(H + 4, 11), scr(o.x), (0.08 + 0.36 * o.heat) * hshim);
+    }
     // G0.1 TOOL-FIRE SURGE: this instance's tool just ran — a hot core wash + wider halo in the
     // capability accent, plus a charge bar draining shut across the crown. BOLD by design (the CRT-lab
     // law: effects read from across the room), gone in under a second.

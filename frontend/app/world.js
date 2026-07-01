@@ -193,6 +193,12 @@ const World = (() => {
       fpx(x + 7, y + 1, 1, 1, fblink(400, f.x) ? '#dfffe8' : '#101a14');
       fscanl(x + 4, y - 1, 4, 3, 0.2);
       fglow(x + 2, y + 4, 8, 2, fscr(f.x), 0.18); fglow(x + 3, y - 2, 6, 5, fscr(f.x), 0.10);
+      // G0.3 ACTIVITY HEAT: real token/tool flow burns the screen brighter + shimmers faster; a stalled
+      // run cools back to the base glow in ~2s. f.heat is the truthful per-agent heat (heatFor), 0..1.
+      if (f.heat > 0) {
+        const hshim = 0.72 + 0.28 * Math.sin(fnow / (170 - 110 * f.heat));
+        fglow(x + 2, y - 3, 8, 8, fscr(f.x), (0.10 + 0.42 * f.heat) * hshim);
+      }
     } else {
       fpx(x + 4, y - 1, 4, 3, '#101a14'); fpx(x + 4, y - 1, 1, 1, '#1c2a22');
       fpx(x + 9, y + 2, 1, 1, fblink(1600) ? '#ff9d2e' : '#33241a');
@@ -1985,9 +1991,12 @@ const World = (() => {
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
         const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || workstationLit(p) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
+        // G0.3 live desk truth: a LIT assigned workstation carries its agent's real activity heat
+        // (token/tool-driven, see heatFor) so the screens burn by actual work, not a binary flag.
+        const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId) } : null;
         // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
         const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
-        items.push({ y: sy, draw: () => PropSprites.draw(p, work) });
+        items.push({ y: sy, draw: () => PropSprites.draw(p, work, live) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
@@ -1995,7 +2004,7 @@ const World = (() => {
         if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => F_chair(s.tx * T, s.ty * T) }); }
       }
     }
-    if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
+    if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working), heat: (agent && agent.working) ? heatFor(agent.id) : 0 }) });   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
@@ -2522,6 +2531,26 @@ const World = (() => {
      INTAKE/belt path exists, nothing rides (the sidecar already ran the work either way). */
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
   const serverLit = new Set();    // agentIds lit by an AUTONOMOUS run (cron/channel) — its run.end clears them
+  /* ---------- per-agent ACTIVITY HEAT (G0.3) ----------
+     A truthful "how hard is this run streaming RIGHT NOW" scalar per agent: every real agent.token /
+     agent.tool_call bumps it, and it decays exponentially (~2s time-constant) between bumps — so a
+     hot-streaming run burns visibly brighter at the desk than a stalled one, with zero invented signal.
+     Read lazily (decay computed at read time) so an idle map entry costs nothing per frame. */
+  const heatByAgent = new Map();  // agentId -> { v, at } (v = heat at time `at`; decays exp(-(now-at)/TAU))
+  const HEAT_TAU = 2000;
+  function heatBump(aid, inc) {
+    const id = aid || (agent && agent.id) || 'agent';
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    const h = heatByAgent.get(id);
+    const v = h ? h.v * Math.exp(-(now - h.at) / HEAT_TAU) : 0;
+    heatByAgent.set(id, { v: Math.min(1, v + inc), at: now });
+  }
+  function heatFor(aid) {
+    const h = heatByAgent.get(aid || (agent && agent.id) || 'agent');
+    if (!h) return 0;
+    const v = h.v * Math.exp(-(fnow - h.at) / HEAT_TAU);
+    return v < 0.01 ? 0 : v;
+  }
   let bridged = false, lastOutboxFlash = -1e9;
   // N1/N2/N3: the channel SSE stream + the connector poll are "opened once" but used to be NEVER released —
   // after a DISCONNECT they kept polling /api/connectors every 5s and the EventSource self-reconnected forever
@@ -2935,6 +2964,7 @@ const World = (() => {
     U.bus.on('agent.tool_call', p => {            // chat.js re-emits the hero's tool calls here; routed agents arrive via SSE
       const n = p && p.name;
       if (!n) return;
+      heatBump(p.agentId, 0.35);                  // G0.3: any real tool fire is activity — stoke the desk heat
       if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (unchanged)
         if (!PropSprites.pulseConnector) return;
         for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
@@ -2952,6 +2982,9 @@ const World = (() => {
     // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
     U.bus.on('shell.exec', () => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
     U.bus.on('verify.result', p => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
+    // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat (audio.js already rides this
+    // same event for music intensity) — the working screens burn by REAL token flow, never a faked flicker.
+    U.bus.on('agent.token', p => heatBump(p && p.agentId, 0.06));
     if (typeof EventSource === 'undefined') return;
     let backoff = 1000;
     const open = () => {
