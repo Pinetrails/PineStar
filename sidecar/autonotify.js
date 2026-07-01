@@ -1,20 +1,20 @@
 /* sidecar/autonotify.js — autonomy B4: ping the Commander over a connected channel (Telegram/Discord) when an
-   AUTONOMOUS (cron) run PRODUCES WORK while they're out. Opt-in + anti-spam: ONLY a clean 'ok' outcome notifies —
-   a 'silent' (decided nothing) or 'failed' run never pings. Pure + injected‑deps (no IO / clock / rng) so it is
-   node‑testable; index.js wires the live adapter.send + the channel store + the cron jobs into it.
+   AUTONOMOUS (cron) run PRODUCES WORK. Opt-in + anti-spam: ONLY a clean 'ok' outcome pings — a 'silent' run (the
+   routine decided there was nothing to report; the autonomous persona carries a [SILENT] hint) or a 'failed' run
+   never does. Pure + injected-deps (no IO / clock / rng) → node-testable; index.js wires the live channel send +
+   the chat→agent map + the cron jobs into it.
 
-   makeAutoNotifier({ send, chatsFor, jobName, jobAgent }) -> { onEvent(name, payload), _buckets() }
-     send(chatId, text) -> Promise        // the live channel send (adapter.send); failures are swallowed
-     chatsFor(agentId)  -> [chatId,...]    // the agent's CONNECTED + opted-in chats ([] if none → no ping)
-     jobName(jobId)     -> string          // the routine's display name (for the message)
-     jobAgent(jobId)    -> agentId | null  // map a cron.result back to its agent (cron.result carries no agentId)
+   makeAutoNotifier({ send, chatsFor, jobName, jobAgent }) -> { onEvent(name, payload) }
+     send(chatId, text, channel) -> Promise   // the live channel send (routed by channel); failures swallowed
+     chatsFor(agentId) -> [{chatId, channel}]  // the agent's CONNECTED chats ([] if none OR opt-in off → no ping)
+     jobName(jobId)    -> string               // the routine's display name (for the message)
+     jobAgent(jobId)   -> agentId | null       // map a cron.result back to its agent (cron.result carries none)
 
-   It watches the cron event stream index.js already emits:
-     'cron.fire'   {jobId,runId}         → start a fresh deliverable bucket for that agent
-     'deliverable' {agentId,title,kind}  → remember a file that agent produced (this event has NO runId, so it is
-                                           bucketed per‑AGENT — a safe approximation for a single‑user station)
-     'cron.result' {jobId,runId,outcome} → on 'ok', compose (routine name + any files) + SEND to the agent's
-                                           opted‑in chats, then drain the bucket. 'silent'/'failed' → nothing. */
+   It watches ONE event: 'cron.result' {jobId,runId,outcome}. On 'ok' it composes a one-line summary (the routine
+   name) and SENDS it to the agent's opted-in chats. It deliberately does NOT correlate the per-file 'deliverable'
+   events: that event carries no runId, so per-run file attribution is UNSOUND under concurrent same-agent jobs
+   (it would send one job's files under another's name). The honest, race-free signal is "the routine ran and
+   produced a result" — outcome 'ok' (not the [SILENT] marker, not a failure). */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -23,12 +23,10 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // the message body — honest + compact. Names the routine and, when it wrote files, lists them. Pure.
-  function composeMessage(name, titles) {
+  // the message body — honest + compact. Names the routine. Pure (the live `redact` scrub is applied at send).
+  function composeMessage(name) {
     const n = String(name == null ? '' : name).trim() || 'a routine';
-    const files = (Array.isArray(titles) ? titles : []).filter(Boolean).map(String);
-    const head = '✦ "' + n + '" ran on its own';
-    return files.length ? (head + ' — wrote ' + files.join(', ') + '.') : (head + '.');
+    return '✦ "' + n + '" ran on its own.';
   }
 
   function makeAutoNotifier(opts) {
@@ -38,33 +36,24 @@
     const jobName = typeof o.jobName === 'function' ? o.jobName : function () { return 'a routine'; };
     const jobAgent = typeof o.jobAgent === 'function' ? o.jobAgent : function () { return null; };
 
-    const buckets = new Map();   // agentId -> [deliverable titles produced during its current run]
-
     function onEvent(name, payload) {
       const p = payload || {};
       try {
-        if (name === 'cron.fire') {
-          const aid = jobAgent(p.jobId);
-          if (aid) buckets.set(aid, []);                       // fresh run → fresh bucket
-        } else if (name === 'deliverable') {
-          const aid = p.agentId;
-          if (aid && p.title) { const b = buckets.get(aid) || []; b.push(String(p.title)); buckets.set(aid, b); }
-        } else if (name === 'cron.result') {
-          const aid = jobAgent(p.jobId);
-          const titles = (aid && buckets.get(aid)) || [];
-          if (aid) buckets.delete(aid);                        // drain regardless of outcome
-          if (p.outcome === 'ok' && aid) {                     // ONLY a clean, work-producing run pings (anti-spam)
-            const chats = chatsFor(aid) || [];
-            if (chats.length) {
-              const text = composeMessage(jobName(p.jobId), titles);
-              for (const chatId of chats) { try { Promise.resolve(send(chatId, text)).catch(function () {}); } catch (_) {} }
-            }
-          }
+        if (name !== 'cron.result' || p.outcome !== 'ok') return;   // ONLY a clean, work-producing run pings (anti-spam)
+        const aid = jobAgent(p.jobId);
+        if (!aid) return;                                            // unknown job → safe no-op
+        const chats = chatsFor(aid) || [];
+        if (!chats.length) return;                                   // no connected/opted-in chat → no ping
+        const text = composeMessage(jobName(p.jobId));
+        for (const c of chats) {
+          const chatId = (c && c.chatId != null) ? c.chatId : c;     // tolerate {chatId,channel} or a bare id
+          const channel = c && c.channel;
+          try { Promise.resolve(send(chatId, text, channel)).catch(function () {}); } catch (_) {}
         }
       } catch (_) { /* a notification must NEVER break the cron pipeline */ }
     }
 
-    return { onEvent: onEvent, _buckets: function () { return buckets; } };
+    return { onEvent: onEvent };
   }
 
   return { makeAutoNotifier: makeAutoNotifier, composeMessage: composeMessage };

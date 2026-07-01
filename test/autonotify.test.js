@@ -1,6 +1,7 @@
 'use strict';
-// autonotify.test.js — autonomy B4: the cron→channel notifier. Watches the cron event stream and pings the
-// agent's opted-in chats ONLY when an autonomous run finished 'ok' (anti-spam); lists any files it wrote.
+// autonotify.test.js — autonomy B4: the cron→channel notifier. Pings the agent's opted-in chats ONLY on a clean
+// work-producing run (cron.result outcome 'ok'); routes by channel; never lists per-file deliverables (unsound to
+// correlate without a runId on that event — see autonotify.js header). Plus wiring source-locks.
 const assert = require('assert');
 const { makeAutoNotifier, composeMessage } = require('../sidecar/autonotify.js');
 
@@ -8,15 +9,15 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); n++; };
 
 // --- composeMessage ---
-eq(composeMessage('Weekly digest', []), '✦ "Weekly digest" ran on its own.', 'no files → just names the routine');
-eq(composeMessage('Weekly digest', ['drafts/a.md', 'drafts/b.md']), '✦ "Weekly digest" ran on its own — wrote drafts/a.md, drafts/b.md.', 'files → lists them');
-eq(composeMessage('', []), '✦ "a routine" ran on its own.', 'empty name falls back');
+eq(composeMessage('Weekly digest'), '✦ "Weekly digest" ran on its own.', 'names the routine');
+eq(composeMessage(''), '✦ "a routine" ran on its own.', 'empty name falls back');
+eq(composeMessage(null), '✦ "a routine" ran on its own.', 'null name falls back');
 
-// a harness: jobId→{agent,name}; per-agent opted-in chats; record every send.
+// harness: jobId→{agent,name}; per-agent chats (as {chatId,channel}); records every send (chatId,text,channel).
 function harness(jobs, chatsByAgent) {
   const sent = [];
   const nf = makeAutoNotifier({
-    send: (chatId, text) => { sent.push({ chatId, text }); return Promise.resolve(); },
+    send: (chatId, text, channel) => { sent.push({ chatId, text, channel }); return Promise.resolve(); },
     chatsFor: (aid) => (chatsByAgent[aid] || []),
     jobName: (jid) => (jobs[jid] || {}).name || 'a routine',
     jobAgent: (jid) => (jobs[jid] || {}).agent || null
@@ -25,78 +26,72 @@ function harness(jobs, chatsByAgent) {
 }
 const JOBS = { j1: { agent: 'agent', name: 'Weekly digest' }, j2: { agent: 'other', name: 'Other job' } };
 
-(async () => {
-  // --- the happy path: fire → deliverable → ok result → ping with the file ---
-  {
-    const h = harness(JOBS, { agent: ['111'] });
-    h.nf.onEvent('cron.fire', { jobId: 'j1', runId: 'r1' });
-    h.nf.onEvent('deliverable', { agentId: 'agent', title: 'drafts/plan.md', kind: 'file' });
-    h.nf.onEvent('cron.result', { jobId: 'j1', runId: 'r1', outcome: 'ok' });
-    await Promise.resolve();
-    eq(h.sent.length, 1, 'one ping on a work-producing ok run');
-    eq(h.sent[0].chatId, '111', 'sent to the agent opted-in chat');
-    ok(/Weekly digest/.test(h.sent[0].text) && /drafts\/plan\.md/.test(h.sent[0].text), 'message names the routine + the file');
-    eq(h.nf._buckets().size, 0, 'the deliverable bucket is drained after the result');
-  }
+// --- ok → pings the agent's opted-in chat, routed by channel ---
+{
+  const h = harness(JOBS, { agent: [{ chatId: '111', channel: 'telegram' }] });
+  h.nf.onEvent('cron.result', { jobId: 'j1', runId: 'r1', outcome: 'ok' });
+  eq(h.sent.length, 1, 'one ping on a clean ok run');
+  eq([h.sent[0].chatId, h.sent[0].channel], ['111', 'telegram'], 'sent to the right chat + channel');
+  ok(/Weekly digest/.test(h.sent[0].text), 'message names the routine');
+}
 
-  // --- ok with NO files still pings (the routine produced a result = work) ---
-  {
-    const h = harness(JOBS, { agent: ['111'] });
-    h.nf.onEvent('cron.fire', { jobId: 'j1' });
-    h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
-    eq(h.sent.length, 1, 'an ok run with no file still pings (it did its job)');
-    ok(!/wrote/.test(h.sent[0].text), 'no "wrote" clause when nothing was written');
-  }
+// --- anti-spam: silent + failed never ping ---
+{
+  const h = harness(JOBS, { agent: [{ chatId: '111', channel: 'telegram' }] });
+  h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'silent' });
+  h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'failed' });
+  h.nf.onEvent('cron.fire', { jobId: 'j1' });           // non-result events are ignored entirely
+  h.nf.onEvent('deliverable', { agentId: 'agent', title: 'x.md' });
+  eq(h.sent.length, 0, "only outcome 'ok' pings — silent/failed/other events never do");
+}
 
-  // --- anti-spam: 'silent' and 'failed' never ping ---
-  {
-    const h = harness(JOBS, { agent: ['111'] });
-    h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'silent' });
-    h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'failed' });
-    eq(h.sent.length, 0, "a 'silent' or 'failed' run never notifies (anti-spam)");
-  }
+// --- opt-in: no chats → no ping ---
+{
+  const h = harness(JOBS, {});
+  h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
+  eq(h.sent.length, 0, 'no opted-in chat → no ping');
+}
 
-  // --- opt-in: no opted-in chats → no ping (even on ok) ---
-  {
-    const h = harness(JOBS, { /* agent has no chats */ });
-    h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
-    eq(h.sent.length, 0, 'no opted-in chat → no ping (opt-in respected)');
-  }
+// --- unknown job (no agent) → safe no-op ---
+{
+  const h = harness({}, { agent: [{ chatId: '111' }] });
+  h.nf.onEvent('cron.result', { jobId: 'nope', outcome: 'ok' });
+  eq(h.sent.length, 0, 'an unknown job is a safe no-op');
+}
 
-  // --- isolation: a deliverable for a DIFFERENT agent never leaks into this run's ping ---
-  {
-    const h = harness(JOBS, { agent: ['111'] });
-    h.nf.onEvent('cron.fire', { jobId: 'j1', runId: 'r1' });          // agent's run starts
-    h.nf.onEvent('deliverable', { agentId: 'other', title: 'drafts/not-mine.md' });   // a DIFFERENT agent's file
-    h.nf.onEvent('cron.result', { jobId: 'j1', runId: 'r1', outcome: 'ok' });
-    ok(!/not-mine/.test(h.sent[0].text), "another agent's deliverable never leaks into this agent's ping");
-  }
+// --- cross-agent isolation: a result for agent X only pings X's chats (never another agent's) ---
+{
+  const h = harness(JOBS, { agent: [{ chatId: 'A1', channel: 'telegram' }], other: [{ chatId: 'B1', channel: 'discord' }] });
+  h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });   // j1 belongs to 'agent'
+  eq(h.sent.map(s => s.chatId), ['A1'], "only the run's own agent chats are pinged (no cross-agent leak)");
+}
 
-  // --- a result with no resolvable agent → no throw, no ping ---
-  {
-    const h = harness({}, { agent: ['111'] });
-    h.nf.onEvent('cron.result', { jobId: 'unknown', outcome: 'ok' });
-    eq(h.sent.length, 0, 'an unknown job (no agent) is a safe no-op');
-  }
+// --- fan-out: every opted-in chat for the agent gets it ---
+{
+  const h = harness(JOBS, { agent: [{ chatId: '111', channel: 'telegram' }, { chatId: '222', channel: 'discord' }] });
+  h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
+  eq(h.sent.map(s => [s.chatId, s.channel]).sort(), [['111', 'telegram'], ['222', 'discord']], 'pings every opted-in chat, each on its own channel');
+}
 
-  // --- fan-out: multiple opted-in chats each get the ping ---
-  {
-    const h = harness(JOBS, { agent: ['111', '222'] });
-    h.nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
-    eq(h.sent.map(s => s.chatId).sort(), ['111', '222'], 'pings every opted-in chat for the agent');
-  }
+// --- never throws even if send is hostile ---
+{
+  const nf = makeAutoNotifier({ send: () => { throw new Error('boom'); }, chatsFor: () => [{ chatId: '1' }], jobName: () => 'x', jobAgent: () => 'agent' });
+  nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });   // must not throw
+  ok(true, 'a throwing send never escapes onEvent (cron pipeline stays safe)');
+}
 
-  // --- source-locks for the (non-node-loadable) wiring: sidecar cron→notifier + the opt-in route + the UI toggle ---
-  const fs = require('fs'); const path = require('path');
-  const idx = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
-  ok(/require\('\.\/autonotify\.js'\)/.test(idx), 'index.js requires the autonotify engine');
-  ok(/makeAutoNotifier\(/.test(idx), 'index.js instantiates the notifier');
-  ok(/emit:\s*cronEmitNotify/.test(idx), 'the cron driver emit is wrapped (cronEmitNotify) to feed the notifier');
-  ok(/'\/api\/channels\/notify'/.test(idx) && /function handleChannelNotify/.test(idx), '/api/channels/notify route + handler are wired');
-  ok(/notifyAutonomous/.test(idx), 'index.js persists/reads the global opt-in flag (channelSecrets.notifyAutonomous)');
-  const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
-  ok(/id="tg-notify"/.test(ui), 'the Messaging panel renders the opt-in checkbox');
-  ok(/\/api\/channels\/notify/.test(ui), 'the checkbox POSTs the opt-in toggle');
+// --- source-locks for the (non-node-loadable) wiring ---
+const fs = require('fs'); const path = require('path');
+const idx = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+ok(/require\('\.\/autonotify\.js'\)/.test(idx), 'index.js requires the autonotify engine');
+ok(/makeAutoNotifier\(/.test(idx), 'index.js instantiates the notifier');
+ok(/emit:\s*cronEmitNotify/.test(idx), 'the cron driver emit is wrapped (cronEmitNotify) to feed the notifier');
+ok(/'\/api\/channels\/notify'/.test(idx) && /function handleChannelNotify/.test(idx), '/api/channels/notify route + handler wired');
+ok(/notifyAutonomous/.test(idx), 'index.js persists/reads the global opt-in flag');
+ok(/redact\(text\)/.test(idx), 'the outbound notification text is redacted before send (no secret egress)');
+const hub = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'channels', 'hub.js'), 'utf8');
+ok(/saveChatRecord\(/.test(hub), 'the inbound hub persists the chat→agent binding (so the notifier can find chats)');
+const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+ok(/id="tg-notify"/.test(ui) && /\/api\/channels\/notify/.test(ui), 'the Messaging panel has the opt-in toggle + posts it');
 
-  console.log('autonotify.test.js OK —', n, 'assertions');
-})().catch(e => { console.error(e); process.exit(1); });
+console.log('autonotify.test.js OK —', n, 'assertions');

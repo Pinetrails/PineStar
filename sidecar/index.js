@@ -904,10 +904,10 @@ const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redac
 // the notifier engine stays opt-in-agnostic. send/chatsFor read telegram/discord/channelSecrets LIVE (closures), so
 // they resolve correctly even though the channel adapters connect after this point in boot.
 const autoNotifier = makeAutoNotifier({
-  send: (chatId, text) => { const ch = telegram || discord; return (ch && ch.adapter) ? ch.adapter.send(chatId, text) : Promise.resolve({ ok: false }); },
+  send: (chatId, text, channel) => { const ch = (channel === 'discord') ? discord : telegram; return (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false }); },
   chatsFor: (agentId) => {
     if (!(channelSecrets && channelSecrets.notifyAutonomous)) return [];   // global opt-in gate (default off — anti-spam)
-    try { const map = channelStore.loadChatMap(); return Object.keys(map.chats || {}).filter(cid => map.chats[cid] && map.chats[cid].agentId === agentId); } catch (_) { return []; }
+    try { const map = channelStore.loadChatMap(); return Object.keys(map.chats || {}).filter(cid => map.chats[cid] && map.chats[cid].agentId === agentId).map(cid => ({ chatId: cid, channel: (map.chats[cid] && map.chats[cid].channel) || 'telegram' })); } catch (_) { return []; }
   },
   jobName: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.name) || 'a routine'; },
   jobAgent: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.agentId) || null; }

@@ -125,6 +125,10 @@
       const agentId = (routed && AID_RE.test(String(routed))) ? String(routed)
         : (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId) : agentIdFor(chatId);
 
+      // B4 — persist the chat→agent binding (+ this hub's channel) so the autonomous notifier can find which chat to
+      // ping for a given agent when a cron run produces work. Best-effort: a store hiccup must never block the reply.
+      try { if (typeof store.saveChatRecord === 'function') store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
+
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
       // agentId, so two chats routed to the SAME agent (via a splitter/filter) never cross-cancel each other.
       const prev = inflight.get(chatId);
