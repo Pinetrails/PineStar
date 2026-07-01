@@ -250,8 +250,34 @@ const Tutorial = (() => {
     const catA = (q('.refit-propcat.active') || {}).dataset;
     if (!catA || catA.cat !== k.cat)
       return kitFocus(q('.refit-propcat[data-cat="' + k.cat + '"]'), 'open the ' + k.catLabel + ' tab — that’s where ' + k.label + ' lives.', 'step-cat-' + k.cat);
-    // right tool, right tier, right tab — light the exact tile, named with its REAL catalog label
-    return kitFocus(q('.refit-proptile[data-prop="' + k.prop + '"]'), 'pick ' + k.label + ' (' + k.power + '), then click a spot in my room to drop it in.', 'step-tile-' + k.prop);
+    // right tool, right tier, right tab — light the exact tile, named with its REAL catalog label.
+    // COMPRESSION: the first placement teaches the loop; reps 2–4 teach nothing new. Once one needed cap is
+    // down, every remaining tile step carries a one-tap "requisition the rest" — the agent places its own
+    // remaining gear through the REAL path (Build.requisition), each landing scored by the normal hook.
+    const offerReq = kitNeeded && kitNeeded.size < KIT.length && typeof Build !== 'undefined' && !!Build.requisition;
+    return kitFocus(q('.refit-proptile[data-prop="' + k.prop + '"]'),
+      'pick ' + k.label + ' (' + k.power + '), then click a spot in my room to drop it in.' + (offerReq ? ' — or say the word and i’ll requisition the rest myself.' : ''),
+      'step-tile-' + k.prop + (offerReq ? '-req' : ''),
+      offerReq ? { action: { label: '⚡ requisition the rest', onClick: runRequisition } } : undefined);
+  }
+  // "requisition the rest" — the agent places its own remaining gear through the REAL placement path
+  // (Build.requisition → station.addProp at a validated tile). Each landing fires the normal placement hook
+  // (build.js → onPropPlaced → kitOnPropPlaced), so the loop scores/flashes/completes exactly as if the
+  // Commander dropped it by hand. Staggered so each ✓ + chime reads; a floor with no clear tile for a piece
+  // degrades honestly back to hand placement (the tick re-lights that tile).
+  function runRequisition() {
+    if (!active || !kitMode || !kitNeeded) return;
+    const left = KIT.filter(k => kitNeeded.has(k.grant));
+    if (!left.length) return;
+    clearCoach(); kitFocusKey = null;
+    let di = 0;
+    for (const k of left) {
+      setTimeout(() => {
+        if (!active || !kitMode || !kitNeeded || !kitNeeded.has(k.grant)) return;   // hand-placed meanwhile / tour over
+        const res = (typeof Build !== 'undefined' && Build.requisition) ? Build.requisition(k.prop) : null;
+        if (!res || !res.ok) kitFlash('no clear floor for ' + k.label + ' — drop it by hand wherever you like.');
+      }, 260 + (di++) * 820);
+    }
   }
   // a placement landed (build.js → onPropPlaced → here). grant is the power-word, or null for inert decor.
   // Forgiving + order-free: any needed cap checks off; a spare or decor just flashes a nudge. The tick re-lights
@@ -390,6 +416,13 @@ const Tutorial = (() => {
     const who = document.createElement('div'); who.className = 'tut-coach-who'; who.textContent = agentLabel();
     const body = document.createElement('div'); body.className = 'tut-coach-body'; body.textContent = text;
     bubble.appendChild(who); bubble.appendChild(body);
+    // an optional one-tap ACTION in the bubble (the coach is the only UI visible over REFIT) — used by the
+    // kit-out's "requisition the rest" offer. Reuses the .tut-coach-ok button styling.
+    if (opts.action && opts.action.label) {
+      const act = document.createElement('button'); act.className = 'tut-coach-ok'; act.type = 'button'; act.textContent = opts.action.label;
+      act.onclick = () => { sfx('click'); try { if (opts.action.onClick) opts.action.onClick(); } catch (_) {} };
+      bubble.appendChild(act);
+    }
     document.body.appendChild(bubble);
     let ring = null;
     if (target) { ring = document.createElement('div'); ring.className = 'tut-ring' + (reduceMotion() ? ' no-anim' : ''); document.body.appendChild(ring); }
@@ -486,7 +519,7 @@ const Tutorial = (() => {
   // every post-run beat early-outs on !active, so a "skip intro" mid-run halts the chain cleanly
   function beatGauge() {
     if (!active) return;
-    say([seg('that little bank by my desk is my memory filling up — green’s fine, red means i’m near full and start losing the early stuff. you’ll learn to read it.', 42, 0)], beatCrew);
+    say([seg('that little bank by my desk is my memory filling up — green fine, red means i’m losing the early stuff.', 42, 0)], beatCrew);
   }
   function beatCrew() {
     if (!active) return;
@@ -509,7 +542,7 @@ const Tutorial = (() => {
       // model hiccup) — the tour never stalls on it, and the un-fired pitch stays armed for a later real task.
       const classicClose = () => {
         if (!active) return;
-        say([seg('you’ve already kitted me out and seen me work. the belts, the leveling, the rest of the gear — i’ll show you when you get there. go on. i’m yours to point.', 44, 0)],
+        say([seg('you’ve already kitted me out and seen me work. your next moves stay pinned under ⚑ QUESTS in the ▤ WORK dock — recruit a specialist, lay a belt, bind a portal. go on. i’m yours to point.', 44, 0)],
           () => Chat.choices([{ label: '▸ START COMMANDING', value: 'done' }], () => finishUp(false)));
       };
       const offered = (cleanRunId && typeof PitchStore !== 'undefined' && PitchStore.offerAtHandoff)

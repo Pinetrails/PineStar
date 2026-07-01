@@ -38,6 +38,23 @@
       open.push({ id: 'idea', kind: 'idea', title: 'An idea is waiting', desc: 'your agent has a tailored build in mind — finish a task and it’ll offer it in COMMS.', reward: 'a real, working build', status: 'open' });
     }
 
+    // 1b) THE STATION ARC — the "what do i build next" spine the tutorial hands off to (recruit → belts →
+    //     portals). Pure projections of the live floor (input.station = { crew, belts, connectors } counts);
+    //     absent input → no arc (older callers unchanged). Honest-loot: each names the real capability it
+    //     cashes out in, and like everything here it gates NOTHING.
+    const st = input.station;
+    if (st && typeof st === 'object') {
+      const arc = [
+        { id: 'st:crew', done: (st.crew || 0) >= 2, title: 'Recruit your first specialist', doing: 'summon a second mind — it takes a station of its own and your lead starts delegating.', reward: 'a crew your lead can point' },
+        { id: 'st:belt', done: (st.belts || 0) >= 1, title: 'Lay your first conveyor belt', doing: 'wire two stations together in REFIT — real work moves as crates you can watch.', reward: 'visible work routing' },
+        { id: 'st:connector', done: (st.connectors || 0) >= 1, title: 'Bind a live tool portal', doing: 'place a connector portal in REFIT and bind a tool server — its powers land in real hands.', reward: 'new real capabilities' }
+      ];
+      for (const a of arc) {
+        const q = { id: a.id, kind: 'station', title: a.title, desc: a.done ? 'done — it’s live on your floor.' : a.doing, reward: a.reward, status: a.done ? 'done' : 'open' };
+        (a.done ? done : open).push(q);
+      }
+    }
+
     // 2) get-to-know-you quests — one per dossier dimension.
     for (const d of dims) {
       if (!d || !d.key) continue;   // a dimension needs a real key — no key, no quest (never a 'dim:null')

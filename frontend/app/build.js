@@ -1333,7 +1333,27 @@ const Build = (() => {
     },
   };
 
-  const api = { init, open, close, toggle, isOpen };
+  // REQUISITION — place a prop programmatically through the SAME validated path as a hand placement
+  // (findPlaceableTile → station.addProp), firing the same flash/chime/first-touch hooks, so the tutorial's
+  // "requisition the rest" is a REAL placement (object=capability stays honest — never a flag). Only while
+  // REFIT is open (the kit-out's context); editable/config props are refused (they'd open an editor
+  // mid-ceremony). Returns { ok, tile? , reason? }.
+  function requisition(t) {
+    if (!running || !station) return { ok: false, reason: 'not-in-build' };
+    if (!t || isEditableProp(t)) return { ok: false, reason: 'needs-config' };
+    const s = propSpec(t);
+    const tile = findPlaceableTile(t, s.w, s.h);
+    if (!tile) return { ok: false, reason: 'no-valid-tile' };
+    const res = station.addProp({ t, x: tile.tx, y: tile.ty, w: s.w, h: s.h, block: s.blocks !== false });
+    if (!res || !res.ok) return { ok: false, reason: (res && res.reason) || 'rejected' };
+    pushFlash([{ x1: tile.tx, y1: tile.ty, x2: tile.tx + s.w - 1, y2: tile.ty + s.h - 1 }], false);
+    const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(t) : null;
+    if (grant) sfx('chime');   // a capability just came online — same brighter note as a hand placement
+    if (typeof Tutorial !== 'undefined' && Tutorial.onPropPlaced) Tutorial.onPropPlaced(t);
+    return { ok: true, tile };
+  }
+
+  const api = { init, open, close, toggle, isOpen, requisition };
   if (typeof window !== 'undefined' && window.__STARNET_DEV__) api.__test__ = __test__;
   return api;
 })();

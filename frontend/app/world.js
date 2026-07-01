@@ -3315,6 +3315,16 @@ const World = (() => {
     // is never a dead wall) and CONNECTORS are account-level (added server-side), so both are excluded here — this is
     // purely the placed-on-top set. An equipped BAY governs; with no bay (the simple single-agent floor) every distinct
     // cap-prop placed anywhere is the hero's. Returns [{objectType}] room-object entries the sidecar appends as extras.
+    // QUEST-LOG read: honest floor counts for the station-arc quests (belts laid, portals placed). A pure
+    // projection of the live station doc — read-only, no caching, gates nothing.
+    stationCounts: () => {
+      if (!station || !station.doc) return { belts: 0, connectors: 0 };
+      const d = station.doc() || {};
+      return {
+        belts: d.belts ? Object.keys(d.belts).length : 0,
+        connectors: d.props ? d.props.filter(p => p && p.t === 'connector_portal').length : 0
+      };
+    },
     heroCaps: (agentId) => {
       if (!station) return [];
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];

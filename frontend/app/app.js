@@ -1625,5 +1625,6 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest };
+  // crewCount: the live crew size (hero + summoned minds) — read by the quest log's station arc.
+  return { show, refreshUsage, persist, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size };
 })();
