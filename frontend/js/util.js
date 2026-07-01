@@ -174,6 +174,9 @@ const SFX = {
   sale() { [523, 659, 784, 1046].forEach((f, i) => SFX.voice({ freq: f, dur: 0.20, type: 'triangle', vol: 0.2, when: i * 0.05, verb: 0.25 })); },
   bad() { SFX.voice({ freq: 196, dur: 0.20, type: 'sawtooth', vol: 0.18, glide: 110, cut: 900 }); SFX.voice({ freq: 146, dur: 0.28, type: 'sawtooth', vol: 0.14, when: 0.08, glide: 90, cut: 700 }); },
   level() { [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.18, type: 'triangle', vol: 0.22, when: i * 0.07, verb: 0.25 })); },
+  // quest-complete sting (G1a): a shorter, brighter cousin of level() — three quick gold steps + one high
+  // shimmer. A MOMENT, deliberately smaller than a level-up: quests pay out in real work, not fanfare.
+  quest() { [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.15, type: 'triangle', vol: 0.2, when: i * 0.055, verb: 0.3 })); SFX.voice({ freq: 1976, dur: 0.32, type: 'sine', vol: 0.09, when: 0.19, verb: 0.5 }); },
   type() { SFX.noise({ dur: 0.018, cut: 3200, vol: 0.05, type: 'highpass' }); },
 
   /* ---- new stings the music director (audio.js) plays on real colony events ---- */
