@@ -21,7 +21,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Truth Auditor | Does the UI show what actually happened? | — | — | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — | — | 0 |
 | Overseer | What broke today, what needs Andrew? | — | — | 0 |
-| Janitor | What's rotting in the workshop? | — | — | 0 |
+| Janitor | What's rotting in the workshop? | 2026-07-01 | 79 findings | 0 |
 
 _(Zeroes are the spine's fresh baseline: no findings filed yet. Each crew lane fills its
 row when it lands and runs its first cycle.)_
