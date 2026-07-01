@@ -3029,6 +3029,15 @@ const World = (() => {
     // REWIND: the rare, important "we rolled the workspace back" beat. checkpoint.created is frequent + quiet
     // (the workbench already pulses on shell), so only the restore is toasted.
     U.bus.on('checkpoint.restored', () => hudNote('↶ rewound to an earlier restore point', 'warn'));
+    // G0.6 CHANNEL ARRIVAL MADE VISIBLE: a real Telegram/Discord message just reached the station
+    // (hub.js emits { channel, chatId, agentId, kind } on every admitted inbound). It used to be a
+    // chime only — now the receiving agent's DISH fires (the web/comms on-ramp lighting up) and the
+    // HUD names the channel. The riding crate + queue gauge still come from workitem.*/queue.status.
+    U.bus.on('channel.inbound', p => {
+      const dish = capPropFor('dish', p && p.agentId);
+      if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
+      hudNote('📡 message received — ' + String((p && p.channel) || 'channel').toUpperCase(), 'good');
+    });
     // G0.5 BUDGET MADE VISIBLE: budget.threshold was alarm-audio only. The payload is the frozen
     // { scope: run|day|global, usd, cap } triple (sidecar/budget.js, one emit per scope+band crossing
     // per run) — the band isn't carried, so derive it from the numbers: at/over cap = stopped.
