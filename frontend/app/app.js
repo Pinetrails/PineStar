@@ -1431,6 +1431,7 @@ const App = (() => {
         persona: (typeof Personas !== 'undefined') ? Personas.get(agent.personaId) : null,   // the voice was chosen on the create screen — the awakening acknowledges it instead of re-asking
         specialty: opts.specialty || null,                   // (reserved) a pre-specced wake skips re-asking the mission; the orchestrator authors it live
         commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
+        getSystem: () => agent ? agent.systemPrompt : '',    // Interview 2.0: the generated beats (wakemind.js) reason on the LIVE prompt (persona + dossier already folded in)
         done: () => { if (agent) agent.onboarded = true; persist(); },   // the awakening landed — mark onboarded so a later refresh resumes into the game, not back into the ceremony
         notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
         // FIRST COMMAND — once the awakening lands, the agent itself teaches the Commander the one real loop (tutorial.js)
