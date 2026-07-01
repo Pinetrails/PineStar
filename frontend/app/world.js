@@ -3060,7 +3060,14 @@ const World = (() => {
     // CRON war-room pulse: an unattended routine actually fired / finished. cron.fire + cron.result are emitted
     // and SSE-broadcast by the tick driver; surface them so an autonomous fire is VISIBLE, not just in the log.
     U.bus.on('cron.fire', () => hudNote('◷ routine fired', 'good'));
-    U.bus.on('cron.result', p => { if (p && p.outcome === 'failed') hudNote('✕ routine failed' + (p.reason ? ' — ' + p.reason : ''), 'warn'); });
+    // cron.result outcomes (cron-driver.js finishFire): 'failed' warns; 'ok' celebrates (G0.9 — the win
+    // case used to show nothing); 'silent' stays silent BY DESIGN — it means a clean run whose reply was
+    // exactly the [SILENT] marker, i.e. the routine itself chose to report nothing.
+    U.bus.on('cron.result', p => {
+      if (!p) return;
+      if (p.outcome === 'failed') hudNote('✕ routine failed' + (p.reason ? ' — ' + p.reason : ''), 'warn');
+      else if (p.outcome === 'ok') hudNote('◷ routine completed', 'good');
+    });
     // REWIND: the rare, important "we rolled the workspace back" beat. checkpoint.created is frequent + quiet
     // (the workbench already pulses on shell), so only the restore is toasted.
     U.bus.on('checkpoint.restored', () => hudNote('↶ rewound to an earlier restore point', 'warn'));
