@@ -16,15 +16,21 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | — | — | 0 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-01T23:11:11.557Z · ui-only · 84878ms | PASS | 0 |
-| Truth Auditor | Does the UI show what actually happened? | — | — | 0 |
-| Visual Auditor | Is the rendered game coherent? (needs eyes) | — | — | 0 |
-| Overseer | What broke today, what needs Andrew? | — | — | 0 |
-| Janitor | What's rotting in the workshop? | 2026-07-01 | 79 findings | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-01 23:28Z @ ef47f9d9 | GREEN | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-01T23:30:22.312Z · ui-only · 84014ms | PASS | 0 |
+| Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
+| Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
+| Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
+| Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
 
-_(Zeroes are the spine's fresh baseline: no findings filed yet. Each crew lane fills its
-row when it lands and runs its first cycle.)_
+_The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
+crew member against trunk `ef47f9d`. Guardian ran all four gates GREEN (Truth Auditor is the
+`audit` step inside that cycle — green, so it filed nothing); Beginner Run passed the fresh
+path UI-only in 84s; Janitor swept the live repo and filed 106 P2 hygiene findings; the
+Overseer digest rendered 0 P0 · 0 P1 · 106 P2 (no Andrew ping — P0 gate is the notify trigger).
+Visual Auditor is the eyes-required local `/loop` (`scripts/VISUAL_AUDITOR.md`), not part of a
+headless cycle. **The `Open findings` column is a snapshot — the live source of truth is
+`node scripts/qa/ledger.mjs --status`.**_
 
 ## Port registry
 
