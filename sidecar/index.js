@@ -3215,16 +3215,21 @@ async function handleSaveWrite(req, res) {
     json(200, result);
   } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
 }
-// GET /api/runs?agent=<id>&limit=<n> — the agent's run history (M-save P4), newest-first. Read-only; the store
-// is append-only and a sibling of the fs jail, so the agent can neither read nor rewrite its own history.
+// GET /api/runs?agent=<id>&limit=<n>&since=<ms> — the agent's run history (M-save P4), newest-first. Read-only;
+// the store is append-only and a sibling of the fs jail, so the agent can neither read nor rewrite its own history.
+// G2.2 (additive): agent=* returns EVERY agent's runs (the while-away digest covers crew routines too), and a
+// since=<ms> filter keeps the answer to runs that finished after the caller's last-attended stamp.
 function serveRuns(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (agent !== '*' && !/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
-    json(200, { runs: runStore.list(agent, { limit }) });
+    const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
+    let rows = runStore.list(agent === '*' ? null : agent, { limit });
+    if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
+    json(200, { runs: rows });
   } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
 }
 

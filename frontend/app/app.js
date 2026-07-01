@@ -1167,6 +1167,7 @@ const App = (() => {
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
     if (typeof AutopilotStore !== 'undefined') AutopilotStore.reset();   // …and a fresh idle autopilot (no inherited idle/armed state — its decision is re-earned by the new Commander's posture + dossier)
+    if (typeof ReturnStore !== 'undefined') ReturnStore.reset();   // …and no inherited return-ritual trail — a fresh Commander gets no prior hero's pending OUTBOX crates or attendance stamp (own key)
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
@@ -1349,6 +1350,11 @@ const App = (() => {
       }
     });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
+    // G2 RETURN RITUAL: arm the durable lastSeenAt heartbeat and (once per session, never during the
+    // awakening) fire the while-you-were-away digest for unattended runs the sidecar recorded. The
+    // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
+    // rides the same rate-the-work path as an attended run. Init AFTER Chat.init so the beat can render.
+    if (typeof ReturnStore !== 'undefined') ReturnStore.init({ enabled: !opts.awaitingPurpose });
     // AUTOPILOT (autonomy Slice A — the idle self-direction driver): when the Commander goes idle with autonomy
     // enabled, the station either EARNS context (asks one gentle get-to-know-you question — A1) or, once the dial
     // permits acting AND the dossier is hot AND today's leash has budget, it ACTS — runs the anti-slop pipeline as

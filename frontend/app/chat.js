@@ -494,6 +494,89 @@ const Chat = (() => {
     autoscroll();
   }
 
+  /* ── G2 RETURN RITUAL — the "while you were away" digest + the per-run collect beat. ──
+     A SESSION-OPEN beat (fired once by ReturnStore after app open), distinct from the post-run slot:
+     it lists the REAL unattended runs the sidecar's run history recorded since the app was last
+     attended, each with a review (rate-the-work) affordance. Rating a row IS the collect tap — it
+     rides the same direct rateWork path (XP law: only user feedback on real work mints), and clears
+     that run's OUTBOX crate via onRated. Gold-inset family; decided rows vanish(); dismissed = the
+     whole beat vanishes and never re-fires (the crates stay collectable from the OUTBOX). */
+  // an away run has no live runWork stash — seed one from its HONEST history row so the rating's
+  // size derives from real recorded turns/spend (turns-1 ≈ tool rounds: each loop turn past the
+  // first was a tool round; conservative, never farmable — the row is server-recorded).
+  function seedAwayWork(rw) {
+    if (!rw || !rw.runId || runWork.has(rw.runId)) return;
+    runWork.set(rw.runId, { toolsOk: Math.max(0, (rw.turns | 0) - 1), delivered: 0, cost: Math.max(0, +rw.usd || 0), agentId: rw.agentId || 'agent' });
+    if (runWork.size > 60) runWork.delete(runWork.keys().next().value);
+  }
+  function awayRowLabel(rw) {
+    const name = rw.routine ? ('“' + rw.routine + '” ran on its own') : (rw.title || 'an unnamed run');
+    const who = (rw.agentId && rw.agentId !== 'agent') ? (' · ' + String(rw.agentId).slice(0, 12)) : '';
+    const usd = (+rw.usd > 0) ? (' · $' + (Math.round(rw.usd * 100) / 100).toFixed(2)) : '';
+    return '◷ ' + name + who + usd;
+  }
+  // ONE digest per session (ReturnStore owns the budget + the row data). opts.onRated(runId) clears the crate.
+  function awayDigest(rows, opts, _try) {
+    if (!log || !rows || !rows.length) return;
+    const onRated = (opts && opts.onRated) || (() => {});
+    // session-open coordination: never collide with a live run, the awakening/interview, a focused
+    // panel, an open turn-in deck, or a live gentle beat (incl. the autopilot welcome-back nudge).
+    const blocked = isBusy() || interview || activeTurnin || activeNudge
+      || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
+      || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
+      || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
+    if (blocked) {   // defer, bounded — if the moment never frees, the OUTBOX crates still carry the flow
+      if ((_try || 0) < 25) setTimeout(() => awayDigest(rows, opts, (_try || 0) + 1), 7000);
+      return;
+    }
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('away-digest');
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ while you were away — ' + rows.length + (rows.length > 1 ? ' runs' : ' run') + ' finished. the work is waiting.';
+    r.body.appendChild(title);
+    let open = rows.length;
+    const settleRow = (item) => { vanish(item); if (--open <= 0) vanish(r.d); };
+    for (const rw of rows) {
+      const item = document.createElement('div'); item.className = 'turnin-item';
+      const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = awayRowLabel(rw);
+      const btns = document.createElement('span'); btns.className = 'consent-btns';
+      item.appendChild(text); item.appendChild(btns);
+      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'review';
+      b.onclick = () => {   // swap the review affordance for the real rate control, in place
+        btns.remove();
+        const rate = document.createElement('div'); rate.className = 'turnin-rate';
+        item.appendChild(rate);
+        seedAwayWork(rw);
+        workRateControl(rate, rw.agentId || 'agent', rw.runId, () => { try { onRated(rw.runId); } catch (_) {} settleRow(item); });
+        autoscroll();
+      };
+      btns.appendChild(b);
+      r.body.appendChild(item);
+    }
+    // dismissed = gone (anti-nag law). Uncollected crates remain on the OUTBOX — evidence, not nagging.
+    const foot = document.createElement('div'); foot.className = 'turnin-rate';
+    const dis = document.createElement('button'); dis.className = 'consent-btn deny'; dis.textContent = 'dismiss';
+    dis.onclick = () => vanish(r.d);
+    foot.appendChild(dis);
+    r.body.appendChild(foot);
+    autoscroll();
+  }
+  // the OUTBOX collect beat: clicking the chute (or a stacked crate) reviews ONE pending away run.
+  // Same gold-inset family; rating clears the crate (onRated) and the beat vanishes.
+  function awayReview(rw, opts) {
+    if (!log || !rw || !rw.runId) return;
+    const onRated = (opts && opts.onRated) || (() => {});
+    if (workRatedRuns.has(rw.runId)) { try { onRated(rw.runId); } catch (_) {} return; }   // already judged — just clear the crate
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ from the OUTBOX — ' + awayRowLabel(rw);
+    r.body.appendChild(title);
+    const rate = document.createElement('div'); rate.className = 'turnin-rate';
+    r.body.appendChild(rate);
+    seedAwayWork(rw);
+    workRateControl(rate, rw.agentId || 'agent', rw.runId, () => { try { onRated(rw.runId); } catch (_) {} vanish(r.d); });
+    autoscroll();
+  }
+
   // Cortex (M-mem.5b) — THE TURN-IN BEAT. After a run, reflection proposes durable memories; the Commander
   // decides Keep / Edit / Discard. Keep/Edit commit a real memory (the click IS the consent, §5.6); every
   // verdict feeds the agent's confidence. This is the gamified formation loop — the agent learns, you approve.
@@ -1391,5 +1474,5 @@ const Chat = (() => {
   // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
   function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, awayDigest, awayReview };
 })();
