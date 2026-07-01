@@ -1368,6 +1368,18 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx-tro.off .nm { color:var(--ph-dim); opacity:.75; }
 .gx-tro .sub { font-family:inherit; font-size:10px; letter-spacing:.04em; margin-top:3px; color:var(--ph-dim); opacity:.7; }
 
+/* G1a — quest-log dynamics: the dismiss ✕ on get-to-know-you quests + the completion flourish.
+   The flourish is a MOMENT (one ~2.4s gold flash, bold not subtle), never a lingering state. */
+.q-dismiss { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;
+  color:var(--ph-dim); opacity:.55; font-family:inherit; font-size:11px; line-height:1; padding:1px 4px; cursor:pointer; }
+.q-dismiss:hover { color:var(--ph-bright); border-color:var(--ph-glow2); opacity:1; }
+.gx-tro.q-celebrate { border-color:var(--gold); animation:q-celebrate 2.4s ease-out 1; }
+@keyframes q-celebrate {
+  0%   { box-shadow:0 0 18px rgba(255,211,74,.85), inset 0 0 14px rgba(255,211,74,.45); background:rgba(255,211,74,.22); }
+  55%  { box-shadow:0 0 9px rgba(255,211,74,.45), inset 0 0 6px rgba(255,211,74,.22); }
+  100% { box-shadow:none; }
+}
+
 .gx-station { border:1px solid var(--gold); border-radius:2px; background:var(--ph-faint); padding:12px 14px; margin-top:6px; }
 .gx-station .hd { display:flex; align-items:center; gap:8px; margin-bottom:11px; }
 .gx-station .badge { font-family:inherit; font-size:11px; letter-spacing:.1em; color:var(--ink); background:var(--gold); padding:1px 6px; border-radius:2px; }

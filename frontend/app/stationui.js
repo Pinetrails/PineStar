@@ -1441,6 +1441,9 @@ const StationUI = (() => {
   function tick() {
     crewTick();
     ctxTick();
+    // G1a: fold the live quest projection into the durable quest memory once a second — completion
+    // detection must not depend on the QUEST LOG being open (the celebration toast/sting fire regardless).
+    if (typeof QuestStateStore !== 'undefined' && QuestStateStore.sync) { try { QuestStateStore.sync(); } catch (_) {} }
     const [txt, cls] = pillFor(activity());
     const p = $('#status-pill');
     if (p) { p.textContent = txt; p.className = cls; }
@@ -2199,18 +2202,28 @@ const StationUI = (() => {
     return row;
   }
 
-  // QUEST LOG (Slice 4): the station's REAL progress dressed as quests — a read projection (QuestStore.view),
-  // never a new source of truth. Reuses the GROWTH trophy idiom (.gx-*) so it needs no new CSS, and honors the
+  // QUEST LOG (Slice 4 + G1a): the station's REAL progress dressed as quests — a read projection (QuestStore.view),
+  // never a new source of truth — now joined with the durable quest memory (QuestStateStore): a dismissed quest
+  // never re-renders (the anti-nag law), a freshly-completed row flashes a gold flourish, and get-to-know-you
+  // quests carry a dismiss ✕ (milestones are achievements — no dismiss; the engine gates by kind). Honors the
   // honest-loot law: every quest pays out in real capability/work, and nothing here is gated behind a level.
   function buildQuests(body) {
+    const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
+    if (QSS && QSS.sync) { try { QSS.sync(); } catch (_) {} }   // never render a stale diff — the log always reflects the memory it just folded
     const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
     if (!v) { body.innerHTML = '<p class="dim">Quest log unavailable.</p>'; return; }
-    const m = v.meter, qs = Array.isArray(v.quests) ? v.quests : [];
+    const m = v.meter, all = Array.isArray(v.quests) ? v.quests : [];
+    const qs = (QSS && QSS.visible) ? QSS.visible(all) : all;   // dismissed = gone forever (degrades to the raw list if the store is absent)
     const open = qs.filter(q => q.status !== 'done'), done = qs.filter(q => q.status === 'done');
-    const tro = q =>
-      '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + '">'
-      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
-      + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
+    const tro = q => {
+      const glow = QSS && QSS.isCelebrating && QSS.isCelebrating(q.id);
+      const dis = QSS && QSS.dismissible && QSS.dismissible(q) && q.status !== 'done';
+      return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '">'
+        + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
+        + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
+        + '</div>'
+        + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
+    };
     const meterHtml = m
       ? '<div class="gx-sec"><span class="gx-title">STATION</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
       : '';
@@ -2222,6 +2235,13 @@ const StationUI = (() => {
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
       + '<div class="gx-tros">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
       + '</div>';
+    // dismissed = stop forever: the row vanishes now and never comes back (and the curiosity nudge for a
+    // waved-off dimension stops with it — QuestStateStore.dismiss carries the one anti-nag law end to end).
+    body.querySelectorAll('.q-dismiss').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const q = qs.find(x => x && x.id === b.dataset.qid);
+      if (q && QSS && QSS.dismiss && QSS.dismiss(q)) { sfx('click'); rerender('quests'); }
+    }));
   }
 
   /* ============== lifecycle ============== */
