@@ -124,6 +124,26 @@ const PitchStore = (() => {
     } catch (_) {}
   }
 
+  // THE HANDOFF OFFER — the tutorial's demo run ends INSIDE the tour, where the auto path correctly stands
+  // down (the dialogue-open guard exists to never stomp a live ceremony). At the tour's close, the tutorial
+  // hands the stage over DELIBERATELY: same pure-engine gate + the same earned-work honesty check as the auto
+  // path (a skipped demo never graduates — no advice before proof-of-life), minus only the stage-protection
+  // guards that no longer apply because the tour is the one offering the stage. Resolves true only when a
+  // pitch beat was actually DELIVERED (fire() latches state.pitched exactly then), so the tour knows whether
+  // the pitch replaced its classic close; any quiet outcome resolves false and leaves the pitch armed.
+  async function offerAtHandoff(runId) {
+    try {
+      if (!ready() || firing || state.pitched) return false;
+      if (typeof Harness === 'undefined' || !Harness.chat || typeof Dialogue === 'undefined') return false;
+      if (!deps.wasTaskRun || !deps.wasTaskRun(runId)) return false;   // stricter than the auto path: the tour MUST prove the run was a real task
+      const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
+      const v = Pitch.shouldPitch({ firstTaskDone: true, alreadyPitched: state.pitched, knownDims: sum ? sum.known : [] });
+      if (!v.go) return false;
+      await fire({ reason: 'done', agentId: 'agent', runId });
+      return !!(state && state.pitched);
+    } catch (_) { return false; }
+  }
+
   // S2: a brand-new hero re-earns its First Pitch. Drop the self-persisted flag (Save.clear() only wipes the
   // main save envelope; this store owns its own key, like curiositystore).
   function reset() { state = (typeof Pitch !== 'undefined') ? Pitch.fresh() : { v: 1, pitched: false }; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
@@ -132,7 +152,7 @@ const PitchStore = (() => {
   function done() { return !!(state && state.pitched); }
 
   // _-prefixed handles are exposed for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, done, _decide: decide, _fire: fire, _state: () => state };
+  return { init, reset, onRunEnd, done, offerAtHandoff, _decide: decide, _fire: fire, _state: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { PitchStore };
