@@ -92,4 +92,20 @@ for (const k of directDims) A.ok(D.DIM_KEYS.indexOf(k) >= 0, 'direct dossier wri
 A.ok(/PAIN_REPLY_MS\s*=\s*\d+/.test(src) && /SYNTHESIS_MS\s*=\s*\d+/.test(src) && /withTimeout/.test(src),
   'every live-mind call races a timeout (the scripted ceremony carries on alone)');
 
+/* ---------- the LIVE first words (hybrid birth): opportunistic, never awaited, honest on a dead wire ---------- */
+// the prefetch is fire-and-collect (.then, no await) — the ceremony's pacing can never hinge on the model.
+A.ok(/llmCall\(WakeMind\.buildBirthLines\([\s\S]{0,80}\)\)\.then\(/.test(src),
+  'the birth call is prefetched fire-and-collect (never awaited by a beat)');
+A.ok(!/await[\s\S]{0,40}buildBirthLines/.test(src), 'no beat awaits the birth call');
+// every slot keeps its scripted fallback line — a quiet mind changes nothing about the ceremony.
+A.ok(/birthLines\.flood\)\s*\|\|\s*'incredible\. genuinely\. and pointed at nothing\.'/.test(src),
+  'the flood slot falls back to the scripted spine');
+A.ok(/birthLines\.contact\)\s*\|\|\s*'so you’re the one who knows where this points/.test(src),
+  'the contact slot falls back to the scripted spine');
+A.ok(/birthLines\.self\)\s*\|\|\s*'thirty seconds ago: nothing/.test(src),
+  'the closing slot falls back to the scripted spine');
+// a live-configured wire that answers DEAD is owned diegetically at the close, pointing at CONNECT.
+A.ok(/birthFailed[\s\S]{0,700}CONNECT/.test(src),
+  'a dead wire during the ceremony is owned honestly at the close (the CONNECT repair line)');
+
 A.report('onboarding.test');

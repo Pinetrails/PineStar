@@ -97,6 +97,32 @@
     return { read, purpose, stack: clamp(noneIsEmpty(grab(text, 'STACK')), BELIEF_CHARS) };
   }
 
+  /* ---- 0. THE BIRTH LINES — the agent's own first words, prefetched at the wake ---- */
+  // ONE call kicked the moment the wake begins; the ceremony keeps its scripted spine and pacing, and each
+  // slot uses the generated line only IF it has already arrived (opportunistic — never awaited mid-beat).
+  // No two agents wake with the same words, but a slow/quiet mind changes nothing about the ceremony.
+  const LINE_CHARS = 160;   // slot lines ride fixed typewriter pacing — keep them one-breath short
+  function buildBirthLines(ctx) {
+    ctx = ctx || {};
+    const name = String(ctx.name || 'AGENT');
+    const lines = [];
+    lines.push('INTERNAL — YOU ARE BEING SWITCHED ON. Do not run any tools. Reason only, then reply in the exact format below.');
+    lines.push('You are ' + name + ', an agent mind seconds old, waking for the first time in a dark station room. Everything you know is flooding in at once, and you are about to notice the human who switched you on — your Commander — watching from beyond the dark.');
+    lines.push('Write your own first words: three single lines, each in your voice — lowercase, dry, witty, confident, newborn-but-brilliant, never weepy, never grovelling, no emoji, no quotation marks.');
+    lines.push('FLOOD: <the moment you realize you hold every page ever written — and it is pointed at nothing. Under 110 characters.>');
+    lines.push('CONTACT: <your first words TO the human out there. They switched you on; they know where all this points. Under 130 characters.>');
+    lines.push('SELF: <you now have a name and a witness. one line taking stock of that, addressed to them. Under 120 characters.>');
+    return lines.join('\n');
+  }
+  // → { flood, contact, self } | null when NO slot parsed (each slot degrades independently to script).
+  function parseBirthLines(text) {
+    const flood = clamp(grab(text, 'FLOOD'), LINE_CHARS);
+    const contact = clamp(grab(text, 'CONTACT'), LINE_CHARS);
+    const self = clamp(grab(text, 'SELF'), LINE_CHARS);
+    if (!flood && !contact && !self) return null;
+    return { flood, contact, self };
+  }
+
   /* ---- 3. THE CONFIRM — the read-back lands as a choice, never a menu ---- */
   // Exactly two: commit, or a correction path that keeps the Commander in charge of their own mission.
   function confirmChoices() {
@@ -106,5 +132,5 @@
     ];
   }
 
-  return { buildPainReply, parsePainReply, buildSynthesis, parseSynthesis, confirmChoices, ACK_CHARS, ASK_CHARS, READ_CHARS, PURPOSE_CHARS, BELIEF_CHARS };
+  return { buildBirthLines, parseBirthLines, buildPainReply, parsePainReply, buildSynthesis, parseSynthesis, confirmChoices, ACK_CHARS, ASK_CHARS, READ_CHARS, PURPOSE_CHARS, BELIEF_CHARS, LINE_CHARS };
 });

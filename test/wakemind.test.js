@@ -68,6 +68,21 @@ A.ok(s5.read.length <= W.READ_CHARS && s5.purpose.length <= W.PURPOSE_CHARS && s
 const s6 = W.parsePainReply('ACK: line one\nnot a tag, ignored\nASK: q?');
 A.ok(s6 && s6.ack === 'line one', 'a tag grabs exactly its own line (no bleed across lines)');
 
+/* ---------- buildBirthLines / parseBirthLines: the agent's own first words, prefetched ---------- */
+const b1 = W.buildBirthLines({ name: 'NOVA' });
+A.ok(/INTERNAL/.test(b1) && /Do not run any tools/.test(b1), 'birth directive is internal + reason-only');
+A.ok(b1.indexOf('NOVA') >= 0, 'the birth directive carries the agent\'s name');
+A.ok(/^FLOOD:/m.test(b1) && /^CONTACT:/m.test(b1) && /^SELF:/m.test(b1), 'birth directive demands FLOOD/CONTACT/SELF');
+A.eq(b1, W.buildBirthLines({ name: 'NOVA' }), 'buildBirthLines is deterministic');
+const bl = W.parseBirthLines('FLOOD: all of it, and nowhere to point it.\nCONTACT: you flipped the switch. i felt that.\nSELF: a name, a witness, and everything else. decent start.');
+A.ok(bl && bl.flood && bl.contact && bl.self, 'parseBirthLines grabs all three slots');
+const blPartial = W.parseBirthLines('CONTACT: just this one.');
+A.ok(blPartial && blPartial.contact === 'just this one.' && blPartial.flood === '' && blPartial.self === '', 'a partial reply still lands — each slot degrades independently');
+A.eq(W.parseBirthLines('no tags at all'), null, 'no slots at all → null (all-scripted ceremony)');
+A.eq(W.parseBirthLines(null), null, 'null reply → null');
+const blLong = W.parseBirthLines('FLOOD: ' + 'f'.repeat(500));
+A.ok(blLong.flood.length <= W.LINE_CHARS, 'a runaway birth line is clamped to LINE_CHARS (fixed typewriter pacing)');
+
 /* ---------- confirmChoices: exactly two — commit or correct, never a menu ---------- */
 const cc = W.confirmChoices();
 A.eq(cc.length, 2, 'confirm is exactly two choices');
