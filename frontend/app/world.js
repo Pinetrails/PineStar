@@ -3092,6 +3092,17 @@ const World = (() => {
       const need = (p && p.need) || 'capability';
       hudNote('⛔ run blocked — ' + (need === 'compute' ? 'no computer in its room' : ('missing ' + need)), 'warn');
     });
+    // G0.8 RUN-ERROR DISTRESS: the run died mid-flight (model call / dispatcher / loop guard). The chat
+    // panel already prints the message; now the FLOOR reacts too — the red desk strobe + one short flat
+    // line (eerie, never chatty; never stomps a live bubble). The stand-up itself rides the
+    // agent.run.end (reason 'error') that loop.js guarantees after every run.error — consumed by the
+    // serverLit / handoff run.end bindings above, so no body is ever left typing at a dead run.
+    const ERROR_LINE = ['it broke', 'lost the thread', 'error state', 'something failed', '...no.'];
+    U.bus.on('agent.run.error', p => {
+      flashDesk(p && p.agentId, '#ff4a3d');
+      const b = bodyForAgent(p && p.agentId);
+      if (b && !(b.say && b.say.text && b.say.until > performance.now())) sayAt(b, U.pick(ERROR_LINE));
+    });
     // MEMORY: a recall fence was injected into this run's prompt — surface the count so recall feels ALIVE, not silent.
     U.bus.on('memory.recall', p => { const c = p && (p.count | 0); if (c > 0) hudNote('◈ recalled ' + c + ' memor' + (c === 1 ? 'y' : 'ies'), 'good'); });
     // CONNECTOR PORTALS — make the external on-ramp LIVE: poll each configured server's state so a placed
