@@ -2026,6 +2026,7 @@ const World = (() => {
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
+    drawDeskFlashes(now);   // G0.4/G0.8: red distress strobe over a desk whose run just died (additive, with the glows)
     drawAwakenLight(now);   // the soul kindling: ignition spark + a growing halo + motes (world-space additive, awakening only)
     // the AWAKENING veil — now a SPOTLIGHT on the newborn (center light, corners dark) that warms cold->dawn,
     // drawn UNDER the speech bubble so its first words still glow while the room is dark.
@@ -2602,6 +2603,38 @@ const World = (() => {
   const deskProg = new Map();        // agentId -> 0..1 (real published fraction only)
   const runStartByAgent = new Map(); // agentId -> performance.now() at agent.run.start
   const deskProgFor = aid => deskProg.has(aid) ? deskProg.get(aid) : null;
+  /* ---------- desk DISTRESS flash (G0.4 capdenied / G0.8 run-error) ----------
+     A brief red warning strobe over the acting agent's desk when its run genuinely dies — the floor's
+     honest "something just went wrong HERE" beat. Additive light over the entities (drawn with the
+     glow pass); goes steady (no strobe) under prefers-reduced-motion, like every other pulse. */
+  const deskFlash = new Map();       // agentId -> { at, color }
+  const FLASH_MS = 950;
+  function flashDesk(aid, color) {
+    const id = aid || (agent && agent.id) || 'agent';
+    deskFlash.set(id, { at: (typeof performance !== 'undefined') ? performance.now() : fnow, color: color || '#ff4a3d' });
+  }
+  function drawDeskFlashes(now) {
+    if (!deskFlash.size) return;
+    for (const [aid, f] of deskFlash) {
+      const k = 1 - (now - f.at) / FLASH_MS;
+      if (k <= 0) { deskFlash.delete(aid); continue; }
+      // the desk rect (placed workstation / the hero's synthetic desk), else the body's own spot
+      let x, y, w, h;
+      const b = bodyForAgent(aid), dp = deskPropFor(aid);
+      if (dp) { x = dp.x * T; y = dp.y * T; w = (dp.w || 1) * T; h = (dp.h || 1) * T; }
+      else if (b === agent && desk) { x = desk.tx * T; y = desk.ty * T; w = desk.w * T; h = desk.h * T; }
+      else if (b) { x = b.px - 8; y = b.py - 14; w = 16; h = 16; }
+      else { deskFlash.delete(aid); continue; }
+      const strobe = reduceMotion() ? 0.8 : ((Math.floor((now - f.at) / 130) % 2 === 0) ? 1 : 0.45);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.38 * k * strobe;
+      ctx.fillStyle = f.color; ctx.fillRect(x - 3, y - 6, w + 6, h + 9);
+      ctx.globalAlpha = 0.7 * k * strobe;
+      ctx.strokeStyle = f.color; ctx.lineWidth = 1; ctx.strokeRect(x - 3.5, y - 6.5, w + 7, h + 10);
+      ctx.restore();
+    }
+  }
   let bridged = false, lastOutboxFlash = -1e9;
   // N1/N2/N3: the channel SSE stream + the connector poll are "opened once" but used to be NEVER released —
   // after a DISCONNECT they kept polling /api/connectors every 5s and the EventSource self-reconnected forever
@@ -2996,6 +3029,14 @@ const World = (() => {
     // REWIND: the rare, important "we rolled the workspace back" beat. checkpoint.created is frequent + quiet
     // (the workbench already pulses on shell), so only the restore is toasted.
     U.bus.on('checkpoint.restored', () => hudNote('↶ rewound to an earlier restore point', 'warn'));
+    // G0.4 CAPDENIED MADE VISIBLE: the run genuinely STOPPED at the capability gate (loop.js emits this
+    // before ending the run) — flash the acting agent's desk red + say it plainly. Today this was
+    // audio-only; the fix-it quest generator built on it is G1b's, not ours.
+    U.bus.on('capdenied', p => {
+      flashDesk(p && p.agentId, '#ff4a3d');
+      const need = (p && p.need) || 'capability';
+      hudNote('⛔ run blocked — ' + (need === 'compute' ? 'no computer in its room' : ('missing ' + need)), 'warn');
+    });
     // MEMORY: a recall fence was injected into this run's prompt — surface the count so recall feels ALIVE, not silent.
     U.bus.on('memory.recall', p => { const c = p && (p.count | 0); if (c > 0) hudNote('◈ recalled ' + c + ' memor' + (c === 1 ? 'y' : 'ies'), 'good'); });
     // CONNECTOR PORTALS — make the external on-ramp LIVE: poll each configured server's state so a placed
