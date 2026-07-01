@@ -3991,13 +3991,14 @@ const PropSprites = (() => {
   function propFired(id) { const s = id && propPulse[id]; return (s && s.at) ? Math.max(0, 1 - (now - s.at) / PULSE_MS) : 0; }
 
   /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens.
-     `live` (G0.3, optional) carries the seated agent's TRUTHFUL activity: { heat } — real token/tool
-     flow, 0..1 with ~2s decay (world.js heatFor). Only ever passed for a lit assigned workstation. */
+     `live` (G0.2/G0.3, optional) carries the seated agent's TRUTHFUL activity: { heat, prog } — heat
+     is real token/tool flow (0..1, ~2s decay, world.js heatFor); prog is a real published task
+     fraction or null (live harness runs have none). Only ever passed for a lit assigned workstation. */
   function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
     const X = f.x * TILE, Y = f.y * TILE, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
     const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
-    if (live) { o.heat = +live.heat || 0; }
+    if (live) { o.heat = +live.heat || 0; o.prog = (live.prog == null) ? null : Math.max(0, Math.min(1, +live.prog || 0)); }
     if (f.t === 'connector_portal') {                 // a bound portal rides its connector's live state
       const cid = f.connectorId || null;
       o.bound = !!cid;
@@ -4011,6 +4012,15 @@ const PropSprites = (() => {
     if (o.work && o.heat > 0) {
       const hshim = 0.72 + 0.28 * Math.sin(now / (170 - 110 * o.heat));
       glow(X + 1, Y - 4, W - 2, Math.min(H + 4, 11), scr(o.x), (0.08 + 0.36 * o.heat) * hshim);
+    }
+    // G0.2 PROGRESS STRIP: drawn ONLY when a REAL fraction was published (the 'task' contract's
+    // prog/dur) — a live harness run has no knowable % and never gets a bar (honesty law).
+    if (o.work && o.prog != null) {
+      const pw = Math.max(1, Math.round((W - 6) * o.prog));
+      px(X + 2, Y - 6, W - 4, 3, '#06090c');            // strip housing above the crown
+      px(X + 3, Y - 5, W - 6, 1, '#12251a');            // dark channel
+      px(X + 3, Y - 5, pw, 1, '#62ff9e');               // the honest fraction
+      glow(X + 3, Y - 6, pw, 3, '#62ff9e', 0.35);
     }
     // G0.1 TOOL-FIRE SURGE: this instance's tool just ran — a hot core wash + wider halo in the
     // capability accent, plus a charge bar draining shut across the crown. BOLD by design (the CRT-lab

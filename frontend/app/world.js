@@ -199,6 +199,15 @@ const World = (() => {
         const hshim = 0.72 + 0.28 * Math.sin(fnow / (170 - 110 * f.heat));
         fglow(x + 2, y - 3, 8, 8, fscr(f.x), (0.10 + 0.42 * f.heat) * hshim);
       }
+      // G0.2 PROGRESS STRIP: drawn ONLY when a REAL fraction was published (f.prog, from the 'task'
+      // bus contract's prog/dur) — a live harness run has no knowable % and never gets a bar.
+      if (f.prog != null) {
+        const pw = Math.max(1, Math.round(6 * Math.max(0, Math.min(1, f.prog))));
+        fpx(x + 2, y - 6, 8, 3, '#06090c');            // strip housing above the monitor
+        fpx(x + 3, y - 5, 6, 1, '#12251a');            // dark channel
+        fpx(x + 3, y - 5, pw, 1, '#62ff9e');           // the honest fraction
+        fglow(x + 3, y - 6, pw, 3, '#62ff9e', 0.35);
+      }
     } else {
       fpx(x + 4, y - 1, 4, 3, '#101a14'); fpx(x + 4, y - 1, 1, 1, '#1c2a22');
       fpx(x + 9, y + 2, 1, 1, fblink(1600) ? '#ff9d2e' : '#33241a');
@@ -1991,9 +2000,10 @@ const World = (() => {
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
         const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || workstationLit(p) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
-        // G0.3 live desk truth: a LIT assigned workstation carries its agent's real activity heat
-        // (token/tool-driven, see heatFor) so the screens burn by actual work, not a binary flag.
-        const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId) } : null;
+        // G0.2/G0.3 live desk truth: a LIT assigned workstation carries its agent's real activity heat
+        // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
+        // (deskProgFor — a live harness run has none and renders none).
+        const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
         // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
         const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work, live) });
@@ -2004,7 +2014,7 @@ const World = (() => {
         if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => F_chair(s.tx * T, s.ty * T) }); }
       }
     }
-    if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working), heat: (agent && agent.working) ? heatFor(agent.id) : 0 }) });   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
+    if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working), heat: (agent && agent.working) ? heatFor(agent.id) : 0, prog: (agent && agent.working) ? deskProgFor(agent.id) : null }) });   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
@@ -2040,6 +2050,7 @@ const World = (() => {
     if (floodAt) drawFlood(now);   // THE FLOOD — the cascade of knowledge streaming in, over the dark room
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     // (the context-window gauge now lives engraved in the bottom bar — StationUI.ctxTick, not the desk)
+    drawRunClocks(now);   // G0.2: the honest elapsed-time tag at every desk with a live run (world-space, over the lightmap)
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (agent && !agent.unplaced && hoverAgent) drawNameplate(now);
@@ -2481,6 +2492,37 @@ const World = (() => {
     }
   }
 
+  /* ---------- the RUN CLOCK (G0.2): tiny elapsed-time tag at each working desk ----------
+     A live harness run has NO knowable percent, so the desk shows the one thing that IS knowable:
+     how long the run has actually been going (agent.run.start -> .end, runStartByAgent). World-space,
+     the station's VT323 terminal face with a faint phosphor bloom — a glance, never a window. */
+  const RUN_FONT = "7px 'VT323','Courier New',monospace";
+  function drawRunClocks(now) {
+    if (!runStartByAgent.size) return;
+    for (const [aid, t0] of runStartByAgent) {
+      const b = bodyForAgent(aid);
+      if (!b || b.unplaced) continue;
+      // only at a desk that is honestly in the working pose — a talk-only run never grows a clock
+      const working = (b === agent) ? !!agent.working : !!(b.working || (b.workUntil && now < b.workUntil));
+      if (!working) continue;
+      const sec = Math.max(0, Math.floor((now - t0) / 1000));
+      const mm = Math.floor(sec / 60), ss = String(sec % 60).padStart(2, '0');
+      const label = 'RUN ' + (mm >= 60 ? Math.floor(mm / 60) + ':' + String(mm % 60).padStart(2, '0') + ':' + ss : mm + ':' + ss);
+      // anchor beside the desk's crown (placed workstation, or the hero's synthetic desk), else above the body
+      let ax, ay;
+      const dp = deskPropFor(aid);
+      if (dp) { ax = (dp.x + (dp.w || 1)) * T + 1; ay = dp.y * T + 3; }
+      else if (b === agent && desk) { ax = (desk.tx + desk.w) * T + 1; ay = desk.ty * T + 3; }
+      else { ax = b.px + 7; ay = b.py - 16; }
+      ctx.save();
+      ctx.font = RUN_FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.shadowBlur = 3; ctx.shadowColor = '#62ff9e';
+      ctx.fillStyle = '#9adcb0';
+      ctx.fillText(label, ax, ay);
+      ctx.restore();
+    }
+  }
+
   function drawBubble(now, who) {
     who = who || agent;
     const s = who.say;
@@ -2551,6 +2593,15 @@ const World = (() => {
     const v = h.v * Math.exp(-(fnow - h.at) / HEAT_TAU);
     return v < 0.01 ? 0 : v;
   }
+  /* ---------- honest desk activity (G0.2): two truth sources, never conflated ----------
+     deskProg — a REAL task-progress fraction, if some producer published one on the 'task' bus event
+     (t.prog/t.dur — the crew-task sim's contract). The strip renders ONLY from this map; a live
+     harness run publishes no fraction and so gets NO bar — it shows elapsed time + heat instead.
+     runStartByAgent — when each agent's live run actually started (agent.run.start/end), driving the
+     tiny elapsed-time tag at the desk. Time is knowable; percent is not; we show exactly what is. */
+  const deskProg = new Map();        // agentId -> 0..1 (real published fraction only)
+  const runStartByAgent = new Map(); // agentId -> performance.now() at agent.run.start
+  const deskProgFor = aid => deskProg.has(aid) ? deskProg.get(aid) : null;
   let bridged = false, lastOutboxFlash = -1e9;
   // N1/N2/N3: the channel SSE stream + the connector poll are "opened once" but used to be NEVER released —
   // after a DISCONNECT they kept polling /api/connectors every 5s and the EventSource self-reconnected forever
@@ -2985,6 +3036,19 @@ const World = (() => {
     // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat (audio.js already rides this
     // same event for music intensity) — the working screens burn by REAL token flow, never a faked flicker.
     U.bus.on('agent.token', p => heatBump(p && p.agentId, 0.06));
+    // G0.2 RUN CLOCK: elapsed-time bookkeeping keyed to the REAL run lifecycle (a run.error is always
+    // followed by run.end reason 'error', so end is the one cleanup point). Internal reason-only runs
+    // never reach U.bus (harness.js suppresses their start/end), so no clock ever shows for self-talk.
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) runStartByAgent.set(p.agentId, performance.now()); });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId) runStartByAgent.delete(p.agentId); });
+    // G0.2 SIM-TASK PROGRESS: store a desk fraction ONLY when a producer publishes a real prog/dur pair
+    // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
+    U.bus.on('task', t => {
+      if (!t || !t.agentId) return;
+      if (t.status && t.status !== 'active' && t.status !== 'running' && t.status !== 'queued') { deskProg.delete(t.agentId); return; }
+      const prog = +t.prog, dur = +t.dur;
+      if (isFinite(prog) && isFinite(dur) && dur > 0) deskProg.set(t.agentId, Math.max(0, Math.min(1, prog / dur)));
+    });
     if (typeof EventSource === 'undefined') return;
     let backoff = 1000;
     const open = () => {
