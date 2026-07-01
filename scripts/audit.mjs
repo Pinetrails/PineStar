@@ -26,7 +26,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from './lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from './lib/seed.mjs';
-import { closeOnly, openSel } from './lib/states.mjs';
+import { closeOnly, openSel, dismissRefitGuide } from './lib/states.mjs';
 
 const PORT = process.env.SKYNET_AUDIT_PORT || '8934';
 const CDP_PORT = Number(process.env.SKYNET_AUDIT_CDP || 9334);
@@ -81,6 +81,49 @@ function startMockOpenRouter(model) {
   });
 }
 
+// TOOL-EMITTING mock (for the approval scenario): the FIRST completion asks for a consent-gated write tool
+// (fs.write, capability `cabinet`), so a non-Full-Access interactive run trips the real permission broker →
+// emits permission.prompt → PAUSES. Every subsequent completion finishes with plain text + stop, so once the
+// human approves and the tool result flows back, the run resumes to a terminal agent.run.end. `calls` counts
+// completion requests, which is the ground truth for "the run is blocked" (exactly 1 until approval arrives).
+function startToolMock(model) {
+  return new Promise((resolve) => {
+    let calls = 0;
+    const server = createServer((req, res) => {
+      if (req.url && req.url.indexOf('/models') >= 0) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: [{ id: model || DEFAULT_MODEL, name: 'Audit Tool Mock', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }] }));
+        return;
+      }
+      if (req.url && req.url.indexOf('/chat/completions') >= 0) {
+        let body = '';
+        req.on('data', d => { body += d; });
+        req.on('end', () => {
+          calls++;
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          if (calls === 1) {
+            const tc = { index: 0, id: 'call_0', type: 'function', function: { name: 'fs.write', arguments: JSON.stringify({ path: 'audit-note.txt', content: 'written by the approval audit' }) } };
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [tc] } }] }) + '\n\n');
+            setTimeout(() => {
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }) + '\n\n');
+              res.write('data: [DONE]\n\n'); res.end();
+            }, 150);
+          } else {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'wrote the note as requested.' } }] }) + '\n\n');
+            setTimeout(() => {
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 } }) + '\n\n');
+              res.write('data: [DONE]\n\n'); res.end();
+            }, 150);
+          }
+        });
+        return;
+      }
+      res.writeHead(404); res.end();
+    });
+    server.listen(0, '127.0.0.1', () => resolve({ server, base: 'http://127.0.0.1:' + server.address().port + '/api/v1', callCount: () => calls }));
+  });
+}
+
 // Wait until the DEV test probe is armed AND reports in-game.
 async function waitTestReady(cdp, tries = 24) {
   for (let i = 0; i < tries; i++) {
@@ -114,6 +157,19 @@ async function waitSel(cdp, sel, tries = 25) {
 const sendChat = (cdp, msg) => evalJS(cdp, `(() => { const i = document.getElementById('chat-input'); if (!i) return 'NO_INPUT'; i.focus(); i.value = ${J(msg)}; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); return 'sent'; })()`).catch((e) => 'ERR:' + e.message);
 const getBodies = (cdp) => evalJS(cdp, 'window.__SKYNET_TEST__.bodies()').catch(() => []);
 const tk = (t) => (t ? `${t.x},${t.y}` : '');
+// REAL canvas input over CDP: synthesize a genuine left-click (move → press → release) at viewport
+// coords, generating the same pointerdown/move/up build.js listens for. Unlike el.click(), this drives
+// the actual canvas pointer pipeline, so a placement here proves the mouse→tile→addProp path end-to-end.
+async function realClick(cdp, x, y) {
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved',   x, y, button: 'none', buttons: 0, pointerType: 'mouse' });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+  await sleep(40);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased',x, y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+}
+// what element is topmost at a viewport point (so we can confirm the canvas — not an overlay — receives input).
+const elAt = (cdp, x, y) => evalJS(cdp, `(() => { const e = document.elementFromPoint(${x}, ${y}); return e ? { tag: e.tagName, cls: String(e.className || '') } : null; })()`).catch(() => null);
+const heroCapTypes = (cdp) => evalJS(cdp, "(typeof World!=='undefined'&&World.heroCaps)?(World.heroCaps('agent')||[]).map(c=>c.objectType):null").catch(() => null);
+
 // containment + gaze-only over a body snapshot (the Tier A/C invariants, reused across scenarios).
 function assertFloorInvariants(A, prefix, list) {
   const escaped = (list || []).filter((b) => b.zone && b.inOwnZone === false);   // only bodies that HAVE a zone may violate it
@@ -234,6 +290,235 @@ async function scenarioMoat(cdp, A) {
   A.ok('moat/caps-well-formed', bad.length === 0, bad.length ? 'unexpected: ' + bad.join(',') : 'every placed object maps to a known capability');
 }
 
+// SCENARIO: PROP-PLACE via REAL canvas input (object=capability, proven through the mouse pipeline).
+// Where `moat` places through the DEV Build.__test__ hook (validated-tile shortcut), this drives the REAL
+// pointer path: enter REFIT, dismiss the first-use guide (it blankets the canvas), select the prop tool +
+// CAPABILITY → comms_dish through the actual palette buttons, then CLICK the grid with CDP mouse events at
+// the framed centre (fitCamera centres the station, so centre lands inside the spawn room). Asserts
+// World.heroCaps gains `dish` (WEB) — the placement, and the capability it earns, both came from a mouse.
+async function scenarioPropPlace(cdp, A) {
+  await evalJS(cdp, closeOnly).catch(() => {});
+  const before = heroCapTypes(cdp) && (await heroCapTypes(cdp)) || [];
+  const hadDish = Array.isArray(before) && before.includes('dish');
+
+  await clickSel(cdp, '#bb-build');
+  let built = false;
+  for (let i = 0; i < 20; i++) { built = await evalJS(cdp, "!!(typeof Build!=='undefined' && Build.__test__ && Build.__test__.isOpen())").catch(() => false); if (built) break; await sleep(200); }
+  A.ok('prop-place/build-mode', built, built ? 'REFIT open' : 'Build.__test__ not available');
+  if (!built) return;
+
+  // clear the full-canvas first-use guide, else CDP mouse events hit .refit-guide, never the grid.
+  const dismissed = await evalJS(cdp, dismissRefitGuide).catch(() => 0);
+  await sleep(200);
+  const topEl = await elAt(cdp, 720, 450);
+  const canvasClear = !!(topEl && /refit-canvas/.test(topEl.cls));
+  A.ok('prop-place/canvas-reachable', canvasClear, canvasClear ? `guide dismissed (${dismissed}); topmost @centre = ${topEl.cls}` : `centre still covered by ${topEl && topEl.cls} — real mouse would miss the grid`);
+
+  // select prop tool → CAPABILITY category → comms_dish, all through the REAL palette DOM.
+  const pt = await evalJS(cdp, "(() => { const t=document.querySelector('.refit-tool[data-tool=\"prop\"]'); if(!t) return 'NO_TOOL'; t.click(); return 'ok'; })()").catch((e) => 'ERR:' + e.message);
+  await sleep(150);
+  await evalJS(cdp, "(() => { const c=document.querySelector('.refit-propcat[data-cat=\"capability\"]'); if(c) c.click(); })()").catch(() => {});
+  await sleep(150);
+  const tile = await evalJS(cdp, "(() => { const b=document.querySelector('.refit-proptile[data-prop=\"comms_dish\"]'); if(!b) return 'NO_TILE'; b.click(); return 'ok'; })()").catch((e) => 'ERR:' + e.message);
+  A.ok('prop-place/prop-selected', pt === 'ok' && tile === 'ok', `tool=${pt} tile=${tile}`);
+
+  // REAL mouse placement: try the framed centre, then a small spiral of nearby tiles (an occupied/edge
+  // centre tile just no-ops; a neighbour lands). We assert on the CAPABILITY appearing, not a fixed tile.
+  let placed = false; const attempts = [];
+  if (canvasClear) {
+    const cx = 720, cy = 450;
+    const spiral = [[0, 0], [0, -48], [48, 0], [0, 48], [-48, 0], [48, -48], [48, 48], [-48, 48], [-48, -48], [0, -96], [96, 0], [-96, 0], [0, 96]];
+    for (const [dx, dy] of spiral) {
+      await realClick(cdp, cx + dx, cy + dy);
+      await sleep(140);
+      const now = (await heroCapTypes(cdp)) || [];
+      attempts.push(`(${cx + dx},${cy + dy})`);
+      if (now.includes('dish') && !hadDish) { placed = true; break; }
+    }
+  }
+  A.ok('prop-place/mouse-placed-dish', placed, placed ? `dish (WEB) online after real click ${attempts[attempts.length - 1]} (${attempts.length} pt${attempts.length > 1 ? 's' : ''})` : `no dish cap after ${attempts.length} real clicks: ${attempts.join(' ')}`);
+
+  // leave build; re-read the capability from the live world to prove the placement persisted the re-bake.
+  await clickSel(cdp, '#refit-done');
+  await evalJS(cdp, closeOnly).catch(() => {});
+  await sleep(700);
+  const after = (await heroCapTypes(cdp)) || [];
+  A.ok('prop-place/capability-persists', after.includes('dish'), `after=[${after.join(', ') || 'none'}] (dish ⇒ web)`);
+}
+
+// SCENARIO: HUD/XP TRUTH — after the driven scenarios ran real work, the DISPLAYED floor-HUD numbers and the
+// XP readout must equal the reduction over the frozen U.bus log (the no-app-lies mandate, extended past
+// floor-rest's single station-level check). We read BOTH sides from the page: the DOM chips (what a human
+// sees) and the testapi reducers (FloorStats/Xp folded over the same frozen events), and compare.
+async function scenarioHudXp(cdp, A) {
+  await evalJS(cdp, closeOnly).catch(() => {});
+  // the app's own displayed-vs-reduced checks (station level etc.) must all hold.
+  const hud = await evalJS(cdp, 'window.__SKYNET_TEST__.hud()').catch(() => null);
+  A.ok('hud-xp/hud-readable', !!(hud && Array.isArray(hud.checks) && hud.checks.length), hud ? `${hud.checks.length} HUD checks` : 'hud() returned nothing');
+  if (hud && Array.isArray(hud.checks)) for (const c of hud.checks) A.ok(`hud-xp/${c.metric}`, c.ok, `displayed=${c.displayed} ${c.mode} expected=${c.expected}`);
+
+  // FLOOR STATS truth: the reduced FloorStats snapshot (runs/slag) is derived purely from the frozen log; assert
+  // it's internally consistent and reflects the runs the driven scenarios fired (task + approval → ≥1 run).
+  const floor = await evalJS(cdp, 'window.__SKYNET_TEST__.reduceFloor()').catch(() => null);
+  const runEvents = (await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run.start').length").catch(() => 0)) || 0;
+  A.ok('hud-xp/floorstats-reduced', !!(floor && typeof floor.runs === 'number'), floor ? `runs=${floor.runs} slag=${floor.slag}` : 'reduceFloor() returned nothing');
+  A.ok('hud-xp/floorstats-runs-match-log', !!floor && floor.runs === runEvents, floor ? `FloorStats.runs=${floor.runs} == agent.run.start count=${runEvents}` : 'no floor snapshot');
+
+  // XP truth: the displayed STATION level chip (gt-station) must equal the level the Xp reducer computes from
+  // the frozen log — the SAME fold XpStore feeds the HUD. A lie here (chip ahead of/behind the store) fails.
+  const xp = await evalJS(cdp, 'window.__SKYNET_TEST__.reduceXp()').catch(() => null);
+  const chip = await evalJS(cdp, "(() => { const e=document.getElementById('gt-station'); return e?(e.textContent||'').trim():null; })()").catch(() => null);
+  const chipLevel = chip == null ? null : (() => { const m = String(chip).match(/(\d+)/); return m ? parseInt(m[1], 10) : null; })();
+  A.ok('hud-xp/xp-reduced', !!(xp && typeof xp.level === 'number'), xp ? `Xp.level=${xp.level} xp=${xp.xp}` : 'reduceXp() returned nothing');
+  A.ok('hud-xp/station-chip-matches-xp', chipLevel != null && xp && chipLevel === xp.level, `displayed STATION="${chip}" (lvl ${chipLevel}) vs Xp.level=${xp && xp.level}`);
+}
+
+// SCENARIO: CONVEYOR — drive the REAL production transport module (Conveyor, a page global) end-to-end: a TEST
+// belt moves a crate off its open end (delivered exactly once), and a K=2 MERGER junction combines two inbound
+// crates into ONE carrier WITHOUT silently losing work. Runs in-page against the same Conveyor build.js/world.js
+// use, with the module's injected clock (deterministic; no wall-clock, no RNG) — so this asserts the live art+sim.
+async function scenarioConveyor(cdp, A) {
+  const present = await evalJS(cdp, "typeof Conveyor !== 'undefined' && !!Conveyor.create").catch(() => false);
+  A.ok('conveyor/module-present', present, present ? 'Conveyor global available' : 'Conveyor not loaded in-page');
+  if (!present) return;
+
+  // 1) a straight TEST belt carries one crate to its open end and delivers it exactly once.
+  const belt = await evalJS(cdp, `(() => {
+    const belts = [{x:0,y:0,dir:'E'},{x:1,y:0,dir:'E'},{x:2,y:0,dir:'E'}];
+    const del = [];
+    const cv = Conveyor.create({ onDeliver: (bx,x,y) => del.push({ id: bx.payload && bx.payload.workitemId, x, y }) });
+    cv.enqueueAt(0, 0, { workitemId: 'belt-1', preview: 'test crate' });
+    let t = 0, rode = false, deliveredAt = -1;
+    for (let i = 0; i < 300; i++) {
+      t += 16; cv.tick(16, t, belts);
+      if (cv.peekBoxes().some(b => b.payload && b.payload.workitemId === 'belt-1')) rode = true;
+      if (del.length && deliveredAt < 0) deliveredAt = i;
+      // keep ticking well past delivery so the sink animation (SINK_MS) completes and the box despawns.
+      if (deliveredAt >= 0 && i - deliveredAt > 40) break;
+    }
+    return { rode, delCount: del.length, delId: del[0] && del[0].id, delAt: del[0] && (del[0].x + ',' + del[0].y), remaining: cv.boxCount() };
+  })()`).catch((e) => ({ err: e.message }));
+  A.ok('conveyor/crate-rode-belt', !!belt && belt.rode === true, belt && belt.err ? belt.err : 'a crate rode the TEST belt');
+  A.ok('conveyor/delivered-once', !!belt && belt.delCount === 1 && belt.delId === 'belt-1', belt ? `delivered ${belt.delCount}× (id=${belt.delId}) @ ${belt.delAt}` : 'no belt result');
+  A.ok('conveyor/belt-drains', !!belt && belt.remaining === 0, belt ? `${belt.remaining} boxes left on belt (drains to empty)` : 'no belt result');
+
+  // 2) a K=2 MERGER junction: two inbound crates → ONE carrier delivery carrying BOTH ids (none dropped).
+  const merge = await evalJS(cdp, `(() => {
+    const belts = [{x:0,y:0,dir:'E'},{x:1,y:0,dir:'E'},{x:2,y:0,dir:'E'},{x:3,y:0,dir:'E'}];
+    const junc = new Map([['2,0', { kind:'merge', bufferSize:2 }]]);
+    const del = [];
+    const cv = Conveyor.create({ onDeliver: bx => del.push(bx.payload) });
+    cv.enqueueAt(0, 0, { workitemId: 'm1' });
+    let t = 0; for (let i = 0; i < 30; i++) { t += 16; cv.tick(16, t, belts, junc); }
+    cv.enqueueAt(0, 0, { workitemId: 'm2' });
+    for (let i = 0; i < 300; i++) { t += 16; cv.tick(16, t, belts, junc); }
+    const d0 = del[0] || null;
+    return {
+      delCount: del.length,
+      merged: d0 && d0.merged ? d0.merged.slice().sort() : null,
+      mergeCount: d0 && d0.mergeCount,
+      remaining: cv.boxCount()
+    };
+  })()`).catch((e) => ({ err: e.message }));
+  A.ok('conveyor/merger-single-delivery', !!merge && merge.delCount === 1, merge && merge.err ? merge.err : (merge ? `merger emitted ${merge.delCount} deliveries for 2 inbound` : 'no merge result'));
+  const carriesBoth = !!(merge && merge.merged && merge.merged.indexOf('m1') >= 0 && merge.merged.indexOf('m2') >= 0);
+  A.ok('conveyor/merger-loses-nothing', carriesBoth && merge.mergeCount === 2, merge ? `carrier merged=[${(merge.merged || []).join(',')}] K=${merge.mergeCount}` : 'no merge result');
+  A.ok('conveyor/merger-belt-drains', !!merge && merge.remaining === 0, merge ? `${merge.remaining} boxes left (absorbed sinks, carrier delivers, both despawn)` : 'no merge result');
+}
+
+// SCENARIO (dedicated boot): TOOL-RUN WITH APPROVAL — drive a run that hits a real permission gate and prove
+// the consent loop end-to-end. Unlike the other scenarios, this needs its OWN sidecar booted WITHOUT Full
+// Access (fullAccess:false → the consent broker's interactive surface, bypass off) plus a tool-emitting mock,
+// because the shared audit sidecar runs Full Access (which bypasses consent entirely) and the shared mock
+// returns plain text (no tool call). Steps: place a `safe` (→ cabinet/files cap) so the agent OWNS fs.write,
+// send a directive, and assert: (1) permission.prompt fires + the .consent row renders in COMMS, (2) the run
+// is GENUINELY blocked while waiting (no agent.run.end; the mock was called exactly once), (3) approving
+// resumes it to a terminal agent.run.end (a 2nd mock call). Ports: 8961/9361 (ad-hoc range, per lane brief).
+async function runApprovalScenario() {
+  const APORT = process.env.SKYNET_AUDIT_APPROVAL_PORT || '8961';
+  const ACDP = Number(process.env.SKYNET_AUDIT_APPROVAL_CDP || 9361);
+  const AURL = `http://127.0.0.1:${APORT}/`;
+  const ASCRATCH = join(OUT_DIR, '_approval-workspace');
+  const APROFILE = join(OUT_DIR, '_approval-profile');
+  const A = makeAsserter();
+  let mock = null, side = null, proc = null, cdp = null;
+  const savedBase = process.env.SKYNET_OPENROUTER_BASE, savedBase2 = process.env.STARNET_OPENROUTER_BASE;
+  try {
+    if (await isUp(AURL)) throw new Error(`approval port :${APORT} already in use; set SKYNET_AUDIT_APPROVAL_PORT to a free port`);
+    mock = await startToolMock(DEFAULT_MODEL);
+    process.env.SKYNET_OPENROUTER_BASE = mock.base;
+    process.env.STARNET_OPENROUTER_BASE = mock.base;
+    console.log(`\nscenario: tool-run-with-approval (dedicated NON-full-access sidecar on :${APORT})`);
+    materializeSeedWorkspace(ASCRATCH);
+    side = bootSeededSidecar({ port: APORT, scratchDir: ASCRATCH, fullAccess: false });   // KEY: interactive consent surface
+    if (!(await waitUp(AURL))) throw new Error('approval sidecar failed to come up on :' + APORT);
+    ({ proc } = launchChrome({ cdpPort: ACDP, win: WIN, profileDir: APROFILE }));
+    cdp = await connectCDP(ACDP);
+    const diag = collectDiagnostics(cdp);
+    await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
+    await cdp.send('Page.navigate', { url: AURL });
+    const ready = await waitDevReady(cdp, evalJS, { tries: 30, url: AURL }) && await waitTestReady(cdp);
+    A.ok('approval/in-game', ready, ready ? 'floor + testapi ready (non-full-access boot lands in-game)' : 'never reached in-game');
+    if (!ready) { await capture(cdp, OUT_DIR, '_FAIL-tool-run-with-approval'); return { name: 'tool-run-with-approval', passed: false, assertions: A.results, data: null }; }
+
+    // give the agent the FILES capability by placing a cabinet-granting prop (safe → cabinet). This isn't the
+    // prop-placement test (that's scenarioPropPlace); here we just need fs.write to be OWNED, so use the fast hook.
+    await clickSel(cdp, '#bb-build');
+    for (let i = 0; i < 20; i++) { if (await evalJS(cdp, "!!(typeof Build!=='undefined'&&Build.__test__&&Build.__test__.isOpen())").catch(() => false)) break; await sleep(200); }
+    const placed = await evalJS(cdp, "Build.__test__.placeCapProp('safe')").catch((e) => ({ ok: false, reason: e.message }));
+    await clickSel(cdp, '#refit-done'); await evalJS(cdp, closeOnly).catch(() => {}); await sleep(700);
+    const caps = (await heroCapTypes(cdp)) || [];
+    A.ok('approval/files-cap-owned', !!(placed && placed.ok) && caps.includes('cabinet'), `placed=${placed && placed.ok} heroCaps=[${caps.join(', ') || 'none'}]`);
+
+    // send a directive → the tool-mock asks for fs.write → the interactive consent broker prompts.
+    const sent = await sendChat(cdp, 'write a short note to a file, then stop');
+    A.ok('approval/directive-sent', sent === 'sent', sent);
+
+    // poll for the LIVE prompt event + the rendered .consent control, while the run stays paused.
+    let promptEvt = false, consentRow = false, endedEarly = false;
+    for (let i = 0; i < 80; i++) {
+      await sleep(250);
+      const pe = await evalJS(cdp, "window.__SKYNET_TEST__.events('permission.prompt').length").catch(() => 0);
+      if ((pe || 0) > 0) promptEvt = true;
+      const cr = await evalJS(cdp, "!!document.querySelector('.consent .consent-btn')").catch(() => false);
+      if (cr) consentRow = true;
+      const ends = await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run.end').length").catch(() => 0);
+      if ((ends || 0) > 0) endedEarly = true;
+      if (promptEvt && consentRow) break;
+    }
+    A.ok('approval/prompt-emitted', promptEvt, promptEvt ? 'permission.prompt fired on the run stream' : 'no permission.prompt — run never hit a gate');
+    A.ok('approval/consent-row-rendered', consentRow, consentRow ? '.consent control rendered in COMMS' : 'consent control never appeared');
+    // BLOCKED: the run must not have terminated, and the mock must have been called exactly once (paused pre-tool-result).
+    const callsBeforeApprove = mock.callCount();
+    A.ok('approval/run-blocked-while-waiting', !endedEarly && callsBeforeApprove === 1, `agent.run.end seen=${endedEarly}; mock completions so far=${callsBeforeApprove} (expect 1 while paused)`);
+    await capture(cdp, OUT_DIR, 'tool-run-with-approval_awaiting');
+
+    // APPROVE ONCE → the paused dispatch resolves, the tool runs, the result flows back, the run resumes.
+    const approved = await evalJS(cdp, "(() => { const b=[...document.querySelectorAll('.consent .consent-btn')].find(x=>/approve/i.test(x.textContent||'')); if(!b) return 'NO_BTN'; b.click(); return 'approved'; })()").catch((e) => 'ERR:' + e.message);
+    A.ok('approval/approve-clicked', approved === 'approved', approved);
+    let resumed = false;
+    for (let i = 0; i < 60; i++) { await sleep(250); const ends = await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run.end').length").catch(() => 0); if ((ends || 0) > 0) { resumed = true; break; } }
+    A.ok('approval/run-resumes-on-approve', resumed && mock.callCount() >= 2, `agent.run.end after approve=${resumed}; mock completions now=${mock.callCount()} (≥2 ⇒ tool result round-tripped)`);
+
+    const hardFail = A.results.some((r) => !r.pass && !r.soft);
+    await capture(cdp, OUT_DIR, hardFail ? '_FAIL-tool-run-with-approval' : 'tool-run-with-approval');
+    return { name: 'tool-run-with-approval', passed: !hardFail, assertions: A.results, data: { console: diag.consoleMsgs.slice(0, 12) } };
+  } catch (e) {
+    A.ok('tool-run-with-approval/ran', false, 'threw: ' + e.message);
+    try { if (cdp) await capture(cdp, OUT_DIR, '_FAIL-tool-run-with-approval'); } catch {}
+    return { name: 'tool-run-with-approval', passed: false, assertions: A.results, data: null };
+  } finally {
+    try { cdp?.ws.close(); } catch {}
+    try { proc && proc.kill('SIGKILL'); } catch {}
+    try { side && side.kill('SIGKILL'); } catch {}
+    try { mock && mock.server && mock.server.close(); } catch {}
+    // restore the shared mock base so nothing downstream is affected.
+    if (savedBase === undefined) delete process.env.SKYNET_OPENROUTER_BASE; else process.env.SKYNET_OPENROUTER_BASE = savedBase;
+    if (savedBase2 === undefined) delete process.env.STARNET_OPENROUTER_BASE; else process.env.STARNET_OPENROUTER_BASE = savedBase2;
+    if (!KEEP) { try { rmSync(ASCRATCH, { recursive: true, force: true }); } catch {} try { rmSync(APROFILE, { recursive: true, force: true }); } catch {} }
+  }
+}
+
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   let ownSidecar = null;
@@ -281,8 +566,11 @@ async function main() {
       const SCENARIOS = [
         { name: 'floor-rest', fn: scenarioFloorRest },
         { name: 'task',       fn: scenarioTask },
+        { name: 'hud-xp',     fn: scenarioHudXp },      // Q3: displayed HUD/XP == event-reduced truth (after a real run)
         { name: 'summon',     fn: scenarioSummon },
         { name: 'moat',       fn: scenarioMoat },
+        { name: 'prop-place', fn: scenarioPropPlace },  // Q3: object=capability via REAL canvas mouse input
+        { name: 'conveyor',   fn: scenarioConveyor },   // Q3: TEST belt delivers · MERGER loses nothing
       ];
       for (const sc of SCENARIOS) {
         console.log(`\nscenario: ${sc.name}`);
@@ -293,6 +581,20 @@ async function main() {
         await capture(cdp, OUT_DIR, hardFail ? `_FAIL-${sc.name}` : sc.name);
         report.scenarios.push({ name: sc.name, passed: !hardFail, assertions: A.results, data: data || null });
         if (hardFail) exitCode = 3;
+      }
+
+      // TOOL-RUN-WITH-APPROVAL runs in its OWN dedicated NON-full-access sidecar (see runApprovalScenario). It's
+      // incompatible with a reused sidecar (that one is Full Access) and with --live (it needs the tool-emitting
+      // mock), so it's skipped LOUDLY (a soft, clearly-labelled marker) in those modes rather than silently absent.
+      if (REUSE_EXISTING || LIVE_PROVIDER) {
+        const A = makeAsserter();
+        A.ok('approval/skipped-in-this-mode', true, `not run: ${REUSE_EXISTING ? 'REUSE' : ''}${LIVE_PROVIDER ? 'LIVE_PROVIDER' : ''} mode needs a dedicated non-full-access mock boot`, /*soft*/ true);
+        console.log('\nscenario: tool-run-with-approval — SKIPPED (needs a dedicated non-full-access mock boot; not compatible with reuse/live)');
+        report.scenarios.push({ name: 'tool-run-with-approval', passed: true, assertions: A.results, data: null });
+      } else {
+        const scr = await runApprovalScenario();
+        report.scenarios.push(scr);
+        if (!scr.passed) exitCode = 3;
       }
     }
     report.console = diag.consoleMsgs.slice(0, 30);
