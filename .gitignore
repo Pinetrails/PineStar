@@ -54,3 +54,5 @@ scripts/STATUS.generated.md
 
 # G0 lane visual-proof screenshots (headless capture output; never committed)
 .qa_g0/
+# G1a lane visual-proof screenshots (same pattern)
+.qa_g1a/
