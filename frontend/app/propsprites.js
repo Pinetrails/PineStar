@@ -3979,6 +3979,17 @@ const PropSprites = (() => {
   function pulseWorkbench(ok) { wbFiredAt = now; wbBad = (ok === false); }
   function workbenchFired() { return wbFiredAt ? Math.max(0, 1 - (now - wbFiredAt) / PULSE_MS) : 0; }
 
+  /* live CAPABILITY-PROP pulse (G0.1) — per placed INSTANCE, the connector/workbench idiom generalized:
+     the world layer maps a firing tool to the prop that GRANTS it (fs->cabinet · web/browser->dish ·
+     notebook/skill/recall/todo->notebook · image->studio · spotify->jukebox, via toolprops.js) and calls
+     pulseProp(propId, capType); draw() overlays a bright surge in that capability's accent that decays
+     1 -> 0 over PULSE_MS. Colors ride the station's semantic economy (amber=files, cyan=web/data,
+     green=memory, magenta=media, gold=audio). */
+  const CAP_GLOW = { cabinet: '#e8c860', dish: '#4ad9ff', notebook: '#41ff8a', studio: '#ff6ad5', jukebox: '#ffd34a' };
+  const propPulse = {};          // propId -> { at, cap }
+  function pulseProp(id, cap) { if (!id) return; propPulse[id] = { at: now, cap: cap || '' }; }
+  function propFired(id) { const s = id && propPulse[id]; return (s && s.at) ? Math.max(0, 1 - (now - s.at) / PULSE_MS) : 0; }
+
   /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens. */
   function draw(f, work) {
     const fn = F[f.t]; if (!fn) return;
@@ -3992,6 +4003,16 @@ const PropSprites = (() => {
     }
     if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
     fn(X, Y, W, H, o);
+    // G0.1 TOOL-FIRE SURGE: this instance's tool just ran — a hot core wash + wider halo in the
+    // capability accent, plus a charge bar draining shut across the crown. BOLD by design (the CRT-lab
+    // law: effects read from across the room), gone in under a second.
+    const pf = propFired(f.id);
+    if (pf > 0) {
+      const acc = CAP_GLOW[(propPulse[f.id] && propPulse[f.id].cap) || ''] || '#c7ffe0';
+      glow(X - 1, Y - 3, W + 2, H + 4, acc, 0.10 + 0.32 * pf);               // outer halo
+      glow(X + 1, Y - 1, Math.max(2, W - 2), Math.max(2, H - 2), acc, 0.28 * pf);   // hot core
+      px(X, Y - 3, Math.max(1, Math.round(W * pf)), 1, acc);                 // draining charge bar
+    }
   }
 
   return {
@@ -4002,6 +4023,8 @@ const PropSprites = (() => {
     setConnectorState, pulseConnector,
     // workbench pulse (the world layer feeds this off shell.exec / verify.result)
     pulseWorkbench,
+    // per-instance capability-prop pulse (G0.1 — the world layer feeds this off agent.tool_call via toolprops.js)
+    pulseProp,
     // exposed for tests / reuse
     _F: F,
   };

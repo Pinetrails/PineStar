@@ -972,6 +972,33 @@ const World = (() => {
     return a ? { tx: a.tx, ty: a.ty, face: a.face } : null;
   }
 
+  /* ---------- capability-prop resolution (G0.1: which prop does a firing tool light?) ----------
+     geo.props are in the bake's LOCAL frame; station.roomAt speaks WORLD tiles — geo.origin bridges them. */
+  const roomOfLocalTile = (lx, ly) => (station && geo && geo.origin) ? station.roomAt(lx + geo.origin.tx, ly + geo.origin.ty) : null;
+  // the acting agent's ROOM: its BAY's room first (the capability seam — the room whose props granted the
+  // tool), else the room its body stands in (hero/summoned workers have no bay).
+  function actingRoomId(aid) {
+    if (!station || !geo) return null;
+    if (aid && typeof station.agentRoomId === 'function') { const r = station.agentRoomId(aid); if (r) return r; }
+    const b = bodyForAgent(aid) || agent;
+    if (!b) return null;
+    const t = tileOf(b.px, b.py);
+    return roomOfLocalTile(t.x, t.y);
+  }
+  // the placed prop a capability pulse should land on: the agent's OWN assigned prop of that type first,
+  // then any matching prop in the acting agent's room, then any matching prop on the floor (null = none
+  // placed -> nothing pulses; a tool the floor didn't grant a body never invents one).
+  function capPropFor(cap, aid) {
+    if (!geo || !geo.props || !cap) return null;
+    const match = p => (station && station.capForProp && station.capForProp(p.t) === cap) || p.t === cap;   // t===cap covers catalog types named for the capability itself (e.g. jukebox)
+    const cands = geo.props.filter(match);
+    if (!cands.length) return null;
+    if (aid) { const own = cands.find(p => p.agentId === aid); if (own) return own; }
+    const room = actingRoomId(aid);
+    if (room) { const inRoom = cands.find(p => roomOfLocalTile(p.x, p.y) === room); if (inRoom) return inRoom; }
+    return cands[0];
+  }
+
   /* free this agent's claimed seat (idempotent) and drop the on-couch render offset */
   function releaseSeat() {
     if (!self) return;
@@ -2907,8 +2934,20 @@ const World = (() => {
     connPollFn = pollConnectors; pollConnectors(); connPollTimer = setInterval(pollConnectors, 5000);
     U.bus.on('agent.tool_call', p => {            // chat.js re-emits the hero's tool calls here; routed agents arrive via SSE
       const n = p && p.name;
-      if (!n || n.indexOf('mcp__') !== 0 || !PropSprites.pulseConnector) return;
-      for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
+      if (!n) return;
+      if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (unchanged)
+        if (!PropSprites.pulseConnector) return;
+        for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
+        return;
+      }
+      // G0.1 PER-TOOL PROP PULSE: a real tool fire lights the prop that GRANTS it (toolprops.js maps
+      // fs.*→cabinet · web/browser→dish · notebook/skill/recall/todo→notebook · image_*→studio ·
+      // spotify_*→jukebox), preferring the acting agent's own/room prop. shell/verify keep their dedicated
+      // workbench events below — the mapper returns null for them, so nothing ever double-fires.
+      const cap = (typeof ToolProps !== 'undefined') ? ToolProps.toolPropType(n) : null;
+      if (!cap || !PropSprites.pulseProp) return;
+      const tgt = capPropFor(cap, p.agentId);
+      if (tgt) PropSprites.pulseProp(tgt.id, cap);
     });
     // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
     U.bus.on('shell.exec', () => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
