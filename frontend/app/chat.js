@@ -456,13 +456,18 @@ const Chat = (() => {
     workRatedRuns.add(runId);
     if (workRatedRuns.size > 120) workRatedRuns.delete(workRatedRuns.values().next().value);
     const reason = verdict === 'great' ? 'work_great' : verdict === 'ok' ? 'work_ok' : 'work_miss';
-    const delta = workSizeDelta(runWork.get(runId));
+    const w = runWork.get(runId);
+    const delta = workSizeDelta(w);
+    // G2.4 task-size weighting: the same real stash also derives a small/medium/large hint (Xp.workSize —
+    // successful tools + reconciled spend); xp.js scales the mint by it, FEEDBACK_XP_CAP still the ceiling.
+    const size = (typeof Xp !== 'undefined' && Xp.workSize) ? Xp.workSize({ tools: (w && w.toolsOk) || 0, usd: (w && w.cost) || 0 }) : undefined;
     // DIRECT call — never U.bus.emit / never /api/memory/turnin. The 'work:'+runId id resolves to NO memory
     // record, so the sidecar memcore trust path is never touched (delta here is an XP size only).
-    if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason });
+    if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size });
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   function workRateControl(host, agentId, runId, onSettle) {
+    markRateShown(runId);   // G2.4: a control now exists for this run — the deferred starve-check stands down
     const lbl = document.createElement('span'); lbl.className = 'work-rate-label';
     lbl.textContent = '◈ rate ' + name + '’s work — ';
     const btns = document.createElement('span'); btns.className = 'consent-btns';
@@ -492,6 +497,35 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
     workRateControl(r.body, agentId, runId, () => vanish(r.d));
     autoscroll();
+  }
+
+  /* G2.4 — CLOSE THE RATE-STARVE HOLE. The rate control used to reach the Commander on exactly two
+     paths: embedded in a turn-in card, or the standalone beat — and the standalone beat stood down the
+     moment memory.proposed fired (proposalRunsSeen). Three ways that starved rating forever:
+       1. reflection proposed but the batch fetch came back EMPTY -> no card, no control;
+       2. the turn-in deck rendered WITH the embedded control, but the Commander decided every memory
+          without rating -> finishBatch vanished the whole card, control and all;
+       3. the batch landed on a NON-displayed stream -> a soft notify, no card, no control.
+     Every hole now funnels into maybeStandaloneRate: after any completed task run that did real work,
+     if no control was shown (or the one that was shown vanished unrated), the standalone beat fires. */
+  const rateShownRuns = new Set();   // runIds that actually got a rate control rendered (any surface)
+  function markRateShown(runId) {
+    if (!runId) return;
+    rateShownRuns.add(runId);
+    if (rateShownRuns.size > 120) rateShownRuns.delete(rateShownRuns.values().next().value);
+  }
+  // fire the standalone rate beat IFF this hero run did real work, is unrated, and no control/deck is
+  // already on screen (one rating ask at a time — anti-nag). Returns true when the beat fired.
+  function maybeStandaloneRate(agentId, runId) {
+    if (!log || !runId || workRatedRuns.has(runId)) return false;
+    if ((agentId || 'agent') !== 'agent') return false;                 // hero-only, mirroring the post-run slot
+    if (isBusy() || interview) return false;                            // never mid-run / mid-awakening
+    const w = runWork.get(runId);
+    if (!w || ((w.toolsOk || 0) < 1 && (w.delivered || 0) < 1)) return false;   // real work only — pure chat is never rate-prompted
+    if (activeTurnin && activeTurnin.node && activeTurnin.node.isConnected) return false;   // a review deck is up (it carries its own control)
+    if (log.querySelector('.cmsg.work-rate')) return false;             // a rate ask is already live
+    workRateBeat(agentId || 'agent', runId);
+    return true;
   }
 
   /* ── G2 RETURN RITUAL — the "while you were away" digest + the per-run collect beat. ──
@@ -628,7 +662,12 @@ const Chat = (() => {
 
     function finishBatch() {
       activeTurnin = null;
-      vanish(head.d, showNextTurnin);
+      vanish(head.d, () => {
+        showNextTurnin();
+        // G2.4 starve hole 2: the deck (and its embedded control) just vanished — if the Commander
+        // curated the memories but never rated the WORK, the standalone beat picks the rating up.
+        if (batch.runId) maybeStandaloneRate(batch.agentId || 'agent', batch.runId);
+      });
     }
     function updateTitle() {
       title.textContent = '◈ ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — review ' + (state.index + 1) + ' of ' + n;
@@ -701,7 +740,9 @@ const Chat = (() => {
       proposalRunsSeen.add(runId);
       setTimeout(async () => {
         const proposals = await Harness.memoryProposals(runId, agentId);
-        if (!proposals.length) return;
+        // G2.4 starve hole 1: memory.proposed fired (so the post-run slot stood down for the turn-in)
+        // but the batch fetch came back empty — no card would ever carry the rate control. Rate now.
+        if (!proposals.length) { maybeStandaloneRate(agentId, runId); return; }
         const batch = { runId, agentId, proposals };
         // route to the ORIGIN stream (the one whose run proposed these) — many streams share agentId 'agent',
         // so gating on agentId can drop the card into the wrong COMMS after a mid-window switch.
@@ -709,7 +750,12 @@ const Chat = (() => {
         if (typeof Workstreams !== 'undefined' && Workstreams.all) { try { originWs = Workstreams.all().find(w => (w.runIds || []).indexOf(runId) >= 0) || null; } catch (_) {} }
         const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
         if (onActive) proposalCard(batch, activeWs);
-        else if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
+        else {
+          if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
+          // G2.4 starve hole 3: the batch landed on a NON-displayed stream — a soft notify carries no
+          // rate control. The hero's work still deserves its rating in the visible COMMS.
+          maybeStandaloneRate(agentId, runId);
+        }
       }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
     });
   }
@@ -778,7 +824,14 @@ const Chat = (() => {
         if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return;   // a focused panel is up (First Pitch graduation / awakening / tutorial) — never slot a gentle nudge behind it
         // ONE post-run beat per run: if this run produced a memory turn-in (or a card is still open in the
         // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
-        if (runId && proposalRunsSeen.has(runId)) return;
+        // G2.4 safety net: standing down must not STARVE the rating — if no turn-in surface ever renders a
+        // control for this run (fetch hiccup, deck error), the standalone beat still eventually fires. The
+        // three known holes are closed at their sources (wireProposals empty/off-stream + finishBatch); this
+        // deferred check is the belt-and-suspenders (duplicates are blocked by the live .work-rate guard).
+        if (runId && proposalRunsSeen.has(runId)) {
+          setTimeout(() => { if (!rateShownRuns.has(runId)) maybeStandaloneRate(p.agentId || 'agent', runId); }, 9000);
+          return;
+        }
         if (log && log.querySelector('.turnin-item')) return;
         // RATE THE WORK (the primary leveling beat): if this run actually did real work and isn't rated yet, it
         // takes the one post-run slot. Gated on real tools/deliverables so a pure chat reply is never rate-prompted.
