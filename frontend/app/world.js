@@ -1967,7 +1967,13 @@ const World = (() => {
         if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => F_chair(s.tx * T, s.ty * T) }); }
       }
     }
-    if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) }) });   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
+    if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => {   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
+      // one desk art everywhere: the synthetic auto-desk routes through the canonical prop renderer
+      if (typeof PropSprites !== 'undefined' && PropSprites.has('desk')) {
+        PropSprites.setCtx(ctx); PropSprites.setNow(now);
+        PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, !!(agent && agent.working));
+      } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) });
+    } });
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => F_chair(seat.tx * T, seat.ty * T) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
