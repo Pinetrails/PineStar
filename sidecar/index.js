@@ -69,7 +69,7 @@ const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
-const { makeSseHub } = require('./channels/sse.js');
+const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
@@ -2062,20 +2062,18 @@ async function runOnce(o) {
   // lifecycle, so the station floor never lights for it. When a caller opts in via o.broadcast, ALSO mirror the
   // run-lifecycle events to the floor over SSE. Gated on the explicit flag — NOT on trigger — so the hero's
   // directive run never double-counts. Scheduled cron forwards lifecycle via its cron driver emit sink; manual
-  // Run Now opts into broadcast because its primary stream is panel-local. Restricted to run.start/cost/end so
-  // agent.token/tool noise never floods the SSE bus. Re-using the name `emit` means every existing emit(...) call
-  // site below tees automatically, with no per-site change.
+  // Run Now opts into broadcast because its primary stream is panel-local. WHAT may tee (and in what shape) is
+  // the runTeeView policy (channels/sse.js, unit-tested): run.start/cost/end whole; EVERY agent.tool_call as a
+  // NAME-ONLY view (agentId/runId/callId/name — args stripped structurally, so G0's per-tool prop pulses fire
+  // live for autonomous runs without tool arguments ever leaving the sidecar); agent.token never (that noise
+  // decision stands). redact() still runs over the view as a second backstop. Re-using the name `emit` means
+  // every existing emit(...) call site below tees automatically, with no per-site change.
   const rawEmit = o.emit;
   const emit = o.broadcast
     ? (name, payload) => {
         try { rawEmit(name, payload); } catch (_) {}
-        if (name === 'agent.run.start' || name === 'agent.cost' || name === 'agent.run.end') {
-          try { sse.broadcast(name, redact(payload)); } catch (_) {}
-        } else if (name === 'agent.tool_call' && payload && typeof payload.name === 'string' && payload.name.indexOf('mcp__') === 0) {
-          // P3: a routed run's MCP tool call pulses its connector portal on the floor. Only mcp__ calls are
-          // teed (not fs/shell), so the SSE bus stays quiet while the on-ramp still lights when it really fires.
-          try { sse.broadcast(name, redact(payload)); } catch (_) {}
-        }
+        const view = runTeeView(name, payload);
+        if (view) { try { sse.broadcast(name, redact(view)); } catch (_) {} }
       }
     : rawEmit;
 

@@ -10,6 +10,32 @@
    with a fake res. A client whose write() throws (dead socket) is evicted on the next broadcast. */
 'use strict';
 
+/* G2.1 — the server-initiated-run egress policy: which runOnce lifecycle events a broadcast-opted
+   run may tee onto the SSE bus, and in what SHAPE. Pure (no IO/clock) so the redaction contract is
+   unit-testable. Returns the payload VIEW to broadcast, or null for "never teed".
+     • agent.run.start / agent.cost / agent.run.end — teed whole (the floor's run lifecycle).
+     • agent.tool_call — teed NAME-ONLY: { agentId, runId, callId, name }. args/argsSummary are
+       stripped STRUCTURALLY (never copied), so a routed run's tool arguments — which can carry user
+       text, file paths, or fetched content — never leave the sidecar on this path (the B4
+       redacted-egress rule). The four kept fields satisfy the frozen agent.tool_call schema, so
+       every existing consumer (connector-portal pulse, G0 per-tool prop pulse, desk heat,
+       delegation window) still fires for autonomous/cron runs.
+     • agent.token (and everything else) — null. The token stream stays off the SSE bus by design
+       (that noise decision stands; desk heat for UNWATCHED runs rides tool_call instead). */
+function runTeeView(name, payload) {
+  const p = payload || {};
+  if (name === 'agent.run.start' || name === 'agent.cost' || name === 'agent.run.end') return p;
+  if (name === 'agent.tool_call') {
+    return {
+      agentId: String(p.agentId == null ? '' : p.agentId),
+      runId: String(p.runId == null ? '' : p.runId),
+      callId: String(p.callId == null ? '' : p.callId),
+      name: String(p.name == null ? '' : p.name)
+    };
+  }
+  return null;
+}
+
 function makeSseHub() {
   const clients = new Set();
 
@@ -35,4 +61,4 @@ function makeSseHub() {
   return { add, remove, size, broadcast, format };
 }
 
-module.exports = { makeSseHub };
+module.exports = { makeSseHub, runTeeView };

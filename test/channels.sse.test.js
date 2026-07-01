@@ -1,10 +1,12 @@
 /* test/channels.sse.test.js — the SSE fan-out that forwards channel/work-item telemetry to the
    live station HUD. Pure + headless: a "client" is any object with .write(string); we drive it
    with a fake res (no node:http, no socket). Guards the two things that matter — every client gets
-   each event, and disconnected/dead clients are removed so the Set never leaks. */
+   each event, and disconnected/dead clients are removed so the Set never leaks.
+   ALSO (G2.1): the runTeeView egress policy for broadcast-opted server-initiated runs — every
+   agent.tool_call tees NAME-ONLY (args stripped structurally), agent.token never tees. */
 'use strict';
 const A = require('./_assert.js');
-const { makeSseHub } = require('../sidecar/channels/sse.js');
+const { makeSseHub, runTeeView } = require('../sidecar/channels/sse.js');
 
 const hub = makeSseHub();
 A.eq(hub.size(), 0, 'a fresh hub has no clients');
@@ -38,5 +40,42 @@ hub.add({ write: () => { throw new Error('EPIPE'); } });
 A.eq(hub.size(), 2, 'the throwing client is registered before the broadcast');
 hub.broadcast('queue.status', { depth: 4 });
 A.eq(hub.size(), 1, 'a client whose write() throws is evicted (the Set never grows unbounded)');
+
+/* ---------- G2.1: the server-initiated-run tee policy (runTeeView) ---------- */
+// run lifecycle passes through whole
+const startP = { agentId: 'a1', runId: 'r1', trigger: 'schedule', model: 'm' };
+A.eq(runTeeView('agent.run.start', startP), startP, 'agent.run.start tees whole');
+A.ok(!!runTeeView('agent.cost', { agentId: 'a1', runId: 'r1', usd: 0.01, reconciled: true }), 'agent.cost tees');
+A.ok(!!runTeeView('agent.run.end', { agentId: 'a1', runId: 'r1', reason: 'done', turns: 1, usd: 0 }), 'agent.run.end tees');
+
+// EVERY tool_call tees — not just mcp__ — but NAME-ONLY: args/argsSummary stripped structurally
+const tc = runTeeView('agent.tool_call', { agentId: 'a1', runId: 'r1', callId: 'c1', name: 'fs.read', argsSummary: 'C:/secret/path.txt' });
+A.ok(!!tc, 'a plain (non-mcp) tool_call is teed — G0 prop pulses fire for autonomous runs');
+A.eq(tc.name, 'fs.read', 'the tool NAME is carried (the prop mapper keys on it)');
+A.eq(tc.agentId, 'a1', 'agentId is carried (pulse lands on the acting agent\'s prop)');
+A.eq(tc.runId, 'r1', 'runId is carried (frozen agent.tool_call schema requires it)');
+A.eq(tc.callId, 'c1', 'callId is carried (the delegation window pairs call->result)');
+A.ok(!('argsSummary' in tc), 'argsSummary is STRIPPED — tool arguments never ride the SSE bus');
+A.eq(Object.keys(tc).sort().join(','), 'agentId,callId,name,runId', 'the tool_call view carries EXACTLY the four id fields — nothing else can leak');
+const tcm = runTeeView('agent.tool_call', { agentId: 'a1', runId: 'r1', callId: 'c2', name: 'mcp__github__search', argsSummary: '{"q":"x"}' });
+A.ok(tcm && tcm.name === 'mcp__github__search' && !('argsSummary' in tcm), 'mcp__ tool_calls keep pulsing their portal, now also name-only');
+
+// the token stream NEVER tees (that noise decision stands)
+A.eq(runTeeView('agent.token', { agentId: 'a1', runId: 'r1', delta: 'hello' }), null, 'agent.token is never teed');
+A.eq(runTeeView('agent.tool_result', { agentId: 'a1', runId: 'r1', callId: 'c1', ok: true, isError: false, summary: 's' }), null, 'tool_result is not teed (unchanged)');
+A.eq(runTeeView('agent.reasoning', { agentId: 'a1', runId: 'r1', on: true }), null, 'other run events stay off the bus');
+
+// SOURCE GUARD (lint-emits idiom): the runOnce broadcast tee in sidecar/index.js must route through
+// runTeeView — a hand-rolled tee could silently re-leak args or re-tee tokens.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '../sidecar/index.js'), 'utf8');
+  const i = src.indexOf('const emit = o.broadcast');
+  A.ok(i > 0, 'index.js has the broadcast-opted tee');
+  const seg = src.slice(i, i + 400);
+  A.ok(/runTeeView\(name,\s*payload\)/.test(seg), 'the tee routes through the runTeeView egress policy');
+  A.ok(/redact\(view\)/.test(seg), 'the teed view still passes redact() as a second backstop');
+}
 
 A.report('channels.sse');
