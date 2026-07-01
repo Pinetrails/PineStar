@@ -31,7 +31,8 @@ const World = (() => {
   // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
   const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
-  let _lut = null, _lutKey = '', _outImg = null;   // per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurve()
+  let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
+  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
@@ -2089,7 +2090,69 @@ const World = (() => {
   }
   function drawCurve(now) {
     if (!cv || CRT.curve <= 0 || document.body.classList.contains('no-scan')) return;
-    const k = CRT.curve, W = cv.width, H = cv.height, hw = W / 2, hh = H / 2;
+    const k = CRT.curve, W = cv.width, H = cv.height;
+    if (!_glFailed && drawCurveGL(k, W, H)) return;   // GPU path (near-free); on any failure it flips _glFailed
+    drawCurveCPU(k, W, H);                             // CPU fallback (per-pixel LUT) — identical look, heavier
+  }
+
+  // GPU barrel warp: upload the frame as a texture and remap it in a fragment shader (same inverse of
+  // ro = rs·(1 - k·rs²), same vignette). No per-pixel CPU loop, no getImageData/putImageData → near-free.
+  function initGL(W, H) {
+    if (_glReady || _glFailed) return _glReady;
+    try {
+      _glc = document.createElement('canvas'); _glc.width = W; _glc.height = H;
+      _gl = _glc.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true }) ||
+            _glc.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+      if (!_gl) throw new Error('no webgl');
+      const gl = _gl;
+      const vs = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos*0.5+0.5; gl_Position = vec4(aPos,0.0,1.0); }';
+      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK;\n' +
+        'void main(){\n' +
+        '  vec2 n = (vUv-0.5)*2.0; float ro = length(n); float rs = ro;\n' +
+        '  for(int i=0;i<6;i++){ float g = rs*(1.0-uK*rs*rs)-ro; float dg = 1.0-3.0*uK*rs*rs; rs = rs - g/dg; }\n' +
+        '  float scale = ro>1e-5 ? rs/ro : 1.0; vec2 sUv = n*scale*0.5+0.5;\n' +
+        '  if(sUv.x<0.0||sUv.x>1.0||sUv.y<0.0||sUv.y>1.0){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }\n' +
+        '  vec3 col = texture2D(uTex, sUv).rgb; float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
+        '  gl_FragColor = vec4(col*vig, 1.0);\n' +
+        '}';
+      const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s)); return s; };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(prog));
+      gl.useProgram(prog);
+      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);   // one big triangle covers the quad
+      const loc = gl.getAttribLocation(prog, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      _glTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, _glTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);   // NEAREST → crisp pixel art, matches the CPU path
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is top; flip so texcoords line up right-side-up
+      gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
+      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glProg = prog; _glReady = true;
+      return true;
+    } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
+  }
+  function drawCurveGL(k, W, H) {
+    try {
+      if (!initGL(W, H)) return false;
+      const gl = _gl;
+      if (_glc.width !== W || _glc.height !== H) { _glc.width = W; _glc.height = H; }
+      gl.viewport(0, 0, W, H);
+      gl.bindTexture(gl.TEXTURE_2D, _glTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);   // upload the composited frame
+      gl.uniform1f(_glKLoc, k);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
+      return true;
+    } catch (e) { console.warn('[crt] WebGL curve draw failed, using CPU fallback:', e && e.message); _glFailed = true; return false; }
+  }
+  function drawCurveCPU(k, W, H) {
+    const hw = W / 2, hh = H / 2;
     if (!_warpCv) { _warpCv = document.createElement('canvas'); _warpCtx = _warpCv.getContext('2d', { willReadFrequently: true }); }
     if (_warpCv.width !== W || _warpCv.height !== H) { _warpCv.width = W; _warpCv.height = H; }
     _warpCtx.setTransform(1, 0, 0, 1, 0, 0); _warpCtx.clearRect(0, 0, W, H); _warpCtx.drawImage(cv, 0, 0);
