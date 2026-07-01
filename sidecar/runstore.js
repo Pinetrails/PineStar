@@ -12,10 +12,15 @@
    in-memory io. A missing/corrupt file -> empty history (fail-open; a run is never crashed by an unreadable log).
 
    makeRunStore({ io, clock, limit? }) -> {
-     record({ runId, agentId, reason, turns, tokens, usd, title }) -> entry,   // stamps ts, appends, returns it
+     record({ runId, agentId, reason, turns, tokens, usd, title, artifacts? }) -> entry,   // stamps ts, appends, returns it
      list(agentId?, { limit }?) -> entry[]   // newest-first; filtered to agentId when given; capped
      all() -> entry[],   count() -> int
-   } */
+   }
+
+   Work-visibility slice 1 (ADDITIVE): `artifacts` — what the run PRODUCED, as small sanitized records
+   ({ kind:'file'|'image'|'message', path?, target?, bytes? }, max 50, strings cut at 260). Collected by
+   sidecar/artifacts.js during the run; defaults to []. Rows persisted before the field existed simply
+   lack it and still parse/list fine (fail-open — proven in runstore.test.js). */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -28,9 +33,28 @@
   const DEFAULT_LIMIT = 200;        // a sane cap so list() never returns an unbounded history
   const TITLE_MAX = 120;
   const UNKNOWN_MODEL = '(unknown)';
+  const ARTIFACT_KINDS = { file: 1, image: 1, message: 1 };
+  const ARTIFACTS_MAX = 50;         // a run that writes 500 files still records a bounded row
+  const ARTIFACT_STR_MAX = 260;     // classic MAX_PATH — a path/target is a display label, not a blob
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function str(v) { return v == null ? '' : String(v); }
   function modelName(v) { const s = str(v).trim(); return (s || UNKNOWN_MODEL).slice(0, 80); }
+  // sanitize the collector's artifact records at the persistence boundary (defense in depth: the collector
+  // already caps, but a foreign caller can't write an unbounded/garbage blob into the append-only log).
+  function artifactList(v) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const a of v) {
+      if (out.length >= ARTIFACTS_MAX) break;
+      if (!a || typeof a !== 'object' || !ARTIFACT_KINDS[a.kind]) continue;
+      const rec = { kind: a.kind };
+      if (a.path != null && str(a.path)) rec.path = str(a.path).slice(0, ARTIFACT_STR_MAX);
+      if (a.target != null && str(a.target)) rec.target = str(a.target).slice(0, ARTIFACT_STR_MAX);
+      if (typeof a.bytes === 'number' && isFinite(a.bytes) && a.bytes >= 0) rec.bytes = Math.floor(a.bytes);
+      if (rec.path || rec.target) out.push(rec);
+    }
+    return out;
+  }
 
   function makeRunStore(opts) {
     opts = opts || {};
@@ -53,6 +77,7 @@
         streamId: str(e.streamId),     // H3.2: the run's workstream — joins this outcome row to its transcript (GET /api/transcript?stream=)
         model: modelName(e.model),   // H3.3/G6: actual model used, or explicit (unknown) as a last resort
         unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
+        artifacts: artifactList(e.artifacts),   // work-visibility: what the run PRODUCED (additive; [] default)
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);

@@ -95,4 +95,46 @@ const clock = { now: () => clk };
   A.eq(s.record({ runId: 'm2', agentId: 'a', model: '' }).model, '(unknown)', 'empty model becomes explicit unknown');
 }
 
+// ---- I. (work-visibility) artifacts ride the entry: sanitized, capped, [] default ----
+{
+  const io = memIo();
+  const s = makeRunStore({ io, clock });
+  const e = s.record({ runId: 'w1', agentId: 'a', reason: 'done', artifacts: [
+    { kind: 'file', path: 'report.md', bytes: 2150 },
+    { kind: 'image', path: 'images/gen-ab.png' },
+    { kind: 'message', target: 'telegram' },
+    { kind: 'bogus', path: 'nope' },                    // unknown kind dropped
+    { kind: 'file' },                                    // no path/target -> dropped
+    'garbage', null                                      // non-objects dropped
+  ] });
+  A.eq(e.artifacts, [
+    { kind: 'file', path: 'report.md', bytes: 2150 },
+    { kind: 'image', path: 'images/gen-ab.png' },
+    { kind: 'message', target: 'telegram' }
+  ], 'artifacts sanitized to known kinds with path/target/bytes only');
+  A.eq(s.record({ runId: 'w2', agentId: 'a' }).artifacts, [], 'missing artifacts defaults to []');
+  A.eq(s.record({ runId: 'w3', agentId: 'a', artifacts: 'nope' }).artifacts, [], 'non-array artifacts defaults to []');
+  const big = s.record({ runId: 'w4', agentId: 'a', artifacts: Array.from({ length: 80 }, (_, i) => ({ kind: 'file', path: 'f' + i })) });
+  A.eq(big.artifacts.length, 50, 'artifacts capped at 50 records');
+  const long = s.record({ runId: 'w5', agentId: 'a', artifacts: [{ kind: 'file', path: 'x'.repeat(999) }] });
+  A.ok(long.artifacts[0].path.length <= 260, 'artifact path capped at 260 chars');
+  A.eq(io.lines[0].artifacts.length, 3, 'artifacts persisted on the appended JSONL row');
+}
+
+// ---- J. (work-visibility) OLD JSONL rows WITHOUT artifacts still parse + list (fail-open) ----
+{
+  const io = memIo();
+  // legacy rows, written before the artifacts field existed (exactly the pre-slice entry shape)
+  io.lines.push({ runId: 'old1', agentId: 'a', reason: 'done', turns: 2, tokens: 10, usd: 0.01, title: 't', streamId: '', model: 'm', unmetered: false, ts: 5 });
+  io.lines.push({ runId: 'old2', agentId: 'a', reason: 'error', turns: 0, tokens: 0, usd: 0, title: '', streamId: '', model: 'm', unmetered: false, ts: 6 });
+  const s = makeRunStore({ io, clock });
+  A.eq(s.count(), 2, 'legacy rows replay into the store');
+  const rows = s.list('a');
+  A.eq(rows.map(r => r.runId), ['old2', 'old1'], 'legacy rows list newest-first, unchanged');
+  A.ok(!('artifacts' in rows[0]) || Array.isArray(rows[0].artifacts), 'a legacy row is served as-is (no crash, no fabricated field)');
+  const e = s.record({ runId: 'new1', agentId: 'a', artifacts: [{ kind: 'file', path: 'n.txt' }] });
+  A.eq(e.artifacts, [{ kind: 'file', path: 'n.txt' }], 'new records alongside legacy rows carry artifacts');
+  A.eq(s.list('a').map(r => r.runId), ['new1', 'old2', 'old1'], 'mixed old/new history lists together');
+}
+
 A.report('runstore.test');
