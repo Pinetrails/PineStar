@@ -672,6 +672,9 @@ const PropSprites = (() => {
   F.outbox = (x, y, w, h, f) => {
     // OUTBOX / DISPATCH CHUTE — where the agent's reply LEAVES the station. Mirror of INTAKE, but cyan/green
     // (outgoing) vs INTAKE's amber (incoming). Flares brighter on f.work when a reply box arrives.
+    // G2.3 UNCOLLECTED WORK: while-away runs the Commander hasn't reviewed stack as banked-product
+    // crates on the chute (f.crates, fed by world.js from the ReturnStore ledger — real recorded
+    // runs, never invented). Cap 5 visible + a counter; clicking the chute opens the review beat.
     sh(x + 1, y + h - 1, w - 2);                                    // floor contact shadow
     box(x, y + 3, w, h - 3, '#2a322f');
     px(x + 1, y + 4, w - 2, 1, '#3a463f');                          // top-lit edge
@@ -694,6 +697,27 @@ const PropSprites = (() => {
     px(ax, y - 3, 1, 1, active ? '#7df0c8' : (blink(720, 1) ? '#41ff8a' : '#173026'));
     if (active) glow(ax - 2, y - 4, 5, 4, '#5ad1b3', 0.35);
     wear(x + 2, y + 5, w - 4, h - 8, 3, '#1d2420');
+    // the uncollected-crate stack (G2.3): banked-product minis climbing off the collar's left side,
+    // with the queue-jam idiom (gentle hash-phased bob + '+N' overflow in the VT323 terminal face).
+    const crates = Math.max(0, (f && f.crates) | 0);
+    if (crates > 0) {
+      const shown = Math.min(crates, 5);
+      const cx = x + 5;                                          // left of the uplink mast
+      for (let i = 0; i < shown; i++) {
+        const cy = y - 2 - i * 6 + Math.sin(now / 380 + i * 0.7) * 0.6;
+        const bx0 = Math.round(cx - 4), by0 = Math.round(cy - 4);
+        px(bx0 - 1, by0 - 1, 11, 8, '#101614');                  // dark outline
+        px(bx0, by0 + 3, 9, 3, '#2a6a56');                       // shaded front face
+        px(bx0, by0, 9, 3, '#5ad1b3');                           // lit product top
+        px(bx0, by0, 9, 1, '#c8f4e6');                           // top sheen
+      }
+      glow(cx - 5, y - 2 - shown * 6, 12, shown * 6 + 4, '#5ad1b3', 0.18);   // the stack reads from across the room
+      if (crates > 5) {
+        ctx.fillStyle = '#7df0c8'; ctx.font = "7px 'VT323','Courier New',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('+' + (crates - 5), cx, y - 2 - shown * 6 - 4);
+      }
+    }
   };
 
   F.splitter = (x, y, w, h, f) => {
@@ -3988,6 +4012,11 @@ const PropSprites = (() => {
   const CAP_GLOW = { cabinet: '#e8c860', dish: '#4ad9ff', notebook: '#41ff8a', studio: '#ff6ad5', jukebox: '#ffd34a' };
   const propPulse = {};          // propId -> { at, cap }
   function pulseProp(id, cap) { if (!id) return; propPulse[id] = { at: now, cap: cap || '' }; }
+
+  // G2.3 — uncollected while-away work: the world layer feeds the ReturnStore's pending-crate count
+  // here each frame; the OUTBOX sprite stacks that many banked-product crates (cap 5 + counter).
+  let outboxCrates = 0;
+  function setOutboxCrates(n) { outboxCrates = Math.max(0, n | 0); }
   function propFired(id) { const s = id && propPulse[id]; return (s && s.at) ? Math.max(0, 1 - (now - s.at) / PULSE_MS) : 0; }
 
   /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens.
@@ -4006,6 +4035,7 @@ const PropSprites = (() => {
       o.fired = connectorFired(cid);
     }
     if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
+    if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
     fn(X, Y, W, H, o);
     // G0.3 ACTIVITY-HEAT WASH: real token/tool flow burns the working screens brighter + shimmers faster
     // (the monitors live in the prop's upper band); a stalled run cools back to the base work-glow in ~2s.
@@ -4044,6 +4074,8 @@ const PropSprites = (() => {
     pulseWorkbench,
     // per-instance capability-prop pulse (G0.1 — the world layer feeds this off agent.tool_call via toolprops.js)
     pulseProp,
+    // G2.3 uncollected-crate stack on the OUTBOX (the world layer feeds this from ReturnStore.pendingCount)
+    setOutboxCrates,
     // exposed for tests / reuse
     _F: F,
   };
