@@ -225,9 +225,9 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 }
 body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
-/* NOTE: the feed scanlines are rendered IN-CANVAS now (world.js drawCRT) at device-pixel
-   resolution — crisp + bold where a CSS overlay washed out to a faint haze. The CSS layer
-   only carries the curved glass (::before) + the faint global lines on the surrounding chrome. */
+/* NOTE: scanlines are painted IN-CANVAS now (world.js drawCRT — device-px integer lines, drawn OVER
+   the warped feed). They are NOT a CSS overlay anymore: the old #stage-wrap::after gradient rasterised
+   against the display grid and beat into wide moiré stripes. Don't re-add a CSS scanline layer here. */
 
 /* camera HUD overlay (reused v7 idiom) */
 .cam-hud { position: absolute; inset: 0; pointer-events: none; font-size: 14px; color: var(--ph); z-index: 3; }

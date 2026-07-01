@@ -26,7 +26,7 @@ const StationBake = (() => {
        pool     = how brightly the ceiling lamps carve their light pools back out
        room/corridor/door = baseline lift inside each space type
        floor    = warmth of the additive light pool painted on the floor */
-  const LIGHT = { ambient: 0.76, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.54, corridor: 0.42, door: 0.5, floor: 0.26 };
+  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
 
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },

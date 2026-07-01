@@ -29,7 +29,10 @@ const World = (() => {
   // live-tunable CRT knobs — drawCRT/drawGlows read these every frame so the dev CRT LAB
   // (crtlab.js, dev-gated) can tune them live. These ARE the shipped defaults: bold scanlines,
   // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
-  const CRT = { scan: 0.43, pitch: 2, fade: 0, glow: 0.08 };
+  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
+  let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
+  let _lut = null, _lutKey = '', _outImg = null;   // per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurve()
+  let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -2006,27 +2009,45 @@ const World = (() => {
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
     drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
-    drawCRT(now);   // CRT scanlines + roll band over the whole feed (screen-space, absolutely last)
+    drawCurve(now); // barrel-warp the whole feed IN-CANVAS — the original (dot-matrix-era) curve, no dots
+    drawCRT(now);   // scanlines + fade, painted in-canvas at device-px OVER the warped feed (no moiré)
 
     if (running) raf = requestAnimationFrame(frame);
   }
 
-  // ---- CRT "FADE" FILTER (screen-space, drawn last over the whole feed) --------
-  // A LIGHT touch, not bold bars: very faint NEUTRAL scanlines (no warm tint — the warm
-  // beam-cores were what cast the yellow) + a soft cool matte wash that lifts the blacks a
-  // hair for that faded old-screen look. Rendered in-canvas at device-pixel res so the
-  // line texture stays crisp. Honors body.no-scan. Tunables flagged below.
+  // ---- CRT SCANLINES + FADE (screen-space, drawn last, OVER the curved feed) --------
+  // Runs AFTER drawCurve, so the scanlines sit straight on TOP of the already-warped picture and are
+  // painted at EXACT device pixels (integer pitch/line) — no resampling, so no moiré. (The earlier CSS
+  // overlay rasterised the line gradient against the display grid and beat into wide stripes; in-canvas
+  // device-px lines, the proven desktop look, don't.) Honors body.no-scan.
+  // SOFT scanline pattern — a smooth raised-cosine darkening per period, NOT hard on/off bars. Hard bars
+  // carry sharp edges (lots of high-frequency harmonics) that beat into diagonal moiré stripes the moment
+  // the canvas is resampled (display scaling, any non-1:1 mapping). A pure-sine profile carries only its
+  // fundamental, so when scaled down it averages into gentle uniform dimming instead of striping, and at
+  // 1:1 it still reads as CRT lines. Cached; rebuilt only when scan/pitch/dpr change.
+  function scanCanvas(scan, pitch, dpr) {
+    const P = Math.max(2, Math.round(pitch * dpr));
+    const key = scan.toFixed(3) + '|' + P;
+    if (_scanKey === key && _scanCv) return _scanCv;
+    const pc = document.createElement('canvas'); pc.width = 1; pc.height = P;
+    const pctx = pc.getContext('2d'), id = pctx.createImageData(1, P);
+    for (let y = 0; y < P; y++) {
+      const a = scan * (0.5 + 0.5 * Math.cos(2 * Math.PI * y / P));   // darkest at the line, smoothly transparent between
+      id.data[y * 4] = 0; id.data[y * 4 + 1] = 0; id.data[y * 4 + 2] = 0; id.data[y * 4 + 3] = Math.round(a * 255);
+    }
+    pctx.putImageData(id, 0, 0);
+    _scanCv = pc; _scanKey = key;
+    return _scanCv;
+  }
   function drawCRT(now) {
     if (!cv || document.body.classList.contains('no-scan')) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const dpr = window.devicePixelRatio || 1;
     const W = cv.width, H = cv.height;
-    const pitch = Math.max(2, Math.round(CRT.pitch * dpr));   // scanline spacing (device px)
-    const line = Math.max(1, Math.round(dpr));               // line thickness (device px)
-    if (CRT.scan > 0) {                               // faint neutral scanlines — CRT.scan
+    if (CRT.scan > 0) {                               // soft neutral scanlines, drawn straight on top of the feed
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(0,0,0,' + CRT.scan + ')';
-      for (let y = 0; y < H; y += pitch) ctx.fillRect(0, y, W, line);
+      const sc = scanCanvas(CRT.scan, CRT.pitch, dpr);
+      ctx.fillStyle = ctx.createPattern(sc, 'repeat'); ctx.fillRect(0, 0, W, H);
     }
     if (CRT.fade > 0) {                               // soft faded matte (cool-neutral, no yellow) — CRT.fade
       ctx.globalCompositeOperation = 'lighter';
@@ -2034,6 +2055,59 @@ const World = (() => {
       ctx.fillRect(0, 0, W, H);
     }
     ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---- BARREL CURVE — bows the whole feed like a CRT tube --------------------------------------
+  // Same signed-off warp (f = 1 - curve·r²): the picture is pulled toward center as r² grows so the rooms
+  // bow and the corners fall away into dark, plus the edge vignette (1 - 0.55·r²). Rendered as an EXACT
+  // PER-PIXEL remap — each output pixel reads its source through a precomputed inverse-map LUT. NOT a
+  // triangle mesh: a mesh draws the picture as thousands of triangles whose seams line up into the diagonal
+  // stripes; a per-pixel remap has no triangles, so there are no seams and no diagonal lines. Curve is identical.
+  function buildLUT(k, W, H) {
+    const key = k.toFixed(4) + '|' + W + 'x' + H;
+    if (_lutKey === key && _lut) return;
+    const hw = W / 2, hh = H / 2, lut = new Int32Array(W * H);
+    for (let oy = 0; oy < H; oy++) {
+      const ny = (oy + 0.5 - hh) / hh;
+      for (let ox = 0; ox < W; ox++) {
+        const nx = (ox + 0.5 - hw) / hw, ro = Math.sqrt(nx * nx + ny * ny);
+        let scale = 1;
+        if (ro > 1e-6) {                    // invert ro = rs·(1 - k·rs²) for rs (Newton); source dir = output dir
+          let rs = ro;
+          for (let it = 0; it < 6; it++) {
+            const g = rs * (1 - k * rs * rs) - ro, dg = 1 - 3 * k * rs * rs;
+            if (Math.abs(dg) < 1e-9) break;
+            rs -= g / dg;
+          }
+          scale = rs / ro;
+        }
+        const sx = (hw + nx * scale * hw) | 0, sy = (hh + ny * scale * hh) | 0;
+        lut[oy * W + ox] = (sx >= 0 && sx < W && sy >= 0 && sy < H) ? (sy * W + sx) : -1;
+      }
+    }
+    _lut = lut; _lutKey = key;
+  }
+  function drawCurve(now) {
+    if (!cv || CRT.curve <= 0 || document.body.classList.contains('no-scan')) return;
+    const k = CRT.curve, W = cv.width, H = cv.height, hw = W / 2, hh = H / 2;
+    if (!_warpCv) { _warpCv = document.createElement('canvas'); _warpCtx = _warpCv.getContext('2d', { willReadFrequently: true }); }
+    if (_warpCv.width !== W || _warpCv.height !== H) { _warpCv.width = W; _warpCv.height = H; }
+    _warpCtx.setTransform(1, 0, 0, 1, 0, 0); _warpCtx.clearRect(0, 0, W, H); _warpCtx.drawImage(cv, 0, 0);
+    buildLUT(k, W, H);
+    const src = _warpCtx.getImageData(0, 0, W, H), s32 = new Uint32Array(src.data.buffer);
+    if (!_outImg || _outImg.width !== W || _outImg.height !== H) _outImg = ctx.createImageData(W, H);
+    const d32 = new Uint32Array(_outImg.data.buffer), lut = _lut, BLACK = 0xFF000000;
+    for (let i = 0; i < d32.length; i++) { const s = lut[i]; d32[i] = s < 0 ? BLACK : s32[s]; }
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.putImageData(_outImg, 0, 0);
+    // edge vignette (matches the dot-matrix's 1 - 0.55·r²): darken toward the bowed corners
+    ctx.save(); ctx.globalCompositeOperation = 'source-over'; ctx.translate(hw, hh); ctx.scale(hw, hh);
+    const vg = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.SQRT2);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(0.5, 'rgba(0,0,0,0.275)');     // r²≈0.5
+    vg.addColorStop(0.707, 'rgba(0,0,0,0.55)');    // r²≈1 (edge midpoints)
+    vg.addColorStop(1, 'rgba(0,0,0,1)');           // r²≈2 (corners) → black
+    ctx.fillStyle = vg; ctx.fillRect(-Math.SQRT2, -Math.SQRT2, 2 * Math.SQRT2, 2 * Math.SQRT2);
+    ctx.restore();
   }
 
   function drawGlows(now) {

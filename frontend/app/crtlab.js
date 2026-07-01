@@ -10,8 +10,8 @@
 (function () {
   if (!/[?&]crtlab\b/.test(location.search)) return;
 
-  const CRT_DEFAULTS = { scan: 0.09, pitch: 2, fade: 1.0, glow: 0.13 };
-  const LIGHT_DEFAULTS = { ambient: 0.72, pool: 0.95, room: 0.5, corridor: 0.42, door: 0.5, floor: 0.22 };
+  const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
+  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
 
   const PRESETS = {
     'Clean (off)':     { crt: { scan: 0, fade: 0 } },
@@ -124,11 +124,12 @@
       collapse.textContent = hidden ? '–' : '+';
     });
 
-    section(body, 'SCANLINES / FADE');
+    section(body, 'SCANLINES / FADE / CURVE');
     sliders.push(buildSlider(body, crt, 'scan', 0, 0.5, 0.01));
     sliders.push(buildSlider(body, crt, 'pitch', 1, 6, 0.5));
     sliders.push(buildSlider(body, crt, 'fade', 0, 3, 0.05));
     sliders.push(buildSlider(body, crt, 'glow', 0, 0.4, 0.01));
+    sliders.push(buildSlider(body, crt, 'curve', 0, 0.4, 0.01));   // barrel-curve the whole feed (0 = flat)
 
     section(body, 'LIGHTING (re-bakes)');
     sliders.push(buildSlider(body, light, 'ambient', 0.3, 0.92, 0.01, scheduleRebake));
