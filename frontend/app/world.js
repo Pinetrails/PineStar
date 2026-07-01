@@ -117,6 +117,7 @@ const World = (() => {
   const SELF_STIM = ['too quiet', 'something to do', 'restless', 'let me find something', 'need a spark'];
   const SELF_TEND = ['anything for me?', 'standing by', 'awaiting orders', 'still here, Commander', 'ready when you are'];
   const SELF_ONDUTY = ['on it', 'parsing', 'let me think', 'working it', 'processing'];
+  const SELF_NOCOMPUTE = ['no terminal in this room', 'nothing to run on here', 'i need a computer here', 'this room has no compute'];   // G0.7: sat down to work in a room that grants no COMPUTE — said once, then silence
   const SELF_QUIET = ['...', 'cycles to spare', 'so quiet', 'just me and the stars', 'standing by'];
   const SELF_CONTEMPLATE = ['quiet out there', 'so much void', 'just... processing', 'the stars again', 'endless out there'];
   const SELF_DISPATCH = ['sent', 'delivered', 'thats away', 'reply is out', 'done and gone'];
@@ -252,6 +253,7 @@ const World = (() => {
     const next = station.projectGeometry();
     const oldOrigin = geo ? geo.origin : null;
     geo = next; T = geo.TILE;
+    computeOkCache.clear();        // G0.7: placements changed — re-answer "can this agent's room actually run?"
     placeDesk();
     compileRouting();              // recompile the RoutingPlan (+ POST to the sidecar) — the single point floor edits flow through
     junctions = buildJunctions();
@@ -279,6 +281,24 @@ const World = (() => {
     bakeDirty = false;
   }
 
+  /* ---------- G0.7 empty-room honesty: can this agent's runs actually pass the COMPUTE GATE? ----------
+     Only decidable for a BAY-BOUND agent — the bay's room is the capability seam the sidecar resolves
+     tools from (station.bayObjects mirrors resolveTools' input, incl. the dedicated-PC rule). The HERO
+     gets compute as the interactive freebie (see heroCaps) and a bayless summoned worker runs on lead-
+     conferred access — both are always OK here: we never claim a lie we cannot prove. Cached per geo
+     generation (computeOkCache cleared in rederive) so the per-frame lit check stays O(1). */
+  const computeOkCache = new Map();   // agentId -> bool
+  function agentComputeOK(aid) {
+    if (!station || !aid || (agent && aid === agent.id)) return true;
+    if (typeof station.agentRoomId !== 'function' || typeof station.bayObjects !== 'function') return true;
+    if (!station.agentRoomId(aid)) return true;   // no bay -> not room-resolved -> can't honestly call it dark
+    return station.bayObjects(aid).some(o => (o && typeof o === 'object' ? o.objectType : o) === 'computer');
+  }
+  function computeOkFor(aid) {
+    if (!computeOkCache.has(aid)) computeOkCache.set(aid, agentComputeOK(aid));
+    return computeOkCache.get(aid);
+  }
+
   // a PLACED workstation prop lights its screens while the agent assigned to it is working (mirrors the synthetic
   // desk's work-glow + the bay-lit pattern) — so an assigned desk reads as "its agent is here, working".
   // (The agent's desk + seat are resolved by the shared deskPropFor/deskSeat helpers defined further below.)
@@ -286,7 +306,10 @@ const World = (() => {
     if (!p.agentId || !isWorkstationProp(p.t)) return false;
     if (agent && p.agentId === agent.id) return !!agent.working;
     const b = crew.find(x => x.agentId === p.agentId);
-    return !!(b && b.working);
+    if (!b || !b.working) return false;
+    // G0.7 EMPTY-ROOM HONESTY: a bay whose room grants no COMPUTE cannot actually run — its screens
+    // stay dark even in the working pose (the run dies at the compute gate; capdenied shows why).
+    return computeOkFor(p.agentId);
   }
 
   // the workstation: the hero's ASSIGNED desk if it placed one, else a 2-wide desk on the spawn room's north wall.
@@ -2875,6 +2898,7 @@ const World = (() => {
     const now = now0;
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
+    if (working) gripeNoCompute(b);      // G0.7: sat down to work in a computeless room — one honest complaint, then silence
     if (working) summonGlance(b, now);   // C-Beat1: AFTER the work-seize (K3 summon-wins) — OTHER idle in-sight bodies 50% glance at the newly-summoned `b`
   }
 
@@ -2889,6 +2913,7 @@ const World = (() => {
     to.working = true; to.sitting = false; to.dir = 'north'; to.target = null; to.pathPts = null; seizeFromIdle(to);   // re-path straight to its desk if it has one (stepCrew), else stand; drop any leisure latch (J4)
     to.workUntil = now + 3600000; if (!to.wakeAt || now - to.wakeAt > 1500) to.wakeAt = now;
     sayAt(to, 'on it…');
+    gripeNoCompute(to);   // G0.7: a delegated worker in a computeless room complains once too
     const from = bodyForAgent(fromId) || agent;
     if (from && from !== to) handoffBoxes.push({ fromX: from.px, fromY: from.py - 6, toX: to.px, toY: to.py - 6, t0: now, color: to.color || '#5ad0ff' });
     summonGlance(to, now);   // C-Beat1: a delegated worker just started — OTHER idle in-sight bodies 50% glance at it (AFTER its seize, K3)
@@ -2915,6 +2940,16 @@ const World = (() => {
     if (!body) return;
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     body.say = { text: t.slice(0, 160), until: performance.now() + 4200 };
+  }
+  // G0.7: the one-time "I need a computer here" complaint — spoken the first time a body takes the
+  // working pose while its bay room grants no COMPUTE (screens stay dark; the run dies at the gate).
+  // The latch resets if the room is later fixed, so a re-broken room earns exactly one fresh gripe.
+  function gripeNoCompute(b) {
+    if (!b || !b.agentId) return;
+    if (computeOkFor(b.agentId)) { b.noComputeGriped = false; return; }
+    if (b.noComputeGriped) return;
+    b.noComputeGriped = true;
+    sayAt(b, U.pick(SELF_NOCOMPUTE));
   }
   // is a BAY prop's bound agent actively working (so the bay lights up)?
   function bayLit(p, now) {
