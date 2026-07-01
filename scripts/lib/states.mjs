@@ -63,6 +63,20 @@ export const openStableNotifs = `(() => {
 
 export const closeOnly = `(() => { ${CLOSE}; return 'reset'; })()`;
 
+// REFIT first-use guide: on a fresh browser profile, build.js showGuide() paints a full-canvas
+// "▮ BUILD YOUR STATION" modal (.refit-guide) OVER the canvas. It intercepts every pointer event, so
+// synthetic canvas input (CDP Input.dispatchMouseEvent) hits the guide, not the grid. The Truth-Auditor
+// prop-place scenario must clear it before any real-mouse placement. Clicking #refit-guide-go marks it
+// seen (localStorage) so it never re-shows; remove() is the backstop. Returns the count dismissed.
+export const dismissRefitGuide = `(() => {
+  let n = 0;
+  document.querySelectorAll('.refit-guide').forEach(g => {
+    const go = g.querySelector('#refit-guide-go');
+    try { if (go) { go.click(); n++; } else { g.remove(); n++; } } catch (_) {}
+  });
+  return n;
+})()`;
+
 // Every key UI state: the floor at rest + each of the 16 dock panels.
 export function buildStates() {
   return [
