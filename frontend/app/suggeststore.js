@@ -24,6 +24,7 @@ const SuggestStore = (() => {
   let sessionShown = 0;    // ideas shown THIS session (in-memory; resets each app run)
   let firing = false;      // re-entrancy guard while an idea is mid-flight
   let pendingChain = null; // G1c: a just-unlocked capability label to chain a follow-up idea off (one-shot, in-memory)
+  let goalProgressed = false; // Tier 2: a goal milestone just completed → allow ONE suggestion on progress (not only familiarity growth). One-shot, in-memory.
 
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
@@ -57,7 +58,7 @@ const SuggestStore = (() => {
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    sessionShown = 0; firing = false; pendingChain = null;
+    sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false;
     if (typeof U !== 'undefined' && U.bus && U.bus.on) U.bus.on('agent.run.end', onRunEnd);
   }
 
@@ -70,6 +71,12 @@ const SuggestStore = (() => {
     const c = String(capLabel == null ? '' : capLabel).trim();
     if (c) pendingChain = c.slice(0, 24);
   }
+
+  // GROWTH Tier 2 (§5, ADDITIVE OR): a goal milestone just advanced — a moment worth a fresh idea even if the
+  // dossier's familiarity didn't grow. willSuggest() ORs this in ALONGSIDE the existing gates (session cap +
+  // cooldown + graduation stay in force); it never bypasses a cap, it only satisfies the "something new to say"
+  // clause. One-shot: consumed on the next fire (or dropped if the gate never opens — never a queued nag).
+  function noteGoalProgress() { goalProgressed = true; }
 
   const pitchDone = () => (typeof PitchStore !== 'undefined' && PitchStore.done) ? PitchStore.done() : false;
   function summary() { return (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null; }
@@ -111,7 +118,12 @@ const SuggestStore = (() => {
       tasksSinceLast: state.tasksSinceLast || 0,
       sessionShown: sessionShown
     });
-    return gate.go;
+    if (gate.go) return true;
+    // Tier 2 (§5 ADDITIVE OR): if the ONLY thing holding the idea back is "nothing new" and a goal milestone just
+    // advanced, that progress IS the new thing — let it through. Every OTHER gate (graduation/require-dims/session
+    // cap/cooldown) still applies (a non-'nothing-new' reason still blocks), so no cap is ever bypassed.
+    if (goalProgressed && gate.reason === 'nothing-new') return true;
+    return false;
   }
 
   // run the idea directive → parse → render a GENTLE nudge → route "build it". Awaitable for the test. Called by
@@ -123,6 +135,7 @@ const SuggestStore = (() => {
     firing = true;
     // G1c: consume any armed chain ONCE — this fire either uses it or it's dropped (never carried to a later beat).
     const chain = pendingChain; pendingChain = null;
+    goalProgressed = false;   // Tier 2: the goal-progress "something new" allowance is spent on THIS fire (one-shot)
     try {
       const recipes = (typeof Recipes !== 'undefined' && Recipes.list)
         ? Recipes.list().map(r => ({ id: r.id, name: r.name, tagline: r.tagline })) : [];
@@ -188,10 +201,10 @@ const SuggestStore = (() => {
   }
 
   // S2: a brand-new hero starts fresh (no baseline, no cooldown carryover). Own key, like curiositystore.
-  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] }; sessionShown = 0; firing = false; pendingChain = null; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] }; sessionShown = 0; firing = false; pendingChain = null; goalProgressed = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, willSuggest, fire, armChain, _state: () => state, _session: () => sessionShown, _chain: () => pendingChain };
+  return { init, reset, onRunEnd, willSuggest, fire, armChain, noteGoalProgress, _state: () => state, _session: () => sessionShown, _chain: () => pendingChain };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { SuggestStore };

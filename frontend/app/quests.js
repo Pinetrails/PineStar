@@ -48,6 +48,18 @@
       open.push({ id: 'idea', kind: 'idea', title: 'An idea is waiting', desc: 'your agent has a tailored build in mind — finish a task and it’ll offer it in COMMS.', reward: 'a real, working build', status: 'open' });
     }
 
+    // 1-arc) THE GOAL ARC (Tier 2) — the ACTIVE GOAL, decomposed into a path. Pre-shaped by Goals.project as a
+    //        header (kind 'arc-goal', progress meter) + one row per milestone (kind 'arc-step', the next OPEN one
+    //        the actionable front). Spliced as a WHOLE BLOCK right after the waiting idea so the goal path reads as
+    //        the top-level direction: the header + its still-open steps lead the OPEN set, the done steps join DONE.
+    //        Absent input → no arc (older callers unchanged). Honest: progress is milestones-done/total, nothing synthetic.
+    if (Array.isArray(input.arcQuests)) {
+      for (const q of input.arcQuests) {
+        if (!q || !q.id) continue;
+        (q.status === 'done' ? done : open).push(q);
+      }
+    }
+
     // 1a) STATION-GAP fix-it quests (G1b) — a real capdenied/capability-gap became playable direction. These are
     //     pre-shaped by StationQuests.project (id 'sq:<agent>:<cap>', kind 'station-gap'); we only need to sort them
     //     into the open/done buckets so the honest open-before-done ordering + the QuestState fold both hold. They

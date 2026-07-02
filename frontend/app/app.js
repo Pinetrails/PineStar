@@ -1245,6 +1245,7 @@ const App = (() => {
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
+    if (typeof GoalStore !== 'undefined') GoalStore.reset();   // …and a fresh goal tree — a new Commander never inherits the prior hero's goals/milestones/progress (own key)
     if (typeof MaintQuestStore !== 'undefined') MaintQuestStore.reset();   // …and no inherited maintenance quests — a new Commander never sees the prior hero's slag/jam backlog (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)
@@ -1398,6 +1399,18 @@ const App = (() => {
     // completing on the launched run finishing (rides QuestState's celebration). Subscribes to run.start/end;
     // self-persists (own key); never emits. Init AFTER QuestStateStore so its completion folds cleanly.
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.init();
+    // GROWTH Tier 2 — GOAL MODEL + QUEST ARCS: a goals-dim belief decomposes into a confirmed, persisted milestone
+    // tree; the next open milestone surfaces as an actionable quest that routes through the work-quest path, so
+    // completing the REAL work advances an honest progress meter and chains the next step. Self-persists (own key)
+    // + mirrors the active goal to the sidecar for cron. Init AFTER DossierStore (reads goals beliefs) + StudyStore
+    // (drift) + WorkQuestStore (binds/reconciles milestone builds) + QuestStateStore (its arc-step completion folds
+    // through QuestState's celebration). getSystem/launchDirective reuse the advice plumbing composed just below.
+    if (typeof GoalStore !== 'undefined') GoalStore.init({
+      now: () => Date.now(),
+      getSystem: () => agent ? agent.systemPrompt : '',
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('Goal milestone') : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
+      getRunSummary: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; return (m && m.title) ? m.title : ''; }
+    });
     // G1c MAINTENANCE-QUEST GENERATOR: recurring slag causes (World.slagPostmortems ring) + a jammed routine
     // (cron.skipped streak) become fix-it quests, clearing when the signal clears. Init AFTER World.loadStation
     // (it reads the live SlagLog ring) and after QuestStateStore. Self-persists (own key); never emits.

@@ -52,6 +52,8 @@ const Chat = (() => {
   let studyWired = false;       // the agent.run.end STUDY (dossier Phase B) listener is registered exactly once
   let studyRunsSeen = new Set();   // runIds already study-fetched (agent.run.end can re-fire; fetch once per run)
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
+  let arcWired = false;         // GROWTH Tier 2: the agent.run.end goal-arc confirm-beat listener (registers once)
+  let arcRunsSeen = new Set();  // GROWTH Tier 2: runIds already arc-offered (agent.run.end can re-fire; offer once per run)
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
@@ -280,6 +282,7 @@ const Chat = (() => {
     // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
     // never flush into a new session (same law as turninQueue above). A fresh beat-slot arbiter matches the DOM.
     studyPending.length = 0; tastePending.length = 0; activeStudy = null;
+    arcRunsSeen.clear();   // GROWTH Tier 2: the arc side starts clean per session (a prior hero's arc offers never carry over)
     beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
@@ -307,6 +310,7 @@ const Chat = (() => {
     warmSlashCatalog();
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
+    wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     load(opts.ws);
     input.onkeydown = e => {
@@ -1168,6 +1172,11 @@ const Chat = (() => {
   function slotCanStudy() { return beatSlot ? beatSlot.canStudy() : 'busy'; }   // no arbiter -> study stands down
   function slotStudyShown() { if (beatSlot) beatSlot.studyShown(); }
   function slotStudyDone(more) { if (beatSlot) beatSlot.studyDone(more); }
+  // GROWTH Tier 2 — the goal-arc confirm beat: the LOWEST-priority participant (memory turn-in + study both win
+  // first). null arbiter OR an older bundle without canArc -> arc stands down (byte-identical pre-Tier-2 behavior).
+  function slotCanArc() { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc() : 'busy'; }
+  function slotArcShown() { if (beatSlot && beatSlot.arcShown) beatSlot.arcShown(); }
+  function slotArcDone() { if (beatSlot && beatSlot.arcDone) beatSlot.arcDone(); }
   // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
   // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
   function studyBlocked() {
@@ -1317,6 +1326,89 @@ const Chat = (() => {
         if (studyRunsSeen.size > 200) studyRunsSeen.delete(studyRunsSeen.values().next().value);
         offerStudy(runId, p.agentId || 'agent');
       }, STUDY_ARM_MS);
+    });
+  }
+
+  /* GROWTH Tier 2 — THE GOAL-ARC CONFIRM BEAT (understanding → direction). When a goals-dim belief exists with no
+     goal tree, the station proposes a decomposition (3-5 milestones) and asks the Commander to Confirm / Edit /
+     Not-now — a focused Dialogue panel, exactly like the First Pitch. It is the LOWEST post-run priority: it arms
+     AFTER the study offer (ARC_ARM_MS > STUDY_ARM_MS) and only takes a WHOLLY FREE beat slot (slotCanArc() ===
+     'free' — memory turn-in + study both win first), obeying the SAME stand-down guards as the study/curiosity
+     beats (studyBlocked). Confirm persists the tree (GoalStore.confirm); Not-now re-offers only when the belief
+     changes (GoalStore.declineDecomposition). One confirm per task end, never stacked (the shared arbiter). */
+  const ARC_ARM_MS = 14000;   // later than STUDY_ARM_MS (12000): the arc yields the moment to memory AND study
+  function arcBlocked() {
+    // the SAME stand-down set the study beat honors (a confirm panel must never render mid-awakening/interview/
+    // tutorial-panel or while the next run streams). Reuses studyBlocked for one home for the guard set.
+    if (typeof studyBlocked === 'function') return studyBlocked();
+    return isBusy() || interview;
+  }
+  async function offerArc() {
+    if (typeof GoalStore === 'undefined' || typeof Dialogue === 'undefined') return;
+    if (!GoalStore.willOfferDecomposition || !GoalStore.willOfferDecomposition()) return;
+    if (slotCanArc() !== 'free' || arcBlocked()) return;   // the LOWEST priority: a taken/blocked moment just drops (re-offers next run end)
+    if (GoalStore.isFiring && GoalStore.isFiring()) return;
+    GoalStore.setFiring && GoalStore.setFiring(true);
+    try {
+      const res = await GoalStore.proposeDecomposition();   // the aux model call (reason-only) + parse
+      if (!res || !res.belief || !Array.isArray(res.texts) || res.texts.length < 3) return;   // no usable path — stay un-offered so a later belief change retries
+      // re-check the moment after the async model round-trip — memory/study may have claimed it meanwhile.
+      if (slotCanArc() !== 'free' || arcBlocked()) return;
+      clearNudge();                 // claim the one post-run beat, retiring any gentle nudge
+      slotArcShown();
+      let path = res.texts.slice();
+      try {
+        Dialogue.open({ name: (name || 'AGENT') });
+        await Dialogue.say('i think i see the path to that goal — here’s how i’d break it down. does this look right?');
+        const linesOf = ts => ts.map((t, i) => (i + 1) + '. ' + t).join('\n');
+        // Confirm / Not-now + an ✎ EDIT custom path (allowCustom): typing a revised path (steps separated by a
+        // newline OR a semicolon) replaces it, then re-applies the pure floor/cap on Confirm. The custom text is
+        // user-typed (never model markup); Dialogue renders it via textContent only.
+        const choice = await Dialogue.node({
+          lines: linesOf(path),
+          options: [ { label: 'confirm the path', value: 'confirm' }, { label: 'not now', value: 'other', skip: true } ],
+          allowCustom: true, customLabel: '✎ edit the milestones', customPlaceholder: 'your milestones, separated by ; …'
+        });
+        if (choice && choice.custom && typeof choice.value === 'string') {
+          const revised = choice.value.split(/[;\n]+/).map(l => l.replace(/^\s*\d{1,2}[.)\]:-]?\s+/, '').trim()).filter(Boolean);
+          if (revised.length >= 3) path = revised.slice(0, 5);
+        }
+        if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
+        // a custom (edited) reply OR an explicit confirm both persist the tree; only "not now" declines. The pure
+        // GoalStore.confirm re-applies the 3-5 floor/cap/redact — a too-short edit falls back to declined (marked
+        // offered, no loop). Not-now re-offers only when the belief changes (never nag).
+        if (choice && (choice.value === 'confirm' || choice.custom)) {
+          const g = GoalStore.confirm(res.belief, path);
+          if (g) {
+            if (typeof SFX !== 'undefined' && SFX.quest) { try { SFX.quest(); } catch (_) {} }
+            if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◇ goal path set — track it under ⚑ QUESTS', 'gold');
+          }
+        } else {
+          GoalStore.declineDecomposition(res.belief);   // not-now: re-offer only when the belief changes (never nag)
+        }
+      } finally {
+        slotArcDone();
+        try { if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close(); } catch (_) {}
+      }
+    } catch (_) {
+    } finally {
+      GoalStore.setFiring && GoalStore.setFiring(false);
+    }
+  }
+  function wireArc() {
+    if (arcWired || typeof U === 'undefined' || !U.bus) return;
+    arcWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p || p.reason !== 'done') return;                       // only after a clean run
+      if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only
+      const runId = p.runId || p.id;
+      // arms LAST (ARC_ARM_MS): memory turn-in + the study offer both claim the moment first; only a wholly free
+      // slot at this point lets the confirm panel open (slotCanArc gate inside offerArc).
+      setTimeout(() => {
+        if (runId && arcRunsSeen.has(runId)) return;
+        if (runId) { arcRunsSeen.add(runId); if (arcRunsSeen.size > 200) arcRunsSeen.delete(arcRunsSeen.values().next().value); }
+        offerArc();
+      }, ARC_ARM_MS);
     });
   }
   // GROWTH Tier 1 §4 — RATINGS → TASTE: after a work verdict folds, a 3-streak on one archetype may mint a

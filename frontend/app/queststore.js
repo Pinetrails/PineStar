@@ -34,13 +34,17 @@ const QuestStore = (() => {
     // means fewer quests (never a crash — the same read-surface degradation idiom as stationGaps).
     const workQuests = (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.quests) ? WorkQuestStore.quests() : [];
     const maintQuests = (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.quests) ? MaintQuestStore.quests() : [];
-    return { meter, milestones, dossierDims, pendingIdea, station, stationGaps, workQuests, maintQuests };
+    // Tier 2 — the ACTIVE GOAL arc (header + progress meter + milestone steps). Pre-shaped by the pure Goals
+    // engine (GoalStore owns the live reads + the drift/reconcile sync); a missing store just means no arc (fewer
+    // quests, never a crash — the same read-surface degradation idiom as stationGaps).
+    const arcQuests = (typeof GoalStore !== 'undefined' && GoalStore.quests) ? GoalStore.quests() : [];
+    return { meter, milestones, dossierDims, pendingIdea, station, stationGaps, workQuests, maintQuests, arcQuests };
   }
 
   // the whole panel read: the station meter + the ordered quest list + open/done counts.
   function view() {
     const g = gather();
-    const quests = (typeof Quests !== 'undefined') ? Quests.build({ milestones: g.milestones, dossierDims: g.dossierDims, pendingIdea: g.pendingIdea, station: g.station, stationGaps: g.stationGaps, workQuests: g.workQuests, maintQuests: g.maintQuests }) : [];
+    const quests = (typeof Quests !== 'undefined') ? Quests.build({ milestones: g.milestones, dossierDims: g.dossierDims, pendingIdea: g.pendingIdea, station: g.station, stationGaps: g.stationGaps, workQuests: g.workQuests, maintQuests: g.maintQuests, arcQuests: g.arcQuests }) : [];
     const summary = (typeof Quests !== 'undefined') ? Quests.summary(quests) : { open: 0, done: 0, total: 0 };
     return { meter: g.meter, quests: quests, summary: summary };
   }

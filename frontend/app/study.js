@@ -297,15 +297,22 @@
      while any reflection is proposed-but-unresolved, study cedes; a memory deck arriving over a visible study
      card QUEUES (never stacks) and renders the moment the study card resolves.
 
-     visible ∈ { null, 'memory', 'study' }; pendingMemory = runIds whose memory.proposed arrived but whose deck
-     hasn't resolved yet (covers the whole LLM→fetch→deck window, incl. the 350ms fetch gap). Contract:
+     visible ∈ { null, 'memory', 'study', 'arc' }; pendingMemory = runIds whose memory.proposed arrived but whose
+     deck hasn't resolved yet (covers the whole LLM→fetch→deck window, incl. the 350ms fetch gap). Contract:
        memoryProposed(runId)     — reflection announced proposals: reserve memory's claim (call BEFORE the fetch).
        memoryDeck()              — a fetched deck wants to render: 'render' (slot was free) | 'queue' (a beat is up).
        memoryDone(runId, more)   — the visible deck resolved; more=true keeps the slot held for the queued next deck.
        memoryEmpty(runId)        — the fetch came back empty / notify-only: release the claim (deck never rendered).
        canStudy()                — 'free' | 'busy' (a beat is visible) | 'memory' (reflection in flight — memory wins).
        studyShown()/studyDone(more) — the study card opened / resolved; more=true hands the slot to a queued memory deck.
-       visibleBeat()             — 'memory' | 'study' | null. THE tested invariant: never both. */
+       visibleBeat()             — 'memory' | 'study' | 'arc' | null. THE tested invariant: never two at once.
+
+     GROWTH Tier 2 (ADDITIVE): the GOAL-ARC confirm beat is a THIRD, LOWEST-priority participant — memory turn-in
+     and study proposals both win the moment before it, so an arc confirm only fires on a genuinely free slot
+     (canArc() === 'free'). It cannot preempt anything and nothing preempts a VISIBLE arc panel (a focused Dialogue
+     confirm, like the First Pitch, owns the screen until the Commander answers). The pre-Tier-2 surface is
+     untouched: memory/study behavior is byte-identical (canStudy still sees only visible + pendingMemory), so the
+     128 study.test assertions hold unchanged. canArc()/arcShown()/arcDone() are the only additions. */
   function makeBeatSlot() {
     const pendingMemory = new Set();
     let visible = null;
@@ -322,6 +329,15 @@
       },
       studyShown() { visible = 'study'; },
       studyDone(more) { visible = more ? 'memory' : null; },
+      // GROWTH Tier 2 — the arc confirm beat cedes to BOTH memory and study: it may only take a wholly free slot.
+      // 'busy' = a beat (memory/study/arc) is visible; 'memory' = reflection in flight (memory wins the moment).
+      canArc() {
+        if (visible !== null) return 'busy';
+        if (pendingMemory.size) return 'memory';
+        return 'free';
+      },
+      arcShown() { visible = 'arc'; },
+      arcDone() { visible = null; },   // an arc confirm never chains a queued deck (memory decks arbitrate their own train)
       visibleBeat() { return visible; },
       _pending() { return pendingMemory.size; }
     };

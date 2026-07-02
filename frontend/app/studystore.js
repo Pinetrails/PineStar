@@ -32,6 +32,7 @@ const StudyStore = (() => {
   let state = null;             // persisted: { v, declined:[text], resolved:{fp:1}, resolvedOrder:[fp], ignores:{fp:int}, ratings:{arch:{up,down,upMinted,downMinted}} }
   let sessionShown = 0;         // proposals shown THIS session (in-memory; resets each app run)
   let deps = {};                // { now } — injected by app.js (all optional; fail-open)
+  let goalNotes = [];           // GROWTH Tier 2 (§5): recent goal-progress notes the study engine can weight (in-memory ring; additive/fail-open — never persisted, never blocks a study)
 
   const ready = () => typeof Study !== 'undefined' && state;
   const now = () => { try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {} return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0; };
@@ -86,10 +87,10 @@ const StudyStore = (() => {
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    sessionShown = 0;
+    sessionShown = 0; goalNotes = [];
   }
   // a brand-new hero starts clean (mirrors the other stores' reset on commission).
-  function reset() { state = hydrate(null); sessionShown = 0; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = hydrate(null); sessionShown = 0; goalNotes = []; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // ---- the gate the chat beat consults ----
   // room left in the per-session budget (anti-nag). The per-RUN "≤1 shown" cap is enforced by the caller
@@ -210,9 +211,24 @@ const StudyStore = (() => {
     return t.proposal;
   }
 
+  // GROWTH Tier 2 (§5, ADDITIVE/fail-open): a goal milestone just completed — a run-context note the study engine
+  // may weight when it next studies work (goal progress is a salience signal). Kept as a small in-memory ring
+  // (never persisted, never gates a study, never throws). GoalStore.bumpStudySalience calls this; the read surface
+  // (goalNotes) is available for a future server-context wire without touching the frozen contract.
+  const GOALNOTE_CAP = 8;
+  function noteGoalProgress(note) {
+    try {
+      const t = note && (note.milestoneText || note.goalText) ? String(note.milestoneText || note.goalText).slice(0, 160) : '';
+      if (!t) return;
+      goalNotes.push(t);
+      while (goalNotes.length > GOALNOTE_CAP) goalNotes.shift();
+    } catch (_) {}
+  }
+  function recentGoalNotes() { return goalNotes.slice(); }
+
   return {
     init, reset, canShow, isExhausted, nextLive, markShown, fetchProposals, retireTarget,
-    declinedList, accept, discard, ignore, noteRating, fingerprint,
+    declinedList, accept, discard, ignore, noteRating, fingerprint, noteGoalProgress, recentGoalNotes,
     SESSION_CAP, IGNORE_LIMIT,
     _state: () => state
   };

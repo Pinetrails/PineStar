@@ -3727,6 +3727,7 @@ const StationUI = (() => {
     if (SQS && SQS.sync) { try { SQS.sync(); } catch (_) {} }   // G1b: resolve station gaps before folding, so a just-closed gap renders done + celebrates
     if (WQS && WQS.sync) { try { WQS.sync(); } catch (_) {} }   // G1c: advance/complete work quests before the fold
     if (MQS && MQS.sync) { try { MQS.sync(); } catch (_) {} }   // G1c: mint/clear maintenance quests before the fold
+    if (typeof GoalStore !== 'undefined' && GoalStore.sync) { try { GoalStore.sync(); } catch (_) {} }   // Tier 2: retire drift + reconcile completed milestone work before the fold, so the arc meter is never stale
     if (QSS && QSS.sync) { try { QSS.sync(); } catch (_) {} }   // never render a stale diff — the log always reflects the memory it just folded
     const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
     if (!v) { body.innerHTML = '<p class="dim">Quest log unavailable.</p>'; return; }
@@ -3736,12 +3737,36 @@ const StationUI = (() => {
     // a station-gap / work / maintenance quest is a fix-it or build SUGGESTION — always dismissible while open
     // (the sandbox law); each routes through its OWN store's denylist, not QuestState (whose dismiss is
     // dossier-only). Only the get-to-know-you (dossier) kind falls through to QuestState's dismissible check.
-    const dismissibleQ = q => q && q.status !== 'done' && (
+    // arc-goal / arc-step (Tier 2) are a persisted GOAL PATH, never a dismissible fix-it: the goal retires only on
+    // real drift (the Study engine forgetting its source belief), never by a wave-off — so they fall through the
+    // dismissible check entirely.
+    const dismissibleQ = q => q && q.status !== 'done' && q.kind !== 'arc-goal' && q.kind !== 'arc-step' && (
       (q.kind === 'station-gap') || (q.kind === 'work') || (q.kind === 'maintenance')
       || (QSS && QSS.dismissible && QSS.dismissible(q)));
     const tro = (q, i) => {
       const glow = QSS && QSS.isCelebrating && QSS.isCelebrating(q.id);
       const dis = dismissibleQ(q);
+      // Tier 2 — THE GOAL HEADER: a distinct progress-meter row (a real bar, honest done/total), never actionable,
+      // never dismissible. It frames the milestone steps rendered under it.
+      if (q.kind === 'arc-goal') {
+        const pct = Math.max(0, Math.min(100, q.pct || 0));
+        return '<div class="gx-tro arc-goal ' + (q.status === 'done' ? 'on' : 'off') + '" style="--ci:' + (i || 0) + ';border-left:2px solid var(--gold);">'
+          + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl" style="color:var(--gold);">&#9671;</span><span class="nm">' + esc(q.title) + '</span></div>'
+          + '<div class="sub">' + esc(q.desc) + '</div>'
+          + '<div class="arc-bar" style="height:5px;border-radius:3px;background:var(--well,rgba(0,0,0,.35));margin-top:5px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:var(--gold);"></div></div>'
+          + '</div>';
+      }
+      // Tier 2 — A MILESTONE STEP: the next OPEN one carries an Accept button (routes through the work-quest path
+      // so completing the real work completes the milestone). Done steps show their evidence. Later open steps are
+      // shown but not actionable (honest chaining, never gating).
+      if (q.kind === 'arc-step') {
+        const accept = (q.status !== 'done' && q.isNext)
+          ? '<button class="consent-btn q-arc-accept" data-gid="' + esc(q.arcGoalId) + '" data-mid="' + esc(q.milestoneId) + '" style="margin-top:5px;">Accept this step</button>'
+          : '';
+        return '<div class="gx-tro arc-step ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + ';margin-left:10px;">'
+          + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
+          + '<div class="sub">' + esc(q.desc) + '</div>' + accept + '</div>';
+      }
       return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
         + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
@@ -3804,6 +3829,14 @@ const StationUI = (() => {
         : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
         : (QSS && QSS.dismiss && QSS.dismiss(q));
       if (took) { sfx('click'); rerender('quests'); }
+    }));
+    // Tier 2 — ACCEPT a milestone step: route the next open milestone through the work-quest path (a real run
+    // launches; completing THAT work completes the milestone and chains the next). No manual tick.
+    body.querySelectorAll('.q-arc-accept').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (typeof GoalStore === 'undefined' || !GoalStore.acceptMilestone) return;
+      const m = GoalStore.acceptMilestone(b.dataset.gid, b.dataset.mid);
+      if (m) { sfx('click'); rerender('quests'); }
     }));
   }
 
