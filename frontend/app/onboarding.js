@@ -338,11 +338,28 @@ const Onboarding = (() => {
   // and its mission are reasoned by the live model (wakemind.js) — degrading beat-for-beat to the scripted
   // ceremony whenever the mind is quiet (no key, offline, slow, unparseable). Purpose.md ALWAYS lands.
 
-  /* ---- the live-mind seam: one guarded reason-only round trip, null on ANY failure ---- */
-  const PAIN_REPLY_MS = 9000, SYNTHESIS_MS = 14000;   // past these, the scripted ceremony carries on alone
+  /* ---- the live-mind seam: one guarded reason-only round trip, null on ANY failure ----
+     PATIENCE, NOT A CLIFF: the first cut used tight timeouts (9s/14s) and silently dropped any reply that
+     beat them by seconds — a slow-but-good brain (codex reasoning models take 15-25s) produced a PERFECT
+     read that died in the wire while the Commander got the old script (proven live 2026-07-01: gpt-5.5's
+     synthesis landed ~2s past the window; the save shows the canned picker purpose). Now the ceremony WAITS
+     with presence: in-voice patter lines cover each patience window, and only the hard ceiling below ends
+     the wait. A fast reply skips all patter; a dead wire (fast error) skips it too — only slow-success waits. */
+  const PAIN_REPLY_MS = 30000, SYNTHESIS_MS = 40000;   // HARD ceilings — past these, the scripted ceremony carries on alone
   const brainReady = () => typeof WakeMind !== 'undefined' && typeof Harness !== 'undefined'
     && !!Harness.chat && !!Harness.configured && !!Harness.configured();
   const withTimeout = (p, ms) => Promise.race([p, new Promise(res => setTimeout(() => res(null), ms))]);
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  // what the newborn says while a slow brain is still composing — presence, never a spinner. One line per
+  // patience window, typed in the panel; the reply usually lands mid-patter and speaks right after.
+  const PAIN_PATTER = [
+    '…give me a second with that one. i want to answer it properly.',
+    'still with you — a mind this new takes a moment to sort what matters.'
+  ];
+  const SYNTH_PATTER = [
+    'almost — i want to say this right the first time.',
+    'still composing. you handed me something real; i’m not going to waste it.'
+  ];
   // reason-only + internal — no tools reachable (placed:[]), no run.start/end on the bus (the awakening
   // thinking about you is not a shipped task; XP/telemetry stay honest), cost still counted.
   function llmCall(directive) {
@@ -354,9 +371,25 @@ const Onboarding = (() => {
       }).catch(() => null);
     } catch (_) { return Promise.resolve(null); }
   }
-  async function mindCall(directive, parse, ms) {
-    if (!brainReady()) return null;
-    const res = await withTimeout(llmCall(directive), ms);
+  // wait for an in-flight reply with patience windows: a quiet first beat, then one spoken patter line per
+  // window while it is still composing, up to the hard cap. Resolves the reply, or null past the ceiling.
+  async function awaitPatiently(pending, patter, capMs) {
+    let done = false, out = null;
+    pending.then(v => { done = true; out = v; });
+    const capped = withTimeout(pending, capMs);          // the ceiling clock starts NOW, patter or not
+    const windows = [7000, 9000, 11000];                 // quiet, then patter[0], then patter[1]
+    for (let w = 0; w < windows.length && !done && running; w++) {
+      await Promise.race([capped, sleep(windows[w])]);
+      if (done || !running) break;
+      const line = patter && patter[w];
+      if (line) await Dialogue.say([seg(line, 44, 240)]);
+    }
+    if (!done && running) await capped;                  // the last stretch, bounded by the ceiling
+    return done ? out : null;
+  }
+  async function mindWait(pending, parse, patter, capMs) {
+    if (!pending) return null;
+    const res = await awaitPatiently(pending, patter, capMs);
     if (!running || !res || res.error || !res.text) return null;
     try { return parse(res.text); } catch (_) { return null; }
   }
@@ -433,9 +466,10 @@ const Onboarding = (() => {
     if (painStep) {
       painT = (await askStep(painStep, { quietAck: true })).text;
       if (!running) return;
-      const reply = painT ? await mindCall(WakeMind.buildPainReply({ pain: painT, name: NAME }), WakeMind.parsePainReply, PAIN_REPLY_MS) : null;
+      bumpTruth();   // the truth lands the moment they answer — the mind composes over it, never dead air
+      const pending = (painT && brainReady()) ? llmCall(WakeMind.buildPainReply({ pain: painT, name: NAME })) : null;
+      const reply = await mindWait(pending, WakeMind.parsePainReply, PAIN_PATTER, PAIN_REPLY_MS);
       if (!running) return;
-      bumpTruth();
       await Dialogue.say([seg(reply ? reply.ack : (typeof painStep.ack === 'function' ? painStep.ack(painT) : painStep.ack), 44, 360)]);
       if (!running) return;
       // 2. THE FOLLOW-UP — one grounded question the agent chose itself; the answer IS context.md (the
@@ -458,26 +492,31 @@ const Onboarding = (() => {
       }
     }
 
-    // 3. AMBITION — the matched pull (scripted ack; the generated READ lands right after).
+    // 3. AMBITION — quiet ask, then KICK the synthesis before the ambition ack types: the ack's own
+    //    screen time (and the "hold on" beat after it) becomes free cover for the read composing.
     let ambitionT = '';
     if (ambitionStep) {
-      ambitionT = (await askStep(ambitionStep)).text;
+      ambitionT = (await askStep(ambitionStep, { quietAck: true })).text;
       if (!running) return;
     }
 
     // 4. THE READ — the agent puts it together, speaks its read, and authors its OWN mission; the
     //    Commander confirms or corrects it. This replaces the 5-option purpose picker: the mission is
-    //    DERIVED from real context, not chosen from a menu. Kick the call before the "hold on" line so
-    //    the model runs while the beat types (latency hides inside the ceremony's own pacing).
+    //    DERIVED from real context, not chosen from a menu. The call is already in flight while the
+    //    ambition ack + "hold on" beats type; past that, patter covers the wait up to the hard ceiling.
     let purposeDone = false;
-    if (brainReady() && (painT || aboutT || ambitionT)) {
-      const pending = withTimeout(llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: ambitionT, name: NAME })), SYNTHESIS_MS);
+    const synPending = (brainReady() && (painT || aboutT || ambitionT))
+      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: ambitionT, name: NAME })) : null;
+    if (ambitionStep) {
+      bumpTruth();
+      await Dialogue.say([seg(typeof ambitionStep.ack === 'function' ? ambitionStep.ack(ambitionT) : ambitionStep.ack, 44, 360)]);
+      if (!running) return;
+    }
+    if (synPending) {
       await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)]);
       if (!running) return;
-      const res = await pending;
+      const syn = await mindWait(synPending, WakeMind.parseSynthesis, SYNTH_PATTER, SYNTHESIS_MS);
       if (!running) return;
-      let syn = null;
-      if (res && !res.error && res.text) { try { syn = WakeMind.parseSynthesis(res.text); } catch (_) { syn = null; } }
       if (syn) {
         await Dialogue.say([seg(syn.read, 42, 420)]);
         if (!running) return;
