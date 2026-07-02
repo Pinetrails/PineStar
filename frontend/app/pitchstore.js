@@ -91,7 +91,15 @@ const PitchStore = (() => {
         if (Dialogue.isOpen()) Dialogue.close();
         return;
       }
-      const choice = await Dialogue.node({ lines: Pitch.present(parsed), options: Pitch.choices() });
+      // G3a seed callout: a pitch that reuses a recipe the Commander SAVED AS A SEED credits it out loud —
+      // one appended sentence (a credit line, never a separate beat), only when provenance genuinely links.
+      let presented = Pitch.present(parsed);
+      if (typeof SeedCredit !== 'undefined' && parsed.build && parsed.build.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
+        const credit = SeedCredit.creditForRecipe(Recipes.get(parsed.build.recipeId));
+        if (credit) presented += ' ' + credit;
+      }
+      if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // G3a: the pitch beat gets its soft chime (was mute)
+      const choice = await Dialogue.node({ lines: presented, options: Pitch.choices() });
       state.pitched = true; save();   // we DID deliver a pitch — never offer the first one again (a transient error above leaves it un-pitched)
       if (Dialogue.isOpen()) Dialogue.close();
       if (choice && choice.value === 'build') doBuild(parsed);

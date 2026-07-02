@@ -229,7 +229,11 @@
       // hand-edited or corrupted import still falls through to template derivation instead of shipping ungated.
       params: (function () { const np = normParams(r.params); return np.length ? np : normParams(paramsFromTemplate(task)); })(),
       task,
-      custom: true
+      custom: true,
+      // G3a seed callouts: a recipe the AGENT authored from an observed pattern (seedstore.save) carries this
+      // durable flag, so a later pitch/suggestion/digest that reuses it can CREDIT the Commander's saved seed.
+      // A hand-authored save-your-own recipe leaves it false — only agent-minted seeds get the callout.
+      seedborn: !!r.seedborn
     };
   }
   customs = readStore().map(normCustom).filter(r => r.id);   // hydrate on load (drops any malformed record with no id)
@@ -300,7 +304,8 @@
       accent: over.accent || '#7bc88a',
       tags: over.tags || null,
       params: over.params || [],
-      task: over.task || ''
+      task: over.task || '',
+      seedborn: !!over.seedborn   // carried through so an agent-authored seed keeps its provenance on save
     };
   }
 

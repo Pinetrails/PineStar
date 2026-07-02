@@ -39,6 +39,12 @@ const ReturnStore = (() => {
       const r = await fetch('/api/cron', { cache: 'no-store' });
       if (r.ok) Returns.matchRoutines(rows, ((await r.json()) || {}).jobs || []);
     } catch (_) { /* routine names are cosmetic — rows stand on their honest titles */ }
+    // G3a seed callout: a row whose unattended run genuinely reuses a Commander-saved seed (seedborn custom
+    // recipe — matched by routine name or by its task template) gets .seed = the seed's name; the digest
+    // label credits it. Cosmetic annotation only — an unmatched row stands unchanged, never guessed.
+    try {
+      if (typeof SeedCredit !== 'undefined' && typeof Recipes !== 'undefined' && Recipes.customs) SeedCredit.annotate(rows, Recipes.customs());
+    } catch (_) {}
     return rows;
   }
 

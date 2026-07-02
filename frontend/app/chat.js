@@ -564,7 +564,10 @@ const Chat = (() => {
     const name = rw.routine ? ('“' + rw.routine + '” ran on its own') : (rw.title || 'an unnamed run');
     const who = (rw.agentId && rw.agentId !== 'agent') ? (' · ' + String(rw.agentId).slice(0, 12)) : '';
     const usd = (+rw.usd > 0) ? (' · $' + (Math.round(rw.usd * 100) / 100).toFixed(2)) : '';
-    return '◷ ' + name + who + usd;
+    // G3a seed callout: an unattended run that reuses a Commander-saved seed credits it inline (rw.seed is
+    // annotated by ReturnStore via SeedCredit — provenance-matched, never guessed). A credit line, not a beat.
+    const seed = rw.seed ? (' · from the seed you saved — “' + rw.seed + '”') : '';
+    return '◷ ' + name + who + usd + seed;
   }
   // ONE digest per session (ReturnStore owns the budget + the row data). opts.onRated(runId) clears the crate.
   function awayDigest(rows, opts, _try) {
