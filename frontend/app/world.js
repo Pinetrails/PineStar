@@ -70,6 +70,25 @@ const World = (() => {
   // so a worker run that starts inside it animates; both are driven purely by existing agent.* bus events.
   const handoffBoxes = [];
   let delegateLead = null, delegateCall = null;
+  // G4 feature 1 — APPROVAL WALK-AND-WAIT. When a HERO run blocks on a permission.prompt the body stops
+  // working, stands, and walks to a wait anchor (airlock → mission board → own desk, resolved honestly from
+  // the live floor via WaitAnchor) where it visibly WAITS with an "AWAITING APPROVAL" tag. permission.response
+  // clears it: the run genuinely resumes (approve) or ends (deny) server-side, so the body returns to its desk
+  // and the ongoing/finished run drives activity as usual. awaitPrompt is the live prompt; awaitAnchor is the
+  // resolved wait tile; awaitArrived latches once the body reaches it (drives the waiting pose + tag).
+  let awaitPrompt = null, awaitAnchor = null, awaitArrived = false;
+  // G4 feature 2 — AUTOJOB PIN-TO-BOARD. When the pending-proposal count RISES, the hero (when idle & free)
+  // walks to the MISSION BOARD and plays a brief pin flourish, then returns to its business — the walk-and-pin
+  // plays once per proposal (keyed to the count high-water mark). pinnedCount is that mark; pinFlourishAt drives
+  // the amber pin-burst render; pinTargetTile is the board approach tile the agent walks to.
+  let pinnedCount = 0, pinFlourishAt = -1e9, pinTargetTile = null, pinCheckAt = -1e9;
+  // G4 feature 3 — MEESEEKS sub-agent sprites. A real background sub-agent (team.dispatch/team.spawn) makes
+  // itself observable via a frozen `task` event (kind:'subagent', status running→done). SubagentSprites folds
+  // that stream into a live-only helper ledger (truthfulness law: a sprite exists IFF a real sub-agent is live).
+  // Each helper is drawn small/translucent/flickering near the LEAD's desk — eerie helpers, not full agents.js
+  // bodies. helperSlots caches a stable local-frame offset per helper id so they don't jitter frame to frame.
+  const subLedger = (typeof SubagentSprites !== 'undefined') ? SubagentSprites.makeLedger({ cap: 5 }) : null;
+  const helperSlots = new Map();
   // AGENT GROWTH HUD: per-agent Xp.compute() snapshots pushed in by XpStore (drives the hero name-tag "Lv N"
   // chip and any body's gold level-up ripple). The station headline lives in the top-bar STATION chip.
   let xpAgent = null, levelUpAt = 0;
@@ -342,6 +361,82 @@ const World = (() => {
     if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) {
       if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; }   // face the assigned desk (deskFace) when teleport-fallback seating
     }
+  }
+  // G4 feature 1: resolve WHERE the permission-blocked hero waits, honestly from the live floor. Reuses the
+  // pure WaitAnchor ladder (airlock → mission board → own desk) + PropAnchor's approach-tile law, and clamps
+  // the anchor into the agent's zone (wait at the nearest in-zone tile when the anchor is outside its area).
+  // Returns { tx, ty, face, source } | null (null → the caller just stands in place at the desk).
+  function resolveWaitAnchor() {
+    if (typeof WaitAnchor === 'undefined' || !geo) return null;
+    const zone = zoneFor(agent);
+    // the nearest walkable, in-zone tile to a target — a small expanding-ring scan (no path, just proximity).
+    function nearestInZone(tile) {
+      if (!tile) return null;
+      for (let r = 0; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;   // ring shell only
+        const tx = tile.tx + dx, ty = tile.ty + dy;
+        if (geo.walkable(tx, ty, blocked) && tileInZone(zone, tx, ty)) return { tx, ty };
+      }
+      return null;
+    }
+    const home = agent && deskPropFor(agent.id), hs = home && deskSeat(home);
+    const fallbackSeat = hs ? { tx: hs.tx, ty: hs.ty, face: 'south' } : (seat ? { tx: seat.tx, ty: seat.ty, face: 'south' } : null);
+    return WaitAnchor.resolve({
+      props: geo.props || [],
+      anchorOf: (prop) => (typeof PropAnchor !== 'undefined' ? PropAnchor.deriveAnchor(prop, geo, { approach: 'south', extra: blocked }) : null),
+      seat: fallbackSeat,
+      zoneAllows: (tx, ty) => tileInZone(zone, tx, ty),
+      nearestInZone
+    });
+  }
+  // ENTER the await state: the hero was just blocked on a permission.prompt. Stop working, stand, and (in tick)
+  // walk to the resolved wait anchor. Idempotent per prompt — a second prompt for the same promptId is a no-op.
+  function enterAwait(prompt) {
+    if (!agent || agent.unplaced) return;
+    if (awaitPrompt && prompt && awaitPrompt.promptId === prompt.promptId) return;
+    awaitPrompt = prompt || { promptId: '' };
+    awaitArrived = false;
+    awaitAnchor = resolveWaitAnchor();
+    // seize the body out of the desk pose so tick re-paths it to the anchor (mirrors the summon re-seize)
+    releaseSeat();
+    agent.goal = 'awaitwalk'; agent.sitting = false; agent.working = false; agent.stilling = false;
+    agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null;
+    agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle';
+    if (awaitAnchor) agent.dir = awaitAnchor.face || 'south';
+  }
+  // CLEAR the await state (permission.response arrived). The run resumes (approve) or ends (deny) server-side;
+  // either way the body leaves the anchor. We drop back to the desk-trip: if the run is still live it re-arms
+  // 'task' via its next tool call (chat.js walkToDesk); a denied/ended run flips to idle via run.end.
+  function clearAwait() {
+    if (!awaitPrompt) return;
+    awaitPrompt = null; awaitAnchor = null; awaitArrived = false;
+    if (agent && (agent.goal === 'awaitwalk' || agent.goal === 'awaiting')) {
+      agent.goal = null; agent.target = null; agent.pathPts = null; agent.state = 'idle'; agent.idleUntil = fnow + 200;
+    }
+  }
+  // G4 feature 2: the MISSION BOARD's approach tile (where the agent stands to pin), via the shared anchor law.
+  function boardAnchorTile() {
+    if (!geo || !geo.props || typeof PropAnchor === 'undefined') return null;
+    const board = geo.props.find(p => p && p.t === 'missionboard');
+    if (!board) return null;
+    const a = PropAnchor.deriveAnchor(board, geo, { approach: 'south', extra: blocked });
+    return a ? { tx: a.tx, ty: a.ty, face: a.face } : null;
+  }
+  // when the pending-proposal count RISES past the mark, send the idle hero to the board to pin (once per new
+  // proposal). Gated to a free, idle hero (never interrupts a task/talk/await/leisure walk) — the pin is a
+  // projection, not a gate: if the agent is busy the card still shows on the board; the WALK just plays later.
+  function maybePinProposal(now, count) {
+    if (now - pinCheckAt < 400) return; pinCheckAt = now;
+    if (!agent || agent.unplaced) return;
+    if ((count | 0) <= pinnedCount) { if ((count | 0) < pinnedCount) pinnedCount = count | 0; return; }   // count dropped (accepted/declined) → lower the mark so a later re-propose re-pins
+    // only launch the walk when the hero is genuinely free (idle, not seized, not already pinning)
+    if (activity !== 'idle' || awaitPrompt || agent.working || agent.sitting || agent.goal === 'pin') return;
+    const tile = boardAnchorTile();
+    if (!tile) { pinnedCount = count | 0; return; }   // no reachable board approach → count as pinned (the card still shows), skip the walk
+    pinTargetTile = tile;
+    agent.goal = 'pin'; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null;
+    agent.sitting = false; agent.working = false; agent.state = 'idle';
+    if (!setPathTo({ x: tile.tx, y: tile.ty })) { pinFlourishAt = now; pinnedCount = count | 0; agent.goal = null; }   // unreachable → count it pinned, no walk
   }
   // the hero's ASSIGNED conveyor: a walkable tile beside the BAY bound to this agent (agentId match, so it never
   // reacts to another agent's bay). null = this agent has no conveyor → no fetch leg (straight to work).
@@ -722,6 +817,19 @@ const World = (() => {
   function arrive(now) {
     self.pathPts = null; self.target = null; self.pauseUntil = 0; self.pauseLook = null; self.stilling = false;
     if (self.goal === 'firstwake') { self.state = 'idle'; return; }   // the wake ritual self-drives via stepFirstWake; the rare 'find feet' arrival is a no-op
+    // G4 feature 1: reached the WAIT ANCHOR — stand, face the anchor, and latch the waiting pose (the tag + the
+    // eerie weight-shift render off awaitArrived). No dwell timer: it waits until permission.response clears it.
+    if (self.goal === 'awaitwalk' || self.goal === 'awaiting') { self.goal = 'awaiting'; self.sitting = false; self.working = false; self.state = 'idle'; self.dir = (awaitAnchor && awaitAnchor.face) || 'south'; awaitArrived = true; return; }
+    // G4 feature 2: reached the MISSION BOARD to pin a proposal — face it, play the pin flourish, raise the
+    // high-water mark (so this proposal never re-triggers the walk), then drift back to wandering.
+    if (self.goal === 'pin') {
+      self.sitting = false; self.working = false; self.state = 'idle'; self.dir = (pinTargetTile && pinTargetTile.face) || 'north';
+      pinFlourishAt = now;
+      if (typeof AutoJobStore !== 'undefined' && AutoJobStore.pendingCount) pinnedCount = AutoJobStore.pendingCount();
+      self.goal = null; self.idleUntil = now + U.irnd(600, 1400);
+      curiositySay(['pinned.', 'left it on the board', 'proposal up', 'for you to weigh'], 0.5, now);
+      return;
+    }
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
     if (FOND[self.goal]) noteFond(now, FOND[self.goal]);   // dwelling somewhere by choice deepens attachment to that tile
     if (self.goal === 'work') { self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
@@ -1903,6 +2011,26 @@ const World = (() => {
     if (agent.state === 'walk' && !agent.target && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) {
       agent.state = 'idle'; agent.idleUntil = 0;
     }
+    // G4 feature 1 — THE AWAIT INVARIANT (runs ABOVE the desk-trip): while blocked on a permission.prompt the
+    // hero is seized to its WAIT ANCHOR instead of its desk. It walks there, then holds an eerie waiting pose
+    // (drawn as 'awaiting'). This overrides the desk-trip (gated on !awaitPrompt below) so a run that blocks
+    // mid-task visibly leaves the desk and waits — the honest "needs you" body. Cleared by permission.response.
+    if (awaitPrompt) {
+      if (awaitArrived) {
+        // WAITING: stand at the anchor, facing it, shifting weight (a slow, patient, unsettling stillness).
+        agent.sitting = false; agent.working = false; agent.state = 'idle';
+        if (awaitAnchor && awaitAnchor.face) agent.dir = awaitAnchor.face;
+      } else if (!awaitAnchor) {
+        // no anchor resolvable (walled-in board, no seat) — wait in place, standing, facing the camera.
+        agent.goal = 'awaiting'; agent.sitting = false; agent.working = false; agent.state = 'idle'; agent.dir = 'south'; awaitArrived = true;
+      } else if (agent.goal === 'awaitwalk' && agent.state !== 'walk' && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) {
+        // start (or, if already at the tile, finish) the walk to the anchor.
+        const cur = tileOf(agent.px, agent.py);
+        if (cur.x === awaitAnchor.tx && cur.y === awaitAnchor.ty) { agent.goal = 'awaiting'; awaitArrived = true; agent.dir = awaitAnchor.face || 'south'; }
+        else if (!setPathTo({ x: awaitAnchor.tx, y: awaitAnchor.ty })) { agent.goal = 'awaiting'; awaitArrived = true; agent.dir = awaitAnchor.face || 'south'; }   // unreachable → wait where it stands
+      }
+      maybeGlance(now);   // the occasional camera glance while waiting rides the existing glance system
+    }
     // THE DESK-TRIP INVARIANT: while activity==='task' the agent is seized HERE — this block runs ABOVE every
     // idle/leisure branch in the tick ladder, and all of those are gated on activity==='idle', so the agent
     // walks to the workstation and STAYS seated working until activity flips off 'task' (the branch below then
@@ -1911,7 +2039,7 @@ const World = (() => {
     // Commander sends a message — so a question answered from memory never triggers this. Once armed it holds
     // for the rest of the run. The talk/task mapping still lives in classify.js (stanceFor) + classify.test.js.
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
-    if (activity === 'task' && agent.goal !== 'work') {
+    if (!awaitPrompt && activity === 'task' && agent.goal !== 'work') {
       if (agent.goal !== 'summon' && agent.goal !== 'fetch') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
       // CONVEYOR-DELIVERED work (cron/channel): first walk UP TO this agent's ASSIGNED conveyor (its bound bay),
       // THEN to the workstation. Only when the work actually rode a belt (taskViaConveyor) AND this agent owns a
@@ -2030,7 +2158,7 @@ const World = (() => {
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
       if (PropSprites.setOutboxCrates) PropSprites.setOutboxCrates(returnCrates());   // G2.3: uncollected while-away work stacks on the chute
-      if (PropSprites.setMissionPins) { const mp = missionPinCounts(now); PropSprites.setMissionPins(mp[0], mp[1], mp[2]); }   // G1b/G1c: open quests pin to the MISSION BOARD; a station-gap keeps it breathing; a jammed routine flags an amber JAM stub
+      if (PropSprites.setMissionPins) { const mp = missionPinCounts(now); PropSprites.setMissionPins(mp[0], mp[1], mp[2], mp[3]); maybePinProposal(now, mp[3]); }   // G1b/G1c: open quests pin to the MISSION BOARD; a station-gap keeps it breathing; a jammed routine flags an amber JAM stub; G4: pending proposals + the walk-and-pin body
       if (PropSprites.setTrophyCount) PropSprites.setTrophyCount(trophyCount(now));   // G3b: earned trophies stand behind glass in the TROPHY CASE
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
@@ -2073,6 +2201,7 @@ const World = (() => {
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
     drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
+    drawMeeseeks(now);   // G4.3: the ephemeral sub-agent helper sprites clustered near the lead's desk (over the entities)
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
 
     ctx.drawImage(cache.lightCv, 0, 0);
@@ -2103,6 +2232,8 @@ const World = (() => {
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     // (the context-window gauge now lives engraved in the bottom bar — StationUI.ctxTick, not the desk)
     drawRunClocks(now);   // G0.2: the honest elapsed-time tag at every desk with a live run (world-space, over the lightmap)
+    drawAwaitTag(now);    // G4.1: the amber AWAITING APPROVAL tag over a permission-blocked hero
+    drawPinFlourish(now); // G4.2: the amber pin-burst at the board the instant a proposal is pinned
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (agent && !agent.unplaced && hoverAgent) drawNameplate(now);
@@ -2575,6 +2706,122 @@ const World = (() => {
     }
   }
 
+  /* ---------- the AWAIT tag (G4 feature 1): a tiny amber "AWAITING APPROVAL" plate above the blocked hero.
+     World-space, VT323 with an amber phosphor bloom (the consent-warning colour), a slow blink so it reads as
+     a live pending state — a glance, never a window. Only while the hero is genuinely blocked (awaitPrompt). */
+  const AWAIT_FONT = "8px 'VT323','Courier New',monospace";
+  function drawAwaitTag(now) {
+    if (!awaitPrompt || !agent || agent.unplaced) return;
+    const x = rposX(), y = rposY();
+    const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(now / 380));   // slow breathing so it never looks frozen
+    const label = 'AWAITING APPROVAL';
+    ctx.save();
+    ctx.font = AWAIT_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const tw = ctx.measureText(label).width, ty = y - 22, pad = 3;
+    // a small dark plate behind the text so it stays legible over any floor
+    ctx.globalAlpha = 0.72; ctx.fillStyle = '#160d02';
+    ctx.fillRect(x - tw / 2 - pad, ty - 9, tw + pad * 2, 12);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 5; ctx.shadowColor = '#ffae3a';
+    ctx.fillStyle = `rgba(255,201,120,${pulse.toFixed(3)})`;
+    ctx.fillText(label, x, ty);
+    // a tiny blinking caret so the "still waiting" read is unmistakable
+    if (Math.sin(now / 300) > 0) { ctx.fillStyle = '#ffd9a3'; ctx.fillRect(x + tw / 2 + pad + 1, ty - 7, 1, 8); }
+    ctx.restore();
+  }
+
+  /* ---------- the PIN FLOURISH (G4 feature 2): a brief amber pin-burst at the MISSION BOARD the instant the
+     agent pins a proposal there. World-space, over the board; a short expanding ring of amber motes + a "PINNED"
+     phosphor tick. Self-expires (~900ms). A juicy confirmation that the proposal now has a body. */
+  function drawPinFlourish(now) {
+    const DUR = 900;
+    if (now - pinFlourishAt > DUR || !geo || !geo.props) return;
+    const board = geo.props.find(p => p && p.t === 'missionboard');
+    if (!board) return;
+    const cx = (board.x + (board.w || 1) / 2) * T, cy = (board.y) * T + 4;
+    const t = (now - pinFlourishAt) / DUR, e = 1 - Math.pow(1 - t, 2), a = (1 - t);
+    ctx.save();
+    ctx.globalAlpha = 0.9 * a;
+    // expanding amber ring
+    ctx.strokeStyle = '#ffc24a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, 3 + e * 12, 0, Math.PI * 2); ctx.stroke();
+    // a few motes flung outward
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2, r = 2 + e * 14;
+      ctx.fillStyle = i % 2 ? '#ffdc8a' : '#ff9a3a';
+      ctx.fillRect(Math.round(cx + Math.cos(ang) * r), Math.round(cy + Math.sin(ang) * r), 1, 1);
+    }
+    // the phosphor confirmation tick
+    ctx.globalAlpha = a; ctx.shadowBlur = 4; ctx.shadowColor = '#ffae3a';
+    ctx.fillStyle = '#ffd9a3'; ctx.font = "7px 'VT323','Courier New',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('PINNED', cx, cy - 6 - e * 4);
+    ctx.restore();
+  }
+
+  /* ---------- MEESEEKS helper sprites (G4 feature 3): a lightweight, dedicated layer (NOT agents.js bodies).
+     Each LIVE sub-agent is one small, translucent, faintly-flickering helper that materializes near the lead's
+     desk, works in place (a tight shimmer + micro-wander), and dissolves in a brief amber-cyan poof when its
+     sub-agent completes. Cap 5 + a '+N' badge. The ledger is the ONLY source — a sprite exists iff a real
+     sub-agent is live (the truthfulness law). Colours are cool/pale so they read as spectral helpers, not crew. */
+  function helperSlot(id) {
+    let s = helperSlots.get(id);
+    if (!s) {
+      // a stable fan of offsets around the lead's foot (local px), hash-seeded so a given helper keeps its spot
+      const h = U.hash('ms' + id);
+      const ang = (h % 360) * Math.PI / 180, rad = 10 + (h % 7);
+      s = { ox: Math.cos(ang) * rad, oy: -6 - (h % 5), ph: (h % 100) / 100 * Math.PI * 2 };
+      helperSlots.set(id, s);
+    }
+    return s;
+  }
+  function drawMeeseeks(now) {
+    if (!subLedger) return;
+    subLedger.prune(now);
+    const view = subLedger.list(now);
+    if (!view.shown.length) { for (const k of helperSlots.keys()) helperSlots.delete(k); return; }
+    for (const s of view.shown) {
+      const lead = bodyForAgent(s.leadId) || agent;
+      if (!lead || lead.unplaced) continue;
+      const lx = lead.seated ? lead.seatPx : lead.px, ly = lead.seated ? lead.seatPy : lead.py;
+      const slot = helperSlot(s.id);
+      // micro-wander: a small lissajous drift so the helper works "in place" without standing dead-still
+      const wob = s.phase === 'materialize' ? 1 : 0.4;
+      const hx = Math.round(lx + slot.ox + Math.sin(now / 520 + slot.ph) * 2.2 * wob);
+      const hy = Math.round(ly + slot.oy + Math.cos(now / 610 + slot.ph) * 1.6 * wob);
+      // flicker: a fast, shallow alpha jitter on top of the materialize/dissolve alpha (eerie, unstable presence)
+      const flick = 0.82 + 0.18 * Math.sin(now / 90 + slot.ph * 3);
+      const a = Math.max(0, Math.min(1, s.alpha)) * flick;
+      const scale = s.phase === 'materialize' ? (0.55 + 0.45 * Math.min(1, s.alpha)) : (0.4 + 0.6 * s.alpha);   // scale-in on birth, shrink on poof
+      ctx.save();
+      ctx.globalAlpha = 0.85 * a;
+      // a small spectral body: pale-cyan torso + head, a faint amber core, a soft contact shadow
+      const bodyH = Math.round(9 * scale), bodyW = Math.max(2, Math.round(3 * scale));
+      ctx.globalAlpha = 0.28 * a; ctx.fillStyle = '#0b1416'; ctx.fillRect(hx - bodyW, hy, bodyW * 2, 1);   // shadow
+      ctx.globalAlpha = 0.8 * a;
+      ctx.fillStyle = '#8fe6df'; ctx.fillRect(hx - (bodyW >> 1), hy - bodyH, bodyW, bodyH);                 // torso
+      ctx.fillStyle = '#c7f4ef'; ctx.fillRect(hx - (bodyW >> 1), hy - bodyH - Math.max(2, Math.round(3 * scale)), bodyW, Math.max(2, Math.round(3 * scale)));   // head
+      ctx.globalAlpha = 0.5 * a; ctx.fillStyle = '#ffd9a3'; ctx.fillRect(hx - 1, hy - Math.round(bodyH * 0.6), 1, 1);   // amber work-core spark
+      // the poof: a couple of rising motes while dissolving
+      if (s.phase === 'dissolve') {
+        ctx.globalAlpha = 0.7 * s.alpha; ctx.fillStyle = '#a7f0ea';
+        for (let i = 0; i < 3; i++) { const t = (1 - s.alpha); ctx.fillRect(hx - 2 + i * 2, hy - bodyH - Math.round(t * 8) - i, 1, 1); }
+      }
+      ctx.restore();
+    }
+    // the '+N' badge: more live helpers than the cap — a tiny cyan counter near the lead
+    if (view.overflow > 0) {
+      const lead = agent;
+      if (lead && !lead.unplaced) {
+        ctx.save();
+        ctx.globalAlpha = 0.9; ctx.font = "7px 'VT323','Courier New',monospace"; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.shadowBlur = 3; ctx.shadowColor = '#8fe6df'; ctx.fillStyle = '#c7f4ef';
+        ctx.fillText('+' + view.overflow, (lead.seated ? lead.seatPx : lead.px) + 14, (lead.seated ? lead.seatPy : lead.py) - 14);
+        ctx.restore();
+      }
+    }
+  }
+
   function drawBubble(now, who) {
     who = who || agent;
     const s = who.say;
@@ -2630,7 +2877,7 @@ const World = (() => {
      missionPinCounts — the board's truthful readout, recomputed at most once a second (the projection walk
      is too heavy for every frame): [how many quests are OPEN in the visible log, whether a station-gap
      fix-it is among them]. Zeroes when the quest stores aren't loaded (headless tests / title screen). */
-  let mpAt = -1e9, mpOpen = 0, mpHot = false, mpJam = false;
+  let mpAt = -1e9, mpOpen = 0, mpHot = false, mpJam = false, mpProp = 0;
   function missionPinCounts(t) {
     if (t - mpAt > 1000) {
       mpAt = t;
@@ -2642,9 +2889,11 @@ const World = (() => {
         mpHot = (typeof StationQuestStore !== 'undefined' && StationQuestStore.openCount) ? StationQuestStore.openCount() > 0 : false;
         // G1c: a repeatedly-skipped routine reads as a JAM — an amber stub pins on the board (pure Factorio).
         mpJam = (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.jammedJobs) ? (MaintQuestStore.jammedJobs().length > 0) : false;
-      } catch (_) { mpOpen = 0; mpHot = false; mpJam = false; }
+        // G4 feature 2: pending autojob PROPOSAL cards the agent pinned to the board.
+        mpProp = (typeof AutoJobStore !== 'undefined' && AutoJobStore.pendingCount) ? AutoJobStore.pendingCount() : 0;
+      } catch (_) { mpOpen = 0; mpHot = false; mpJam = false; mpProp = 0; }
     }
-    return [mpOpen, mpHot, mpJam];
+    return [mpOpen, mpHot, mpJam, mpProp];
   }
   // hit-test: a placed MISSION BOARD under a world-space point. Always clickable while placed — the click
   // opens the QUEST LOG, which always has content, so the affordance is never dead (unlike the OUTBOX,
@@ -3225,6 +3474,13 @@ const World = (() => {
     });
     // MEMORY: a recall fence was injected into this run's prompt — surface the count so recall feels ALIVE, not silent.
     U.bus.on('memory.recall', p => { const c = p && (p.count | 0); if (c > 0) hudNote('◈ recalled ' + c + ' memor' + (c === 1 ? 'y' : 'ies'), 'good'); });
+    // G4 feature 1 — APPROVAL WALK-AND-WAIT. The run PAUSED on the sidecar awaiting a human yes/no (permission.prompt,
+    // {promptId, agentId}). For the HERO, walk the body off its desk to the wait anchor and hold the waiting pose;
+    // permission.response ({promptId, decision}) resumes (approve) or ends (deny) the run server-side, so we clear
+    // the await and let the ongoing/finished run drive the body back to work or idle. (A DELEGATED worker's block
+    // rides the lead's stream — hero-scoped here; crew await is future work.)
+    U.bus.on('permission.prompt', p => { if (p && (!p.agentId || (agent && p.agentId === agent.id))) enterAwait({ promptId: p.promptId || '', agentId: p.agentId || (agent && agent.id) }); });
+    U.bus.on('permission.response', p => { if (p && awaitPrompt && (!p.promptId || p.promptId === awaitPrompt.promptId)) clearAwait(); });
     // CONNECTOR PORTALS — make the external on-ramp LIVE: poll each configured server's state so a placed
     // portal glows green/amber/red, and pulse it when ITS tools fire (an mcp__<connectorId>__* tool call).
     const connIds = [];
@@ -3272,6 +3528,10 @@ const World = (() => {
     // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
     U.bus.on('task', t => {
       if (!t || !t.agentId) return;
+      // G4 feature 3: a sub-agent lifecycle event (kind:'subagent') folds into the Meeseeks helper ledger. The
+      // lead is whoever is currently delegating (the open team.dispatch window), else the hero — so helpers
+      // cluster near the desk that spawned them. The fold itself enforces the "live sub-agent ⇒ one sprite" law.
+      if (subLedger && t.kind === 'subagent') subLedger.fold(t, performance.now(), delegateLead || (agent && agent.id) || null);
       if (t.status && t.status !== 'active' && t.status !== 'running' && t.status !== 'queued') { deskProg.delete(t.agentId); return; }
       const prog = +t.prog, dur = +t.dur;
       if (isFinite(prog) && isFinite(dur) && dur > 0) deskProg.set(t.agentId, Math.max(0, Math.min(1, prog / dur)));
@@ -3391,7 +3651,7 @@ const World = (() => {
       if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer } },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount },
     // read-only body snapshot for the DEV test harness (window.__SKYNET_TEST__) — the Tier A/B/C substrate.
     // Pure read, no side effects: the hero + every crew body, each with tile/zone/glance/goal/moving so the
     // floor invariants (idle stays in-zone · awareness is gaze-only · summoned walks to its OWN workstation)
