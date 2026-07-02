@@ -155,6 +155,17 @@
     const lgFails = new Map();    // signature (name\0args) -> failure count
     const lgWarned = new Set();   // signatures already nudged (the warn fires once)
 
+    // NO-OP TURN REFUND (Hermes iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
+    // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
+    // — a pure failover/compaction retry that streamed nothing usable. It should NOT count against the effective
+    // iteration budget. But an unbounded refund could, in principle, let a pathological all-no-op provider be
+    // retried forever, so a HARD FLOOR bounds it: at most `refundMax` turns per run are ever refunded (default 8;
+    // limits.refundMax overrides, 0 disables refunding entirely). Past the floor every turn — even a no-op — counts,
+    // guaranteeing termination at maxIters. NOTE: this never touches loopguard state (which only advances on
+    // tool-call turns, never on a no-op turn), so a refund can neither reset nor confuse a failure streak.
+    const REFUND_MAX = (limits.refundMax != null) ? limits.refundMax : 8;
+    let refundsUsed = 0;
+
     let spentUsd = 0, turns = 0, spentTokens = 0;
     const unpricedUsage = [];
     let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
@@ -320,14 +331,25 @@
         reasoningTokens: final.reasoningTokens || 0, cachedTokens: final.cachedTokens || 0, model, reconciled: true
       });
 
-      // (4) APPEND assistant turn FIRST
+      // (4) APPEND assistant turn FIRST. Capture the prior assistant text BEFORE appending, so a no-op turn whose
+      // content merely duplicates the previous assistant turn can be detected below.
+      let priorAssistantText = null;
+      for (let mi = messages.length - 1; mi >= 0; mi--) { if (messages[mi].role === 'assistant') { priorAssistantText = String(messages[mi].content == null ? '' : messages[mi].content); break; } }
       const calls = Object.keys(acc.toolCalls).sort((a, b) => a - b).map((k, i) => parseCall(acc.toolCalls[k], i));
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
       messages.push(assistantTurn(acc.text, calls));
 
-      // (5) STOP iff no tool calls accumulated
+      // (5) STOP iff no tool calls accumulated. A no-op turn (no tool call + no NEW assistant content) is refunded
+      //     so it doesn't burn the iteration budget — bounded by REFUND_MAX (the hard floor guaranteeing termination).
       if (calls.length === 0) {
-        if (!String(acc.text || '').trim()) turns = turnStart;   // empty/no-assistant turn: refund only this turn
+        const text = String(acc.text || '');
+        const empty = !text.trim();                                   // nothing usable produced
+        const duplicate = !empty && priorAssistantText != null && text === priorAssistantText;   // a re-emitted prior turn
+        if ((empty || duplicate) && refundsUsed < REFUND_MAX) {
+          refundsUsed++;
+          turns = turnStart;                                          // refund: this turn didn't advance the budget
+          emit('iteration.refunded', { agentId, runId, turn: turnStart, reason: empty ? 'empty' : 'duplicate', refundsUsed });
+        }
         return end('done');
       }
 

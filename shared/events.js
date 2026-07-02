@@ -55,6 +55,12 @@
       agentId: str, runId: str, fromModel: str, toModel: str, reason: str,
       fromProvider: str, toProvider: str, rotate: bool
     }),
+    // a no-op turn (no tool call + no NEW assistant content — an empty stream or a re-emitted prior turn, e.g. a
+    // wasted failover/compaction retry) was REFUNDED from the iteration budget instead of counting against maxIters.
+    // Bounded by a per-run floor (refundsUsed) so a pathological all-no-op run still terminates. Observability only.
+    'iteration.refunded': obj(['agentId', 'runId', 'reason'], {
+      agentId: str, runId: str, turn: int, reason: { enum: ['empty', 'duplicate'] }, refundsUsed: int
+    }),
     'run.cancel': obj(['runId'], { runId: str }),
     // context was compacted mid-run (Hermes-style cache-aware compaction): tokens before/after + items removed.
     'agent.compact': obj(['agentId', 'runId'], {
