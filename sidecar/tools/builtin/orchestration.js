@@ -259,7 +259,12 @@
     // which resolves ctx.summon (mirroring the consent round-trip). The new id is returned so the lead can hand it
     // work with team.dispatch in the SAME run. consent-gated (APPROVAL beat); ctx.summon is only present on a
     // live interactive lead run, so a headless/worker call degrades to a clear "not available" message.
-    const SPEC_IDS = 'researcher, engineer, operator, scribe, analyst, reviewer, scout, archivist, designer, chief, liaison';
+    // Class Loadouts S1: the specialist class list is composed from the SHARED catalog (deps.classes =
+    // [{id, tagline}]), NOT hardcoded here, so it never drifts from the Recruitment Bay. Falls back to a
+    // static list only if no catalog was injected (keeps the tool self-describing under a bare unit test).
+    const SPEC_IDS = (Array.isArray(deps.classes) && deps.classes.length)
+      ? deps.classes.map(c => c && c.id).filter(Boolean).join(', ')
+      : 'researcher, engineer, operator, scribe, analyst, reviewer, scout, archivist, designer, chief, liaison';
     const summonTool = {
       // own wall-clock above the summon's 120s browser-ack backstop, so a stalled ack returns a clean "not
       // completed" instead of tripping the 30s fast-tool default mid-wait. The happy path acks in well under a second.

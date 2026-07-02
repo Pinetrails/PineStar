@@ -94,6 +94,13 @@
     if (has) return !!(isMap ? overrides.get(skill.slug) : overrides[skill.slug]);
     return !!skill.default;
   }
+  // Class Loadouts S1: a PER-AGENT class skill package is ADD-ONLY — enabling a skill for this agent can never
+  // DISABLE a globally-enabled one, and it doesn't touch the global prefs. So agentEnabled = the class package
+  // includes this slug, OR the global rule already enables it. Still gated by availability (placedTypes) + budget.
+  function isAgentEnabled(skill, overrides, agentSet) {
+    if (agentSet && agentSet.has(skill.slug)) return true;
+    return isEnabled(skill, overrides);
+  }
 
   // catalog for the UI/API: each skill plus its enabled/available flags for a given workstation.
   function catalog(skills, opts) {
@@ -115,8 +122,14 @@
     opts = opts || {};
     const placed = asSet(opts.placedTypes);
     const budget = opts.budget > 0 ? opts.budget : 12000;
-    const live = (skills || []).filter(s => isEnabled(s, opts.overrides) && isAvailable(s, placed));
+    // Class Loadouts S1: opts.agentSkills = this agent's class package (slugs). Union ADD-only with global prefs.
+    const agentSet = (opts.agentSkills && (opts.agentSkills.size || opts.agentSkills.length))
+      ? asSet(Array.isArray(opts.agentSkills) ? opts.agentSkills : [...opts.agentSkills]) : null;
+    const live = (skills || []).filter(s => isAgentEnabled(s, opts.overrides, agentSet) && isAvailable(s, placed));
     if (!live.length) return '';
+    // agent-package skills compose FIRST so, under the budget cap, GLOBAL extras get truncated before the
+    // class package (the class's own recipes are the priority the summon promised).
+    if (agentSet) live.sort((a, b) => (agentSet.has(b.slug) ? 1 : 0) - (agentSet.has(a.slug) ? 1 : 0));
     let used = 0, omitted = 0;
     const parts = [];
     for (const s of live) {
@@ -133,5 +146,5 @@
     return head + parts.join('\n\n') + tail;
   }
 
-  return { parse, parseFrontmatter, normalize, loadDir, isAvailable, isEnabled, catalog, compose, slugify };
+  return { parse, parseFrontmatter, normalize, loadDir, isAvailable, isEnabled, isAgentEnabled, catalog, compose, slugify };
 });

@@ -114,6 +114,10 @@ const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
+const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
+// the specialist classes as {id, tagline}, composed from the shared catalog so team.summon's class list +
+// the [ORCHESTRATION] teamNote never drift from the Recruitment Bay (single source of truth).
+const SPECIALIST_CLASSES = (sharedSpecialties.BUILTINS || []).map(s => ({ id: s.id, tagline: s.tagline || '' }));
 
 // ---- Skynet→StarNet env back-compat ------------------------------------------------------------
 // The project was renamed Skynet → StarNet; its env vars moved SKYNET_* → STARNET_*. ENV() reads the
@@ -562,7 +566,11 @@ function replaceAgentRoster(list) {
       model: (a && a.model) ? String(a.model) : null,
       provider: normalizeProviderId((a && a.provider) || ''),
       role: String((a && a.role) || '').slice(0, 120),
-      approvalMode: ((a && a.approvalMode) === 'full') ? 'full' : 'ask'   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
+      approvalMode: ((a && a.approvalMode) === 'full') ? 'full' : 'ask',   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
+      // Class Loadouts S1 (additive): the agent's class SKILL PACKAGE + applied reasoning effort. Old rosters
+      // without these load unchanged (skills -> [], reasoningEffort -> null). skills are slugs, deduped + capped.
+      skills: Array.isArray(a && a.skills) ? [...new Set(a.skills.map(s => String(s || '').trim()).filter(Boolean))].slice(0, 40) : [],
+      reasoningEffort: (a && a.reasoningEffort) ? String(a.reasoningEffort) : null
     });
   }
 }
@@ -575,7 +583,7 @@ function loadAgentRoster() {
 function saveAgentRoster() {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
-    const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '' }));
+    const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // Class Loadouts S1: persist per-agent skill package + effort
     saveResilient(AGENT_ROSTER_FILE, { version: 1, agents });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
 }
@@ -2918,7 +2926,9 @@ async function runOnce(o) {
   const providerId = normalizeProvider(o.provider || (rosterIdent && rosterIdent.provider) || '');
   const usingCodex = providerUsesCodex(providerId);
   const providerUnmetered = !!((getProviderProfile(providerId) || {}).unmetered);
-  const reasoningEffort = resolveReasoningEffort(providerId, o.reasoningEffort || o.reasoning_effort || (o.reasoning && o.reasoning.effort));
+  // Class Loadouts S1: reasoning-effort precedence = explicit run-option > this agent's roster record (the class
+  // applied default) > provider default. An explicit per-run choice still wins; the roster only fills a gap.
+  const reasoningEffort = resolveReasoningEffort(providerId, o.reasoningEffort || o.reasoning_effort || (o.reasoning && o.reasoning.effort) || (rosterIdent && rosterIdent.reasoningEffort));
   let model = String((o && o.model) || '').trim() || (rosterIdent && rosterIdent.model ? String(rosterIdent.model).trim() : '') || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   const baseUrl = providerRuntimeBaseUrl(providerId, o.baseUrl || o.base_url || '');
   const runKey = providerRuntimeKey(providerId, key);
@@ -3038,6 +3048,7 @@ async function runOnce(o) {
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
   makeOrchestrationTools({
     runOnce, roster: () => agentRoster, key: runKey, model, provider: providerId, baseUrl, reasoningEffort, subagents,
+    classes: SPECIALIST_CLASSES,   // Class Loadouts S1: the summon-tool class list, composed from the shared catalog (no hardcoded prose)
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
@@ -3341,9 +3352,12 @@ async function runOnce(o) {
       + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
     teamNote += '\n• SPAWN temporary same-identity subagents with team.spawn for one-off parallel subtasks when no named specialist is needed. '
       + 'Use background:true for watchable long-running spawned workers, then inspect/control them with team.subagents, team.interrupt, and team.resume.';
+    // Class Loadouts S1: the class list here is composed from the SHARED catalog (id + tagline), never hardcoded,
+    // so the summon prose can't drift from the Recruitment Bay's actual classes as new ones are added.
+    const classListLine = SPECIALIST_CLASSES.map(c => c.id + (c.tagline ? ' — ' + c.tagline : '')).join('; ');
     teamNote += '\n• SUMMON a NEW specialist with team.summon when the Commander wants an agent you don\'t have yet '
-      + '(e.g. "create a research agent for me"): pass a class via specId (researcher, engineer, operator, scribe, '
-      + 'analyst, reviewer, scout, archivist, designer, chief, liaison) or a custom name + purpose. It returns the new '
+      + '(e.g. "create a research agent for me"): pass a class via specId — one of: ' + classListLine + ' — '
+      + 'or a custom name + purpose. It returns the new '
       + 'agentId, which you can immediately hand work to with team.dispatch. When the Commander asks you to create or '
       + 'summon an agent, actually DO it with team.summon — don\'t just describe it or claim you cannot. '
       + 'For scheduled work, create StarNet routines with routine_create; if the work clearly belongs to a specialist '
@@ -3359,7 +3373,10 @@ async function runOnce(o) {
   try {
     const sRoom = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
     const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
-    skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes });
+    // Class Loadouts S1: union the running agent's per-agent class SKILL PACKAGE (roster record) with the global
+    // prefs — ADD-only (see catalog.compose). Still gated by placedTypes + the budget; package composes first.
+    const agentSkills = (rosterIdent && Array.isArray(rosterIdent.skills)) ? rosterIdent.skills : [];
+    skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes, agentSkills: agentSkills });
   } catch (_) { /* a skill-injection hiccup must never break a run */ }
   // STARNET OPERATOR MANUAL: how the station works, so the agent can guide a stuck Commander. Interactive
   // only (same gate as capsummary — a Commander is present to help and the build UI exists). Sits right
