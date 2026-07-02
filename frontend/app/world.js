@@ -124,6 +124,13 @@ const World = (() => {
   let lastCursor = { wx: 0, wy: 0, t: -1e9 };
   let userReturnUntil = 0;
   let deepLocks = 0;
+  /* TIER D · D4 — THE CURSOR IS A CREATURE. `cursorMoveT` is the last time the cursor actually MOVED a
+     meaningful distance (not merely present) — THE CHASE only ever considers rolling when the cursor is
+     both fresh AND actively moving (a still cursor is presence, not a lure). It's stamped in the mousemove
+     handler alongside lastCursor. Distinct from lastCursor.t (which updates on every mousemove, even a
+     1-pixel jitter) — this stamps on real displacement so a parked-but-twitching cursor doesn't read as
+     "moving". A user INPUT signal (allowed by G6 — never Math.random/Date.now for behavior). */
+  let cursorMoveT = -1e9;
   /* TIER D · D1 ATTENTIVE AUDIENCE — which agent the Commander currently has COMMS focus on (chat.js
      announces it via setChatFocus on every load(ws) rebind; null = no conversation / awakening interview).
      The focused body, while idle, drops its wander/quirk/social life and holds its attention on the Commander
@@ -141,6 +148,17 @@ const World = (() => {
      U.chance/U.irnd/U.pick/U.hash only. reduceMotion degrades D3 to Tier C glances (no walking). */
   let socialBeat = null;                    // the single live encounter slot (G4)
   const socialPairCd = new Map();           // "idA|idB" (sorted) -> earliest `now` the pair may re-encounter
+  /* TIER D · D4 THE CHASE (the headline, ultra-rare). Exactly ONE chaser station-wide, mutually exclusive
+     WITH a live social beat (the same one-noticeable-thing-at-a-time discipline as the social slot). `chaseId`
+     is the agentId of the current chaser (null = nobody chasing); the per-body chase plan lives on
+     `body.chase = { phase, until, repathAt, faceX, faceY, hardUntil }`. `chaseGateUntil` is the LONG
+     station-level cooldown (8-15 min) so most sessions see ZERO chases — rarity is sacred. Every walk target
+     is re-clamped to the chaser's zone at EVERY repath (the cursor moves, so a one-time clamp isn't enough).
+     Per-body mimic cooldown lives on `body.mimicCd` (quirk-band 45-90s). Both beats ride the goal/hold
+     machinery ('mimic'/'chase') rather than a new state family, so summon/chat-focus/social exclusion all
+     compose with the existing gates. Determinism: U.* + cursor input only (G6). */
+  let chaseId = null;                       // agentId of the one live chaser, or null (station-level, like socialBeat)
+  let chaseGateUntil = -1e9;                // earliest `now` the next chase may be considered (drawn LONG, 8-15 min)
   /* First-person self-talk — ONE conscious mind narrating its OWN state to itself. Never crew/colony
      banter (a lie for a solo agent). Every line is gated by curiositySay (no live bubble + global
      cooldown + the chatty trait), so they read as rare honest thoughts tied to the true inner state. */
@@ -601,7 +619,11 @@ const World = (() => {
         cv.style.cursor = 'grabbing'; return;
       }
       const wp = toWorld(ev);
-      lastCursor = { wx: wp.x, wy: wp.y, t: performance.now() };   // remember where you are — the agent's sense of your presence (feeds gaze)
+      const nowMs = performance.now();
+      // D4: stamp cursorMoveT only on a REAL displacement (> ~half a tile) — a parked-but-jittering cursor is
+      // presence (feeds gaze), not "moving" (which lures THE CHASE). Compared against the PREVIOUS lastCursor.
+      if (Math.hypot(wp.x - lastCursor.wx, wp.y - lastCursor.wy) > T * 0.5) cursorMoveT = nowMs;
+      lastCursor = { wx: wp.x, wy: wp.y, t: nowMs };   // remember where you are — the agent's sense of your presence (feeds gaze)
       const hit = agentHit(wp);
       // rising edge: it notices the Commander's cursor land on it and turns to meet you
       if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
@@ -925,6 +947,7 @@ const World = (() => {
       self.placeTarget = null; self.removeId = null; self.goal = null; self.idleUntil = now + U.irnd(900, 2000);
     }
     else if (self.goal === 'social') { self.state = 'idle'; self.target = null; self.pathPts = null; }   // TIER D · D3: reached a social waypoint — stay on goal='social'; stepSocial enters the hold next tick
+    else if (self.goal === 'chase') { self.state = 'idle'; self.target = null; self.pathPts = null; }    // TIER D · D4: reached a pursuit leg — stay on goal='chase'; stepChase repaths (or enters the stare) next tick
     else { self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600); }
   }
   function wander(now) {
@@ -1095,6 +1118,11 @@ const World = (() => {
     // then stepSocial ((re)path or hold). Runs BELOW the b.working seize (stepCrew skips this whole fn while working),
     // so a summon always wins (G2). stepSocial (re)establishes self.target; the walk block below then advances it.
     if (self.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }   // may (re)set self.target (walk) or clear goal (ended)
+    // TIER D · D4: this crew body's cursor-mimic (head-only) / THE CHASE (walk-pursue-stare) steppers. Below the
+    // b.working seize (stepCrew skips this whole fn while working), so a summon always wins (G2). stepChase may
+    // (re)set self.target (a pursuit leg); the walk block below then advances it.
+    if (self.goal === 'mimic') stepMimic(now);
+    if (self.goal === 'chase') stepChase(now);
     if (self.target) {
       if (now < (self.pauseUntil || 0)) {
         self.state = 'idle';                                // a deliberate hold mid-walk (maybeStrollBeat's considered pause / double-take)
@@ -1115,6 +1143,10 @@ const World = (() => {
       // TIER D · D3: in a social encounter with no active target = the HOLD phase (or a between-steps beat). stepSocial
       // above already set the facing/until; this branch just STOPS the ladder from falling through to decideIdle, which
       // would clear stilling + pick a wandering beat and stomp the encounter. The guard/stepSocial own the lifecycle.
+      self.state = 'idle';
+    } else if (self.goal === 'mimic' || self.goal === 'chase') {
+      // TIER D · D4: mimic (head-only) / chase (stare or between-repaths) with no active target. stepMimic/stepChase
+      // above own the facing + lifecycle; this branch just STOPS the fall-through to decideIdle (which would stomp it).
       self.state = 'idle';
     } else if (self.goal === 'use') {
       if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
@@ -1236,6 +1268,7 @@ const World = (() => {
     b.seatKey = null; b.seated = false; b.pendSeat = null;
     b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
     b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
+    if (chaseId === b.agentId) chaseId = null; b.chase = null; b.mimic = null;   // TIER D · D4: a summon seizes the body → drop any live chase/mimic + free the station chaser lock (G2)
   }
 
   /* v7 sit-ON-the-couch: a couch is a blocking prop (you can't path onto it), so the agent walks to
@@ -1880,11 +1913,171 @@ const World = (() => {
     return null;
   }
 
+  /* ================= TIER D · D4 — THE CURSOR IS A CREATURE (mimic + THE CHASE) =================
+     Both beats build on the EXISTING Commander-presence stack (lastCursor + cursorMoveT) — NO second cursor
+     tracker. They ride the goal/hold machinery ('mimic'/'chase'), not a new state family, so summon-seize,
+     chat-focus, and social exclusion all compose. Cursor freshness = lastCursor.t within 8s; cursor MOVING =
+     cursorMoveT within 1.5s (real displacement, not mere presence). All U.* + cursor input only (G6). */
+  const CURSOR_FRESH_MS = 8000;           // shared freshness window (matches ambientGazeDir / THE LOOK-UP)
+  const CURSOR_MOVING_MS = 1500;          // "actively moving" = a real displacement stamped within this window
+
+  // eligible to be pulled into a D4 cursor beat right now? idle, placed, not chat-focused, not already in a
+  // social/mimic/chase hold. Reuses bodyIsIdle (excludes tasked/walking/mid-goal). Read-only.
+  function cursorBeatEligible(b, now) {
+    if (!b || b.unplaced || b.social || b.chase) return false;
+    if (b.goal != null) return false;                              // any held goal suppresses it (never yank a deliberate beat)
+    if (chatFocusId && b === chatFocusBody()) return false;        // chat-stare exclusion (D1)
+    return bodyIsIdle(b, now);
+  }
+
+  /* ---- BEAT 2 — CURSOR-MIMIC (head-only follow; rare, quirk-band) ----
+     An IDLE body TRACKS the moving cursor with continuously-updated FACING for 3-6s (a follow, not one glance),
+     then snaps away and resumes. No movement — facing only (rides self.goal='mimic', stepped every tick). Cursor
+     must be fresh at start AND stay fresh (stale mid-beat → end early). Per-body cooldown in the quirk band
+     (45-90s); consults + arms the D2 station gate (crewBeatDamp/armBeat) so it shares the calm budget. reduceMotion
+     → degrade to a single glance. Selected from decideIdle at the idle cadence (self = the deciding body). */
+  const MIMIC_MIN_MS = 3000, MIMIC_MAX_MS = 6000;
+  const MIMIC_CD_MIN = 45000, MIMIC_CD_MAX = 90000;   // quirk-cooldown band (per-body)
+  const MIMIC_SEL_ROLL = 0.03;                        // rare (a quirk-band beat), only rolled when cursor is fresh + body eligible
+  function maybeMimic(now) {
+    if (!cursorBeatEligible(self, now)) return false;
+    if (now < (self.mimicCd || 0)) return false;                  // per-body quirk-band cooldown
+    if ((now - lastCursor.t) >= CURSOR_FRESH_MS) return false;    // cursor must be fresh at START
+    if (crewBeatDamp(now) === 0) return false;                    // G5: station calm budget (no-op for hero)
+    if (reduceMotion()) {                                          // reduceMotion: degrade the follow to ONE glance toward you
+      const dir = dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
+      setGlance(dir === 'north' ? 'south' : dir, U.irnd(600, 1000), now);
+      self.mimicCd = now + U.irnd(MIMIC_CD_MIN, MIMIC_CD_MAX);
+      armBeat(now);
+      return true;
+    }
+    if (!U.chance(MIMIC_SEL_ROLL)) { self.mimicCd = now + U.irnd(8000, 16000); return false; }   // miss → short re-scan gap (no per-tick re-roll storm)
+    self.goal = 'mimic'; self.stilling = false; self.usingProp = null; self.sitting = false; self.state = 'idle';
+    self.mimic = { until: now + U.irnd(MIMIC_MIN_MS, MIMIC_MAX_MS) };
+    self.mimicCd = now + U.irnd(MIMIC_CD_MIN, MIMIC_CD_MAX);
+    self.trackUntil = 0; self.glance = null;                      // attention is on YOU — drop any in-flight box-track / head-turn
+    armBeat(now);                                                 // a noticeable beat — count it against the station budget (G5)
+    stepMimic(now);                                               // face you THIS tick (no one-frame lag)
+    return true;
+  }
+  // per-tick stepper for goal==='mimic': keep facing the cursor while it's fresh; end (snap away) on time or staleness.
+  function stepMimic(now) {
+    const pl = self.mimic; if (!pl) { if (self.goal === 'mimic') { self.goal = null; self.state = 'idle'; } return; }
+    const stale = (now - lastCursor.t) >= CURSOR_FRESH_MS;
+    if (now >= pl.until || stale) { endMimic(now, !stale); return; }   // time up (snap away) or cursor gone (just release)
+    let dir = dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
+    if (dir === 'north') dir = 'south';                           // never turn its back on you — the face is the point (mirrors THE LOOK-UP)
+    self.dir = dir; self.state = 'idle';
+  }
+  // end the mimic: on a natural time-up, SNAP AWAY to a cardinal that isn't the cursor (the "it looked, then
+  // dismissed you" beat); on a stale-cursor end, just release. Clears the plan + goal → idle.
+  function endMimic(now, snap) {
+    const pl = self.mimic; self.mimic = null;
+    if (snap && pl) { const away = U.pick(['east', 'west', 'north']); self.dir = away; setGlance(away, U.irnd(400, 800), now); }
+    if (self.goal === 'mimic') { self.goal = null; self.state = 'idle'; self.idleUntil = now + U.irnd(600, 1400); }
+  }
+
+  /* ---- BEAT 3 — THE CHASE (the headline; ultra-rare) ----
+     An idle body breaks toward the cursor and PURSUES it (repathing ~1/s so it lags like a real pursuer) for
+     3-6s, then STOPS and stares at where the cursor was (2-4s), then walks off as if nothing happened. Rarity
+     is sacred: a LONG station cooldown (8-15 min), one chaser EVER (chaseId), mutually exclusive with a live
+     social beat (socialBeat), only considered when the D2 gate is open + cursor fresh AND actively MOVING. If
+     the cursor leaves the chaser's zone mid-chase → halt at the clamped boundary tile and stare across the
+     border, then release. reduceMotion → no chase (degrade to the mimic's single glance). */
+  const CHASE_MIN_MS = 3000, CHASE_MAX_MS = 6000;         // pursuit duration (hard cap)
+  const CHASE_STARE_MIN = 2000, CHASE_STARE_MAX = 4000;   // the held stare at where the cursor was
+  const CHASE_HARD_MS = 15000;                            // absolute whole-beat timeout (belt-and-suspenders)
+  const CHASE_REPATH_MS = 1000;                           // low repath cadence → it LAGS the cursor (a real pursuer)
+  const CHASE_GATE_MIN = 480000, CHASE_GATE_MAX = 900000; // 8-15 min station cooldown between chases (RARITY IS SACRED)
+  // roll THE CHASE. Selected from decideIdle at the idle cadence with self = the deciding idle body. Returns true
+  // iff a chase was armed (⇒ decideIdle stops). Most sessions return false forever — that is correct.
+  function maybeChase(now) {
+    if (reduceMotion()) return false;                            // reduceMotion → no chase (mimic already gave a single glance)
+    if (chaseId != null) return false;                          // one chaser EVER (station-level)
+    if (socialBeat) return false;                              // mutually exclusive with a live social beat (one noticeable thing at a time)
+    if (now < chaseGateUntil) return false;                    // LONG station cooldown — the rarity backbone
+    if (crewBeatDamp(now) === 0) return false;                 // only when the D2 station gate is open (G5)
+    if (!cursorBeatEligible(self, now)) return false;          // idle, placed, goal==null, not chat-focused, not already in a beat
+    if ((now - lastCursor.t) >= CURSOR_FRESH_MS) return false; // cursor must be FRESH
+    if ((now - cursorMoveT) >= CURSOR_MOVING_MS) return false; // AND actively MOVING (recent real displacement, not mere presence)
+    // arm the chase. Draw the LONG station cooldown NOW (from chase start) so nothing re-rolls for minutes.
+    chaseId = self.id; chaseGateUntil = now + U.irnd(CHASE_GATE_MIN, CHASE_GATE_MAX);
+    self.goal = 'chase'; self.stilling = false; self.usingProp = null; self.sitting = false; self.state = 'idle';
+    self.chase = { phase: 'pursue', endAt: now + U.irnd(CHASE_MIN_MS, CHASE_MAX_MS), hardUntil: now + CHASE_HARD_MS, repathAt: now, faceX: lastCursor.wx, faceY: lastCursor.wy, border: false };
+    self.trackUntil = 0; self.glance = null;
+    armBeat(now);                                               // a noticeable beat (G5)
+    return true;
+  }
+  // per-tick stepper for goal==='chase'. Repaths toward the cursor's CURRENT tile at a low cadence (re-clamping
+  // to the chaser's zone EVERY repath — the cursor moves, so a one-time clamp isn't enough), then STOP + stare.
+  function stepChase(now) {
+    const pl = self.chase; if (!pl) { if (self.goal === 'chase') { self.goal = null; self.state = 'idle'; } return; }
+    if (now >= pl.hardUntil) { endChase(now); return; }                         // absolute cap — always frees
+    const stale = (now - lastCursor.t) >= CURSOR_FRESH_MS;
+    if (pl.phase === 'pursue') {
+      if (stale) { pl.phase = 'stare'; pl.until = now + U.irnd(CHASE_STARE_MIN, CHASE_STARE_MAX); self.pathPts = null; self.target = null; self.state = 'idle'; return; }   // cursor gone → immediate stop + stare (at its last spot)
+      if (now >= pl.endAt) { pl.phase = 'stare'; pl.until = now + U.irnd(CHASE_STARE_MIN, CHASE_STARE_MAX); pl.faceX = lastCursor.wx; pl.faceY = lastCursor.wy; self.pathPts = null; self.target = null; self.state = 'idle'; return; }   // pursuit done → stop + stare at where you were
+      if (self.state === 'walk' || self.target) return;                          // still walking a leg — let the walk machinery advance it
+      if (now < pl.repathAt) { self.state = 'idle'; return; }                     // between repaths → stand a beat (lags the cursor)
+      pl.repathAt = now + CHASE_REPATH_MS;
+      const zone = zoneFor(self);
+      const cur = tileOf(self.px, self.py);
+      const ct = tileOf(lastCursor.wx, lastCursor.wy);                            // the cursor's CURRENT world tile
+      pl.faceX = lastCursor.wx; pl.faceY = lastCursor.wy;                         // remember the live cursor spot for the eventual stare
+      if (tileInZone(zone, ct.x, ct.y) && geo.walkable(ct.x, ct.y, blocked)) {
+        pl.border = false;
+        if (!(cur.x === ct.x && cur.y === ct.y)) setPathTo({ x: ct.x, y: ct.y }); // in-zone → chase the real tile
+      } else {
+        // cursor is OUTSIDE the chaser's zone → clamp to the nearest in-zone walkable tile toward it (the border),
+        // then STOP there and stare out across the boundary (the containment beat again).
+        const clamp = nearestWalkableInZone(zone, ct.x, ct.y, cur, 6);
+        if (clamp && !(cur.x === clamp.x && cur.y === clamp.y)) { pl.border = true; pl.borderTx = clamp.x; pl.borderTy = clamp.y; setPathTo({ x: clamp.x, y: clamp.y }); }
+        else { pl.phase = 'stare'; pl.until = now + U.irnd(CHASE_STARE_MIN, CHASE_STARE_MAX); self.pathPts = null; self.target = null; self.state = 'idle'; }   // already at the boundary → stare out now
+      }
+      return;
+    }
+    // phase 'stare': stand at where it stopped, face where the cursor was (or its actual position for a border
+    // stare — face toward the real cursor across the line), hold, then release to normal idle.
+    self.state = 'idle'; self.sitting = false;
+    self.dir = dirToward(self.px, self.py, pl.faceX, pl.faceY);
+    if (now >= (pl.until || 0)) endChase(now);
+  }
+  // free THE CHASE: clear the station chaser lock + this body's plan/goal → idle. Idempotent. The long station
+  // cooldown was drawn at chase START (maybeChase), so endChase does NOT re-draw it.
+  function endChase(now) {
+    if (chaseId != null && self && self.id === chaseId) chaseId = null;
+    if (self) { self.chase = null; if (self.goal === 'chase') { self.goal = null; self.state = 'idle'; self.pathPts = null; self.target = null; self.idleUntil = now + U.irnd(800, 1800); } }
+  }
+  // STATION-LEVEL CHASE SWEEP (mirrors the social slot sweep) — run every tick from the hero tick(), independent
+  // of the chaser's own stepper, so a summoned / despawned / chat-focused chaser ALWAYS frees the lock same-tick.
+  // Reads only; the actual clear happens by re-pointing self to the chaser (endChaseFor) so the plan is torn down.
+  function sweepChase(now) {
+    if (chaseId == null) return;
+    const c = bodyForAgent(chaseId);
+    let broken = false;
+    if (!c || c.unplaced) broken = true;                                          // despawned
+    else if (c.goal !== 'chase' || !c.chase) broken = true;                       // plan cleared out from under us
+    else if (c.working) broken = true;                                            // crew run seized it
+    else if (c === agent && activity === 'task') broken = true;                   // hero got summoned
+    else if (chatFocusId && c === chatFocusBody()) broken = true;                 // pulled into a chat-stare
+    if (!broken) return;
+    // tear the chaser's plan down on the correct body (endChase mutates `self`); restore self after.
+    const keep = self; self = c || agent; endChase(now); self = keep;
+    if (!c || c.unplaced) chaseId = null;                                          // despawn: force-clear the lock even if the body is gone
+  }
+
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
   // Petz "it knows where you are" (continuous tracking, NOT the rare dramatic look-up). Falls back to a
   // random cardinal when the cursor's gone quiet, so it never reads as locked-on.
   function ambientGazeDir(now) {
-    if ((now - lastCursor.t) < 8000 && U.chance(0.32)) return dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
+    // D4 Beat 1 — CREW cursor-drift: the hero keeps the larger Commander-attuned share (0.32); CREW bodies get
+    // a smaller slice (0.15) of their ambient facing drifting toward the cursor when it's fresh, so an idle
+    // crew member is occasionally just... watching you — but the hero stays the most attuned. This is the ONLY
+    // spot crew ambient facing is randomized (via lookAround/standStill), so it never fights a held goal, a
+    // glance, a chat-stare, or work facing (those don't route through here). N=1 parity: self===agent → 0.32,
+    // byte-identical to pre-D4. Ambient TEXTURE, not a noticeable beat → NOT gated by the D2 station budget (G5).
+    const drift = self === agent ? 0.32 : 0.15;
+    if ((now - lastCursor.t) < 8000 && U.chance(drift)) return dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
     return U.pick(['east', 'west', 'south', 'north']);
   }
 
@@ -2324,7 +2517,9 @@ const World = (() => {
     const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
+      if (maybeChase(now)) return;         // TIER D · D4 THE CHASE: ultra-rare (8-15 min station cooldown, one chaser ever, mutually exclusive with a live social beat, cursor fresh+MOVING) — breaks toward the cursor, pursues, stops+stares, walks off. Rolled FIRST but hardest-gated: most idle decisions never even reach the roll.
       if (maybeSocial(now)) return;        // TIER D · D3: a rare SILENT social encounter (huddle/watch/border/half-follow) between idle neighbors — bounded movement, one live station-wide, zone-clamped, per-pair cooldown (G3/G4/G5); selected here at the idle cadence off neighborsOf (K4 — never off observing another encounter)
+      if (maybeMimic(now)) return;         // TIER D · D4 CURSOR-MIMIC: a rare quirk-band head-only follow of the moving cursor (3-6s, per-body 45-90s cooldown, station-gated); reduceMotion → a single glance
       if (maybeMutualGlance(now)) return;  // C-Beat2: a quiet noticing between two idle neighbors — gaze-only; maybeMutualGlance holds self.idleUntil past its own glance so the beat stays two-sided, then ends by timeout
       if (U.chance(0.10) && maybeRevisit(now)) return;                                 //   occasionally drift back to its favorite spot
       const r = U.irnd(0, 99);
@@ -2463,6 +2658,7 @@ const World = (() => {
     // tick (neither runs its per-body guard), the slot ALWAYS frees. self===agent here (set below/above), and
     // endEncounter is idempotent; this is the belt-and-suspenders that makes the slot un-leakable.
     if (socialBeat && (now >= socialBeat.until || encounterBroken(now))) endEncounter(now);
+    sweepChase(now);                                              // TIER D · D4: station-level chase sweep (G4) — a seized/despawned/chat-focused chaser ALWAYS frees the lock same-tick, independent of its own stepper
     tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
     stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
     const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
@@ -2506,7 +2702,7 @@ const World = (() => {
     // for the rest of the run. The talk/task mapping still lives in classify.js (stanceFor) + classify.test.js.
     // SUMMONED → don't teleport: pause where it stands (loading context) facing the desk, THEN walk over
     if (!awaitPrompt && activity === 'task' && agent.goal !== 'work') {
-      if (agent.goal !== 'summon' && agent.goal !== 'fetch') { releaseSeat(); agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
+      if (agent.goal !== 'summon' && agent.goal !== 'fetch') { releaseSeat(); if (chaseId === agent.id) chaseId = null; agent.chase = null; agent.mimic = null; agent.goal = 'summon'; agent.sitting = false; agent.working = false; agent.stilling = false; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null; agent.pauseUntil = 0; agent.pauseLook = null; agent.state = 'idle'; agent.dir = 'north'; agent.thinkUntil = now + U.irnd(400, 1200); curiositySay(SELF_ONDUTY, 0.9, now); }
       // CONVEYOR-DELIVERED work (cron/channel): first walk UP TO this agent's ASSIGNED conveyor (its bound bay),
       // THEN to the workstation. Only when the work actually rode a belt (taskViaConveyor) AND this agent owns a
       // reachable bay; otherwise straight to the seat (in-app chat is byte-identical — no detour).
@@ -2531,6 +2727,10 @@ const World = (() => {
     // holds. It sits BELOW the summon-seize block above (which flips goal off 'social' via encounterBroken → the
     // survivor releases this tick, K3), so work always wins (G2). Only runs while genuinely idle+on the social goal.
     if (activity === 'idle' && agent.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }
+    // TIER D · D4: the hero's cursor-mimic (head-only) / THE CHASE (walk-pursue-stare) steppers. Both sit BELOW the
+    // summon-seize block (which flips goal off 'mimic'/'chase') so work always wins (G2). Only while genuinely idle.
+    if (activity === 'idle' && agent.goal === 'mimic') stepMimic(now);
+    if (activity === 'idle' && agent.goal === 'chase') stepChase(now);
     if (agent.target) {
       // belt-yield: about to cross a belt with cargo bearing down → pause and let it pass (only on a casual stroll)
       if (now >= (agent.pauseUntil || 0) && now >= (agent.yieldCd || 0) && agent.goal == null && shouldYieldToCargo()) {
@@ -2576,6 +2776,11 @@ const World = (() => {
       // TIER D · D3: hero in a social encounter with no active target = the HOLD phase. The guard/stepSocial (run
       // above, before `if (agent.target)`) own the facing + lifecycle; this branch only STOPS the ladder from
       // reaching decideIdle, which would stomp the encounter with a wandering beat.
+      agent.state = 'idle';
+    } else if (agent.goal === 'mimic' || agent.goal === 'chase') {
+      // TIER D · D4: mimic (head-only follow) / chase (stare phase, or a between-repaths beat) with no active
+      // target. stepMimic/stepChase (run above) own the facing + lifecycle; this branch only STOPS the ladder
+      // from reaching decideIdle, which would stomp the beat with a wandering pick.
       agent.state = 'idle';
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
       decideIdle(now);
@@ -4332,7 +4537,7 @@ const World = (() => {
       if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
     // TEST/DEBUG ONLY — the D3 border-meeting pure geometry (sharedEdge/borderTileFor), exposed read-only for the
     // DEV harness. No world state touched (both are pure; borderTileFor takes an injected walkable predicate).
     // The headless coverage lives in test/social-border.test.js (extracts the D3-PURE-GEOMETRY block from source).
