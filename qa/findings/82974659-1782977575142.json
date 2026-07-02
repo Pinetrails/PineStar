@@ -1,0 +1,15 @@
+{
+  "id": "82974659-1782977575142",
+  "fingerprint": "82974659",
+  "ts": 1782977575142,
+  "crew": "Green Guardian",
+  "severity": "P1",
+  "title": "Visual regression: frame `sys-logbook` changed beyond animation noise",
+  "detail": "trunk 1f1d7591 — mean-abs-diff 8.19 exceeds the golden threshold. The vision model should read ONLY this frame. — ACCEPTED as the intentional ui-premium P2 palette/chrome/dossier-hero sweep (trunk 1f1d759 and neighbours); goldens re-blessed on agent/green-sweep. Vision-checked: panels/text/palette all healthy, no breakage.",
+  "evidence": [
+    "C:\\Users\\andro\\Desktop\\gen\\.bugloops\\guardian-20260702-073111\\golden-frames\\sys-logbook.png",
+    "C:\\Users\\andro\\Desktop\\gen\\.bugloops\\guardian-20260702-073111\\golden.log"
+  ],
+  "status": "dismissed",
+  "routedTo": "green-sweep"
+}
