@@ -2799,6 +2799,10 @@ async function runOnce(o) {
     emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
     return;
   }
+  // did admission reserve managed credit? Declared OUTSIDE the try so it is in scope in the outer `finally`
+  // leak-guard below — a `let` declared INSIDE a try block is NOT visible in that try's finally (referencing it
+  // there throws a ReferenceError, which would swallow the return and skip concurrencyGate.leave → a hung run).
+  let billed = false;
   // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
   // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
   try {
@@ -2811,7 +2815,6 @@ async function runOnce(o) {
   const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
     : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity);
   const managedRun = credits.configured() && !providerUnmetered;
-  let billed = false;   // did admission reserve managed credit? (drives the settle in finally)
   if (managedRun) {
     // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
     if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
