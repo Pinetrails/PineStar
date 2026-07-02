@@ -58,3 +58,5 @@ scripts/STATUS.generated.md
 .qa_g1a/
 # G2 lane visual-proof screenshots (same pattern)
 .qa_g2/
+# G3a lane visual-proof screenshots (same pattern)
+.qa_g3a/
