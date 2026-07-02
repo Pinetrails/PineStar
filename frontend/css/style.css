@@ -611,7 +611,9 @@ body.no-scan .crt-scan { display: none; }
   width: 88px; height: 116px; image-rendering: pixelated;
   border: 2px solid var(--ph-dim); background: #02080a; flex-shrink: 0;
 }
-.ag-name { font-size: 25px; letter-spacing: 4px; }
+/* Phase-2 dossier hero: larger name with a soft glow (the glow rides the agent's own
+   inline suit colour via currentColor, so it stays "this unit's" hue) + faint chromatic edge. */
+.ag-name { font-size: 28px; letter-spacing: 4px; line-height: 1; text-shadow: 0 0 15px var(--ph-glow2), -1px 0 rgba(255,90,90,.22), 1px 0 rgba(90,170,255,.20); }
 .ag-role { color: var(--ph); font-size: 14px; letter-spacing: 2px; }
 .ag-tags { margin-top: 4px; display: flex; gap: 5px; flex-wrap: wrap; }
 .tag {

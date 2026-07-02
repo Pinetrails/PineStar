@@ -426,6 +426,24 @@ textarea, select {
 }
 
 /* ============================================================
+   17 · ACTIVE-WORK SHIMMER (Phase 2 · H) — the crew row's in-flight bar.
+   The bar is collapsed until the row carries .working (toggled from the
+   real agent.run.start/end state in crewTick). While working it opens to
+   a thin filled rail and the .bar-active shimmer sweeps across it, so a
+   running agent reads as alive. Indeterminate (full-width fill), not a %.
+   ============================================================ */
+.crew-row .crew-prog {
+  height: 0; margin-top: 0; overflow: hidden;
+  transition: height var(--t-med) var(--ease-out), margin-top var(--t-med) var(--ease-out);
+}
+.crew-row.working .crew-prog { height: 3px; margin-top: 4px; }
+.crew-row.working .crew-prog > div {
+  width: 100%; background: var(--ph); box-shadow: 0 0 6px var(--ph-glow);
+}
+/* the shimmer sweep only animates while working (the ::after is present always via
+   .bar-active, but with a collapsed 0-height parent it's clipped and invisible). */
+
+/* ============================================================
    16 · HIERARCHY & DENSITY (Phase 2) — targeted breathing room.
    Quest-log only (scoped by .gx-quests / .q-grid so the GROWTH and
    TROPHY grids that share .gx-tros are untouched). OPEN cards get more
@@ -455,7 +473,7 @@ textarea, select {
   .swap-in,
   .toast, .toast.leaving,
   .bar-active::after,
-  .term-led,
+  .term-led, .ag-psweep,
   .crew-row, .ag-item, .kb-card, .gx-tro, .perk, .mc-row, .sk-card,
   .key-row, .prov-card, .notif-row, .cn-row,
   .loading, .loading.pulse, .loading::before {

@@ -323,6 +323,9 @@ const StationUI = (() => {
       '<div class="crew-name" style="color:' + a.color + '">' + esc(a.name) +
       '<span class="crew-room">HAB-01' + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
       '<div class="crew-status" id="cs-' + a.id + '">…</div>' +
+      // in-flight work bar: hidden until the row is .working (crewTick toggles it from the real run state).
+      // The shimmer (.bar-active) reads as live activity; it's an indeterminate sweep, not a % readout.
+      '<div class="crew-prog bar-active" id="cp-' + a.id + '" aria-hidden="true"><div></div></div>' +
       '</div></li>').join('');
     $('#crew-n').textContent = present.length + (present.length === 1 ? ' AGENT' : ' AGENTS');
     ul.querySelectorAll('.crew-row').forEach(li =>
@@ -344,6 +347,8 @@ const StationUI = (() => {
       if (live) working++;
       const e = $('#cs-' + a.id);
       if (e) e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
+      // H: mark the row WORKING so the in-flight shimmer bar shows only while it's actually running.
+      if (e && e.parentElement && e.parentElement.parentElement) e.parentElement.parentElement.classList.toggle('working', live);
     });
     const sum = $('#crew-sum');
     if (sum) sum.innerHTML =
@@ -417,7 +422,13 @@ const StationUI = (() => {
     const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
     return '<div class="ag-hero">' +
-      '<div class="ag-portrait-wrap"><canvas id="ag-portrait" width="84" height="112"></canvas></div>' +
+      // recessed portrait WELL: corner ticks + a slow scan-sweep overlay (v2 hero pattern). The sweep +
+      // ticks are pointer-events:none cosmetic overlays; the canvas keeps rendering the live agent body.
+      '<div class="ag-portrait-wrap"><div class="ag-portrait-well">' +
+        '<span class="ag-ptick a"></span><span class="ag-ptick b"></span><span class="ag-ptick c"></span><span class="ag-ptick d"></span>' +
+        '<span class="ag-psweep" aria-hidden="true"></span>' +
+        '<canvas id="ag-portrait" width="84" height="112"></canvas>' +
+      '</div></div>' +
       '<div class="ag-info">' +
       '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>' +
       '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
@@ -431,9 +442,16 @@ const StationUI = (() => {
   function agBrief(a) {
     const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
-    // BRIEF is operational telemetry; the full Level/XP/Satisfaction/milestone readout lives in the GROWTH tab.
+    // BRIEF stat wells — compact 3-up readout from data already on the agent (no new API calls):
+    // RUNS (station totals), LEVEL (pure Xp engine), and positive feedback / XP-to-next when known.
+    // The full Level/XP/Satisfaction/milestone readout still lives in the GROWTH tab.
+    const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
+    const lvl = g ? g.level : '—';
+    const kudos = g ? g.positiveFeedback : 0;
     return '<div class="stat-grid">' +
       '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val">' + lvl + '</div><div class="stat-lbl">LEVEL</div></div>' +
+      '<div class="stat-cell"><div class="stat-val pos">' + kudos + '</div><div class="stat-lbl">KUDOS</div></div>' +
       '</div>' +
       '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
       (a.purpose
@@ -2867,8 +2885,8 @@ const StationUI = (() => {
     // the "the agent wants to run this for you" ask reads first. Only shown when the ledger has cards.
     const AJS = (typeof AutoJobStore !== 'undefined' && AutoJobStore.pendingList) ? AutoJobStore : null;
     const proposals = AJS ? AJS.pendingList() : [];
-    const propRow = p => '<div class="gx-tro off gx-proposal" style="border-left:2px solid #ffae3a;">'
-      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl" style="color:#ffae3a;">&#9873;</span><span class="nm">' + esc(p.title) + '</span></div>'
+    const propRow = p => '<div class="gx-tro off gx-proposal" style="border-left:2px solid var(--gold);">'
+      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl" style="color:var(--gold);">&#9873;</span><span class="nm">' + esc(p.title) + '</span></div>'
       + '<div class="sub">' + esc(p.why || 'a standing job the agent proposes running for you on a schedule.') + '</div>'
       + '<div class="consent-btns" style="margin-top:5px;">'
       + '<button class="consent-btn q-prop-yes" data-pid="' + esc(p.id) + '">Approve</button>'
