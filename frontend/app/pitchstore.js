@@ -116,6 +116,9 @@ const PitchStore = (() => {
   // making it theirs (the intentional-gap beat).
   function doBuild(parsed) {
     try {
+      // G1c: the accepted First Pitch becomes a trackable WORK quest (multi-step, rides the QuestState
+      // celebration). Minted BEFORE the launch so its store can claim the run the launch kicks off. Additive.
+      try { if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.accept) WorkQuestStore.accept(parsed); } catch (_) {}
       const b = parsed.build || {};
       if (b.kind === 'recipe' && b.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
         const r = Recipes.get(b.recipeId);

@@ -29,13 +29,18 @@ const QuestStore = (() => {
     // Already fully shaped by the pure StationQuests engine (the store owns the live reads); a missing store
     // just means no station-gap quests (fewer quests, never a crash — the read-surface degradation idiom).
     const stationGaps = (typeof StationQuestStore !== 'undefined' && StationQuestStore.quests) ? StationQuestStore.quests() : [];
-    return { meter, milestones, dossierDims, pendingIdea, station, stationGaps };
+    // G1c — accepted-idea WORK quests (multi-step, ride the QuestState celebration) + MAINTENANCE quests
+    // (recurring slag causes + jammed routines). Both pre-shaped by their pure engines; a missing store just
+    // means fewer quests (never a crash — the same read-surface degradation idiom as stationGaps).
+    const workQuests = (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.quests) ? WorkQuestStore.quests() : [];
+    const maintQuests = (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.quests) ? MaintQuestStore.quests() : [];
+    return { meter, milestones, dossierDims, pendingIdea, station, stationGaps, workQuests, maintQuests };
   }
 
   // the whole panel read: the station meter + the ordered quest list + open/done counts.
   function view() {
     const g = gather();
-    const quests = (typeof Quests !== 'undefined') ? Quests.build({ milestones: g.milestones, dossierDims: g.dossierDims, pendingIdea: g.pendingIdea, station: g.station, stationGaps: g.stationGaps }) : [];
+    const quests = (typeof Quests !== 'undefined') ? Quests.build({ milestones: g.milestones, dossierDims: g.dossierDims, pendingIdea: g.pendingIdea, station: g.station, stationGaps: g.stationGaps, workQuests: g.workQuests, maintQuests: g.maintQuests }) : [];
     const summary = (typeof Quests !== 'undefined') ? Quests.summary(quests) : { open: 0, done: 0, total: 0 };
     return { meter: g.meter, quests: quests, summary: summary };
   }

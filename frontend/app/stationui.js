@@ -2300,17 +2300,23 @@ const StationUI = (() => {
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
     const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
+    const WQS = (typeof WorkQuestStore !== 'undefined') ? WorkQuestStore : null;
+    const MQS = (typeof MaintQuestStore !== 'undefined') ? MaintQuestStore : null;
     if (SQS && SQS.sync) { try { SQS.sync(); } catch (_) {} }   // G1b: resolve station gaps before folding, so a just-closed gap renders done + celebrates
+    if (WQS && WQS.sync) { try { WQS.sync(); } catch (_) {} }   // G1c: advance/complete work quests before the fold
+    if (MQS && MQS.sync) { try { MQS.sync(); } catch (_) {} }   // G1c: mint/clear maintenance quests before the fold
     if (QSS && QSS.sync) { try { QSS.sync(); } catch (_) {} }   // never render a stale diff — the log always reflects the memory it just folded
     const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
     if (!v) { body.innerHTML = '<p class="dim">Quest log unavailable.</p>'; return; }
     const m = v.meter, all = Array.isArray(v.quests) ? v.quests : [];
     const qs = (QSS && QSS.visible) ? QSS.visible(all) : all;   // dismissed = gone forever (degrades to the raw list if the store is absent)
     const open = qs.filter(q => q.status !== 'done'), done = qs.filter(q => q.status === 'done');
-    // a station-gap quest is a fix-it SUGGESTION — always dismissible while open (the sandbox law); it routes
-    // through its own store's denylist, not QuestState (whose dismiss is dossier-only).
+    // a station-gap / work / maintenance quest is a fix-it or build SUGGESTION — always dismissible while open
+    // (the sandbox law); each routes through its OWN store's denylist, not QuestState (whose dismiss is
+    // dossier-only). Only the get-to-know-you (dossier) kind falls through to QuestState's dismissible check.
     const dismissibleQ = q => q && q.status !== 'done' && (
-      (q.kind === 'station-gap') || (QSS && QSS.dismissible && QSS.dismissible(q)));
+      (q.kind === 'station-gap') || (q.kind === 'work') || (q.kind === 'maintenance')
+      || (QSS && QSS.dismissible && QSS.dismissible(q)));
     const tro = q => {
       const glow = QSS && QSS.isCelebrating && QSS.isCelebrating(q.id);
       const dis = dismissibleQ(q);
@@ -2337,10 +2343,11 @@ const StationUI = (() => {
       ev.stopPropagation();
       const q = qs.find(x => x && x.id === b.dataset.qid);
       if (!q) return;
-      // a station-gap fix-it routes to its own permanent denylist (StationQuestStore); every other kind
-      // (dossier) goes through QuestState. Either way: dismissed = stop forever (the one anti-nag law).
-      const took = (q.kind === 'station-gap')
-        ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
+      // each fix-it/build kind routes to its OWN permanent denylist; the dossier kind goes through QuestState.
+      // Either way: dismissed = stop forever (the one anti-nag law).
+      const took = (q.kind === 'station-gap') ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
+        : (q.kind === 'work') ? (WQS && WQS.dismiss && WQS.dismiss(q.id))
+        : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
         : (QSS && QSS.dismiss && QSS.dismiss(q));
       if (took) { sfx('click'); rerender('quests'); }
     }));

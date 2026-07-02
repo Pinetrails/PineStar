@@ -335,6 +335,8 @@
 <script src="app/pitch.js"></script>
 <script src="app/quests.js"></script>
 <script src="app/stationquests.js"></script><!-- pure station-quest generator (G1b): capdenied/capability-gap → fix-it quest (dedup, completion-on-placement, dismiss-forever) -->
+<script src="app/workquests.js"></script><!-- pure work-quest generator (G1c): accepted idea → multi-step build (gaps → steps, run-completion → done, dismiss-forever) -->
+<script src="app/maintquests.js"></script><!-- pure maintenance-quest generator (G1c): recurring slag cause / jammed routine → fix-it quest (threshold, dedup, clears-when-signal-clears) -->
 <script src="app/queststate.js"></script><!-- pure durable-quest-memory engine (G1a): firstSeen/completed/dismissed + open→done diff -->
 <script src="app/seeds.js"></script>
 <script src="app/seedcredit.js"></script><!-- pure seed-callout helper (G3a): credits a Commander-saved seed when a pitch/suggestion/digest reuses it -->
@@ -388,6 +390,9 @@
 <script src="app/queststore.js"></script>
 <script src="app/queststatestore.js"></script><!-- durable quest memory + completion celebration (G1a); self-persists (own key) -->
 <script src="app/stationqueststore.js"></script><!-- station-quest generator wiring (G1b): agent.tool_call → capability-gap detection → fix-it quest; self-persists (own key), never emits -->
+<script src="app/workqueststore.js"></script><!-- work-quest generator wiring (G1c): accepted idea (pitch/suggest) → multi-step build tracked to run-completion; self-persists (own key), never emits -->
+<script src="app/maintqueststore.js"></script><!-- maintenance-quest generator wiring (G1c): SlagLog ring tally + cron.skipped jam → fix-it quest; self-persists (own key), never emits -->
+<script src="app/dockglow.js"></script><!-- deferred BUILD-dock glow (G1c): soft hint on the BUILD dock while a station quest is open; reuses the kit-out traps; tutorial wins -->
 <script src="app/mintstore.js"></script>
 <script src="app/seedstore.js"></script>
 <script src="app/autonomystore.js"></script>

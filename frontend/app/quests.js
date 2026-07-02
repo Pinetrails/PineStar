@@ -31,6 +31,11 @@
   //                 by the pure StationQuests.project engine (the store owns the live reads); build() just splices
   //                 them into the ordered list right after the waiting idea, so a real capability failure surfaces
   //                 as the most-actionable direction. Absent input → unchanged (older callers untouched).
+  //   workQuests  — (G1c) accepted-idea builds projected from WorkQuests: [{ id, kind:'work', title, desc,
+  //                 reward, status }] — a pitch/idea the Commander said "build it" to, with real step progress.
+  //   maintQuests — (G1c) fix-it quests projected from MaintQuests: [{ id, kind:'maintenance', title, desc,
+  //                 reward, status }] — a recurring slag cause or a jammed routine became actionable direction.
+  //                 All three (station/work/maint) are absent-input → unchanged (older callers untouched).
   // OPEN quests (actionable now) come first, then DONE (the trophy shelf). Each quest names its REAL reward.
   function build(input) {
     input = input || {};
@@ -49,6 +54,26 @@
     //     lead the actionable set (right after the idea) because they name a WALL the agent just hit.
     if (Array.isArray(input.stationGaps)) {
       for (const q of input.stationGaps) {
+        if (!q || !q.id) continue;
+        (q.status === 'done' ? done : open).push(q);
+      }
+    }
+
+    // 1a-i) WORK quests (G1c) — an accepted pitch/idea became a trackable multi-step build. Pre-shaped by
+    //       WorkQuests.project (id 'wq:<n>', kind 'work'); each carries its own step progress in the desc. They
+    //       lead right after the station gaps: a build the Commander SAID YES to is the most actionable direction.
+    if (Array.isArray(input.workQuests)) {
+      for (const q of input.workQuests) {
+        if (!q || !q.id) continue;
+        (q.status === 'done' ? done : open).push(q);
+      }
+    }
+
+    // 1a-ii) MAINTENANCE quests (G1c) — recurring wasted-spend (slag post-mortems) + a jammed routine became a
+    //        fix-it. Pre-shaped by MaintQuests.project (id 'mq:<cause>', kind 'maintenance'). Sorted like the
+    //        station gaps; they name a recurring WALL the line keeps hitting, so they sit with the actionable set.
+    if (Array.isArray(input.maintQuests)) {
+      for (const q of input.maintQuests) {
         if (!q || !q.id) continue;
         (q.status === 'done' ? done : open).push(q);
       }

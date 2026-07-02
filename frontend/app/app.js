@@ -1164,6 +1164,8 @@ const App = (() => {
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
+    if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
+    if (typeof MaintQuestStore !== 'undefined') MaintQuestStore.reset();   // …and no inherited maintenance quests — a new Commander never sees the prior hero's slag/jam backlog (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
@@ -1307,6 +1309,14 @@ const App = (() => {
     // check + resolution read World.heroCaps / the live floor) and after QuestStateStore so a resumed save's
     // already-closed gaps are a quiet baseline. Self-persists to its own key; never emits on U.bus.
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.init();
+    // G1c WORK-QUEST GENERATOR: an accepted pitch/idea ("build it") becomes a trackable multi-step build,
+    // completing on the launched run finishing (rides QuestState's celebration). Subscribes to run.start/end;
+    // self-persists (own key); never emits. Init AFTER QuestStateStore so its completion folds cleanly.
+    if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.init();
+    // G1c MAINTENANCE-QUEST GENERATOR: recurring slag causes (World.slagPostmortems ring) + a jammed routine
+    // (cron.skipped streak) become fix-it quests, clearing when the signal clears. Init AFTER World.loadStation
+    // (it reads the live SlagLog ring) and after QuestStateStore. Self-persists (own key); never emits.
+    if (typeof MaintQuestStore !== 'undefined') MaintQuestStore.init();
     if (typeof SeedStore !== 'undefined') SeedStore.init();   // SELF-GROWING SEED: reset the one-offer-per-session budget
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.init();   // AUTONOMY POSTURE: hydrate the "alive between sessions" dial (own key; the awakening cadence beat + the station dial are its writers)
     // FIRST PITCH: once the agent has done one real task and knows enough about the Commander, it proactively
@@ -1476,6 +1486,10 @@ const App = (() => {
     }
     // P3: arm the first-steps briefing's bus ticks; re-offer the checklist to a returning user mid-progress
     if (typeof Tutorial !== 'undefined' && Tutorial.onEnterGame) Tutorial.onEnterGame();
+    // G1c: the deferred BUILD-dock glow — a soft standing hint on the BUILD dock while a station quest is open
+    // (the fix is one click away). Stands down while the tutorial is coaching (tutorial wins). Started here so
+    // it only ever runs on the floor; disconnect() stops it.
+    if (typeof DockGlow !== 'undefined' && DockGlow.start) DockGlow.start();
     el('btn-disconnect').onclick = disconnect;
   }
 
@@ -1589,7 +1603,7 @@ const App = (() => {
   // DISCONNECT (the ⏏ button) tears down the live game but NEVER wipes data and NEVER lands on a dead title
   // screen — it persists, then re-enters via reentry(): straight back into the station if creds are still in
   // hand, otherwise the RESUME-mode connect screen. The agent is always preserved.
-  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); stopRailTicker(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
+  function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof DockGlow !== 'undefined' && DockGlow.stop) DockGlow.stop(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); stopRailTicker(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
 
   /* ---------- creation ---------- */
   // Guarded: a genuine FRESH start (no save) wipes any stale resume pointer and opens CREATE YOUR OVERSEER.
