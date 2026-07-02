@@ -83,7 +83,12 @@ const PropSprites = (() => {
   /* casings are toned DOWN ~15% (sheen rows 20%) from the authoring values so props sit inside the
      station's dim CRT lighting instead of popping against it — Andrew's pre-merge call. Emissives
      and ACC accents keep full brightness; only the body ramps dim. */
-  const dim = (c, k) => U.shade(c, k || -0.15);
+  const dim = (c, k) => {   // module-load-safe darken (U isn't defined under a bare Node require)
+    k = k || -0.15;
+    const n = parseInt(c.slice(1), 16);
+    const r = Math.round(((n >> 16) & 255) * (1 + k)), g = Math.round(((n >> 8) & 255) * (1 + k)), b = Math.round((n & 255) * (1 + k));
+    return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+  };
   const RAMP = {
     steel: { top: dim('#4a5862'), face: dim('#39454d'), lit: dim('#5f6f7a'), sheen: dim('#7a8b95', -0.2), dk: dim('#242e35'), ao: dim('#12181d') },
     gun:   { top: dim('#3c4a44'), face: dim('#2e3a36'), lit: dim('#4e5e56'), sheen: dim('#68796f', -0.2), dk: dim('#1d2723'), ao: dim('#0f1512') },
