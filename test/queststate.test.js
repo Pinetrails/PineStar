@@ -18,6 +18,26 @@ A.eq(Object.keys(junk.seen), ['ok'], 'hydrate drops malformed seen entries, keep
 A.eq(junk.seen.ok, { firstSeenAt: 5, completedAt: null, lastStatus: 'open' }, 'hydrate sanitizes completedAt/lastStatus');
 A.eq(Object.keys(junk.dismissed), ['e'], 'hydrate drops non-numeric dismissal stamps');
 
+/* ---------- epoch-0 hydrate fix: a null/undefined/junk completedAt is ABSENT, never resurrected to 1969 ----------
+   The bug: Number(null)===0 (finite), so the old hydrate kept 0 — a never-completed quest rendered as
+   "completed 1969". A stored 0 from that bug window must migrate to null (done, DATE UNKNOWN), not 1969. */
+const nul = QS.hydrate({ seen: {
+  openNull:  { firstSeenAt: 100, completedAt: null,      lastStatus: 'open' },   // never completed → stays absent
+  openUndef: { firstSeenAt: 100,                          lastStatus: 'open' },   // undefined → absent
+  bugZero:   { firstSeenAt: 100, completedAt: 0,         lastStatus: 'done' },   // pre-fix persisted 0 → absent (done, date unknown)
+  realDone:  { firstSeenAt: 100, completedAt: 1751000000000, lastStatus: 'done' } // a genuine ms stamp → preserved exactly
+} });
+A.eq(nul.seen.openNull.completedAt, null, 'a null completedAt hydrates as absent (not epoch-0 → not 1969)');
+A.eq(nul.seen.openUndef.completedAt, null, 'an undefined completedAt hydrates as absent');
+A.eq(nul.seen.bugZero.completedAt, null, 'a pre-fix persisted 0 migrates to absent — "completed, date unknown", never 1969');
+A.eq(nul.seen.bugZero.lastStatus, 'done', '…and the bug-window quest stays DONE (only the fabricated date is dropped)');
+A.eq(nul.seen.realDone.completedAt, 1751000000000, 'a genuine completedAt survives untouched');
+// a migrated 0 must not be re-stamped by the next fold (the quest is already done — no phantom re-completion)
+const mig = QS.hydrate({ seen: { 'ms:x': { firstSeenAt: 100, completedAt: 0, lastStatus: 'done' } } });
+const rmig = QS.fold(mig, [q('ms:x', 'done')], 5000);
+A.eq(rmig.completions, [], 're-folding a migrated (done, date-unknown) quest never celebrates or re-stamps');
+A.eq(QS.stateOf(mig, 'ms:x').completedAt, null, '…and its completedAt stays absent (honest: date unknown, not now)');
+
 /* ---------- first sight = baseline, never a celebration ---------- */
 s = QS.fresh();
 let r = QS.fold(s, [q('dim:goals', 'open'), q('ms:first_light', 'done')], 1000);

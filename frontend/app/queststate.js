@@ -37,7 +37,12 @@
       if (!id || !r || typeof r !== 'object') continue;
       const first = Number(r.firstSeenAt);
       if (!Number.isFinite(first)) continue;
-      const comp = Number(r.completedAt);
+      // null/undefined must round-trip as null — Number(null) is 0 (finite!), which would resurrect a
+      // never-completed quest as "completed at epoch" (a 1969 trophy). Guard the null case before coercing,
+      // mirroring stationquests.js's hydrate. A stored 0 from the pre-fix bug window ALSO reads as null here:
+      // the trophy case then renders it "completed, date unknown" rather than 1969 (the migration choice —
+      // an honest completion with no knowable date beats a fabricated one).
+      const comp = (r.completedAt == null || r.completedAt === 0) ? NaN : Number(r.completedAt);
       s.seen[id] = {
         firstSeenAt: first,
         completedAt: Number.isFinite(comp) ? comp : null,
