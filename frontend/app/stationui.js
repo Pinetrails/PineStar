@@ -1948,7 +1948,13 @@ const StationUI = (() => {
       BG_KEYS.forEach(k => {
         const el = inputOf(k); if (!el) return;
         // show the EFFECTIVE cap (persisted-or-env). An empty string can't represent "0 = no cap", so always fill.
-        const v = (typeof caps[k] === 'number') ? caps[k] : (typeof envd[k] === 'number' ? envd[k] : 0);
+        // Truthful precedence: a value the user SAVED wins (never show the env default over a real saved cap — the
+        // status payload's `caps` can be clobbered by the governor's pool-only shape, dropping perRun/perAgent), then
+        // the effective `caps` value, then the flat `perRun` back-compat field, then the env default.
+        const v = (typeof saved[k] === 'number') ? saved[k]
+          : (typeof caps[k] === 'number') ? caps[k]
+          : (k === 'perRun' && typeof st.perRun === 'number') ? st.perRun
+          : (typeof envd[k] === 'number' ? envd[k] : 0);
         el.value = String(v);
         // annotate whether this value is a saved override or the env default (honest, non-blocking).
         const savedHere = Object.prototype.hasOwnProperty.call(saved, k);
