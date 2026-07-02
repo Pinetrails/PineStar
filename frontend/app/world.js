@@ -3387,6 +3387,19 @@ const World = (() => {
     // the live station document (read-only) — the station-quest generator reads props[] to detect the
     // OUTBOX / MISSION-BOARD standing gaps and to resolve a placement. Null when no station is loaded (headless).
     stationDoc: () => (station && station.doc ? station.doc() : null),
+    // DEV/proof read surface (pure, no side effects — the testapi idiom): where a placed prop of type `t`
+    // sits ON SCREEN (CSS px), derived from the live camera + the local-frame geometry. Lets a headless
+    // driver dispatch a REAL mouse click at the MISSION BOARD instead of faking the seam. Null when absent.
+    propScreenRect: (t) => {
+      if (!cv || !geo || !geo.props) return null;
+      const p = geo.props.find(q => q.t === t);
+      if (!p) return null;
+      const r = cv.getBoundingClientRect();
+      const kx = r.width / cv.width, ky = r.height / cv.height;
+      const toScr = (wx, wy) => ({ x: r.left + (wx * scale + panX) * kx, y: r.top + (wy * scale + panY) * ky });
+      const a = toScr(p.x * T, p.y * T), b = toScr((p.x + (p.w || 1)) * T, (p.y + (p.h || 1)) * T);
+      return { left: a.x, top: a.y, right: b.x, bottom: b.y, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+    },
     heroCaps: (agentId) => {
       if (!station) return [];
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
