@@ -46,7 +46,29 @@ A.ok(src.includes("params.indexOf('tools') >= 0"), 'Harness.listModels derives t
 A.ok(src.includes("providerSlot(base, provider)"), 'Harness stores key/base-url settings in provider-scoped localStorage slots');
 A.ok(src.includes("invoke('harness_store_provider_key'"), 'desktop Harness pushes provider-scoped key updates to Tauri');
 A.ok(src.includes('getKey(provider)') || /const\s+getKey\s*=\s*provider\s*=>/.test(src), 'Harness.getKey accepts a provider argument');
-A.ok(/saved\s*&&\s*saved\.agent[\s\S]{0,180}Harness\.listModels\(\)/.test(app), 'auto-resume warms the model catalog before entering the game');
+/* ---------- BOOTFIX regression guard: the seeded DEV / resume floor must NEVER wait on the model catalog ----------
+   listModels() proxies a LIVE external OpenRouter /models fetch; awaiting it inline on the auto-resume path
+   strands boot on #screen-connect forever when that upstream is slow/blocked (the seeded SKYNET_DEV shoot
+   regression). The catalog is cosmetic for resume, so the auto-resume branch must fire it in the BACKGROUND
+   (fire-and-forget) and enter the station immediately — and every catalog fetch must be timeout-bounded so
+   listModels() always settles. If a future refactor re-introduces an inline `await Harness.listModels()` on
+   the enter-the-game path, these assertions fail. */
+
+// (a) the auto-resume branch decides eligibility, then enters WITHOUT awaiting the catalog — listModels() is
+//     kicked in the background (not `await`ed) right before resumeInto(). This is the exact shape of the fix.
+A.ok(/const\s+canResume\s*=[\s\S]{0,400}if\s*\(\s*canResume\s*\)\s*\{[\s\S]{0,260}Harness\.listModels\(\)[\s\S]{0,200}resumeInto\(saved\)/.test(app),
+  'auto-resume enters the station and warms the catalog in the background (no inline await before the floor)');
+// the background warm must NOT be awaited (that would re-introduce the hang). Assert the resume branch has no
+// `await Harness.listModels()` — the awaited call only survives on the RESUME-connect recovery path below it.
+{
+  const mBranch = /if\s*\(\s*canResume\s*\)\s*\{([\s\S]*?)resumeInto\(saved\);\s*return;\s*\}/.exec(app);
+  A.ok(mBranch, 'the canResume branch is present and returns via resumeInto(saved)');
+  A.ok(mBranch && !/await\s+Harness\.listModels\(\)/.test(mBranch[1]), 'the auto-resume branch does NOT await Harness.listModels() (the floor never waits on the catalog)');
+}
+// (b) every catalog fetch is bounded by an AbortController timeout so listModels() always settles even against a
+//     hung upstream — a timeout reads as an empty catalog, exactly like an offline sidecar.
+A.ok(/AbortController\(\)[\s\S]{0,160}setTimeout\([\s\S]{0,80}\.abort\(\)/.test(src), 'fetchModelCatalog arms an AbortController timeout');
+A.ok(/fetch\(url,\s*\{\s*cache:\s*'no-store',\s*signal:/.test(src), 'the catalog fetch passes the abort signal');
 
 // Hermes-style work discipline: task runs should push the model into a stable build loop instead of repeated
 // failed path guesses, shell-quoted source rewrites, or syntax-only verification.
