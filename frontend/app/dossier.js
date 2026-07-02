@@ -80,6 +80,10 @@
       id: nextId(dossier), text,
       source: (belief.source && typeof belief.source === 'string') ? belief.source : 'commander',
       sourceRunId: (typeof belief.sourceRunId === 'string') ? belief.sourceRunId : null,
+      // Phase B (study): when the STATION observed a belief from real work (not the Commander authoring it), stamp
+      // WHEN — the COMMANDER panel renders a study-sourced belief with an "observed" tag + this timestamp. Only a
+      // finite number is kept (never a guessed 0), so a Commander-authored belief carries none.
+      observedAt: (Number.isFinite(belief.observedAt) && belief.observedAt > 0) ? belief.observedAt : null,
       createdAt: now, updatedAt: now, pinned: false
     });
     dossier.updatedAt = now;
@@ -195,6 +199,7 @@
             text,
             source: (typeof b.source === 'string') ? b.source : 'commander',
             sourceRunId: (typeof b.sourceRunId === 'string') ? b.sourceRunId : null,
+            observedAt: (Number.isFinite(b.observedAt) && b.observedAt > 0) ? b.observedAt : null,   // Phase B study provenance (preserved across reload)
             createdAt: Number.isFinite(b.createdAt) ? b.createdAt : 0,
             updatedAt: Number.isFinite(b.updatedAt) ? b.updatedAt : 0,
             pinned: !!b.pinned
