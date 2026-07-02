@@ -255,11 +255,26 @@ and (by intent) THE LONG STARE hold.
   its whole idle life (quirks/social/chase/wander) was permanently suppressed. Andrew: "it will just endlessly
   follow the users mouse."
 - **The fix — hold the stare only while the conversation is WARM.** A module-local `chatWarmT` timestamp + a
-  `CHAT_WARM_MS = 120000` (~2 min) constant: `chatStareHold` now additionally requires `(now - chatWarmT) <
-  CHAT_WARM_MS` (added as the SECOND guard, right after the focused-body check). Warmth is stamped on genuine
-  engagement: `setChatFocus(id)` stamps it (a switch/open = engagement — and only stamps for a non-null id, so
-  `setChatFocus(null)` never warms), and a new tiny public `World.chatFocusPing()` re-stamps it (no-op when no
-  focus is set).
+  `CHAT_WARM_MS = 120000` (~2 min) constant, unified behind **ONE shared predicate**:
+  `chatHot(now) = chatFocusId != null && (now - chatWarmT) < CHAT_WARM_MS` (RNG-free; reads module state + `now`
+  only). Warmth is stamped on genuine engagement: `setChatFocus(id)` stamps it (a switch/open = engagement — and
+  only stamps for a non-null id, so `setChatFocus(null)` never warms), and a new tiny public
+  `World.chatFocusPing()` re-stamps it (no-op when no focus is set).
+- **Eligibility is keyed on HOT-focus, not focus (adversarial-review fix on the first cut):** COMMS focus never
+  clears in practice, so any exclusion keyed on focus ALONE would permanently bar the focused body from a beat
+  family even after warmth lapsed — the first cut fixed only `chatStareHold` and left the body half-restored
+  (wander/quirks back; social/mimic/chase still barred forever). ALL five "held by the stare" call sites now key
+  on the same `chatHot(now) && body === chatFocusBody()` condition: `chatStareHold`'s own gate, the
+  `socialEligible` exclusion (D3 recruiting), the `cursorBeatEligible` exclusion (gates BOTH `maybeMimic` and
+  `maybeChase`), `encounterBroken` (a live social beat), and `sweepChase` (a live chase). Semantics: while HOT,
+  behavior is identical to the old always-focused behavior (excluded from beats, mid-beat seized); once COLD, the
+  focused body is FULLY back in its idle life — eligible for social, mimic, THE CHASE, quirks, and wander.
+- **The re-warm race (traced):** if the user types (re-warms) while the cold-focused body is MID-beat, it is not
+  yanked mid-tick — `chatStareHold` bails on any `goal !== 'stare-chat'` (unchanged), so the transition always goes
+  through the sanctioned teardown: a live social beat breaks via `encounterBroken → endEncounter` (both bodies
+  released cleanly, slot freed), a live chase via `sweepChase → endChase` (lock freed, plan torn down) — both now
+  keyed on hot, same-tick, exactly the old focus-seize semantics — and the short head-only mimic (3-6s, no sweep)
+  simply finishes naturally. The stare then engages at the body's next idle decision.
 - **Re-warm points (chat.js, pings only — the chosen design, NOT a world-side signal, to avoid double machinery):**
   a one-line `warmChat()` helper (`if (World.chatFocusPing) World.chatFocusPing()`) is called at the three genuine
   engagement moments: (a) the compose input's `input` handler (typing at the focused stream — O(1) timestamp write

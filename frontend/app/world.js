@@ -844,6 +844,13 @@ const World = (() => {
   function chatFocusPing() { if (chatFocusId) chatWarmT = fnow; }
   // the body (hero or crew) the Commander is chatting with, or null. bodyForAgent maps 'agent'→hero + crew by id.
   function chatFocusBody() { return chatFocusId ? bodyForAgent(chatFocusId) : null; }
+  /* chatHot — THE single predicate for "the chat-stare is actually engaged": a focus is set AND the conversation
+     is still WARM. Every call site that means "this body is (or should be) held by the stare" keys on THIS
+     (chatStareHold's own gate, the socialEligible/cursorBeatEligible exclusions, encounterBroken, sweepChase) so
+     the definition can never drift apart. COMMS focus never clears in practice (persistent panel), so keying any
+     of those on focus ALONE would permanently bar the focused body from social/mimic/chase after warmth lapses —
+     hot-focus is the real "held" condition. RNG-free: reads module state + `now` only. */
+  function chatHot(now) { return chatFocusId != null && (now - chatWarmT) < CHAT_WARM_MS; }
 
   function setActivity(kind) {
     activity = kind;
@@ -1669,7 +1676,7 @@ const World = (() => {
   function socialEligible(b, now) {
     if (!b || b.unplaced || b.social) return false;              // already in an encounter, or nobody
     if (b.stilling) return false;                                // don't yank a deliberate stillness hold (eerie calm wins)
-    if (chatFocusId && b === chatFocusBody()) return false;      // chat-stare exclusion (D1): never recruit the focused body
+    if (chatHot(now) && b === chatFocusBody()) return false;     // chat-stare exclusion (D1): never recruit the HOT-focused body (cold focus = the body is living its life — fully eligible)
     return bodyIsIdle(b, now);                                   // idle, not tasked/walking/mid-goal (hero: activity idle; crew: summoned+free)
   }
 
@@ -1703,7 +1710,7 @@ const World = (() => {
     if (a.social == null) return true;                                     // observer's plan cleared out from under us
     if (a.working) return true;                                            // observer's crew run seized it
     if (a === agent && activity === 'task') return true;                   // observer (hero) got summoned
-    if (chatFocusId && (a === chatFocusBody() || b === chatFocusBody())) return true;   // either pulled into a chat-stare
+    if (chatHot(now) && (a === chatFocusBody() || b === chatFocusBody())) return true;   // either pulled into a LIVE (hot) chat-stare — a cold focus doesn't seize, so it doesn't break the beat
     if (!oneSided) {
       // TWO-SIDED: the partner (bId) must also still be holding its own plan and not seized.
       if (b.social == null) return true;
@@ -2015,7 +2022,7 @@ const World = (() => {
   function cursorBeatEligible(b, now) {
     if (!b || b.unplaced || b.social || b.chase) return false;
     if (b.goal != null) return false;                              // any held goal suppresses it (never yank a deliberate beat)
-    if (chatFocusId && b === chatFocusBody()) return false;        // chat-stare exclusion (D1)
+    if (chatHot(now) && b === chatFocusBody()) return false;       // chat-stare exclusion (D1): HOT focus only — a cold-focused body may mimic/chase (it's living its life)
     return bodyIsIdle(b, now);
   }
 
@@ -2148,7 +2155,7 @@ const World = (() => {
     else if (c.goal !== 'chase' || !c.chase) broken = true;                       // plan cleared out from under us
     else if (c.working) broken = true;                                            // crew run seized it
     else if (c === agent && activity === 'task') broken = true;                   // hero got summoned
-    else if (chatFocusId && c === chatFocusBody()) broken = true;                 // pulled into a chat-stare
+    else if (chatHot(now) && c === chatFocusBody()) broken = true;                // pulled into a LIVE (hot) chat-stare — a warm re-engage mid-chase seizes attention; a cold focus does NOT break the chase (the body is living its life)
     if (!broken) return;
     // tear the chaser's plan down on the correct body (endChase mutates `self`); restore self after.
     const keep = self; self = c || agent; endChase(now); self = keep;
@@ -2238,8 +2245,7 @@ const World = (() => {
      Returns true when it took/holds the body. G2: reachable ONLY while free (never while activity==='task' /
      working / walking / mid-goal) — it sits BELOW the summon-seize, which the callers gate for us. */
   function chatStareHold(now) {
-    if (!self || self !== chatFocusBody()) return false;                 // not the focused body → normal life
-    if ((now - chatWarmT) >= CHAT_WARM_MS) return false;                 // D1 WARMTH: the conversation went cold → stop holding; the body falls to normal idle (decideIdle clears stilling on entry) and its quirks/social/chase/wander resume
+    if (!self || !chatHot(now) || self !== chatFocusBody()) return false; // not the HOT-focused body → normal life. chatHot = focus set + warm (the ONE shared predicate — same definition the socialEligible/cursorBeatEligible exclusions, encounterBroken, and sweepChase key on). Cold → stop holding; the body falls to normal idle (decideIdle clears stilling on entry) and its quirks/social/mimic/chase/wander ALL resume (the exclusions key on hot too)
     if (self === agent && activity !== 'idle') return false;            // G2: working-at-desk (task) wins; and a live VOICE conversation ('talk') keeps its own listening-glances (maybeGlance) — the stare is an IDLE beat only
     if (self.working || self.unplaced) return false;                    // a live run owns the body (crew) — never stare mid-work
     if (self.state === 'walk' || self.target) return false;             // let an in-flight walk finish before holding
