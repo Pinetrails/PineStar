@@ -48,13 +48,18 @@
     return s;
   }
 
-  /* unattended(state, runs) -> digest rows.
+  /* unattended(state, runs, sinceMs?) -> digest rows.
      runs = /api/runs rows (newest-first): { runId, agentId, reason, turns, tokens, usd, title, ts, model }.
-     Filters: finished clean ('done'), landed AFTER the last attended moment, not already digested,
-     not already pending. Fresh state (lastSeenAt 0) -> [] always. */
-  function unattended(state, runs) {
+     Filters: finished clean ('done'), landed AFTER the away boundary, not already digested, not
+     already pending. sinceMs is the PREVIOUS session's lastSeenAt, passed explicitly because the
+     caller has usually already heartbeat-ed the live state to "now" (using the live stamp would
+     filter everything out — the bug the explicit boundary exists to prevent). Defaults to the
+     state's own lastSeenAt for callers that compute before stamping. Boundary 0 (first-ever
+     session) -> [] always: no prior attendance means nothing was "missed". */
+  function unattended(state, runs, sinceMs) {
     const s = hydrate(state);
-    if (s.lastSeenAt <= 0) return [];                      // first-ever session: nothing was "missed"
+    const since = (typeof sinceMs === 'number' && isFinite(sinceMs)) ? Math.max(0, sinceMs) : s.lastSeenAt;
+    if (since <= 0) return [];                             // first-ever session: nothing was "missed"
     if (!Array.isArray(runs)) return [];
     const digested = {}; for (const id of s.digested) digested[id] = true;
     const pending = {}; for (const r of s.pending) pending[r.runId] = true;
@@ -64,7 +69,7 @@
       if (!r || typeof r !== 'object') continue;
       const runId = str(r.runId); if (!runId) continue;
       if (r.reason !== 'done') continue;                   // slag has its own post-mortem path
-      if (num(r.ts) <= s.lastSeenAt) continue;             // happened while attended (or before)
+      if (num(r.ts) <= since) continue;                    // happened while attended (or before)
       if (digested[runId] || pending[runId]) continue;     // once listed, never re-listed
       out.push({
         runId: runId,

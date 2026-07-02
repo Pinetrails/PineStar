@@ -31,7 +31,9 @@ const ReturnStore = (() => {
       const r = await fetch('/api/runs?agent=*&limit=200&since=' + encodeURIComponent(sinceMs), { cache: 'no-store' });
       if (r.ok) runs = (await r.json()).runs || [];
     } catch (_) { return []; }
-    const rows = Returns.unattended(state, runs);
+    // the away boundary is the PREVIOUS session's stamp — the live state has already heartbeat-ed
+    // to "now", so it MUST be passed explicitly (returns.test locks this regression).
+    const rows = Returns.unattended(state, runs, sinceMs);
     if (!rows.length) return rows;
     try {
       const r = await fetch('/api/cron', { cache: 'no-store' });

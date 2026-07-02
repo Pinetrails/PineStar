@@ -38,6 +38,19 @@ A.ok(rows[0].title.length <= 90, 'titles are whitespace-folded + capped');
 const many = []; for (let i = 0; i < 20; i++) many.push(run({ runId: 'm' + i, ts: 3000 - i }));
 A.eq(R.unattended(s, many).length, R.DIGEST_CAP, 'one digest lists at most DIGEST_CAP rows');
 
+// ---- the explicit away boundary (REGRESSION: caught live by the g2proof driver) ----
+// The store heartbeats to "now" the moment the app opens, THEN composes the digest — so unattended()
+// must honor an explicit sinceMs (the PREVIOUS session's stamp), not the already-advanced live one.
+s = R.heartbeat(R.hydrate(null), 1000);   // previous session stamped 1000
+const prevSeen = s.lastSeenAt;
+s = R.heartbeat(s, 50000);                // app open: live state is now "attended at 50000"
+A.eq(R.unattended(s, [run({ runId: 'ov', ts: 2000 })]).length, 0,
+  'against the LIVE stamp the overnight run looks attended (the bug shape)');
+rows = R.unattended(s, [run({ runId: 'ov', ts: 2000 })], prevSeen);
+A.eq(rows.length, 1, 'the explicit previous-session boundary lists the overnight run');
+A.eq(R.unattended(s, [run({ runId: 'ov', ts: 2000 })], 0).length, 0,
+  'an explicit 0 boundary (first-ever session) still digests nothing');
+
 // ---- fold: listed once, NEVER re-listed (the anti-nag law, pure form) ----
 s = R.heartbeat(R.hydrate(null), 1000);
 rows = R.unattended(s, [run({ runId: 'a', ts: 2000 })]);
