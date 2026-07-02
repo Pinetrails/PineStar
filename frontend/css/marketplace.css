@@ -290,6 +290,10 @@
 .mkt-skinbar .skin-thumb img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 .mkt-skinbar .skin-thumb:hover { border-color: var(--ph); }
 .mkt-skinbar .skin-thumb.sel { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
+/* SUMMON model bar — reuses the shared .mp-* ModelPicker, laid out like the APPEARANCE skin bar */
+.mkt-modelbar .mkt-modelpick { display: flex; align-items: center; gap: 8px; }
+.mkt-modelbar .mp-wrap { width: 100%; }
+.mkt-modelbar .mp-model { flex: 1 1 auto; }
 
 /* ---- the ＋ build tile (a dashed grid cell) + the custom-class builder form ---- */
 .mkt-build { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;

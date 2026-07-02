@@ -183,19 +183,48 @@ const App = (() => {
   // a.model/a.provider the dock + focusAgent already use, then pushRoster() so the sidecar roster records the pin
   // (runOnce honors it when a run carries no explicit model; cron already reads it via cronModelFor). Persists.
   // If the pinned agent is the FOCUSED one, retarget the live harness so the very next chat run uses it immediately.
-  function setAgentModelPin(agentId, model, provider) {
+  function setAgentModelPin(agentId, model, provider, effort) {
     const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
     if (!a) return false;
     const m = String(model || '').trim();
     const p = String(provider || '').trim();
     a.model = m || null;
     a.provider = p || null;
+    // effort is OPTIONAL + additive: written only when the 4th arg is passed (older 3-arg callers untouched); a clear also clears it.
+    const hasEffort = (arguments.length >= 4);
+    const e = String(effort || '').trim();
+    if (hasEffort) a.reasoningEffort = (m && e) ? e : null;
     if (agent && a.id === agent.id) {   // focused agent — apply live so the next run reflects the pin at once
       if (m && typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(m);
       if (p && typeof Harness !== 'undefined' && Harness.setProv) Harness.setProv(p);
+      if (hasEffort && a.reasoningEffort && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(a.reasoningEffort);
       if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
     }
     pushRoster();   // the pin reaches the sidecar roster (honored by runOnce + cron)
+    persist();
+    return true;
+  }
+
+  // Rename an agent from its dossier. The name is DISPLAY identity only — the agentId (the `agents` Map key, the
+  // sidecar roster key, the workstream binding) never changes, so a rename cannot break any lookup. We recompose
+  // the system prompt (the default identity embeds the name), retarget the live COMMS labels when this is the
+  // focused agent, relabel the floor body, then pushRoster + persist. Normalized to the shape summon mints
+  // (single-spaced, UPPER, ≤18 chars, non-empty) so a renamed agent is indistinguishable from a freshly-summoned one.
+  function setAgentName(agentId, name) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return false;
+    const nm = String(name || '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 18);
+    if (!nm) return false;
+    a.name = nm;
+    a.systemPrompt = composeSystemPrompt(a);              // the default identity embeds the name — keep the prompt honest
+    if (agent && a.id === agent.id) {                     // focused: retarget the live COMMS identity + label at once
+      const gtA = el('gt-agent'); if (gtA) gtA.textContent = a.name;
+      if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);
+    }
+    if (typeof World !== 'undefined' && World.relabel) World.relabel(a.id, a.name);   // the floor nameplate follows
+    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+    renderRail();
+    pushRoster();
     persist();
     return true;
   }
@@ -403,9 +432,17 @@ const App = (() => {
     opts = opts || {};
     if (!agent) return null;                                   // need a base context (model/provider): a woken hero
     const id = allocAgentId(spec);
+    // OPTIONAL per-agent model chosen in the bay (spec.modelPin = { model, provider, effort }); falls back to the
+    // hero's transport. Kept on a DISTINCT key so it never collides with the specialty's own `spec.model` clearance
+    // TIER hint (reasoning/balanced/fast) shown on the class card. Setting provider+effort alongside the model also
+    // fixes the prior gap where a summoned agent inherited only the hero's model, leaving provider/effort unset.
+    const pin = (spec && spec.modelPin) || null;
     const a = {
       id, name: ((spec && spec.name) || 'AGENT').toUpperCase().slice(0, 18), role: 'specialist',   // summoned crew are specialists under the Orchestrator
-      color: SUITS[agents.size % SUITS.length], skin: (spec && spec.skin) || DATA.DEFAULT_SKIN, model: agent.model,
+      color: SUITS[agents.size % SUITS.length], skin: (spec && spec.skin) || DATA.DEFAULT_SKIN,
+      model: (pin && pin.model) || agent.model,
+      provider: (pin && pin.provider) || agent.provider || null,
+      reasoningEffort: (pin && pin.effort) || agent.reasoningEffort || null,
       personaId: (spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) ? spec.persona : agent.personaId,
       purpose: null, createdAt: Date.now()
     };
@@ -1295,7 +1332,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider (P1-6)
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }

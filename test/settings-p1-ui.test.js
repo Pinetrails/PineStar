@@ -22,7 +22,7 @@ ok(/access\.config\.setModel/.test(ui), 'P1-6: the model card calls config.setMo
 ok(/FOLLOW STATION DEFAULT/.test(ui), 'P1-6: the card offers "follow station default" (clear the pin)');
 ok(/function setAgentModelPin\(/.test(appjs), 'P1-6: App implements setAgentModelPin');
 ok(/setModel:\s*setAgentModelPin/.test(appjs), 'P1-6: setModel is exposed on the config access surface');
-ok(/setAgentModelPin[\s\S]{0,1000}pushRoster\(\)/.test(appjs), 'P1-6: the pin pushes the roster so the sidecar records it');
+ok(/setAgentModelPin[\s\S]{0,1500}pushRoster\(\)/.test(appjs), 'P1-6: the pin pushes the roster so the sidecar records it');
 
 // ---- P1-7 station backup export/import/reset ----
 ok(/STATION BACKUP/.test(ui), 'P1-7: SETTINGS has a STATION BACKUP card');

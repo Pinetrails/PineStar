@@ -745,12 +745,21 @@ const StationUI = (() => {
         '<canvas id="ag-portrait" width="84" height="112"></canvas>' +
       '</div></div>' +
       '<div class="ag-info">' +
-      '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) + (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>' +
+      // NAME — read-only with a ✎ rename affordance, or an inline editor while agEdit['__name'] is set (wired in wireHead).
+      (agEdit['__name']
+        ? '<div class="ag-name-edit">' +
+            '<input id="ag-rename-in" class="ag-name-input" type="text" maxlength="18" spellcheck="false" autocomplete="off" value="' + esc(a.name) + '" aria-label="Rename agent" style="color:' + a.color + '">' +
+            '<button class="ag-name-ok" id="ag-rename-save" title="save name" aria-label="Save name">✓</button>' +
+            '<button class="ag-name-x" id="ag-rename-cancel" title="cancel" aria-label="Cancel rename">✕</button></div>'
+        : '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) +
+            '<button class="ag-rename" id="ag-rename-btn" title="rename this agent" aria-label="Rename agent">✎</button>' +
+            (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>') +
       '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
       '<div class="ag-tags">' +
       // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
       ((typeof Specialties !== 'undefined' && a.specialtyId) ? (function () { var s = Specialties.get(a.specialtyId); return s ? '<span class="tag">' + esc(s.emoji + ' ' + s.name) + '</span>' : ''; })() : '') +
-      '<span class="tag model">' + esc(a.model || '—') + '</span>' +
+      // MODEL tag doubles as the shortcut into CONFIG › model (wired in wireHead) so "change the model" is one click from anywhere.
+      '<span class="tag model" data-goconfig="1" role="button" tabindex="0" title="change this agent’s model">' + esc(a.model || '—') + '</span>' +
       '</div></div></div>';
   }
 
@@ -1088,11 +1097,22 @@ const StationUI = (() => {
     const model = (a && a.model) ? String(a.model) : '';
     const prov = (a && a.provider) ? String(a.provider) : '';
     const pinned = !!model;
+    // PRIMARY control: the shared ModelPicker (grouped catalog + effort), preselected + populated in wireConfig.
+    // FALLBACK (when the component is unavailable): the original free-text model/provider inputs, always present in
+    // an <details> as an escape hatch for a model id that isn't in the catalog. SAVE reads the picker first.
+    const hasPicker = (typeof ModelPicker !== 'undefined');
+    const picker = hasPicker
+      ? '<div class="set-row mc-pick-row"><label for="ag-model-pick-model">MODEL</label>' +
+          '<div class="mc-pick" id="ag-model-pick">' + ModelPicker.shellHTML({ id: 'ag-model-pick', inheritLabel: 'Follow station default', ariaLabel: 'Agent model', effort: true }) + '</div></div>'
+      : '';
     return '<div class="cf-card">' +
       '<div class="cf-head"><span class="cf-file">▣ model</span><span class="cf-badge">PER-AGENT</span></div>' +
-      '<div class="cf-desc">What this agent runs on. Pin a model + provider here to run this agent on it everywhere — chat, delegated work, scheduled routines — independent of the station default in the COMMS dock. Leave blank to follow the station default.</div>' +
-      '<div class="set-row"><label for="ag-model-in">MODEL</label><input id="ag-model-in" class="key-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. anthropic/claude-sonnet-4-5 — blank = station default" value="' + esc(model) + '"></div>' +
-      '<div class="set-row"><label for="ag-prov-in">PROVIDER</label><input id="ag-prov-in" class="key-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. openrouter · anthropic · codex" value="' + esc(prov) + '"></div>' +
+      '<div class="cf-desc">What this agent runs on. Pick a model to run this agent on it everywhere — chat, delegated work, scheduled routines — independent of the station default in the COMMS dock. “Follow station default” clears the pin.</div>' +
+      picker +
+      '<details class="mc-adv"' + ((pinned && !hasPicker) ? ' open' : '') + '><summary>advanced — type a model id</summary>' +
+        '<div class="set-row"><label for="ag-model-in">MODEL</label><input id="ag-model-in" class="key-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. anthropic/claude-sonnet-4-5" value="' + esc(model) + '"></div>' +
+        '<div class="set-row"><label for="ag-prov-in">PROVIDER</label><input id="ag-prov-in" class="key-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. openrouter · anthropic · codex" value="' + esc(prov) + '"></div>' +
+      '</details>' +
       '<div class="mc-hint">' + (pinned ? 'pinned — this agent ignores the station default' : 'following the station default') + '</div>' +
       '<div class="mc-acts">' +
         '<button class="bb sm" id="ag-model-save">SAVE PIN</button>' +
@@ -1118,27 +1138,72 @@ const StationUI = (() => {
       notify('saved ' + (meta ? meta.file : key) + ' — your agent runs on it now', 'good');
       rerender('agents');
     }));
-    // keep focus in the editor across the rerender that opened it
-    const openKey = Object.keys(agEdit).find(k => agEdit[k]);
+    // keep focus in the editor across the rerender that opened it (ignore reserved '__' keys like the header rename)
+    const openKey = Object.keys(agEdit).find(k => agEdit[k] && k.charAt(0) !== '_');
     if (openKey) { const ta = body.querySelector('#cf-ta-' + openKey); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
-    // P1-6 per-agent MODEL pin — save / clear via App.setAgentModel (updates a.model/a.provider + pushRoster).
+    // P1-6 per-agent MODEL pin — save / clear via App.setAgentModel (updates a.model/a.provider/a.reasoningEffort + pushRoster).
     const a = present[sel];
     const mSave = body.querySelector('#ag-model-save');
     const mMsg = body.querySelector('#ag-model-msg');
     const setMMsg = (t, ok) => { if (mMsg) { mMsg.textContent = t || ''; mMsg.className = 'msg' + (ok ? ' ok' : ''); } };
-    const applyModel = (model, provider) => {
+    // fill + preselect the picker from the agent's current pin (async — the catalog is fetched on open)
+    const pickWrap = body.querySelector('#ag-model-pick');
+    if (pickWrap && typeof ModelPicker !== 'undefined') {
+      ModelPicker.populate(pickWrap, { current: { model: (a && a.model) || '', provider: (a && a.provider) || '', effort: (a && a.reasoningEffort) || '' } }).catch(() => {});
+    }
+    const applyModel = (model, provider, effort) => {
       if (!(access.config && access.config.setModel)) { setMMsg('per-agent model unavailable'); return; }
-      const ok = access.config.setModel(a && a.id, model, provider);
+      const ok = access.config.setModel(a && a.id, model, provider, effort);
       if (ok === false) { setMMsg('could not update this agent'); sfx('bad'); return; }
       sfx('click'); rerender('agents');
     };
     if (mSave) mSave.addEventListener('click', () => {
-      const model = (body.querySelector('#ag-model-in') || {}).value || '';
-      const provider = (body.querySelector('#ag-prov-in') || {}).value || '';
-      applyModel(model.trim(), provider.trim());
+      // picker is primary; the advanced free-text is the escape hatch for a model id not in the catalog.
+      const pick = (pickWrap && typeof ModelPicker !== 'undefined') ? ModelPicker.read(pickWrap) : { model: '', provider: '', effort: '' };
+      const advModel = ((body.querySelector('#ag-model-in') || {}).value || '').trim();
+      const advProv = ((body.querySelector('#ag-prov-in') || {}).value || '').trim();
+      const model = pick.model || advModel;
+      const provider = pick.model ? pick.provider : (advModel ? advProv : '');
+      applyModel(model, provider, pick.effort || '');
     });
     const mClear = body.querySelector('#ag-model-clear');
-    if (mClear) mClear.addEventListener('click', () => applyModel('', ''));
+    if (mClear) mClear.addEventListener('click', () => applyModel('', '', ''));
+  }
+
+  // header wiring (present on EVERY tab, so it lives here rather than in a per-tab wire): the rename affordance
+  // and the "model tag → CONFIG" shortcut. access.config.setName renames; a missing setName degrades to a notice.
+  function wireHead(body) {
+    const a = present[sel];
+    const goCfg = body.querySelector('.ag-tags .tag.model[data-goconfig]');
+    if (goCfg) {
+      const jump = () => { agTab = 'config'; sfx('click'); rerender('agents'); };
+      goCfg.addEventListener('click', jump);
+      goCfg.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); jump(); } });
+    }
+    const rn = body.querySelector('#ag-rename-btn');
+    if (rn) rn.addEventListener('click', () => { agEdit['__name'] = true; sfx('click'); rerender('agents'); });
+    const commit = () => {
+      const val = ((body.querySelector('#ag-rename-in') || {}).value || '').trim();
+      if (!val) { sfx('bad'); return; }
+      delete agEdit['__name'];
+      if (!(access.config && access.config.setName)) { notify('rename unavailable', 'bad'); rerender('agents'); return; }
+      const ok = access.config.setName(a && a.id, val);
+      if (ok === false) { notify('could not rename', 'bad'); sfx('bad'); rerender('agents'); return; }
+      notify('renamed to ' + val.replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 18), 'good');
+      sfx('click'); rerender('agents');
+    };
+    const rin = body.querySelector('#ag-rename-in');
+    if (rin) {
+      rin.focus(); try { rin.setSelectionRange(rin.value.length, rin.value.length); } catch (_) {}
+      rin.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); delete agEdit['__name']; rerender('agents'); }
+      });
+    }
+    const rsave = body.querySelector('#ag-rename-save');
+    if (rsave) rsave.addEventListener('click', commit);
+    const rcancel = body.querySelector('#ag-rename-cancel');
+    if (rcancel) rcancel.addEventListener('click', () => { delete agEdit['__name']; sfx('click'); rerender('agents'); });
   }
 
   function buildAgents(body) {
@@ -1163,9 +1228,10 @@ const StationUI = (() => {
       tabContent +
       '</div></div>';
     body.querySelectorAll('.ag-item').forEach(it =>
-      it.addEventListener('click', () => { sel = +it.dataset.i; sfx('click'); rerender('agents'); }));
+      it.addEventListener('click', () => { sel = +it.dataset.i; delete agEdit['__name']; sfx('click'); rerender('agents'); }));
     body.querySelectorAll('.ag-tab').forEach(tb =>
-      tb.addEventListener('click', () => { agTab = tb.dataset.tab; sfx('click'); rerender('agents'); }));
+      tb.addEventListener('click', () => { agTab = tb.dataset.tab; delete agEdit['__name']; sfx('click'); rerender('agents'); }));
+    wireHead(body);
     if (agTab === 'config') wireConfig(body);
     if (agTab === 'memory') { wireMemoryLive(); loadMemoryCore(a); }
     drawPortrait(body.querySelector('#ag-portrait'), a);

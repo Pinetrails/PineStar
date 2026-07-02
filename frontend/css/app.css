@@ -1739,6 +1739,27 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* connector add/edit form: one-line help, transport toggle, key:value textareas, transport tag on a row */
 .mc-hint { font-size: 11px; color: var(--ph-dim); margin: -2px 0 2px; line-height: 1.35; }
 .mc-hint code { color: var(--ph); }
+/* shared per-agent MODEL PICKER (native grouped <select> + optional effort select) — used by the dossier
+   CONFIG card AND the recruitment bay, so it lives here in the global sheet. Phosphor-terminal styling. */
+.mp-wrap { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.mp-model, .mp-effort {
+  font-family: inherit; font-size: 13px; color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm, 4px); padding: 4px 8px; cursor: pointer; max-width: 100%;
+}
+.mp-model { flex: 1 1 200px; min-width: 0; }
+.mp-effort { flex: 0 0 auto; color: var(--ph-dim); }
+.mp-model:focus, .mp-effort:focus { outline: none; border-color: var(--ph); box-shadow: 0 0 0 1px var(--ph); }
+.mp-model optgroup { color: var(--ph-dim); font-style: normal; background: var(--panel2); }
+.mp-model option, .mp-effort option { color: var(--ph-bright); background: var(--panel2); }
+/* the CONFIG model card: the picker row + the collapsible advanced free-text escape hatch */
+.mc-pick-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.mc-pick-row > label { flex: 0 0 60px; color: var(--ph-dim); font-size: 12px; letter-spacing: .5px; }
+.mc-pick { flex: 1; min-width: 0; }
+.mc-adv { margin: 4px 0 6px; }
+.mc-adv > summary { cursor: pointer; color: var(--ph-dim); font-size: 11px; letter-spacing: .5px; list-style: none; padding: 2px 0; }
+.mc-adv > summary::-webkit-details-marker { display: none; }
+.mc-adv > summary:hover { color: var(--ph); }
+.mc-adv[open] > summary { color: var(--ph); margin-bottom: 4px; }
 /* BUDGET panel — number-input phosphor styling (the base rule at top only covers text/password) + label→input row.
    Additive: new selectors only, on-theme via the same vars. */
 input[type=number].key-input {

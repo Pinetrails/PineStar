@@ -612,12 +612,46 @@ const ModelDock = (() => {
     fetchModels(false).catch(() => { loading = false; renderList(); });
   }
 
+  // PURE catalog accessor for OTHER pickers (recruitment bay, per-agent dossier) — same provider fan-out,
+  // fallbacks, gating, grouping and sort as the dock, but WITHOUT touching Harness transport state or the
+  // dock DOM (the dock is a global singleton bound to the FOCUSED agent; a per-target picker must not move it).
+  // `ensure: { id, provider }` guarantees a specific model (e.g. an agent's own pin) is present even if the
+  // provider is unconfigured, so the picker can always show + preselect it. Returns [{ id, name, provider, … }].
+  async function computeCatalog(force, ensure) {
+    const ids = ['codex', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
+    const active = provider();
+    if (ids.indexOf(active) < 0) ids.unshift(active);
+    const parts = await Promise.all(ids.map(p => fetchProviderModels(p, force).catch(() => [])));
+    let list = parts.reduce((a, b) => a.concat(b), []).filter(m => m && m.id);
+    if (ensure && ensure.id) {
+      const eid = String(ensure.id).trim();
+      const ep = normalizeProvider(ensure.provider);
+      if (eid && !list.some(m => m.id === eid && normalizeProvider(m.provider) === ep)) list.unshift(asModel({ id: eid, name: eid }, ep));
+    }
+    // de-dup identical (provider,id) pairs the fan-out may surface twice (active provider appears in its own list)
+    const seen = new Set();
+    list = list.filter(m => { const k = normalizeProvider(m.provider) + '' + m.id; if (seen.has(k)) return false; seen.add(k); return true; });
+    list.sort((a, b) => {
+      const pa = normalizeProvider(a.provider), pb = normalizeProvider(b.provider);
+      if (pa !== pb) return ((PROVIDER_RANK[pa] == null ? 20 : PROVIDER_RANK[pa]) - (PROVIDER_RANK[pb] == null ? 20 : PROVIDER_RANK[pb]));
+      if (pa === 'openrouter') { const ga = openRouterGroupName(a), gb = openRouterGroupName(b); if (ga !== gb) return ga.localeCompare(gb); }
+      return modelLabel(a).localeCompare(modelLabel(b)) || a.id.localeCompare(b.id);
+    });
+    return list;
+  }
+
   return {
     init,
     refresh: () => fetchModels(true),
     reflect,
     close: closeDock,
     normalizeEffort,
+    // reuse surface for per-target pickers (bay / dossier) — pure data + label/effort helpers, no side effects
+    catalog: (o) => computeCatalog(!!(o && o.force), o && o.ensure),
+    labels: { model: modelLabel, provider: providerLabel, group: groupOf, short: shortModelName, normProvider: normalizeProvider, orGroup: openRouterGroupName },
+    efforts: { optionsFor: effortOptionsFor, label: effortLabel, clamp: clampEffortForModel, list: () => EFFORTS.slice() },
     _internals: { effortOptionsFor, clampEffortForModel, modelFamily, supportsReasoning }
   };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = ModelDock;

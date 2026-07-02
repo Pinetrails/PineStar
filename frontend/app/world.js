@@ -4134,6 +4134,16 @@ const World = (() => {
     b.idleUntil = fnow + U.irnd(1400, 3200);                              // hold a beat after materializing, then it strolls
     crew.push(b);
   }
+  // rename a placed body (hero or crew) so its floor nameplate follows a dossier rename. DISPLAY-ONLY: the
+  // agentId that keys crew/anchors/engine-state never changes, so this can't disturb any body's identity.
+  function relabel(id, name) {
+    const nm = String(name || '').trim();
+    if (!id || !nm) return false;
+    if (agent && agent.id === id) { agent.name = nm; return true; }
+    const b = crew.find(x => x.agentId === id);
+    if (b) { b.name = nm; return true; }
+    return false;
+  }
   // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
   // body lights + takes the working pose while its run is live, and extinguishes when it ends.
   function setActivityFor(agentId, kind) {
@@ -4689,7 +4699,7 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

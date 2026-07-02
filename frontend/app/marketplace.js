@@ -24,6 +24,7 @@ const Marketplace = (() => {
   let tab = 'agents';                            // 'agents' | 'recipes'
   let glassOpen = false;
   let pickedSummonSkin = null;
+  let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
   let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'
   let query = '';
@@ -76,6 +77,7 @@ const Marketplace = (() => {
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();
     pickedSummonSkin = null;
+    pickedSummonModel = null;
     const builtins = Specialties.builtins();
     focusAgent = (ctx.currentSpecialtyId && Specialties.get(ctx.currentSpecialtyId)) ? ctx.currentSpecialtyId : (builtins[0] && builtins[0].id) || null;
     focusRecipe = hasRecipes() ? ((Recipes.builtins()[0] && Recipes.builtins()[0].id) || null) : null;
@@ -231,6 +233,7 @@ const Marketplace = (() => {
       : '<div class="mkt-toolbar"><span class="mkt-hint">picking one pre-fills the wake screen — name, voice &amp; purpose, ready to tweak</span></div>';
     let html = toolbar;
     html += summonSkinBarHTML();
+    html += summonModelBarHTML();
     html += glassHTML();
     html += recShelfHTML();
     const builtins = filt(Specialties.builtins());
@@ -276,6 +279,17 @@ const Marketplace = (() => {
     }).join('');
     return '<div class="mkt-skinbar"><label class="mkt-skinlabel">APPEARANCE <span class="mkt-hint">— the character this agent wears (your call, any class)</span></label>' +
       '<div class="skin-picker" id="mkt-skin-picker">' + thumbs + '</div></div>';
+  }
+
+  // SUMMON-only: choose the new agent's MODEL (optional — blank inherits the orchestrator's). Reuses the shared
+  // ModelPicker so the catalog, grouping and effort options match the COMMS dock and the dossier. The <select>
+  // is populated asynchronously after mount (wireRoster), then read at SUMMON time into spec.modelPin.
+  function summonModelBarHTML() {
+    if (!(ctx && ctx.mode === 'pick' && ctx.summon) || typeof ModelPicker === 'undefined') return '';
+    return '<div class="mkt-skinbar mkt-modelbar"><label class="mkt-skinlabel">MODEL <span class="mkt-hint">— which brain it runs on (blank = same as your orchestrator)</span></label>' +
+      '<div class="mkt-modelpick" id="mkt-model-pick">' +
+        ModelPicker.shellHTML({ id: 'mkt-model', inheritLabel: 'Same as the orchestrator', ariaLabel: 'New agent model', effort: true }) +
+      '</div></div>';
   }
 
   /* ---------- the class card (coin seal in the roster) ---------- */
@@ -508,6 +522,16 @@ const Marketplace = (() => {
       b.classList.add('sel'); sfx('click');
     }));
 
+    // SUMMON model picker: fill the catalog async, then track the choice ('' model → inherit the orchestrator's).
+    const modelWrap = stage.querySelector('#mkt-model-pick');
+    if (modelWrap && typeof ModelPicker !== 'undefined') {
+      ModelPicker.populate(modelWrap, { current: pickedSummonModel || {} }).catch(() => {});
+      ModelPicker.onChange(modelWrap, (sel) => {
+        pickedSummonModel = (sel && sel.model) ? { model: sel.model, provider: sel.provider, effort: sel.effort || '' } : null;
+        sfx('click');
+      });
+    }
+
     wireGlass(stage);
     wireSuggest(stage);
   }
@@ -520,7 +544,7 @@ const Marketplace = (() => {
       const s = Specialties.get(deployBtn.dataset.id); if (!s) return;
       sfx('click');
       if (ctx && ctx.mode === 'pick') {
-        if (ctx.onPick) ctx.onPick(ctx.summon ? Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) }) : s);
+        if (ctx.onPick) ctx.onPick(ctx.summon ? Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null }) : s);
         close();
       } else {
         const cb = root && root.querySelector('.mkt-adopt-cb');

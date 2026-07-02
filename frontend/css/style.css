@@ -622,6 +622,32 @@ body.no-scan .crt-scan { display: none; }
 }
 .tag.claw { color: var(--bad); border-color: var(--bad); }
 .tag.model { color: var(--gold); border-color: var(--gold); }
+/* the model tag doubles as a one-click shortcut into CONFIG › model */
+.tag.model[data-goconfig] { cursor: pointer; }
+.tag.model[data-goconfig]:hover { color: var(--ink); background: var(--gold); }
+.tag.model[data-goconfig]:focus { outline: none; box-shadow: 0 0 0 1px var(--gold); }
+/* rename affordance on the dossier name (per-agent rename) */
+.ag-rename {
+  display: inline-block; vertical-align: middle; margin-left: 8px;
+  font-size: 13px; line-height: 1; letter-spacing: 0; color: var(--ph-dim);
+  background: transparent; border: 1px solid transparent; border-radius: 3px;
+  padding: 2px 5px; cursor: pointer; opacity: 0.4; transition: opacity .12s, color .12s, border-color .12s;
+}
+.ag-name:hover .ag-rename, .ag-rename:focus { opacity: 1; }
+.ag-rename:hover { color: var(--ph-bright); border-color: var(--ph-dim); }
+.ag-name-edit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ag-name-input {
+  font-family: inherit; font-size: 24px; letter-spacing: 3px; line-height: 1;
+  background: var(--panel2); border: 1px solid var(--ph); border-radius: 3px;
+  padding: 3px 8px; width: 11ch; max-width: 60vw; text-transform: uppercase;
+}
+.ag-name-input:focus { outline: none; box-shadow: 0 0 0 1px var(--ph), 0 0 12px var(--ph-glow2); }
+.ag-name-ok, .ag-name-x {
+  font-size: 15px; line-height: 1; cursor: pointer; border: 1px solid var(--ph-dim);
+  border-radius: 3px; padding: 3px 9px; background: var(--panel2); color: var(--ph);
+}
+.ag-name-ok:hover { color: var(--gold); border-color: var(--gold); }
+.ag-name-x:hover { color: var(--bad); border-color: var(--bad); }
 .ag-desc { font-size: 14px; margin: 8px 0; opacity: 0.85; user-select: text; }
 .stat-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; }
 .stat-row span { width: 86px; color: var(--ph-dim); letter-spacing: 1px; }
