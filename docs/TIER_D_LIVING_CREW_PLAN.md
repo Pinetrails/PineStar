@@ -413,3 +413,115 @@ unchanged — RARE by design (a 6-agent floor sees an encounter every few minute
   existing idle stack (wander/rounds/gaze-out all clamp when the target is chosen), so it is not a D3 regression —
   and any stale walk is bounded by the 25 s whole-encounter hard cap. Recorded, not fixed: fixing it here would
   mean a new per-step containment layer the rest of the idle stack doesn't have.
+
+## D4 — implementation notes (as built) — THE CURSOR IS A CREATURE
+
+**All three beats shipped** (crew cursor-drift, cursor-mimic, THE CHASE). Single writer: `frontend/app/world.js`
+(+ this doc + the roadmap check-off). No chat.js edits. Commit `tier-d D4: the cursor is a creature …` (19c4c692)
++ the cross-phase-sweep fixes. Builds on the EXISTING Commander-presence stack (`lastCursor`) — no second cursor
+tracker; the only new input signal is `cursorMoveT` (a real-displacement stamp for "actively moving", distinct from
+`lastCursor.t` = mere presence).
+
+### Beat 1 — crew cursor-drift (ambient, common)
+`ambientGazeDir(now)` split: hero keeps `0.32`, CREW get `0.15` (`self === agent ? 0.32 : 0.15`). This is the ONE
+spot crew ambient facing is randomized (via `lookAround`/`standStill`), so it never fights a held goal, a glance, a
+chat-stare, or work facing (none route through here). **Ambient texture → NOT gated by the D2 station budget (G5's
+ambient exemption).** N=1: `self` is only ever `agent` → `0.32`, byte-identical to pre-D4.
+
+### Beat 2 — cursor-mimic (`maybeMimic`/`stepMimic`/`endMimic`, goal `mimic`)
+An idle body TRACKS the moving cursor with continuously-updated facing (a follow, not one glance). Rides the goal/hold
+machinery, not a new state family. Head-only — no movement. Gates: `cursorBeatEligible` (idle+placed+goal==null+not
+chat-focused+not social/chase); per-body `mimicCd` in the quirk band `U.irnd(45000,90000)`; cursor FRESH at start
+(`<8s`); `crewBeatDamp` (station budget) + `armBeat` on fire. `stepMimic` ends early if the cursor goes stale
+mid-beat (snap-away only on a natural time-up). Duration `U.irnd(3000,6000)`. reduceMotion → degrade to a single
+glance toward you (still arms the cooldown + budget). Suppressed during chat-focus (D1) / any held goal (the
+`goal==null` gate) — a live social/chase body already has a goal so it's excluded.
+
+### Beat 3 — THE CHASE (`maybeChase`/`stepChase`/`endChase`/`sweepChase`, goal `chase`) — the headline
+One chaser station-wide (`chaseId`, module-level like the D3 social slot), **mutually exclusive with a live social
+beat** (`maybeChase` bails on `socialBeat`; `maybeSocial` bails on `chaseId` — the one-noticeable-thing-at-a-time
+discipline in both directions). Only ever CONSIDERED when: `now >= chaseGateUntil` (the LONG station cooldown), the
+D2 station gate is open (`crewBeatDamp`), body idle+`goal==null`, cursor FRESH **and actively MOVING**
+(`cursorMoveT` within 1.5 s — recent real displacement, not mere presence). On fire it draws the next
+`chaseGateUntil = now + U.irnd(480000, 900000)` (8-15 min) immediately, so nothing re-rolls for minutes.
+**Mechanics:** `stepChase` repaths toward the cursor's CURRENT tile at a low cadence (`CHASE_REPATH_MS = 1000` → it
+LAGS the cursor like a real pursuer), **re-clamping to the chaser's zone at EVERY repath** (the cursor moves — a
+one-time clamp isn't enough); pursuit `U.irnd(3000,6000)`; then STOP + face where the cursor was + hold
+`U.irnd(2000,4000)` + release. **Cursor leaves the zone mid-chase** → clamp to the nearest in-zone walkable tile
+(`nearestWalkableInZone`, the border) and stare out across the boundary (the containment beat again). **Cursor stale
+mid-chase** → immediate stop + stare + release. Absolute whole-beat cap `CHASE_HARD_MS = 15000`. **Summon/despawn/
+chat-focus seizes instantly:** `sweepChase` runs every tick at the top of the hero `tick()` (independent of the
+chaser's own stepper, mirroring the D3 slot sweep) and frees the lock + tears the plan down the same tick; plus
+per-body clears in the hero summon block and `seizeFromIdle` (crew). reduceMotion → no chase (the mimic already gave
+the single glance).
+
+### Final tuning constants
+`ambientGazeDir` crew share `0.15` (hero `0.32`); `MIMIC_MIN/MAX_MS = 3000/6000`, `MIMIC_CD_MIN/MAX = 45000/90000`,
+`MIMIC_SEL_ROLL = 0.03`; `CHASE_MIN/MAX_MS = 3000/6000`, `CHASE_STARE_MIN/MAX = 2000/4000`, `CHASE_HARD_MS = 15000`,
+`CHASE_REPATH_MS = 1000`, `CHASE_GATE_MIN/MAX = 480000/900000`; shared `CURSOR_FRESH_MS = 8000`,
+`CURSOR_MOVING_MS = 1500`.
+
+### RARITY HONESTY (computed at the shipped constants)
+- **THE CHASE.** Governed purely by the 8-15 min station cooldown (avg 11.5 min) — `maybeChase` has NO probability
+  roll; it fires on the first eligible re-decide after the gate lapses. **Ceiling (user moves the mouse continuously
+  the whole hour): ~5.2 chases/hour** (one per ~11.6 min). **Realistic:** the cursor is fresh+MOVING only a fraction
+  of a session, and when the gate lapses during a quiet stretch the next chase WAITS for the cursor to next move —
+  so ~2.4/hour if actively moused ~30 % of the time, ~0.9/hour at ~10 %, and **0 in any unattended / read-only /
+  quiet session.** Most sessions see zero chases — that is the design, and it's what makes the one you see land.
+- **CURSOR-MIMIC.** Per body, gated by the 45-90 s quirk-band cooldown + a `p=0.03` roll per ~2 s idle re-decide
+  while the cursor is fresh. **Ceiling (cursor fresh continuously): ~26 mimics/hour/body** (≈ once per 2.2 min).
+  N=1 (hero only) = same. **Realistic** (cursor fresh ~20 % of a session): ~5/hour. N=6: the hero is undamped; the
+  CREW's collective mimic rate is bounded by the shared 45-90 s station beat gate (`armBeat`), NOT 6×, and shares
+  that budget with quirks/social — so a 6-body floor stays calm (crew-count-invariant, same G5 property D2 measured).
+
+### The 6 self-review hunts — how each was cleared
+1. **Chase target outside zone at ANY repath tick.** `stepChase` re-derives `zoneFor(self)` and re-tests
+   `tileInZone` on EVERY repath; out-of-zone → clamp to the border via `nearestWalkableInZone` + stare-out. Stronger
+   than the clamp-at-pick model the rest of the idle stack uses (which clamps once). CLEAR.
+2. **chase/social/chat-stare/mimic mutual exclusion.** Every hold-family entry gates on `goal==null` (via
+   `bodyIsIdle`/`cursorBeatEligible`/`socialEligible`) so no body is ever in two holds; the two STATION-level
+   "noticeable" slots are cross-guarded BOTH ways (`maybeChase`↔`socialBeat`, `maybeSocial`↔`chaseId`) so only one
+   is ever live; bodies step sequentially (crew then hero) so no two arm in one tick; `chatStareHold` bails on any
+   non-`stare-chat` goal (won't yank a chaser/mimicker), and `cursorBeatEligible` excludes the chat-focused body.
+   Fixed during the sweep: added the `maybeSocial → chaseId` guard (was one-directional). CLEAR.
+3. **Stuck chase state** (cursor stale / body summoned mid-walk / path fail). `CHASE_HARD_MS = 15000` absolute cap;
+   `sweepChase` frees on seize/despawn/chat-focus same-tick independent of the stepper; a failed `setPathTo` just
+   stands a beat and retries, bounded by `endAt` (≤6 s) → stare → end. CLEAR.
+4. **N=1 hero-only floor.** Beat 1 is a provable crew-only no-op (`self===agent → 0.32`, byte-identical). Beats 2+3
+   both function for the lone hero (`crewBeatDamp` returns 1 for the hero → the gate is open; the hero IS the only
+   body and MAY chase, by design). When the cursor is stale (the common unattended case) both beats early-return
+   BEFORE any `U.chance`, so quiet-session idle life consumes zero extra RNG. CLEAR.
+5. **Determinism (G6).** All beat logic uses `U.irnd`/`U.chance`/`U.pick` + the `now` frame clock. The only new raw
+   call is `performance.now()`/`Math.hypot` inside the mousemove HANDLER (cursor displacement = user input, allowed;
+   `lastCursor` already used `performance.now()` there pre-D4). `lint-determinism` green. CLEAR.
+6. **No regression to the existing hero cursor gaze-drift / deep-lock.** `ambientGazeDir` hero share unchanged
+   (`0.32`); THE LOOK-UP + deep-lock live in `maybeGlance`, untouched. `maybeGlance` now bails early for
+   `goal==='mimic'/'chase'` (fixed during the sweep — else its cargo-body-track could hijack the cursor-follow
+   facing), so stepMimic/stepChase is the SOLE facing driver during those beats. CLEAR.
+
+### Cross-phase sweep (pre-merge review of the whole lane: chat-stare vs social vs mimic vs chase vs the D2 gate)
+Read the full D3+D4 world.js diff hunting for two "one live thing" slots engaging one body and for non-mutually-
+exclusive hold families. **Findings + fixes:**
+- **F1 (fixed): social↔chase mutual exclusion was one-directional.** `maybeChase` bailed on a live `socialBeat`, but
+  `maybeSocial` did NOT bail on a live `chaseId` — so a hero social beat could arm while a crew chase was live (two
+  station-level noticeable things at once, violating the one-at-a-time discipline). Added `if (chaseId != null)
+  return false` to `maybeSocial`. Now cross-guarded both ways.
+- **F2 (fixed): `maybeGlance` could hijack the mimic/chase facing.** During goal `mimic`/`chase` the hero's
+  `maybeGlance` (which runs before the steppers each tick) fell through to its cargo-body-track branch and could set
+  `agent.glance`/`agent.dir`, fighting the cursor-follow. Added a `goal==='mimic'/'chase'` early-return to
+  `maybeGlance` (mirrors the existing `sleep`/`firstwake` guards) so the D4 steppers own the facing.
+- **Verified clean (no fix needed):** chat-focus moving onto a mid-chase body breaks the chase via `sweepChase`
+  (chat-focus check) → the body then holds the stare next tick; the D2 `armBeat` gate is shared by mimic+chase+
+  social+quirks so a 6-body floor's collective noticeable rate stays bounded (G5); every hold family is `goal`-keyed
+  and every entry requires `goal==null`, so the FSM can only ever be in one; summon precedence (the seize block sits
+  ABOVE all D4 stepping, and the steppers gate on `activity==='idle'`/`!b.working`) is intact.
+
+### Verification (honest limits — same as Tier B/C/D3)
+`node --check` clean; full `npm run test:fast` green incl. `lint-determinism` + `lint-emits` + `social-border.test`.
+Behavioral canvas beats are NOT headless-testable (rAF pauses in a backgrounded tab — the plan's honest-limits
+section); the mimic + chase ARE observable on demand in a foreground `?dev` soak (move the mouse; the chase needs a
+fresh+moving cursor after the 8-15 min gate — force-testable by temporarily shrinking `CHASE_GATE_MIN` in a local
+build). `dbg()` now exposes `social`/`chase`/`chaseGateIn`/`cursorFresh`/`cursorMoving` for the in-browser harness.
+**Residual/unverifiable:** the live FEEL (does the chase read as eerie-and-alive vs silly?) and the tick-driven
+phase progressions are code-review + rate-model verified only; an attended foreground multi-crew soak is the sole
+way to SEE the beats — deferred to an attended check.

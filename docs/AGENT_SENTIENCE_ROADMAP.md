@@ -52,7 +52,7 @@
 - [x] **Face a wall/corner** and stand there (eerie, unexplained) — `quirkFaceWall` (9% of quirks)
 - [x] **Anomaly beats / THE VIGIL**: walks to a room's dead-center, faces one cardinal, holds 12–26s perfectly motionless with head-turns fully suppressed — the absence of the usual micro-motion is what reads as wrong (`quirkVigil`, rarest quirk band, silent)
 - [x] **The double-take**: mid-stroll it halts and turns to look back the way it came, as if something caught its attention, then continues (`maybeStrollBeat`, `pauseLook='back'`, rare + long cooldown) — **verified live**
-- [ ] **Mimic the cursor**: very rarely, track the Commander's mouse for a few seconds (it sees you moving)
+- [x] **Mimic the cursor**: very rarely, track the Commander's mouse for a few seconds (it sees you moving) — shipped as Tier D · D4 Beat 2 (`maybeMimic`/`stepMimic`, goal `mimic`): an idle body follows the moving cursor with continuous facing 3-6s, per-body 45-90s quirk-band cooldown, station-budget-gated, reduceMotion → single glance. See `docs/TIER_D_LIVING_CREW_PLAN.md` §D4. (Its ultra-rare sibling THE CHASE — a body that physically pursues the cursor, stops, stares, and walks off — also shipped in the same D4 phase.)
 - [x] **Off-beat timing / OFF-BEAT HOLD**: a rare, separately-cooldowned multiplier (`offbeat()`, ~9% + 70–140s floor) that stretches ONE ordinary dwell to ~2.2–3.0× — a pose whose rhythm you've learned suddenly refuses to end. Fully silent; reduceMotion-aware
 - [x] **Sleep / power-down** in deep `drift` phase: sits, dead still, until summon / a placement / time stirs it (`sleep`, goal `sleep`)
 

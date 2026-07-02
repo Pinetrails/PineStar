@@ -1721,6 +1721,7 @@ const World = (() => {
   function maybeSocial(now) {
     if (reduceMotion()) return false;                                    // reduceMotion: no walking social beats (Tier C glances only)
     if (socialBeat) return false;                                        // G4: one live encounter
+    if (chaseId != null) return false;                                   // TIER D · D4: mutual exclusion — no social beat while THE CHASE is live (one noticeable station-level thing at a time, from EITHER body's decideIdle)
     if (self.social) return false;                                       // already in one (defensive)
     if (!socialEligible(self, now)) return false;
     if (crewBeatDamp(now) === 0) return false;                           // G5: station calm budget closed for crew (hero: damp=1)
@@ -2558,6 +2559,7 @@ const World = (() => {
     if (agent.state === 'walk') return;                              // walking owns the facing
     if (agent.goal === 'sleep') return;                             // dormant: hold dead still (no head-turns)
     if (agent.goal === 'firstwake') return;                         // FIRST LIGHT: stepFirstWake is the SOLE facing driver — no random flicks polluting the deliberate sweep
+    if (agent.goal === 'mimic' || agent.goal === 'chase') return;   // TIER D · D4: stepMimic/stepChase is the SOLE facing driver — no cargo-track/ambient flick hijacking the cursor follow / pursuit-stare
     if (agent.glance && agent.glance.until > now) return;
     if (now < (agent.glanceCd || 0)) return;
     // ── THE LOOK-UP ───────────────────────────────────────────────────────────────────────────────────
