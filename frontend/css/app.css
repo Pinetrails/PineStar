@@ -643,8 +643,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .mic-btn:hover, .voice-toggle:hover, .model-dock-toggle:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
 
 .model-dock-toggle {
-  width: 54px; min-width: 54px; height: 33px; padding: 0 6px; gap: 4px;
+  width: auto; min-width: 54px; max-width: 148px; height: 33px; padding: 0 7px; gap: 4px;
   font-size: 13px; line-height: 1; letter-spacing: 0; text-shadow: 0 0 5px var(--ph-glow2);
+  position: relative; overflow: visible;
 }
 .model-dock-toggle.on {
   color: var(--ink); background: var(--ph); border-color: var(--ph);
@@ -655,9 +656,46 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   border: 1px solid currentColor; font-size: 11px; font-weight: 800;
 }
 .model-dock-effort-chip {
-  display: inline-block; max-width: 26px; overflow: hidden; text-overflow: clip;
-  font-size: 10px; font-weight: 800;
+  display: inline-block; max-width: 40px; overflow: hidden; text-overflow: clip;
+  white-space: nowrap; font-size: 10px; font-weight: 800; color: var(--ph-bright);
 }
+/* resting-state model short-name: a dim MODEL label so the chip reads "MODEL · TIER" and its
+   purpose is legible without a click. Capped + truncated so the composer never grows. */
+.model-dock-model-name {
+  display: inline-block; max-width: 62px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+  color: var(--ph-dim); line-height: 1;
+}
+.model-dock-model-name.empty { color: var(--ph-dim); opacity: 0.7; }
+.model-dock-toggle .model-dock-effort-chip::before {
+  content: '·'; color: var(--ph-dim); margin: 0 3px 0 1px; font-weight: 400;
+}
+/* CRT tooltip — a molded phosphor card above the chip. pointer-events:none so it never eats
+   the click that opens the dock; shown on hover AND keyboard focus (a11y); killed on open. */
+.model-dock-tip {
+  position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 90;
+  width: max-content; max-width: 244px; pointer-events: none;
+  padding: 8px 11px; text-align: left; cursor: default;
+  color: var(--ph); background: var(--panel);
+  border: 2px solid var(--ph); border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--ink), 0 0 18px var(--ph-glow2);
+  opacity: 0; transform: translateY(3px);
+  transition: opacity .12s var(--ease-out), transform .12s var(--ease-out);
+}
+.model-dock-tip[hidden] { display: none; }
+.model-dock-tip.show { opacity: 1; transform: translateY(0); }
+.model-dock-tip::after {
+  content: ''; position: absolute; right: 16px; top: 100%;
+  border: 6px solid transparent; border-top-color: var(--ph);
+}
+.mdt-row { font-size: 12px; line-height: 1.35; white-space: normal; }
+.mdt-model { color: var(--ph-bright); font-weight: 800; font-size: 13px; }
+.mdt-prov { color: var(--gold); font-size: 10px; font-weight: 800; letter-spacing: 0.5px; margin-top: 1px; }
+.mdt-sep { height: 1px; background: var(--ph-dim); opacity: 0.5; margin: 6px 0; }
+.mdt-tier { color: var(--ph); }
+.mdt-tier b { color: var(--ph-bright); }
+.mdt-mean { color: var(--ph-dim); font-size: 11px; margin-top: 1px; }
+.mdt-hint { color: var(--ph-dim); font-size: 10px; letter-spacing: 0.5px; margin-top: 6px; opacity: 0.85; }
 .model-dock {
   position: absolute; right: 8px; bottom: calc(100% + 8px); z-index: 80;
   width: min(322px, calc(100vw - 34px)); max-height: min(70vh, 414px);
@@ -732,9 +770,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .model-dock-foot button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 
 @media (max-width: 780px) {
-  .model-dock-toggle { width: 44px; min-width: 44px; padding: 0 4px; gap: 3px; }
+  .model-dock-toggle { width: auto; min-width: 44px; max-width: 118px; padding: 0 5px; gap: 3px; }
   .model-dock-sigil { width: 14px; height: 14px; font-size: 10px; }
-  .model-dock-effort-chip { max-width: 20px; font-size: 9px; }
+  .model-dock-effort-chip { max-width: 30px; font-size: 9px; }
+  /* on the narrow composer the model short-name is redundant with the tooltip — drop it, keep MODEL·TIER glyphs */
+  .model-dock-model-name { display: none; }
+  .model-dock-toggle .model-dock-effort-chip::before { display: none; }
+  .model-dock-tip { max-width: min(74vw, 244px); }
   .model-dock { position: fixed; left: 8px; right: 8px; bottom: 120px; width: auto; max-height: min(62vh, 410px); }
   .model-dock-list { max-height: 220px; }
 }

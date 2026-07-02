@@ -596,4 +596,30 @@ textarea, select {
   ::-webkit-scrollbar-thumb {
     transition-duration: 0.01ms !important;
   }
+  /* ui-irritants: retire the first-run pulse under reduced-motion (rule appended below) */
+  .model-dock-toggle.first-run { animation: none !important; }
+  .mc-rec { animation-duration: 0.01ms !important; }
+}
+
+/* ============================================================
+   ui-irritants lane — appended section (owned by agent/ui-irritants)
+   Three targeted UX polish moves:
+   (1) model chip first-run pulse — a subtle glow breath so new users
+       notice the model/effort selector exists; retired after one
+       interaction (JS clears .first-run + persists a localStorage guard).
+   (2) memory-core record cards join the shared .cardIn entrance
+       (the .mc-rec class was missing from §13's list).
+   ============================================================ */
+@keyframes modeldock-firstrun {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; border-color: var(--ph-dim); }
+  50%      { box-shadow: 0 0 12px var(--ph-glow); border-color: var(--ph); }
+}
+.model-dock-toggle.first-run {
+  animation: modeldock-firstrun 2.2s var(--ease-soft) 3;
+}
+/* memory-core belief cards — the entrance the shared card language already grants siblings.
+   Stagger via --ci when set (renderMemoryList can add it); falls back to 0. */
+.mc-rec {
+  animation: cardIn 0.34s var(--ease-out) backwards;
+  animation-delay: calc(min(var(--ci, 0), 8) * 25ms);
 }

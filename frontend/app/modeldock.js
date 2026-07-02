@@ -118,6 +118,30 @@ const ModelDock = (() => {
     return EFFORTS.find(x => x.id === id) || EFFORTS[3];
   }
 
+  // plain-language gloss of what the effort tier MEANS — surfaced in the chip tooltip so a
+  // beginner learns "MED" is a reasoning dial, not a mystery button.
+  const EFFORT_MEANING = {
+    none: 'no extra reasoning — fastest, cheapest',
+    minimal: 'a touch of reasoning',
+    low: 'light reasoning — quick answers',
+    medium: 'balanced reasoning — the default',
+    high: 'deep reasoning — slower, more careful',
+    xhigh: 'very deep reasoning',
+    max: 'maximum reasoning — slowest, most thorough'
+  };
+  function effortMeaning(id) { return EFFORT_MEANING[normalizeEffort(id)] || EFFORT_MEANING.medium; }
+
+  // a compact display name for the resting chip: last path segment, spaces, capped so the
+  // composer never grows. Empty model → a dim placeholder.
+  function shortModelName(id) {
+    const raw = String(id || '').trim();
+    if (!raw) return '';
+    let s = raw.indexOf('/') >= 0 ? raw.split('/').pop() : raw;
+    s = s.replace(/-latest$/i, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (s.length > 16) s = s.slice(0, 15).trim() + '…';
+    return s.toUpperCase();
+  }
+
   function getModel() {
     return (typeof Harness !== 'undefined' && Harness.getModel) ? String(Harness.getModel() || '') : '';
   }
@@ -421,22 +445,109 @@ const ModelDock = (() => {
     renderList();
   }
 
+  // Build the injected chrome (model short-name span in the resting chip + the CRT tooltip)
+  // once, without touching index.html. Idempotent — safe to call from every reflect().
+  function ensureChipChrome() {
+    const toggle = el('model-dock-toggle');
+    if (!toggle) return null;
+    let nameEl = el('model-dock-model-name');
+    if (!nameEl) {
+      nameEl = document.createElement('span');
+      nameEl.id = 'model-dock-model-name';
+      nameEl.className = 'model-dock-model-name';
+      nameEl.setAttribute('aria-hidden', 'true');
+      // sit between the sigil and the effort chip so the chip reads MODEL · TIER
+      const chip = el('model-dock-effort-chip');
+      if (chip && chip.parentNode === toggle) toggle.insertBefore(nameEl, chip);
+      else toggle.appendChild(nameEl);
+    }
+    let tip = el('model-dock-tip');
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.id = 'model-dock-tip';
+      tip.className = 'model-dock-tip';
+      tip.setAttribute('role', 'tooltip');
+      tip.hidden = true;
+      // pointer-events:none via CSS so it can never eat the click that opens the dock
+      toggle.appendChild(tip);
+    }
+    return { nameEl, tip };
+  }
+
+  function updateTip(tip) {
+    if (!tip) return;
+    const current = getModel();
+    const p = provider();
+    const effort = currentEffort();
+    const def = effortDef(effort);
+    const model = current ? modelLabel({ id: current }) : 'no model selected';
+    tip.innerHTML =
+      '<div class="mdt-row mdt-model">' + esc(model) + '</div>' +
+      '<div class="mdt-row mdt-prov">' + esc(providerLabel(p)) + '</div>' +
+      '<div class="mdt-sep"></div>' +
+      '<div class="mdt-row mdt-tier"><b>' + esc(def.label) + '</b> · reasoning effort</div>' +
+      '<div class="mdt-row mdt-mean">' + esc(effortMeaning(effort)) + '</div>' +
+      '<div class="mdt-hint">click to change model &amp; effort</div>';
+  }
+  function esc(s) { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
+
   function reflect() {
     const current = getModel();
     const p = provider();
     const providerEl = el('model-dock-provider');
     const currentEl = el('model-dock-current-model');
     const chip = el('model-dock-effort-chip');
+    const chrome = ensureChipChrome();
     if (providerEl) providerEl.textContent = providerLabel(p);
     if (currentEl) currentEl.textContent = current ? modelLabel({ id: current }) : 'NO MODEL';
     const effort = ensureCurrentEffort();
     if (chip) chip.textContent = effortLabel(effort);
+    if (chrome && chrome.nameEl) {
+      const short = shortModelName(current);
+      chrome.nameEl.textContent = short || '—';
+      chrome.nameEl.classList.toggle('empty', !short);
+    }
+    if (chrome) updateTip(chrome.tip);
     renderEfforts();
+  }
+
+  function showTip() {
+    const tip = el('model-dock-tip');
+    if (!tip || open) return;   // never show the hover tip while the dock itself is open
+    updateTip(tip);
+    tip.hidden = false;
+    tip.classList.add('show');
+  }
+  function hideTip() {
+    const tip = el('model-dock-tip');
+    if (!tip) return;
+    tip.classList.remove('show');
+    tip.hidden = true;
+  }
+  // first-run affordance: one subtle pulse so a new user notices the chip exists. Persisted
+  // guard so it fires only until they've interacted (or seen it once).
+  const PULSE_KEY = 'starnet.modeldock.seen';
+  function clearPulse() {
+    const toggle = el('model-dock-toggle');
+    if (toggle) toggle.classList.remove('first-run');
+    try { localStorage.setItem(PULSE_KEY, '1'); } catch (_) {}
+  }
+  function maybePulse() {
+    let seen = false;
+    try { seen = localStorage.getItem(PULSE_KEY) === '1'; } catch (_) {}
+    if (seen) return;
+    const toggle = el('model-dock-toggle');
+    if (!toggle) return;
+    toggle.classList.add('first-run');
+    // auto-retire after a few cycles so it's a nudge, not a permanent distraction
+    setTimeout(clearPulse, 9000);
   }
 
   function openDock() {
     const dock = el('model-dock'), toggle = el('model-dock-toggle'), search = el('model-dock-search');
     if (!dock || !toggle) return;
+    hideTip();
+    clearPulse();
     open = true;
     dock.hidden = false;
     toggle.classList.add('on');
@@ -473,7 +584,14 @@ const ModelDock = (() => {
     const search = el('model-dock-search');
     const refresh = el('model-dock-refresh');
     const settings = el('model-dock-settings');
-    if (toggle) toggle.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); toggleDock(); });
+    if (toggle) {
+      toggle.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); toggleDock(); });
+      // rich CRT tooltip on hover + keyboard focus (a11y) — killed the moment the dock opens
+      toggle.addEventListener('mouseenter', showTip);
+      toggle.addEventListener('mouseleave', hideTip);
+      toggle.addEventListener('focus', showTip);
+      toggle.addEventListener('blur', hideTip);
+    }
     if (search) search.addEventListener('input', renderList);
     if (refresh) refresh.addEventListener('click', () => fetchModels(true));
     if (settings) settings.addEventListener('click', openSettings);
@@ -490,6 +608,7 @@ const ModelDock = (() => {
     opts = Object.assign({}, opts, o || {});
     wire();
     reflect();
+    maybePulse();
     fetchModels(false).catch(() => { loading = false; renderList(); });
   }
 
