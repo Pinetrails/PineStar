@@ -1,0 +1,15 @@
+{
+  "id": "2a5f525c-1782961146290",
+  "fingerprint": "2a5f525c",
+  "ts": 1782961146290,
+  "crew": "Green Guardian",
+  "severity": "P1",
+  "title": "Visual regression: frame `crew-commander` changed beyond animation noise",
+  "detail": "trunk 424bb206 — mean-abs-diff 7.48 exceeds the golden threshold. The vision model should read ONLY this frame. — ACCEPTED as the intentional ui-premium P2 palette/chrome/dossier-hero sweep (trunk 1f1d759 and neighbours); goldens re-blessed on agent/green-sweep. Vision-checked: panels/text/palette all healthy, no breakage.",
+  "evidence": [
+    "C:\\Users\\andro\\Desktop\\gen\\.bugloops\\guardian-20260702-025707\\golden-frames\\crew-commander.png",
+    "C:\\Users\\andro\\Desktop\\gen\\.bugloops\\guardian-20260702-025707\\golden.log"
+  ],
+  "status": "dismissed",
+  "routedTo": "green-sweep"
+}
