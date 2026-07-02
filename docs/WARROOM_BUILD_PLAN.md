@@ -1,7 +1,7 @@
 # Living War-Room — Build Plan
 
 > The plan for turning the **Living War-Room** UI direction (prototyped in
-> [`frontend/mockups/warroom-mockup.html`](../frontend/mockups/warroom-mockup.html))
+> [`design/mockups/warroom-mockup.html`](../design/mockups/warroom-mockup.html))
 > into the real, honest harness UI. Written to be **parcelled out to multiple
 > agents/worktrees** — each workstream maps to one `agent/<name>` branch.
 > **Read [`CLAUDE.md`](../CLAUDE.md) first; the worktree no-clobber rules are non-negotiable.**

@@ -632,15 +632,15 @@ const StationUI = (() => {
       return;
     }
     ul.innerHTML = present.map((a, i) =>
-      '<li class="crew-row" data-i="' + i + '" data-agent-id="' + a.id + '" style="--ci:' + i + '">' +
+      '<li class="crew-row" data-i="' + i + '" data-agent-id="' + esc(a.id) + '" style="--ci:' + i + '">' +
       '<span class="dot on"></span>' +
       '<div class="crew-main">' +
-      '<div class="crew-name" style="color:' + a.color + '">' + esc(a.name) +
+      '<div class="crew-name" style="color:' + esc(a.color) + '">' + esc(a.name) +
       '<span class="crew-room">HAB-01' + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
-      '<div class="crew-status" id="cs-' + a.id + '">…</div>' +
+      '<div class="crew-status" id="cs-' + esc(a.id) + '">…</div>' +
       // in-flight work bar: hidden until the row is .working (crewTick toggles it from the real run state).
       // The shimmer (.bar-active) reads as live activity; it's an indeterminate sweep, not a % readout.
-      '<div class="crew-prog bar-active" id="cp-' + a.id + '" aria-hidden="true"><div></div></div>' +
+      '<div class="crew-prog bar-active" id="cp-' + esc(a.id) + '" aria-hidden="true"><div></div></div>' +
       '</div></li>').join('');
     $('#crew-n').textContent = present.length + (present.length === 1 ? ' AGENT' : ' AGENTS');
     ul.querySelectorAll('.crew-row').forEach(li =>

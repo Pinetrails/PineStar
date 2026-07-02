@@ -21,11 +21,34 @@
 
   const MAX_TEXT = 12000;
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
+  function playwrightChromes() {
+    // ms-playwright caches live under per-user app data with a versioned dir name;
+    // scan for them instead of pinning any machine-specific path or revision.
+    const roots = [];
+    if (process.env.LOCALAPPDATA) roots.push(P.join(process.env.LOCALAPPDATA, 'ms-playwright'));
+    roots.push(P.join(OS.homedir(), '.cache', 'ms-playwright'));
+    roots.push(P.join(OS.homedir(), 'Library', 'Caches', 'ms-playwright'));
+    const out = [];
+    for (const root of roots) {
+      let dirs = [];
+      try { dirs = FS.readdirSync(root); } catch (_) { continue; }
+      for (const d of dirs.sort().reverse()) {
+        if (/^chromium_headless_shell-\d+$/.test(d)) {
+          out.push(P.join(root, d, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'));
+          out.push(P.join(root, d, 'chrome-headless-shell-linux', 'headless_shell'));
+        } else if (/^chromium-\d+$/.test(d)) {
+          out.push(P.join(root, d, 'chrome-win64', 'chrome.exe'));
+          out.push(P.join(root, d, 'chrome-linux', 'chrome'));
+          out.push(P.join(root, d, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'));
+        }
+      }
+    }
+    return out;
+  }
   const CHROME_CANDIDATES = [
     process.env.STARNET_CHROME,
     process.env.SKYNET_CHROME,
-    'C:/Users/andro/AppData/Local/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-win64/chrome-headless-shell.exe',
-    'C:/Users/andro/AppData/Local/ms-playwright/chromium-1228/chrome-win64/chrome.exe',
+    ...playwrightChromes(),
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
     '/usr/bin/google-chrome',
     '/usr/bin/chromium-browser',
