@@ -347,7 +347,7 @@ const ModelDock = (() => {
     if (loading) {
       const div = document.createElement('div');
       div.className = 'model-dock-empty';
-      div.textContent = 'SCANNING CATALOG';
+      div.innerHTML = '<span class="loading pulse">scanning catalog</span>';
       wrap.appendChild(div);
       return;
     }

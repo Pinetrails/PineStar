@@ -166,11 +166,30 @@ const StationUI = (() => {
   function closeTerm(key) {
     if (open[key]) {
       const w = open[key];
+      if (w._closing) return;   // guard the Esc + ✕ + toggle double-close race
+      w._closing = true;
       if (w._onClose) { try { w._onClose(); } catch (_) {} }   // e.g. tear down the live arcade canvas
       const opener = w._opener;   // a11y: the control that opened this window, to restore focus to
-      w.remove(); delete open[key]; sfx('close');
+      // free the slot NOW so a re-open (toggle) mounts a fresh window while this one animates out.
+      delete open[key]; sfx('close');
       // restore keyboard focus to the opener (or its dock trigger) so Tab order isn't lost on close.
       try { if (opener && opener.isConnected && opener.focus) opener.focus(); } catch (_) {}
+      // reverse-power CRT off, THEN remove. Clear any running open-animation first so it can play.
+      w.style.animation = '';
+      w.classList.add('term-closing');
+      const done = () => { if (w.isConnected) w.remove(); };
+      let removed = false;
+      const onEnd = () => { if (removed) return; removed = true; done(); };
+      w.addEventListener('animationend', onEnd, { once: true });
+      setTimeout(onEnd, 320);   // fallback if animationend never fires (reduced-motion / detached)
+      // fade the scrim out in step when this was the last window
+      const s = document.getElementById('term-scrim');
+      if (s && Object.keys(open).length === 0) {
+        s.classList.add('term-closing');
+        setTimeout(() => { if (s.isConnected && Object.keys(open).length === 0) s.remove(); }, 200);
+        syncBB();
+        return;   // skip syncScrim() removal — the fade-out handles it
+      }
     }
     syncBB(); syncScrim();
   }
@@ -229,6 +248,7 @@ const StationUI = (() => {
       w.style.left = r.left + 'px';
       w.style.top = r.top + 'px';
       w.style.transform = 'none';
+      w.classList.add('term-moved');   // close animation must not re-centre a dragged window
       // cache size once at grab (it can't change mid-drag) so the move handler never forces a layout read.
       termDrag = { w, dx: ev.clientX - r.left, dy: ev.clientY - r.top, ww: r.width, wh: r.height };
       ev.preventDefault();
@@ -244,8 +264,15 @@ const StationUI = (() => {
       else if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
       else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
     });
-    w._render = () => {
+    w._render = (swap) => {
       builder(body);
+      // tab/section crossfade: fade the freshly-injected body in on RE-renders (tab swaps,
+      // live refreshes) — not on the initial mount, which already plays the CRT power-on.
+      if (swap) {
+        body.classList.remove('swap-in');
+        void body.offsetWidth;   // restart the animation if it was mid-flight
+        body.classList.add('swap-in');
+      }
       if (opts && opts.fitViewport) requestAnimationFrame(() => fitTermInViewport(w));
     };
     w._render();
@@ -254,7 +281,7 @@ const StationUI = (() => {
     try { (f0[0] || w).focus(); } catch (_) {}
     syncBB(); syncScrim();
   }
-  function rerender(key) { if (open[key]) open[key]._render(); }
+  function rerender(key) { if (open[key]) open[key]._render(true); }
   function syncBB() {
     document.querySelectorAll('.bb[data-term]').forEach(b => b.classList.toggle('active', !!open[b.dataset.term]));
   }
@@ -264,7 +291,7 @@ const StationUI = (() => {
     wireCrewLive();   // ensure the per-agent run-state listener is live
     const ul = $('#crew'); if (!ul) return;
     if (!present.length) {
-      ul.innerHTML = '<li class="crew-empty">No agents on station.</li>';
+      ul.innerHTML = '<li class="crew-empty"><div class="empty-state"><span class="es-glyph">▯</span><b>NO AGENTS ON STATION</b><span>Commission one from RECRUITMENT to begin.</span></div></li>';
       $('#crew-n').textContent = '';
       $('#crew-sum').innerHTML = '';
       return;
@@ -516,7 +543,7 @@ const StationUI = (() => {
       '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">PROVENANCE</div><span class="gx-clear"><span class="k">TRACED</span><span class="v">&#10003;</span></span></div></div>' +
       '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
       '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
-      '<div id="mc-list" class="mc-list"><span class="dim">reading memory core&hellip;</span></div>' +
+      '<div id="mc-list" class="mc-list"><span class="loading pulse">reading memory core&hellip;</span></div>' +
       // observability: the permanent reject-list (Discarded proposals never re-proposed). Hidden until non-empty.
       '<div class="gx-sec" id="mc-declined-sec" style="display:none;"><span class="gx-ref">&#10007;</span><span class="gx-title">Declined</span><span class="gx-tag" id="mc-declined-count"></span></div>' +
       '<div class="mc-note" id="mc-declined-note" style="display:none;">Beliefs you Discarded — the station will <b>never propose these again</b>. <b>Restore</b> one to let it be proposed in future.</div>' +
@@ -801,7 +828,7 @@ const StationUI = (() => {
       '<p class="sk-note sk-lib-intro">Pre-installed <b>recipes</b> your agents follow when a task matches. Each one ' +
       'rides on the capabilities above — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
       'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
-      '<div id="sk-lib" class="sk-lib"><div class="sk-loading">Loading the skill library…</div></div>';
+      '<div id="sk-lib" class="sk-lib"><div class="sk-loading"><span class="loading pulse">loading the skill library…</span></div></div>';
     loadSkillLibrary(agentId);
   }
 
@@ -1611,6 +1638,29 @@ const StationUI = (() => {
     if (store.notifs.length > 60) store.notifs = store.notifs.slice(-60);
     save(); badges();
     if (open.notifs) rerender('notifs');
+    toast(String(text || ''), cls || '');
+  }
+  // transient on-screen toast — slides in, auto-dismisses with a fade-out, stacks cleanly.
+  // The persistent record still lives in the NOTIFICATIONS panel (buildNotifs); this is the
+  // ephemeral heads-up so a result isn't silent when that panel is closed.
+  function toast(text, cls) {
+    if (typeof document === 'undefined' || !text) return;
+    let stack = document.getElementById('toast-stack');
+    if (!stack) { stack = el('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
+    const t = el('div', 'toast' + (cls ? ' ' + cls : ''));
+    t.innerHTML = '<span class="toast-ts">' + clock(Date.now()) + '</span>' + esc(text);
+    stack.appendChild(t);
+    // cap the visible stack so a burst can't cover the screen
+    while (stack.children.length > 4) stack.removeChild(stack.firstChild);
+    const kill = () => {
+      if (t._killed) return; t._killed = true;
+      t.classList.add('leaving');
+      const gone = () => { if (t.isConnected) t.remove(); };
+      t.addEventListener('animationend', gone, { once: true });
+      setTimeout(gone, 360);
+    };
+    setTimeout(kill, 4200);
+    t.addEventListener('click', kill);   // click to dismiss early
   }
   function buildUpdates(body) {
     if (typeof Updates !== 'undefined' && Updates.render) Updates.render(body);
@@ -1618,7 +1668,7 @@ const StationUI = (() => {
   }
   function buildNotifs(body) {
     if (!store.notifs.length) {
-      body.innerHTML = '<div class="fb-empty">NO NOTIFICATIONS YET.<br><span>Run results, saved deliverables and assigned tasks show up here.</span></div>';
+      body.innerHTML = '<div class="empty-state"><span class="es-glyph">▮</span><b>NO NOTIFICATIONS YET</b><span>Run results, saved deliverables and assigned tasks show up here.</span></div>';
       return;
     }
     body.innerHTML =
@@ -1879,7 +1929,7 @@ const StationUI = (() => {
       '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
         'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
         '<span class="dim">(Remote http(s) servers, or a local <code>stdio</code> command. Secrets are stored locally by the sidecar and never displayed.)</span></p>' +
-      '<div id="mc-list" class="mc-list">loading…</div>' +
+      '<div id="mc-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<h4 class="ms-h" id="mc-form-h">ADD A CONNECTOR</h4>' +
       '<div class="mc-form" id="mc-form">' +
         '<input id="mc-id" class="key-input" placeholder="id — e.g. github (a-z 0-9 _ -)" autocomplete="off" spellcheck="false" maxlength="40">' +
@@ -2171,7 +2221,7 @@ const StationUI = (() => {
       '<div id="rt-gate" class="set-about"></div>' +
       // SELF-INITIATION (autonomy Slice 2): let the agent propose standing jobs grounded in what it knows about you.
       '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ SUGGEST ROUTINES</button>' +
-      '<div id="rt-list" class="mc-list">loading…</div>' +
+      '<div id="rt-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<h4 class="ms-h">ADD A ROUTINE</h4>' +
       '<div class="mc-form">' +
         '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
@@ -2359,7 +2409,7 @@ const StationUI = (() => {
       '<p class="set-about">A snapshot of this agent\'s workspace is auto-saved <b>before every command it runs</b> ' +
       '(and before file edits when checkpoints are on). Restoring rolls the workspace back and removes anything ' +
       'created since. <span class="dim">Use it to undo a bad change.</span></p>' +
-      '<div id="rw-list" class="mc-list">loading…</div>' +
+      '<div id="rw-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div id="rw-msg" class="msg"></div>';
     const listEl = body.querySelector('#rw-list'), msgEl = body.querySelector('#rw-msg');
     const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -2411,7 +2461,7 @@ const StationUI = (() => {
       '<button class="bb sm lb-tab" data-tab="slag">⚠ SLAG</button> ' +
       '<button class="bb sm lb-tab" data-tab="insights">📊 INSIGHTS</button></div>' +
       '<p class="set-about" id="lb-about"></p>' +
-      '<div id="lb-list" class="mc-list">loading…</div>';
+      '<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>';
     const listEl = body.querySelector('#lb-list'), aboutEl = body.querySelector('#lb-about');
     let tab = 'runs';
     function runRow(r) {
@@ -2463,7 +2513,7 @@ const StationUI = (() => {
             if (!tx.hidden) { tx.hidden = true; return; }
             tx.hidden = false;
             if (tx.dataset.loaded) return;
-            tx.innerHTML = '<div class="mc-detail">loading transcript…</div>';
+            tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
             try {
               const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(row.dataset.stream) + '&agent=' + encodeURIComponent(agentId) + '&limit=50')).json();
               const turns = (t && t.turns) || [];
