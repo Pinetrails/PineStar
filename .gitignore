@@ -65,3 +65,5 @@ scripts/STATUS.generated.md
 # bootfix lane visual-proof + repro scratch (headless shoot captures + the tarpit repros; never committed)
 .qa_bootfix/
 .qa_bootfix_full/
+# G3b lane visual-proof screenshots (TROPHY CASE + seed-reuse callout; same pattern)
+.qa_g3b/
