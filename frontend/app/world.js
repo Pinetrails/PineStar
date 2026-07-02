@@ -2584,17 +2584,32 @@ const World = (() => {
         ctx.save(); ctx.globalAlpha = wp * 0.7; ctx.strokeStyle = who.color; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.ellipse(who.px, who.py, 7 + 1.5 * Math.sin(now / 360), 3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
-      // the LEVEL-UP pulse: the same sonar ring as waking, but GOLD, fired on this body's level gain.
+      // the LEVEL-UP surge: a brief GOLD phosphor bloom localized to this body — a bloom pulse behind the
+      // sprite + the same sonar ring as waking. Time-limited (~1.2s), driven by who.levelUpAt (set in
+      // pulseLevelUp); piggybacks this render pass (no rAF added). Under reduced motion the moving ring is
+      // dropped and only a brief steady bloom remains (an honest "it happened" cue without strobe/travel).
       const lva = (who && who.levelUpAt) || ((who === agent) ? levelUpAt : 0);
-      if (lva && now - lva < 1500) {
-        ctx.save(); ctx.strokeStyle = '#ffd45a';
-        for (let k = 0; k < 3; k++) {
-          const tk = (now - lva) / 1300 - k * 0.18;
-          if (tk <= 0 || tk >= 1) continue;
-          ctx.globalAlpha = (1 - tk) * 0.7 * (1 - k * 0.2); ctx.lineWidth = Math.max(0.5, 1.6 - tk);
-          ctx.beginPath(); ctx.ellipse(who.px, who.py, 5 + tk * 26, 2.5 + tk * 11, 0, 0, Math.PI * 2); ctx.stroke();
+      if (lva && now - lva < 1200) {
+        const lt = (now - lva) / 1200;                    // 0..1 across the surge window
+        // the phosphor BLOOM: a soft radial gold glow that swells early then fades — the "surge" itself
+        const bloom = Math.sin(Math.min(1, lt * 1.9) * Math.PI);   // 0→1→0, peaks ~mid
+        if (bloom > 0.01) {
+          ctx.save();
+          ctx.shadowBlur = 16 * bloom; ctx.shadowColor = '#ffd45a';
+          ctx.globalAlpha = 0.30 * bloom; ctx.fillStyle = '#ffd45a';
+          ctx.beginPath(); ctx.ellipse(who.px, who.py - 5, 6 + 4 * bloom, 8 + 5 * bloom, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
         }
-        ctx.restore();
+        if (!reduceMotion()) {
+          ctx.save(); ctx.strokeStyle = '#ffd45a';
+          for (let k = 0; k < 3; k++) {
+            const tk = (now - lva) / 1300 - k * 0.18;
+            if (tk <= 0 || tk >= 1) continue;
+            ctx.globalAlpha = (1 - tk) * 0.7 * (1 - k * 0.2); ctx.lineWidth = Math.max(0.5, 1.6 - tk);
+            ctx.beginPath(); ctx.ellipse(who.px, who.py, 5 + tk * 26, 2.5 + tk * 11, 0, 0, Math.PI * 2); ctx.stroke();
+          }
+          ctx.restore();
+        }
       }
       // a soft "I'm listening to you" pulse at the feet — an in-world cue the mic is open and he's hearing
       // you (distinct from just standing facing the Commander). Only while the mic is actually live (hero).
@@ -2664,7 +2679,19 @@ const World = (() => {
     ctx.shadowBlur = 4; ctx.shadowColor = suit;
     ctx.font = nameSz + 'px ' + PLATE_FONT; ctx.fillStyle = suit; ctx.fillText(name, x + padX, tcy);
     if (lvl) {
-      ctx.font = lvlSz + 'px ' + PLATE_FONT; ctx.fillStyle = suit; ctx.fillText(lvl, x + padX + nameW + gap, tcy);
+      // LEVEL-UP GLINT: right after a level gain the "Lv N" ticks to a gold bloom and settles back to the
+      // suit colour over ~1.2s — the plate number itself catches the light. Piggybacks this draw; no timer.
+      const lva = (agent && agent.levelUpAt) || levelUpAt || 0;
+      const gt = lva ? (now - lva) / 1200 : 1;   // now is the shared render clock (fnow); >=1 → settled
+      if (gt >= 0 && gt < 1) {
+        const glint = Math.sin(Math.min(1, gt * 1.7) * Math.PI);   // 0→1→0 over the window
+        ctx.shadowBlur = 4 + 8 * glint; ctx.shadowColor = '#ffd45a';
+        // the number catches the light: the suit hue lifted toward a bright gold-white at the glint peak
+        ctx.fillStyle = (U && U.shade) ? U.shade(suit, 0.55 * glint) : suit;
+      } else {
+        ctx.shadowColor = suit; ctx.fillStyle = suit;
+      }
+      ctx.font = lvlSz + 'px ' + PLATE_FONT; ctx.fillText(lvl, x + padX + nameW + gap, tcy);
     }
     ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
 
