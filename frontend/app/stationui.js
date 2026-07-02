@@ -24,7 +24,8 @@ const StationUI = (() => {
   let sel = 0;               // selected agent index (dossier / crew)
   let routineAgentId = 'agent'; // selected roster agent for new scheduled routines
   let tickTimer = 0;
-  const open = {};           // key -> open terminal-window element
+  const open = {};           // key -> open terminal-window element (stays populated while minimized)
+  const minimized = {};      // key -> true while the window is minimized to the strip (element kept alive, hidden)
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
@@ -100,6 +101,7 @@ const StationUI = (() => {
   const termPos = {};   // key -> {left,top} remembered drag position — kills the dead-center pile-up
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
+      termDrag.moved = true;   // real drag movement — a dblclick-to-minimize must not fire after a drag
       const w = termDrag.w, ww = termDrag.ww;
       // clamp so the title bar can never be dragged off-screen (lost window): keep >=64px of the panel
       // horizontally on each edge and the header row always reachable. (ww/wh cached at grab — no layout read.)
@@ -114,7 +116,8 @@ const StationUI = (() => {
     // remember where the Commander parked this panel so it re-opens there, not back at dead-center
     if (termDrag) {
       const w = termDrag.w, k = Object.keys(open).find(key => open[key] === w);
-      if (k) termPos[k] = { left: w.offsetLeft, top: w.offsetTop };
+      if (k && termDrag.moved) termPos[k] = { left: w.offsetLeft, top: w.offsetTop };
+      w._lastDragMoved = !!termDrag.moved;   // let dblclick-to-minimize know if this grab was actually a drag
     }
     termDrag = null;
   });
@@ -153,25 +156,152 @@ const StationUI = (() => {
     w.style.transform = 'none';
   }
 
+  // how many windows are actually VISIBLE (open but not minimized to the strip). Drives the scrim.
+  function visibleCount() { return Object.keys(open).filter(k => !minimized[k]).length; }
+
   /* focus scrim: one dim layer mounted under the lowest open window so an
      open dossier/settings panel owns the eye. Purely visual (pointer-events
-     none); torn down once the last window closes. */
+     none); torn down once the last VISIBLE window closes (all-minimized → no scrim). */
   function syncScrim() {
     const host = $('#terms'); if (!host) return;
     let s = document.getElementById('term-scrim');
-    const any = Object.keys(open).length > 0;
+    const any = visibleCount() > 0;
     if (any && !s) { s = el('div', 'term-scrim'); s.id = 'term-scrim'; host.insertBefore(s, host.firstChild); }
     else if (!any && s) { s.remove(); }
+  }
+
+  /* ---------- MINIMIZE-TO-STRIP: window→bottom-bar chip lifecycle ----------
+     Minimizing keeps the window element alive (hidden via .term-min-hidden) and its logical `open`
+     slot, so the dock stays lit and NO _onClose teardown fires. A chip in #term-strip restores it. */
+  const termStrip = () => document.getElementById('term-strip');
+
+  // build the strip container once, docked in #bottombar just before .bb-right. Hidden while empty.
+  function ensureStrip() {
+    let strip = termStrip();
+    if (strip) return strip;
+    const bar = document.getElementById('bottombar'); if (!bar) return null;
+    strip = el('div', 'term-strip'); strip.id = 'term-strip';
+    strip.setAttribute('role', 'group');
+    strip.setAttribute('aria-label', 'Minimized windows');
+    const right = bar.querySelector('.bb-right');
+    if (right) bar.insertBefore(strip, right); else bar.appendChild(strip);
+    return strip;
+  }
+  function syncStripVisibility() {
+    const strip = termStrip(); if (!strip) return;
+    strip.classList.toggle('has-chips', strip.querySelector('.term-chip') != null);
+  }
+  function chipTitle(key) {
+    const w = open[key];
+    // prefer the live title text; fall back to the term key so a chip is never blank
+    const t = w && w.querySelector('.term-title');
+    return (t && t.textContent.trim()) || String(key).toUpperCase();
+  }
+  function addChip(key) {
+    const strip = ensureStrip(); if (!strip) return;
+    if (strip.querySelector('.term-chip[data-key="' + CSS.escape(key) + '"]')) return;   // no dup
+    const title = chipTitle(key);
+    const chip = el('button', 'term-chip');
+    chip.dataset.key = key;
+    chip.type = 'button';
+    chip.setAttribute('aria-label', 'Restore ' + title);
+    chip.title = 'Restore ' + title;
+    chip.innerHTML = '<span class="term-chip-led" aria-hidden="true"></span>' +
+      '<span class="term-chip-t">' + esc(title) + '</span>';
+    chip.addEventListener('click', () => { sfx('click'); restoreTerm(key); });
+    strip.appendChild(chip);
+    // entrance: force a reflow then flip .in so the transform/opacity transition runs
+    void chip.offsetWidth; chip.classList.add('in');
+    syncStripVisibility();
+  }
+  function removeChip(key) {
+    const strip = termStrip(); if (!strip) return;
+    const chip = strip.querySelector('.term-chip[data-key="' + CSS.escape(key) + '"]');
+    if (!chip) return;
+    chip.classList.add('out'); chip.classList.remove('in');
+    chip.disabled = true;
+    let gone = false;
+    const done = () => { if (gone) return; gone = true; if (chip.isConnected) chip.remove(); syncStripVisibility(); };
+    chip.addEventListener('transitionend', done, { once: true });
+    setTimeout(done, 260);   // fallback (reduced-motion / detached)
+  }
+  function isMinimized(key) { return !!minimized[key]; }
+
+  function minimizeTerm(key) {
+    const w = open[key]; if (!w || minimized[key] || w._closing) return;
+    // remember where it sits so restore lands it back exactly (reuse the drag-position map).
+    // Only capture if it was ever positioned explicitly; a never-dragged single window keeps its
+    // CSS centering (termPos stays unset → placeTerm re-centres on restore, which is fine).
+    if (w.classList.contains('term-moved')) {
+      termPos[key] = { left: w.offsetLeft, top: w.offsetTop };
+    }
+    minimized[key] = true;
+    sfx('close');
+    // if focus is inside this window, hand it to the dock trigger (or blur) so the hidden window
+    // never holds focus (which would keep the Esc handler live on an invisible element).
+    const active = document.activeElement;
+    // quick collapse: a compressed power-off toward the strip (transform/opacity only), then hide.
+    w.classList.add('term-minimizing');
+    const hide = () => {
+      w.classList.remove('term-minimizing');
+      w.classList.add('term-min-hidden');
+      w.setAttribute('aria-hidden', 'true');
+    };
+    let hidden = false;
+    const onEnd = () => { if (hidden) return; hidden = true; hide(); };
+    w.addEventListener('animationend', onEnd, { once: true });
+    setTimeout(onEnd, 240);   // fallback
+    if (w.contains(active)) {
+      const trig = document.querySelector('.bb[data-term="' + CSS.escape(key) + '"]');
+      try { (trig && trig.focus) ? trig.focus() : (active.blur && active.blur()); } catch (_) {}
+    }
+    addChip(key);
+    syncScrim();   // all-minimized → scrim fades; dock .active stays (open slot kept)
+    syncBB();
+  }
+
+  function restoreTerm(key) {
+    const w = open[key]; if (!w || !minimized[key]) return;
+    delete minimized[key];
+    removeChip(key);
+    sfx('open');
+    w.classList.remove('term-min-hidden', 'term-minimizing');
+    w.removeAttribute('aria-hidden');
+    // land it back at the remembered spot (or CSS-centre if never moved), lift to top, replay power-on.
+    placeTerm(w, key);
+    w.style.zIndex = U.zTop();
+    // replay the CRT power-on: clear the inline animation override, restart the base .term-power.
+    w.style.animation = '';
+    void w.offsetWidth;
+    w.classList.add('term-restoring');
+    const clearRestore = () => w.classList.remove('term-restoring');
+    w.addEventListener('animationend', clearRestore, { once: true });
+    setTimeout(clearRestore, 460);
+    // focus back into the window (first control, or the window itself)
+    const f0 = termFocusables(w);
+    try { (f0[0] || w).focus(); } catch (_) {}
+    syncScrim();
+    syncBB();
   }
   function closeTerm(key) {
     if (open[key]) {
       const w = open[key];
       if (w._closing) return;   // guard the Esc + ✕ + toggle double-close race
       w._closing = true;
+      // a window closed while minimized (or minimized-then-restored, then torn down) must leave no orphan chip.
+      const wasMin = !!minimized[key];
+      if (wasMin) { delete minimized[key]; removeChip(key); }
       if (w._onClose) { try { w._onClose(); } catch (_) {} }   // e.g. tear down the live arcade canvas
       const opener = w._opener;   // a11y: the control that opened this window, to restore focus to
       // free the slot NOW so a re-open (toggle) mounts a fresh window while this one animates out.
       delete open[key]; sfx('close');
+      // a still-minimized (hidden) window has no visible chrome to power-off — just drop it.
+      if (wasMin) {
+        try { if (opener && opener.isConnected && opener.focus) opener.focus(); } catch (_) {}
+        if (w.isConnected) w.remove();
+        syncBB(); syncScrim();
+        return;
+      }
       // restore keyboard focus to the opener (or its dock trigger) so Tab order isn't lost on close.
       try { if (opener && opener.isConnected && opener.focus) opener.focus(); } catch (_) {}
       // reverse-power CRT off, THEN remove. Clear any running open-animation first so it can play.
@@ -182,11 +312,11 @@ const StationUI = (() => {
       const onEnd = () => { if (removed) return; removed = true; done(); };
       w.addEventListener('animationend', onEnd, { once: true });
       setTimeout(onEnd, 320);   // fallback if animationend never fires (reduced-motion / detached)
-      // fade the scrim out in step when this was the last window
+      // fade the scrim out in step when this was the last VISIBLE window (any still-minimized don't count)
       const s = document.getElementById('term-scrim');
-      if (s && Object.keys(open).length === 0) {
+      if (s && visibleCount() === 0) {
         s.classList.add('term-closing');
-        setTimeout(() => { if (s.isConnected && Object.keys(open).length === 0) s.remove(); }, 200);
+        setTimeout(() => { if (s.isConnected && visibleCount() === 0) s.remove(); }, 200);
         syncBB();
         return;   // skip syncScrim() removal — the fade-out handles it
       }
@@ -194,7 +324,8 @@ const StationUI = (() => {
     syncBB(); syncScrim();
   }
   function toggleTerm(key, title, builder, opts) {
-    if (open[key]) { closeTerm(key); return; }
+    // a minimized window's dock button RESTORES it (never rebuilds, never closes); a visible one toggles closed.
+    if (open[key]) { if (minimized[key]) restoreTerm(key); else closeTerm(key); return; }
     // Mode-exclusivity: a dock panel and full-screen REFIT must never be mounted at once.
     // Opening a panel exits refit first so two features can't stack (see COHERENCE_MATRIX dim T).
     if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) { try { Build.close(); } catch (_) {} }
@@ -218,6 +349,12 @@ const StationUI = (() => {
     const head = el('div', 'term-head',
       '<span class="term-led" aria-hidden="true"></span>' +
       '<span class="term-title" id="' + titleId + '">' + title + '</span>');
+    // minimize control — sits left of ✕. Collapses the window to a strip chip (keeps it logically open).
+    const mn = el('button', 'term-min', '–');
+    mn.setAttribute('aria-label', 'Minimize ' + title);
+    mn.setAttribute('type', 'button');
+    mn.addEventListener('click', ev => { ev.stopPropagation(); minimizeTerm(key); });
+    head.appendChild(mn);
     const x = el('button', 'term-x', '✕');
     x.setAttribute('aria-label', 'Close ' + title);
     x.addEventListener('click', () => closeTerm(key));
@@ -255,7 +392,7 @@ const StationUI = (() => {
     placeTerm(w, key);   // land in a cascaded slot (or its remembered spot) — never dead-center pile-up
     w.addEventListener('mousedown', () => { w.style.zIndex = U.zTop(); });
     head.addEventListener('mousedown', ev => {
-      if (ev.target === x) return;
+      if (ev.target === x || ev.target === mn) return;   // header controls handle their own clicks
       // Bake the window's CURRENT VISUAL position into explicit left/top before dragging. A freshly
       // opened single window is centered purely in CSS (left/top:50% + translate(-50%,-50%)), so its
       // offsetLeft/offsetTop report the PRE-transform corner (viewport centre) — anchoring the drag off
@@ -272,6 +409,14 @@ const StationUI = (() => {
       // cache size once at grab (it can't change mid-drag) so the move handler never forces a layout read.
       termDrag = { w, dx: ev.clientX - r.left, dy: ev.clientY - r.top, ww: r.width, wh: r.height };
       ev.preventDefault();
+    });
+    // double-click the header (not its buttons) minimizes — cheap muscle-memory. Skip if the last grab was
+    // an actual drag (a drag-release-quick-click can otherwise register as a dblclick).
+    head.addEventListener('dblclick', ev => {
+      if (ev.target === x || ev.target === mn) return;
+      if (w._lastDragMoved) return;
+      ev.preventDefault();
+      minimizeTerm(key);
     });
     // a11y: Esc closes; Tab is trapped within the window (focus can't leak to the page behind).
     w.addEventListener('keydown', ev => {
@@ -818,7 +963,7 @@ const StationUI = (() => {
     if ('imageSmoothingQuality' in pctx) pctx.imageSmoothingQuality = 'high';
     pctx.drawImage(buf, minX, minY, sw, sh, (cv.width - dw) / 2, cv.height - padBot - dh, dw, dh);
   }
-  function openAgent(i) { sel = i; if (open.agents) rerender('agents'); else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '600px', feature: true }); }
+  function openAgent(i) { sel = i; if (open.agents) { if (minimized.agents) restoreTerm('agents'); rerender('agents'); } else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '600px', feature: true }); }
 
   /* ============== SKILLS — capability readout (mirrors the sidecar CAP_REGISTRY) ==============
      The agent's real tools come from the OBJECTS at its workstation (object = capability — see
@@ -2971,7 +3116,7 @@ const StationUI = (() => {
   // if the panel is already open it's left as-is rather than closed.
   function openTerm(key) {
     const def = BUILDERS[key]; if (!def) return;
-    if (open[key]) return;
+    if (open[key]) { if (minimized[key]) restoreTerm(key); return; }   // minimized → restore, not duplicate
     toggleTerm(key, def[0], def[1], def[2]);
   }
 

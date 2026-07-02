@@ -462,6 +462,109 @@ textarea, select {
 .gx-quests .gx-sec { margin-top: 15px; }
 
 /* ============================================================
+   18 · MINIMIZE-TO-STRIP — a header minimize control + a dock strip of
+   minimized-window chips. Built by StationUI (stationui.js): a "–" .term-min
+   button sits left of the ✕; minimizing collapses the window toward the strip
+   (a compressed power-off), hides it (kept alive), and drops a chip into
+   #term-strip in the bottom bar. Chip click restores. Phosphor / VT323 only,
+   theme vars only, transform/opacity motion only.
+   ============================================================ */
+
+/* header minimize button — mirrors .term-x chrome so the two controls read as a pair */
+.term-min {
+  background: rgba(0,0,0,0.35); border: 1px solid var(--ph-dim); color: var(--ph);
+  font-family: inherit; cursor: pointer; font-size: var(--fs-1); line-height: 1;
+  padding: 2px 8px; border-radius: var(--r-sm); text-shadow: none;
+  transition:
+    border-color var(--t-fast) var(--ease-soft),
+    background-color var(--t-fast) var(--ease-soft),
+    box-shadow var(--t-fast) var(--ease-soft),
+    color var(--t-fast) var(--ease-soft);
+}
+.term-min:hover { background: var(--ph-faint); color: var(--ph-bright); border-color: var(--ph); box-shadow: 0 0 12px var(--ph-glow2); }
+.term-min:active { filter: brightness(0.86); transition-duration: 60ms; }
+
+/* hidden (minimized) window: fully removed from layout + interaction, element kept alive */
+.term.term-min-hidden { display: none !important; }
+
+/* collapse animation — a compressed variant of the CRT power-off, toward the bottom (the strip lives in
+   the bottom bar). transform/opacity only. Two variants mirror the close ones: centered vs dragged. */
+.term.term-minimizing {
+  animation: term-minimize 200ms var(--ease-soft) forwards;
+  pointer-events: none;
+}
+.term.term-minimizing.term-moved { animation: term-minimize-moved 200ms var(--ease-soft) forwards; }
+@keyframes term-minimize {
+  0%   { transform: translate(-50%, -50%) scale(1, 1); opacity: 1; }
+  100% { transform: translate(-50%, calc(-50% + 40px)) scale(0.7, 0.05); opacity: 0; }
+}
+@keyframes term-minimize-moved {
+  0%   { transform: scale(1, 1) translateY(0); opacity: 1; }
+  100% { transform: scale(0.7, 0.05) translateY(40px); opacity: 0; }
+}
+/* restore: replay a CRT power-on. A centered (never-dragged) window keeps the translate()-based
+   keyframes; a .term-moved window carries no centering transform, so it gets a plain variant. Both
+   are stamped as an explicit class-scoped animation so it re-triggers even though the base .term-power
+   already ran once on the original mount. */
+.term.term-restoring { animation: term-power-on 0.42s var(--ease-out); }
+@keyframes term-power-on {
+  0%   { transform: translate(-50%, -50%) scale(1, 0.012); filter: brightness(6); }
+  9%   { transform: translate(-50%, -50%) scale(1, 0.04); }
+  46%  { transform: translate(-50%, -50%) scale(1.004, 1.03); filter: brightness(2.2); }
+  100% { transform: translate(-50%, -50%) scale(1, 1); filter: brightness(1); }
+}
+.term.term-restoring.term-moved { animation: term-power-on-moved 0.42s var(--ease-out); }
+@keyframes term-power-on-moved {
+  0%   { transform: scale(1, 0.012); filter: brightness(6); }
+  9%   { transform: scale(1, 0.04); }
+  46%  { transform: scale(1.004, 1.03); filter: brightness(2.2); }
+  100% { transform: scale(1, 1); filter: brightness(1); }
+}
+
+/* THE STRIP — docked in #bottombar before .bb-right. Empty → collapsed to nothing. */
+#term-strip {
+  display: flex; align-items: center; gap: var(--s-2);
+  min-width: 0; max-width: 46vw;
+  margin: 0 var(--s-2);
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent;
+}
+#term-strip:not(.has-chips) { display: none; }
+#term-strip::-webkit-scrollbar { height: 6px; }
+#term-strip::-webkit-scrollbar-track { background: transparent; }
+#term-strip::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 3px; }
+#term-strip::-webkit-scrollbar-thumb:hover { background: var(--ph); }
+
+/* a chip — tiny LED + VT323 title, phosphor border, hover bloom (premium-chrome language). */
+.term-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto;
+  min-width: 54px; max-width: 148px;
+  padding: 3px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--ph-dim); background: rgba(0,0,0,0.35);
+  color: var(--ph); font-family: inherit; font-size: var(--fs-1); letter-spacing: var(--ls-2);
+  cursor: pointer; text-shadow: 0 0 6px var(--ph-glow2); white-space: nowrap;
+  /* enter/leave: transform + opacity + a width/margin collapse so neighbours slide over on removal */
+  opacity: 0; transform: translateY(6px) scale(0.96);
+  transition:
+    opacity var(--t-med) var(--ease-out),
+    transform var(--t-med) var(--ease-out),
+    border-color var(--t-fast) var(--ease-soft),
+    box-shadow var(--t-fast) var(--ease-soft),
+    background-color var(--t-fast) var(--ease-soft),
+    color var(--t-fast) var(--ease-soft);
+}
+.term-chip.in { opacity: 1; transform: translateY(0) scale(1); }
+.term-chip.out { opacity: 0; transform: translateY(6px) scale(0.96); pointer-events: none; }
+.term-chip:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); box-shadow: 0 0 12px var(--ph-glow2); }
+.term-chip:active { filter: brightness(0.86); transition-duration: 60ms; }
+.term-chip-led {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--ok); box-shadow: 0 0 6px var(--ok);
+  animation: term-led-pulse 2.4s ease-in-out infinite;
+}
+.term-chip-t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ============================================================
    11 · REDUCED MOTION — collapse everything added above to near-0.
    Respects the user's OS setting. (The idle looping animations here
    — toast/loading/shimmer — are transform/opacity only and cheap, but
@@ -469,11 +572,13 @@ textarea, select {
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   .term.term-closing, .term.term-closing.term-moved,
+  .term.term-minimizing, .term.term-minimizing.term-moved,
+  .term.term-restoring, .term.term-restoring.term-moved,
   .term-scrim.term-closing,
   .swap-in,
   .toast, .toast.leaving,
   .bar-active::after,
-  .term-led, .ag-psweep,
+  .term-led, .ag-psweep, .term-chip-led,
   .crew-row, .ag-item, .kb-card, .gx-tro, .perk, .mc-row, .sk-card,
   .key-row, .prov-card, .notif-row, .cn-row,
   .loading, .loading.pulse, .loading::before {
@@ -481,7 +586,7 @@ textarea, select {
     animation-iteration-count: 1 !important;
   }
   .btn, .btn-xl, .btn-sm, .prov, .bb, .bb-grp, .ag-tab, .lb-tab,
-  .mc-seg-btn, .set-theme, .phosphor-swatches .swatch, .term-x,
+  .mc-seg-btn, .set-theme, .phosphor-swatches .swatch, .term-x, .term-min, .term-chip,
   .empty-state .es-cta,
   input, textarea, select,
   .set-row input[type=checkbox], .set-row input[type=checkbox]::after,
