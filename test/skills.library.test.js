@@ -50,6 +50,42 @@ const { makeSkillPrefs } = require('../sidecar/skills/prefs.js');
   A.ok(by['test-driven-development'], 'TDD loaded');
   A.ok(by['test-driven-development'].requires.indexOf('workbench') >= 0, 'TDD requires the workbench object');
   A.eq(by['test-driven-development'].default, false, 'TDD is off by default');
+
+  // ---- C2. the EXPANDED bundled catalog (Lane B port: 15-25 Hermes skills added) ----
+  A.ok(skills.length >= 25, 'the bundled library is now a rich catalog (>=25 recipes), not the original 9');
+
+  // every recipe on disk carries the required frontmatter fields and a real body
+  for (const s of skills) {
+    A.ok(s.name && s.description && s.category, s.slug + ': has name/description/category');
+    A.ok(s.body && s.body.length > 40, s.slug + ': has a non-trivial body');
+  }
+
+  // requires: only maps to KNOWN capability objects (honest gating — no typo'd object silently ungates a skill)
+  const KNOWN_OBJECTS = new Set(['computer', 'notebook', 'cabinet', 'dish', 'workbench', 'studio', 'jukebox', 'orchestrator', 'connector']);
+  for (const s of skills) for (const r of s.requires) A.ok(KNOWN_OBJECTS.has(r), s.slug + ': requires only known objects (' + r + ')');
+
+  // spot-check two NEW ports' gating maps to the right capability object
+  A.ok(by['arxiv-research'], 'new port: arXiv Research loaded');
+  A.ok(by['arxiv-research'].requires.indexOf('dish') >= 0, 'arXiv Research is web-gated (DISH)');
+  A.eq(by['arxiv-research'].default, false, 'arXiv Research is off by default (protects the compose budget)');
+  A.ok(by['spike'], 'new port: Spike loaded');
+  A.ok(by['spike'].requires.indexOf('workbench') >= 0, 'Spike is execution-gated (WORKBENCH)');
+  A.eq(by['spike'].default, false, 'Spike is off by default');
+  A.ok(by['decision-1-3-1'], 'new port: 1-3-1 Decision loaded');
+  A.eq(by['decision-1-3-1'].requires.length, 0, '1-3-1 is pure reasoning (no object required)');
+  A.ok(by['meme-generation'] && by['meme-generation'].requires.indexOf('studio') >= 0, 'Meme Generation is image-gated (STUDIO)');
+
+  // budget invariant: with the FULL expanded catalog default-on AND every object placed, compose HONORS the 12k
+  // budget — it omit-flags the overflow instead of silently truncating (the growth from 9->28 recipes is exactly
+  // why almost every port ships default:false; forcing them ALL on must degrade gracefully, never blow the window).
+  const ALL_OBJECTS = ['computer', 'notebook', 'cabinet', 'dish', 'workbench', 'studio', 'jukebox', 'orchestrator', 'connector'];
+  const forceOn = {}; for (const s of skills) forceOn[s.slug] = true;
+  const full = C.compose(skills, { overrides: forceOn, placedTypes: ALL_OBJECTS, budget: 12000 });
+  A.ok(/omitted here to keep the prompt lean/.test(full), 'the full expanded catalog exceeds 12k -> compose omit-flags the overflow (no silent truncation)');
+  // the SHIPPED-DEFAULT set (frontmatter default:true only) is lean, fits well under budget, and omits nothing —
+  // proof the Lane B ports didn't sneak anything on-by-default that eats the prompt window.
+  const shipped = C.compose(skills, { overrides: {}, placedTypes: ALL_OBJECTS, budget: 12000 });
+  A.ok(shipped.length < 12000 && !/omitted/.test(shipped), 'the default-on shipped skill set is lean and fits with room to spare');
 }
 
 // ---- D. isAvailable: object = capability — requires ⊆ placed objects ----
