@@ -467,7 +467,6 @@ const Chat = (() => {
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   function workRateControl(host, agentId, runId, onSettle) {
-    markRateShown(runId);   // G2.4: a control now exists for this run — the deferred starve-check stands down
     const lbl = document.createElement('span'); lbl.className = 'work-rate-label';
     lbl.textContent = '◈ rate ' + name + '’s work — ';
     const btns = document.createElement('span'); btns.className = 'consent-btns';
@@ -506,26 +505,44 @@ const Chat = (() => {
        2. the turn-in deck rendered WITH the embedded control, but the Commander decided every memory
           without rating -> finishBatch vanished the whole card, control and all;
        3. the batch landed on a NON-displayed stream -> a soft notify, no card, no control.
-     Every hole now funnels into maybeStandaloneRate: after any completed task run that did real work,
-     if no control was shown (or the one that was shown vanished unrated), the standalone beat fires. */
-  const rateShownRuns = new Set();   // runIds that actually got a rate control rendered (any surface)
-  function markRateShown(runId) {
-    if (!runId) return;
-    rateShownRuns.add(runId);
-    if (rateShownRuns.size > 120) rateShownRuns.delete(rateShownRuns.values().next().value);
-  }
-  // fire the standalone rate beat IFF this hero run did real work, is unrated, and no control/deck is
-  // already on screen (one rating ask at a time — anti-nag). Returns true when the beat fired.
+       4. a focused panel (the tutorial's Dialogue on the FIRST command, an intake interview) held the
+          post-run slot at the 650ms moment -> every beat stood down with no retry, ever.
+     Every hole now funnels into maybeStandaloneRate; armRateFallback (armed per run at run end)
+     re-attempts on a 5s cadence until the beat fires or the run is permanently ineligible. */
+  // one attempt at the standalone rate beat. Returns:
+  //   'fired'   — the beat rendered (this hero run did real work, was unrated, and the moment was free)
+  //   'blocked' — TRANSIENT: a run is live / a focused panel (tutorial Dialogue, intake) is up / a
+  //               review deck or another rate control is on screen — worth retrying later
+  //   'never'   — PERMANENT: rated already, not the hero, or no real work — stop asking
   function maybeStandaloneRate(agentId, runId) {
-    if (!log || !runId || workRatedRuns.has(runId)) return false;
-    if ((agentId || 'agent') !== 'agent') return false;                 // hero-only, mirroring the post-run slot
-    if (isBusy() || interview) return false;                            // never mid-run / mid-awakening
+    if (!log || !runId || workRatedRuns.has(runId)) return 'never';
+    if ((agentId || 'agent') !== 'agent') return 'never';               // hero-only, mirroring the post-run slot
     const w = runWork.get(runId);
-    if (!w || ((w.toolsOk || 0) < 1 && (w.delivered || 0) < 1)) return false;   // real work only — pure chat is never rate-prompted
-    if (activeTurnin && activeTurnin.node && activeTurnin.node.isConnected) return false;   // a review deck is up (it carries its own control)
-    if (log.querySelector('.cmsg.work-rate')) return false;             // a rate ask is already live
+    if (!w || ((w.toolsOk || 0) < 1 && (w.delivered || 0) < 1)) return 'never';   // real work only — pure chat is never rate-prompted
+    if (isBusy() || interview) return 'blocked';                        // never mid-run / mid-awakening
+    if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return 'blocked';
+    if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return 'blocked';
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return 'blocked';   // a focused panel is up (e.g. the tutorial) — retry after it closes
+    if (activeTurnin && activeTurnin.node && activeTurnin.node.isConnected) return 'blocked';   // a review deck is up (it carries its own control)
+    if (log.querySelector('.cmsg.work-rate') || log.querySelector('.turnin-rate')) return 'blocked';   // a rate control is already live somewhere (one ask at a time)
     workRateBeat(agentId || 'agent', runId);
-    return true;
+    return 'fired';
+  }
+  // the self-retrying fallback: armed once per completed task run at run end, it keeps re-attempting
+  // (5s cadence, bounded ~5min) until the beat fires or the run is permanently ineligible — so a
+  // tutorial panel, a live turn-in deck, or a busy stream can DELAY the rating but never STARVE it.
+  // Its first attempt is DEFERRED: the post-run slot's own inline attempt owns the immediate moment.
+  const armedRateRuns = new Set();
+  function armRateFallback(agentId, runId, tries) {
+    if (!runId || armedRateRuns.has(runId)) return;
+    armedRateRuns.add(runId);
+    if (armedRateRuns.size > 120) armedRateRuns.delete(armedRateRuns.values().next().value);
+    (function attempt(left) {
+      setTimeout(() => {
+        const r = maybeStandaloneRate(agentId, runId);
+        if (r === 'blocked' && left > 0) attempt(left - 1);
+      }, 5000);
+    })(typeof tries === 'number' ? tries : 60);
   }
 
   /* ── G2 RETURN RITUAL — the "while you were away" digest + the per-run collect beat. ──
@@ -818,27 +835,27 @@ const Chat = (() => {
       if ((p.agentId || 'agent') !== 'agent') return;   // only the HERO's runs drive the hero-dossier beat — a summoned worker's run must not fire a curiosity/suggestion/seed nudge
       const runId = p.runId || p.id;
       setTimeout(() => {
+        // G2.4: arm the self-retrying rate fallback FIRST, before any stand-down guard — a focused
+        // tutorial panel / busy stream / open deck may block THIS moment, but the rating for a run
+        // that did real work must eventually fire (permanent ineligibility stops it inside).
+        if (runId) armRateFallback(p.agentId || 'agent', runId);
         if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
         if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return;
         if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return;
         if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return;   // a focused panel is up (First Pitch graduation / awakening / tutorial) — never slot a gentle nudge behind it
         // ONE post-run beat per run: if this run produced a memory turn-in (or a card is still open in the
-        // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
-        // G2.4 safety net: standing down must not STARVE the rating — if no turn-in surface ever renders a
-        // control for this run (fetch hiccup, deck error), the standalone beat still eventually fires. The
-        // three known holes are closed at their sources (wireProposals empty/off-stream + finishBatch); this
-        // deferred check is the belt-and-suspenders (duplicates are blocked by the live .work-rate guard).
-        if (runId && proposalRunsSeen.has(runId)) {
-          setTimeout(() => { if (!rateShownRuns.has(runId)) maybeStandaloneRate(p.agentId || 'agent', runId); }, 9000);
-          return;
-        }
-        if (log && log.querySelector('.turnin-item')) return;
-        // RATE THE WORK (the primary leveling beat): if this run actually did real work and isn't rated yet, it
-        // takes the one post-run slot. Gated on real tools/deliverables so a pure chat reply is never rate-prompted.
-        if (runId && !workRatedRuns.has(runId)) {
-          const w = runWork.get(runId);
-          if (w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)) { workRateBeat(p.agentId || 'agent', runId); return; }
-        }
+        // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible
+        // dogpile). Standing down can no longer STARVE the rating: the armRateFallback armed above (plus
+        // the wireProposals empty/off-stream hooks and the finishBatch hand-off) keeps re-attempting the
+        // standalone beat until it fires or the run is permanently ineligible.
+        if (runId && proposalRunsSeen.has(runId)) return;
+        // (scoped to REAL turn-in decks: the away-digest reuses .turnin-item for styling, but a
+        // session-open digest sitting in the feed must not suppress a fresh run's rate beat — G2.4)
+        if (log && log.querySelector('.cmsg.turnin:not(.away-digest) .turnin-item')) return;
+        // RATE THE WORK (the primary leveling beat): if this run actually did real work and isn't rated yet,
+        // it takes the one post-run slot (the same attempt the armed fallback retries — real-work-gated, so
+        // a pure chat reply is never rate-prompted; 'blocked'/'never' fall through to the gentler beats).
+        if (runId && maybeStandaloneRate(p.agentId || 'agent', runId) === 'fired') return;
         // FIRE ON SALIENCE, not after every run: a basic conversational turn (not a task) earns NO proactive beat —
         // the station only reaches for a suggestion / seed / get-to-know-you question after it did real WORK. This
         // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
