@@ -144,6 +144,13 @@
     // plan so a long run never loses it (Hermes' todo survives context compression the same way). A function
     // returning the plan text (or null); absent = no-op (existing callers byte-identical).
     const todoNote = (typeof o.todoNote === 'function') ? o.todoNote : null;
+    // OPTIONAL LIVE STEERING (additive): a function drained ONCE per iteration, at the top of the loop, that
+    // returns any Commander notes injected mid-run (via POST /api/run/steer). Each drained note becomes ONE
+    // <steering_note> system message appended to the working set, so the NEXT model call sees it — exactly at
+    // a message boundary (never mid-tool-pairing), so it can neither split a tool_call from its result nor
+    // corrupt the assistant/tool interleave. Absent = never steered (existing callers byte-identical). Bounded
+    // by the caller's buffer; the loop just injects whatever it's handed and emits one telemetry event.
+    const steer = (typeof o.steer === 'function') ? o.steer : null;
     // LOOP GUARD (default ON): a tool called with IDENTICAL arguments that keeps FAILING is a stuck loop, not
     // progress. Warn once (a system nudge the model can act on) at warnAfter, then hard-stop at stopAfter so a
     // degraded run can't burn the whole budget spinning. Only errored, byte-identical (name+args) calls count;
@@ -261,6 +268,23 @@
       // until a context manager + summarizer are injected). Runs before turns++ so it cannot inflate the count.
       await maybeCompact();
       if (signal.aborted) return end('cancelled');   // a cancel during summarization ends cleanly
+      // LIVE STEERING: fold any Commander notes queued mid-run into the prompt BEFORE the next paid call. This is
+      // a message-boundary injection (the prior iteration's tool results are already appended + paired), so it is
+      // structurally safe. Runs after compaction so a fresh note is never folded away in the same turn it lands.
+      if (steer) {
+        let notes = null;
+        try { notes = steer(); } catch (_) { notes = null; }
+        if (Array.isArray(notes) && notes.length) {
+          for (const n of notes) {
+            const t = String(n == null ? '' : n).trim();
+            if (!t) continue;
+            // surface the note in the live transcript as an agent.token delta (a registered event) so the
+            // Commander SEES their steer land, then inject it as a system message for the next model call.
+            emit('agent.token', { agentId, runId, delta: '\n[steering] ' + t + '\n' });
+            messages.push({ role: 'system', content: '<steering_note>' + t + '</steering_note>' });
+          }
+        }
+      }
       const turnStart = turns;
       turns++;
 

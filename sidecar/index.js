@@ -548,6 +548,12 @@ const skillPrefs = makeSkillPrefs({ io: skillPrefsIo, clock: { now: () => Date.n
 const credPool = makeCredPool({ clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
+// LIVE STEERING: runId -> [pending Commander notes]. POST /api/run/steer appends; the loop's injected steer()
+// drains once per iteration (see runAgentLoop o.steer). A note only lands while the run is IN-FLIGHT (its runId
+// is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
+const steerBuffers = new Map();
+function drainSteer(runId) { const b = steerBuffers.get(runId); if (!b || !b.length) return []; steerBuffers.set(runId, []); return b; }
+const STEER_MAX_PENDING = 8;      // bound the buffer so a spammed steer can't grow unbounded between iterations
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
 // Stage 2: the crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
 // own identity (its composed system prompt + model/provider). agentId -> { system, name, model, provider }.
@@ -1688,6 +1694,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
+  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
@@ -2905,6 +2913,7 @@ async function handleRun(req, res) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
@@ -3507,6 +3516,7 @@ async function runOnce(o) {
         credPool.penalize(credKey, ttlMs);
       },
       todoNote: () => Todo.formatForInjection(notebookStore, agentId),   // re-inject the active task plan after a compaction
+      steer: () => drainSteer(runId),   // LIVE STEERING: fold any mid-run /steer notes into the next model call
       signal: signal, clock: { now: () => Date.now() },
       agentId, runId, model, trigger: trigger,
       // rough initial estimate for the error classifier's context-overflow ratio; contextLimit is 0 until the
@@ -3672,6 +3682,41 @@ async function handleCancel(req, res) {
   const ac = runId && runs.get(runId);
   if (ac) ac.abort();
   res.writeHead(200); res.end('ok');
+}
+
+// POST /api/run/steer { runId, text } — LIVE MID-RUN STEERING. Append a Commander note to an IN-FLIGHT run's steer
+// buffer; the loop's injected steer() drains it before the NEXT model call and folds it in as a <steering_note>.
+// Only a run whose id is still in `runs` (i.e. actually in flight) accepts a steer — a stale/unknown runId is a
+// clean 404, so a note can never queue against a finished run. Bounded to STEER_MAX_PENDING pending notes per run.
+async function handleRunSteer(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const runId = String(body.runId || '');
+  const text = String(body.text == null ? '' : body.text).trim();
+  if (!text) return json(400, { error: 'empty steering note' });
+  if (!runId || !runs.has(runId)) return json(404, { error: 'no in-flight run for that id' });
+  const buf = steerBuffers.get(runId) || [];
+  if (buf.length >= STEER_MAX_PENDING) return json(429, { error: 'steer buffer full', pending: buf.length });
+  buf.push(text.slice(0, 2000));   // clamp a single note so one steer can't blow up the prompt
+  steerBuffers.set(runId, buf);
+  json(200, { ok: true, pending: buf.length });
+}
+
+// GET /api/version — the honest build/version surface for /version. Reads the repo package.json (harness version)
+// and, when present, the Tauri desktop app version; both are best-effort so a missing file never 500s.
+let _versionCache = null;
+function handleVersion(req, res) {
+  if (!_versionCache) {
+    const out = { harness: '', app: '', node: process.version };
+    try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+    try {
+      const t = require('../src-tauri/tauri.conf.json');
+      out.app = String((t && (t.version || (t.package && t.package.version))) || '');
+    } catch (_) {}
+    _versionCache = out;
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(_versionCache));
 }
 
 // POST /api/halt — the E-STOP. Abort EVERY in-flight run so one click stops all spend immediately: the browser

@@ -8,11 +8,11 @@ const S = require('../sidecar/slash.js');
   const cat = S.catalog();
   const names = cat.commands.map(c => c.name).sort();
   const required = [
-    'agents', 'background', 'blueprint', 'branch', 'bundles', 'compress', 'copy', 'cron',
-    'debug', 'fast', 'goal', 'help', 'memory', 'model', 'new', 'personality', 'queue',
+    'agents', 'background', 'blueprint', 'branch', 'bundles', 'clear', 'compress', 'copy', 'cron',
+    'debug', 'fast', 'goal', 'help', 'history', 'insights', 'memory', 'model', 'new', 'personality', 'queue',
     'reasoning', 'reload-mcp', 'reload-skills', 'resume', 'retry', 'save', 'skills',
     'status', 'steer', 'stop', 'subgoal', 'suggestions', 'title', 'tools', 'undo',
-    'usage', 'version', 'voice', 'yolo'
+    'usage', 'version', 'voice', 'whoami', 'yolo'
   ];
   A.eq(names, required.slice().sort(), 'catalog exposes the built-in workflow commands');
   A.ok(cat.commands.every(c => c.source === 'builtin'), 'catalog marks built-ins');
@@ -71,6 +71,16 @@ const S = require('../sidecar/slash.js');
   A.eq(mcp.directive.action, 'reload-mcp', 'reload_mcp dispatch runs reload-mcp action');
   const ver = S.dispatch('/v');
   A.eq(ver.directive.action, 'version', 'v alias dispatches to version');
+  // slash-parity: the Hermes-parity commands resolve, aliases canonicalize, and args flow through.
+  A.eq(S.dispatch('/clear').directive, { type: 'client', action: 'clear', args: '' }, 'clear dispatches to clear');
+  A.eq(S.dispatch('/cls').command.name, 'clear', 'cls alias canonicalizes to clear');
+  A.eq(S.dispatch('/history 5').directive, { type: 'client', action: 'history', args: '5' }, 'history dispatch carries the count arg');
+  A.eq(S.dispatch('/hist').command.name, 'history', 'hist alias canonicalizes to history');
+  A.eq(S.dispatch('/whoami').directive.action, 'whoami', 'whoami dispatches to whoami');
+  A.eq(S.dispatch('/insights').directive.action, 'insights', 'insights dispatches to insights');
+  const catP = S.catalog();
+  A.ok(catP.commands.find(c => c.name === 'clear').aliases.indexOf('cls') >= 0, 'clear exposes /cls alias');
+  A.ok(catP.commands.find(c => c.name === 'history').aliases.indexOf('hist') >= 0, 'history exposes /hist alias');
 }
 
 {

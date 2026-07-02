@@ -1848,6 +1848,10 @@ const Chat = (() => {
     Object.freeze({ name: 'copy', desc: "copy the agent's last reply", action: 'copy' }),
     Object.freeze({ name: 'help', desc: 'list available commands', action: 'help' }),
     Object.freeze({ name: 'new', aliases: ['reset'], desc: 'start a fresh workstream', action: 'new' }),
+    Object.freeze({ name: 'clear', aliases: ['cls'], desc: 'clear COMMS and start a fresh workstream', action: 'clear' }),
+    Object.freeze({ name: 'history', aliases: ['hist'], desc: 'show recent turns of this workstream', action: 'history' }),
+    Object.freeze({ name: 'whoami', desc: 'show the current agent identity', action: 'whoami' }),
+    Object.freeze({ name: 'insights', desc: 'usage rollup from the run history', action: 'insights' }),
     Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', action: 'branch' }),
     Object.freeze({ name: 'status', desc: 'show current stream and run state', action: 'status' }),
     Object.freeze({ name: 'usage', desc: 'show token and spend totals', action: 'usage' }),
@@ -2159,10 +2163,30 @@ const Chat = (() => {
     if (!text) return localLine('Usage: /steer <guidance>');
     const note = 'Steering note for the current task: ' + text;
     if (isBusy()) {
-      const arr = queued.get(activeWs.id) || [];
-      arr.unshift(note); queued.set(activeWs.id, arr); renderQueued();
-      localLine('Steering note queued to run next; live mid-run steering is not exposed yet.');
-    } else send(note);
+      // LIVE MID-RUN STEERING: if the running turn has a known runId, POST it to the sidecar's per-run steer
+      // buffer; the loop folds it in before its NEXT model call (after the current tool result). Fall back to the
+      // queue only when there is no live runId (e.g. a run whose id we never captured) or the POST fails — so a
+      // steer is NEVER silently dropped and NEVER injected into a run we can't address.
+      const rid = (typeof Channels !== 'undefined' && Channels.runIdOf) ? Channels.runIdOf(activeWs.id) : null;
+      if (rid && typeof fetch !== 'undefined') {
+        fetch('/api/run/steer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId: rid, text: text }) })
+          .then(r => r.ok ? r.json().catch(() => null) : null)
+          .then(j => {
+            if (j && j.ok) localLine('Steering the live run — it will fold your note in on its next step.');
+            else steerQueueFallback(note);   // run already ended / buffer full → queue it
+          })
+          .catch(() => steerQueueFallback(note));
+        return;
+      }
+      return steerQueueFallback(note);
+    }
+    send(note);
+  }
+  function steerQueueFallback(note) {
+    if (!activeWs) return;
+    const arr = queued.get(activeWs.id) || [];
+    arr.unshift(note); queued.set(activeWs.id, arr); renderQueued();
+    localLine('Steering note queued to run next.');
   }
   function undoCommand() {
     if (!activeWs) return localLine('No active workstream.');
@@ -2178,12 +2202,78 @@ const Chat = (() => {
   }
   function compressCommand() {
     const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState() : null;
+    // The run host is STATELESS — the conversation lives in the browser and is sent per call — so there is no
+    // persistent server-side context to fold on demand between runs. Auto-compaction runs INSIDE a run when the
+    // live prompt crosses the threshold. This is the honest status; see the slash-parity report for the rationale.
     if (cs && cs.limit) {
       const pct = Math.round(((cs.used || 0) / cs.limit) * 100);
-      localLine('Context: ' + (cs.used || 0) + ' / ' + cs.limit + ' tokens (' + pct + '%). Auto-compaction runs during model calls near the compaction threshold; manual compaction is not exposed yet.');
+      localLine('Context: ' + (cs.used || 0) + ' / ' + cs.limit + ' tokens (' + pct + '%). Auto-compaction folds older turns into a summary automatically during a run once the prompt nears the window; because the run host is stateless there is no idle prompt to compact on demand between runs.');
     } else {
-      localLine('Context compaction is automatic when the provider reports a context limit; no manual compaction endpoint is exposed yet.');
+      localLine('Context compaction is automatic: during a run, once the live prompt nears the model window, older turns are folded into a running summary. There is no idle context to compact between runs (the run host is stateless — the conversation is sent per call).');
     }
+  }
+  // /clear — wipe the rendered COMMS panel and start a fresh workstream. Shares newWorkstreamCommand's create+load
+  // (which itself clears the log via load()), so it can NEVER touch another stream's in-flight run: it only ever
+  // spins up a brand-new stream and rebinds the panel to it. Purely additive over /new (aliased for Hermes parity).
+  function clearCommand(args) {
+    newWorkstreamCommand(args);
+    if (log) log.innerHTML = '';   // belt-and-suspenders: guarantee a clean panel even if load() left an empty-state hint
+    localLine('Cleared COMMS and started a fresh workstream.');
+  }
+  // /history [n] — print the last n turns (default 10) of the ACTIVE workstream from ws.history, role-prefixed and
+  // truncated. Read-only; never mutates history or touches any run.
+  function historyCommand(args) {
+    if (!activeWs) return localLine('No active workstream.');
+    const h = (activeWs.history || []).filter(m => m && (m.role === 'user' || m.role === 'assistant') && (m.content || '').trim());
+    if (!h.length) return localLine('No conversation history in this workstream yet.');
+    let n = parseInt(String(args || '').trim(), 10);
+    if (!Number.isInteger(n) || n <= 0) n = 10;
+    n = Math.min(n, 30);
+    const slice = h.slice(-n);
+    localLine('History (last ' + slice.length + ' of ' + h.length + ' turn' + (h.length === 1 ? '' : 's') + '):');
+    for (const m of slice) {
+      const who = m.role === 'user' ? 'You' : 'Agent';
+      localLine(who + ': ' + String(m.content).replace(/\s+/g, ' ').slice(0, 160));
+    }
+  }
+  // /whoami — the current agent identity: id/name, role/class, level + XP (Xp.compute), model + provider, and the
+  // capabilities placed on the floor (slashPlacedTypes). Read-only.
+  function whoamiCommand() {
+    const a = activeAgent() || {};
+    const id = (activeWs && activeWs.agentId) || a.id || 'agent';
+    const name = a.name || id;
+    const spec = (a.specialtyId && typeof Specialties !== 'undefined' && Specialties.get) ? Specialties.get(a.specialtyId) : null;
+    const klass = (spec && (spec.name || spec.id)) || a.role || (id === 'agent' ? 'orchestrator' : 'specialist');
+    let lvl = '';
+    try { if (typeof Xp !== 'undefined' && Xp.compute && a.stats) { const g = Xp.compute(a.stats); lvl = ', Lv ' + g.level + ' (' + (g.xp != null ? g.xp + ' XP, ' : '') + g.pct + '% to Lv ' + (g.level + 1) + ')'; } } catch (_) {}
+    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : (a.model || '');
+    const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : (a.provider || '');
+    const placed = slashPlacedTypes();
+    localLine('You are ' + name + ' [' + id + '] — ' + klass + lvl + '. Model: ' + (model || 'not selected') + (provider ? ' via ' + provider : '')
+      + '. Placed capabilities: ' + (placed.length ? placed.join(', ') : 'none on the floor yet') + '.');
+  }
+  // /insights — a usage rollup from the DURABLE run history (GET /api/insights): total runs, spend, tokens,
+  // success rate, and top models. This is the persisted lifetime ledger for this agent — honestly labelled as such
+  // (the run store keeps every run, so it is not windowed to 30 days). A per-session fallback uses Harness.totals()
+  // when the sidecar is offline, clearly marked session-only so no number is ever faked.
+  async function insightsCommand() {
+    const agentId = (activeWs && activeWs.agentId) || (activeAgent() && activeAgent().id) || 'agent';
+    try {
+      const r = await fetch('/api/insights?agent=' + encodeURIComponent(agentId), { cache: 'no-store' });
+      const j = r.ok ? await r.json() : null;
+      if (j && (j.totalRuns != null)) {
+        const models = Array.isArray(j.byModel) ? j.byModel.slice(0, 3).map(m => (m.model || '?') + ' ($' + (m.usd || 0) + ')') : [];
+        const succ = (j.successPct == null) ? '' : ', ' + j.successPct + '% completed';
+        return localLine('Insights (lifetime run history for ' + agentId + '): ' + (j.totalRuns || 0) + ' run' + (j.totalRuns === 1 ? '' : 's')
+          + ', $' + (j.totalUsd || 0) + ', ' + (j.totalTokens || 0) + ' tokens'
+          + (j.avgUsdPerRun ? ', $' + j.avgUsdPerRun + '/run' : '') + succ
+          + (models.length ? '. Top models: ' + models.join(', ') : '') + '.');
+      }
+    } catch (_) {}
+    // sidecar offline / no fold — honest session-only fallback, never fabricated.
+    const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
+    localLine('Insights: the durable run history is unavailable (sidecar offline). This SESSION only: ' + (t.tokens || 0) + ' tokens, $'
+      + ((t.cost || 0).toFixed ? t.cost.toFixed(6) : '0.000000') + ', ' + (t.calls || 0) + ' calls.');
   }
   function activeAgent() {
     try { return (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null; } catch (_) { return null; }
@@ -2420,8 +2510,19 @@ const Chat = (() => {
     warmSlashCatalog();
     localLine('Refreshing slash skills and command catalog for this workstation.');
   }
-  function versionCommand() {
-    localLine('StarNet harness: local development build. Package version is not exposed to the browser yet; sidecar health is checked through /api/health.');
+  async function versionCommand() {
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store' });
+      const j = r.ok ? await r.json() : null;
+      if (j) {
+        const bits = [];
+        if (j.app) bits.push('StarNet ' + j.app);
+        if (j.harness && j.harness !== j.app) bits.push('harness ' + j.harness);
+        if (j.node) bits.push('Node ' + j.node);
+        return localLine('Version: ' + (bits.length ? bits.join(', ') : 'unknown') + '.');
+      }
+    } catch (_) {}
+    localLine('Version: could not reach the sidecar (/api/version). It is likely offline.');
   }
   function debugCommand() {
     const ws = activeWs || {};
@@ -2440,6 +2541,7 @@ const Chat = (() => {
       compress: compressCommand, title: titleCommand, resume: resumeCommand,
       save: saveCommand, agents: agentsCommand, background: backgroundCommand,
       goal: goalCommand, subgoal: subgoalCommand,
+      clear: clearCommand, history: historyCommand, whoami: whoamiCommand, insights: insightsCommand,
       model: modelCommand, personality: personalityCommand, yolo: yoloCommand,
       reasoning: reasoningCommand, fast: fastCommand, voice: voiceCommand,
       tools: toolsCommand, skills: skillsCommand, memory: memoryCommand,

@@ -68,7 +68,7 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'steer',
     category: 'Session',
-    desc: 'queue steering guidance for the current task',
+    desc: 'steer the live run (or queue guidance when idle)',
     argsHint: '<guidance>',
     action: 'steer'
   }),
@@ -82,6 +82,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     name: 'compress',
     category: 'Session',
     desc: 'show context compaction status',
+    argsHint: '',
     action: 'compress'
   }),
   Object.freeze({
@@ -133,6 +134,33 @@ const BUILTIN_COMMANDS = Object.freeze([
     desc: 'add a criterion the goal loop must also satisfy',
     argsHint: '[text|remove N|clear]',
     action: 'subgoal'
+  }),
+  Object.freeze({
+    name: 'clear',
+    aliases: ['cls'],
+    category: 'Session',
+    desc: 'clear COMMS and start a fresh workstream',
+    action: 'clear'
+  }),
+  Object.freeze({
+    name: 'history',
+    aliases: ['hist'],
+    category: 'Session',
+    desc: 'show recent turns of this workstream',
+    argsHint: '[n]',
+    action: 'history'
+  }),
+  Object.freeze({
+    name: 'whoami',
+    category: 'Info',
+    desc: 'show the current agent identity',
+    action: 'whoami'
+  }),
+  Object.freeze({
+    name: 'insights',
+    category: 'Info',
+    desc: 'usage rollup from the run history',
+    action: 'insights'
   }),
   Object.freeze({
     name: 'model',
