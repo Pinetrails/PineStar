@@ -108,7 +108,7 @@
     deps = deps || {};
     const emit = typeof deps.emit === 'function' ? deps.emit : function () {};
     const log = typeof deps.log === 'function' ? deps.log : function () {};
-    const now = typeof deps.now === 'function' ? deps.now : function () { return Date.now(); };
+    const now = typeof deps.now === 'function' ? deps.now : function () { return 0; };   // caller injects the clock (determinism); 0 = unstamped
     const source = str(deps.source || 'background-review');
     const seen = new Set();
     return {

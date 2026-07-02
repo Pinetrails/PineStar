@@ -941,7 +941,7 @@ async function runBackgroundSkillReview(o) {
     // A2: un-silence the review. The quiet loop's own emit stays a no-op (no run.start/tool chatter on the bus),
     // but every skillbase MUTATION fires the EXISTING `deliverable` event + one auditable log line via this
     // observer — that is what surfaces the new skill in the SKILLS panel and the one COMMS aside.
-    const reviewObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), source: 'skill-review' });
+    const reviewObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), now: () => Date.now(), source: 'skill-review' });
     makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => reviewObserver.onManage(skill, action) }).register(registry);
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = {
@@ -1014,7 +1014,7 @@ async function runSkillCurator(o) {
   try {
     const registry = makeRegistry();
     // A2: same un-silencing for the curator — merges/archives now surface a deliverable + audit line once each.
-    const curatorObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), source: 'skill-curator' });
+    const curatorObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), now: () => Date.now(), source: 'skill-curator' });
     makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => curatorObserver.onManage(skill, action) }).register(registry);
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = { agentId, room: 'skill-curator', hasCompute: true, tools: allowed.slice(), approvalRules: {}, networkCaps: {} };
