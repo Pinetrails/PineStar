@@ -17,8 +17,20 @@
 const StationBake = (() => {
   /* palette + geometry knobs — verbatim from v7 world.js/render.js */
   const pad = 7;
-  const NFACE = 9, NCAP = 4, FACEW = 4, WALLH = 12;
+  const NFACE = 9, FACEW = 4;
   const wallTop = '#4a463a', wallFace = '#2b2820', wallDk = '#1d1a14', hullC = '#191712';
+  const wallCap = '#7c7258';   // the lit TOP surface of a tall wall — bright on purpose: it survives the ambient bake and defines wall height at any zoom
+
+  /* live-tunable WALL HEIGHT — same contract as LIGHT below: the CRT LAB writes these and
+     re-bakes. Height only ever extrudes OUTSIDE the floor footprint (up-screen above north
+     edges, down-screen below the hull, sideways past e/w edges), so no walkable tile is ever
+     covered and nothing y-sorted against agents changes.
+       up     = how far a room's north wall face rises above the floor seam (px)
+       corUp  = same for corridors (lower → corridors read as tunnels, rooms as halls)
+       skirt  = hull extrusion depth below the station silhouette (the south wall seen outside)
+       side   = width of the e/w wall-top band beyond the floor edge
+       capH   = thickness of the lit cap that crowns a tall wall */
+  const WALL = { up: 22, corUp: 11, skirt: 28, side: 7, capH: 3 };
 
   /* live-tunable lighting — the CRT LAB (crtlab.js, dev-gated) writes these and calls
      World.rebake() to re-run the bake. These ARE the shipped defaults.
@@ -37,8 +49,8 @@ const StationBake = (() => {
 
   /* per-bake state (a bake runs synchronously start→finish, so module locals are safe) */
   const CHUNK_PX = 384;
-  const DIRTY_PAD_PX = pad + WALLH + 48;
-  let G, T, HR, W, H, VX, VY, CW, CH, lampPos, edges, chamferAt;
+  const dirtyPadPx = () => pad + Math.max(WALL.skirt, WALL.up + WALL.capH + 8) + 48;   // walls reach outside the footprint — invalidate that far too
+  let G, T, HR, W, H, VX, VY, CW, CH, lampPos, edges, chamferAt, extN;
   const h2 = (x, y, s) => U.hash(x + ',' + y + ',' + (s || ''));
 
   function spandrelPath(g, kind, ax, ay, rad) {
@@ -86,6 +98,7 @@ const StationBake = (() => {
         if (nz === z) continue;                       // interior — no edge
         const door = nz != null && (G_.canStep(x, y, nx, ny) || G_.canStep(nx, ny, x, y));
         edges.push({ x, y, side, room, door, exterior: nz == null });
+        if (side === 'n' && nz == null) extN.add(x + ',' + y);   // tiles with a TALL north face (lamp fixtures mount on it)
       }
     }
   }
@@ -154,17 +167,57 @@ const StationBake = (() => {
     }
   }
 
+  /* the TALL north wall: the interior face a viewer sees when looking at the far side of a
+     room. It keeps the classic NFACE px of floor-contact face BELOW the seam (unchanged, so
+     props/agents hugging the top row still read right) and rises WALL.up px ABOVE it — over
+     void/hull only, never over walkable floor — crowned by a lit cap + dark hull lip. */
+  function bakeTallNorthFace(b, e, X, Y) {
+    const room = e.room;
+    const up = Math.max(0, Math.round(room ? WALL.up : WALL.corUp));
+    const inFace = room ? NFACE : 5;
+    const capH = Math.max(2, Math.round(WALL.capH));
+    const h = up + inFace, topY = Y - up;
+    // dark hull lip above the crown (the old NCAP band, pushed up with the wall)
+    b.fillStyle = wallDk; b.fillRect(X, topY - capH - 2, T, 2);
+    // lit crown — the wall's top surface catching the ceiling lights. Kept BRIGHT on purpose:
+    // after the ambient bake this continuous line is what defines the wall height at any zoom.
+    b.fillStyle = wallCap; b.fillRect(X, topY - capH, T, capH);
+    b.fillStyle = 'rgba(255,255,255,0.22)'; b.fillRect(X, topY - capH, T, 1);
+    // the face: a 3-band vertical gradient (lit top → mid → dark base) so it reads as a
+    // STANDING surface, not a floor shadow
+    b.fillStyle = '#4a4433'; b.fillRect(X, topY, T, h);
+    b.fillStyle = '#39342a'; b.fillRect(X, topY + Math.max(2, (h * 0.35) | 0), T, h - Math.max(2, (h * 0.35) | 0));
+    b.fillStyle = wallFace; b.fillRect(X, topY + Math.max(3, (h * 0.68) | 0), T, h - Math.max(3, (h * 0.68) | 0));
+    // warm under-crown glow (lamp light licking the wall top) + floor AO
+    b.fillStyle = 'rgba(255,220,160,0.10)'; b.fillRect(X, topY, T, 1);
+    b.fillStyle = 'rgba(0,0,0,0.28)'; b.fillRect(X, Y + inFace - 3, T, 3);
+    // panel work: one vertical seam per tile + a weld line, then per-tile greebles
+    b.fillStyle = 'rgba(0,0,0,0.3)';
+    b.fillRect(X + 5, topY, 1, h);
+    b.fillRect(X, topY + ((h * 0.55) | 0), T, 1);
+    const n = h2(e.x, e.y, 'nwall');
+    if (room && up >= 10 && n % 4 === 0) {          // a recessed vent panel
+      b.fillStyle = '#1a1712'; b.fillRect(X + 7, topY + 4, 4, 5);
+      b.fillStyle = 'rgba(0,0,0,0.5)';
+      for (let i = 0; i < 2; i++) b.fillRect(X + 8, topY + 5 + i * 2, 2, 1);
+    } else if (up >= 8 && n % 7 === 3) {            // a pale conduit drop
+      b.fillStyle = 'rgba(255,255,255,0.08)'; b.fillRect(X + 2, topY + 2, 1, h - 6);
+    }
+    // floor-contact cap line (identical to the old look)
+    b.fillStyle = wallTop; b.fillRect(X, Y + inFace, T, 1);
+  }
+
   function bakeWalls(b) {
     for (const e of edges) {
       const X = e.x * T, Y = e.y * T;
       if (e.door) { bakeThreshold(b, e, X, Y); continue; }
-      const fw = e.room ? FACEW : 2, out = e.room ? 4 : 2, face = e.room ? NFACE : 5, cap = e.room ? NCAP : 2;
+      const fw = e.room ? FACEW : 2, out = e.room ? 4 : 2, face = e.room ? NFACE : 5;
       const dep = fw + 1, rib = 'rgba(0,0,0,0.25)';
-      // the dark hull band (cap above / out below/beside) paints OUTSIDE the tile — only when the
-      // neighbour is void. Interior boundaries (a non-door seam to another zone) draw the face only,
-      // so the wall never smears onto an adjacent room/corridor floor (v7 render.js parity).
+      // walls only extrude OUTSIDE the tile when the neighbour is void. Interior boundaries
+      // (a non-door seam to another zone) draw the face only, so the wall never smears onto
+      // an adjacent room/corridor floor (v7 render.js parity).
       if (e.side === 'n') {
-        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X, Y - cap, T, cap); }
+        if (e.exterior) { bakeTallNorthFace(b, e, X, Y); continue; }
         b.fillStyle = wallFace; b.fillRect(X, Y, T, face);
         b.fillStyle = rib; b.fillRect(X + 5, Y, 1, face);
         b.fillStyle = wallTop; b.fillRect(X, Y + face, T, 1);
@@ -178,12 +231,22 @@ const StationBake = (() => {
         b.fillStyle = wallTop; b.fillRect(X + fw, Y, 1, T);
         b.fillStyle = wallFace; b.fillRect(X, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X, Y + 5, fw, 1);
-        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X - out, Y, out, T); }
+        if (e.exterior) {
+          const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
+          b.fillStyle = '#2f2b20'; b.fillRect(X - 3, Y, 3, T);            // wall-top mid tone against the floor
+          b.fillStyle = wallDk; b.fillRect(X - side, Y, side - 3, T);     // outer hull band
+          b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X - side, Y, 1, T);
+        }
       } else {
         b.fillStyle = wallTop; b.fillRect(X + T - dep, Y, 1, T);
         b.fillStyle = wallFace; b.fillRect(X + T - fw, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X + T - fw, Y + 5, fw, 1);
-        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X + T, Y, out, T); }
+        if (e.exterior) {
+          const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
+          b.fillStyle = '#2f2b20'; b.fillRect(X + T, Y, 3, T);
+          b.fillStyle = wallDk; b.fillRect(X + T + 3, Y, side - 3, T);
+          b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X + T + side - 1, Y, 1, T);
+        }
       }
     }
   }
@@ -219,8 +282,12 @@ const StationBake = (() => {
       const count = Math.max(1, Math.round((r.x2 - r.x1 + 1) / 7));
       for (let i = 0; i < count; i++) {
         const lx = X + RW * (i + 0.5) / count;
-        b.fillStyle = '#6a6253'; b.fillRect(Math.round(lx) - 4, r.y1 * T + 1, 8, 2);
-        b.fillStyle = 'rgba(255,255,255,0.55)'; b.fillRect(Math.round(lx) - 3, r.y1 * T + 1, 6, 1);
+        // when the tile behind the fixture carries a TALL exterior face, mount the flood
+        // high on that wall (just under the crown); a door/interior seam keeps the old spot
+        const tall = extN.has(Math.floor(lx / T) + ',' + r.y1);
+        const fy = tall ? r.y1 * T - Math.round(WALL.up) + 2 : r.y1 * T + 1;
+        b.fillStyle = '#6a6253'; b.fillRect(Math.round(lx) - 4, fy, 8, 2);
+        b.fillStyle = 'rgba(255,255,255,0.55)'; b.fillRect(Math.round(lx) - 3, fy, 6, 1);
       }
     }
   }
@@ -252,37 +319,70 @@ const StationBake = (() => {
   }
 
   function bakeHullExtrusion(b) {
-    const sil = canvas(CW, CH);
-    const g = translatedContext(sil);
+    const skirt = Math.max(4, Math.round(WALL.skirt));
+    // vertical working margin: a footprint whose bottom edge sits just ABOVE this viewport
+    // must still drop its skirt INTO it (and one ending just below must not lose its lip),
+    // so the silhouette canvases are taller than the viewport by the full skirt reach.
+    const M = skirt + 4;
+    const sil = canvas(CW, CH + M * 2);
+    const g = sil.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.translate(-VX, -(VY - M));
     g.fillStyle = '#fff';
     for (const r of G.allRects) g.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
-    const f = canvas(CW, CH);
+    const f = canvas(CW, CH + M * 2);
     const fg = f.getContext('2d');
-    const tmp = canvas(CW, CH);
+    const tmp = canvas(CW, CH + M * 2);
     const tg = tmp.getContext('2d');
     const stamp = (dy, c) => {
-      tg.clearRect(0, 0, CW, CH); tg.drawImage(sil, 0, dy);
-      tg.globalCompositeOperation = 'source-in'; tg.fillStyle = c; tg.fillRect(0, 0, CW, CH);
+      tg.clearRect(0, 0, CW, CH + M * 2); tg.drawImage(sil, 0, dy);
+      tg.globalCompositeOperation = 'source-in'; tg.fillStyle = c; tg.fillRect(0, 0, CW, CH + M * 2);
       tg.globalCompositeOperation = 'source-over'; fg.drawImage(tmp, 0, 0);
     };
-    stamp(WALLH, '#0b0a07'); stamp(WALLH - 2, '#14120d'); stamp(3, '#1f1c15'); stamp(1, '#3f3a2c');
+    // the tall exterior wall seen from outside: banded panels darkening toward the void
+    // (renders at these raw tones — the ambient mask deliberately stops at the floor line)
+    stamp(skirt, '#0b0a07');
+    stamp(skirt - 1, '#100e09');
+    stamp(Math.max(3, Math.round(skirt * 0.72)), '#16130d');
+    stamp(Math.max(2, Math.round(skirt * 0.45)), '#1f1b12');
+    stamp(3, '#2a251a');
+    stamp(1, '#3f3a2c');
     fg.globalCompositeOperation = 'destination-out'; fg.drawImage(sil, 0, 0);
     fg.globalCompositeOperation = 'source-atop';
     fg.fillStyle = 'rgba(0,0,0,0.35)';
-    for (let x = 5 - (VX % 28); x < CW; x += 28) fg.fillRect(x, 0, 1, CH);
+    for (let x = 5 - (VX % 28); x < CW; x += 28) fg.fillRect(x, 0, 1, CH + M * 2);
     fg.globalCompositeOperation = 'source-over';
     b.globalCompositeOperation = 'destination-over';
-    b.drawImage(f, VX, VY);
+    b.drawImage(f, VX, VY - M);
     b.globalCompositeOperation = 'source-over';
   }
 
   function buildLightMap() {
     const lightCv = canvas(CW, CH);
     const L = translatedContext(lightCv);
-    L.fillStyle = 'rgba(' + LIGHT.ambR + ',' + LIGHT.ambG + ',' + LIGHT.ambB + ',' + LIGHT.ambient + ')';   // darker ambient: the station leans on its OWN lights (the lamp cuts below punch brighter pools out of this)
-    for (const r of G.allRects) L.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
-    for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(L, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
+    // darker ambient: the station leans on its OWN lights (the lamp cuts below punch brighter
+    // pools out of this). Built as an opaque MASK drawn once at LIGHT.ambient alpha, so the
+    // per-rect fills UNION instead of stacking — overlapping footprints (and the new tall-wall
+    // reach above/below them) never double-darken.
+    const capH = Math.max(2, Math.round(WALL.capH));
+    const upReach = r => Math.round((G.isCorridor(r.z) ? WALL.corUp : WALL.up) + capH + 4);
+    // the raised north faces sit under the ambient like the rest of the interior (lamp cuts
+    // give them life); the hull SKIRT below stays OUTSIDE the mask — it hangs in void where
+    // no lamp reaches, so it renders at its baked tones (else it fades to nothing).
+    const mask = canvas(CW, CH);
+    const mg = mask.getContext('2d');
+    mg.imageSmoothingEnabled = false;
+    mg.translate(-VX, -VY);
+    mg.fillStyle = 'rgb(' + LIGHT.ambR + ',' + LIGHT.ambG + ',' + LIGHT.ambB + ')';
+    for (const r of G.allRects) {
+      const u = upReach(r);
+      mg.fillRect(r.x1 * T - pad, r.y1 * T - pad - u, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2 + u);
+    }
+    for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(mg, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
+    L.globalAlpha = LIGHT.ambient;
+    L.drawImage(mask, VX, VY);
+    L.globalAlpha = 1;
     L.globalCompositeOperation = 'destination-out';
     const cut = (x, y, r, a) => {
       const g = L.createRadialGradient(x, y, 1, x, y, r);
@@ -366,6 +466,27 @@ const StationBake = (() => {
       }
       b.lineWidth = 2; b.strokeStyle = '#28241b'; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
       b.lineWidth = 1; b.strokeStyle = wallTop; b.beginPath(); b.arc(ax, ay, T - 5.5, A.a0, A.a1); b.stroke();
+
+      // TALL WALL over a curved top corner: sweep the interior wall arc up-screen, easing from
+      // full height at the north end down to zero at the side end (side walls carry no face),
+      // so the raised north wall flows around the chamfer instead of stopping dead at it.
+      if ((kind === 'tl' || kind === 'tr') && WALL.up > 0) {
+        const R = T - 0.5, up = Math.round(WALL.up), capH = Math.max(2, Math.round(WALL.capH));
+        const steps = Math.max(12, Math.ceil(R * 1.4));
+        const pt = tt => {   // tt: 0 at the side end of the arc → 1 at the north end
+          const ang = kind === 'tl' ? A.a0 + (A.a1 - A.a0) * tt : A.a1 - (A.a1 - A.a0) * tt;
+          const k = Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up;
+          return [ax + Math.cos(ang) * R, ay + Math.sin(ang) * R, k];
+        };
+        b.fillStyle = wallFace;
+        for (let i = 0; i <= steps; i++) { const [px, py, k] = pt(i / steps); b.fillRect(px - 1.6, py - k, 3.2, k + 1); }
+        b.lineWidth = capH; b.strokeStyle = wallCap; b.beginPath();
+        for (let i = 0; i <= steps; i++) { const [px, py, k] = pt(i / steps); const yy = py - k - capH / 2; if (i) b.lineTo(px, yy); else b.moveTo(px, yy); }
+        b.stroke();
+        b.lineWidth = 1; b.strokeStyle = 'rgba(255,255,255,0.08)'; b.beginPath();
+        for (let i = 0; i <= steps; i++) { const [px, py, k] = pt(i / steps); const yy = py - k; if (i) b.lineTo(px, yy); else b.moveTo(px, yy); }
+        b.stroke();
+      }
     }
 
     // faint room name plates (the v7 floor-code stencil, generalized)
@@ -391,7 +512,7 @@ const StationBake = (() => {
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
     VX = viewport ? viewport.x : 0; VY = viewport ? viewport.y : 0;
     CW = viewport ? viewport.w : W; CH = viewport ? viewport.h : H;
-    lampPos = []; chamferAt = {};
+    lampPos = []; chamferAt = {}; extN = new Set();
     for (const [cx, cy, k] of geo.chamfers) chamferAt[cx + ',' + cy] = k;
     buildEdges();
     return true;
@@ -428,10 +549,10 @@ const StationBake = (() => {
   function dirtyRectToLocalPx(geo, r) {
     const t = geo.TILE;
     return {
-      x1: Math.max(0, (r.x1 - geo.origin.tx) * t - DIRTY_PAD_PX),
-      y1: Math.max(0, (r.y1 - geo.origin.ty) * t - DIRTY_PAD_PX),
-      x2: Math.min(geo.W, (r.x2 + 1 - geo.origin.tx) * t + DIRTY_PAD_PX),
-      y2: Math.min(geo.H, (r.y2 + 1 - geo.origin.ty) * t + DIRTY_PAD_PX)
+      x1: Math.max(0, (r.x1 - geo.origin.tx) * t - dirtyPadPx()),
+      y1: Math.max(0, (r.y1 - geo.origin.ty) * t - dirtyPadPx()),
+      x2: Math.min(geo.W, (r.x2 + 1 - geo.origin.tx) * t + dirtyPadPx()),
+      y2: Math.min(geo.H, (r.y2 + 1 - geo.origin.ty) * t + dirtyPadPx())
     };
   }
   function dirtyChunks(geo, dirtyRects) {
@@ -562,7 +683,7 @@ const StationBake = (() => {
     else if (baked && baked.lightCv) ctx.drawImage(baked.lightCv, ox, oy);
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX, LIGHT };
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX, LIGHT, WALL };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;

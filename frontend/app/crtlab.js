@@ -12,6 +12,7 @@
 
   const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
   const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
+  const WALL_DEFAULTS = { up: 22, corUp: 11, skirt: 28, side: 7 };
 
   const PRESETS = {
     'Clean (off)':     { crt: { scan: 0, fade: 0 } },
@@ -22,6 +23,9 @@
     'Bright room':     { light: { ambient: 0.52, pool: 0.9, floor: 0.2 } },
     'Balanced':        { light: { ambient: 0.66, pool: 0.95, floor: 0.22 } },
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
+    'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 } },
+    'Tall halls':      { wall: { up: 22, corUp: 11, skirt: 28, side: 7 } },
+    'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 9 } },
   };
 
   // World/StationBake are top-level `const`s (global lexical bindings, NOT window props), so
@@ -30,6 +34,7 @@
   const SB = () => (typeof StationBake !== 'undefined' ? StationBake : window.StationBake);
   const crt = () => (W() && W().crt) || {};
   const light = () => (SB() && SB().LIGHT) || {};
+  const wall = () => (SB() && SB().WALL) || {};
 
   let rebakeT = 0;
   function scheduleRebake() {
@@ -84,7 +89,7 @@
   let sliders = [];
   let readout;
   function syncReadout() {
-    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)) }, null, 0);
+    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)), wall: pick(wall(), Object.keys(WALL_DEFAULTS)) }, null, 0);
   }
   function pick(o, keys) { const r = {}; for (const k of keys) if (o[k] != null) r[k] = +(+o[k]).toFixed(3); return r; }
   function syncAll() { sliders.forEach(s => s._sync && s._sync()); syncReadout(); }
@@ -92,6 +97,7 @@
   function applyPreset(p) {
     if (p.crt) Object.assign(crt(), p.crt);
     if (p.light) { Object.assign(light(), p.light); scheduleRebake(); }
+    if (p.wall) { Object.assign(wall(), p.wall); scheduleRebake(); }
     syncAll();
   }
 
@@ -137,6 +143,12 @@
     sliders.push(buildSlider(body, light, 'floor', 0, 0.5, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'room', 0.2, 0.8, 0.02, scheduleRebake));
 
+    section(body, 'WALL HEIGHT (re-bakes)');
+    sliders.push(buildSlider(body, wall, 'up', 0, 36, 1, scheduleRebake));      // room north face rise
+    sliders.push(buildSlider(body, wall, 'corUp', 0, 24, 1, scheduleRebake));   // corridor north face rise
+    sliders.push(buildSlider(body, wall, 'skirt', 6, 44, 1, scheduleRebake));   // hull drop below the station
+    sliders.push(buildSlider(body, wall, 'side', 4, 12, 1, scheduleRebake));    // e/w wall-top band width
+
     section(body, 'PRESETS');
     const presetWrap = document.createElement('div');
     presetWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
@@ -156,7 +168,7 @@
       navigator.clipboard && navigator.clipboard.writeText(txt).then(
         () => flash('copied ✓'), () => { readout.select(); flash('select+copy'); });
     }, true);
-    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(light(), LIGHT_DEFAULTS); scheduleRebake(); syncAll(); });
+    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(light(), LIGHT_DEFAULTS); Object.assign(wall(), WALL_DEFAULTS); scheduleRebake(); syncAll(); });
     body.appendChild(actions);
 
     const note = document.createElement('div');
