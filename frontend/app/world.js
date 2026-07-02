@@ -129,6 +129,18 @@ const World = (() => {
      The focused body, while idle, drops its wander/quirk/social life and holds its attention on the Commander
      (see the chat-stare beat in decideIdle + the per-tick hold in tick/crewEngineStep). D0 plumbing only. */
   let chatFocusId = null;
+  /* TIER D · D3 SOCIAL ENCOUNTERS — Tier C (gaze-only) grows bounded MOVEMENT beats. ONE live encounter
+     station-wide (G4): `socialBeat` is the single slot — null, or {kind, aId, bId, until}. `until` is a HARD
+     whole-encounter timeout so the slot ALWAYS frees, even if pathing fails / a body gets stuck / a participant
+     despawns. Per-pair long cooldowns (`socialPairCd`, keyed by the sorted id pair) so the same duo never loops
+     (K4 no cascade). Every fired encounter also arms the D2 station beat gate (armBeat) so social beats share the
+     station calm budget with quirks (G5). Each participant carries its OWN plan on `body.social` (assigned once at
+     initiation by startEncounter — the ONE documented cross-body write, K2); per-tick stepping (stepSocial) mutates
+     ONLY self.social + self position/facing and reads a partner's position/flags READ-ONLY. All movement targets
+     pass the zone clamp (tileInZone(zoneFor(body))) — a body NEVER steps outside its own zone (G3). Determinism:
+     U.chance/U.irnd/U.pick/U.hash only. reduceMotion degrades D3 to Tier C glances (no walking). */
+  let socialBeat = null;                    // the single live encounter slot (G4)
+  const socialPairCd = new Map();           // "idA|idB" (sorted) -> earliest `now` the pair may re-encounter
   /* First-person self-talk — ONE conscious mind narrating its OWN state to itself. Never crew/colony
      banter (a lie for a solo agent). Every line is gated by curiositySay (no live bubble + global
      cooldown + the chatty trait), so they read as rare honest thoughts tied to the true inner state. */
@@ -912,6 +924,7 @@ const World = (() => {
       }
       self.placeTarget = null; self.removeId = null; self.goal = null; self.idleUntil = now + U.irnd(900, 2000);
     }
+    else if (self.goal === 'social') { self.state = 'idle'; self.target = null; self.pathPts = null; }   // TIER D · D3: reached a social waypoint — stay on goal='social'; stepSocial enters the hold next tick
     else { self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600); }
   }
   function wander(now) {
@@ -1078,6 +1091,10 @@ const World = (() => {
     // facing directly. Self-gates OFF while working/walking/mid-goal (b.working is set ABOVE in stepCrew, so a live
     // run never reaches here), so the work-seize always wins (G2). A held body skips the rest of the idle engine.
     if (chatStareHold(now)) return;
+    // TIER D · D3: this crew body is in a live social encounter → the guard (hard timeout + partner-broken, G4/K3)
+    // then stepSocial ((re)path or hold). Runs BELOW the b.working seize (stepCrew skips this whole fn while working),
+    // so a summon always wins (G2). stepSocial (re)establishes self.target; the walk block below then advances it.
+    if (self.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }
     if (self.target) {
       if (now < (self.pauseUntil || 0)) {
         self.state = 'idle';                                // a deliberate hold mid-walk (maybeStrollBeat's considered pause / double-take)
@@ -1493,6 +1510,352 @@ const World = (() => {
     // way the partner is held — gaze/timer-only, no path/target/goal (K1/K2 intact, K4 still self-terminating).
     self.idleUntil = Math.max(self.idleUntil || 0, now + dur + U.irnd(200, 600));
     return true;
+  }
+
+  /* ================= TIER D · D3 — SOCIAL ENCOUNTERS (Tier C grows legs) =================
+     Bounded, SILENT movement beats between two idle bodies. The four kinds:
+       'huddle'  — two SAME-ZONE bodies converge to adjacent tiles, face each other, hold, break.
+       'watch'   — an idle body stands ~2 tiles behind a WORKING body in its own zone, faces the desk, holds.
+       'border'  — two ADJACENT-zone bodies each walk to the nearest tile of their shared edge (each INSIDE its
+                   own zone), face each other across the line, hold, break.
+       'follow'  — an idle body notices a walking body passing nearby, half-follows 2-4 tiles (zone-clamped), then
+                   loses interest and STOPS. It NEVER completes the follow — the incompleteness is the design.
+     INVARIANTS (each is a named review hunt): containment (every target zone-clamped, G3/K1); work seizes
+     instantly (any participant summoned → abandons; the survivor releases within the hard timeout, G2/K3);
+     one live encounter (the `socialBeat` slot + hard `until`, G4); no deadlock/cascade (idle-cadence selection off
+     neighborsOf, per-pair cooldowns, a beat never spawns another, K4); station rarity (consult crewBeatDamp + arm
+     via armBeat, G5); Tier B self-discipline (startEncounter is the ONE cross-body write; stepSocial mutates only
+     self, K2); chat-stare exclusion (a chatFocus body never joins). */
+  const SOCIAL_SEL_ROLL = 0.02;             // per idle re-decide, when a candidate pair exists + station gate open (G5: RARE)
+  const SOCIAL_HOLD_MIN = 3000, SOCIAL_HOLD_MAX = 7000;   // the silent face-each-other hold (varied)
+  const SOCIAL_HARD_MS = 25000;             // whole-encounter hard timeout — the slot ALWAYS frees by this (G4)
+  const SOCIAL_PAIR_CD_MIN = 180000, SOCIAL_PAIR_CD_MAX = 360000;   // per-pair cooldown (minutes) so a duo never loops (K4)
+  const SOCIAL_NEAR_RADIUS = 5;             // tiles — huddle/watch candidate proximity (within the observer's zone via neighborsOf)
+  const SOCIAL_FOLLOW_MIN = 2, SOCIAL_FOLLOW_MAX = 4;   // half-follow distance (tiles) — bounded, never completes
+
+  // stable sorted-pair key for the per-pair cooldown map
+  function pairKey(aId, bId) { return (String(aId) < String(bId)) ? (aId + '|' + bId) : (bId + '|' + aId); }
+  function pairOnCd(aId, bId, now) { return now < (socialPairCd.get(pairKey(aId, bId)) || 0); }
+  function armPairCd(aId, bId, now) { socialPairCd.set(pairKey(aId, bId), now + U.irnd(SOCIAL_PAIR_CD_MIN, SOCIAL_PAIR_CD_MAX)); }
+
+  // is body `b` a valid social participant right now? idle, placed, not chat-focused, not already in a beat.
+  // Reuses bodyIsIdle (the Tier C read-only idle test) — so it excludes tasked/walking/mid-goal/mid-run bodies.
+  function socialEligible(b, now) {
+    if (!b || b.unplaced || b.social) return false;              // already in an encounter, or nobody
+    if (b.stilling) return false;                                // don't yank a deliberate stillness hold (eerie calm wins)
+    if (chatFocusId && b === chatFocusBody()) return false;      // chat-stare exclusion (D1): never recruit the focused body
+    return bodyIsIdle(b, now);                                   // idle, not tasked/walking/mid-goal (hero: activity idle; crew: summoned+free)
+  }
+
+  // free the whole encounter + clear both participants' plans. Idempotent. Called on: hard timeout, partner-gone,
+  // a participant seized by work, or a clean natural end. NEVER leaves the slot occupied (G4).
+  function endEncounter(now, armCd) {
+    const s = socialBeat; socialBeat = null;
+    if (!s) return;
+    const a = bodyForAgent(s.aId), b = bodyForAgent(s.bId);
+    for (const body of [a, b]) {
+      if (!body || !body.social) continue;
+      // only tear down OUR plan; if a body was already re-tasked (working / summon), leave its live state alone —
+      // just drop the social plan so it stops trying to rendezvous. Its own tick owns the rest.
+      body.social = null;
+      if (body.goal === 'social') { body.goal = null; body.state = 'idle'; body.pathPts = null; body.target = null; body.idleUntil = Math.max(body.idleUntil || 0, now + U.irnd(300, 900)); }
+    }
+    if (armCd !== false && s.aId != null && s.bId != null) armPairCd(s.aId, s.bId, now);   // arm the per-pair cooldown on any end (so a loop can't restart it)
+  }
+
+  // has a participant been pulled out from under the encounter (seized by work / despawned / chat-focused)? Any of
+  // these ⇒ the beat can no longer be two-sided → tear down (the survivor releases; K3). READ-ONLY on the bodies.
+  function encounterBroken(now) {
+    const s = socialBeat; if (!s) return true;
+    const a = bodyForAgent(s.aId), b = bodyForAgent(s.bId);
+    if (!a || !b || a.unplaced || b.unplaced) return true;                 // a participant despawned
+    for (const body of [a, b]) {
+      if (body.social == null) return true;                               // its plan got cleared out from under us
+      if (body.working) return true;                                      // a crew run seized it
+      if (body === agent && activity === 'task') return true;             // the hero got summoned
+      if (chatFocusId && body === chatFocusBody()) return true;           // pulled into a chat-stare
+    }
+    return false;
+  }
+
+  /* startEncounter — THE ONE coordinator (K2). Assigns each body its OWN plan on `body.social` at initiation
+     (this is the sanctioned cross-body write, done once, explicitly, here). Each plan is fully self-contained so
+     per-tick stepSocial(self) mutates only self. Every walk target is zone-clamped to the MOVER's own zone (G3).
+     Returns true iff an encounter was armed (⇒ caller should not fall through to a normal idle beat). */
+  function startEncounter(a, b, kind, now, planA, planB) {
+    if (socialBeat) return false;                                         // G4: one live encounter station-wide
+    a.social = planA; b.social = planB;
+    a.social.partnerId = b.id; b.social.partnerId = a.id;
+    a.social.kind = kind; b.social.kind = kind;
+    a.goal = 'social'; b.goal = 'social';
+    // drop any in-flight idle state so the social plan owns each body cleanly (does NOT touch working/task — those
+    // paths are excluded by socialEligible, so a/b are genuinely idle here).
+    for (const body of [a, b]) { body.stilling = false; body.usingProp = null; body.sitting = false; body.pauseUntil = 0; body.pauseLook = null; body.studyKey = null; }
+    socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS };
+    armBeat(now);                                                         // G5: a social encounter is a noticeable beat — count it against the station budget
+    return true;
+  }
+
+  /* stepSocial — per-tick stepper for the CURRENT body (self) while self.goal === 'social'. Mutates ONLY self
+     (self.social, self position/facing via the existing walk/arrive machinery) and reads the partner READ-ONLY
+     (position/tile only). Phases per plan:
+       plan = { phase:'walk'|'hold', tx,ty, faceTile:{x,y}|'partner', until, followLeft }
+     'walk': path toward (tx,ty) (already zone-clamped at plan time; re-derive path via setPathTo, reusing the
+             existing pather). On arrival → face the target and enter 'hold'. For 'follow', decrement followLeft
+             and re-target the next step toward the (still-moving) partner, zone-clamped; when followLeft hits 0 or
+             the partner stops/leaves the zone, it just STOPS (never completes).
+     'hold': stand still, face the partner (or the fixed faceTile), until `plan.until`; then the encounter ends.
+     The whole-encounter hard timeout + the partner-broken check are enforced by the caller (stepSocialGuard) BEFORE
+     this runs, so stepSocial only handles the happy path. Determinism: U.* only. */
+  function stepSocial(now) {
+    const pl = self.social; if (!pl) return;
+    // face resolution
+    const facePartner = () => { const p = bodyForAgent(pl.partnerId); if (p) self.dir = dirToward(self.px, self.py, p.px, p.py); };
+    if (pl.phase === 'walk') {
+      if (self.state === 'walk' || self.target) return;   // still walking — the walk machinery in tick/crewEngineStep drives it
+      const cur = tileOf(self.px, self.py);
+      if (pl.kind === 'follow') {
+        // half-follow: take bounded steps toward the (moving) partner, zone-clamped; NEVER complete.
+        const p = bodyForAgent(pl.partnerId);
+        if (!p || (pl.followLeft || 0) <= 0) { enterHold(now, pl); return; }          // lost interest / budget spent / partner gone → stop + a brief stare, then end
+        const zone = zoneFor(self);
+        const pt = tileOf(p.px, p.py);
+        const stepX = Math.sign(pt.x - cur.x), stepY = Math.sign(pt.y - cur.y);       // one tile toward the partner's CURRENT tile
+        let stepped = false;
+        for (const [dx, dy] of [[stepX, stepY], [stepX, 0], [0, stepY]]) {
+          if (!dx && !dy) continue;
+          const tx = cur.x + dx, ty = cur.y + dy;
+          if (tileInZone(zone, tx, ty) && geo.walkable(tx, ty, blocked) && setPathTo({ x: tx, y: ty })) {
+            pl.tx = tx; pl.ty = ty; pl.followLeft = (pl.followLeft || 0) - 1; self.goal = 'social'; stepped = true; break;
+          }
+        }
+        if (!stepped) enterHold(now, pl);                                             // can't advance in-zone → stop where it is
+        return;
+      }
+      // huddle / watch / border: a single fixed walk target. `started` distinguishes "not yet en route" (→ path to
+      // it) from "arrived / path exhausted" (→ hold). Without it, a freshly-armed plan with no path would read as
+      // "already arrived" on tick 1 and hold in place without ever walking.
+      if (cur.x === pl.tx && cur.y === pl.ty) { enterHold(now, pl); return; }         // standing on it already → hold
+      if (pl.started) { enterHold(now, pl); return; }                                 // was en route, now stopped (arrived or path ran out) → hold where it is
+      if (setPathTo({ x: pl.tx, y: pl.ty })) { pl.started = true; self.goal = 'social'; }   // begin the walk (path set → walk block advances it next)
+      else enterHold(now, pl);                                                        // unreachable → hold in place (never strand the slot)
+      return;
+    }
+    if (pl.phase === 'hold') {
+      self.state = 'idle'; self.sitting = false;
+      if (pl.faceTile === 'partner') facePartner();
+      else if (pl.faceTile) self.dir = dirToward(self.px, self.py, (pl.faceTile.x + 0.5) * T, (pl.faceTile.y + 0.5) * T);
+      if (now >= pl.until) endEncounter(now);                                         // natural end → free the slot + arm the pair cooldown
+    }
+  }
+  // enter the silent face-each-other hold (varied duration). Both bodies enter their own hold independently; the
+  // encounter ends when EITHER reaches its `until` (endEncounter frees both) — a hard cap already bounds it.
+  function enterHold(now, pl) {
+    pl.phase = 'hold'; pl.until = now + U.irnd(SOCIAL_HOLD_MIN, SOCIAL_HOLD_MAX);
+    self.pathPts = null; self.target = null; self.state = 'idle'; self.goal = 'social';
+  }
+
+  /* stepSocialGuard — called every tick for a body whose goal==='social', BEFORE stepSocial. Enforces the two
+     global safety nets: (1) whole-encounter hard timeout (G4 — the slot frees no matter what), and (2) the
+     partner-broken check (K3 — if the OTHER party was seized/despawned/chat-focused, the survivor releases now
+     rather than waiting forever at a rendezvous). Returns true if it handled (ended) the beat this tick. */
+  function stepSocialGuard(now) {
+    if (!socialBeat) { if (self.social) { self.social = null; if (self.goal === 'social') { self.goal = null; self.state = 'idle'; self.idleUntil = now + 300; } } return true; }
+    if (now >= socialBeat.until || encounterBroken(now)) { endEncounter(now); return true; }
+    return false;
+  }
+
+  /* maybeSocial — SELECTION hook, called from decideIdle at the existing idle cadence with self = the deciding
+     idle body (K4: never triggered by observing another encounter — only off neighborsOf at re-decide time). Rolls
+     rarely (SOCIAL_SEL_ROLL) and only when: the station gate is open (crewBeatDamp — shared G5 budget), no encounter
+     is live (G4), self is eligible, and a concrete candidate pair exists. Tries the beats in order; the first that
+     assembles a zone-legal plan wins. reduceMotion → no walking beats (degrade to Tier C: return false, let the
+     normal gaze life run). Returns true iff an encounter was started (⇒ decideIdle stops). */
+  function maybeSocial(now) {
+    if (reduceMotion()) return false;                                    // reduceMotion: no walking social beats (Tier C glances only)
+    if (socialBeat) return false;                                        // G4: one live encounter
+    if (self.social) return false;                                       // already in one (defensive)
+    if (!socialEligible(self, now)) return false;
+    if (crewBeatDamp(now) === 0) return false;                           // G5: station calm budget closed for crew (hero: damp=1)
+    // in-sight SAME-ZONE neighbors (Tier C read-only scan) + whether ANY other placed body exists (adjacent-zone
+    // border candidates aren't same-zone, so the border precheck scans allBodies). CRITICAL N=1 PARITY (hunt 6):
+    // the U.chance roll is gated BEHIND candidate existence — a solo floor (no other body) returns here BEFORE the
+    // roll, so it consumes ZERO extra RNG draws and stays byte-identical to pre-D3 (U.* are independent Math.random
+    // wrappers, so a skipped draw shifts nothing). No candidate ⇒ no roll ⇒ provable no-op.
+    const near = neighborsOf(self, SOCIAL_NEAR_RADIUS);
+    const anyOther = allBodies().some(b => b !== self && !b.unplaced);   // is there any OTHER placed body at all (border candidates aren't same-zone)?
+    if (!near.length && !anyOther) return false;                         // no same-zone neighbor AND no other placed body → not a candidate; skip the roll (N=1 parity: solo floor never rolls)
+    if (!U.chance(SOCIAL_SEL_ROLL)) return false;                        // RARE (only reached when a real candidate could exist)
+    // 1) WATCH-A-PEER-WORK: a WORKING neighbor in my zone → stand ~2 tiles behind it, face its desk.
+    for (const w of near) {
+      if (!(w.working)) continue;
+      if (pairOnCd(self.id, w.id, now)) continue;
+      if (planWatch(self, w, now)) return true;
+    }
+    // 2) HUDDLE: an eligible same-zone idle neighbor → converge to adjacent tiles.
+    const idleCands = near.filter(o => socialEligible(o, now) && !pairOnCd(self.id, o.id, now));
+    if (idleCands.length && planHuddle(self, U.pick(idleCands), now)) return true;
+    // 3) HALF-FOLLOW: a WALKING body passing nearby (may be tasked/idle-walking) → half-follow its path.
+    for (const w of near) {
+      if (w.state !== 'walk') continue;
+      if (pairOnCd(self.id, w.id, now)) continue;
+      if (planFollow(self, w, now)) return true;
+    }
+    // 4) BORDER MEETING: an eligible idle body in an ADJACENT zone with a shared edge → meet at the border.
+    if (planBorderMeeting(self, now)) return true;
+    return false;
+  }
+
+  // ---- per-kind plan builders (each returns true iff it armed a zone-legal encounter) ----
+
+  // HUDDLE: pick a walkable in-zone tile for each body that is ADJACENT to the other's approach, so they end up
+  // facing each other a tile apart. Simplest robust form: each walks to a tile adjacent to the midpoint, inside its
+  // OWN zone. We resolve concrete tiles so both plans are fixed at initiation (K2 — no mid-tick partner reads for the target).
+  function planHuddle(a, b, now) {
+    const zA = zoneFor(a), zB = zoneFor(b);
+    const ca = tileOf(a.px, a.py), cb = tileOf(b.px, b.py);
+    const mx = Math.round((ca.x + cb.x) / 2), my = Math.round((ca.y + cb.y) / 2);
+    const ta = nearestWalkableInZone(zA, mx, my, ca, 4);
+    if (!ta) return false;
+    // b aims for a tile adjacent to a's target, still in b's own zone (so they end up ~1 tile apart, facing)
+    const tb = nearestWalkableInZone(zB, ta.x, ta.y, cb, 4, ta);   // exclude a's exact tile
+    if (!tb) return false;
+    return startEncounter(a, b, 'huddle', now,
+      { phase: 'walk', tx: ta.x, ty: ta.y, faceTile: 'partner' },
+      { phase: 'walk', tx: tb.x, ty: tb.y, faceTile: 'partner' });
+  }
+
+  // WATCH-A-PEER-WORK: stand ~2 tiles behind the worker (on the side away from its desk facing), inside the
+  // observer's zone, and face the worker's desk. Only the observer moves; the worker keeps working untouched.
+  function planWatch(obs, worker, now) {
+    if (pairOnCd(obs.id, worker.id, now)) return false;
+    const zone = zoneFor(obs);
+    const wt = tileOf(worker.px, worker.py);
+    // "behind" = the direction from the worker back toward the observer (so it approaches from where it already is)
+    const dx = Math.sign(obs.px - worker.px) || 0, dy = Math.sign(obs.py - worker.py) || 0;
+    const cands = [];
+    for (const dist of [2, 3, 1]) cands.push({ x: wt.x + dx * dist, y: wt.y + dy * dist });
+    cands.push({ x: wt.x + 2, y: wt.y }, { x: wt.x - 2, y: wt.y }, { x: wt.x, y: wt.y + 2 }, { x: wt.x, y: wt.y - 2 });
+    const oc = tileOf(obs.px, obs.py);
+    for (const c of cands) {
+      if (!tileInZone(zone, c.x, c.y) || !geo.walkable(c.x, c.y, blocked)) continue;
+      if (c.x === wt.x && c.y === wt.y) continue;
+      // observer-only encounter: the worker has NO social plan (it keeps working). Use a one-sided beat: give the
+      // worker a null plan but still register the slot so no other encounter starts. endEncounter tolerates a
+      // partner with no social plan (it just won't tear anything down for it).
+      if (socialBeat) return false;
+      obs.social = { phase: 'walk', tx: c.x, ty: c.y, faceTile: { x: wt.x, y: wt.y }, kind: 'watch', partnerId: worker.id };
+      obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
+      socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS };
+      armBeat(now);
+      return true;
+    }
+    return false;
+  }
+
+  // HALF-FOLLOW: begin trailing the walking body. The observer gets a 'follow' plan with a step budget; stepSocial
+  // takes it 2-4 tiles toward the (moving) partner, zone-clamped, then STOPS (never completes). One-sided: the
+  // walker has no plan (it's just passing through / on its own task).
+  function planFollow(obs, walker, now) {
+    if (socialBeat) return false;
+    const zone = zoneFor(obs);
+    const oc = tileOf(obs.px, obs.py), wc = tileOf(walker.px, walker.py);
+    // first step toward the walker, in-zone
+    const sx = Math.sign(wc.x - oc.x), sy = Math.sign(wc.y - oc.y);
+    let first = null;
+    for (const [dx, dy] of [[sx, sy], [sx, 0], [0, sy]]) {
+      if (!dx && !dy) continue;
+      const tx = oc.x + dx, ty = oc.y + dy;
+      if (tileInZone(zone, tx, ty) && geo.walkable(tx, ty, blocked)) { first = { x: tx, y: ty }; break; }
+    }
+    if (!first) return false;
+    obs.social = { phase: 'walk', tx: first.x, ty: first.y, faceTile: 'partner', kind: 'follow', partnerId: walker.id, followLeft: U.irnd(SOCIAL_FOLLOW_MIN, SOCIAL_FOLLOW_MAX) };
+    obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
+    if (!setPathTo({ x: first.x, y: first.y })) { obs.social = null; obs.goal = null; return false; }
+    obs.social.followLeft -= 1;
+    socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS };
+    armBeat(now);
+    return true;
+  }
+
+  /* BORDER MEETING: find an eligible idle body in an ADJACENT zone (a shared rect edge exists), then send each body
+     to the nearest walkable tile of the shared edge INSIDE ITS OWN zone (never a crossing — G3 staged, not hidden).
+     Shared-edge geometry is computed directly from the two zone rects (no zones.js API change). A zone that isn't a
+     single rect ('leash'/'multi') can't cleanly express a shared edge → those pairs simply aren't border candidates
+     (documented skip, not a zones.js edit). */
+  function planBorderMeeting(a, now) {
+    const zA = zoneFor(a);
+    const ra = zoneRect(zA); if (!ra) return false;                      // only single-rect (room) zones border-meet
+    for (const b of allBodies()) {
+      if (b === a) continue;
+      if (!socialEligible(b, now) || pairOnCd(a.id, b.id, now)) continue;
+      const zB = zoneFor(b); const rb = zoneRect(zB); if (!rb) continue;
+      const edge = sharedEdge(ra, rb); if (!edge) continue;              // no shared edge → not a border pair
+      // each body walks to the nearest tile of the shared line INSIDE its own rect
+      const ta = borderTileFor(ra, edge, tileOf(a.px, a.py));
+      const tb = borderTileFor(rb, edge, tileOf(b.px, b.py));
+      if (!ta || !tb) continue;
+      if (!tileInZone(zA, ta.x, ta.y) || !tileInZone(zB, tb.x, tb.y)) continue;   // belt-and-suspenders containment
+      return startEncounter(a, b, 'border', now,
+        { phase: 'walk', tx: ta.x, ty: ta.y, faceTile: 'partner' },
+        { phase: 'walk', tx: tb.x, ty: tb.y, faceTile: 'partner' });
+    }
+    return false;
+  }
+  // the single normalized rect of a 'room' zone, else null (leash/multi don't express a clean shared edge)
+  function zoneRect(zone) { return (zone && zone.kind === 'room' && zone.rect) ? zone.rect : null; }
+  // shared edge between two inclusive rects that are ADJACENT (abut along a full or partial line). Returns
+  // { axis:'v'|'h', line, lo, hi } — a vertical shared edge at column `line` spanning rows lo..hi (or horizontal).
+  // Adjacency = the rects touch along one line (one's right edge == the other's left edge (±0/1), overlapping span).
+  function sharedEdge(ra, rb) {
+    // vertical edge: ra is left of rb (ra.x2 abuts rb.x1) or vice-versa
+    const vpairs = [[ra, rb], [rb, ra]];
+    for (const [l, r] of vpairs) {
+      if (Math.abs(l.x2 - r.x1) <= 1 || l.x2 + 1 === r.x1 || l.x2 === r.x1) {
+        const lo = Math.max(l.y1, r.y1), hi = Math.min(l.y2, r.y2);
+        if (hi >= lo && (l.x2 + 1 === r.x1 || l.x2 === r.x1 || Math.abs(l.x2 - r.x1) <= 1)) return { axis: 'v', line: l.x2, lo, hi, lx: l.x2, rx: r.x1 };
+      }
+    }
+    // horizontal edge: l above r (l.y2 abuts r.y1)
+    for (const [t, b] of [[ra, rb], [rb, ra]]) {
+      if (t.y2 + 1 === b.y1 || t.y2 === b.y1 || Math.abs(t.y2 - b.y1) <= 1) {
+        const lo = Math.max(t.x1, b.x1), hi = Math.min(t.x2, b.x2);
+        if (hi >= lo) return { axis: 'h', line: t.y2, lo, hi, ty: t.y2, by: b.y1 };
+      }
+    }
+    return null;
+  }
+  // nearest walkable tile of `rect` along the shared edge (inside rect), closest to the body's current tile.
+  function borderTileFor(rect, edge, cur) {
+    const cands = [];
+    if (edge.axis === 'v') {
+      // the column of THIS rect that sits on the shared edge: rect.x2 if rect is the left one, else rect.x1
+      const col = (rect.x2 === edge.lx) ? rect.x2 : ((rect.x1 === edge.rx) ? rect.x1 : (Math.abs(rect.x2 - edge.line) <= 1 ? rect.x2 : rect.x1));
+      for (let y = edge.lo; y <= edge.hi; y++) cands.push({ x: col, y });
+    } else {
+      const row = (rect.y2 === edge.ty) ? rect.y2 : ((rect.y1 === edge.by) ? rect.y1 : (Math.abs(rect.y2 - edge.line) <= 1 ? rect.y2 : rect.y1));
+      for (let x = edge.lo; x <= edge.hi; x++) cands.push({ x, y: row });
+    }
+    cands.sort((p, q) => (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) - (Math.abs(q.x - cur.x) + Math.abs(q.y - cur.y)));
+    for (const c of cands) if (geo.walkable(c.x, c.y, blocked)) return c;
+    return null;
+  }
+  // nearest walkable in-zone tile to (tx,ty), searching a small ring; `cur` biases toward reachability; `excl` an
+  // optional tile to skip (so a huddle partner doesn't target the same tile). Deterministic ring scan (no RNG).
+  function nearestWalkableInZone(zone, tx, ty, cur, radius, excl) {
+    for (let r = 0; r <= radius; r++) {
+      const ring = [];
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;   // only the ring at Chebyshev distance r
+        ring.push({ x: tx + dx, y: ty + dy });
+      }
+      ring.sort((p, q) => (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) - (Math.abs(q.x - cur.x) + Math.abs(q.y - cur.y)));
+      for (const c of ring) {
+        if (excl && c.x === excl.x && c.y === excl.y) continue;
+        if (tileInZone(zone, c.x, c.y) && geo.walkable(c.x, c.y, blocked)) return c;
+      }
+    }
+    return null;
   }
 
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
@@ -1939,6 +2302,7 @@ const World = (() => {
     const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
+      if (maybeSocial(now)) return;        // TIER D · D3: a rare SILENT social encounter (huddle/watch/border/half-follow) between idle neighbors — bounded movement, one live station-wide, zone-clamped, per-pair cooldown (G3/G4/G5); selected here at the idle cadence off neighborsOf (K4 — never off observing another encounter)
       if (maybeMutualGlance(now)) return;  // C-Beat2: a quiet noticing between two idle neighbors — gaze-only; maybeMutualGlance holds self.idleUntil past its own glance so the beat stays two-sided, then ends by timeout
       if (U.chance(0.10) && maybeRevisit(now)) return;                                 //   occasionally drift back to its favorite spot
       const r = U.irnd(0, 99);
@@ -2072,6 +2436,11 @@ const World = (() => {
     if (!agent || agent.unplaced || !geo || awakeFrozen) return;   // frozen during the awakening: the newborn holds still, facing the Commander
     self = agent;                                                  // B1: the hero tick runs with self===agent (engine core reads the current body via self) — byte-identical hero path
     if (!agent.lastTaskAt) agent.lastTaskAt = now;                 // anchor downtime at the first live tick
+    // TIER D · D3 — STATION-LEVEL SLOT SWEEP (G4): the whole-encounter hard timeout + broken-participant check run
+    // here EVERY tick, independent of any body's own stepper — so even if BOTH participants get seized in the same
+    // tick (neither runs its per-body guard), the slot ALWAYS frees. self===agent here (set below/above), and
+    // endEncounter is idempotent; this is the belt-and-suspenders that makes the slot un-leakable.
+    if (socialBeat && (now >= socialBeat.until || encounterBroken(now))) endEncounter(now);
     tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
     stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
     const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
@@ -2135,6 +2504,11 @@ const World = (() => {
     }
     maybeGlance(now);   // head-turns over the top of whatever else the agent is doing
     chatStareHold(now); // TIER D · D1: if the Commander has COMMS focus on the hero + it's idle, hold its attention on you (faces south / tracks the cursor) — runs AFTER maybeGlance so the stare owns the final facing. Self-gates OFF while activity==='task'/mid-goal/walking, so the summon-seize above always wins (G2)
+    // TIER D · D3: a live social encounter drives the body (walk-to-rendezvous → hold → break). The guard enforces
+    // the whole-encounter hard timeout + the partner-broken check EVERY tick (G4/K3), then stepSocial (re)paths or
+    // holds. It sits BELOW the summon-seize block above (which flips goal off 'social' via encounterBroken → the
+    // survivor releases this tick, K3), so work always wins (G2). Only runs while genuinely idle+on the social goal.
+    if (activity === 'idle' && agent.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }
     if (agent.target) {
       // belt-yield: about to cross a belt with cargo bearing down → pause and let it pass (only on a casual stroll)
       if (now >= (agent.pauseUntil || 0) && now >= (agent.yieldCd || 0) && agent.goal == null && shouldYieldToCargo()) {
