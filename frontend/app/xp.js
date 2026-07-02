@@ -27,6 +27,21 @@
   const MIN_SAMPLES = 3;    // user feedback samples needed before confidence is "known"
   const FEEDBACK_XP_PER_DELTA = 10; // explicit positive user turn-in feedback is the only XP mint
   const FEEDBACK_XP_CAP = 50;       // cap one feedback event so one huge delta cannot jump many levels
+  // G2.4 task-size weighting (the locked leveling-redesign TODO): an optional payload.size hint
+  // ('small'|'medium'|'large', derived from REAL tool count + spend — see workSize) SCALES the minted
+  // XP, never invents it: no positive verdict, no XP, whatever the size; FEEDBACK_XP_CAP stays the
+  // hard ceiling. Absent/unknown size = 1 (fully additive — every existing payload is unchanged).
+  const SIZE_MULT = { small: 1, medium: 1.25, large: 1.5 };
+
+  // derive the honest size hint from a run's REAL work: successful tool calls + reconciled spend.
+  // Pure + shared so the rate-the-work caller (chat.js) and tests agree on one derivation.
+  function workSize(w) {
+    const tools = Math.max(0, (w && w.tools) | 0);
+    const usd = Math.max(0, (w && typeof w.usd === 'number' && isFinite(w.usd)) ? w.usd : 0);
+    if (tools >= 6 || usd >= 0.5) return 'large';
+    if (tools >= 3 || usd >= 0.08) return 'medium';
+    return 'small';
+  }
 
   function feedbackReason(p) {
     return String((p && p.reason) || '').trim().toLowerCase();
@@ -71,7 +86,9 @@
         const eff = Math.min(Math.max(d, 0), 10);
         // ONLY a full positive (quality 1 = kept/edited/work_great) mints; a 👌 work_ok (0.5) is a satisfaction
         // sample with no XP. Gate on >=1 so the neutral middle rung never levels an agent.
-        return { xp: quality >= 1 && d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA)) : 0, quality };
+        // An optional size hint scales the mint (task-size weighting); the CAP stays the ceiling.
+        const mult = SIZE_MULT[String(p.size || '')] || 1;
+        return { xp: quality >= 1 && d > 0 ? Math.min(FEEDBACK_XP_CAP, Math.round(eff * FEEDBACK_XP_PER_DELTA * mult)) : 0, quality };
       }
       case 'workitem.delivered': return { xp: 0, quality: null };
       case 'channel.delivery':   return { xp: 0, quality: null };
@@ -208,5 +225,5 @@
     return MILESTONES.map(m => ({ id: m.id, label: m.label, hint: m.hint, earned: earned.indexOf(m.id) !== -1 }));
   }
 
-  return { fresh, clone, applyEvent, compute, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES };
+  return { fresh, clone, applyEvent, compute, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, workSize };
 });

@@ -231,12 +231,20 @@ const Harness = (() => {
     };
   }
 
+  // The model catalog can proxy a LIVE external fetch (OpenRouter's /models); a slow/blocked upstream must
+  // never hang a caller. Bound every catalog fetch with an AbortController timeout so listModels() always
+  // settles — a timeout reads as "catalog unavailable" (empty list), exactly like an offline sidecar.
+  const MODEL_CATALOG_TIMEOUT_MS = 6000;
   async function fetchModelCatalog(url, field) {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json();
-    const raw = (j && j[field]) || [];
-    return raw.map(normalizeModel).filter(m => m.id);
+    let ctl = null, t = null;
+    try { ctl = new AbortController(); t = setTimeout(() => { try { ctl.abort(); } catch (_) {} }, MODEL_CATALOG_TIMEOUT_MS); } catch (_) {}
+    try {
+      const r = await fetch(url, { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      const raw = (j && j[field]) || [];
+      return raw.map(normalizeModel).filter(m => m.id);
+    } finally { if (t) clearTimeout(t); }
   }
 
   /* public model catalog (no key required) — populates the connect dropdown */

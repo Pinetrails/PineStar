@@ -231,8 +231,9 @@ const Conveyor = (() => {
     const pending = [];                                    // enqueueAt() work-items, born inside tick() (live nowMs + dir)
     const rr = new Map();                                  // per-junction round-robin counter (deterministic splitter routing)
     const mbuf = new Map();                                // per-merge-tile absorbed payloads (combined on the K-th box)
+    const mergeFx = [];                                    // G0.10: {x, y, t0, carrier} — combine flashes at merge junctions
 
-    function reset() { boxes = []; pending.length = 0; rr.clear(); mbuf.clear(); }
+    function reset() { boxes = []; pending.length = 0; rr.clear(); mbuf.clear(); mergeFx.length = 0; }
 
     /* a junction overrides a box's exit at its tile. Three kinds, all deterministic (per-tile state + the
        fixed LANE_ORDER, no RNG/clock):
@@ -243,7 +244,7 @@ const Conveyor = (() => {
          MERGE  — buffer K inbound boxes per-tile; the first K-1 are ABSORBED (return false = consume, no
                   delivery), the K-th rides on carrying the combined work-item list (config.bufferSize = K).
        Returns an out-lane dir, or null (go straight), or false (merge consumed this box — sink it, no deliver). */
-    function chooseExit(jt, bx, x, y, map) {
+    function chooseExit(jt, bx, x, y, map, nowMs) {
       const lanes = outLanes(x, y, map);
       if (!lanes.length) return null;                      // open-end junction: nothing to override, deliver/sink
       const k = key(x, y);
@@ -267,12 +268,14 @@ const Conveyor = (() => {
         buf.push(bx.payload || null);
         if (buf.length < K) {                              // not the K-th yet: this box is absorbed into the merge
           bx.merged = true;
+          mergeFx.push({ x, y, t0: nowMs, carrier: false });   // G0.10: an absorbed crate flashes the junction — it never just vanishes
           if (onAdvance) onAdvance(bx, { kind: 'merge', tile: { x, y }, absorbed: true });
           return false;                                    // CONSUME sentinel — caller sinks it without delivering
         }
         mbuf.set(k, []);                                   // K reached: clear buffer; this box becomes the carrier
         const ids = buf.map(p => p && p.workitemId).filter(Boolean);
         bx.payload = Object.assign({}, bx.payload, { merged: ids, mergeCount: K });
+        mergeFx.push({ x, y, t0: nowMs, carrier: true });      // G0.10: the combined carrier releases — a brighter combine burst
         if (onAdvance) onAdvance(bx, { kind: 'merge', tile: { x, y }, lane: lanes[0], merged: ids });
         return lanes[0];                                   // merge fans IN, rides out the single out-lane
       }
@@ -308,6 +311,9 @@ const Conveyor = (() => {
       const map = buildMap(belts || []);
       const dt = Math.min(64, dtMs) / 1000;
 
+      // G0.10: expire spent merge flashes (append-ordered, so the head is always the oldest)
+      while (mergeFx.length && nowMs - mergeFx[0].t0 > MERGE_FX_MS) mergeFx.shift();
+
       // occupancy index of RIDING boxes (sinking boxes are leaving — they don't block)
       const tileMap = new Map();
       for (const bx of boxes) { if (bx.sink > 0) continue; const k = key(bx.x, bx.y); (tileMap.get(k) || tileMap.set(k, []).get(k)).push(bx); }
@@ -339,7 +345,7 @@ const Conveyor = (() => {
           let dir = bx.dir;
           const jt = junctions && junctions.get(key(bx.x, bx.y));            // a junction picks the exit lane (else straight)
           if (jt) {
-            const ex = chooseExit(jt, bx, bx.x, bx.y, map);
+            const ex = chooseExit(jt, bx, bx.x, bx.y, map, nowMs);
             if (ex === false) { bx.sink = 1; break; }                        // merge absorbed it — sink, never deliver
             if (ex) dir = ex;
           }
@@ -360,6 +366,30 @@ const Conveyor = (() => {
       _ctx = ctx; _now = nowMs;
       const map = buildMap(belts);
       for (const b of belts) beltTile(b.x * T, b.y * T, T, classify(map, b), nowMs, U.hash('belt' + key(b.x, b.y)));
+      drawMergeFx(T);   // G0.10: combine flashes over the junction tiles (under the riding boxes)
+    }
+    /* G0.10 MERGE SHIMMER: a merger just absorbed a crate into its buffer (or released the combined
+       carrier) — flash the junction tile so K-1 boxes never just vanish. A hot amber core + an
+       expanding combine ring, ~450ms decay; the carrier release burns brighter and wider. Driven only
+       by real chooseExit decisions and the injected nowMs (deterministic — no ambient clock). */
+    const MERGE_FX_MS = 450;
+    function drawMergeFx(T) {
+      if (!mergeFx.length) return;
+      for (const fx of mergeFx) {
+        const k = 1 - (_now - fx.t0) / MERGE_FX_MS;
+        if (k <= 0) continue;
+        const cx = (fx.x + 0.5) * T, cy = (fx.y + 0.5) * T;
+        _ctx.save();
+        _ctx.globalCompositeOperation = 'lighter';
+        _ctx.globalAlpha = Math.min(1, 0.55 * k * (fx.carrier ? 1.5 : 1));
+        _ctx.fillStyle = '#e8c860';
+        _ctx.fillRect(cx - 3, cy - 3, 6, 6);                        // hot core
+        _ctx.globalAlpha = 0.8 * k;
+        _ctx.strokeStyle = fx.carrier ? '#fff0b0' : '#e8c860'; _ctx.lineWidth = 1;
+        const r = 2 + (1 - k) * (fx.carrier ? 8 : 5);               // the expanding combine ring
+        _ctx.beginPath(); _ctx.arc(cx, cy, r, 0, 6.2832); _ctx.stroke();
+        _ctx.restore();
+      }
     }
     function beltTile(X, Y, T, info, now, h) {
       const v = DIRV[info.dir], horiz = v[0] !== 0;

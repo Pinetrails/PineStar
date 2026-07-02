@@ -152,6 +152,14 @@
       "port": 8798,
       "autoPort": false,
       "env": { "SKYNET_PORT": "8798" }
+    },
+    {
+      "name": "first-ten",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/first-ten/sidecar/index.js"],
+      "port": 8802,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8802" }
     }
   ]
 }

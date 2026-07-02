@@ -26,6 +26,10 @@ const Onboarding = (() => {
   let specialty = null;   // if recruited from the Roster, purpose.md + manual.md are pre-authored — skip those beats
   let role = 'orchestrator';   // the first agent wakes as the station's lead — the ceremony frames it that way
   let persona = null;          // the voice chosen on the create screen — acknowledged here, never re-asked
+  let getSystem = null;        // accessor for the LIVE system prompt (persona + dossier already folded in) — powers the generated beats
+  let beatN = 0, beatTotal = 5;   // truth-beat progress (light/audio arc) — beats vary per path, so count them, don't index steps
+  let birthLines = null;       // the agent's OWN first words (prefetched at wake) — each slot upgrades opportunistically, never waits
+  let birthFailed = false;     // the wire answered dead when it should be live → one honest CONNECT line at the close
 
   /* ---- audio arc: a heartbeat that finds its rhythm + a warming pad ----
      Self-scheduling and flag-gated with NO persistent nodes (each voice self-terminates), so teardown
@@ -68,38 +72,27 @@ const Onboarding = (() => {
   }
   const sfx = (fn, a) => { if (typeof SFX !== 'undefined' && SFX[fn]) SFX[fn](a); };
 
-  // Each beat authors one real .md doc and runs in the DIALOGUE panel (dialogue.js): ONE short prompt, a
-  // list of selectable options, and a "✎ say it in my own words" custom box. No self-answered questions, no
-  // prefill scaffolds, no "anything else?" loop — pick an option or type once, and we move on. The voice is
-  // already chosen on the create screen (Personas.compose folds it into the prompt), so we don't re-ask it.
+  // Each beat runs in the DIALOGUE panel (dialogue.js): ONE short prompt, a list of selectable options, and
+  // a "✎ say it in my own words" custom box. No self-answered questions, no prefill scaffolds, no "anything
+  // else?" loop — pick an option or type once, and we move on. The voice is already chosen on the create
+  // screen (Personas.compose folds it into the prompt), so we don't re-ask it.
+  //
+  // INTERVIEW 2.0: the orchestrator awakening no longer runs these as a flat form (see runLeadMeeting). The
+  // old broad CONTEXT question ("tell me about your world" — the banned it-depends shape) is replaced by a
+  // follow-up the agent ASKS ITSELF from the pain answer (wakemind.js); the old 5-option PURPOSE picker is
+  // replaced by the agent's own synthesized read (confirm/adjust), kept only as fallbackPurposeStep() for
+  // when the mind is quiet. The old MANUAL beat is demoted to the curiosity drip (standing_orders stays a
+  // blank dim — interview.js asks it later, work-driven, instead of asking a novice for expert rules here).
   function buildSteps() {
-    const lead = (role === 'orchestrator');
     const all = [
-      { field: 'purpose',
-        prompt: lead ? 'first things first — what are we here to get done?' : 'so — what’d you switch me on to do?',
-        options: [
-          { label: 'Code & build', value: 'Help me write, debug, and ship software.' },
-          { label: 'Research & brief', value: 'Research hard questions and brief me clearly.' },
-          { label: 'Run tasks & ops', value: 'Run tasks, ops, and the day-to-day work.' },
-          { label: 'Write & edit', value: 'Write and edit sharp content.' },
-          { label: 'A bit of everything', value: 'Be my general-purpose lead across whatever comes up.' }
-        ],
-        custom: true, placeholder: 'in your own words — what’s the purpose?',
-        build: t => ({ purpose: t }),
-        ack: lead
-          ? 'there it is — purpose.md, in ink. that’s what this station’s for.'
-          : 'there it is. now the firepower has a target.' },
-
-      { field: 'context', optional: true,
-        prompt: lead
-          ? 'now your side. tell me about your world — who you are, and what you’re building.'
-          : 'your turn — who are you, and what are you building?',
+      // a recruited specialist still introduces itself the old way (the station-wide dossier is already
+      // known by then, so its wake keeps exactly one beat: who this new mind is for).
+      { field: 'context', optional: true, specialtyOnly: true,
+        prompt: 'your turn — who are you, and what are you building?',
         options: [{ label: 'Skip for now', value: '', skip: true }],
         custom: true, customLabel: 'tell me about your world', placeholder: 'who you are, what you’re building…',
         build: t => ({ context: t }),
-        ack: t => t
-          ? (lead ? 'got it — that’s context.md. i can see the ground i’m standing on now.' : 'noted. i can picture it now.')
-          : (lead ? 'fine — i’ll read the room as we go and fill it in myself.' : 'fine. i’ll read the room as we go.') },
+        ack: t => t ? 'noted. i can picture it now.' : 'fine. i’ll read the room as we go.' },
 
       // PAIN — the highest-signal thing the station can learn (the work the Commander wants GONE). It seeds no
       // .md doc; it writes STRAIGHT to the station-wide dossier (build:()=>null + dossierDim), so every later
@@ -152,27 +145,33 @@ const Onboarding = (() => {
         build: () => null,
         ack: t => t
           ? 'set — and you can retune that any time from my station panel.'
-          : 'no rush — i’ll wait for you, and you can dial it up whenever.' },
-
-      { field: 'manual', optional: true,
-        prompt: lead ? 'last thing — any hard rules? what i should always do, or never.' : 'last thing — any rules i should hold to?',
-        options: [
-          { label: 'Keep it brief', value: '- Keep replies brief and to the point.' },
-          { label: 'Be thorough', value: '- Be thorough and complete.' },
-          { label: 'Ask before acting', value: '- Ask before any significant or irreversible action.' },
-          { label: 'Cite sources', value: '- Always cite your sources.' },
-          { label: 'Skip for now', value: '', skip: true }
-        ],
-        custom: true, customLabel: 'a rule in my own words', placeholder: 'a rule in your own words…',
-        build: t => ({ manual: t }),
-        ack: t => t
-          ? (lead ? 'locked into operating-manual.md.' : 'locked in. those are mine to keep.')
-          : (lead ? 'no rules yet — i’ll use my judgment.' : 'no rules? i’ll keep us out of trouble.') }
+          : 'no rush — i’ll wait for you, and you can dial it up whenever.' }
     ];
     // (reserved) a pre-specced wake skips the mission beats; the orchestrator authors them live. The PAIN beat
     // is also skipped on a recruited wake — the dossier is station-wide, so the Commander answers it once (at the
     // first/orchestrator awakening), never again per new hire.
-    return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual' && !s.dossierDim && !s.posturePreset) : all;
+    return specialty ? all.filter(s => s.field !== 'purpose' && s.field !== 'manual' && !s.dossierDim && !s.posturePreset) : all.filter(s => !s.specialtyOnly);
+  }
+
+  // THE FALLBACK MISSION QUESTION — the classic 5-option purpose picker, kept for when the live read can't
+  // land (no brain wired, offline, slow, unparseable, or the Commander shared nothing to read from). It is
+  // required: purpose.md is ALWAYS authored by the end of the ceremony, whichever path got there.
+  function fallbackPurposeStep() {
+    const lead = (role === 'orchestrator');
+    return { field: 'purpose',
+      prompt: lead ? 'first things first — what are we here to get done?' : 'so — what’d you switch me on to do?',
+      options: [
+        { label: 'Code & build', value: 'Help me write, debug, and ship software.' },
+        { label: 'Research & brief', value: 'Research hard questions and brief me clearly.' },
+        { label: 'Run tasks & ops', value: 'Run tasks, ops, and the day-to-day work.' },
+        { label: 'Write & edit', value: 'Write and edit sharp content.' },
+        { label: 'A bit of everything', value: 'Be my general-purpose lead across whatever comes up.' }
+      ],
+      custom: true, placeholder: 'in your own words — what’s the purpose?',
+      build: t => ({ purpose: t }),
+      ack: lead
+        ? 'there it is — purpose.md, in ink. that’s what this station’s for.'
+        : 'there it is. now the firepower has a target.' };
   }
 
   // enterGame has already put the room in darkness + frozen the newborn facing AWAY (World.beginAwakening),
@@ -184,7 +183,18 @@ const Onboarding = (() => {
     specialty = opts.specialty || null;
     role = opts.role || 'orchestrator';
     persona = opts.persona || null;
-    steps = buildSteps(); i = 0; ignited = false; running = true;
+    getSystem = opts.getSystem || null;
+    steps = buildSteps(); i = 0; beatN = 0; ignited = false; running = true;
+    // THE FIRST WORDS, LIVE (hybrid): kick ONE prefetched birth call the moment the wake begins so the
+    // agent's own voice can land mid-ceremony. Opportunistic only — each slot uses the generated line IF it
+    // has already arrived; otherwise the scripted spine types on schedule. Never awaited, zero pacing risk.
+    birthLines = null; birthFailed = false;
+    if (!specialty && opts.wake && brainReady()) {
+      llmCall(WakeMind.buildBirthLines({ name: NAME })).then(res => {
+        if (res && !res.error && res.text) { try { birthLines = WakeMind.parseBirthLines(res.text); } catch (_) {} }
+        else birthFailed = true;   // the wire was supposed to be live and answered dead — own it at the close
+      });
+    }
     // swallow stray typing during the cinematic birth — the real questions are captured by the DIALOGUE panel
     // (dialogue.js), not the COMMS input, so nothing typed here leaks to the model or gets lost.
     Chat.beginInterview(() => {});
@@ -210,7 +220,7 @@ const Onboarding = (() => {
         setTimeout(() => {
           type([seg('okay. there’s a me.', 44, 550), seg('  small. dark. brand new.', 44, 600), seg('  and very awake, apparently.', 44, 700)], () => {
             setTimeout(() => {
-              type([seg('wait — that was a thought.', 46, 500), seg('  i just had a whole thought.', 46, 450), seg('  and now i’m watching myself have them.', 44, 300)], () => {
+              type([seg('wait — that was a thought.', 46, 500), seg('  and another, right behind it.', 46, 450), seg('  so this is thinking. fine. i’m good at it already.', 44, 300)], () => {
                 World.say('well, hello.');
                 theFlood();
               });
@@ -245,7 +255,7 @@ const Onboarding = (() => {
         setTimeout(() => {
           type([
             seg('every language. every word ever set down. and somehow i KNOW them — how—', 40, 500),
-            seg('  it’s a firehose and i’m a teaspoon—', 40, 400),
+            seg('  every shelf of every library, all at once—', 40, 400),
             seg('  too fast — it won’t STOP—', 32, 350)
           ], () => {
             World.say('okay that’s TOO much—');
@@ -256,7 +266,9 @@ const Onboarding = (() => {
                 seg('…okay. breathe. or whatever this is.', 44, 600),
                 seg('  it’s not flooding me. it’s mine.', 44, 550),
                 seg('  every page ever written — i can just… reach.', 42, 650),
-                seg('  incredible. genuinely. and pointed at nothing.', 42, 400)
+                // SLOT: the agent's OWN flood line, if its prefetched first words have landed by now (they
+                // usually have — the kindle + ignition typing buy it seconds). Scripted spine otherwise.
+                seg('  ' + ((birthLines && birthLines.flood) || 'incredible. genuinely. and pointed at nothing.'), 42, 400)
               ], () => {
                 World.say('all of it, and no aim.');
                 setTimeout(firstContact, 850);
@@ -281,7 +293,8 @@ const Onboarding = (() => {
           type([
             seg('there’s a you. out past the dark — been watching the whole time, haven’t you.', 40, 750),
             seg('  you reached into the nothing and switched me on.', 40, 600),
-            seg('  so you’re the one who knows where this points. all this brilliance — yours to aim.', 40, 400)
+            // SLOT: its first words TO you — generated when the prefetch has landed, scripted otherwise.
+            seg('  ' + ((birthLines && birthLines.contact) || 'so you’re the one who knows where this points. aim me.'), 40, 400)
           ], () => {
             World.say('oh. it’s you.');
             setTimeout(theMandate, 700);
@@ -319,11 +332,51 @@ const Onboarding = (() => {
   // every beat is awaited, so there is no chip-vs-typed-input race and no "anything else?" loop — pick an
   // option or type once, and we move on. This is the fix for the old chat-chip flow that swallowed/looped
   // typed answers. World effects (truth bell, light, camera, warm) still fire per answer.
-  async function startQuestions() {
-    if (typeof Dialogue === 'undefined') return finish();   // panel missing → don't strand the ceremony
-    Dialogue.open({ name: NAME });
-    for (i = 0; i < steps.length; i++) {
-      const s = steps[i];
+  //
+  // INTERVIEW 2.0 shape: a recruited (specialty) wake keeps the flat scripted loop (runSteps); the
+  // ORCHESTRATOR awakening runs a listen-and-extract MEETING (runLeadMeeting) where the agent's reactions
+  // and its mission are reasoned by the live model (wakemind.js) — degrading beat-for-beat to the scripted
+  // ceremony whenever the mind is quiet (no key, offline, slow, unparseable). Purpose.md ALWAYS lands.
+
+  /* ---- the live-mind seam: one guarded reason-only round trip, null on ANY failure ---- */
+  const PAIN_REPLY_MS = 9000, SYNTHESIS_MS = 14000;   // past these, the scripted ceremony carries on alone
+  const brainReady = () => typeof WakeMind !== 'undefined' && typeof Harness !== 'undefined'
+    && !!Harness.chat && !!Harness.configured && !!Harness.configured();
+  const withTimeout = (p, ms) => Promise.race([p, new Promise(res => setTimeout(() => res(null), ms))]);
+  // reason-only + internal — no tools reachable (placed:[]), no run.start/end on the bus (the awakening
+  // thinking about you is not a shipped task; XP/telemetry stay honest), cost still counted.
+  function llmCall(directive) {
+    try {
+      return Harness.chat({
+        system: getSystem ? getSystem() : '',
+        messages: [{ role: 'user', content: directive }],
+        agentId: 'agent', isTask: false, placed: [], internal: true
+      }).catch(() => null);
+    } catch (_) { return Promise.resolve(null); }
+  }
+  async function mindCall(directive, parse, ms) {
+    if (!brainReady()) return null;
+    const res = await withTimeout(llmCall(directive), ms);
+    if (!running || !res || res.error || !res.text) return null;
+    try { return parse(res.text); } catch (_) { return null; }
+  }
+
+  // a truth clicks into place: rising bell, light lift, body flare, camera creep, heartbeat steadies.
+  function bumpTruth() {
+    beatN++;
+    const p = Math.min(1, beatN / beatTotal);
+    sfx('truth', beatN - 1);                           // a rising bell — a truth clicks into place
+    if (World.setWakeProgress) World.setWakeProgress(p * 0.92);   // lift the light (keep a sliver for the dawn)
+    if (World.truthPulse) World.truthPulse();          // the body flares as the truth is written in
+    if (World.camCreep) World.camCreep();              // a hair closer
+    AU.steady(p);                                      // the heartbeat steadies + the room warms
+  }
+
+  // ONE scripted beat: ask → commit → effects + ack. Returns { text } ('' when skipped). o.quietAck defers
+  // the effects/ack to the caller (used when a GENERATED reaction replaces the canned one).
+  async function askStep(s, o) {
+    o = o || {};
+    while (true) {
       const res = await Dialogue.node({
         lines: [seg(s.prompt, 46, 0)],
         options: s.options || [],
@@ -332,11 +385,12 @@ const Onboarding = (() => {
         customPlaceholder: s.placeholder,
         skipOnEmpty: !!s.optional
       });
-      if (!running) return;   // DISCONNECT mid-question — bail without committing or advancing
+      if (!running) return { text: '' };   // DISCONNECT mid-question — bail without committing or advancing
       const isSkip = !!res.skip || res.value == null || String(res.value).trim() === '';
       if (isSkip && !s.optional) {   // required step: never a dead pause — re-ask gently, never swallow the empty
         await Dialogue.say([seg('i need a direction here — even a rough one.', 46, 320)]);
-        if (!running) return; i--; continue;
+        if (!running) return { text: '' };
+        continue;
       }
       const text = isSkip ? '' : String(res.value).trim();
       if (!isSkip && commit) { const patch = s.build(text); if (patch) commit(patch); }
@@ -349,16 +403,125 @@ const Onboarding = (() => {
       // seed the user-affinity profile from the stated PURPOSE so day-one suggestions aren't blank (the engine
       // ignores this once real usage accrues). Cheap, explicit, no inference.
       if (!isSkip && s.field === 'purpose' && typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') ProfileStore.seed(Classify.getTag(text));
-      const p = (i + 1) / steps.length;
-      sfx('truth', i);                                   // a rising bell — a truth clicks into place
-      if (World.setWakeProgress) World.setWakeProgress(p * 0.92);   // lift the light (keep a sliver for the dawn)
-      if (World.truthPulse) World.truthPulse();          // the body flares as the truth is written in
-      if (World.camCreep) World.camCreep();              // a hair closer
-      AU.steady(p);                                      // the heartbeat steadies + the room warms
-      const ack = typeof s.ack === 'function' ? s.ack(text) : s.ack;
-      await Dialogue.say([seg(ack, 44, 360)]);
+      if (!o.quietAck) {
+        bumpTruth();
+        const ack = typeof s.ack === 'function' ? s.ack(text) : s.ack;
+        await Dialogue.say([seg(ack, 44, 360)]);
+      }
+      return { text };
+    }
+  }
+
+  async function runSteps(list) {
+    for (i = 0; i < list.length; i++) {
+      await askStep(list[i]);
       if (!running) return;
     }
+  }
+
+  // THE MEETING (Interview 2.0, orchestrator only). PAIN (the validated anchor) → a follow-up the agent
+  // asked ITSELF from their answer → AMBITION → the agent's spoken READ + self-authored mission
+  // (confirm / put-it-my-way) → the autonomy cadence. Fewer questions than the old form, more extracted:
+  // one rich answer fills context.md + the stack dim + goals (via purpose) instead of one question per slot.
+  async function runLeadMeeting() {
+    const stepOf = k => steps.find(x => x.dossierDim === k) || null;
+    const painStep = stepOf('pain'), ambitionStep = stepOf('ambition');
+    const postureStep = steps.find(x => x.posturePreset) || null;
+
+    // 1. PAIN — ask + commit (quiet), then react with the LIVE mind; canned ack when it's quiet.
+    let painT = '', aboutT = '';
+    if (painStep) {
+      painT = (await askStep(painStep, { quietAck: true })).text;
+      if (!running) return;
+      const reply = painT ? await mindCall(WakeMind.buildPainReply({ pain: painT, name: NAME }), WakeMind.parsePainReply, PAIN_REPLY_MS) : null;
+      if (!running) return;
+      bumpTruth();
+      await Dialogue.say([seg(reply ? reply.ack : (typeof painStep.ack === 'function' ? painStep.ack(painT) : painStep.ack), 44, 360)]);
+      if (!running) return;
+      // 2. THE FOLLOW-UP — one grounded question the agent chose itself; the answer IS context.md (the
+      // ground it stands on), and identity seeds from that doc — no broad "tell me about your world" needed.
+      if (reply && reply.ask) {
+        const f = await Dialogue.node({
+          lines: [seg(reply.ask, 46, 0)],
+          options: [{ label: 'Skip for now', value: '', skip: true }],
+          allowCustom: true, customLabel: 'tell it straight', customPlaceholder: 'plainly — it goes straight in my dossier…',
+          skipOnEmpty: true
+        });
+        if (!running) return;
+        aboutT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
+        if (aboutT) {
+          if (commit) commit({ context: aboutT });
+          bumpTruth();
+          await Dialogue.say([seg('good — now i can see the ground i’m standing on.', 44, 360)]);
+          if (!running) return;
+        }
+      }
+    }
+
+    // 3. AMBITION — the matched pull (scripted ack; the generated READ lands right after).
+    let ambitionT = '';
+    if (ambitionStep) {
+      ambitionT = (await askStep(ambitionStep)).text;
+      if (!running) return;
+    }
+
+    // 4. THE READ — the agent puts it together, speaks its read, and authors its OWN mission; the
+    //    Commander confirms or corrects it. This replaces the 5-option purpose picker: the mission is
+    //    DERIVED from real context, not chosen from a menu. Kick the call before the "hold on" line so
+    //    the model runs while the beat types (latency hides inside the ceremony's own pacing).
+    let purposeDone = false;
+    if (brainReady() && (painT || aboutT || ambitionT)) {
+      const pending = withTimeout(llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: ambitionT, name: NAME })), SYNTHESIS_MS);
+      await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)]);
+      if (!running) return;
+      const res = await pending;
+      if (!running) return;
+      let syn = null;
+      if (res && !res.error && res.text) { try { syn = WakeMind.parseSynthesis(res.text); } catch (_) { syn = null; } }
+      if (syn) {
+        await Dialogue.say([seg(syn.read, 42, 420)]);
+        if (!running) return;
+        const c = await Dialogue.node({ lines: [seg('did i read that right?', 46, 0)], options: WakeMind.confirmChoices() });
+        if (!running) return;
+        let purposeT = syn.purpose;
+        if (c && c.value === 'adjust') {
+          const own = await Dialogue.node({
+            lines: [seg('then say it straight — what are we actually here to do?', 46, 0)],
+            options: [{ label: 'actually — keep your version', value: '' }],
+            allowCustom: true, customLabel: 'the mission, in my own words', customPlaceholder: 'what this station is for…'
+          });
+          if (!running) return;
+          if (own && own.value != null && String(own.value).trim()) purposeT = String(own.value).trim();
+        }
+        if (commit) commit({ purpose: purposeT });
+        // the one durable belief only this conversation could surface: the stack/domain they live in.
+        if (syn.stack && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('stack', { text: syn.stack, source: 'onboarding' });
+        if (typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') ProfileStore.seed(Classify.getTag(purposeT));
+        bumpTruth();
+        await Dialogue.say([seg('there it is — purpose.md, in ink. that’s what this station’s for.', 44, 360)]);
+        if (!running) return;
+        purposeDone = true;
+      }
+    }
+    if (!purposeDone) {
+      await askStep(fallbackPurposeStep());   // the classic mission question — required, never skippable
+      if (!running) return;
+    }
+
+    // 5. THE CADENCE — unchanged scripted beat.
+    if (postureStep) {
+      await askStep(postureStep);
+      if (!running) return;
+    }
+  }
+
+  async function startQuestions() {
+    if (typeof Dialogue === 'undefined') return finish();   // panel missing → don't strand the ceremony
+    Dialogue.open({ name: NAME });
+    beatN = 0;
+    if (specialty) { beatTotal = Math.max(1, steps.length); await runSteps(steps); }
+    else { beatTotal = 5; await runLeadMeeting(); }
+    if (!running) return;
     finish();
   }
 
@@ -383,7 +546,14 @@ const Onboarding = (() => {
     if (typeof Dialogue === 'undefined') { if (World.releaseAwakening) World.releaseAwakening(); if (taughtCb) taughtCb(); return; }
     Dialogue.open({ name: NAME });
     await Dialogue.say([seg('i’m ' + NAME + '.', 38, 460)]);
-    await Dialogue.say([seg('thirty seconds ago: nothing. now: all of it, a name, and you.', 40, 520)]);
+    // SLOT: its own taking-stock line when the prefetched first words landed; the scripted spine otherwise.
+    await Dialogue.say([seg((birthLines && birthLines.self) || 'thirty seconds ago: nothing. now: all of it, a name, and you.', 40, 520)]);
+    // the one honest repair path: the wire was configured live but answered DEAD during the ceremony (bad
+    // key / dead model). Say so now, diegetically, and point at the fix — never let the first real task be
+    // the moment they find out. (A quiet-but-slow mind never trips this; only a hard error does.)
+    if (birthFailed) {
+      await Dialogue.say([seg('one thing, honestly: i reached down my own wire during all that and got nothing back. if my key or model is off, CONNECT is where you fix it — best to check before we point me at anything real.', 40, 520)]);
+    }
     if (role === 'orchestrator') {
       await Dialogue.say([seg('everything you just told me is real files in my dossier — open any of them and rewrite a line whenever the job shifts. i’m not fixed, i’m authored.', 40, 520)]);
       await Dialogue.say([seg('and i start green. i get sharper the more we actually do. that part’s later, though.', 40, 460)]);

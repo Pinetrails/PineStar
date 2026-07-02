@@ -1,0 +1,470 @@
+# QA STATION — the runbook (STAND UP THE WATCH)
+
+> **What this is:** the operating manual for StarNet's Self-Testing Station — the crew of
+> scripts + Claude sessions that finds breakage so **Andrew doesn't have to be the
+> bug-finder**. Charter: `docs/SELF_TEST_STATION_PLAN.md` (Parts 2/3/5 for the crew, the
+> findings spine, and the laws). Live dashboard: `qa/STATUS.md`. Known baseline:
+> `qa/KNOWN_ISSUES.md`. Every claim below was verified against trunk `feat/harness-backend`
+> @ `ef47f9d` on 2026-07-01.
+>
+> **The one rule that shapes everything:** *scripts detect + ledger; sessions judge + notify.*
+> A `node` script NEVER pings Andrew — it appends a deduped finding and exits nonzero on red.
+> A Claude session (Overseer / Visual Auditor) reads the ledger, decides, and is the only
+> thing that ever notifies. Keep that split and the station stays honest and quiet.
+
+---
+
+## Table of contents
+
+1. [At a glance — the crew](#1--at-a-glance--the-crew)
+2. [Green Guardian](#2--green-guardian)
+3. [Beginner Run](#3--beginner-run)
+4. [Truth Auditor](#4--truth-auditor)
+5. [Visual Auditor](#5--visual-auditor)
+6. [Overseer (the daily digest)](#6--overseer-the-daily-digest)
+7. [Janitor](#7--janitor)
+8. [Port registry](#8--port-registry)
+9. [The notification rule](#9--the-notification-rule)
+10. [KNOWN_ISSUES triage flow](#10--known_issues-triage-flow)
+11. [Scheduling — the decision & the glue](#11--scheduling--the-decision--the-glue)
+12. [Cold start — stand the whole watch up on a fresh machine](#12--cold-start--stand-the-whole-watch-up-on-a-fresh-machine)
+13. [Activation — the single command that turns the watch ON](#13--activation--the-single-command-that-turns-the-watch-on)
+
+---
+
+## 1 · At a glance — the crew
+
+| Crew member | Question | Runner | Launch line | Cadence | Output |
+| --- | --- | --- | --- | --- | --- |
+| **Green Guardian** | Is trunk green + does the app boot/look right? | script | `npm run qa:guardian` | per-merge (`--watch`) **and/or** hourly | ledger + `qa/STATUS.md` + `.bugloops/guardian-<stamp>/` |
+| **Beginner Run** | Can a fresh user reach first value, unassisted? | script | `npm run qa:beginner` | daily `--ui-only`; weekly `--live` | ledger + `qa/STATUS.md` + `.bugloops/beginner-<stamp>/` |
+| **Truth Auditor** | Does the UI show what actually happened? | script | `npm run audit` (also runs inside every Guardian cycle) | every Guardian cycle | `.uiaudit/audit-report.json` |
+| **Visual Auditor** | Is the rendered game coherent? *(needs eyes)* | **session** | `/loop` per `scripts/VISUAL_AUDITOR.md` | self-paced, local | `SESSIONS.md` + re-shot PNGs |
+| **Overseer** | What broke today, what needs Andrew? | **session** | `/loop` reading the ledger | daily | `qa/digests/<date>.md` + P0 pings |
+| **Janitor** | What's rotting in the workshop? | script | `npm run qa:janitor` | weekly | ledger (P2) + `qa/digests/janitor-<date>.md` |
+
+Two runner kinds, cleanly separated (Charter Part 2):
+- **Scripts** — node, headless, no vision. Detect, write findings, exit nonzero. Never notify.
+- **Sessions** — Claude `/loop` on Andrew's machine. Read findings, look at pixels, judge,
+  route, notify. Scripts detect; sessions decide.
+
+---
+
+## 2 · Green Guardian
+
+**Answers:** "Is trunk green and does the app still boot + look right?"
+**Script:** `scripts/qa/guardian.mjs` · **Ports:** 8940–8949 (CDP 9340–9349).
+
+One cycle pins trunk HEAD into a **dedicated** detached worktree (`../_qa-guardian-pin`,
+override `SKYNET_GUARDIAN_PIN`; created + `npm install`'d on first run, `git reset --hard`'d
+to trunk each cycle) and composes the four detectors in dependency order:
+`test:fast` → `shoot` → `golden` → `audit`. It files ONE deduped finding per regression
+(fingerprinted per failing suite / frame / assertion), refreshes the Guardian row in
+`qa/STATUS.md`, and exits nonzero on any red. **STATUS.md + findings are written into the
+Guardian script's OWN repo** (resolved from `import.meta.url`), so the dashboard survives the
+pin's next `reset --hard`.
+
+### Launch lines
+```bash
+npm run qa:guardian                    # one cycle; exit 0 green / 1 red or BLOCKED
+npm run qa:guardian -- --skip-visual   # test:fast + audit only (no Chrome; CI-lite)
+npm run qa:guardian:watch              # poll trunk HEAD; run a cycle each time it MOVES
+npm run qa:guardian:watch -- --interval 120   # poll every N seconds (default 60)
+```
+
+### Cadence — run it BOTH ways (they cover different failure windows)
+- **Per-merge (primary): the long-running `--watch` process.** `qa:guardian:watch` polls
+  `git rev-parse` on trunk (cheap) and fires a full cycle the instant HEAD moves — i.e. the
+  moment any lane merges. This catches **parallel-breakage** (a merge broke another lane)
+  within one cycle, which is the whole point. Run it as a persistent process (see §11).
+- **Hourly (belt-and-suspenders): a scheduled one-shot.** A Task Scheduler entry running
+  `npm run qa:guardian` hourly re-verifies trunk even when nothing merged (catches
+  environment drift, flaky-then-real failures, and covers any window where the watch process
+  died). The two overlap harmlessly — dedup means a standing red files once, not twice.
+- Use `--skip-visual` for a Chrome-free fast lane on machines/CI without a display; the full
+  visual gates (`shoot`/`golden`/`audit`) need headless Chrome.
+
+### What RED means
+Exit code **1** = a real regression OR a BLOCKED step. Concretely:
+- **`test-fast` red (P0):** a unit/contract suite failed on trunk. The merge gate itself is
+  broken — trunk is not shippable. One finding per failing suite.
+- **`shoot` red (P1):** a UI state failed to open / the app never booted in-game. One
+  finding per failing state (from `manifest.json`).
+- **`golden` red (P1):** a frame moved beyond the animation-noise floor — a merged branch
+  changed the look. One finding per flagged frame (from `golden-report.json`). If the change
+  is a legitimate improvement, a human re-blesses (`npm run golden:bless`) — the Guardian
+  only detects.
+- **`audit` red (P1):** the UI claimed a state the harness can't prove (hard-failing
+  assertion; soft failures are environment signals, never build failures). One finding per
+  assertion (from `audit-report.json`).
+- **BLOCKED (P0):** a step could not even run (git/npm/spawn failure, timeout, missing
+  report). Filed loudly; the cycle never silently passes (No-fake-green law, Part 5).
+
+Evidence for every cycle lands in `.bugloops/guardian-<stamp>/` (per-step logs, flagged
+golden PNGs, gate reports). **The Guardian never notifies** — a red cycle surfaces to Andrew
+only through the Overseer digest (§6) / the P0 rule (§9).
+
+---
+
+## 3 · Beginner Run
+
+**Answers:** "Can a brand-new user reach first value, unassisted, in under 10 minutes?"
+**Script:** `scripts/qa/beginner-run.mjs` · **Ports:** 8950–8959 (CDP 9350–9359).
+
+CDP-drives the **cold** fresh-install path (NOT the seeded one every other detector uses):
+boots a sidecar with `SKYNET_WORKSPACES=<OS-temp>` (empty → the connect screen shows) and
+**without** `SKYNET_DEV` (so nothing auto-resumes — the connect screen + awakening run for
+real). It steps title → connect → create-agent → awakening → first-directive, screenshotting
+and timing **every** step, with a per-step budget and a total budget of **10 minutes** (the
+product-thesis number). On a stall: it screenshots the stuck frame, files a P0 finding
+fingerprinted on the stuck step, and exits nonzero.
+
+### Launch lines
+```bash
+npm run qa:beginner                    # --ui-only (default): every screen REACHABLE up to the LLM boundary
+npm run qa:beginner:live               # --live: real key from env, full path to a first deliverable
+# useful flags:
+npm run qa:beginner -- --keep          # keep the temp workspace + browser profile for inspection
+npm run qa:beginner -- --step-scale 2  # 2× every per-step budget (slow machines)
+```
+
+### Cadence
+- **Daily `--ui-only`.** No key, no cost, ~84s on this machine (verified 2026-07-01). Asserts
+  every screen/control on the fresh path is reachable up to the first real `/api/run`
+  (the awakening ceremony is client-scripted, so it's 100% reachable UI-only; reaching the
+  LLM boundary is a PASS — we never fake an LLM reply).
+- **Weekly `--live`.** Drives the full path through a real first deliverable. This is the
+  only crew run that spends tokens — see the cost note below.
+
+### `--live` env-var contract (HARD: never in files, never echoed)
+The real key is sourced **from the environment ONLY** — never committed, never echoed, never
+written into any evidence file. After a `--live` run the CLI automatically runs
+`npm run lint:evidence-secrets` over the run dir to prove no key leaked into a screenshot or
+log; if the lint trips, the run fails.
+
+- Default env var: **`SKYNET_OPENROUTER_KEY`** (fallback **`STARNET_OPENROUTER_KEY`**).
+- Override the var name with `--key-env <NAME>`.
+- If `--live` is passed and the var is empty, the script **refuses to run** (loud error, no
+  boot) — it never falls back to a placeholder.
+- Set it in the session's environment only, e.g. (PowerShell, current shell only):
+  ```powershell
+  $env:SKYNET_OPENROUTER_KEY = (Get-Content "$HOME\.claude\projects\C--Users-andro-Desktop-gen\memory\.openrouter-key" -Raw).Trim()
+  npm run qa:beginner:live
+  Remove-Item Env:\SKYNET_OPENROUTER_KEY   # scrub it back out when done
+  ```
+  Do NOT put the key in `.env`, a launch.json, a scheduled-task definition, or anywhere on
+  disk. The weekly `--live` run is a **session** task (a human/agent exports the key for that
+  one run), never a headless scheduled task.
+
+### Cost note (`--live`)
+A `--live` pass drives the fresh path through create-agent → awakening → first directive →
+first deliverable. The awakening ceremony is client-scripted (**zero** model calls); the only
+billed work is the tutorial's first command plus the first-deliverable run — a handful of
+`/api/run` turns. With the placeholder default model (`anthropic/claude-3.5-sonnet` class,
+via `SKYNET_DEFAULT_MODEL`) that's on the order of a **few thousand tokens total** — pennies
+per run. It is safe as a **weekly** cadence; do not put it on an hourly/daily loop (cost +
+rate-limit noise for no added signal — `--ui-only` already covers reachability daily).
+
+### What RED means
+Exit nonzero = the fresh user got stuck. The finding names the exact stuck step
+(`boot` / `title` / `connect` / `create-agent` / `awakening` / `first-directive` /
+`first-deliverable`), with the stuck screenshot as evidence in `.bugloops/beginner-<stamp>/`.
+This is the **beginner-confusion** tripwire: onboarding regressed and a machine caught it
+instead of Andrew. This script is the *ruler* the zero-to-value session optimizes against —
+it measures, it does not fix.
+
+---
+
+## 4 · Truth Auditor
+
+**Answers:** "Does the UI show what actually happened?" (the anti **app-lies** detector.)
+**Script:** `npm run audit` (`scripts/audit.mjs`) · runs on the Guardian's ports inside a
+Guardian cycle (8942/9342), or on 8930s ad-hoc when run standalone.
+
+The audit boots a seeded sidecar and asserts, for each scenario, that the *displayed* state
+equals the *event-reduced truth* — it cannot be fooled by a UI that lies. It is composed into
+**every Green Guardian cycle** as the fourth gate, so under normal operation you never run it
+by hand; the Guardian files any hard-failing assertion for you.
+
+### Run it standalone
+```bash
+npm run audit                          # all scenarios; nonzero exit on any HARD-failing assertion
+```
+Report → `.uiaudit/audit-report.json`; a failing frame is captured in `.uiaudit/`. Current
+trunk state: 44/45 assertions pass, **1 known soft skip** (soft failures are environment
+signals, never build failures — mirrored by the Guardian's parser). The two expected
+placeholder-key artifacts are pre-loaded in `qa/KNOWN_ISSUES.md` and never re-file.
+
+### What RED means
+A hard assertion failed: a panel is claiming state the harness can't prove. That is exactly
+the class of bug that ships "green in unit tests, broken live" — always live-smoke `npm run
+audit` after touching the harness (No-fake-green law precedent: the rebrand-drift bug).
+
+---
+
+## 5 · Visual Auditor
+
+**Answers:** "Is the rendered game *coherent*?" — overlap, off-center, clash, disconnected,
+unpolished, untruthful. **This one needs eyes**, so it is NOT a headless script and NOT
+schedulable as a cron/Task-Scheduler job.
+
+**It runs as a local Claude `/loop` session with vision.** The authoritative runbook is
+**`scripts/VISUAL_AUDITOR.md`** — do not duplicate it here; that file owns the launch line,
+the incoherence rubric, the golden-diff triage (read ONLY changed frames), and the small-fix
+mandate. In one sentence: open a Claude Code session in the repo and run the `/loop` prompt
+at the top of `scripts/VISUAL_AUDITOR.md`; it shoots every UI state (ports **8930–8939**),
+reads each PNG, catalogs incoherence, fixes small cross-cutting issues in the `live-polish`
+worktree + re-shoots to confirm, and routes bigger ones to UI-SHELL / WORLD-GAME.
+
+**Cadence:** self-paced, on Andrew's machine (it needs the local app + vision). It is the
+sibling of the Overseer loop — one watches pixels, the other watches the ledger.
+
+---
+
+## 6 · Overseer (the daily digest)
+
+**Answers:** "What broke today, and what needs Andrew?" **This is a session, not a script** —
+it is the only crew member that judges the whole ledger and notifies.
+
+The digest itself is *rendered* by the ledger CLI; the Overseer **session** runs it daily,
+saves it, reads it, and pings on P0.
+
+### Render the digest
+```bash
+node scripts/qa/ledger.mjs --digest                 # today, to stdout (grouped P0→P1→P2, then by crew)
+node scripts/qa/ledger.mjs --digest --write         # ALSO persist to qa/digests/<today>.md
+node scripts/qa/ledger.mjs --digest --date 2026-07-01 --write   # a specific day
+node scripts/qa/ledger.mjs --status                 # live per-crew roll-up (the STATUS.md table, fresh)
+```
+Every finding in the digest carries its evidence path + fingerprint (Evidence law: no finding
+without an artifact). `--write` lands it at `qa/digests/<date>.md`.
+
+### The Overseer `/loop` session prompt
+Open a Claude Code session in the repo (`C:\Users\andro\Desktop\gen`) and run:
+
+```
+/loop 24h  Run one Overseer cycle: render today's QA digest with
+  `node scripts/qa/ledger.mjs --digest --write`, read it, and triage.
+  For each OPEN finding: confirm it against its evidence path, then either ROUTE it to the
+  owning feature session (note the owner in the finding / SESSIONS.md and set status=routed
+  via the ledger) or DISMISS it if invalid (status=dismissed — dismissed fingerprints never
+  re-file). If ANY P0 is open, NOTIFY Andrew immediately (push/Telegram/Discord — see §9)
+  with the P0 title + evidence path; P1/P2 wait for the morning digest. Scripts never notify —
+  YOU are the notifier. Compare today's digest against yesterday's to spot new vs. standing
+  issues. Write nothing outside qa/ and the ledger.
+```
+
+`24h` fires it daily; drop the interval to self-pace. It reads `qa/digests/`, writes today's
+digest, and is the single throat-to-choke for notifications. **On P0 it notifies; on P1/P2 it
+lets the morning digest do the talking** (anti-nag).
+
+---
+
+## 7 · Janitor
+
+**Answers:** "What's rotting in the workshop?" — merged-but-not-removed worktrees, stranded
+branches, root-litter PNGs/logs, docs referencing deleted files, evidence-dir bloat.
+**Script:** `scripts/qa/janitor.mjs` · no sidecar, no ports.
+
+**Propose-only, always (Part 0 + read-only law).** The Janitor NEVER deletes, prunes, or
+edits anything outside its own report + ledger findings. For a removable worktree it prints
+the exact `remove-agent-tree.ps1 <name> -DeleteBranch` command for a human/orchestrator to
+run — it never runs it. Hygiene findings are **P2** (informational, never a merge blocker).
+
+It **watches the MAIN integration tree read-only** (git metadata is shared; `git -C <path>
+status` is a read) and **writes only into its own checkout** (`qa/findings/`, the digest, its
+STATUS row). Point writes elsewhere with `--out-root <dir>` or `QA_JANITOR_OUT` — it will
+**never** default writes to MAIN.
+
+### Launch lines
+```bash
+npm run qa:janitor                     # sweep; write report + file findings + update STATUS row
+npm run qa:janitor -- --dry-run        # sweep + print the report; file NOTHING (no writes)
+npm run qa:janitor -- --stale-days 30  # override the 14-day "stranded branch" threshold
+```
+
+### Cadence
+**Weekly.** Hygiene drifts slowly; a weekly `--dry-run` for review, promoted to a real filing
+run when Andrew wants the findings in the digest, is plenty. Report → `qa/digests/janitor-<date>.md`.
+
+### What "red" means
+The Janitor exits **0 on a clean sweep** (P2 hygiene is never a blocker) and nonzero **only
+if the sweep itself could not run** (BLOCKED loudly). Its findings are proposals, not alarms —
+they show up in the Overseer digest for a human to action the printed commands.
+
+---
+
+## 8 · Port registry
+
+Loops must not collide — multiple sidecars may run at once (Charter Part 3 / Part 5 port law).
+Each crew boots sidecars **only** in its assigned range. Mirrored in `qa/STATUS.md`.
+
+| Range | Owner | CDP range |
+| --- | --- | --- |
+| 8930–8939 | Visual Auditor (`scripts/VISUAL_AUDITOR.md`) | 9330–9339 |
+| 8940–8949 | Green Guardian (shoot 8940/9340 · golden 8941/9341 · audit 8942/9342) | 9340–9349 |
+| 8950–8959 | Beginner Run (default 8950/9350) | 9350–9359 |
+| 8960+ | Ad-hoc / manual | 9360+ |
+
+Truth Auditor has no range of its own: inside a Guardian cycle it uses the Guardian's audit
+ports (8942/9342); run standalone it defaults to the 8930s.
+
+---
+
+## 9 · The notification rule
+
+**Scripts never notify. Sessions notify. Only P0 pings.** (Charter Part 2 + Part 5.)
+
+- A `node` script's only outputs are: a deduped ledger finding + a nonzero exit code on red.
+  It has no push/channel access and must never gain any — that keeps the watch quiet and
+  keeps the detect/decide split intact.
+- The **Overseer session** is the sole notifier. Its rule:
+  - **P0 open** → notify Andrew **immediately** (push / Telegram / Discord) with the finding
+    title + evidence path. P0 = trunk red or the fresh user hard-stuck: things that block
+    shipping or first-value.
+  - **P1 / P2** → **no immediate ping**; they ride the daily morning digest.
+- **Anti-nag:** fingerprint dedup means a standing failure files once, not every cycle;
+  `dismissed`/`known` fingerprints never re-file. So a P0 that's already been seen and
+  acknowledged does not re-ping.
+
+---
+
+## 10 · KNOWN_ISSUES triage flow
+
+The lifecycle of a finding, and why the same defect never nags twice:
+
+```
+ script detects ──► ledger.add() ──► [known/dismissed fingerprint?] ──► REFUSED (never files)
+                                        │ no
+                                        ▼
+                                   filed: status=open ──► Overseer session triages:
+                                        │
+              ┌─────────────────────────┼──────────────────────────────┐
+              ▼                          ▼                              ▼
+      ROUTE to a feature          DISMISS (invalid /            Leave OPEN (real,
+      session (status=routed,     won't-fix): status=           unrouted) → rides the
+      note owner in the finding    dismissed → fingerprint       next digest until actioned
+      / SESSIONS.md)               NEVER re-files
+```
+
+- **Route:** a real defect the station can't fix (it only detects). Set the finding's status
+  to `routed`, record the owning feature lane, and hand the evidence to that session. Fixes
+  happen in normal feature lanes, never in the QA scripts (except the QA scripts' own bugs).
+- **Dismiss:** invalid / expected / won't-fix. Set status `dismissed`. **Dismissed
+  fingerprints never re-file** — same anti-nag law as the product. Use this instead of
+  deleting, so the suppression is durable across re-runs.
+- **Bless as known baseline:** for an expected-forever artifact (e.g. the placeholder-key
+  audit artifacts), add a row to `qa/KNOWN_ISSUES.md` with its `fingerprint:` token — the
+  ledger scrapes that file and refuses the fingerprint on `--add`. One file, no second data
+  store. To retire a baseline (a real fix landed), delete its row and the crew re-files it
+  fresh if it recurs.
+- Check any fingerprint's state: `node scripts/qa/ledger.mjs --dedup-check <fingerprint>`.
+
+---
+
+## 11 · Scheduling — the decision & the glue
+
+**Decision (this lane's call):** use **all three** runner styles, matched to each crew's
+nature — do not force one mechanism onto crews it doesn't fit:
+
+| Crew | Mechanism | Why |
+| --- | --- | --- |
+| Green Guardian (per-merge) | **long-running `--watch` process** | must fire the instant trunk moves; a persistent poller is the only thing that catches a merge within one cycle. Polls `git rev-parse` — cheap. |
+| Green Guardian (hourly) + Janitor (weekly) | **Windows Task Scheduler** | pure time-triggered, headless, no key, no judgement — the textbook cron case. |
+| Beginner Run (`--ui-only` daily) | **Task Scheduler** | headless, no key, deterministic — safe unattended. |
+| Beginner Run (`--live` weekly) | **session task** (human/agent exports the key for one run) | spends tokens + needs a secret from env; must never live in a scheduled-task definition. |
+| Overseer (daily) + Visual Auditor | **Claude `/loop` session** | they *judge* and *notify* / need *eyes* — a script can't do either. |
+
+**Why not "one Task Scheduler for everything":** two crew members (Overseer, Visual Auditor)
+require a Claude session (judgement + vision) and cannot be a headless task; and `--live`
+Beginner requires a secret that must never be written into a task definition. **Why not "just
+`/loop` sessions for everything":** the purely-mechanical, keyless, headless jobs (hourly
+Guardian, daily `--ui-only`, weekly Janitor) don't need a Claude session burning tokens to
+babysit them — Task Scheduler is cheaper and survives reboots. So: **Task Scheduler for the
+headless keyless jobs, a standing `--watch` process for per-merge, `/loop` sessions for the
+judging/vision/secret jobs.**
+
+**HARD CONSTRAINT — prepare, do not execute.** This lane PREPARES the scheduling glue but
+never registers a task or launches a persistent process. Registration is the orchestrator's
+explicit final activation step (§13). The glue is a single script:
+
+### `scripts/qa/register-watch.ps1` (prepared, NOT run)
+A PowerShell script that registers the headless jobs as Windows Scheduled Tasks. It is
+**inert until an operator runs it**, defaults to a **dry-run that only PRINTS** what it would
+register, and only mutates the system when called with `-Apply`. It registers:
+- `StarNet-QA-Guardian-Hourly` → `npm run qa:guardian` every hour.
+- `StarNet-QA-Beginner-Daily` → `npm run qa:beginner` (`--ui-only`) daily.
+- `StarNet-QA-Janitor-Weekly` → `npm run qa:janitor` weekly.
+
+It does NOT register the `--watch` Guardian (that's a standing process, started once — see
+§13), the `--live` Beginner (secret; session-only), or the Overseer / Visual Auditor
+(sessions). Unregister with `-Remove`. See the header of `scripts/qa/register-watch.ps1` for
+the exact flags.
+
+---
+
+## 12 · Cold start — stand the whole watch up on a fresh machine
+
+From zero (fresh clone, no `node_modules`, no pin), in order:
+
+1. **Toolchain:** Node (repo runs on the pinned Node; `node -v` must succeed) + a headless
+   Chrome/Chromium the CDP scripts can launch (the visual gates need it; `--skip-visual` /
+   `--ui-only` do not). Git with worktree support.
+2. **Deps:** from the repo root, `npm install`. (The Guardian's pinned checkout `npm
+   install`s itself on its first cycle — no action needed.)
+3. **Smoke each headless crew member once, cheap first:**
+   ```bash
+   npm run qa:janitor -- --dry-run        # no ports, fastest — proves git/fs plumbing
+   npm run qa:beginner                    # --ui-only fresh path (~85s); proves Chrome + CDP + sidecar boot
+   npm run qa:guardian -- --skip-visual   # test:fast + audit; proves the gate composition (no Chrome)
+   npm run qa:guardian                    # full cycle incl. shoot/golden (proves headless Chrome end-to-end)
+   ```
+   Each should print a clear GREEN/PASS and exit 0. A non-zero exit at this stage is a real
+   environment problem — fix it before scheduling (No-fake-green: a detector that can't run
+   must fail loudly, never be scheduled into silent-pass).
+4. **Render a digest** to confirm the ledger is wired: `node scripts/qa/ledger.mjs --status`
+   then `node scripts/qa/ledger.mjs --digest`.
+5. **Verify the pin location** (optional): the Guardian created `../_qa-guardian-pin`
+   (override `SKYNET_GUARDIAN_PIN`). It lives one level up from the repo — expected.
+6. **Then activate** (§13). Scheduling is the LAST step, only after every crew member has
+   smoked green by hand.
+
+Ports 8930–8959 must be free (nothing else bound). The `--live` Beginner run additionally
+needs `SKYNET_OPENROUTER_KEY` in the session env (never on disk) — but that's a weekly session
+task, not part of cold-start.
+
+---
+
+## 13 · Activation — the single command that turns the watch ON
+
+> **Orchestrator only.** Everything above is inert documentation + a dry-run script until an
+> operator runs these. This lane does not run them.
+
+**A. Headless scheduled jobs** (hourly Guardian + daily `--ui-only` Beginner + weekly
+Janitor) — one command. Point `-RepoRoot` at the integration tree so the tasks run there:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\qa\register-watch.ps1 -RepoRoot C:\Users\andro\Desktop\gen -Apply
+```
+
+(Works under Windows PowerShell 5.1 — no `pwsh` required. Run WITHOUT `-Apply` first to
+preview the exact plan — the script is inert until `-Apply`. `-Remove` tears the tasks down.
+Verified 2026-07-01: the dry-run prints all three tasks and registers nothing.)
+
+**B. Per-merge Guardian** — start the standing watch process once (it runs until stopped;
+launch it detached / in its own window / as a service wrapper of your choice):
+
+```powershell
+npm run qa:guardian:watch
+```
+
+**C. Sessions** (judgement + vision — start these as Claude Code `/loop` sessions on Andrew's
+machine, not via Task Scheduler):
+- **Overseer (daily):** the `/loop 24h ...` prompt in §6.
+- **Visual Auditor (self-paced):** the `/loop` prompt at the top of `scripts/VISUAL_AUDITOR.md`.
+- **Beginner `--live` (weekly):** a session that exports `SKYNET_OPENROUTER_KEY` from Andrew's
+  local key store for one run, then `npm run qa:beginner:live`, then scrubs the env var.
+
+That's the whole watch: **A** turns on the headless cron jobs, **B** turns on per-merge
+guarding, **C** turns on the judging/vision/secret loops. After that, Andrew reads the
+morning digest and triages — machines find the problems.

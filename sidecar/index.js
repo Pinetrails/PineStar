@@ -69,7 +69,7 @@ const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
-const { makeSseHub } = require('./channels/sse.js');
+const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
@@ -2062,20 +2062,18 @@ async function runOnce(o) {
   // lifecycle, so the station floor never lights for it. When a caller opts in via o.broadcast, ALSO mirror the
   // run-lifecycle events to the floor over SSE. Gated on the explicit flag — NOT on trigger — so the hero's
   // directive run never double-counts. Scheduled cron forwards lifecycle via its cron driver emit sink; manual
-  // Run Now opts into broadcast because its primary stream is panel-local. Restricted to run.start/cost/end so
-  // agent.token/tool noise never floods the SSE bus. Re-using the name `emit` means every existing emit(...) call
-  // site below tees automatically, with no per-site change.
+  // Run Now opts into broadcast because its primary stream is panel-local. WHAT may tee (and in what shape) is
+  // the runTeeView policy (channels/sse.js, unit-tested): run.start/cost/end whole; EVERY agent.tool_call as a
+  // NAME-ONLY view (agentId/runId/callId/name — args stripped structurally, so G0's per-tool prop pulses fire
+  // live for autonomous runs without tool arguments ever leaving the sidecar); agent.token never (that noise
+  // decision stands). redact() still runs over the view as a second backstop. Re-using the name `emit` means
+  // every existing emit(...) call site below tees automatically, with no per-site change.
   const rawEmit = o.emit;
   const emit = o.broadcast
     ? (name, payload) => {
         try { rawEmit(name, payload); } catch (_) {}
-        if (name === 'agent.run.start' || name === 'agent.cost' || name === 'agent.run.end') {
-          try { sse.broadcast(name, redact(payload)); } catch (_) {}
-        } else if (name === 'agent.tool_call' && payload && typeof payload.name === 'string' && payload.name.indexOf('mcp__') === 0) {
-          // P3: a routed run's MCP tool call pulses its connector portal on the floor. Only mcp__ calls are
-          // teed (not fs/shell), so the SSE bus stays quiet while the on-ramp still lights when it really fires.
-          try { sse.broadcast(name, redact(payload)); } catch (_) {}
-        }
+        const view = runTeeView(name, payload);
+        if (view) { try { sse.broadcast(name, redact(view)); } catch (_) {} }
       }
     : rawEmit;
 
@@ -3217,16 +3215,21 @@ async function handleSaveWrite(req, res) {
     json(200, result);
   } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
 }
-// GET /api/runs?agent=<id>&limit=<n> — the agent's run history (M-save P4), newest-first. Read-only; the store
-// is append-only and a sibling of the fs jail, so the agent can neither read nor rewrite its own history.
+// GET /api/runs?agent=<id>&limit=<n>&since=<ms> — the agent's run history (M-save P4), newest-first. Read-only;
+// the store is append-only and a sibling of the fs jail, so the agent can neither read nor rewrite its own history.
+// G2.2 (additive): agent=* returns EVERY agent's runs (the while-away digest covers crew routines too), and a
+// since=<ms> filter keeps the answer to runs that finished after the caller's last-attended stamp.
 function serveRuns(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (agent !== '*' && !/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
-    json(200, { runs: runStore.list(agent, { limit }) });
+    const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
+    let rows = runStore.list(agent === '*' ? null : agent, { limit });
+    if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
+    json(200, { runs: rows });
   } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
 }
 

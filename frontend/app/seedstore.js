@@ -58,11 +58,14 @@ const SeedStore = (() => {
     try {
       if (!s || typeof Recipes === 'undefined' || !Recipes.saveCustom) return;
       const params = (typeof Recipes.paramsFromTemplate === 'function') ? Recipes.paramsFromTemplate(s.task) : [];
+      // seedborn: durable provenance — this recipe was AUTHORED BY THE AGENT from an observed pattern (not a
+      // hand-built custom), so a later pitch/suggestion/digest that reuses it can credit the Commander's seed (G3a).
       const draft = (typeof Recipes.draft === 'function')
-        ? Recipes.draft({ name: s.title, task: s.task, params: params })
-        : { name: s.title, task: s.task, params: params };
+        ? Recipes.draft({ name: s.title, task: s.task, params: params, seedborn: true })
+        : { name: s.title, task: s.task, params: params, seedborn: true };
       Recipes.saveCustom(draft);
       if (typeof MintStore !== 'undefined' && MintStore.markMinted) MintStore.markMinted(s.key);
+      if (typeof SFX !== 'undefined' && SFX.seed) { try { SFX.seed(); } catch (_) {} }   // G3a: saving a seed gets its planting chime (was mute)
       if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Saved a seed to your shelf — find it under RECIPES', 'gold');
     } catch (_) {}
   }

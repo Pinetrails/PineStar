@@ -70,4 +70,42 @@ A.ok(/s\.posturePreset\b[\s\S]{0,220}AutonomyStore\.applyPreset\(text\)/.test(sr
 A.ok(/specialty\s*\?[\s\S]{0,200}!s\.posturePreset/.test(src),
   'a pre-specced wake filters out the posturePreset beat (asked once, at the orchestrator awakening)');
 
+/* ---------- Interview 2.0 — the live-mind beats stay honest + the ceremony can never lose the mission ---------- */
+// the generated beats reason with NO tools reachable and NO run.start/end on the bus (the awakening thinking
+// about the Commander is not a shipped task — XP/telemetry stay honest, mirroring pitchstore's internal call).
+A.ok(/isTask:\s*false,\s*placed:\s*\[\],\s*internal:\s*true/.test(src),
+  'the awakening\'s live-mind call is reason-only (placed:[]) and internal (no bus run events)');
+// purpose.md ALWAYS lands: when the synthesized read can't (no brain / timeout / unparseable / nothing shared),
+// the classic required mission question runs instead — the ceremony can never end without a mission.
+A.ok(/function fallbackPurposeStep\(\)[\s\S]{0,400}field:\s*'purpose'/.test(src),
+  'the classic purpose question survives as fallbackPurposeStep (field: purpose)');
+A.ok(/if\s*\(!purposeDone\)\s*\{[\s\S]{0,120}askStep\(fallbackPurposeStep\(\)\)/.test(src),
+  'runLeadMeeting falls back to the required mission question when the live read did not land');
+// the follow-up answer becomes context.md (the doc identity seeds from) — the broad context question is gone
+// from the lead path, but the doc it authored still gets written when the Commander answers the follow-up.
+A.ok(/commit\(\{\s*context:\s*aboutT\s*\}\)/.test(src),
+  'the follow-up answer is committed as context.md');
+// the synthesis' one direct dossier write targets a REAL dimension (same silent-drop guard as the beats above).
+const directDims = [...src.matchAll(/DossierStore\.upsert\('([^']+)'/g)].map(m => m[1]);
+for (const k of directDims) A.ok(D.DIM_KEYS.indexOf(k) >= 0, 'direct dossier write "' + k + '" targets a real dossier dimension');
+// the live calls are time-bounded — a slow model can stall a beat, never the ceremony.
+A.ok(/PAIN_REPLY_MS\s*=\s*\d+/.test(src) && /SYNTHESIS_MS\s*=\s*\d+/.test(src) && /withTimeout/.test(src),
+  'every live-mind call races a timeout (the scripted ceremony carries on alone)');
+
+/* ---------- the LIVE first words (hybrid birth): opportunistic, never awaited, honest on a dead wire ---------- */
+// the prefetch is fire-and-collect (.then, no await) — the ceremony's pacing can never hinge on the model.
+A.ok(/llmCall\(WakeMind\.buildBirthLines\([\s\S]{0,80}\)\)\.then\(/.test(src),
+  'the birth call is prefetched fire-and-collect (never awaited by a beat)');
+A.ok(!/await[\s\S]{0,40}buildBirthLines/.test(src), 'no beat awaits the birth call');
+// every slot keeps its scripted fallback line — a quiet mind changes nothing about the ceremony.
+A.ok(/birthLines\.flood\)\s*\|\|\s*'incredible\. genuinely\. and pointed at nothing\.'/.test(src),
+  'the flood slot falls back to the scripted spine');
+A.ok(/birthLines\.contact\)\s*\|\|\s*'so you’re the one who knows where this points/.test(src),
+  'the contact slot falls back to the scripted spine');
+A.ok(/birthLines\.self\)\s*\|\|\s*'thirty seconds ago: nothing/.test(src),
+  'the closing slot falls back to the scripted spine');
+// a live-configured wire that answers DEAD is owned diegetically at the close, pointing at CONNECT.
+A.ok(/birthFailed[\s\S]{0,700}CONNECT/.test(src),
+  'a dead wire during the ceremony is owned honestly at the close (the CONNECT repair line)');
+
 A.report('onboarding.test');

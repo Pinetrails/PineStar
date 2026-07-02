@@ -31,12 +31,13 @@ const World = (() => {
   // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
   const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
-  let _lut = null, _lutKey = '', _outImg = null;   // per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurve()
+  let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
+  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = false, onClick = null, onArcade = null, wakeAt = 0;
+  let drag = null, hoverAgent = false, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -116,6 +117,7 @@ const World = (() => {
   const SELF_STIM = ['too quiet', 'something to do', 'restless', 'let me find something', 'need a spark'];
   const SELF_TEND = ['anything for me?', 'standing by', 'awaiting orders', 'still here, Commander', 'ready when you are'];
   const SELF_ONDUTY = ['on it', 'parsing', 'let me think', 'working it', 'processing'];
+  const SELF_NOCOMPUTE = ['no terminal in this room', 'nothing to run on here', 'i need a computer here', 'this room has no compute'];   // G0.7: sat down to work in a room that grants no COMPUTE — said once, then silence
   const SELF_QUIET = ['...', 'cycles to spare', 'so quiet', 'just me and the stars', 'standing by'];
   const SELF_CONTEMPLATE = ['quiet out there', 'so much void', 'just... processing', 'the stars again', 'endless out there'];
   const SELF_DISPATCH = ['sent', 'delivered', 'thats away', 'reply is out', 'done and gone'];
@@ -192,6 +194,21 @@ const World = (() => {
       fpx(x + 7, y + 1, 1, 1, fblink(400, f.x) ? '#dfffe8' : '#101a14');
       fscanl(x + 4, y - 1, 4, 3, 0.2);
       fglow(x + 2, y + 4, 8, 2, fscr(f.x), 0.18); fglow(x + 3, y - 2, 6, 5, fscr(f.x), 0.10);
+      // G0.3 ACTIVITY HEAT: real token/tool flow burns the screen brighter + shimmers faster; a stalled
+      // run cools back to the base glow in ~2s. f.heat is the truthful per-agent heat (heatFor), 0..1.
+      if (f.heat > 0) {
+        const hshim = 0.72 + 0.28 * Math.sin(fnow / (170 - 110 * f.heat));
+        fglow(x + 2, y - 3, 8, 8, fscr(f.x), (0.10 + 0.42 * f.heat) * hshim);
+      }
+      // G0.2 PROGRESS STRIP: drawn ONLY when a REAL fraction was published (f.prog, from the 'task'
+      // bus contract's prog/dur) — a live harness run has no knowable % and never gets a bar.
+      if (f.prog != null) {
+        const pw = Math.max(1, Math.round(6 * Math.max(0, Math.min(1, f.prog))));
+        fpx(x + 2, y - 6, 8, 3, '#06090c');            // strip housing above the monitor
+        fpx(x + 3, y - 5, 6, 1, '#12251a');            // dark channel
+        fpx(x + 3, y - 5, pw, 1, '#62ff9e');           // the honest fraction
+        fglow(x + 3, y - 6, pw, 3, '#62ff9e', 0.35);
+      }
     } else {
       fpx(x + 4, y - 1, 4, 3, '#101a14'); fpx(x + 4, y - 1, 1, 1, '#1c2a22');
       fpx(x + 9, y + 2, 1, 1, fblink(1600) ? '#ff9d2e' : '#33241a');
@@ -236,6 +253,7 @@ const World = (() => {
     const next = station.projectGeometry();
     const oldOrigin = geo ? geo.origin : null;
     geo = next; T = geo.TILE;
+    computeOkCache.clear();        // G0.7: placements changed — re-answer "can this agent's room actually run?"
     placeDesk();
     compileRouting();              // recompile the RoutingPlan (+ POST to the sidecar) — the single point floor edits flow through
     junctions = buildJunctions();
@@ -263,6 +281,24 @@ const World = (() => {
     bakeDirty = false;
   }
 
+  /* ---------- G0.7 empty-room honesty: can this agent's runs actually pass the COMPUTE GATE? ----------
+     Only decidable for a BAY-BOUND agent — the bay's room is the capability seam the sidecar resolves
+     tools from (station.bayObjects mirrors resolveTools' input, incl. the dedicated-PC rule). The HERO
+     gets compute as the interactive freebie (see heroCaps) and a bayless summoned worker runs on lead-
+     conferred access — both are always OK here: we never claim a lie we cannot prove. Cached per geo
+     generation (computeOkCache cleared in rederive) so the per-frame lit check stays O(1). */
+  const computeOkCache = new Map();   // agentId -> bool
+  function agentComputeOK(aid) {
+    if (!station || !aid || (agent && aid === agent.id)) return true;
+    if (typeof station.agentRoomId !== 'function' || typeof station.bayObjects !== 'function') return true;
+    if (!station.agentRoomId(aid)) return true;   // no bay -> not room-resolved -> can't honestly call it dark
+    return station.bayObjects(aid).some(o => (o && typeof o === 'object' ? o.objectType : o) === 'computer');
+  }
+  function computeOkFor(aid) {
+    if (!computeOkCache.has(aid)) computeOkCache.set(aid, agentComputeOK(aid));
+    return computeOkCache.get(aid);
+  }
+
   // a PLACED workstation prop lights its screens while the agent assigned to it is working (mirrors the synthetic
   // desk's work-glow + the bay-lit pattern) — so an assigned desk reads as "its agent is here, working".
   // (The agent's desk + seat are resolved by the shared deskPropFor/deskSeat helpers defined further below.)
@@ -270,7 +306,10 @@ const World = (() => {
     if (!p.agentId || !isWorkstationProp(p.t)) return false;
     if (agent && p.agentId === agent.id) return !!agent.working;
     const b = crew.find(x => x.agentId === p.agentId);
-    return !!(b && b.working);
+    if (!b || !b.working) return false;
+    // G0.7 EMPTY-ROOM HONESTY: a bay whose room grants no COMPUTE cannot actually run — its screens
+    // stay dark even in the working pose (the run dies at the compute gate; capdenied shows why).
+    return computeOkFor(p.agentId);
   }
 
   // the workstation: the hero's ASSIGNED desk if it placed one, else a 2-wide desk on the spawn room's north wall.
@@ -438,7 +477,7 @@ const World = (() => {
       // rising edge: it notices the Commander's cursor land on it and turns to meet you
       if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
       if (hit !== hoverAgent) hoverAgent = hit;
-      cv.style.cursor = (hit || arcadeAt(wp)) ? 'pointer' : 'default';   // arcade cabinets are clickable too
+      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -450,7 +489,13 @@ const World = (() => {
         if (onClick) onClick(); return;
       }
       const arc = arcadeAt(wp);
-      if (arc && onArcade) onArcade(arc);
+      if (arc && onArcade) { onArcade(arc); return; }
+      // G2.3: a stacked OUTBOX is the collect tap — clicking it opens the oldest pending run's review
+      const ob = outboxAt(wp);
+      if (ob && onOutbox) { onOutbox(ob); return; }
+      // G1b: the MISSION BOARD is the quest log's body — clicking it opens the log (never gated, never dead)
+      const mb = missionBoardAt(wp);
+      if (mb && onMissionBoard) onMissionBoard(mb);
     });
     cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
     // you just came back to the tab → for a few seconds the agent is likelier to look up and notice you
@@ -969,6 +1014,33 @@ const World = (() => {
     if (typeof PropAnchor === 'undefined' || !geo || !prop) return null;
     const a = PropAnchor.deriveAnchor(prop, geo, { approach: 'south', sit: true, extra: blocked });
     return a ? { tx: a.tx, ty: a.ty, face: a.face } : null;
+  }
+
+  /* ---------- capability-prop resolution (G0.1: which prop does a firing tool light?) ----------
+     geo.props are in the bake's LOCAL frame; station.roomAt speaks WORLD tiles — geo.origin bridges them. */
+  const roomOfLocalTile = (lx, ly) => (station && geo && geo.origin) ? station.roomAt(lx + geo.origin.tx, ly + geo.origin.ty) : null;
+  // the acting agent's ROOM: its BAY's room first (the capability seam — the room whose props granted the
+  // tool), else the room its body stands in (hero/summoned workers have no bay).
+  function actingRoomId(aid) {
+    if (!station || !geo) return null;
+    if (aid && typeof station.agentRoomId === 'function') { const r = station.agentRoomId(aid); if (r) return r; }
+    const b = bodyForAgent(aid) || agent;
+    if (!b) return null;
+    const t = tileOf(b.px, b.py);
+    return roomOfLocalTile(t.x, t.y);
+  }
+  // the placed prop a capability pulse should land on: the agent's OWN assigned prop of that type first,
+  // then any matching prop in the acting agent's room, then any matching prop on the floor (null = none
+  // placed -> nothing pulses; a tool the floor didn't grant a body never invents one).
+  function capPropFor(cap, aid) {
+    if (!geo || !geo.props || !cap) return null;
+    const match = p => (station && station.capForProp && station.capForProp(p.t) === cap) || p.t === cap;   // t===cap covers catalog types named for the capability itself (e.g. jukebox)
+    const cands = geo.props.filter(match);
+    if (!cands.length) return null;
+    if (aid) { const own = cands.find(p => p.agentId === aid); if (own) return own; }
+    const room = actingRoomId(aid);
+    if (room) { const inRoom = cands.find(p => roomOfLocalTile(p.x, p.y) === room); if (inRoom) return inRoom; }
+    return cands[0];
   }
 
   /* free this agent's claimed seat (idempotent) and drop the on-couch render offset */
@@ -1954,12 +2026,18 @@ const World = (() => {
     // placeable props (furniture) — drawn over the bake, y-sorted with agents, under the lightmap
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
+      if (PropSprites.setOutboxCrates) PropSprites.setOutboxCrates(returnCrates());   // G2.3: uncollected while-away work stacks on the chute
+      if (PropSprites.setMissionPins) { const mp = missionPinCounts(now); PropSprites.setMissionPins(mp[0], mp[1]); }   // G1b: open quests pin to the MISSION BOARD; a station-gap keeps it breathing
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
         const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || workstationLit(p) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
+        // G0.2/G0.3 live desk truth: a LIT assigned workstation carries its agent's real activity heat
+        // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
+        // (deskProgFor — a live harness run has none and renders none).
+        const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
         // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
         const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
-        items.push({ y: sy, draw: () => PropSprites.draw(p, work) });
+        items.push({ y: sy, draw: () => PropSprites.draw(p, work, live) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
@@ -1975,11 +2053,14 @@ const World = (() => {
       } else F_chair(tx * T, ty * T);
     }
     if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => {   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
-      // one desk art everywhere: the synthetic auto-desk routes through the canonical prop renderer
+      // one desk art everywhere: the synthetic auto-desk routes through the canonical prop renderer,
+      // carrying the truthful G0.2/G0.3 live data (heat + published progress) into the prop desk
+      const work = !!(agent && agent.working);
+      const live = work ? { heat: heatFor(agent.id), prog: deskProgFor(agent.id) } : null;
       if (typeof PropSprites !== 'undefined' && PropSprites.has('desk')) {
         PropSprites.setCtx(ctx); PropSprites.setNow(now);
-        PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, !!(agent && agent.working));
-      } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work: !!(agent && agent.working) });
+        PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, work, live);
+      } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work, heat: live ? live.heat : 0, prog: live ? live.prog : null });
     } });
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
@@ -1992,6 +2073,7 @@ const World = (() => {
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
+    drawDeskFlashes(now);   // G0.4/G0.8: red distress strobe over a desk whose run just died (additive, with the glows)
     drawAwakenLight(now);   // the soul kindling: ignition spark + a growing halo + motes (world-space additive, awakening only)
     // the AWAKENING veil — now a SPOTLIGHT on the newborn (center light, corners dark) that warms cold->dawn,
     // drawn UNDER the speech bubble so its first words still glow while the room is dark.
@@ -2016,6 +2098,7 @@ const World = (() => {
     if (floodAt) drawFlood(now);   // THE FLOOD — the cascade of knowledge streaming in, over the dark room
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     // (the context-window gauge now lives engraved in the bottom bar — StationUI.ctxTick, not the desk)
+    drawRunClocks(now);   // G0.2: the honest elapsed-time tag at every desk with a live run (world-space, over the lightmap)
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (agent && !agent.unplaced && hoverAgent) drawNameplate(now);
@@ -2102,7 +2185,69 @@ const World = (() => {
   }
   function drawCurve(now) {
     if (!cv || CRT.curve <= 0 || document.body.classList.contains('no-scan')) return;
-    const k = CRT.curve, W = cv.width, H = cv.height, hw = W / 2, hh = H / 2;
+    const k = CRT.curve, W = cv.width, H = cv.height;
+    if (!_glFailed && drawCurveGL(k, W, H)) return;   // GPU path (near-free); on any failure it flips _glFailed
+    drawCurveCPU(k, W, H);                             // CPU fallback (per-pixel LUT) — identical look, heavier
+  }
+
+  // GPU barrel warp: upload the frame as a texture and remap it in a fragment shader (same inverse of
+  // ro = rs·(1 - k·rs²), same vignette). No per-pixel CPU loop, no getImageData/putImageData → near-free.
+  function initGL(W, H) {
+    if (_glReady || _glFailed) return _glReady;
+    try {
+      _glc = document.createElement('canvas'); _glc.width = W; _glc.height = H;
+      _gl = _glc.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true }) ||
+            _glc.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+      if (!_gl) throw new Error('no webgl');
+      const gl = _gl;
+      const vs = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos*0.5+0.5; gl_Position = vec4(aPos,0.0,1.0); }';
+      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK;\n' +
+        'void main(){\n' +
+        '  vec2 n = (vUv-0.5)*2.0; float ro = length(n); float rs = ro;\n' +
+        '  for(int i=0;i<6;i++){ float g = rs*(1.0-uK*rs*rs)-ro; float dg = 1.0-3.0*uK*rs*rs; rs = rs - g/dg; }\n' +
+        '  float scale = ro>1e-5 ? rs/ro : 1.0; vec2 sUv = n*scale*0.5+0.5;\n' +
+        '  if(sUv.x<0.0||sUv.x>1.0||sUv.y<0.0||sUv.y>1.0){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }\n' +
+        '  vec3 col = texture2D(uTex, sUv).rgb; float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
+        '  gl_FragColor = vec4(col*vig, 1.0);\n' +
+        '}';
+      const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s)); return s; };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(prog));
+      gl.useProgram(prog);
+      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);   // one big triangle covers the quad
+      const loc = gl.getAttribLocation(prog, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      _glTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, _glTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);   // NEAREST → crisp pixel art, matches the CPU path
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is top; flip so texcoords line up right-side-up
+      gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
+      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glProg = prog; _glReady = true;
+      return true;
+    } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
+  }
+  function drawCurveGL(k, W, H) {
+    try {
+      if (!initGL(W, H)) return false;
+      const gl = _gl;
+      if (_glc.width !== W || _glc.height !== H) { _glc.width = W; _glc.height = H; }
+      gl.viewport(0, 0, W, H);
+      gl.bindTexture(gl.TEXTURE_2D, _glTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);   // upload the composited frame
+      gl.uniform1f(_glKLoc, k);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
+      return true;
+    } catch (e) { console.warn('[crt] WebGL curve draw failed, using CPU fallback:', e && e.message); _glFailed = true; return false; }
+  }
+  function drawCurveCPU(k, W, H) {
+    const hw = W / 2, hh = H / 2;
     if (!_warpCv) { _warpCv = document.createElement('canvas'); _warpCtx = _warpCv.getContext('2d', { willReadFrequently: true }); }
     if (_warpCv.width !== W || _warpCv.height !== H) { _warpCv.width = W; _warpCv.height = H; }
     _warpCtx.setTransform(1, 0, 0, 1, 0, 0); _warpCtx.clearRect(0, 0, W, H); _warpCtx.drawImage(cv, 0, 0);
@@ -2395,6 +2540,37 @@ const World = (() => {
     }
   }
 
+  /* ---------- the RUN CLOCK (G0.2): tiny elapsed-time tag at each working desk ----------
+     A live harness run has NO knowable percent, so the desk shows the one thing that IS knowable:
+     how long the run has actually been going (agent.run.start -> .end, runStartByAgent). World-space,
+     the station's VT323 terminal face with a faint phosphor bloom — a glance, never a window. */
+  const RUN_FONT = "7px 'VT323','Courier New',monospace";
+  function drawRunClocks(now) {
+    if (!runStartByAgent.size) return;
+    for (const [aid, t0] of runStartByAgent) {
+      const b = bodyForAgent(aid);
+      if (!b || b.unplaced) continue;
+      // only at a desk that is honestly in the working pose — a talk-only run never grows a clock
+      const working = (b === agent) ? !!agent.working : !!(b.working || (b.workUntil && now < b.workUntil));
+      if (!working) continue;
+      const sec = Math.max(0, Math.floor((now - t0) / 1000));
+      const mm = Math.floor(sec / 60), ss = String(sec % 60).padStart(2, '0');
+      const label = 'RUN ' + (mm >= 60 ? Math.floor(mm / 60) + ':' + String(mm % 60).padStart(2, '0') + ':' + ss : mm + ':' + ss);
+      // anchor beside the desk's crown (placed workstation, or the hero's synthetic desk), else above the body
+      let ax, ay;
+      const dp = deskPropFor(aid);
+      if (dp) { ax = (dp.x + (dp.w || 1)) * T + 1; ay = dp.y * T + 3; }
+      else if (b === agent && desk) { ax = (desk.tx + desk.w) * T + 1; ay = desk.ty * T + 3; }
+      else { ax = b.px + 7; ay = b.py - 16; }
+      ctx.save();
+      ctx.font = RUN_FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.shadowBlur = 3; ctx.shadowColor = '#62ff9e';
+      ctx.fillStyle = '#9adcb0';
+      ctx.fillText(label, ax, ay);
+      ctx.restore();
+    }
+  }
+
   function drawBubble(now, who) {
     who = who || agent;
     const s = who.say;
@@ -2425,6 +2601,57 @@ const World = (() => {
 
   function setOnClick(fn) { onClick = fn; }
   function setOnArcade(fn) { onArcade = fn; }
+  function setOnOutbox(fn) { onOutbox = fn; }
+  function setOnMissionBoard(fn) { onMissionBoard = fn; }   // G1b: click a placed MISSION BOARD → open the quest log
+  // G2.3 — the live uncollected-crate count (ReturnStore's pending ledger). Read per-frame for the
+  // OUTBOX sprite stack and by the hit-test below; 0 when the store isn't loaded (headless tests).
+  function returnCrates() {
+    try { return (typeof ReturnStore !== 'undefined' && ReturnStore.pendingCount) ? (ReturnStore.pendingCount() | 0) : 0; } catch (_) { return 0; }
+  }
+  // hit-test: the OUTBOX chute under a world-space point — clickable ONLY while crates are stacked
+  // (an empty chute keeps plain floor behavior; no dead affordance). The stack climbs above the
+  // footprint, so extend the box up so the crates themselves are clickable too.
+  function outboxAt(wp) {
+    if (!geo || !geo.props || returnCrates() <= 0) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'outbox') continue;
+      const x0 = p.x * T, y0 = p.y * T - 34;
+      const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 4;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
+  }
+  /* ---------- G1b MISSION BOARD: the quest log's body ----------
+     missionPinCounts — the board's truthful readout, recomputed at most once a second (the projection walk
+     is too heavy for every frame): [how many quests are OPEN in the visible log, whether a station-gap
+     fix-it is among them]. Zeroes when the quest stores aren't loaded (headless tests / title screen). */
+  let mpAt = -1e9, mpOpen = 0, mpHot = false;
+  function missionPinCounts(t) {
+    if (t - mpAt > 1000) {
+      mpAt = t;
+      try {
+        const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
+        const all = (v && Array.isArray(v.quests)) ? v.quests : [];
+        const vis = (typeof QuestStateStore !== 'undefined' && QuestStateStore.visible) ? QuestStateStore.visible(all) : all;
+        mpOpen = vis.filter(q => q && q.status !== 'done').length;
+        mpHot = (typeof StationQuestStore !== 'undefined' && StationQuestStore.openCount) ? StationQuestStore.openCount() > 0 : false;
+      } catch (_) { mpOpen = 0; mpHot = false; }
+    }
+    return [mpOpen, mpHot];
+  }
+  // hit-test: a placed MISSION BOARD under a world-space point. Always clickable while placed — the click
+  // opens the QUEST LOG, which always has content, so the affordance is never dead (unlike the OUTBOX,
+  // whose click needs crates). The wall lugs + casing spill above the footprint; extend the box up.
+  function missionBoardAt(wp) {
+    if (!geo || !geo.props) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'missionboard') continue;
+      const x0 = p.x * T, y0 = p.y * T - 6;
+      const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 4;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
+  }
   // hit-test: the arcade cabinet prop under a world-space point (null if none). The cabinet
   // art spills a few px below its tile footprint, so extend the box down to keep it clickable.
   function arcadeAt(wp) {
@@ -2445,6 +2672,67 @@ const World = (() => {
      INTAKE/belt path exists, nothing rides (the sidecar already ran the work either way). */
   const chanQueues = new Map();   // queueId -> depth (from queue.status) — drives the backpressure HUD
   const serverLit = new Set();    // agentIds lit by an AUTONOMOUS run (cron/channel) — its run.end clears them
+  /* ---------- per-agent ACTIVITY HEAT (G0.3) ----------
+     A truthful "how hard is this run streaming RIGHT NOW" scalar per agent: every real agent.token /
+     agent.tool_call bumps it, and it decays exponentially (~2s time-constant) between bumps — so a
+     hot-streaming run burns visibly brighter at the desk than a stalled one, with zero invented signal.
+     Read lazily (decay computed at read time) so an idle map entry costs nothing per frame. */
+  const heatByAgent = new Map();  // agentId -> { v, at } (v = heat at time `at`; decays exp(-(now-at)/TAU))
+  const HEAT_TAU = 2000;
+  function heatBump(aid, inc) {
+    const id = aid || (agent && agent.id) || 'agent';
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    const h = heatByAgent.get(id);
+    const v = h ? h.v * Math.exp(-(now - h.at) / HEAT_TAU) : 0;
+    heatByAgent.set(id, { v: Math.min(1, v + inc), at: now });
+  }
+  function heatFor(aid) {
+    const h = heatByAgent.get(aid || (agent && agent.id) || 'agent');
+    if (!h) return 0;
+    const v = h.v * Math.exp(-(fnow - h.at) / HEAT_TAU);
+    return v < 0.01 ? 0 : v;
+  }
+  /* ---------- honest desk activity (G0.2): two truth sources, never conflated ----------
+     deskProg — a REAL task-progress fraction, if some producer published one on the 'task' bus event
+     (t.prog/t.dur — the crew-task sim's contract). The strip renders ONLY from this map; a live
+     harness run publishes no fraction and so gets NO bar — it shows elapsed time + heat instead.
+     runStartByAgent — when each agent's live run actually started (agent.run.start/end), driving the
+     tiny elapsed-time tag at the desk. Time is knowable; percent is not; we show exactly what is. */
+  const deskProg = new Map();        // agentId -> 0..1 (real published fraction only)
+  const runStartByAgent = new Map(); // agentId -> performance.now() at agent.run.start
+  const deskProgFor = aid => deskProg.has(aid) ? deskProg.get(aid) : null;
+  /* ---------- desk DISTRESS flash (G0.4 capdenied / G0.8 run-error) ----------
+     A brief red warning strobe over the acting agent's desk when its run genuinely dies — the floor's
+     honest "something just went wrong HERE" beat. Additive light over the entities (drawn with the
+     glow pass); goes steady (no strobe) under prefers-reduced-motion, like every other pulse. */
+  const deskFlash = new Map();       // agentId -> { at, color }
+  const FLASH_MS = 950;
+  function flashDesk(aid, color) {
+    const id = aid || (agent && agent.id) || 'agent';
+    deskFlash.set(id, { at: (typeof performance !== 'undefined') ? performance.now() : fnow, color: color || '#ff4a3d' });
+  }
+  function drawDeskFlashes(now) {
+    if (!deskFlash.size) return;
+    for (const [aid, f] of deskFlash) {
+      const k = 1 - (now - f.at) / FLASH_MS;
+      if (k <= 0) { deskFlash.delete(aid); continue; }
+      // the desk rect (placed workstation / the hero's synthetic desk), else the body's own spot
+      let x, y, w, h;
+      const b = bodyForAgent(aid), dp = deskPropFor(aid);
+      if (dp) { x = dp.x * T; y = dp.y * T; w = (dp.w || 1) * T; h = (dp.h || 1) * T; }
+      else if (b === agent && desk) { x = desk.tx * T; y = desk.ty * T; w = desk.w * T; h = desk.h * T; }
+      else if (b) { x = b.px - 8; y = b.py - 14; w = 16; h = 16; }
+      else { deskFlash.delete(aid); continue; }
+      const strobe = reduceMotion() ? 0.8 : ((Math.floor((now - f.at) / 130) % 2 === 0) ? 1 : 0.45);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.38 * k * strobe;
+      ctx.fillStyle = f.color; ctx.fillRect(x - 3, y - 6, w + 6, h + 9);
+      ctx.globalAlpha = 0.7 * k * strobe;
+      ctx.strokeStyle = f.color; ctx.lineWidth = 1; ctx.strokeRect(x - 3.5, y - 6.5, w + 7, h + 10);
+      ctx.restore();
+    }
+  }
   let bridged = false, lastOutboxFlash = -1e9;
   // N1/N2/N3: the channel SSE stream + the connector poll are "opened once" but used to be NEVER released —
   // after a DISCONNECT they kept polling /api/connectors every 5s and the EventSource self-reconnected forever
@@ -2685,6 +2973,7 @@ const World = (() => {
     const now = now0;
     if (working) { b.workUntil = now + 3600000; if (!b.wakeAt || now - b.wakeAt > 1500) b.wakeAt = now; sayAt(b, 'working…'); }
     else { b.workUntil = 0; if (b.say && /working/.test(b.say.text || '')) b.say = { text: '', until: 0 }; }
+    if (working) gripeNoCompute(b);      // G0.7: sat down to work in a computeless room — one honest complaint, then silence
     if (working) summonGlance(b, now);   // C-Beat1: AFTER the work-seize (K3 summon-wins) — OTHER idle in-sight bodies 50% glance at the newly-summoned `b`
   }
 
@@ -2699,6 +2988,7 @@ const World = (() => {
     to.working = true; to.sitting = false; to.dir = 'north'; to.target = null; to.pathPts = null; seizeFromIdle(to);   // re-path straight to its desk if it has one (stepCrew), else stand; drop any leisure latch (J4)
     to.workUntil = now + 3600000; if (!to.wakeAt || now - to.wakeAt > 1500) to.wakeAt = now;
     sayAt(to, 'on it…');
+    gripeNoCompute(to);   // G0.7: a delegated worker in a computeless room complains once too
     const from = bodyForAgent(fromId) || agent;
     if (from && from !== to) handoffBoxes.push({ fromX: from.px, fromY: from.py - 6, toX: to.px, toY: to.py - 6, t0: now, color: to.color || '#5ad0ff' });
     summonGlance(to, now);   // C-Beat1: a delegated worker just started — OTHER idle in-sight bodies 50% glance at it (AFTER its seize, K3)
@@ -2725,6 +3015,16 @@ const World = (() => {
     if (!body) return;
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     body.say = { text: t.slice(0, 160), until: performance.now() + 4200 };
+  }
+  // G0.7: the one-time "I need a computer here" complaint — spoken the first time a body takes the
+  // working pose while its bay room grants no COMPUTE (screens stay dark; the run dies at the gate).
+  // The latch resets if the room is later fixed, so a re-broken room earns exactly one fresh gripe.
+  function gripeNoCompute(b) {
+    if (!b || !b.agentId) return;
+    if (computeOkFor(b.agentId)) { b.noComputeGriped = false; return; }
+    if (b.noComputeGriped) return;
+    b.noComputeGriped = true;
+    sayAt(b, U.pick(SELF_NOCOMPUTE));
   }
   // is a BAY prop's bound agent actively working (so the bay lights up)?
   function bayLit(p, now) {
@@ -2835,10 +3135,56 @@ const World = (() => {
     // CRON war-room pulse: an unattended routine actually fired / finished. cron.fire + cron.result are emitted
     // and SSE-broadcast by the tick driver; surface them so an autonomous fire is VISIBLE, not just in the log.
     U.bus.on('cron.fire', () => hudNote('◷ routine fired', 'good'));
-    U.bus.on('cron.result', p => { if (p && p.outcome === 'failed') hudNote('✕ routine failed' + (p.reason ? ' — ' + p.reason : ''), 'warn'); });
+    // cron.result outcomes (cron-driver.js finishFire): 'failed' warns; 'ok' celebrates (G0.9 — the win
+    // case used to show nothing); 'silent' stays silent BY DESIGN — it means a clean run whose reply was
+    // exactly the [SILENT] marker, i.e. the routine itself chose to report nothing.
+    U.bus.on('cron.result', p => {
+      if (!p) return;
+      if (p.outcome === 'failed') hudNote('✕ routine failed' + (p.reason ? ' — ' + p.reason : ''), 'warn');
+      else if (p.outcome === 'ok') hudNote('◷ routine completed', 'good');
+    });
     // REWIND: the rare, important "we rolled the workspace back" beat. checkpoint.created is frequent + quiet
     // (the workbench already pulses on shell), so only the restore is toasted.
     U.bus.on('checkpoint.restored', () => hudNote('↶ rewound to an earlier restore point', 'warn'));
+    // G0.6 CHANNEL ARRIVAL MADE VISIBLE: a real Telegram/Discord message just reached the station
+    // (hub.js emits { channel, chatId, agentId, kind } on every admitted inbound). It used to be a
+    // chime only — now the receiving agent's DISH fires (the web/comms on-ramp lighting up) and the
+    // HUD names the channel. The riding crate + queue gauge still come from workitem.*/queue.status.
+    U.bus.on('channel.inbound', p => {
+      const dish = capPropFor('dish', p && p.agentId);
+      if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
+      hudNote('📡 message received — ' + String((p && p.channel) || 'channel').toUpperCase(), 'good');
+    });
+    // G0.5 BUDGET MADE VISIBLE: budget.threshold was alarm-audio only. The payload is the frozen
+    // { scope: run|day|global, usd, cap } triple (sidecar/budget.js, one emit per scope+band crossing
+    // per run) — the band isn't carried, so derive it from the numbers: at/over cap = stopped.
+    U.bus.on('budget.threshold', p => {
+      if (!p || !isFinite(+p.usd) || !isFinite(+p.cap) || +p.cap <= 0) return;
+      const usd = +p.usd, cap = +p.cap;
+      const scopeWord = p.scope === 'run' ? 'this run' : (p.scope === 'day' ? 'today' : 'the global pool');
+      const money = v => '$' + (Math.round(v * 100) / 100).toFixed(2);
+      if (usd >= cap) hudNote('⛔ budget cap hit for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap), 'warn');
+      else hudNote('⚠ budget warning for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap) + ' (' + Math.round(usd / cap * 100) + '%)', 'warn');
+    });
+    // G0.4 CAPDENIED MADE VISIBLE: the run genuinely STOPPED at the capability gate (loop.js emits this
+    // before ending the run) — flash the acting agent's desk red + say it plainly. Today this was
+    // audio-only; the fix-it quest generator built on it is G1b's, not ours.
+    U.bus.on('capdenied', p => {
+      flashDesk(p && p.agentId, '#ff4a3d');
+      const need = (p && p.need) || 'capability';
+      hudNote('⛔ run blocked — ' + (need === 'compute' ? 'no computer in its room' : ('missing ' + need)), 'warn');
+    });
+    // G0.8 RUN-ERROR DISTRESS: the run died mid-flight (model call / dispatcher / loop guard). The chat
+    // panel already prints the message; now the FLOOR reacts too — the red desk strobe + one short flat
+    // line (eerie, never chatty; never stomps a live bubble). The stand-up itself rides the
+    // agent.run.end (reason 'error') that loop.js guarantees after every run.error — consumed by the
+    // serverLit / handoff run.end bindings above, so no body is ever left typing at a dead run.
+    const ERROR_LINE = ['it broke', 'lost the thread', 'error state', 'something failed', '...no.'];
+    U.bus.on('agent.run.error', p => {
+      flashDesk(p && p.agentId, '#ff4a3d');
+      const b = bodyForAgent(p && p.agentId);
+      if (b && !(b.say && b.say.text && b.say.until > performance.now())) sayAt(b, U.pick(ERROR_LINE));
+    });
     // MEMORY: a recall fence was injected into this run's prompt — surface the count so recall feels ALIVE, not silent.
     U.bus.on('memory.recall', p => { const c = p && (p.count | 0); if (c > 0) hudNote('◈ recalled ' + c + ' memor' + (c === 1 ? 'y' : 'ies'), 'good'); });
     // CONNECTOR PORTALS — make the external on-ramp LIVE: poll each configured server's state so a placed
@@ -2857,12 +3203,41 @@ const World = (() => {
     connPollFn = pollConnectors; pollConnectors(); connPollTimer = setInterval(pollConnectors, 5000);
     U.bus.on('agent.tool_call', p => {            // chat.js re-emits the hero's tool calls here; routed agents arrive via SSE
       const n = p && p.name;
-      if (!n || n.indexOf('mcp__') !== 0 || !PropSprites.pulseConnector) return;
-      for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
+      if (!n) return;
+      heatBump(p.agentId, 0.35);                  // G0.3: any real tool fire is activity — stoke the desk heat
+      if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (unchanged)
+        if (!PropSprites.pulseConnector) return;
+        for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
+        return;
+      }
+      // G0.1 PER-TOOL PROP PULSE: a real tool fire lights the prop that GRANTS it (toolprops.js maps
+      // fs.*→cabinet · web/browser→dish · notebook/skill/recall/todo→notebook · image_*→studio ·
+      // spotify_*→jukebox), preferring the acting agent's own/room prop. shell/verify keep their dedicated
+      // workbench events below — the mapper returns null for them, so nothing ever double-fires.
+      const cap = (typeof ToolProps !== 'undefined') ? ToolProps.toolPropType(n) : null;
+      if (!cap || !PropSprites.pulseProp) return;
+      const tgt = capPropFor(cap, p.agentId);
+      if (tgt) PropSprites.pulseProp(tgt.id, cap);
     });
     // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
     U.bus.on('shell.exec', () => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
     U.bus.on('verify.result', p => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
+    // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat (audio.js already rides this
+    // same event for music intensity) — the working screens burn by REAL token flow, never a faked flicker.
+    U.bus.on('agent.token', p => heatBump(p && p.agentId, 0.06));
+    // G0.2 RUN CLOCK: elapsed-time bookkeeping keyed to the REAL run lifecycle (a run.error is always
+    // followed by run.end reason 'error', so end is the one cleanup point). Internal reason-only runs
+    // never reach U.bus (harness.js suppresses their start/end), so no clock ever shows for self-talk.
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) runStartByAgent.set(p.agentId, performance.now()); });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId) runStartByAgent.delete(p.agentId); });
+    // G0.2 SIM-TASK PROGRESS: store a desk fraction ONLY when a producer publishes a real prog/dur pair
+    // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
+    U.bus.on('task', t => {
+      if (!t || !t.agentId) return;
+      if (t.status && t.status !== 'active' && t.status !== 'running' && t.status !== 'queued') { deskProg.delete(t.agentId); return; }
+      const prog = +t.prog, dur = +t.dur;
+      if (isFinite(prog) && isFinite(dur) && dur > 0) deskProg.set(t.agentId, Math.max(0, Math.min(1, prog / dur)));
+    });
     if (typeof EventSource === 'undefined') return;
     let backoff = 1000;
     const open = () => {
@@ -2958,7 +3333,7 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, refit, pauseBridge, resumeBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
@@ -3015,6 +3390,32 @@ const World = (() => {
     // is never a dead wall) and CONNECTORS are account-level (added server-side), so both are excluded here — this is
     // purely the placed-on-top set. An equipped BAY governs; with no bay (the simple single-agent floor) every distinct
     // cap-prop placed anywhere is the hero's. Returns [{objectType}] room-object entries the sidecar appends as extras.
+    // QUEST-LOG read: honest floor counts for the station-arc quests (belts laid, portals placed). A pure
+    // projection of the live station doc — read-only, no caching, gates nothing.
+    stationCounts: () => {
+      if (!station || !station.doc) return { belts: 0, connectors: 0 };
+      const d = station.doc() || {};
+      return {
+        belts: d.belts ? Object.keys(d.belts).length : 0,
+        connectors: d.props ? d.props.filter(p => p && p.t === 'connector_portal').length : 0
+      };
+    },
+    // the live station document (read-only) — the station-quest generator reads props[] to detect the
+    // OUTBOX / MISSION-BOARD standing gaps and to resolve a placement. Null when no station is loaded (headless).
+    stationDoc: () => (station && station.doc ? station.doc() : null),
+    // DEV/proof read surface (pure, no side effects — the testapi idiom): where a placed prop of type `t`
+    // sits ON SCREEN (CSS px), derived from the live camera + the local-frame geometry. Lets a headless
+    // driver dispatch a REAL mouse click at the MISSION BOARD instead of faking the seam. Null when absent.
+    propScreenRect: (t) => {
+      if (!cv || !geo || !geo.props) return null;
+      const p = geo.props.find(q => q.t === t);
+      if (!p) return null;
+      const r = cv.getBoundingClientRect();
+      const kx = r.width / cv.width, ky = r.height / cv.height;
+      const toScr = (wx, wy) => ({ x: r.left + (wx * scale + panX) * kx, y: r.top + (wy * scale + panY) * ky });
+      const a = toScr(p.x * T, p.y * T), b = toScr((p.x + (p.w || 1)) * T, (p.y + (p.h || 1)) * T);
+      return { left: a.x, top: a.y, right: b.x, bottom: b.y, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+    },
     heroCaps: (agentId) => {
       if (!station) return [];
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];

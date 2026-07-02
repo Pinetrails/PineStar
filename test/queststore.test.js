@@ -41,6 +41,19 @@ A.eq(st.indexOf('done') > st.lastIndexOf('open'), true, 'the view preserves open
 pending = false;
 A.eq(QuestStore.view().quests.some(q => q.kind === 'idea'), false, 'no idea quest when none is due');
 
+/* ---------- the STATION ARC joins from live floor counts (World) + crew size (App) ---------- */
+A.eq(QuestStore.view().quests.some(q => q.kind === 'station'), false, 'no World → no station arc (never an arc claiming a floor we cannot read)');
+global.World = { stationCounts: () => ({ belts: 2, connectors: 0 }) };
+global.App = { crewCount: () => 2 };
+const withArc = QuestStore.view();
+A.eq(withArc.quests.find(q => q.id === 'st:crew').status, 'done', 'crew size 2 → recruit quest done through the join');
+A.eq(withArc.quests.find(q => q.id === 'st:belt').status, 'done', 'live belt count → belt quest done through the join');
+A.eq(withArc.quests.find(q => q.id === 'st:connector').status, 'open', 'no portals yet → portal quest open through the join');
+global.World = { stationCounts: () => ({ belts: 0, connectors: 0 }) };
+global.App = undefined;   // World present but App missing → crew reads 0, arc still renders (recruit stays open)
+A.eq(QuestStore.view().quests.find(q => q.id === 'st:crew').status, 'open', 'missing App degrades to crew:0 (recruit open), never a crash');
+global.World = undefined;
+
 /* ---------- partial outages: each guard works in isolation ---------- */
 global.SuggestStore = undefined; global.DossierStore = undefined;   // XpStore only
 const xpOnly = QuestStore.view();

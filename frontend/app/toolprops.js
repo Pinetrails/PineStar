@@ -1,0 +1,55 @@
+/* STARNET — toolprops.js : PURE tool-name -> capability-prop mapper (G0.1).
+
+   The single source for "which placed prop does a firing tool light up?" — the render-side
+   mirror of the sidecar's CAP_REGISTRY (sidecar/capability/registry.js), keyed the same way
+   worldmodel's CAP_PROP_MAP keys prop types to capability objectTypes:
+
+     fs.*                                        -> 'cabinet'   (files)
+     web_search / web_fetch / browser.*          -> 'dish'      (web)
+     notebook.* / skill.* / recall_conversation
+       / todo                                    -> 'notebook'  (memory)
+     image_*                                     -> 'studio'    (media)
+     spotify_*                                   -> 'jukebox'   (spotify)
+
+   Everything else maps to null ON PURPOSE — those tools already have their own dedicated
+   floor visual, so mapping them here would double-fire:
+     mcp__<id>__*      -> the connector PORTAL pulse (world.js polls + pulseConnector)
+     shell.* / verify.* / computer.use -> the WORKBENCH pulse (shell.exec / verify.result events)
+     team.* / routine.*                -> the lead->worker handoff boxes (orchestration visuals)
+     model.chat                        -> the compute gate, not a callable prop tool
+
+   Pure + headless-safe: no DOM, no clock, no state — a name goes in, a prop type (or null)
+   comes out. Loads under require() for the unit tests exactly like worldmodel.js. */
+'use strict';
+
+const ToolProps = (() => {
+  // exact-name grants that don't share a family prefix (from CAP_REGISTRY's notebook rows)
+  const EXACT = {
+    web_search: 'dish',
+    web_fetch: 'dish',
+    todo: 'notebook',
+    recall_conversation: 'notebook'
+  };
+  // family prefix -> prop type (checked after EXACT; first match wins)
+  const PREFIX = [
+    ['fs.', 'cabinet'],
+    ['browser.', 'dish'],
+    ['notebook.', 'notebook'],
+    ['skill.', 'notebook'],
+    ['image_', 'studio'],
+    ['spotify_', 'jukebox']
+  ];
+
+  /* the mapper: real tool name -> capability prop type ('cabinet'|'dish'|'notebook'|'studio'|'jukebox') or null */
+  function toolPropType(name) {
+    if (!name || typeof name !== 'string') return null;
+    if (name.indexOf('mcp__') === 0) return null;          // connector portals own their own pulse
+    if (EXACT[name]) return EXACT[name];
+    for (const [pre, t] of PREFIX) if (name.indexOf(pre) === 0) return t;
+    return null;                                           // shell/verify/team/routine/model + unknowns: no cap-prop pulse
+  }
+
+  return { toolPropType };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = ToolProps;

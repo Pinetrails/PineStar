@@ -91,7 +91,15 @@ const PitchStore = (() => {
         if (Dialogue.isOpen()) Dialogue.close();
         return;
       }
-      const choice = await Dialogue.node({ lines: Pitch.present(parsed), options: Pitch.choices() });
+      // G3a seed callout: a pitch that reuses a recipe the Commander SAVED AS A SEED credits it out loud —
+      // one appended sentence (a credit line, never a separate beat), only when provenance genuinely links.
+      let presented = Pitch.present(parsed);
+      if (typeof SeedCredit !== 'undefined' && parsed.build && parsed.build.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
+        const credit = SeedCredit.creditForRecipe(Recipes.get(parsed.build.recipeId));
+        if (credit) presented += ' ' + credit;
+      }
+      if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // G3a: the pitch beat gets its soft chime (was mute)
+      const choice = await Dialogue.node({ lines: presented, options: Pitch.choices() });
       state.pitched = true; save();   // we DID deliver a pitch — never offer the first one again (a transient error above leaves it un-pitched)
       if (Dialogue.isOpen()) Dialogue.close();
       if (choice && choice.value === 'build') doBuild(parsed);
@@ -124,6 +132,26 @@ const PitchStore = (() => {
     } catch (_) {}
   }
 
+  // THE HANDOFF OFFER — the tutorial's demo run ends INSIDE the tour, where the auto path correctly stands
+  // down (the dialogue-open guard exists to never stomp a live ceremony). At the tour's close, the tutorial
+  // hands the stage over DELIBERATELY: same pure-engine gate + the same earned-work honesty check as the auto
+  // path (a skipped demo never graduates — no advice before proof-of-life), minus only the stage-protection
+  // guards that no longer apply because the tour is the one offering the stage. Resolves true only when a
+  // pitch beat was actually DELIVERED (fire() latches state.pitched exactly then), so the tour knows whether
+  // the pitch replaced its classic close; any quiet outcome resolves false and leaves the pitch armed.
+  async function offerAtHandoff(runId) {
+    try {
+      if (!ready() || firing || state.pitched) return false;
+      if (typeof Harness === 'undefined' || !Harness.chat || typeof Dialogue === 'undefined') return false;
+      if (!deps.wasTaskRun || !deps.wasTaskRun(runId)) return false;   // stricter than the auto path: the tour MUST prove the run was a real task
+      const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
+      const v = Pitch.shouldPitch({ firstTaskDone: true, alreadyPitched: state.pitched, knownDims: sum ? sum.known : [] });
+      if (!v.go) return false;
+      await fire({ reason: 'done', agentId: 'agent', runId });
+      return !!(state && state.pitched);
+    } catch (_) { return false; }
+  }
+
   // S2: a brand-new hero re-earns its First Pitch. Drop the self-persisted flag (Save.clear() only wipes the
   // main save envelope; this store owns its own key, like curiositystore).
   function reset() { state = (typeof Pitch !== 'undefined') ? Pitch.fresh() : { v: 1, pitched: false }; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
@@ -132,7 +160,7 @@ const PitchStore = (() => {
   function done() { return !!(state && state.pitched); }
 
   // _-prefixed handles are exposed for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, done, _decide: decide, _fire: fire, _state: () => state };
+  return { init, reset, onRunEnd, done, offerAtHandoff, _decide: decide, _fire: fire, _state: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { PitchStore };

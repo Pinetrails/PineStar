@@ -98,4 +98,36 @@ A.eq(postRunBeat(), 'suggestion', 'a due suggestion outranks a ripe seed (sugges
 A.eq(seedProposed, false, 'the seed stands down when a suggestion fires');
 stubSeedWill = false;
 
+/* ---------- 4. G2.4: the rate-the-work control can never STARVE (source guards, same idiom as §1) ----------
+   Rating is the PRIMARY leveling input (XP law), so every path where the turn-in "owns the moment" (or a
+   focused panel holds the slot) must still funnel an unrated run into the standalone beat: an empty
+   proposal fetch, an off-stream batch (notify-only), a deck the Commander finished without rating, and
+   a tutorial/intake panel blocking the 650ms moment. */
+const iMaybe = chatSrc.indexOf('function maybeStandaloneRate');
+A.ok(iMaybe > 0, 'chat.js defines maybeStandaloneRate (the one funnel for a starved rating)');
+A.ok(/workRatedRuns\.has\(runId\)/.test(chatSrc.slice(iMaybe, iMaybe + 500)), 'maybeStandaloneRate never double-asks a rated run');
+A.ok(/\.cmsg\.work-rate/.test(chatSrc.slice(iMaybe, iMaybe + 2200)), 'maybeStandaloneRate never stacks a second live rate ask (one at a time)');
+A.ok(/Dialogue\.isOpen/.test(chatSrc.slice(iMaybe, iMaybe + 2200)) && /'blocked'/.test(chatSrc.slice(iMaybe, iMaybe + 2200)),
+  'a focused panel is a TRANSIENT block (retryable), not a permanent stand-down');
+// the self-retrying fallback: armed at run end BEFORE any stand-down guard, retries while blocked
+const iArm = chatSrc.indexOf('function armRateFallback');
+A.ok(iArm > 0, 'chat.js defines the armRateFallback retry loop');
+A.ok(/'blocked'\s*&&\s*left > 0\)\s*attempt\(left - 1\)/.test(chatSrc.slice(iArm, iArm + 800)),
+  'the fallback re-attempts while transiently blocked (a tutorial panel delays, never starves, the rating)');
+const iRunEnd = chatSrc.indexOf('armRateFallback(p.agentId');
+const iBusyGuard = chatSrc.indexOf('if (isBusy() || interview) return;', iWire);
+A.ok(iRunEnd > iWire && iBusyGuard > 0 && iRunEnd < iBusyGuard,
+  'the fallback is armed BEFORE the post-run slot\'s stand-down guards (a blocked moment cannot skip arming)');
+// hole 1: proposed-but-empty batch — the early return must rate first
+A.ok(/if \(!proposals\.length\) \{ maybeStandaloneRate\(agentId, runId\); return; \}/.test(chatSrc),
+  'an EMPTY proposal batch (turn-in stood the slot down, then never rendered) still fires the standalone rate beat');
+// hole 3: a batch on a non-displayed stream is notify-only — the rating must not vanish with it
+const iNotify = chatSrc.indexOf('memories to review');
+A.ok(iNotify > 0 && /maybeStandaloneRate\(agentId, runId\)/.test(chatSrc.slice(iNotify, iNotify + 400)),
+  'an off-stream (notify-only) batch still fires the standalone rate beat');
+// hole 2: a deck decided without rating — finishBatch must hand the rating to the standalone beat
+const iFinish = chatSrc.indexOf('function finishBatch');
+A.ok(iFinish > 0 && /maybeStandaloneRate\(batch\.agentId \|\| 'agent', batch\.runId\)/.test(chatSrc.slice(iFinish, iFinish + 600)),
+  'a turn-in deck that vanishes unrated hands the rating to the standalone beat');
+
 A.report('beat-coordination.test');

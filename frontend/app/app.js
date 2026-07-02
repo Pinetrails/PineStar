@@ -1162,10 +1162,15 @@ const App = (() => {
     if (typeof SuggestStore !== 'undefined') SuggestStore.reset();   // …and a fresh ongoing-suggestion cadence
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
+    if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
+    if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
     if (typeof AutopilotStore !== 'undefined') AutopilotStore.reset();   // …and a fresh idle autopilot (no inherited idle/armed state — its decision is re-earned by the new Commander's posture + dossier)
+    if (typeof ReturnStore !== 'undefined') ReturnStore.reset();   // …and no inherited return-ritual trail — a fresh Commander gets no prior hero's pending OUTBOX crates or attendance stamp (own key)
+    if (typeof PrideStore !== 'undefined') PrideStore.reset();   // …and a brand-new station record — a fresh Commander founds their OWN colony, inheriting no prior hero's lifetime tasks/deliverables/routines/founding-date (own key)
+    if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
@@ -1213,6 +1218,8 @@ const App = (() => {
     World.spawn(agent);
     World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
+    if (World.setOnOutbox) World.setOnOutbox(() => { if (typeof ReturnStore !== 'undefined' && ReturnStore.reviewNext) ReturnStore.reviewNext(); });   // G2.3: click the stacked OUTBOX → review the oldest uncollected while-away run
+    if (World.setOnMissionBoard) World.setOnMissionBoard(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests'); });   // G1b: click the MISSION BOARD → the QUEST LOG (the board is a projection, never a gate)
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
     else if (opts.wake) { World.wakeIn(); SFX.level(); }
     // the canonical station the builder edits — restored from the save, or a fresh starter room. LOAD it
@@ -1288,6 +1295,16 @@ const App = (() => {
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
+    // QUEST MEMORY (G1a): durable quest state — firstSeenAt/completedAt per quest + dismissed-forever — and
+    // the open→done completion celebration (quest sting + gold toast + row flourish; NEVER XP). Self-persists
+    // to its own key. Init AFTER XpStore/DossierStore so its first fold sees the real projection as a quiet
+    // baseline (a resumed save backfills already-done quests without a celebration storm).
+    if (typeof QuestStateStore !== 'undefined') QuestStateStore.init();
+    // G1b STATION-QUEST GENERATOR: subscribe to agent.tool_call and mint a fix-it quest when an agent reaches
+    // for a tool its room can't grant (capdenied → playable direction). Init AFTER World.loadStation (its gap
+    // check + resolution read World.heroCaps / the live floor) and after QuestStateStore so a resumed save's
+    // already-closed gaps are a quiet baseline. Self-persists to its own key; never emits on U.bus.
+    if (typeof StationQuestStore !== 'undefined') StationQuestStore.init();
     if (typeof SeedStore !== 'undefined') SeedStore.init();   // SELF-GROWING SEED: reset the one-offer-per-session budget
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.init();   // AUTONOMY POSTURE: hydrate the "alive between sessions" dial (own key; the awakening cadence beat + the station dial are its writers)
     // FIRST PITCH: once the agent has done one real task and knows enough about the Commander, it proactively
@@ -1312,6 +1329,9 @@ const App = (() => {
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
+    // G3a CONFIDENCE NARRATIVE: two fire-once spoken moments in the hero's reliability arc (calibration
+    // complete + TRUSTED). Init AFTER XpStore so its memory.feedback hook sees an already-folded meter.
+    if (typeof ConfBeats !== 'undefined') ConfBeats.init({ getStats: () => { const a = agents.get('agent'); return a ? a.stats : null; } });
     // SELF-INITIATION (Slice 2): the agent proposes recurring standing JOBS grounded in the dossier → the Commander
     // approves → each becomes a scheduled cron routine (POST /api/cron, the same endpoint the ROUTINES panel uses).
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.init({
@@ -1343,6 +1363,15 @@ const App = (() => {
       }
     });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
+    // G2 RETURN RITUAL: arm the durable lastSeenAt heartbeat and (once per session, never during the
+    // awakening) fire the while-you-were-away digest for unattended runs the sidecar recorded. The
+    // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
+    // rides the same rate-the-work path as an attended run. Init AFTER Chat.init so the beat can render.
+    if (typeof ReturnStore !== 'undefined') ReturnStore.init({ enabled: !opts.awaitingPurpose });
+    // G3a PRIDE LAYER: arm the durable lifetime STATION RECORD — folds real completed runs / delivered
+    // work-items / fired routines / summed run durations into counters that persist across sessions (own key,
+    // read-only on the bus). The COMMANDER DOSSIER panel renders snapshot() as the STATION RECORD block.
+    if (typeof PrideStore !== 'undefined') PrideStore.init();
     // AUTOPILOT (autonomy Slice A — the idle self-direction driver): when the Commander goes idle with autonomy
     // enabled, the station either EARNS context (asks one gentle get-to-know-you question — A1) or, once the dial
     // permits acting AND the dossier is hot AND today's leash has budget, it ACTS — runs the anti-slop pipeline as
@@ -1431,6 +1460,7 @@ const App = (() => {
         persona: (typeof Personas !== 'undefined') ? Personas.get(agent.personaId) : null,   // the voice was chosen on the create screen — the awakening acknowledges it instead of re-asking
         specialty: opts.specialty || null,                   // (reserved) a pre-specced wake skips re-asking the mission; the orchestrator authors it live
         commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
+        getSystem: () => agent ? agent.systemPrompt : '',    // Interview 2.0: the generated beats (wakemind.js) reason on the LIVE prompt (persona + dossier already folded in)
         done: () => { if (agent) agent.onboarded = true; persist(); },   // the awakening landed — mark onboarded so a later refresh resumes into the game, not back into the ceremony
         notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
         // FIRST COMMAND — once the awakening lands, the agent itself teaches the Commander the one real loop (tutorial.js)
@@ -1608,13 +1638,23 @@ const App = (() => {
     if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
     if (saved && saved.reasoningEffort && Harness.setReasoningEffort) Harness.setReasoningEffort(saved.reasoningEffort);
     if (saved && saved.agent) {
-      if (Harness.getProv && Harness.getProv() !== 'codex' && Harness.listModels) await Harness.listModels();
       // AUTO-RESUME: a saved station goes STRAIGHT back into the world when creds are available — an OpenRouter
-      // key in hand, the desktop keychain holds one (configured), OR the Codex provider (OAuth tokens live
-      // server-side; a missing/expired one surfaces as a run error that prompts re-sign-in). No title screen.
-      if (Harness.getKey() || (Harness.configured && Harness.configured()) || Harness.getProv() === 'codex') { resumeInto(saved); return; }
+      // key in hand, the desktop keychain holds one (configured, incl. the DEV fast-path), OR the Codex provider
+      // (OAuth tokens live server-side; a missing/expired one surfaces as a run error that prompts re-sign-in).
+      // NEVER gate reaching the floor on the model catalog: listModels() proxies a LIVE external OpenRouter fetch
+      // and if that is slow/blocked, awaiting it here strands boot on the connect screen forever (the seeded DEV
+      // shoot regression). The catalog is cosmetic for resume (dropdown/pricing/context gauge), so fire it in the
+      // BACKGROUND and enter the station immediately — pricing fills in a beat later, the floor never waits.
+      const canResume = !!(Harness.getKey() || (Harness.configured && Harness.configured()) || Harness.getProv() === 'codex');
+      if (canResume) {
+        if (Harness.getProv && Harness.getProv() !== 'codex' && Harness.listModels) { Promise.resolve(Harness.listModels()).catch(() => {}); }
+        resumeInto(saved); return;
+      }
       // saved station, but the credentials are gone (cache/origin wipe). RESUME-mode recovery screen: a banner,
       // the model pre-filled, identity locked read-only — the agent is preserved, only the brain re-connects.
+      // Here the model dropdown DOES want the catalog, but bound the wait so a hung network can't strand the
+      // recovery screen either — a timeout just yields an empty dropdown the Commander can still type a slug into.
+      if (Harness.getProv && Harness.getProv() !== 'codex' && Harness.listModels) await Harness.listModels();
       resumingSaved = saved;
       show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
       return;
@@ -1624,5 +1664,10 @@ const App = (() => {
   }
   init();
 
-  return { show, refreshUsage, persist, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest };
+  // crewCount: the live crew size (hero + summoned minds) — read by the quest log's station arc.
+  // agentName/heroId (G1b): the station-quest generator names the acting agent from the LIVE roster
+  // (never an id in the UI) and keys its standing candidates against the focused hero.
+  return { show, refreshUsage, persist, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size,
+    agentName: id => { const a = agents.get(id); return a ? (a.name || a.id) : null; },
+    heroId: () => (agent ? agent.id : 'agent') };
 })();

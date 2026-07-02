@@ -456,10 +456,17 @@ const Chat = (() => {
     workRatedRuns.add(runId);
     if (workRatedRuns.size > 120) workRatedRuns.delete(workRatedRuns.values().next().value);
     const reason = verdict === 'great' ? 'work_great' : verdict === 'ok' ? 'work_ok' : 'work_miss';
-    const delta = workSizeDelta(runWork.get(runId));
+    const w = runWork.get(runId);
+    const delta = workSizeDelta(w);
+    // G2.4 task-size weighting: the same real stash also derives a small/medium/large hint (Xp.workSize —
+    // successful tools + reconciled spend); xp.js scales the mint by it, FEEDBACK_XP_CAP still the ceiling.
+    const size = (typeof Xp !== 'undefined' && Xp.workSize) ? Xp.workSize({ tools: (w && w.toolsOk) || 0, usd: (w && w.cost) || 0 }) : undefined;
     // DIRECT call — never U.bus.emit / never /api/memory/turnin. The 'work:'+runId id resolves to NO memory
     // record, so the sidecar memcore trust path is never touched (delta here is an XP size only).
-    if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason });
+    if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size });
+    // G3a confidence narrative: the same DIRECT hand-off (this verdict never rides the bus, so the fire-once
+    // calibration/TRUSTED beats must be told here, AFTER the meter folded). Speaks at most twice, ever; mints nothing.
+    if (typeof ConfBeats !== 'undefined' && ConfBeats.onFeedback) { try { ConfBeats.onFeedback({ agentId: agentId || 'agent', id: 'work:' + runId, delta: delta, reason: reason }); } catch (_) {} }
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   function workRateControl(host, agentId, runId, onSettle) {
@@ -491,6 +498,139 @@ const Chat = (() => {
     clearNudge();   // claim the one post-run beat slot, retiring any prior gentle nudge
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
     workRateControl(r.body, agentId, runId, () => vanish(r.d));
+    autoscroll();
+  }
+
+  /* G2.4 — CLOSE THE RATE-STARVE HOLE. The rate control used to reach the Commander on exactly two
+     paths: embedded in a turn-in card, or the standalone beat — and the standalone beat stood down the
+     moment memory.proposed fired (proposalRunsSeen). Three ways that starved rating forever:
+       1. reflection proposed but the batch fetch came back EMPTY -> no card, no control;
+       2. the turn-in deck rendered WITH the embedded control, but the Commander decided every memory
+          without rating -> finishBatch vanished the whole card, control and all;
+       3. the batch landed on a NON-displayed stream -> a soft notify, no card, no control.
+       4. a focused panel (the tutorial's Dialogue on the FIRST command, an intake interview) held the
+          post-run slot at the 650ms moment -> every beat stood down with no retry, ever.
+     Every hole now funnels into maybeStandaloneRate; armRateFallback (armed per run at run end)
+     re-attempts on a 5s cadence until the beat fires or the run is permanently ineligible. */
+  // one attempt at the standalone rate beat. Returns:
+  //   'fired'   — the beat rendered (this hero run did real work, was unrated, and the moment was free)
+  //   'blocked' — TRANSIENT: a run is live / a focused panel (tutorial Dialogue, intake) is up / a
+  //               review deck or another rate control is on screen — worth retrying later
+  //   'never'   — PERMANENT: rated already, not the hero, or no real work — stop asking
+  function maybeStandaloneRate(agentId, runId) {
+    if (!log || !runId || workRatedRuns.has(runId)) return 'never';
+    if ((agentId || 'agent') !== 'agent') return 'never';               // hero-only, mirroring the post-run slot
+    const w = runWork.get(runId);
+    if (!w || ((w.toolsOk || 0) < 1 && (w.delivered || 0) < 1)) return 'never';   // real work only — pure chat is never rate-prompted
+    if (isBusy() || interview) return 'blocked';                        // never mid-run / mid-awakening
+    if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return 'blocked';
+    if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return 'blocked';
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return 'blocked';   // a focused panel is up (e.g. the tutorial) — retry after it closes
+    if (activeTurnin && activeTurnin.node && activeTurnin.node.isConnected) return 'blocked';   // a review deck is up (it carries its own control)
+    if (log.querySelector('.cmsg.work-rate') || log.querySelector('.turnin-rate')) return 'blocked';   // a rate control is already live somewhere (one ask at a time)
+    workRateBeat(agentId || 'agent', runId);
+    return 'fired';
+  }
+  // the self-retrying fallback: armed once per completed task run at run end, it keeps re-attempting
+  // (5s cadence, bounded ~5min) until the beat fires or the run is permanently ineligible — so a
+  // tutorial panel, a live turn-in deck, or a busy stream can DELAY the rating but never STARVE it.
+  // Its first attempt is DEFERRED: the post-run slot's own inline attempt owns the immediate moment.
+  const armedRateRuns = new Set();
+  function armRateFallback(agentId, runId, tries) {
+    if (!runId || armedRateRuns.has(runId)) return;
+    armedRateRuns.add(runId);
+    if (armedRateRuns.size > 120) armedRateRuns.delete(armedRateRuns.values().next().value);
+    (function attempt(left) {
+      setTimeout(() => {
+        const r = maybeStandaloneRate(agentId, runId);
+        if (r === 'blocked' && left > 0) attempt(left - 1);
+      }, 5000);
+    })(typeof tries === 'number' ? tries : 60);
+  }
+
+  /* ── G2 RETURN RITUAL — the "while you were away" digest + the per-run collect beat. ──
+     A SESSION-OPEN beat (fired once by ReturnStore after app open), distinct from the post-run slot:
+     it lists the REAL unattended runs the sidecar's run history recorded since the app was last
+     attended, each with a review (rate-the-work) affordance. Rating a row IS the collect tap — it
+     rides the same direct rateWork path (XP law: only user feedback on real work mints), and clears
+     that run's OUTBOX crate via onRated. Gold-inset family; decided rows vanish(); dismissed = the
+     whole beat vanishes and never re-fires (the crates stay collectable from the OUTBOX). */
+  // an away run has no live runWork stash — seed one from its HONEST history row so the rating's
+  // size derives from real recorded turns/spend (turns-1 ≈ tool rounds: each loop turn past the
+  // first was a tool round; conservative, never farmable — the row is server-recorded).
+  function seedAwayWork(rw) {
+    if (!rw || !rw.runId || runWork.has(rw.runId)) return;
+    runWork.set(rw.runId, { toolsOk: Math.max(0, (rw.turns | 0) - 1), delivered: 0, cost: Math.max(0, +rw.usd || 0), agentId: rw.agentId || 'agent' });
+    if (runWork.size > 60) runWork.delete(runWork.keys().next().value);
+  }
+  function awayRowLabel(rw) {
+    const name = rw.routine ? ('“' + rw.routine + '” ran on its own') : (rw.title || 'an unnamed run');
+    const who = (rw.agentId && rw.agentId !== 'agent') ? (' · ' + String(rw.agentId).slice(0, 12)) : '';
+    const usd = (+rw.usd > 0) ? (' · $' + (Math.round(rw.usd * 100) / 100).toFixed(2)) : '';
+    // G3a seed callout: an unattended run that reuses a Commander-saved seed credits it inline (rw.seed is
+    // annotated by ReturnStore via SeedCredit — provenance-matched, never guessed). A credit line, not a beat.
+    const seed = rw.seed ? (' · from the seed you saved — “' + rw.seed + '”') : '';
+    return '◷ ' + name + who + usd + seed;
+  }
+  // ONE digest per session (ReturnStore owns the budget + the row data). opts.onRated(runId) clears the crate.
+  function awayDigest(rows, opts, _try) {
+    if (!log || !rows || !rows.length) return;
+    const onRated = (opts && opts.onRated) || (() => {});
+    // session-open coordination: never collide with a live run, the awakening/interview, a focused
+    // panel, an open turn-in deck, or a live gentle beat (incl. the autopilot welcome-back nudge).
+    const blocked = isBusy() || interview || activeTurnin || activeNudge
+      || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
+      || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
+      || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
+    if (blocked) {   // defer, bounded — if the moment never frees, the OUTBOX crates still carry the flow
+      if ((_try || 0) < 25) setTimeout(() => awayDigest(rows, opts, (_try || 0) + 1), 7000);
+      return;
+    }
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('away-digest');
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ while you were away — ' + rows.length + (rows.length > 1 ? ' runs' : ' run') + ' finished. the work is waiting.';
+    r.body.appendChild(title);
+    let open = rows.length;
+    const settleRow = (item) => { vanish(item); if (--open <= 0) vanish(r.d); };
+    for (const rw of rows) {
+      const item = document.createElement('div'); item.className = 'turnin-item';
+      const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = awayRowLabel(rw);
+      const btns = document.createElement('span'); btns.className = 'consent-btns';
+      item.appendChild(text); item.appendChild(btns);
+      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'review';
+      b.onclick = () => {   // swap the review affordance for the real rate control, in place
+        btns.remove();
+        const rate = document.createElement('div'); rate.className = 'turnin-rate';
+        item.appendChild(rate);
+        seedAwayWork(rw);
+        workRateControl(rate, rw.agentId || 'agent', rw.runId, () => { try { onRated(rw.runId); } catch (_) {} settleRow(item); });
+        autoscroll();
+      };
+      btns.appendChild(b);
+      r.body.appendChild(item);
+    }
+    // dismissed = gone (anti-nag law). Uncollected crates remain on the OUTBOX — evidence, not nagging.
+    const foot = document.createElement('div'); foot.className = 'turnin-rate';
+    const dis = document.createElement('button'); dis.className = 'consent-btn deny'; dis.textContent = 'dismiss';
+    dis.onclick = () => vanish(r.d);
+    foot.appendChild(dis);
+    r.body.appendChild(foot);
+    autoscroll();
+  }
+  // the OUTBOX collect beat: clicking the chute (or a stacked crate) reviews ONE pending away run.
+  // Same gold-inset family; rating clears the crate (onRated) and the beat vanishes.
+  function awayReview(rw, opts) {
+    if (!log || !rw || !rw.runId) return;
+    const onRated = (opts && opts.onRated) || (() => {});
+    if (workRatedRuns.has(rw.runId)) { try { onRated(rw.runId); } catch (_) {} return; }   // already judged — just clear the crate
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ from the OUTBOX — ' + awayRowLabel(rw);
+    r.body.appendChild(title);
+    const rate = document.createElement('div'); rate.className = 'turnin-rate';
+    r.body.appendChild(rate);
+    seedAwayWork(rw);
+    workRateControl(rate, rw.agentId || 'agent', rw.runId, () => { try { onRated(rw.runId); } catch (_) {} vanish(r.d); });
     autoscroll();
   }
 
@@ -545,7 +685,12 @@ const Chat = (() => {
 
     function finishBatch() {
       activeTurnin = null;
-      vanish(head.d, showNextTurnin);
+      vanish(head.d, () => {
+        showNextTurnin();
+        // G2.4 starve hole 2: the deck (and its embedded control) just vanished — if the Commander
+        // curated the memories but never rated the WORK, the standalone beat picks the rating up.
+        if (batch.runId) maybeStandaloneRate(batch.agentId || 'agent', batch.runId);
+      });
     }
     function updateTitle() {
       title.textContent = '◈ ' + name + ' picked up ' + n + (n > 1 ? ' things' : ' thing') + ' worth remembering — review ' + (state.index + 1) + ' of ' + n;
@@ -618,7 +763,9 @@ const Chat = (() => {
       proposalRunsSeen.add(runId);
       setTimeout(async () => {
         const proposals = await Harness.memoryProposals(runId, agentId);
-        if (!proposals.length) return;
+        // G2.4 starve hole 1: memory.proposed fired (so the post-run slot stood down for the turn-in)
+        // but the batch fetch came back empty — no card would ever carry the rate control. Rate now.
+        if (!proposals.length) { maybeStandaloneRate(agentId, runId); return; }
         const batch = { runId, agentId, proposals };
         // route to the ORIGIN stream (the one whose run proposed these) — many streams share agentId 'agent',
         // so gating on agentId can drop the card into the wrong COMMS after a mid-window switch.
@@ -626,7 +773,12 @@ const Chat = (() => {
         if (typeof Workstreams !== 'undefined' && Workstreams.all) { try { originWs = Workstreams.all().find(w => (w.runIds || []).indexOf(runId) >= 0) || null; } catch (_) {} }
         const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
         if (onActive) proposalCard(batch, activeWs);
-        else if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
+        else {
+          if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
+          // G2.4 starve hole 3: the batch landed on a NON-displayed stream — a soft notify carries no
+          // rate control. The hero's work still deserves its rating in the visible COMMS.
+          maybeStandaloneRate(agentId, runId);
+        }
       }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
     });
   }
@@ -689,20 +841,27 @@ const Chat = (() => {
       if ((p.agentId || 'agent') !== 'agent') return;   // only the HERO's runs drive the hero-dossier beat — a summoned worker's run must not fire a curiosity/suggestion/seed nudge
       const runId = p.runId || p.id;
       setTimeout(() => {
+        // G2.4: arm the self-retrying rate fallback FIRST, before any stand-down guard — a focused
+        // tutorial panel / busy stream / open deck may block THIS moment, but the rating for a run
+        // that did real work must eventually fire (permanent ineligibility stops it inside).
+        if (runId) armRateFallback(p.agentId || 'agent', runId);
         if (isBusy() || interview) return;     // another run started, or we're already mid-interview/awakening
         if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return;
         if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return;
         if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return;   // a focused panel is up (First Pitch graduation / awakening / tutorial) — never slot a gentle nudge behind it
         // ONE post-run beat per run: if this run produced a memory turn-in (or a card is still open in the
-        // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible dogpile).
+        // feed), let the turn-in own the moment — don't stack a curiosity nudge under it (the visible
+        // dogpile). Standing down can no longer STARVE the rating: the armRateFallback armed above (plus
+        // the wireProposals empty/off-stream hooks and the finishBatch hand-off) keeps re-attempting the
+        // standalone beat until it fires or the run is permanently ineligible.
         if (runId && proposalRunsSeen.has(runId)) return;
-        if (log && log.querySelector('.turnin-item')) return;
-        // RATE THE WORK (the primary leveling beat): if this run actually did real work and isn't rated yet, it
-        // takes the one post-run slot. Gated on real tools/deliverables so a pure chat reply is never rate-prompted.
-        if (runId && !workRatedRuns.has(runId)) {
-          const w = runWork.get(runId);
-          if (w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)) { workRateBeat(p.agentId || 'agent', runId); return; }
-        }
+        // (scoped to REAL turn-in decks: the away-digest reuses .turnin-item for styling, but a
+        // session-open digest sitting in the feed must not suppress a fresh run's rate beat — G2.4)
+        if (log && log.querySelector('.cmsg.turnin:not(.away-digest) .turnin-item')) return;
+        // RATE THE WORK (the primary leveling beat): if this run actually did real work and isn't rated yet,
+        // it takes the one post-run slot (the same attempt the armed fallback retries — real-work-gated, so
+        // a pure chat reply is never rate-prompted; 'blocked'/'never' fall through to the gentler beats).
+        if (runId && maybeStandaloneRate(p.agentId || 'agent', runId) === 'fired') return;
         // FIRE ON SALIENCE, not after every run: a basic conversational turn (not a task) earns NO proactive beat —
         // the station only reaches for a suggestion / seed / get-to-know-you question after it did real WORK. This
         // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
@@ -1391,5 +1550,5 @@ const Chat = (() => {
   // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
   function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta };
+  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, awayDigest, awayReview };
 })();

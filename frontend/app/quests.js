@@ -26,6 +26,11 @@
   //   dossierDims — [{ key, label, known }] (the store joins Dossier.DIMS with DossierStore.summary())
   //   pendingIdea — true when an ONGOING suggestion is due (SuggestStore.willSuggest()). The First Pitch is excluded
   //                 on purpose: it fires immediately on graduation, so it's never a "waiting" log entry.
+  //   stationGaps — (G1b) fix-it quests projected from StationQuests: [{ id, kind:'station-gap', title, desc,
+  //                 reward, status }] — an agent reached for a tool its room can't grant. Already fully shaped
+  //                 by the pure StationQuests.project engine (the store owns the live reads); build() just splices
+  //                 them into the ordered list right after the waiting idea, so a real capability failure surfaces
+  //                 as the most-actionable direction. Absent input → unchanged (older callers untouched).
   // OPEN quests (actionable now) come first, then DONE (the trophy shelf). Each quest names its REAL reward.
   function build(input) {
     input = input || {};
@@ -36,6 +41,34 @@
     // 1) a waiting idea — the single most actionable thing (only ever open).
     if (input.pendingIdea) {
       open.push({ id: 'idea', kind: 'idea', title: 'An idea is waiting', desc: 'your agent has a tailored build in mind — finish a task and it’ll offer it in COMMS.', reward: 'a real, working build', status: 'open' });
+    }
+
+    // 1a) STATION-GAP fix-it quests (G1b) — a real capdenied/capability-gap became playable direction. These are
+    //     pre-shaped by StationQuests.project (id 'sq:<agent>:<cap>', kind 'station-gap'); we only need to sort them
+    //     into the open/done buckets so the honest open-before-done ordering + the QuestState fold both hold. They
+    //     lead the actionable set (right after the idea) because they name a WALL the agent just hit.
+    if (Array.isArray(input.stationGaps)) {
+      for (const q of input.stationGaps) {
+        if (!q || !q.id) continue;
+        (q.status === 'done' ? done : open).push(q);
+      }
+    }
+
+    // 1b) THE STATION ARC — the "what do i build next" spine the tutorial hands off to (recruit → belts →
+    //     portals). Pure projections of the live floor (input.station = { crew, belts, connectors } counts);
+    //     absent input → no arc (older callers unchanged). Honest-loot: each names the real capability it
+    //     cashes out in, and like everything here it gates NOTHING.
+    const st = input.station;
+    if (st && typeof st === 'object') {
+      const arc = [
+        { id: 'st:crew', done: (st.crew || 0) >= 2, title: 'Recruit your first specialist', doing: 'summon a second mind — it takes a station of its own and your lead starts delegating.', reward: 'a crew your lead can point' },
+        { id: 'st:belt', done: (st.belts || 0) >= 1, title: 'Lay your first conveyor belt', doing: 'wire two stations together in REFIT — real work moves as crates you can watch.', reward: 'visible work routing' },
+        { id: 'st:connector', done: (st.connectors || 0) >= 1, title: 'Bind a live tool portal', doing: 'place a connector portal in REFIT and bind a tool server — its powers land in real hands.', reward: 'new real capabilities' }
+      ];
+      for (const a of arc) {
+        const q = { id: a.id, kind: 'station', title: a.title, desc: a.done ? 'done — it’s live on your floor.' : a.doing, reward: a.reward, status: a.done ? 'done' : 'open' };
+        (a.done ? done : open).push(q);
+      }
     }
 
     // 2) get-to-know-you quests — one per dossier dimension.

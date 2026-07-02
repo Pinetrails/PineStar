@@ -63,6 +63,26 @@ A.eq(Xp.applyEvent(Xp.fresh(), discard()).awards.xp, 0, 'negative feedback award
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'kept')).awards.xp, 50, 'a huge finite kept-feedback delta is capped at +50 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'huge')).awards.xp, 0, 'unknown memory.feedback reasons do not award xp');
 
+// ---- G2.4 task-size weighting: an optional payload.size hint scales the mint; the CAP stays the ceiling ----
+const sized = (delta, reason, size) => ({ name: 'memory.feedback', payload: { agentId: 'a', id: 'w1', delta, reason, size } });
+A.eq(Xp.workSize({ tools: 0, usd: 0 }), 'small', 'no tools, no spend -> small');
+A.eq(Xp.workSize({ tools: 2, usd: 0.01 }), 'small', 'a couple of tool calls is still small');
+A.eq(Xp.workSize({ tools: 3, usd: 0 }), 'medium', '3 successful tools -> medium');
+A.eq(Xp.workSize({ tools: 0, usd: 0.08 }), 'medium', 'real spend alone can make medium');
+A.eq(Xp.workSize({ tools: 6, usd: 0 }), 'large', '6 successful tools -> large');
+A.eq(Xp.workSize({ tools: 0, usd: 0.5 }), 'large', 'heavy spend alone -> large');
+A.eq(Xp.workSize(null), 'small', 'missing stash -> small (conservative, never inflating)');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'large')).awards.xp, 45, 'large task: 3*10*1.5 = 45 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'medium')).awards.xp, 38, 'medium task: round(3*10*1.25) = 38 xp');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'small')).awards.xp, 30, 'small task: base mint unchanged');
+A.eq(Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great')).awards.xp, 30, 'NO size hint -> exactly the old mint (fully additive)');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(3, 'work_great', 'gigantic')).awards.xp, 30, 'an unknown size string is ignored (mult 1)');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(4, 'work_great', 'large')).awards.xp, 50, 'weighting never pierces FEEDBACK_XP_CAP (4*10*1.5=60 -> 50)');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(8, 'work_great', 'large')).awards.xp, 50, 'a big weighted delta stays capped at +50');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(5, 'work_ok', 'large')).awards.xp, 0, 'weighting SCALES a mint, never invents one — work_ok still mints nothing');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(5, 'work_miss', 'large')).awards.xp, 0, 'work_miss with a size hint still mints nothing (no penalty either)');
+A.eq(Xp.applyEvent(Xp.fresh(), sized(2, 'kept', 'large')).awards.xp, 30, 'the multiplier rides the shared mint path (kept delta 2 * large = 30)');
+
 // ---- "rate the work" verdicts ride memory.feedback (synthetic id, direct XpStore call): only 👍 mints, none penalize ----
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(3, 'work_great')).awards.xp, 30, 'work_great delta 3 awards 30 xp (size-weighted)');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(8, 'work_great')).awards.xp, 50, 'work_great big task is capped at +50 xp');

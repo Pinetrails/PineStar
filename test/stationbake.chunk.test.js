@@ -156,13 +156,20 @@ function makeGeo() {
   };
 }
 
+// a chunk bake may allocate intermediates up to one skirt-margin taller than the chunk
+// (the hull extrusion's silhouette canvases carry WALL.skirt+4 of vertical margin on each
+// side so a footprint ending just outside the viewport still drops its skirt into it) —
+// but never anything approaching full-world size.
+const CHUNK_BOUND_H = StationBake.CHUNK_PX + 2 * (Math.round(StationBake.WALL.skirt) + 4);
+const boundedCanvas = c => c.width <= StationBake.CHUNK_PX && c.height <= CHUNK_BOUND_H;
+
 const geo = makeGeo();
 canvases.length = 0;
 const first = StationBake.bakeIncremental(geo, null, null);
 A.ok(first.chunked, 'large bake uses the chunk cache');
 A.eq(first.stats.chunkCount, 6, '900x650 bake splits into a 3x2 chunk grid');
 A.eq(first.stats.rebakedChunks, 6, 'cold bake renders every chunk once');
-A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
+A.ok(canvases.every(boundedCanvas),
   'chunk bake never allocates a full-world canvas');
 
 const mono = StationBake.bake(geo);
@@ -180,7 +187,7 @@ A.eq(second.stats.dirtyChunks, ['0,0'], 'single tile edit maps to the exact dirt
 A.eq(second.stats.rebakedChunks, 1, 'single tile edit rebakes one chunk');
 A.eq(second.stats.reusedChunks, 5, 'single tile edit reuses untouched chunks');
 A.ok(second.chunkMap.get('1,0') === reusedBefore.get('1,0'), 'untouched chunk object is reused');
-A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
+A.ok(canvases.every(boundedCanvas),
   'incremental rebake remains bounded to chunk-sized canvases');
 
 const visible = StationBake.visibleChunks(first, { x: 384, y: 0, w: 384, h: 384 });
@@ -238,7 +245,7 @@ const reset = StationBake.bakeIncremental(shiftedGeo, first, [{ x1: 10, y1: 10, 
 });
 A.eq(reset.stats.fullReset, true, 'origin changes reset chunk metadata instead of reusing stale chunks');
 A.eq(reset.stats.chunkCount, 1, 'origin reset can rebuild only the visible chunk');
-A.ok(canvases.every(c => c.width <= StationBake.CHUNK_PX && c.height <= StationBake.CHUNK_PX),
+A.ok(canvases.every(boundedCanvas),
   'origin reset does not allocate full-world base/light canvases');
 
 A.report('stationbake.chunk');

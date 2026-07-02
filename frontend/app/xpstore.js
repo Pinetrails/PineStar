@@ -68,6 +68,8 @@ const XpStore = (() => {
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('STATION advanced to Level ' + level, 'gold');
   }
   function announceMilestone(id) {
+    // G3a: a milestone lands with its own sting — grander than a quest, smaller than a level-up (was mute).
+    if (typeof SFX !== 'undefined' && SFX.milestone) { try { SFX.milestone(); } catch (_) {} }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(MILESTONE_TEXT[id] || ('Milestone — ' + id), 'gold');
   }
 

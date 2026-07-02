@@ -225,6 +225,45 @@ A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: true, reaso
     PitchStore.init(deps);
     A.eq(PitchStore._state().pitched, false, 'after reset + reload the new hero re-earns the First Pitch');
 
+    /* ---------- offerAtHandoff: the tutorial hands the stage over deliberately at its close ----------
+       Same engine gate + earned-work honesty as the auto path; resolves true ONLY when a pitch beat was
+       actually delivered, so the tour knows whether the pitch replaced its classic "yours to point" close. */
+    clearFakes(); PitchStore.reset(); PitchStore.init(deps);
+    A.eq(await PitchStore.offerAtHandoff('demo-run'), false, 'no wasTaskRun dep wired → the handoff offer REFUSES (stricter than the auto path — the tour must prove the run was real)');
+    A.eq(hn.calls.length, 0, 'and makes no model call');
+
+    deps.wasTaskRun = (runId) => runId === 'demo-run';
+    PitchStore.init(deps);
+    A.eq(await PitchStore.offerAtHandoff('chat-run'), false, 'a non-task run id never graduates at handoff');
+    A.eq(await PitchStore.offerAtHandoff(null), false, 'a missing run id (skipped/failed demo) never graduates at handoff');
+    A.eq(hn.calls.length, 0, 'refused offers reach no model');
+
+    knownDims = ['identity', 'stack'];
+    A.eq(await PitchStore.offerAtHandoff('demo-run'), false, 'a cold dossier (no goals) stays quiet at handoff too');
+    knownDims = ['goals', 'identity'];
+
+    hn.next = { text: 'PITCH: automate the weekly digest\nWHY: it eats your friday\nBUILD: workflow\nGAP: where the notes live' };
+    dlg.nextChoice = { value: 'other' };
+    A.eq(await PitchStore.offerAtHandoff('demo-run'), true, 'a real completed demo + a warm dossier → the pitch DELIVERS at handoff');
+    A.eq(hn.calls.length, 1, 'the handoff offer runs exactly one reason-only call');
+    A.eq(PitchStore._state().pitched, true, 'a delivered handoff pitch spends the one-time flag');
+    A.eq(await PitchStore.offerAtHandoff('demo-run'), false, 'the handoff offer never double-fires (already-pitched)');
+
+    clearFakes(); PitchStore.reset(); PitchStore.init(deps);
+    hn.next = { error: true, text: '' };
+    A.eq(await PitchStore.offerAtHandoff('demo-run'), false, 'a model hiccup at handoff resolves false (the tour falls back to its classic close)');
+    A.eq(PitchStore._state().pitched, false, 'and the un-fired pitch stays ARMED for a later real task');
+    delete deps.wasTaskRun;
+
+    /* ---------- source-locks: tutorial.js wires the handoff honestly (browser IIFE — lock the source) ---------- */
+    const tutSrc = require('fs').readFileSync(require('path').join(__dirname, '../frontend/app/tutorial.js'), 'utf8');
+    A.ok(/PitchStore\.offerAtHandoff\b/.test(tutSrc), 'the tutorial handoff offers the First Pitch');
+    A.ok(/cleanRunId\s*&&\s*typeof PitchStore/.test(tutSrc), 'the handoff offer is gated on a captured CLEAN run id');
+    A.ok(/if\s*\(sawDeny\)[\s\S]{0,400}reason === 'done'[\s\S]{0,120}cleanRunId\s*=/.test(tutSrc),
+      'cleanRunId is captured only on a clean done (the sawDeny branch is checked first — a denied demo never pitches)');
+    A.ok(/const classicClose\s*=/.test(tutSrc) && /yours to point/.test(tutSrc),
+      'the classic close survives as the fallback — the tour never stalls on a quiet pitch');
+
     A.report('pitchstore.test');
   } catch (e) {
     A.ok(false, 'unexpected throw: ' + (e && e.stack || e));

@@ -52,6 +52,23 @@ A.ok(!list.some(q => /\bXP\b|points|coins|gold/i.test(q.reward)), 'no quest rewa
 /* ---------- no pending idea → no idea quest ---------- */
 A.eq(Q.build({ milestones: ms, dossierDims: dims, pendingIdea: false }).some(q => q.kind === 'idea'), false, 'no idea quest when none is pending');
 
+/* ---------- the STATION ARC (recruit → belts → portals): the tutorial's hand-off spine ---------- */
+const fresh = Q.build({ station: { crew: 1, belts: 0, connectors: 0 } });
+A.eq(fresh.length, 3, 'a fresh floor has the three station-arc quests');
+A.ok(fresh.every(q => q.kind === 'station' && q.status === 'open'), 'all three arc quests start open');
+A.eq(fresh[0].id, 'st:crew', 'recruit-a-specialist leads the arc');
+A.ok(fresh.every(q => typeof q.reward === 'string' && q.reward.length > 0 && !/\bXP\b|points|coins/i.test(q.reward)), 'arc quests pay real capabilities, never a fake currency');
+const grown = Q.build({ station: { crew: 2, belts: 4, connectors: 0 } });
+A.eq(grown.find(q => q.id === 'st:crew').status, 'done', 'a second crew member completes the recruit quest');
+A.eq(grown.find(q => q.id === 'st:belt').status, 'done', 'a laid belt completes the belt quest');
+A.eq(grown.find(q => q.id === 'st:connector').status, 'open', 'the portal quest stays open until one is placed');
+A.eq(Q.build({ milestones: ms, dossierDims: dims, pendingIdea: false }).some(q => q.kind === 'station'), false, 'no station input → no arc (older callers unchanged)');
+const withIdea = Q.build({ station: { crew: 1, belts: 0, connectors: 0 }, pendingIdea: true });
+A.eq(withIdea[0].kind, 'idea', 'a waiting idea still leads — the arc follows it');
+A.eq(withIdea[1].kind, 'station', 'the arc sits right after the idea');
+const arcStatuses = Q.build({ station: { crew: 2, belts: 0, connectors: 1 }, dossierDims: dims }).map(q => q.status);
+A.eq(arcStatuses.indexOf('done') > arcStatuses.lastIndexOf('open'), true, 'open-before-done ordering holds with the arc mixed in');
+
 /* ---------- summary counts ---------- */
 const sum = Q.summary(list);
 A.eq(sum.total, list.length, 'summary total matches the list');

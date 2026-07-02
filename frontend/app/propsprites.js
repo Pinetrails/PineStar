@@ -1180,6 +1180,103 @@ const PropSprites = (() => {
     px(ax, y + h - 21, 1, 1, r.sheen);
     px(ax, y + h - 27, 1, 1, active ? '#7df0c8' : (blink(720, 1) ? ACC.work : U.shade(ACC.work, -0.6)));
     if (active) glow(ax - 2, y + h - 28, 5, 4, '#5ad1b3', 0.35);
+    // the uncollected-crate stack (G2.3): banked-product minis climbing off the top's west side,
+    // with the queue-jam idiom (gentle hash-phased bob + '+N' overflow in the VT323 terminal face).
+    // f.crates is fed by world.js from the ReturnStore ledger — real recorded runs, never invented.
+    const crates = Math.max(0, (f && f.crates) | 0);
+    if (crates > 0) {
+      const shown = Math.min(crates, 5);
+      const cx = x + 5;                                          // west of the uplink mast
+      for (let i = 0; i < shown; i++) {
+        const cy = y + h - 22 - i * 6 + Math.sin(now / 380 + i * 0.7) * 0.6;   // base rides the chute top
+        const bx0 = Math.round(cx - 4), by0 = Math.round(cy - 4);
+        px(bx0 - 1, by0 - 1, 11, 8, '#101614');                  // dark outline
+        px(bx0, by0 + 3, 9, 3, '#2a6a56');                       // shaded front face
+        px(bx0, by0, 9, 3, '#5ad1b3');                           // lit product top
+        px(bx0, by0, 9, 1, '#c8f4e6');                           // top sheen
+      }
+      glow(cx - 5, y + h - 22 - shown * 6, 12, shown * 6 + 4, '#5ad1b3', 0.18);   // the stack reads from across the room
+      if (crates > 5) {
+        ctx.fillStyle = '#7df0c8'; ctx.font = "7px 'VT323','Courier New',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('+' + (crates - 5), cx, y + h - 22 - shown * 6 - 4);
+      }
+    }
+  };
+
+  F.studio = (x, y, w, h, f) => {
+    // STUDIO — the media bay (G1b: image_generate / image_analyze finally get a placeable body). A squat
+    // render rig: violet-dark casing, a raised latent-image frame where magenta bands sweep as a picture
+    // forms, and an emitter lens aimed up at it. Rides the station's magenta media accent (CAP_GLOW.studio);
+    // f.work = an image tool is actually running (the canvas burns + scanlines roll). Bolted, bold, eerie.
+    sh(x + 1, y + h - 1, w - 2);                                    // floor contact shadow
+    box(x, y + 6, w, h - 6, '#2e2430');                             // violet-dark casing
+    px(x + 1, y + 7, w - 2, 1, '#4a3a4e');                          // top-lit edge
+    px(x + 1, y + h - 2, w - 2, 1, '#140e18');                      // bottom shade
+    rivets(x + 1, y + 7, w - 2, h - 8, '#5a4660', '#120c14');
+    // the RENDER FRAME — a raised easel screen (the silhouette): header bar + recessed canvas well
+    px(x + 3, y - 4, w - 6, 2, '#1c1420');
+    px(x + 3, y - 4, w - 6, 1, '#3a2a3e');                          // header lit edge
+    inset(x + 2, y - 2, w - 4, 9, '#160e1a');
+    const act = !!f.work;
+    // the latent image: vertical magenta bands sweeping across the canvas (a picture resolving)
+    for (let i = 0; i < w - 8; i += 3) {
+      const on = ((i / 3 + Math.floor(now / 260)) % 3) === 0;
+      px(x + 4 + i, y - 1, 2, 7, on ? (act ? '#ff6ad5' : '#5a2a4a') : '#241226');
+    }
+    px(x + 3, y - 1, 1, 7, '#3a1a34'); px(x + w - 4, y - 1, 1, 7, '#3a1a34');   // canvas side rails
+    if (act) { glow(x + 2, y - 3, w - 4, 11, '#ff6ad5', 0.30 + 0.14 * Math.sin(now / 180)); scanl(x + 3, y - 1, w - 6, 7, 0.18); }
+    else glow(x + 2, y - 2, w - 4, 9, '#ff6ad5', 0.08);
+    // the emitter lens on the casing deck, aimed at the canvas
+    px(x + (w >> 1) - 2, y + 8, 4, 3, '#1c1420');
+    px(x + (w >> 1) - 1, y + 9, 2, 1, act ? '#ffd2f0' : (blink(700, 2) ? '#ff6ad5' : '#3a1a34'));
+    if (act) glow(x + (w >> 1) - 3, y + 6, 6, 5, '#ff6ad5', 0.35);
+    // sample drawers on the casing face
+    px(x + 3, y + 13, 6, 4, '#241a28'); px(x + 3, y + 13, 6, 1, '#3f3044'); px(x + 8, y + 15, 1, 1, '#5a4660');
+    px(x + w - 9, y + 13, 6, 4, '#241a28'); px(x + w - 9, y + 13, 6, 1, '#3f3044'); px(x + w - 4, y + 15, 1, 1, '#5a4660');
+    wear(x + 2, y + 8, w - 4, h - 10, 3, '#1a1220');
+  };
+
+  F.missionboard = (x, y, w, h, f) => {
+    // MISSION BOARD — the quest log's body (G1b). A riveted slate briefing board; each pinned card stub is
+    // one OPEN quest (f.pins, fed by world.js from the live quest projection — real direction, never
+    // invented). Cap 4 visible + a '+N' counter (the OUTBOX crate idiom). While a station-gap quest is open
+    // (f.hot) the whole board breathes a slow gold pulse — the "something to do" beacon. Click → QUEST LOG.
+    px(x + 4, y - 3, 2, 3, '#1a2024'); px(x + w - 6, y - 3, 2, 3, '#1a2024');   // wall-mount lugs
+    px(x + 4, y - 3, 2, 1, '#323c42'); px(x + w - 6, y - 3, 2, 1, '#323c42');
+    box(x, y - 1, w, h + 3, '#23282c');                                          // slate casing
+    px(x + 1, y, w - 2, 1, '#3a4248');                                           // bezel sheen
+    rivets(x + 1, y, w - 2, h + 1, '#4a565e', '#0c1114');
+    inset(x + 2, y + 1, w - 4, h, '#0d1210');                                    // the briefing well
+    const pins = Math.max(0, (f && f.pins) | 0), shown = Math.min(pins, 4);
+    // phosphor header strip — the terminal face names the surface (VT323, the canvas text law)
+    px(x + 3, y + 2, w - 6, 4, '#0f1a14');
+    ctx.fillStyle = pins > 0 ? '#7df0c8' : '#2e5a4a';
+    ctx.font = "6px 'VT323','Courier New',monospace"; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('MISSIONS', x + 4, y + 6);
+    if (pins > 0 && blink(600, 0)) px(x + w - 5, y + 3, 1, 1, '#7df0c8');        // live cursor tick
+    // pinned card stubs — one per open quest, amber pin heads, hash-phased hang so they read as paper
+    for (let i = 0; i < shown; i++) {
+      const cx = x + 4 + i * 7, tilt = (U.hash('mb' + i) % 2);
+      px(cx, y + 8 + tilt, 5, 5, '#0a0e0c');                                     // card shadow
+      px(cx, y + 7 + tilt, 5, 5, '#b8c4b0');                                     // the card
+      px(cx, y + 7 + tilt, 5, 1, '#dce6d4');                                     // top sheen
+      px(cx + 1, y + 9 + tilt, 3, 1, '#5a665a'); px(cx + 1, y + 10 + tilt, 2, 1, '#5a665a');   // scrawl
+      px(cx + 2, y + 6 + tilt, 1, 1, '#ffaa33');                                 // the pin
+    }
+    if (pins > 4) {
+      ctx.fillStyle = '#ffd9a3'; ctx.font = "7px 'VT323','Courier New',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('+' + (pins - 4), x + 4 + shown * 7 + 1, y + 12);
+    }
+    if (pins === 0) { px(x + 5, y + 9, w - 10, 1, '#1a2420'); px(x + 5, y + 11, w - 14, 1, '#161e1a'); }   // empty cork lines — nothing pinned, nothing claimed
+    seamH(x + 1, y + h + 1, w - 2, '#23282c');
+    // the beacon: a station-gap quest is OPEN — the board breathes gold (slow, gentle; a state, not an event)
+    if (f && f.hot) {
+      const b = 0.10 + 0.08 * (0.5 + 0.5 * Math.sin(now / 420));
+      glow(x - 1, y - 2, w + 2, h + 5, '#e8c860', b);
+      px(x + 2, y + 2, 1, 1, blink(840, 0.5) ? '#ffd75e' : '#3a3020');           // standing-order lamp
+    }
   };
 
   F.splitter = (x, y, w, h, f) => {
@@ -4439,8 +4536,13 @@ const PropSprites = (() => {
     { id: "core", label: "CORE", cat: "capability", tier: "functional", w: 1, h: 2, animated: true, blocks: true, desc: D_MEM },
     { id: "gigs_servercart", label: "SERVER CART", cat: "capability", tier: "functional", w: 1, h: 1, animated: true, blocks: true, desc: D_MEM },
     { id: "bridge_relaystack", label: "RELAY STACK", cat: "capability", tier: "functional", w: 1, h: 2, animated: true, blocks: true, desc: D_MEM },
+    { id: "studio", label: "STUDIO", cat: "capability", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "CAPABILITY — gives the agent in this room a media studio (generate & analyze images). It glows magenta while an image renders." },
     // ISOLATION — seal a room off on the floor.
     { id: "airlock", label: "AIRLOCK", cat: "isolation", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "AIRLOCK — seals a room on the floor (a staging / merge gate); the agent's body can't path in or out. Click to cycle open / sealed / jammed." },
+    // COMMAND — mission surfaces (functional-but-not-capability: they grant no tools; they make the
+    // station's real state readable + clickable. The workstation-model rule: functional props that aren't
+    // capability objects get their own category, never mixed into cosmetics).
+    { id: "missionboard", label: "MISSION BOARD", cat: "command", tier: "functional", w: 3, h: 1, animated: true, blocks: false, desc: "MISSION BOARD — the quest log made physical. Every pinned card is a real open quest; click the board to read them. It suggests, never gates." },
 
     /* ===================== COSMETIC ===================== */
     // SCREENS — ops & display dressing.
@@ -4542,11 +4644,37 @@ const PropSprites = (() => {
   function pulseWorkbench(ok) { wbFiredAt = now; wbBad = (ok === false); }
   function workbenchFired() { return wbFiredAt ? Math.max(0, 1 - (now - wbFiredAt) / PULSE_MS) : 0; }
 
-  /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens. */
-  function draw(f, work) {
+  /* live CAPABILITY-PROP pulse (G0.1) — per placed INSTANCE, the connector/workbench idiom generalized:
+     the world layer maps a firing tool to the prop that GRANTS it (fs->cabinet · web/browser->dish ·
+     notebook/skill/recall/todo->notebook · image->studio · spotify->jukebox, via toolprops.js) and calls
+     pulseProp(propId, capType); draw() overlays a bright surge in that capability's accent that decays
+     1 -> 0 over PULSE_MS. Colors ride the station's semantic economy (amber=files, cyan=web/data,
+     green=memory, magenta=media, gold=audio). */
+  const CAP_GLOW = { cabinet: '#e8c860', dish: '#4ad9ff', notebook: '#41ff8a', studio: '#ff6ad5', jukebox: '#ffd34a' };
+  const propPulse = {};          // propId -> { at, cap }
+  function pulseProp(id, cap) { if (!id) return; propPulse[id] = { at: now, cap: cap || '' }; }
+
+  // G2.3 — uncollected while-away work: the world layer feeds the ReturnStore's pending-crate count
+  // here each frame; the OUTBOX sprite stacks that many banked-product crates (cap 5 + counter).
+  let outboxCrates = 0;
+  function setOutboxCrates(n) { outboxCrates = Math.max(0, n | 0); }
+
+  // G1b — the MISSION BOARD's live readout: `pins` = how many quests are OPEN in the (visible) quest log,
+  // `hot` = a station-gap fix-it quest is currently open (the board breathes gold). The world layer feeds
+  // both from the real quest projection (throttled ~1s) — the sprite stays a pure function of its inputs.
+  let missionPins = 0, missionHot = false;
+  function setMissionPins(open, hot) { missionPins = Math.max(0, open | 0); missionHot = !!hot; }
+  function propFired(id) { const s = id && propPulse[id]; return (s && s.at) ? Math.max(0, 1 - (now - s.at) / PULSE_MS) : 0; }
+
+  /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens.
+     `live` (G0.2/G0.3, optional) carries the seated agent's TRUTHFUL activity: { heat, prog } — heat
+     is real token/tool flow (0..1, ~2s decay, world.js heatFor); prog is a real published task
+     fraction or null (live harness runs have none). Only ever passed for a lit assigned workstation. */
+  function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
     const X = f.x * TILE, Y = f.y * TILE, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
     const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
+    if (live) { o.heat = +live.heat || 0; o.prog = (live.prog == null) ? null : Math.max(0, Math.min(1, +live.prog || 0)); }
     if (f.t === 'connector_portal') {                 // a bound portal rides its connector's live state
       const cid = f.connectorId || null;
       o.bound = !!cid;
@@ -4554,7 +4682,34 @@ const PropSprites = (() => {
       o.fired = connectorFired(cid);
     }
     if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
+    if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
+    if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; }   // G1b: open quests pinned + the station-gap beacon
     fn(X, Y, W, H, o);
+    // G0.3 ACTIVITY-HEAT WASH: real token/tool flow burns the working screens brighter + shimmers faster
+    // (the monitors live in the prop's upper band); a stalled run cools back to the base work-glow in ~2s.
+    if (o.work && o.heat > 0) {
+      const hshim = 0.72 + 0.28 * Math.sin(now / (170 - 110 * o.heat));
+      glow(X + 1, Y - 4, W - 2, Math.min(H + 4, 11), scr(o.x), (0.08 + 0.36 * o.heat) * hshim);
+    }
+    // G0.2 PROGRESS STRIP: drawn ONLY when a REAL fraction was published (the 'task' contract's
+    // prog/dur) — a live harness run has no knowable % and never gets a bar (honesty law).
+    if (o.work && o.prog != null) {
+      const pw = Math.max(1, Math.round((W - 6) * o.prog));
+      px(X + 2, Y - 6, W - 4, 3, '#06090c');            // strip housing above the crown
+      px(X + 3, Y - 5, W - 6, 1, '#12251a');            // dark channel
+      px(X + 3, Y - 5, pw, 1, '#62ff9e');               // the honest fraction
+      glow(X + 3, Y - 6, pw, 3, '#62ff9e', 0.35);
+    }
+    // G0.1 TOOL-FIRE SURGE: this instance's tool just ran — a hot core wash + wider halo in the
+    // capability accent, plus a charge bar draining shut across the crown. BOLD by design (the CRT-lab
+    // law: effects read from across the room), gone in under a second.
+    const pf = propFired(f.id);
+    if (pf > 0) {
+      const acc = CAP_GLOW[(propPulse[f.id] && propPulse[f.id].cap) || ''] || '#c7ffe0';
+      glow(X - 1, Y - 3, W + 2, H + 4, acc, 0.10 + 0.32 * pf);               // outer halo
+      glow(X + 1, Y - 1, Math.max(2, W - 2), Math.max(2, H - 2), acc, 0.28 * pf);   // hot core
+      px(X, Y - 3, Math.max(1, Math.round(W * pf)), 1, acc);                 // draining charge bar
+    }
   }
 
   return {
@@ -4565,6 +4720,12 @@ const PropSprites = (() => {
     setConnectorState, pulseConnector,
     // workbench pulse (the world layer feeds this off shell.exec / verify.result)
     pulseWorkbench,
+    // per-instance capability-prop pulse (G0.1 — the world layer feeds this off agent.tool_call via toolprops.js)
+    pulseProp,
+    // G2.3 uncollected-crate stack on the OUTBOX (the world layer feeds this from ReturnStore.pendingCount)
+    setOutboxCrates,
+    // G1b MISSION BOARD pins + station-gap beacon (the world layer feeds these from the live quest projection)
+    setMissionPins,
     // exposed for tests / reuse
     _F: F,
   };

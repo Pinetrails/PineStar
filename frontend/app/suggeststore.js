@@ -128,7 +128,15 @@ const SuggestStore = (() => {
 
       const why = parsed.why ? (' ' + parsed.why) : '';
       const gap = parsed.gap ? (' i’d need one thing from you: ' + parsed.gap) : '';
-      const line = '✦ a fresh idea — ' + Pitch.titleSentence(parsed.title) + why + gap;   // shared title→sentence join (no double period)
+      // G3a seed callout: an idea that reuses a Commander-saved seed credits it inline (a credit line,
+      // never a separate beat) — the mint→pitch loop, spoken closed.
+      let credit = '';
+      if (typeof SeedCredit !== 'undefined' && parsed.build && parsed.build.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
+        const c = SeedCredit.creditForRecipe(Recipes.get(parsed.build.recipeId));
+        if (c) credit = ' ' + c;
+      }
+      const line = '✦ a fresh idea — ' + Pitch.titleSentence(parsed.title) + why + credit + gap;   // shared title→sentence join (no double period)
+      if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // G3a: the idea beat gets its soft chime (was mute)
       Chat.nudge(line, [{ label: 'let’s build it', value: 'build' }, { label: 'not now', value: 'no', skip: true }], choice => {
         if (choice && choice.value === 'build') doBuild(parsed);
       });

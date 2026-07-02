@@ -1441,6 +1441,13 @@ const StationUI = (() => {
   function tick() {
     crewTick();
     ctxTick();
+    // G1b: resolve station-gap quests against the live floor + re-evaluate the standing OUTBOX candidate
+    // FIRST, so a gap that just closed (a prop placed) is already flipped done in the projection when the
+    // durable quest memory folds it below — the open→done edge then rides G1a's celebration for free.
+    if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
+    // G1a: fold the live quest projection into the durable quest memory once a second — completion
+    // detection must not depend on the QUEST LOG being open (the celebration toast/sting fire regardless).
+    if (typeof QuestStateStore !== 'undefined' && QuestStateStore.sync) { try { QuestStateStore.sync(); } catch (_) {} }
     const [txt, cls] = pillFor(activity());
     const p = $('#status-pill');
     if (p) { p.textContent = txt; p.className = cls; }
@@ -2066,6 +2073,33 @@ const StationUI = (() => {
   const CD_SOURCE = { onboarding: 'from your awakening', commander: 'you told the station', interview: 'from the intake interview', curiosity: 'you answered a question' };
   const CDS = () => (typeof DossierStore !== 'undefined') ? DossierStore : null;
 
+  // STATION RECORD — the durable lifetime pride counters (G3a). Reads the pure PrideStore snapshot and renders a
+  // compact honest grid: a counter with no real sample shows "—", never a made-up 0 (the floorstats honesty rule).
+  // Returns null when the store isn't present (fresh boot / node) so the caller can append unconditionally.
+  function cdStationRecord() {
+    if (typeof PrideStore === 'undefined' || !PrideStore.snapshot) return null;
+    const snap = PrideStore.snapshot();
+    if (!snap) return null;
+    const cell = (known, n, label) => {
+      const val = known ? String(n) : '—';
+      return '<div class="cd-stat"><span class="cd-stat-n' + (known ? '' : ' dim') + '">' + esc(val) + '</span>'
+        + '<span class="cd-stat-l">' + esc(label) + '</span></div>';
+    };
+    const grid = cell(snap.tasksKnown, snap.tasks, 'tasks completed')
+      + cell(snap.deliverablesKnown, snap.deliverables, 'deliverables shipped')
+      + cell(snap.routinesKnown, snap.routines, 'routines fired')
+      + cell(snap.workKnown, snap.workMinutes, 'agent-work minutes');
+    let founded = '';
+    if (snap.founded && snap.foundedAt) {
+      let d = ''; try { d = new Date(snap.foundedAt).toLocaleDateString(); } catch (_) { d = ''; }
+      if (d) founded = '<div class="cd-founded">station founded <b>' + esc(d) + '</b></div>';
+    }
+    return el('div', 'cd-record',
+      '<div class="cd-record-h">STATION RECORD // LIFETIME</div>'
+      + '<div class="cd-record-grid">' + grid + '</div>'
+      + founded);
+  }
+
   function buildCommander(body) {
     const ds = CDS();
     const sum = ds ? ds.summary() : null;
@@ -2088,6 +2122,12 @@ const StationUI = (() => {
       '<div class="cd-sub">' + sum.known.length + ' of ' + dims.length + ' dimensions known &middot; ' + obsLine + '</div>' +
       '<div class="mc-note">This dossier is <b>shared by every agent on your station</b> and folds into each one\'s briefing, so a freshly-deployed agent already knows you. It is <b>local-first</b> — it never leaves this machine. Add, edit, pin, or forget anything below; you own it.</div>');
     body.appendChild(head);
+
+    // STATION RECORD (G3a pride layer): the durable lifetime counters, honest by construction — a counter
+    // with no real sample yet renders "—" (never a fabricated 0). Rendered here, on the station-wide dossier,
+    // because it IS the colony's whole-lifetime track record. Absent store → silently omit (nothing to show).
+    const rec = cdStationRecord();
+    if (rec) body.appendChild(rec);
 
     // the active "get to know you" trigger — runs the intake interview in COMMS, folding answers into the
     // dossier through the same upsert path the cards use. Gated on a free agent + not-already-running.
@@ -2199,18 +2239,34 @@ const StationUI = (() => {
     return row;
   }
 
-  // QUEST LOG (Slice 4): the station's REAL progress dressed as quests — a read projection (QuestStore.view),
-  // never a new source of truth. Reuses the GROWTH trophy idiom (.gx-*) so it needs no new CSS, and honors the
+  // QUEST LOG (Slice 4 + G1a): the station's REAL progress dressed as quests — a read projection (QuestStore.view),
+  // never a new source of truth — now joined with the durable quest memory (QuestStateStore): a dismissed quest
+  // never re-renders (the anti-nag law), a freshly-completed row flashes a gold flourish, and get-to-know-you
+  // quests carry a dismiss ✕ (milestones are achievements — no dismiss; the engine gates by kind). Honors the
   // honest-loot law: every quest pays out in real capability/work, and nothing here is gated behind a level.
   function buildQuests(body) {
+    const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
+    const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
+    if (SQS && SQS.sync) { try { SQS.sync(); } catch (_) {} }   // G1b: resolve station gaps before folding, so a just-closed gap renders done + celebrates
+    if (QSS && QSS.sync) { try { QSS.sync(); } catch (_) {} }   // never render a stale diff — the log always reflects the memory it just folded
     const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
     if (!v) { body.innerHTML = '<p class="dim">Quest log unavailable.</p>'; return; }
-    const m = v.meter, qs = Array.isArray(v.quests) ? v.quests : [];
+    const m = v.meter, all = Array.isArray(v.quests) ? v.quests : [];
+    const qs = (QSS && QSS.visible) ? QSS.visible(all) : all;   // dismissed = gone forever (degrades to the raw list if the store is absent)
     const open = qs.filter(q => q.status !== 'done'), done = qs.filter(q => q.status === 'done');
-    const tro = q =>
-      '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + '">'
-      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
-      + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
+    // a station-gap quest is a fix-it SUGGESTION — always dismissible while open (the sandbox law); it routes
+    // through its own store's denylist, not QuestState (whose dismiss is dossier-only).
+    const dismissibleQ = q => q && q.status !== 'done' && (
+      (q.kind === 'station-gap') || (QSS && QSS.dismissible && QSS.dismissible(q)));
+    const tro = q => {
+      const glow = QSS && QSS.isCelebrating && QSS.isCelebrating(q.id);
+      const dis = dismissibleQ(q);
+      return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '">'
+        + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
+        + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
+        + '</div>'
+        + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
+    };
     const meterHtml = m
       ? '<div class="gx-sec"><span class="gx-title">STATION</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
       : '';
@@ -2222,6 +2278,19 @@ const StationUI = (() => {
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
       + '<div class="gx-tros">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
       + '</div>';
+    // dismissed = stop forever: the row vanishes now and never comes back (and the curiosity nudge for a
+    // waved-off dimension stops with it — QuestStateStore.dismiss carries the one anti-nag law end to end).
+    body.querySelectorAll('.q-dismiss').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const q = qs.find(x => x && x.id === b.dataset.qid);
+      if (!q) return;
+      // a station-gap fix-it routes to its own permanent denylist (StationQuestStore); every other kind
+      // (dossier) goes through QuestState. Either way: dismissed = stop forever (the one anti-nag law).
+      const took = (q.kind === 'station-gap')
+        ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
+        : (QSS && QSS.dismiss && QSS.dismiss(q));
+      if (took) { sfx('click'); rerender('quests'); }
+    }));
   }
 
   /* ============== lifecycle ============== */
