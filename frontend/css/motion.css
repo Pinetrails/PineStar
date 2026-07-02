@@ -1,0 +1,292 @@
+/* STARNET — motion.css : the PREMIUM MOTION + FEEDBACK foundation (Phase 1).
+   Additive layer over style.css/app.css. Same skin, same amber, same VT323 —
+   the premium feel comes from MATERIAL, DEPTH & RHYTHM, not the aesthetic.
+
+   Rules of this file:
+   - Never introduce a hardcoded colour. Only the existing phosphor/role vars.
+   - Motion goes through the token layer below (--t-fast/med/slow + shared easings).
+   - Animate only transform / opacity / colour / border / box-shadow — NEVER layout
+     (width/height/top/left) on hot paths; the canvas game loop runs at 60fps behind.
+   - A single prefers-reduced-motion block at the bottom collapses everything.
+
+   Motion tokens are static (no var() refs) so they live safely on :root. Any
+   COMPOSITE var that references another var still MUST be declared on `body`
+   (the theme swap re-evaluates it there) — see style.css --bezel/--well note. */
+
+:root {
+  --t-fast: 120ms;
+  --t-med: 220ms;
+  --t-slow: 400ms;
+  /* one shared ease-out for entrances/settling, one soft ease for state flips */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================
+   2 · INTERACTIVE ELEMENTS — tactile transitions + hover bloom
+   Buttons, provider chips, swatches, tab headers, dock items,
+   inputs & selects gain a fast transition on the properties that
+   actually change on hover/active. No layout props animated.
+   ============================================================ */
+.btn, .btn-xl, .btn-sm, .prov,
+.bb, .bb-grp, .bb.sm,
+.ag-tab, .lb-tab, .mc-seg-btn, .set-theme,
+.phosphor-swatches .swatch,
+.term-x,
+input[type=text], input[type=password], input:not([type]),
+textarea, select {
+  transition:
+    border-color var(--t-fast) var(--ease-soft),
+    background-color var(--t-fast) var(--ease-soft),
+    box-shadow var(--t-fast) var(--ease-soft),
+    color var(--t-fast) var(--ease-soft);
+}
+
+/* subtle hover bloom — a soft phosphor glow, no layout shift */
+.btn:hover, .btn-xl:hover, .btn-sm:hover, .prov:hover,
+.ag-tab:hover, .lb-tab:hover, .set-theme:hover,
+.term-x:hover {
+  box-shadow: 0 0 12px var(--ph-glow2);
+}
+/* the .btn-xl already carries a resting shadow — keep it and add the bloom */
+.btn-xl:hover {
+  box-shadow: 0 0 0 2px rgba(0,0,0,.85), 0 0 18px var(--ph-glow2), 0 0 12px var(--ph-glow2);
+}
+
+/* :active — keep the existing translateY(1px) sink, add a brief brightness dip */
+.btn:active, .btn-xl:active, .btn-sm:active, .prov:active,
+.bb:active, .bb-grp:active, .ag-tab:active, .lb-tab:active,
+.term-x:active {
+  filter: brightness(0.86);
+  transition-duration: 60ms;
+}
+
+/* ============================================================
+   3 · UNIFIED FOCUS RING — one keyboard-focus treatment app-wide.
+   Kept low-specificity so it applies everywhere but existing
+   themed :focus (border/glow) rules still layer their own accent.
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid var(--ph-bright);
+  outline-offset: 2px;
+}
+/* mouse focus never draws the ring (matches native :focus-visible intent) */
+:focus:not(:focus-visible) { outline: none; }
+
+/* ============================================================
+   4 · THEMED SCROLLBARS — thin phosphor bars app-wide, incl. panel
+   bodies and textareas. Firefox via scrollbar-* ; Chromium via
+   ::-webkit-scrollbar. Thumb brightens on hover.
+   ============================================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ph-dim) var(--ph-faint);
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--ph-faint); }
+::-webkit-scrollbar-thumb {
+  background: var(--ph-dim); border-radius: 4px;
+  transition: background var(--t-fast) var(--ease-soft);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--ph); }
+::-webkit-scrollbar-corner { background: var(--ph-faint); }
+
+/* ============================================================
+   5 · WINDOW CLOSE — reverse CRT power-off before DOM removal.
+   toggleTerm/closeTerm add .term-closing; this collapses the
+   glass to a bright line then blackout, matching term-power in.
+   ============================================================ */
+@keyframes term-power-off {
+  0%   { transform: translate(-50%, -50%) scale(1, 1); filter: brightness(1); opacity: 1; }
+  55%  { transform: translate(-50%, -50%) scale(1.006, 0.06); filter: brightness(2.4); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.9, 0.004); filter: brightness(6); opacity: 0; }
+}
+.term.term-closing {
+  animation: term-power-off 190ms var(--ease-soft) forwards;
+  pointer-events: none;
+}
+/* a window that was dragged (transform:none, explicit left/top) closes without
+   the translate() so it doesn't jump to centre on the way out. */
+.term.term-closing.term-moved {
+  animation: term-power-off-moved 190ms var(--ease-soft) forwards;
+}
+@keyframes term-power-off-moved {
+  0%   { transform: scale(1, 1); filter: brightness(1); opacity: 1; }
+  55%  { transform: scale(1.006, 0.06); filter: brightness(2.4); opacity: 1; }
+  100% { transform: scale(0.9, 0.004); filter: brightness(6); opacity: 0; }
+}
+.term-scrim.term-closing { animation: scrim-out 180ms var(--ease-soft) forwards; }
+@keyframes scrim-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* ============================================================
+   6 · TAB / SECTION CROSSFADE — builder-swapped bodies fade in.
+   StationUI stamps .swap-in on the injected content root; the
+   class is short-lived (removed after the animation) so a repeat
+   swap re-triggers it.
+   ============================================================ */
+@keyframes swap-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.swap-in { animation: swap-in var(--t-med) var(--ease-out); }
+
+/* ============================================================
+   7 · TOAST / NOTIFICATION MOTION — a transient on-screen stack.
+   StationUI.notify() mirrors the stored notification to a toast
+   in #toast-stack; each slides+fades in, then fades out.
+   ============================================================ */
+#toast-stack {
+  position: fixed; right: 16px; bottom: 56px; z-index: 960;
+  display: flex; flex-direction: column-reverse; gap: 8px;
+  pointer-events: none; max-width: min(360px, 42vw);
+}
+.toast {
+  pointer-events: auto;
+  border: 1px solid var(--ph-dim); border-left: 3px solid var(--ph);
+  background: rgba(5, 3, 1, 0.96);
+  color: var(--text); font-size: 14px; letter-spacing: 0.5px; line-height: 1.3;
+  padding: 8px 12px; border-radius: var(--r-sm);
+  box-shadow: 0 0 14px var(--ph-glow2), 0 6px 18px rgba(0,0,0,0.6), var(--raise);
+  text-shadow: 0 0 4px var(--ph-glow2);
+  animation: toast-in var(--t-med) var(--ease-out);
+}
+.toast .toast-ts { color: var(--ph-dim); font-size: 11px; letter-spacing: 1px; margin-right: 6px; }
+.toast.good { border-left-color: var(--ok); }
+.toast.good .toast-ts { color: var(--ok); }
+.toast.gold { border-left-color: var(--gold); }
+.toast.warn { border-left-color: var(--warn); }
+.toast.bad  { border-left-color: var(--bad); }
+.toast.leaving { animation: toast-out var(--t-med) var(--ease-soft) forwards; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); max-height: 60px; }
+  to   { opacity: 0; transform: translateX(24px); max-height: 0; margin-top: -8px; }
+}
+
+/* ============================================================
+   8 · TOGGLE SWITCHES — bare Settings checkboxes → CRT pill switch.
+   Checkbox stays in the DOM (a11y + label click) but is visually
+   replaced by a styled pill with an animated knob; glows when ON.
+   Scoped to .set-row so only Settings-style toggles are affected.
+   ============================================================ */
+.set-row input[type=checkbox] {
+  -webkit-appearance: none; appearance: none;
+  position: relative; vertical-align: middle;
+  width: 34px; height: 17px; margin: 0 8px 0 0; padding: 0;
+  border: 1px solid var(--ph-dim); border-radius: 10px;
+  background: rgba(0,0,0,0.55);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.85);
+  cursor: pointer; flex: 0 0 auto;
+  transition: border-color var(--t-fast) var(--ease-soft),
+              background-color var(--t-fast) var(--ease-soft),
+              box-shadow var(--t-fast) var(--ease-soft);
+}
+.set-row input[type=checkbox]::after {
+  content: ''; position: absolute; top: 1px; left: 1px;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--ph-dim);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  transition: transform var(--t-fast) var(--ease-out),
+              background-color var(--t-fast) var(--ease-soft),
+              box-shadow var(--t-fast) var(--ease-soft);
+}
+.set-row input[type=checkbox]:checked {
+  border-color: var(--ph);
+  background: var(--ph-faint);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.6), 0 0 10px var(--ph-glow2);
+}
+.set-row input[type=checkbox]:checked::after {
+  transform: translateX(17px);
+  background: var(--ph);
+  box-shadow: 0 0 8px var(--ph-glow);
+}
+.set-row input[type=checkbox]:disabled {
+  opacity: 0.45; cursor: not-allowed;
+}
+/* keep the label text aligned with the new pill — ONLY on rows that carry a
+   checkbox (a text-only .set-row keeps its block flow). :has() is supported in
+   the Chromium the desktop app / preview run on. */
+.set-row:has(> input[type=checkbox]) { display: flex; align-items: center; }
+
+/* ============================================================
+   9 · UNIFIED LOADING + EMPTY STATES.
+   .loading  — a CRT block-cursor + pulsing label ("reading…").
+   .empty-state — a dim glyph + prose, centred.
+   Applied to the model catalog / memory core / crew / task board.
+   ============================================================ */
+.loading {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--ph-dim); font-size: 14px; letter-spacing: 1px;
+  padding: 8px 2px;
+}
+.loading::before {
+  content: '▮'; color: var(--ph);
+  animation: load-blink 1s steps(1) infinite;
+  text-shadow: 0 0 6px var(--ph-glow);
+}
+.loading.pulse { animation: load-pulse 1.4s ease-in-out infinite; }
+@keyframes load-blink { 50% { opacity: 0; } }
+@keyframes load-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.empty-state {
+  text-align: center; color: var(--ph-dim);
+  padding: 22px 16px; line-height: 1.5; font-size: 13px;
+}
+.empty-state .es-glyph {
+  display: block; font-size: 30px; color: var(--ph-dim);
+  opacity: 0.6; margin-bottom: 8px; text-shadow: 0 0 8px var(--ph-glow2);
+}
+.empty-state b { display: block; color: var(--ph); font-size: 15px; letter-spacing: 1px; margin-bottom: 4px; }
+.empty-state span { display: block; font-size: 12px; opacity: 0.85; }
+
+/* ============================================================
+   10 · PROGRESS / GAUGE EASING — fills glide instead of snapping.
+   The context gauge already eases (style.css); this covers the
+   generic fills + adds an optional shimmer sweep on active bars.
+   ============================================================ */
+.crew-prog > div,
+.stat-bar > div,
+#xpfill {
+  transition: width var(--t-slow) var(--ease-out), background var(--t-med) var(--ease-soft);
+}
+/* opt-in shimmer sweep for an ACTIVE progress bar (add .bar-active).
+   transform-only sweep — cheap, no repaint of the bar body. */
+.bar-active { position: relative; overflow: hidden; }
+.bar-active::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 46px;
+  background: linear-gradient(90deg, transparent, var(--ph-glow), transparent);
+  animation: bar-shim 1.9s linear infinite;
+  pointer-events: none;
+}
+@keyframes bar-shim {
+  0%   { transform: translateX(-46px); }
+  100% { transform: translateX(420px); }
+}
+
+/* ============================================================
+   11 · REDUCED MOTION — collapse everything added above to near-0.
+   Respects the user's OS setting. (The idle looping animations here
+   — toast/loading/shimmer — are transform/opacity only and cheap, but
+   still honoured.)
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .term.term-closing, .term.term-closing.term-moved,
+  .term-scrim.term-closing,
+  .swap-in,
+  .toast, .toast.leaving,
+  .bar-active::after,
+  .loading, .loading.pulse, .loading::before {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .btn, .btn-xl, .btn-sm, .prov, .bb, .bb-grp, .ag-tab, .lb-tab,
+  .mc-seg-btn, .set-theme, .phosphor-swatches .swatch, .term-x,
+  input, textarea, select,
+  .set-row input[type=checkbox], .set-row input[type=checkbox]::after,
+  .crew-prog > div, .stat-bar > div, #xpfill,
+  ::-webkit-scrollbar-thumb {
+    transition-duration: 0.01ms !important;
+  }
+}
