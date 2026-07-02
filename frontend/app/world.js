@@ -152,22 +152,29 @@ const World = (() => {
      Lines stay sparse and unresolved; the SILENCE is the unsettling part. */
   // quirk/off-beat cooldowns are now PER-BODY (self.quirkCd / self.offbeatCd, seeded on the hero literal + crew init) —
   // J2: a body's gate must never throttle another body. (Module globals removed; maybeQuirk/offbeat read/write self.)
-  // B3/D2 STATION RARITY BUDGET (G5): a single FLOOR-WIDE "a noticeable eerie beat just fired somewhere" timestamp.
-  // It is NOT cross-agent awareness (no body perceives another — that is Tier C); it is a light rarity governor on the
-  // dice only, so a floor of N crew doesn't burst into simultaneous beats. Rates were tuned for ~1 body; without this,
-  // N crew all running the shared engine fire ~Nx the quirks/strolls/off-beats/revisits and read busy/cute — breaking
-  // the Pass-7 stillness law. THE FAMILIES it governs: quirks (incl. vigil/stare-entry, via maybeQuirk), stroll
-  // double-takes (maybeStrollBeat), off-beat dwell-stretches (offbeat), and haunt revisits (maybeRevisit). Each ARMS it
-  // when it fires and DAMPS the next CREW roll if the floor just produced one — so the STATION's total noticeable-beat
-  // rate stays ~a single agent's, whatever the crew count. Ambient TEXTURE (glances, cursor facing-drift, mutual-glance)
-  // is deliberately NOT budgeted — only the noticeable beats are. CALIBRATION / N=1 PARITY: crewBeatDamp returns 1
-  // (a no-op) whenever self===agent, so the HERO's rolls are byte-identical to today and a single-body floor behaves
-  // EXACTLY as before (J1/N=1). Only crew rolls (self!==agent, which only exist when crew.length>0) are ever damped.
-  // Wall-clock-free (armed from the tick's U-driven `now`) → deterministic (J5). Subsumes the old per-quirk lastQuirkAt.
-  let lastBeatAt = -1e9;
-  // damp a CREW roll if the floor produced a noticeable beat within `win` ms; hero (self===agent) is never damped (parity).
-  function crewBeatDamp(now, win) { return (self !== agent && (now - lastBeatAt) < (win || 8000)) ? 0.35 : 1; }
-  function armBeat(now) { lastBeatAt = now; }   // arm the floor-wide governor (called by whichever body fired a beat)
+  // B3/D2 STATION RARITY BUDGET (G5): ONE station-wide gate for the CREW's noticeable eerie beats. It is NOT
+  // cross-agent awareness (no body perceives another — that is Tier C); it is a rarity governor on the dice only.
+  // Rates were tuned for ~1 body; without this, N crew all running the shared engine fire ~Nx the quirks/strolls/
+  // off-beats/revisits and read busy/cute — breaking the Pass-7 stillness law. THE FAMILIES it governs: quirks
+  // (incl. vigil/stare-entry, via maybeQuirk), stroll double-takes + considered pauses (maybeStrollBeat), off-beat
+  // dwell-stretches (offbeat), and haunt revisits (maybeRevisit). MECHANISM: every fired beat (hero or crew) ARMS
+  // a shared gate window drawn on the order of the per-family cooldowns (U.irnd 45-90s — the quirkCd range, no new
+  // magic numbers); while armed, ALL crew rolls in the four families are hard-gated (multiplier 0). So the CREW's
+  // COLLECTIVE noticeable-beat rate is bounded at ~1 per 45-90s regardless of crew count, and hero beats keep crew
+  // quiet in their shadow. Monte-Carlo with the real constants (200 runs, 10min, 2s re-rolls): N=1 ≈ 6.9 beats/10min;
+  // a 6-7 body floor ≈ 12.5-12.6 total ≈ 1.8x single-agent (was 6-7x undamped; an 8s/x0.35 soft damp only reached
+  // ~5.7x) — the station worst case is ~2x N=1 (hero ~1x + crew collectively ~1x), NOT 1x, stated honestly.
+  // Ambient TEXTURE (glances, cursor facing-drift, mutual-glance, wander) is deliberately NOT budgeted. N=1 PARITY:
+  // crewBeatDamp short-circuits to 1 on self===agent BEFORE reading any gate state, so the HERO's rolls are
+  // byte-identical to today at ANY crew count (J1) and a single-body floor (self is only ever agent) is a provable
+  // no-op — armBeat's U.irnd draw can't shift outcomes either (U.chance/irnd are independent Math.random wrappers,
+  // not a seeded stream). NO STARVATION: the gate is a timestamp vs the advancing U-driven frame clock — it always
+  // expires, skipped rolls never mutate per-body cooldowns, and revisit re-considers every idle tick. Deterministic
+  // (U.* only, wall-clock-free; J5). Subsumes the old per-quirk lastQuirkAt.
+  let crewBeatGateUntil = -1e9;
+  // 0 while the station gate holds a CREW roll, else 1; the hero (self===agent) is NEVER damped (parity).
+  function crewBeatDamp(now) { return (self !== agent && now < crewBeatGateUntil) ? 0 : 1; }
+  function armBeat(now) { crewBeatGateUntil = now + U.irnd(45000, 90000); }   // any fired beat (hero or crew) arms the station gate
   const Q_PONDER = ['hm.', '...', 'i wonder', 'strange', 'thinking'];
   const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
   const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
@@ -810,8 +817,8 @@ const World = (() => {
     if (!self || self.goal != null || ((self === agent) && activity !== 'idle') || self.unplaced) return;
     const now = fnow;
     if (now < (self.pauseCd || 0)) return;
-    // D2 (G5): station budget — soften a CREW stroll-beat roll if the floor just fired a noticeable beat (no-op for the hero).
-    const damp = crewBeatDamp(now, 8000);
+    // D2 (G5): station budget — a CREW stroll-beat roll is hard-gated (damp=0) while the station gate holds (no-op for the hero).
+    const damp = crewBeatDamp(now);
     // THE DOUBLE-TAKE (rare): stop and turn to look back the way it came, as if something caught its attention
     if (now >= (self.lookBackCd || 0) && U.chance(0.045 * (self.pers ? self.pers.curious : 1) * damp)) {
       self.pauseUntil = now + U.irnd(900, 1700); self.pauseLook = 'back';
@@ -1585,8 +1592,8 @@ const World = (() => {
   function offbeat(now, ms) {
     if (reduceMotion()) return ms;
     // J2: per-body off-beat gate — a crew dwell-stretch must NOT throttle hero/siblings (was the shared module global).
-    // D2 (G5): also soften the CREW roll by the station budget (no-op for the hero) and arm the floor governor on a fire.
-    if (now >= (self.offbeatCd || 0) && U.chance(0.09 * crewBeatDamp(now, 8000))) { self.offbeatCd = now + U.irnd(70000, 140000); armBeat(now); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }
+    // D2 (G5): a CREW roll is also hard-gated by the station budget (no-op for the hero); a fire arms the station gate.
+    if (now >= (self.offbeatCd || 0) && U.chance(0.09 * crewBeatDamp(now))) { self.offbeatCd = now + U.irnd(70000, 140000); armBeat(now); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }
     return ms;
   }
   /* FIRST LIGHT — the newborn's first autonomous act: hold the gaze, take one slow look at the room it now
@@ -1703,12 +1710,11 @@ const World = (() => {
   function maybeQuirk(now) {
     if (now < (self.quirkCd || 0)) return false;   // J2: per-body cooldown — a crew quirk must NOT throttle the hero or siblings (was the shared module global)
     let p = 0.085 * (0.6 + self.pers.restless * 0.4);
-    // B3/D2: the hero's probability is UNCHANGED (J1 byte-parity). For a crew body, if ANY noticeable beat fired
-    // ANYWHERE on the floor in the last ~8s (a quirk OR a D2-budgeted stroll/off-beat/revisit — all arm lastBeatAt),
-    // soften this roll so the floor doesn't beat in unison — eerie restraint at scale (G3/G5). Not awareness: the
-    // body learns nothing about the other; it's a global rarity governor on the dice only. crewBeatDamp reads
-    // lastBeatAt, which every beat (quirk included, via armBeat above) advances — so it subsumes the old lastQuirkAt.
-    p *= crewBeatDamp(now, 8000);
+    // B3/D2: the hero's probability is UNCHANGED (J1 byte-parity). A CREW body's roll is hard-gated (p*=0) while the
+    // station-wide beat gate holds — any noticeable beat anywhere on the floor (a quirk OR a D2-budgeted stroll/
+    // off-beat/revisit) armed it — so the floor never beats in unison and the crew's COLLECTIVE rate stays bounded
+    // (G3/G5). Not awareness: the body learns nothing about the other; it's a global rarity governor on the dice only.
+    p *= crewBeatDamp(now);
     if (!U.chance(p)) return false;
     self.quirkCd = now + U.irnd(45000, 90000);    // quirks stay special — even rarer now, so each lands with weight
     armBeat(now);                                 // D2 (G5): arm the floor-wide governor — a quirk is a noticeable beat, so it also damps the NEXT crew quirk AND the station's stroll/off-beat/revisit budget (subsumes the old per-quirk lastQuirkAt)
@@ -1872,10 +1878,10 @@ const World = (() => {
   // rarely, drawn back to its favorite spot just to be there a while (gated by a long cooldown + a real favorite)
   function maybeRevisit(now) {
     if (now < (self.revisitCd || 0)) return false;
-    // D2 (G5): station budget — a CREW body skips a haunt-revisit if the floor just fired a noticeable beat, so N crew
-    // don't all drift to their favorites at once (no-op for the hero → N=1 parity). A skip leaves revisitCd untouched,
-    // so the beat simply re-considers on the next idle tick — no starvation.
-    if (crewBeatDamp(now, 8000) < 1) return false;
+    // D2 (G5): station budget — a CREW body skips a haunt-revisit while the station gate holds, so N crew don't all
+    // drift to their favorites at once (no-op for the hero → N=1 parity). A skip leaves revisitCd untouched, so the
+    // beat simply re-considers on the next idle tick once the gate expires — no starvation.
+    if (crewBeatDamp(now) < 1) return false;
     const f = favTile(); if (!f) return false;
     if (!tileInZone(zoneFor(self), f.x, f.y)) return false;   // P1: a remembered haunt outside the new zone isn't revisited (a zone change must not strand revisit — it just no-ops this beat)
     const cur = tileOf(self.px, self.py);

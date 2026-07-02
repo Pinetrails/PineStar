@@ -271,30 +271,45 @@ audit table is the map, the code is the truth) and disposed of as follows:
 remaining hero-only beat is either design-intent-exclusive, hero-coupled, or a non-mechanical rebuild. The crew liveliness
 gain in D2 therefore comes entirely from Half 2 (the retune that lets the already-shared beats run at a *calm* station rate).
 
-### Half 2 — G5 station-level rarity budget (the retune; landed)
-- **Shape (follows the existing `lastQuirkAt` floor-governor):** a single module-local timestamp `lastBeatAt` +
-  two helpers — `armBeat(now)` (sets `lastBeatAt = now`) and `crewBeatDamp(now, win)` (returns `0.35` for a CREW body
-  when `now - lastBeatAt < win`, else `1`; **always `1` for the hero**). This *generalizes* and *subsumes* the old
-  per-quirk `lastQuirkAt` (removed — it was write-only after this change).
+### Half 2 — G5 station-level rarity budget (the retune; landed, then RE-TUNED after adversarial review)
+- **Review finding (F1) that forced the retune:** the first cut (an 8s window with a x0.35 soft damp, mirroring the
+  B3 quirk governor) was correct but **barely bound at scale** — the 8s damp shadow covers only ~5-18% of the 45-140s
+  per-family cooldowns, so a Monte-Carlo of a 6-body floor showed only ~7% reduction (≈5.7x single-agent cadence,
+  vs the G5 target). The claim "floors at ~1 agent's" was overstated and is retracted; the shipped design below is
+  measured, and its honest worst case is **~2x single-agent**, not 1x.
+- **Shape (a station-wide SHARED cooldown for crew rolls):** one module-local `crewBeatGateUntil` + two helpers —
+  `armBeat(now)` sets `crewBeatGateUntil = now + U.irnd(45000, 90000)` (a window drawn on the order of the per-family
+  cooldowns — deliberately the same range as `quirkCd`, no new magic numbers), and `crewBeatDamp(now)` returns `0`
+  for a CREW body while `now < crewBeatGateUntil`, else `1` — and **always `1` for the hero** (the `self === agent`
+  short-circuit runs BEFORE any gate-state read). Every fired beat (hero or crew) arms the gate, so the CREW's
+  COLLECTIVE noticeable-beat rate is bounded at ~1 per 45-90s regardless of crew count, and hero beats keep the crew
+  quiet in their shadow. This generalizes and subsumes the old per-quirk `lastQuirkAt` (removed — write-only after this).
 - **Governed families (the noticeable beats only):** quirks (`maybeQuirk`, incl. vigil + long-stare entry), stroll
   double-takes + considered pauses (`maybeStrollBeat`), off-beat dwell-stretches (`offbeat`), and haunt revisits
-  (`maybeRevisit`). Each **arms** the governor when it fires and **damps** its own crew roll (`p *= crewBeatDamp(...)`,
+  (`maybeRevisit`). Each **arms** the governor when it fires and hard-gates its own crew roll (`p *= crewBeatDamp(now)`,
   or an early skip for revisit which has no chance-roll). Ambient **texture** — glances, cursor facing-drift,
   mutual-glance, wander, needs — is deliberately NOT budgeted (per G5: only noticeable beats).
-- **CALIBRATION — why N=1 is a provable no-op:** `crewBeatDamp` short-circuits to `1` whenever `self === agent`.
-  A single-agent floor never populates `crew[]`, so `self` is only ever `agent`, so every damp multiplier is `* 1`
-  (byte-identical in IEEE754) and the revisit skip (`crewBeatDamp() < 1` ⇒ `1 < 1`) is never taken. The extra
-  `armBeat` writes to `lastBeatAt` are inert in N=1 (only `crewBeatDamp` reads it, and it ignores the value for the
-  hero). **⇒ N=1 behaves EXACTLY as pre-D2, and the hero's rolls stay byte-identical at ANY crew count (J1 parity).**
-- **Expected effect at N=6:** before, 6 bodies × the per-body rate ≈ 6× the station's noticeable-beat rate (busy/cute).
-  After, once ANY body fires a beat, every *crew* body's next-8s roll is cut to 35% — so overlapping beats within the
-  window collapse toward a single-agent cadence. The hero is never damped, so the floor's rate floors at ~1 agent's
-  and rises only gently with crew (each additional body adds only its damped share). Restraint scales with the crew,
-  which is the G5 goal (Pass-7 stillness holds at scale). The 8000 ms window + 0.35 factor mirror the proven B3 quirk
-  governor exactly (not a new magic number).
-- **No deadlock:** the governor is a *soft* multiplier keyed off the advancing frame clock `now`; it decays to `1`
-  after `win` ms with no new beat, and even inside the window a crew roll keeps 35% of its chance (revisit's skip is
-  re-evaluated every idle tick). Nothing holds `lastBeatAt` in the future or stalls `now`.
+- **MEASURED CALIBRATION (Monte-Carlo, real constants: 2s idle re-rolls, p=0.085·(0.6+0.4·restless), 45-90s per-body
+  quirkCd; 200 runs × 10min):**
+  | Config | beats/10min | × N=1 |
+  | --- | --- | --- |
+  | N=1 (hero only) baseline | 6.9 | 1.00x |
+  | 6 bodies, undamped | 41.8 | 6.06x |
+  | 6 bodies, first-cut 8s/x0.35 damp | 39.3 | 5.70x (the F1 finding — barely binds) |
+  | 6 bodies, **shipped gate 45-90s** | **12.5** | **1.81x** (hero 6.9 + crew collectively 5.6) |
+  | 7 bodies, shipped gate 45-90s | 12.6 | 1.83x (crew-count-invariant: crew stays ~5.6) |
+  Alternatives tried: 30-70s window → 2.17x (passes but less margin); 60-120s → 1.47x (quieter than needed).
+  45-90s chosen: within the ~2-2.5x target with margin, and symmetric with the existing `quirkCd` range.
+- **Why N=1 is a provable no-op:** `crewBeatDamp` short-circuits to `1` on `self === agent` before reading the gate.
+  A single-agent floor never populates `crew[]`, so `self` is only ever `agent` → every multiplier is `* 1`
+  (byte-identical in IEEE754) and the revisit skip (`1 < 1`) is never taken. `armBeat`'s writes (and its `U.irnd`
+  draw) are inert in N=1 — `U.chance`/`U.irnd` are independent `Math.random` wrappers, not a seeded stream, so an
+  extra draw cannot shift any other roll's outcome. **⇒ N=1 behaves EXACTLY as pre-D2, and the hero's rolls stay
+  byte-identical at ANY crew count (J1 parity).**
+- **No deadlock / no starvation:** the gate is a timestamp compared against the advancing U-driven frame clock —
+  it always expires; a gated roll (`U.chance(0)`) fails BEFORE any per-body cooldown write, so skipped rolls never
+  mutate `quirkCd`/`offbeatCd`/`pauseCd`/`revisitCd`; revisit's binary skip re-considers every idle tick once the
+  window lapses. Crew families still fire — collectively ~1 per 45-90s, individually rotated by whoever rolls first.
 - **Determinism (G6):** `now` is the U-driven frame clock; only `U.chance`/`U.irnd` + arithmetic used; no
   `Math.random`/`Date.now`/`new Date`. `lint-determinism` green.
 - **Blast radius (G7):** `frontend/app/world.js` + this doc only. No chat.js, no shared/*, no new modules.
