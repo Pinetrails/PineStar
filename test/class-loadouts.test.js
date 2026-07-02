@@ -347,4 +347,79 @@ for (const c of [{ name: 'Legacy', purpose: 'x' }]) {
   S.removeCustom(norm.id);
 }
 
+/* ============================================================================================
+   S3 — UI: the loadout is VISIBLE (dossier) + CONFIGURABLE (custom builder) + a tier->model seam.
+   Like S1/S3 above, the browser modules are IIFEs over live DOM, so we source-lock the honesty-critical
+   wiring: labels/grants resolve from the LIVE catalog (never hardcoded), the custom builder round-trips the
+   loadout into the saved spec, and resolveTierModel consults the persisted tier->model map.
+   ============================================================================================ */
+const mkt = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
+const sui = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
+
+/* ---------- S3a. DOSSIER: kit + skill package render from LIVE sources (no hardcoded prop labels) ---------- */
+// the kit block resolves each objectType's prop label from the LIVE catalog (PropSprites.CATALOG via
+// WorldModel.CAP_PROP_MAP) and its grant from WorldModel's owned CAP_LABEL — never a hardcoded prop name.
+A.ok(/function kitBlockHTML\(s\)/.test(mkt), 'the dossier has a STANDARD ISSUE KIT block');
+A.ok(/STANDARD ISSUE KIT/.test(mkt), 'the dossier labels the kit section "STANDARD ISSUE KIT"');
+A.ok(/function kitPropLabel\(objType\)/.test(mkt), 'kit labels resolve through kitPropLabel (from the live catalog)');
+const kpl = mkt.slice(mkt.indexOf('function kitPropLabel('), mkt.indexOf('function kitPropLabel(') + 900);
+A.ok(/PropSprites\.CATALOG/.test(kpl), 'kitPropLabel reads the LIVE PropSprites catalog for the prop label (never hardcoded)');
+A.ok(/CAP_PROP_MAP/.test(kpl), 'kitPropLabel maps the objectType through WorldModel.CAP_PROP_MAP (the owned source)');
+A.ok(/WorldModel/.test(mkt) && /CAP_LABEL/.test(mkt), 'the dossier resolves capability grants from WorldModel.CAP_LABEL (the owned power-word source)');
+// the SKILL PACKAGE block resolves names/descriptions from the /api/skills catalog the SKILLS window uses.
+A.ok(/function skillPackageHTML\(s\)/.test(mkt), 'the dossier has a SKILL PACKAGE block');
+A.ok(/SKILL PACKAGE/.test(mkt), 'the dossier labels the skills section "SKILL PACKAGE"');
+A.ok(/function loadSkillCatalog\(\)/.test(mkt) && /fetch\('\/api\/skills'\)/.test(mkt),
+  'skill names/descriptions come from the live /api/skills catalog (the SKILLS window\'s source)');
+A.ok(/function hydrateSkillRows\(\)/.test(mkt) && /hydrateSkillRows\(\)/.test(mkt.slice(mkt.indexOf('function renderDossier'))),
+  'the dossier hydrates real skill names async once the catalog resolves');
+// CLEARANCE honesty: the pips read as advisory model (station default) while EFFORT is labelled applied-at-summon.
+A.ok(/model: station default/.test(mkt), 'the CLEARANCE row is honest — the model is the station default (advisory pip)');
+A.ok(/applied at summon/.test(mkt), 'the EFFORT row is honest — the reasoning effort is what summon APPLIES');
+
+/* ---------- S3b. CUSTOM BUILDER: kit/skills/effort round-trip into the saved custom spec ---------- */
+// the builder holds picked-loadout state and folds it into the spec passed to Specialties.saveCustom.
+A.ok(/let buildKit = \[\], buildSkills = \[\], buildEffort = null/.test(mkt), 'the custom builder tracks picked kit/skills/effort');
+A.ok(/function buildKitChipsHTML\(\)/.test(mkt), 'the builder renders kit picker chips');
+A.ok(/KIT_PICKABLE = \['dish', 'cabinet', 'notebook', 'workbench', 'studio'\]/.test(mkt),
+  'the kit picker offers the auto-requisitionable caps only (computer/connector are manual-bind, excluded)');
+A.ok(/data-skill=/.test(mkt) && /loadSkillCatalog\(\)\.then/.test(mkt.slice(mkt.indexOf('function wireBuildForm'))),
+  'the skill picker is populated from the live skill catalog');
+A.ok(/data-effort=/.test(mkt), 'the builder has a reasoning-effort selector');
+// the CREATE handler passes kit/skills/effort into saveCustom (round-trip).
+const createSeg = mkt.slice(mkt.indexOf("const create = stage.querySelector('.mkt-do-build')"), mkt.indexOf("stage.querySelector('#mkt-b-name'); if (nameIn)"));
+A.ok(/kit:\s*buildKit\.slice\(\)/.test(createSeg), 'CREATE folds the picked kit into the saved spec');
+A.ok(/skills:\s*buildSkills\.slice\(\)/.test(createSeg), 'CREATE folds the picked skill package into the saved spec');
+A.ok(/reasoningEffort:\s*buildEffort/.test(createSeg), 'CREATE folds the picked effort into the saved spec');
+// FUNCTIONAL round-trip through the real Specialties store: a saved custom carrying a loadout normalizes + persists it.
+{
+  const saved = S.saveCustom({ name: 'Loadout QA', purpose: 'test', kit: ['dish', 'notebook', 'dish'], skills: ['web-research', 'web-research'], reasoningEffort: 'high' });
+  A.ok(saved.kit.indexOf('dish') >= 0 && saved.kit.indexOf('notebook') >= 0, 'a custom class round-trips its picked kit');
+  A.eq(saved.kit.length, 2, 'the saved kit is deduped (dish listed once)');
+  A.ok(saved.skills.indexOf('web-research') >= 0, 'a custom class round-trips its picked skill package');
+  A.eq(saved.skills.length, 1, 'the saved skill package is deduped');
+  A.eq(saved.reasoningEffort, 'high', 'a custom class round-trips its picked reasoning effort');
+  // and it survives a reload (re-normalized from the store shape)
+  const round = S.get(saved.id);
+  A.ok(round && round.kit.length === 2 && round.reasoningEffort === 'high', 'the loadout persists on the saved custom record');
+  // a garbage effort normalizes to null (never leaks an unknown level into a run)
+  const bad = S.saveCustom({ name: 'Bad Effort', purpose: 'x', reasoningEffort: 'extreme' });
+  A.eq(bad.reasoningEffort, null, 'an unknown effort normalizes to null');
+  S.removeCustom(saved.id); S.removeCustom(bad.id);
+}
+
+/* ---------- S3c. TIER->MODEL: settings persist the map + resolveTierModel consults it ---------- */
+// the seam is now filled: resolveTierModel reads a persisted tier->model map (a pinned tier wins; else base model).
+A.ok(/TIER_MODELS_KEY = 'starnet\.tierModels\.v1'/.test(app), 'app.js defines the tier->model store key');
+const rtm = app.slice(app.indexOf('function resolveTierModel('), app.indexOf('function resolveTierModel(') + 400);
+A.ok(/tierModelMap\(\)\[tier\]/.test(rtm), 'resolveTierModel consults the persisted tier->model map (the S1 seam is filled)');
+A.ok(/return baseModel \|\|/.test(rtm), 'an unpinned tier still falls back to the base/station-default model (default unchanged)');
+// the SETTINGS MODELS section adds the CLASS TIER MODELS mapping + wires it to the SAME localStorage key.
+A.ok(/CLASS TIER MODELS/.test(sui), 'SETTINGS surfaces a CLASS TIER MODELS mapping');
+A.ok(/TIER_MODELS_KEY = 'starnet\.tierModels\.v1'/.test(sui), 'the settings writer uses the SAME key app.js reads (no new plumbing)');
+A.ok(/function wireTierModels\(body\)/.test(sui) && /wireTierModels\(host\)/.test(sui), 'the tier-model picker is wired into buildSettings');
+A.ok(/models\/openrouter/.test(sui.slice(sui.indexOf('function wireTierModels'))), 'the tier-model selects are filled from the live model catalog');
+const tmSeg = sui.slice(sui.indexOf('function wireTierModels'), sui.indexOf('function wireTierModels') + 2200);
+A.ok(/writeTierModels\(map\)/.test(tmSeg), 'a tier-model pick persists to the store on change');
+
 A.report('class-loadouts');
