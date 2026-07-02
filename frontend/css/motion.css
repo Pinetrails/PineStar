@@ -623,3 +623,16 @@ textarea, select {
   animation: cardIn 0.34s var(--ease-out) backwards;
   animation-delay: calc(min(var(--ci, 0), 8) * 25ms);
 }
+
+/* (3) NOTIFICATION SEVERITY — a whisper, not a traffic light. A lead glyph + a left edge that
+   colours to the severity. The good/gold/warn/bad toast edges already exist above (§7); here we
+   add the glyph slot, the info edge, and the bad edge for the normalized 'error' case. */
+.toast { display: flex; align-items: baseline; gap: 6px; }
+.toast-sev { flex: 0 0 auto; font-size: 12px; line-height: 1; opacity: 0.9; }
+.toast.sev-bad  { border-left-color: var(--bad); }
+.toast.sev-bad  .toast-sev { color: var(--bad); }
+.toast.sev-warn .toast-sev { color: var(--warn); }
+.toast.sev-good .toast-sev { color: var(--ok); }
+.toast.sev-gold .toast-sev { color: var(--gold); }
+.toast.sev-info { border-left-color: var(--ph-dim); }
+.toast.sev-info .toast-sev { color: var(--ph-dim); }

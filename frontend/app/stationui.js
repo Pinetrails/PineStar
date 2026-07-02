@@ -779,15 +779,17 @@ const StationUI = (() => {
   function renderMemoryList(host, records, a) {
     host.innerHTML = '';
     if (!records.length) {
-      const p = el('div', 'mc-empty');
-      p.textContent = a.name + ' has no stored memories yet. As it works and you Keep what it learns, durable '
-        + 'beliefs collect here — each typed, scored, and traceable to the run that earned it.';
-      host.appendChild(p); return;
+      // shared .empty-state vocabulary (glyph + title + prose) rather than a bare paragraph
+      const es = el('div', 'empty-state');
+      es.innerHTML = '<span class="es-glyph">◈</span><b>NO MEMORIES YET</b>' +
+        '<span>As ' + esc(a.name) + ' works and you Keep what it learns, durable beliefs collect here — ' +
+        'each typed, scored, and traceable to the run that earned it.</span>';
+      host.appendChild(es); return;
     }
     // pinned first, then most-trusted, then most-recent — the order recall itself favours
     const sorted = records.slice().sort((x, y) =>
       (!!y.pinned - !!x.pinned) || ((y.trust || 0) - (x.trust || 0)) || ((y.createdAt || 0) - (x.createdAt || 0)));
-    for (const rec of sorted) host.appendChild(memCard(rec, a));
+    sorted.forEach((rec, i) => { const c = memCard(rec, a); c.style.setProperty('--ci', String(i)); host.appendChild(c); });
   }
 
   function memCard(rec, a) {
@@ -1834,6 +1836,18 @@ const StationUI = (() => {
   }
 
   /* ============== NOTIFICATIONS — driven by real harness events ============== */
+  // Severity is a WHISPER, not a traffic light: it rides the existing cls the callers already
+  // pass (good/gold/warn/bad, plus legacy 'error'→bad). No severity is invented where the caller
+  // gave none — an empty cls stays 'info' (a dim edge + a quiet ▸). Each maps to a lead glyph.
+  const SEV_GLYPH = { bad: '✗', warn: '⚠', good: '✓', gold: '★', info: '▸' };
+  function severityOf(cls) {
+    const c = String(cls || '').trim().toLowerCase();
+    if (c === 'error' || c === 'bad' || c === 'fail') return 'bad';
+    if (c === 'warn' || c === 'warning') return 'warn';
+    if (c === 'good' || c === 'ok' || c === 'success') return 'good';
+    if (c === 'gold') return 'gold';
+    return 'info';
+  }
   function notify(text, cls) {
     store.notifs.push({ id: uid('n'), t: Date.now(), txt: String(text || ''), cls: cls || '', read: false });
     if (store.notifs.length > 60) store.notifs = store.notifs.slice(-60);
@@ -1848,8 +1862,12 @@ const StationUI = (() => {
     if (typeof document === 'undefined' || !text) return;
     let stack = document.getElementById('toast-stack');
     if (!stack) { stack = el('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
-    const t = el('div', 'toast' + (cls ? ' ' + cls : ''));
-    t.innerHTML = '<span class="toast-ts">' + clock(Date.now()) + '</span>' + esc(text);
+    const sev = severityOf(cls);
+    // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
+    // sev-* class so 'error'/'info' also get an edge + the lead glyph.
+    const t = el('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev);
+    t.innerHTML = '<span class="toast-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
+      '<span class="toast-ts">' + clock(Date.now()) + '</span>' + esc(text);
     stack.appendChild(t);
     // cap the visible stack so a burst can't cover the screen
     while (stack.children.length > 4) stack.removeChild(stack.firstChild);
@@ -1860,7 +1878,8 @@ const StationUI = (() => {
       t.addEventListener('animationend', gone, { once: true });
       setTimeout(gone, 360);
     };
-    setTimeout(kill, 4200);
+    // errors linger a touch longer so a failure isn't gone before it's read
+    setTimeout(kill, sev === 'bad' ? 6500 : 4200);
     t.addEventListener('click', kill);   // click to dismiss early
   }
   function buildUpdates(body) {
@@ -1874,8 +1893,12 @@ const StationUI = (() => {
     }
     body.innerHTML =
       '<button class="bb sm" id="nf-clear">MARK ALL READ</button>' +
-      '<div class="nf-list">' + store.notifs.slice().reverse().map((n, i) =>
-        '<div class="nf ' + n.cls + (n.read ? ' read' : '') + '" style="--ci:' + i + '">' + ts(n.t) + ' ' + esc(n.txt) + '</div>').join('') + '</div>';
+      '<div class="nf-list">' + store.notifs.slice().reverse().map((n, i) => {
+        const sev = severityOf(n.cls);
+        return '<div class="nf ' + (n.cls || '') + ' sev-' + sev + (n.read ? ' read' : '') + '" style="--ci:' + i + '">' +
+          '<span class="nf-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
+          '<span class="nf-ts">' + ts(n.t) + '</span> ' + esc(n.txt) + '</div>';
+      }).join('') + '</div>';
     body.querySelector('#nf-clear').addEventListener('click', () => {
       store.notifs.forEach(n => n.read = true); save(); rerender('notifs'); badges(); sfx('click');
     });
