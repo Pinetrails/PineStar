@@ -49,8 +49,24 @@ const TrustStore = (() => {
           provenance: (e.provenance && typeof e.provenance === 'object') ? sanitizeProv(e.provenance) : null
         };
       }
+      // the EARNED grant records (provenance for the ledger badge): keep only well-formed rows.
+      const eg = raw.earned && raw.earned.grant;
+      if (eg && typeof eg === 'object') {
+        for (const k in eg) {
+          const g = eg[k];
+          if (!g || typeof g !== 'object') continue;
+          if (!s.earned.grant) s.earned.grant = {};
+          s.earned.grant[k] = { provenance: (g.provenance && typeof g.provenance === 'object') ? sanitizeProv(g.provenance) : null, earnedAt: (typeof g.earnedAt === 'number' && isFinite(g.earnedAt)) ? g.earnedAt : null };
+        }
+      }
       if (raw.declined && typeof raw.declined === 'object') for (const k in raw.declined) { const b = Math.floor(Number(raw.declined[k])); if (Number.isFinite(b) && b > 0) s.declined[k] = b; }
-      if (raw.ignores && typeof raw.ignores === 'object') for (const k in raw.ignores) { const n = Math.floor(Number(raw.ignores[k])); if (Number.isFinite(n) && n > 0) s.ignores[k] = n; }
+      // ignore tallies are { band, n } records (band-scoped stop-forever) — keep only well-formed ones.
+      if (raw.ignores && typeof raw.ignores === 'object') for (const k in raw.ignores) {
+        const ig = raw.ignores[k];
+        if (!ig || typeof ig !== 'object') continue;
+        const band = Math.floor(Number(ig.band)), n = Math.floor(Number(ig.n));
+        if (Number.isFinite(band) && band > 0 && Number.isFinite(n) && n > 0) s.ignores[k] = { band: band, n: n };
+      }
     }
     return s;
   }
