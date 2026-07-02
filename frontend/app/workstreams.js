@@ -61,6 +61,9 @@
       // stream's first run. A manual rename() flips it false so the upgrade (and any future auto-title) can
       // never stomp a title the human chose. Defaults true; preserved verbatim through init()'s re-normalize.
       titleAuto: opts.titleAuto != null ? !!opts.titleAuto : true,
+      // /goal AUTONOMOUS LOOP state (chat.js owns the shape via GoalLoop.normalize) — carried through verbatim so a
+      // standing goal survives a reload/switch exactly like the thread history. Undefined for a stream with no loop.
+      goalLoop: (opts.goalLoop && typeof opts.goalLoop === 'object') ? opts.goalLoop : undefined,
       createdAt: opts.createdAt || t,
       lastActiveAt: opts.lastActiveAt || t
     };
