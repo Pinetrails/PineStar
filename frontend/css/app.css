@@ -481,6 +481,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cd-fpct { color: var(--ph-bright); font-size: 12px; letter-spacing: 0.5px; }
 .cd-sub { font-size: 12px; color: var(--ph-dim); margin: 8px 0 6px; letter-spacing: 0.3px; }
 .cd-sub b { color: var(--ph); font-weight: 600; }
+/* STATION RECORD (G3a pride layer): the durable lifetime counters — a compact grid of honest numbers.
+   Reads PrideStore.snapshot(); a counter with no real sample yet shows "—" (never a fabricated 0). */
+.cd-record { margin: 12px 0 4px; padding: 9px 11px; background: var(--ph-faint); border-left: 2px solid var(--gold); border-radius: 0 5px 5px 0; }
+.cd-record-h { font-family: inherit; font-size: 10px; letter-spacing: .16em; color: var(--gold); opacity: .9; margin-bottom: 8px; }
+.cd-record-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 14px; }
+.cd-stat { display: flex; flex-direction: column; gap: 2px; }
+.cd-stat-n { font-size: 21px; line-height: .95; color: var(--ph-bright); letter-spacing: .5px; text-shadow: 0 0 10px var(--ph-glow2); }
+.cd-stat-n.dim { color: var(--ph-dim); text-shadow: none; }
+.cd-stat-l { font-size: 10px; letter-spacing: .1em; color: var(--ph-dim); text-transform: uppercase; }
+.cd-founded { margin-top: 9px; font-size: 11px; color: var(--ph-dim); letter-spacing: .3px; }
+.cd-founded b { color: var(--ph); font-weight: 600; }
 .cd-sec { margin-top: 14px; }
 .cd-sech { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--ph-faint); padding-bottom: 3px; }
 .cd-dim { color: var(--ph-bright); font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }

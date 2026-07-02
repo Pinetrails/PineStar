@@ -2069,6 +2069,33 @@ const StationUI = (() => {
   const CD_SOURCE = { onboarding: 'from your awakening', commander: 'you told the station', interview: 'from the intake interview', curiosity: 'you answered a question' };
   const CDS = () => (typeof DossierStore !== 'undefined') ? DossierStore : null;
 
+  // STATION RECORD — the durable lifetime pride counters (G3a). Reads the pure PrideStore snapshot and renders a
+  // compact honest grid: a counter with no real sample shows "—", never a made-up 0 (the floorstats honesty rule).
+  // Returns null when the store isn't present (fresh boot / node) so the caller can append unconditionally.
+  function cdStationRecord() {
+    if (typeof PrideStore === 'undefined' || !PrideStore.snapshot) return null;
+    const snap = PrideStore.snapshot();
+    if (!snap) return null;
+    const cell = (known, n, label) => {
+      const val = known ? String(n) : '—';
+      return '<div class="cd-stat"><span class="cd-stat-n' + (known ? '' : ' dim') + '">' + esc(val) + '</span>'
+        + '<span class="cd-stat-l">' + esc(label) + '</span></div>';
+    };
+    const grid = cell(snap.tasksKnown, snap.tasks, 'tasks completed')
+      + cell(snap.deliverablesKnown, snap.deliverables, 'deliverables shipped')
+      + cell(snap.routinesKnown, snap.routines, 'routines fired')
+      + cell(snap.workKnown, snap.workMinutes, 'agent-work minutes');
+    let founded = '';
+    if (snap.founded && snap.foundedAt) {
+      let d = ''; try { d = new Date(snap.foundedAt).toLocaleDateString(); } catch (_) { d = ''; }
+      if (d) founded = '<div class="cd-founded">station founded <b>' + esc(d) + '</b></div>';
+    }
+    return el('div', 'cd-record',
+      '<div class="cd-record-h">STATION RECORD // LIFETIME</div>'
+      + '<div class="cd-record-grid">' + grid + '</div>'
+      + founded);
+  }
+
   function buildCommander(body) {
     const ds = CDS();
     const sum = ds ? ds.summary() : null;
@@ -2091,6 +2118,12 @@ const StationUI = (() => {
       '<div class="cd-sub">' + sum.known.length + ' of ' + dims.length + ' dimensions known &middot; ' + obsLine + '</div>' +
       '<div class="mc-note">This dossier is <b>shared by every agent on your station</b> and folds into each one\'s briefing, so a freshly-deployed agent already knows you. It is <b>local-first</b> — it never leaves this machine. Add, edit, pin, or forget anything below; you own it.</div>');
     body.appendChild(head);
+
+    // STATION RECORD (G3a pride layer): the durable lifetime counters, honest by construction — a counter
+    // with no real sample yet renders "—" (never a fabricated 0). Rendered here, on the station-wide dossier,
+    // because it IS the colony's whole-lifetime track record. Absent store → silently omit (nothing to show).
+    const rec = cdStationRecord();
+    if (rec) body.appendChild(rec);
 
     // the active "get to know you" trigger — runs the intake interview in COMMS, folding answers into the
     // dossier through the same upsert path the cards use. Gated on a free agent + not-already-running.
