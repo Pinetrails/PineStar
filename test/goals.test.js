@@ -142,4 +142,31 @@ A.eq(G.project([goal]).length, 0, 'a done-only goal projects no active arc');
 A.eq(G.project([active]).length, 0, 'a retired-only goal projects no active arc');
 A.eq(G.project([]).length, 0, 'no goals → [] (absent-input safe)');
 
+/* ---- IN-FLIGHT render state (review fix 2): a live-bound front milestone reads "in progress" (no Accept) ---- */
+G.bindMilestoneQuest(g2, 'goal_200:m2', 'wq:9');
+const projLive = G.project([g2], { questLive: ref => ref === 'wq:9' });
+const front = projLive.filter(q => q.kind === 'arc-step').find(s => s.isNext);
+A.eq(front.inFlight, true, 'a front milestone with a LIVE bound quest is flagged inFlight');
+A.ok(/in progress/.test(front.desc), 'an in-flight step reads "in progress" (never a second Accept)');
+const projDead = G.project([g2], { questLive: () => false });
+const front2 = projDead.filter(q => q.kind === 'arc-step').find(s => s.isNext);
+A.eq(front2.inFlight, false, 'a dead/stalled/dismissed binding is NOT in flight — Accept re-offers (recovery path)');
+A.eq(G.project([g2]).filter(q => q.kind === 'arc-step').find(s => s.isNext).inFlight, false, 'no questLive input → never inFlight (absent-input safe, older callers unchanged)');
+
+/* ---- resolveConfirmChoice (review fix 3): the tested home for Confirm / ✎-Edit / Not-now routing ---- */
+const basePath = ['step one now', 'step two here', 'step three too', 'step four also', 'step five more'];
+A.eq(G.resolveConfirmChoice({ value: 'confirm' }, basePath), { action: 'confirm', path: basePath }, 'an explicit Confirm keeps the proposed path');
+A.eq(G.resolveConfirmChoice({ value: 'other', skip: true }, basePath).action, 'decline', 'not-now declines');
+A.eq(G.resolveConfirmChoice(null, basePath).action, 'decline', 'no choice declines (panel dismissed)');
+// a VALID edit (≥3 steps, ; or newline separated, ordinals stripped) confirms the EDITED path
+const edited = G.resolveConfirmChoice({ custom: true, value: '1. do alpha first; 2. do beta second; 3. do gamma third' }, basePath);
+A.eq(edited.action, 'confirm', 'a valid 3-step edit confirms');
+A.eq(edited.path, ['do alpha first', 'do beta second', 'do gamma third'], 'the EDITED path replaces the model path (ordinals stripped)');
+// an over-long edit is capped at MAX
+A.eq(G.resolveConfirmChoice({ custom: true, value: 'a1 x; b2 x; c3 x; d4 x; e5 x; f6 x' }, basePath).path.length, 5, 'an edited path is capped at 5');
+// THE FIX: a too-short edit is a REJECTION — decline, never silently persist the unedited model tree
+const short = G.resolveConfirmChoice({ custom: true, value: 'just do X' }, basePath);
+A.eq(short.action, 'decline', 'an edit under the 3-step floor DECLINES (the Commander rejected the tree)');
+A.eq(G.resolveConfirmChoice({ custom: true, value: '' }, basePath).action, 'decline', 'an empty edit declines too');
+
 A.report('goals.test');

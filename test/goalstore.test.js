@@ -18,21 +18,24 @@ global.Goals = G;
 let goalsBeliefs = [{ id: 'cd_5', text: 'ship a local-first agent harness' }];
 global.DossierStore = { beliefs: dim => (dim === 'goals' ? goalsBeliefs.slice() : []) };
 
-// a fake WorkQuestStore: accept() mints an incrementing id; quests() reports each as done when markDone'd.
-let wqSeq = 0; const wqDone = {}; const wqAccepts = [];
+// a STATEFUL fake WorkQuestStore (mirrors the real projection contract incl. the additive `stalled` field):
+// accept() mints an OPEN build; the test flips status/stalled/dismissed to drive liveness.
+let wqSeq = 0; const wq = {}; const wqAccepts = [];
 global.WorkQuestStore = {
-  accept: parsed => { wqAccepts.push(parsed); return 'wq:' + (++wqSeq); },
-  quests: () => Object.keys(wqDone).map(id => ({ id, status: wqDone[id] ? 'done' : 'open' }))
+  accept: parsed => { wqAccepts.push(parsed); const id = 'wq:' + (++wqSeq); wq[id] = { status: 'open', stalled: false, dismissed: false }; return id; },
+  quests: () => Object.keys(wq).filter(id => !wq[id].dismissed).map(id => ({ id, status: wq[id].status, stalled: wq[id].stalled }))
 };
+const wqComplete = id => { wq[id].status = 'done'; };
 
 // capture the sidecar mirror + let a POST resolve
 const posts = [];
 global.fetch = (url, opts) => { posts.push({ url, body: JSON.parse((opts && opts.body) || '{}') }); return Promise.resolve({ ok: true }); };
 
-// a fake Harness returning a fixed decomposition; a launch recorder
+// a fake Harness returning a fixed decomposition (COUNTED — the spend-once cache is asserted on this counter)
 let harnessReply = '1. Set up the runtime\n2. Wire the event bus\n3. Build the first agent loop';
+let chatCalls = 0;
 const launches = [];
-global.Harness = { chat: async () => ({ text: harnessReply, error: false }) };
+global.Harness = { chat: async () => { chatCalls++; return { text: harnessReply, error: false }; } };
 
 const { GoalStore } = require('../frontend/app/goalstore.js');
 
@@ -91,7 +94,7 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   A.eq(GoalStore.acceptMilestone(goal.id, goal.milestones[1].id), null, 'a non-front milestone cannot be accepted (chaining)');
 
   // the work quest completes → a clean run.end reconciles: the milestone folds done + writes evidence + chains
-  wqDone['wq:1'] = true;
+  wqComplete('wq:1');
   clock = 2000;
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_a' });
   A.eq(GoalStore.activeGoal().milestones[0].status, 'done', 'completing the REAL work completes the milestone (never a manual tick)');
@@ -103,9 +106,9 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   A.ok(posts.some(p => p.url === '/api/goals' && p.body.goal && p.body.goal.done === 1), 'the advanced progress re-mirrors to the sidecar');
 
   // complete the remaining two → the goal completes
-  GoalStore.acceptMilestone(goal.id, goal.milestones[1].id); wqDone['wq:2'] = true;
+  GoalStore.acceptMilestone(goal.id, goal.milestones[1].id); wqComplete('wq:2');
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_b' });
-  GoalStore.acceptMilestone(goal.id, goal.milestones[2].id); wqDone['wq:3'] = true;
+  GoalStore.acceptMilestone(goal.id, goal.milestones[2].id); wqComplete('wq:3');
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_c' });
   A.eq(GoalStore.activeGoal(), null, 'all milestones done → the goal is done (no active goal left)');
   A.eq(GoalStore.quests().length, 0, 'a done goal projects no active arc');
@@ -119,13 +122,13 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   goalsBeliefs = [{ id: 'cd_11', text: 'build a second real feature' }];
   harnessReply = '1. draft the plan clearly\n2. build the core module\n3. wire the ui shell in';
   const g3 = GoalStore.confirm(GoalStore.pendingDecomposition(), (await GoalStore.proposeDecomposition()).texts);
-  GoalStore.acceptMilestone(g3.id, g3.milestones[0].id); wqDone['wq:4'] = true;
+  GoalStore.acceptMilestone(g3.id, g3.milestones[0].id); wqComplete('wq:4');
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_d' });
   A.ok(studyNotes.length >= 1 && studyNotes[0].milestoneText, 'a completed milestone bumps Study salience (goal-progress note)');
   // finish the goal → the suggest gate bump
-  GoalStore.acceptMilestone(g3.id, g3.milestones[1].id); wqDone['wq:5'] = true;
+  GoalStore.acceptMilestone(g3.id, g3.milestones[1].id); wqComplete('wq:5');
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_e' });
-  GoalStore.acceptMilestone(g3.id, g3.milestones[2].id); wqDone['wq:6'] = true;
+  GoalStore.acceptMilestone(g3.id, g3.milestones[2].id); wqComplete('wq:6');
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_f' });
   A.ok(suggestBumped >= 1, 'completing the whole goal bumps the suggestion gate (§5 additive OR)');
   delete global.StudyStore; delete global.SuggestStore;
@@ -157,7 +160,7 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   goalsBeliefs = [{ id: 'cd_40', text: 'a persisted goal' }];
   harnessReply = '1. persist step one\n2. persist step two\n3. persist step three';
   const gp = GoalStore.confirm(GoalStore.pendingDecomposition(), (await GoalStore.proposeDecomposition()).texts);
-  GoalStore.acceptMilestone(gp.id, gp.milestones[0].id); wqDone['wq:' + wqSeq] = true;
+  GoalStore.acceptMilestone(gp.id, gp.milestones[0].id); wqComplete('wq:' + wqSeq);
   clock = 9000; GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_p' });
   const prBefore = GoalStore.quests()[0].desc;
   GoalStore.init({ now: () => clock, getSystem: () => '', launchDirective: t => launches.push(t) });   // re-hydrate from the own key
@@ -193,6 +196,120 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   slot.arcDone();
   A.eq(slot.visibleBeat(), null, 'the moment is free again after the arc confirm resolves');
   A.eq(slot.canStudy(), 'free', 'and the pre-Tier-2 memory/study surface is untouched (still free)');
+
+  /* ====== 8b. REVIEW FIX 1 — the contested arc beat NEVER strands a queued memory deck ======
+     A late memory.proposed lands while the arc Dialogue is open (a minutes-long confirm): the deck QUEUES.
+     When the arc resolves, arcDone(true) hands the slot STRAIGHT to the queued deck (no gap another beat could
+     steal), the deck renders + resolves, pendingMemory clears, and the study/arc lanes are free — never frozen. */
+  const slot2 = S.makeBeatSlot();
+  slot2.arcShown();
+  A.eq(slot2.visibleBeat(), 'arc', 'the arc panel holds the moment');
+  slot2.memoryProposed('run_late');                       // reflection lands mid-confirm
+  A.eq(slot2.memoryDeck(), 'queue', 'the late memory deck QUEUES behind the visible arc panel (never stacks)');
+  A.eq(slot2.canStudy(), 'busy', 'study still cedes while the arc panel is up');
+  slot2.arcDone(true);                                    // the arc resolves WITH a deck queued → hand the slot over
+  A.eq(slot2.visibleBeat(), 'memory', 'arcDone(true) hands the slot straight to the queued memory deck (no gap)');
+  slot2.memoryShown();                                    // renderTurninBatch's idempotent hard-claim (showNextTurnin path)
+  slot2.memoryDone('run_late', false);                    // the Commander decides the deck
+  A.eq(slot2._pending(), 0, 'pendingMemory cleared — the claim cannot strand the lanes');
+  A.eq(slot2.canStudy(), 'free', 'the study lane is free after the drained deck resolves (no freeze)');
+  A.eq(slot2.canArc(), 'free', 'the arc lane is free too');
+  // and with NOTHING queued, arcDone(false) frees the slot outright
+  const slot3 = S.makeBeatSlot();
+  slot3.arcShown(); slot3.arcDone(false);
+  A.eq(slot3.visibleBeat(), null, 'arcDone(false) frees the slot when nothing queued');
+
+  /* ====== 9. REVIEW FIX 2 — DOUBLE-ACCEPT refused while the bound build is LIVE; re-offer on stall/dismiss ====== */
+  goalsBeliefs = [{ id: 'cd_50', text: 'a goal for the double-accept guard' }];
+  harnessReply = '1. guard step one\n2. guard step two\n3. guard step three';
+  const gd = GoalStore.confirm(GoalStore.pendingDecomposition(), (await GoalStore.proposeDecomposition()).texts);
+  const acceptsBefore = wqAccepts.length, launchesBefore = launches.length;
+  const mA = GoalStore.acceptMilestone(gd.id, gd.milestones[0].id);
+  A.ok(mA, 'the front milestone accepts');
+  const boundRef = gd.milestones[0].questRef;
+  A.eq(wqAccepts.length, acceptsBefore + 1, 'one work quest minted');
+  // the projection now reads IN PROGRESS with no re-accept (render state = the guard's state)
+  const front9 = GoalStore.quests().filter(q => q.kind === 'arc-step').find(s => s.isNext);
+  A.eq(front9.inFlight, true, 'the accepted front step projects inFlight (renders "in progress", no Accept button)');
+  // a stale UI re-click is REFUSED: no duplicate build, no duplicate paid run, the binding untouched
+  A.eq(GoalStore.acceptMilestone(gd.id, gd.milestones[0].id), null, 'a re-accept while the bound build is LIVE is refused');
+  A.eq(wqAccepts.length, acceptsBefore + 1, 'no duplicate work quest minted');
+  A.eq(launches.length, launchesBefore + 1, 'no duplicate run launched (no double-spend)');
+  A.eq(gd.milestones[0].questRef, boundRef, 'the original binding is untouched');
+  // a DONE-but-not-yet-reconciled build also refuses (one reconcile away from folding — never re-spend)
+  wqComplete(boundRef);
+  A.eq(GoalStore.acceptMilestone(gd.id, gd.milestones[0].id), null, 'a done-awaiting-reconcile build refuses re-accept too');
+  GoalStore.reconcile('');
+  A.eq(gd.milestones[0].status, 'done', 'reconcile folds the completed milestone');
+  // STALL RECOVERY: the next milestone's build stalls → Accept re-offers → re-accept mints a FRESH build + re-binds
+  const mB = GoalStore.acceptMilestone(gd.id, gd.milestones[1].id);
+  A.ok(mB, 'the next front milestone accepts');
+  const stalledRef = gd.milestones[1].questRef;
+  wq[stalledRef].stalled = true;                          // the run errored/budgeted out — the build stalled
+  const front9b = GoalStore.quests().filter(q => q.kind === 'arc-step').find(s => s.isNext);
+  A.eq(front9b.inFlight, false, 'a STALLED bound build is no longer in flight — Accept re-offers (recovery)');
+  const reAccept = GoalStore.acceptMilestone(gd.id, gd.milestones[1].id);
+  A.ok(reAccept, 'a stalled binding re-accepts cleanly');
+  A.ok(gd.milestones[1].questRef && gd.milestones[1].questRef !== stalledRef, 'the fresh build re-binds the milestone');
+  // DISMISSED RECOVERY: the fresh build is dismissed → dead binding → Accept re-offers again
+  wq[gd.milestones[1].questRef].dismissed = true;
+  A.eq(GoalStore.questLive(gd.milestones[1].questRef), false, 'a dismissed build is not live (dead questRef)');
+  A.ok(GoalStore.acceptMilestone(gd.id, gd.milestones[1].id), 'a dismissed/dead binding re-accepts (recovery path)');
+
+  /* ====== 10. REVIEW FIX 3 — a too-short EDIT declines; a valid edit persists the EDITED path ====== */
+  goalsBeliefs = [{ id: 'cd_60', text: 'a goal the commander will edit' }];
+  harnessReply = '1. model step one\n2. model step two\n3. model step three';
+  const prop10 = await GoalStore.proposeDecomposition();
+  // the Commander types "just do X" into the ✎ edit box — the resolver DECLINES; routing persists NOTHING
+  const dShort = G.resolveConfirmChoice({ custom: true, value: 'just do X' }, prop10.texts);
+  A.eq(dShort.action, 'decline', 'a too-short edit resolves to decline (the Commander rejected the tree)');
+  const goalsBefore10 = GoalStore._state().goals.length;
+  GoalStore.declineDecomposition(prop10.belief);          // the routing chat.js applies on 'decline'
+  A.eq(GoalStore._state().goals.length, goalsBefore10, 'NOTHING was persisted — the unedited model tree never lands');
+  A.eq(GoalStore.willOfferDecomposition(), false, 'the rejected belief state is marked offered (re-offer only on change)');
+  // a VALID edit persists the EDITED milestones, not the model path
+  goalsBeliefs = [{ id: 'cd_61', text: 'a goal the commander edits well' }];
+  const prop10b = await GoalStore.proposeDecomposition();
+  const dGood = G.resolveConfirmChoice({ custom: true, value: 'my alpha step; my beta step; my gamma step' }, prop10b.texts);
+  A.eq(dGood.action, 'confirm', 'a valid 3-step edit resolves to confirm');
+  const gEdited = GoalStore.confirm(prop10b.belief, dGood.path);
+  A.ok(gEdited && gEdited.milestones.map(m => m.text).join('|') === 'my alpha step|my beta step|my gamma step',
+    'the EDITED path is what persists (never the model path the Commander replaced)');
+
+  /* ====== 11. REVIEW FIX 6 — the paid decomposition is SPENT ONCE per belief state (cache) ====== */
+  goalsBeliefs = [{ id: 'cd_70', text: 'a goal whose proposal must not re-bill' }];
+  harnessReply = '1. cache step one\n2. cache step two\n3. cache step three';
+  const callsBefore = chatCalls;
+  const p1 = await GoalStore.proposeDecomposition();      // the moment is then lost (memory claimed it) — result discarded
+  A.eq(chatCalls, callsBefore + 1, 'the first propose pays one aux call');
+  const p2 = await GoalStore.proposeDecomposition();      // the next run end re-offers the SAME belief state
+  A.eq(chatCalls, callsBefore + 1, 'the re-offer reuses the CACHED path — no second aux spend');
+  A.eq(p2.texts, p1.texts, 'the cached path is the same proposal');
+  GoalStore.declineDecomposition(p2.belief);              // deciding the belief clears its cache
+  goalsBeliefs = [{ id: 'cd_70', text: 'a goal whose proposal must not re-bill, changed' }];
+  await GoalStore.proposeDecomposition();
+  A.eq(chatCalls, callsBefore + 2, 'a CHANGED belief state is a fresh spend (the cache never leaks across states)');
+
+  /* ====== 12. REVIEW FIX 5 — the offered-fingerprint memory is FIFO-capped (no unbounded growth) ====== */
+  for (let i = 0; i < 120; i++) { goalsBeliefs = [{ id: 'cd_cap_' + i, text: 'capped goal number ' + i + ' distinct' }]; GoalStore.declineDecomposition(GoalStore.pendingDecomposition() || goalsBeliefs[0]); }
+  A.ok(GoalStore._state().offeredOrder.length <= 100, 'the offered set is FIFO-capped at 100 (bounded localStorage)');
+  A.eq(Object.keys(GoalStore._state().offered).length, GoalStore._state().offeredOrder.length, 'the offered map and its order stay in lockstep (evicted keys are deleted)');
+  // the cap survives a persistence round-trip
+  GoalStore.init({ now: () => clock, getSystem: () => '', launchDirective: t => launches.push(t) });
+  A.ok(GoalStore._state().offeredOrder.length <= 100, 'the FIFO cap round-trips through hydrate');
+
+  /* ---- source-locks: the chat.js/stationui glue actually drives the tested seams (idiom of study.test §3) ---- */
+  const fs = require('fs');
+  const path = require('path');
+  const chatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
+  const uiSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
+  const iArc = chatSrc.indexOf('async function offerArc');
+  A.ok(iArc > 0, 'chat.js defines offerArc');
+  const arcBody = chatSrc.slice(iArc, iArc + 4200);
+  A.ok(/slotArcDone\(turninQueue\.length > 0\)/.test(arcBody), 'offerArc hands the slot to a queued deck on resolve (fix 1: arcDone(more))');
+  A.ok(/if \(turninQueue\.length && !activeTurnin\) showNextTurnin\(\);/.test(arcBody), 'offerArc DRAINS the queued memory deck in its finally (fix 1: never a stranded invisible deck)');
+  A.ok(/Goals\.resolveConfirmChoice/.test(arcBody), 'offerArc routes the choice through the PURE resolver (fix 3 lives in tested code)');
+  A.ok(/q\.isNext && !q\.inFlight/.test(uiSrc), 'stationui renders Accept only for a NOT-in-flight front step (fix 2 render state)');
 
   A.report('goalstore.test');
 })();
