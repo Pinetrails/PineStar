@@ -438,13 +438,23 @@ const App = (() => {
   /* ---------- LOADOUT (Class Loadouts S1): a class is model tier + effort + skill package + kit ----------
      Defaults, never locks (sandbox law): summon APPLIES these to the agent record; the Commander overrides
      any of them per-agent afterward. */
-  // Resolve a specialty's model TIER ('reasoning'|'balanced'|'fast') to a CONCRETE model id. There is no
-  // user-configured tier->model mapping in the app yet (the tier pips are advisory), so for S1 this resolves
-  // to the base model summon already inherits (the woken hero's model) — i.e. the class does not (yet) change
-  // the model, only records its effort/skills/kit. THIS IS THE SEAM: when a tier->model settings store lands,
-  // fill it in here and everything downstream (roster/pushRoster/runOnce) already honors a per-agent model.
+  // Resolve a specialty's model TIER ('reasoning'|'balanced'|'fast') to a CONCRETE model id. The Commander can
+  // OPTIONALLY map each tier to a specific model in SETTINGS → MODELS → CLASS TIER MODELS (persisted per-machine
+  // in localStorage under TIER_MODELS_KEY). An unset tier ('(station default)') falls back to the base model the
+  // summon already inherits (the woken hero's model / the model dock's primary), so the default behaviour is
+  // exactly as before — the class only changes the model when the Commander has deliberately pinned that tier.
+  // Everything downstream (roster / pushRoster / runOnce) already honors a per-agent model id.
+  const TIER_MODELS_KEY = 'starnet.tierModels.v1';   // { reasoning?, balanced?, fast? } -> concrete model id (shared with stationui SETTINGS)
+  function tierModelMap() {
+    try {
+      if (typeof localStorage === 'undefined') return {};
+      const m = JSON.parse(localStorage.getItem(TIER_MODELS_KEY) || '{}');
+      return (m && typeof m === 'object') ? m : {};
+    } catch (_) { return {}; }
+  }
   function resolveTierModel(tier, baseModel) {
-    // Future: return (Settings.tierModels && Settings.tierModels[tier]) || baseModel;
+    const pinned = tier && tierModelMap()[tier];
+    if (pinned && String(pinned).trim()) return String(pinned).trim();
     return baseModel || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : null) || null;
   }
   // fold the class loadout (model tier + effort + skills) onto an agent record. Kit placement is separate
@@ -565,7 +575,7 @@ const App = (() => {
     const _spawned = (typeof World !== 'undefined' && !!World.spawnAgent);
     if (_spawned) World.spawnAgent(a);                          // Phase C: a real floor body
     else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
-    if (_spawned) requisitionKit(a, spec);   // Class Loadouts S1: place the class kit at the agent's workstation (real placement; degrades if no room yet)
+    const kitRes = _spawned ? requisitionKit(a, spec) : null;   // Class Loadouts S1: place the class kit at the agent's workstation (real placement; degrades if no room yet)
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     else console.warn('[summon] StationUI.setRoster missing — crew manifest not refreshed');
     try { console.log('[summon]', JSON.stringify({ id, name: a.name, skin: a.skin, hadHero: !!agent, worldSpawn: _spawned, crew: (typeof World !== 'undefined' && World.crewCount) ? World.crewCount() : '?', roster: agents.size })); } catch (e) {}
@@ -584,7 +594,26 @@ const App = (() => {
       ? a.name + ' summoned - type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).'
       : a.name + ' summoned - overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate.',
       'good');
+    // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
+    // applied, and the kit (placed now vs deferred until it gets a workstation). Skipped for a plain persona-only
+    // class (no kit/skills/effort) so it never adds noise. This mirrors the dossier copy so the two never drift.
+    const lo = loadoutSummary(a, spec, kitRes);
+    if (lo) _notify(a.name + ' loadout - ' + lo, 'info');
     return a;
+  }
+  // Compose the one-line summon loadout beat from what was ACTUALLY applied. Kit is split into placed-now vs
+  // pending (deferred until the agent gets a workstation), matching the real requisition outcome; skills + effort
+  // read off the agent record applyLoadout just wrote. Returns '' when there is nothing to say.
+  function loadoutSummary(a, spec, kitRes) {
+    const parts = [];
+    const placed = (kitRes && kitRes.placed) || [];
+    const pending = (a && Array.isArray(a.pendingKit)) ? a.pendingKit : [];
+    if (placed.length) parts.push('kit at its station: ' + placed.join(', '));
+    if (pending.length) parts.push('kit ' + pending.join(', ') + ' arrives when it gets a workstation');
+    const skills = (a && Array.isArray(a.skills)) ? a.skills : [];
+    if (skills.length) parts.push(skills.length + ' skill' + (skills.length === 1 ? '' : 's') + ' enabled');
+    if (a && a.reasoningEffort) parts.push(a.reasoningEffort + ' reasoning effort applied');
+    return parts.join(' · ');
   }
   // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
   let concurrentCap = null;   // server MAX_CONCURRENT_AGENTS (how many agents RUN at once) — fetched once, kept honest

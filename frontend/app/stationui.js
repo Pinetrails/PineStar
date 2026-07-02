@@ -2109,6 +2109,57 @@ const StationUI = (() => {
     if (resetBtn) resetBtn.addEventListener('click', () => post(null, 'reset to environment default'));
   }
 
+  // CLASS TIER MODELS (Class Loadouts S3) — the three tier->model pins the summon path (app.resolveTierModel)
+  // reads. Persisted in localStorage under the SAME key app.js reads (starnet.tierModels.v1) so there's no new
+  // plumbing between the two IIFEs. The selects are filled from the live OpenRouter catalog (same source the
+  // fallback-chain picker uses); an empty value means "(station default)" — the tier inherits the model dock.
+  const TIER_MODELS_KEY = 'starnet.tierModels.v1';
+  const TM_TIERS = ['reasoning', 'balanced', 'fast'];
+  function readTierModels() {
+    try { const m = JSON.parse(localStorage.getItem(TIER_MODELS_KEY) || '{}'); return (m && typeof m === 'object') ? m : {}; }
+    catch (_) { return {}; }
+  }
+  function writeTierModels(m) { try { localStorage.setItem(TIER_MODELS_KEY, JSON.stringify(m || {})); } catch (_) {} }
+  function wireTierModels(body) {
+    const form = body.querySelector('#tm-form');
+    if (!form) return;
+    const msgEl = body.querySelector('#tm-msg');
+    const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
+    const map = readTierModels();
+    const selOf = tier => body.querySelector('#tm-' + tier);
+    // paint the saved pin onto each select (an unknown/stale id is added as an option so it still shows honestly).
+    const paint = () => TM_TIERS.forEach(tier => {
+      const sel = selOf(tier); if (!sel) return;
+      const want = String(map[tier] || '');
+      if (want && !Array.prototype.some.call(sel.options, o => o.value === want)) {
+        const o = document.createElement('option'); o.value = want; o.textContent = want + '  ·  (not in catalog)'; sel.appendChild(o);
+      }
+      sel.value = want;
+    });
+    paint();
+    // fill the model catalog into all three selects (same warmed catalog the fallback picker uses).
+    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => r.json()).then(j => {
+      if (!j || !Array.isArray(j.models)) return;
+      const opts = j.models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      TM_TIERS.forEach(tier => {
+        const sel = selOf(tier); if (!sel) return;
+        const frag = document.createDocumentFragment();
+        opts.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = (m.name && m.name !== m.id) ? (m.name + '  ·  ' + m.id) : m.id; frag.appendChild(o); });
+        sel.appendChild(frag);
+      });
+      paint();   // re-apply the saved value now the real options exist
+    }).catch(() => {});
+    TM_TIERS.forEach(tier => {
+      const sel = selOf(tier); if (!sel) return;
+      sel.addEventListener('change', () => {
+        const v = String(sel.value || '').trim();
+        if (v) map[tier] = v; else delete map[tier];
+        writeTierModels(map); sfx('click');
+        setMsg(v ? ('✓ ' + tier.toUpperCase() + '-class agents will summon on ' + v) : ('✓ ' + tier.toUpperCase() + ' follows the station default'), true);
+      });
+    });
+  }
+
   // P1-8 NOTIFICATION PREFS — persist per-category on/off + sound to store.settings.notifyPrefs (localStorage);
   // notify() reads it live at emit time, so a toggle takes effect on the very next notification with no rerender.
   function wireNotifyPrefs(body) {
@@ -2341,7 +2392,20 @@ const StationUI = (() => {
           '<button class="bb xs" id="fbc-reset" title="clear the saved chain so it follows the environment default again" style="display:none">RESET TO DEFAULT</button>' +
         '</div>' +
       '</div>' +
-      '<div id="fbc-msg" class="msg"></div>';
+      '<div id="fbc-msg" class="msg"></div>' +
+      // CLASS TIER MODELS (Class Loadouts S3) — map each class clearance tier to a concrete model. A class's
+      // model is a TIER indirection (DEEP / BALANCED / FAST); when summoned it resolves through this map. Left
+      // at "(station default)" a tier inherits the model dock's primary, so this is purely opt-in. Saved per-machine
+      // (localStorage) and read live by the summon path (app.resolveTierModel) — no rerun/rebuild needed.
+      '<h4 class="ms-h">CLASS TIER MODELS <span class="dim">— which model each class clearance summons on</span></h4>' +
+      '<p class="set-about">Every class carries a clearance <b>tier</b> — ◆◆◆ DEEP, ◆◆ BALANCED, or ◆ FAST. When you summon one, the tier resolves to a real model here. Leave a tier on <b>(station default)</b> and it inherits your primary model from the COMMS model dock. Pin a tier to give every DEEP-class agent a stronger model and every FAST-class agent a cheaper one, automatically. Saved on this machine; you can still re-pin any single agent afterward in its dossier.</p>' +
+      '<div class="mc-form" id="tm-form">' +
+        '<div class="set-row"><label for="tm-reasoning">◆◆◆ DEEP</label><select id="tm-reasoning" class="fbc-sel" data-tier="reasoning"><option value="">(station default)</option></select></div>' +
+        '<div class="set-row"><label for="tm-balanced">◆◆ BALANCED</label><select id="tm-balanced" class="fbc-sel" data-tier="balanced"><option value="">(station default)</option></select></div>' +
+        '<div class="set-row"><label for="tm-fast">◆ FAST</label><select id="tm-fast" class="fbc-sel" data-tier="fast"><option value="">(station default)</option></select></div>' +
+        '<div class="mc-hint">A pin applies to the next agent you summon of that tier. Empty = follow the model dock. This never overrides a model you set on a specific agent.</div>' +
+      '</div>' +
+      '<div id="tm-msg" class="msg"></div>';
     const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
@@ -2402,6 +2466,7 @@ const StationUI = (() => {
     wireCredits(host);
     wireBudget(host);
     wireFallbackChain(host);
+    wireTierModels(host);
     wireNotifyPrefs(host);
     wireAdvanced(host);
     wireBackup(host);
