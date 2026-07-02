@@ -364,6 +364,7 @@ const App = (() => {
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
              approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
              skills: Array.isArray(a.skills) ? a.skills.slice() : [],   // Class Loadouts S1: per-agent skill package persists
+             pendingKit: Array.isArray(a.pendingKit) && a.pendingKit.length ? a.pendingKit.slice() : undefined,   // Class Loadouts S1: kit not yet delivered (agent had no room) — survives reload, delivered on room-assign
              stats: a.stats || null, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
@@ -377,6 +378,7 @@ const App = (() => {
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
                   approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   skills: Array.isArray(s.skills) ? s.skills.slice() : [],   // Class Loadouts S1: restore the per-agent skill package
+                  pendingKit: Array.isArray(s.pendingKit) && s.pendingKit.length ? s.pendingKit.slice() : undefined,   // Class Loadouts S1: restore undelivered kit (drained by deliverPendingKit once the agent has a room)
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
       a.systemPrompt = composeSystemPrompt(a);
@@ -465,6 +467,11 @@ const App = (() => {
   // station.addProp — object=capability stays honest, never a flag). Degrades gracefully: places what fits into
   // the agent's room, skips what doesn't (a fresh summon usually has NO room until the Commander gives it a PC in
   // REFIT — then nothing is placed and every kit item is reported as "needs a workstation"). Never throws.
+  // a skip reason that a LATER room assignment can heal: the agent had no room ('no-room'), or the room was
+  // full at the time ('no-valid-tile' — space may free up). Reasons like 'manual-bind' (computer/connector are
+  // never auto-placed), 'no-prop', 'no-build' are permanent for THIS kit item, so they never go pending (they'd
+  // never resolve and would nag forever). Placement rejections keep retrying — they're usually transient.
+  const KIT_RETRYABLE = { 'no-room': 1, 'no-valid-tile': 1, 'no-station': 1, 'rejected': 1 };
   function requisitionKit(a, spec) {
     const kit = (spec && Array.isArray(spec.kit)) ? spec.kit : [];
     if (!a || !kit.length) return { placed: [], skipped: [] };
@@ -478,13 +485,52 @@ const App = (() => {
       catch (e) { res = { ok: false, reason: (e && e.message) || 'error' }; }
       if (res && res.ok) placed.push(t); else skipped.push({ type: t, reason: (res && res.reason) || 'skipped' });
     }
+    // KIT-ARRIVAL GAP fix: a fresh summon has NO room, so the class kit places nothing. Persist the retryable
+    // misses on the agent record (survives reload via serializeAgentLite/rehydrate). deliverPendingKit() drains
+    // this list — idempotently — the moment the agent is bound to a bay/workstation (build.js -> onAgentRoomAssigned).
+    const pending = skipped.filter(s => KIT_RETRYABLE[s.reason]).map(s => s.type);
+    setPendingKit(a, pending);
     if (skipped.length) {
       const names = skipped.map(s => s.type).join(', ');
       try { console.log('[summon] kit not fully placed for ' + a.id + ' — needs a workstation for: ' + names, skipped); } catch (_) {}
       const _n = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : null;
-      if (_n) _n(a.name + ': give it a workstation in REFIT to receive its kit (' + names + ').', 'info');
+      if (_n && pending.length) _n(a.name + ': give it a workstation in REFIT to receive its kit (' + pending.join(', ') + ').', 'info');
     }
-    return { placed, skipped };
+    return { placed, skipped, pending };
+  }
+  // merge new pending kit objectTypes onto the agent record (deduped; ADD-only — an item already delivered
+  // once is never re-queued because deliverPendingKit removes it). Empty list clears the field so saves stay clean.
+  function setPendingKit(a, types) {
+    if (!a) return;
+    const seen = {}, out = [];
+    for (const v of (a.pendingKit || []).concat(types || [])) { const t = String(v || '').trim(); if (t && !seen[t]) { seen[t] = true; out.push(t); } }
+    if (out.length) a.pendingKit = out; else delete a.pendingKit;
+  }
+  // KIT-ARRIVAL GAP: an agent that just received a room (bay/workstation bound) drains its pending kit through the
+  // SAME validated path summon uses. Idempotent — requisitionForAgent returns {ok:true, already:true} for a cap
+  // already in the room (skipped, dropped from pending), and only genuinely retryable misses stay queued. Called
+  // from build.js after assignPropAgent binds an agent, and on load for any saved agent that already has a room.
+  function deliverPendingKit(agentId) {
+    const a = agents.get(agentId);
+    if (!a || !Array.isArray(a.pendingKit) || !a.pendingKit.length) return { delivered: [], stillPending: [] };
+    const canPlace = (typeof Build !== 'undefined' && Build.requisitionForAgent);
+    if (!canPlace) return { delivered: [], stillPending: a.pendingKit.slice() };
+    const delivered = [], stillPending = [];
+    for (const t of a.pendingKit) {
+      let res = null;
+      try { res = Build.requisitionForAgent(a.id, t); }
+      catch (e) { res = { ok: false, reason: (e && e.message) || 'error' }; }
+      if (res && res.ok) delivered.push(t);                       // placed now, OR already present -> done either way
+      else if (res && KIT_RETRYABLE[res.reason]) stillPending.push(t);   // still no room/space -> keep waiting
+      // any other reason (manual-bind/no-prop) is permanent -> drop it so it never nags
+    }
+    if (stillPending.length) a.pendingKit = stillPending; else delete a.pendingKit;
+    if (delivered.length) {
+      try { persist(); } catch (_) {}
+      const _n = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : null;
+      if (_n) _n((a.name || a.id) + ': kit delivered (' + delivered.join(', ') + ').', 'good');
+    }
+    return { delivered, stillPending };
   }
 
   // a backend-valid, collision-free agentId for a summon (never the hero's reserved 'agent').
@@ -1381,7 +1427,13 @@ const App = (() => {
     if (typeof Build !== 'undefined') {
       // agents: the live multi-agent roster the BAY agent-picker / builder offer. The bay->agent binding
       // persists via station.serialize (prop.agentId round-trips), so the routing floor is saved per agent.
-      Build.init({ getStation: () => station, persist: persist, world: World, agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })) });
+      // onAgentRoomAssigned: the KIT-ARRIVAL GAP seam — when REFIT binds an agent to a bay/workstation it now
+      // has a room, so drain any kit that couldn't be placed at summon (idempotent; see deliverPendingKit).
+      Build.init({ getStation: () => station, persist: persist, world: World, onAgentRoomAssigned: deliverPendingKit,
+        agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })) });
+      // a resumed save may already have agents with a room (bay bound before this feature, or kit queued last
+      // session) — flush their pending kit now that the station geometry is loaded and Build is wired.
+      for (const a of liveAgents()) if (Array.isArray(a.pendingKit) && a.pendingKit.length) deliverPendingKit(a.id);
       const bbBuild = el('bb-build');
       if (bbBuild) {
         let seenBuild = false; try { seenBuild = !!localStorage.getItem('starnet.refit.seen'); } catch (e) {}
@@ -1856,5 +1908,6 @@ const App = (() => {
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
+    deliverPendingKit,   // Class Loadouts S1: drain an agent's undelivered class kit once it has a room (also called via Build onAgentRoomAssigned)
     applyConfig: applyAgentConfig };
 })();

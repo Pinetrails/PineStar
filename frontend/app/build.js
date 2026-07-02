@@ -458,7 +458,9 @@ const Build = (() => {
     g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
     g.querySelector('#bay-ok').onclick = () => {
       const res = station.assignPropAgent(bayId, input.value.trim());
-      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP(); }
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP();
+        // KIT-ARRIVAL GAP: binding an agent gives it a room — deliver any class kit that couldn't place at summon.
+        if (res.agentId && opts && typeof opts.onAgentRoomAssigned === 'function') { try { opts.onAgentRoomAssigned(res.agentId); } catch (_) {} } }
       else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
     };
     g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, noun + ' unbound', true); closeP(); };
@@ -501,7 +503,9 @@ const Build = (() => {
     g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
     g.querySelector('#ws-ok').onclick = () => {
       const res = station.assignPropAgent(propId, input.value.trim());
-      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('workstation → ' + res.agentId) : 'workstation cleared', true); closeP(); }
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('workstation → ' + res.agentId) : 'workstation cleared', true); closeP();
+        // KIT-ARRIVAL GAP: harmless if the agent still has no bay-room (delivery no-ops); delivers if a bay exists.
+        if (res.agentId && opts && typeof opts.onAgentRoomAssigned === 'function') { try { opts.onAgentRoomAssigned(res.agentId); } catch (_) {} } }
       else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
     };
     g.querySelector('#ws-clear').onclick = () => { station.assignPropAgent(propId, ''); sfx('click'); flashTip(ev, 'workstation cleared', true); closeP(); };
