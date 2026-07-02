@@ -1291,6 +1291,93 @@ const StationUI = (() => {
     });
   }
 
+  // MODELS panel (P0-3) — the ordered FALLBACK CHAIN the loop walks when the primary model fails mid-run.
+  // Server-persisted (/api/fallback/chain) + applied live; env SKYNET_FALLBACK_MODELS stays the default until
+  // saved. Editing is local (add from catalog / remove / reorder) until SAVE posts the whole ordered list.
+  function wireFallbackChain(body) {
+    const form = body.querySelector('#fbc-form');
+    if (!form) return;
+    const listEl = body.querySelector('#fbc-list');
+    const addSel = body.querySelector('#fbc-add');
+    const msgEl = body.querySelector('#fbc-msg');
+    const saveBtn = body.querySelector('#fbc-save');
+    const resetBtn = body.querySelector('#fbc-reset');
+    const maxEl = body.querySelector('#fbc-max');
+    const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
+    let chain = [];          // the WORKING copy being edited (posted whole on SAVE)
+    let savedFlag = false;   // is the server chain a saved override (vs env default)?
+    let maxEntries = 8;
+    const paint = () => {
+      if (maxEl) maxEl.textContent = String(maxEntries);
+      if (resetBtn) resetBtn.style.display = savedFlag ? '' : 'none';
+      if (!listEl) return;
+      if (!chain.length) {
+        listEl.innerHTML = '<div class="fbc-row dim">— no fallback: if the model fails, the run fails —</div>';
+      } else {
+        listEl.innerHTML = chain.map((id, i) =>
+          '<div class="fbc-row" data-i="' + i + '">' +
+            '<span class="fbc-ord">' + (i + 1) + '.</span>' +
+            '<span class="fbc-id" title="' + esc(id) + '">' + esc(id) + '</span>' +
+            '<button class="bb xs" data-act="up" title="try this model earlier"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+            '<button class="bb xs" data-act="dn" title="try this model later"' + (i === chain.length - 1 ? ' disabled' : '') + '>▼</button>' +
+            '<button class="bb xs" data-act="rm" title="remove from the chain">✕</button>' +
+          '</div>').join('');
+      }
+      // annotate the source honestly, mirroring the Budget panel's saved-vs-env truthfulness
+      listEl.title = savedFlag ? 'saved on this machine' : 'environment default (not yet saved here)';
+      listEl.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.closest('.fbc-row').dataset.i);
+        const act = b.dataset.act;
+        if (act === 'rm') chain.splice(i, 1);
+        else if (act === 'up' && i > 0) { const t = chain[i - 1]; chain[i - 1] = chain[i]; chain[i] = t; }
+        else if (act === 'dn' && i < chain.length - 1) { const t = chain[i + 1]; chain[i + 1] = chain[i]; chain[i] = t; }
+        sfx('click'); paint();
+      }));
+    };
+    const applyStatus = (st) => {
+      chain = Array.isArray(st && st.chain) ? st.chain.slice() : [];
+      savedFlag = !!(st && st.saved);
+      if (st && typeof st.maxEntries === 'number') maxEntries = st.maxEntries;
+      paint();
+    };
+    fetch('/api/fallback/chain', { cache: 'no-store' }).then(r => r.json()).then(applyStatus)
+      .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });
+    // catalog for the ADD picker — the same warmed OpenRouter catalog the model dock uses. Best-effort: an empty
+    // catalog just leaves the picker with its placeholder (the chain itself still paints + saves fine).
+    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => r.json()).then(j => {
+      if (!addSel || !j || !Array.isArray(j.models)) return;
+      const frag = document.createDocumentFragment();
+      j.models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
+        if (!m || !m.id) return;
+        const o = document.createElement('option');
+        o.value = m.id; o.textContent = (m.name && m.name !== m.id) ? (m.name + '  ·  ' + m.id) : m.id;
+        frag.appendChild(o);
+      });
+      addSel.appendChild(frag);
+    }).catch(() => {});
+    if (addSel) addSel.addEventListener('change', () => {
+      const id = addSel.value; addSel.value = '';
+      if (!id) return;
+      if (chain.indexOf(id) >= 0) { setMsg('already in the chain'); sfx('bad'); return; }
+      if (chain.length >= maxEntries) { setMsg('the chain holds at most ' + maxEntries + ' models'); sfx('bad'); return; }
+      chain.push(id); setMsg(''); sfx('click'); paint();
+    });
+    const post = (models, okText) => {
+      setMsg('saving…');
+      fetch('/api/fallback/chain', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ models: models }) })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => {
+          if (!ok) { setMsg((j && j.error) || 'could not save the chain'); sfx('bad'); return; }
+          applyStatus(j);
+          const warn = (j && j.warnings && j.warnings.length) ? ' — not in the catalog (kept anyway): ' + j.warnings.join(', ') : '';
+          setMsg('✓ ' + okText + warn, true); sfx('click');
+        })
+        .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
+    };
+    if (saveBtn) saveBtn.addEventListener('click', () => post(chain, 'chain saved & applied'));
+    if (resetBtn) resetBtn.addEventListener('click', () => post(null, 'reset to environment default'));
+  }
+
   function buildSettings(body) {
     refreshCodexConnectionStatus();
     const s = store.settings;
@@ -1353,6 +1440,21 @@ const StationUI = (() => {
         '</div>' +
       '</div>' +
       '<div id="budget-msg" class="msg"></div>' +
+      // MODELS — the ordered FALLBACK CHAIN (P0-3). The primary model is chosen live in the COMMS model dock; this
+      // sets what the loop tries NEXT if that model fails mid-run. Persisted server-side + applied live to every run
+      // path (browser, cron, channels); env SKYNET_FALLBACK_MODELS is the default until you save one here.
+      '<h4 class="ms-h">MODELS <span class="dim">— fallback chain</span></h4>' +
+      '<p class="set-about">Your primary model is set in the COMMS model dock. If it <b>fails mid-run</b> — the provider is overloaded (502/503), errors (500), the model is unknown (404), or your key hits a rate-limit / billing / auth wall — the loop retries the same turn on the <b>next model in this list</b>, in order, instead of dying. A failover shows a <b>⤳ failover</b> notice + a LOGBOOK line so you can see it happen. Empty = no fallback. Saved here on this machine; the default comes from the environment.</p>' +
+      '<div class="mc-form" id="fbc-form">' +
+        '<div id="fbc-list" class="mc-list-fb"><div class="dim">reading chain…</div></div>' +
+        '<div class="set-row"><select id="fbc-add" class="fbc-sel"><option value="">＋ add a model from the catalog…</option></select></div>' +
+        '<div class="mc-hint">Order is the retry order — the loop walks it top-to-bottom. Up to <span id="fbc-max">8</span> models. Unknown ids are allowed (the catalog can be stale) but flagged.</div>' +
+        '<div class="mc-acts">' +
+          '<button class="bb sm" id="fbc-save">SAVE CHAIN</button>' +
+          '<button class="bb xs" id="fbc-reset" title="clear the saved chain so it follows the environment default again" style="display:none">RESET TO DEFAULT</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="fbc-msg" class="msg"></div>' +
       '<h4 class="ms-h">SCHEDULED TASKS</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">- ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
@@ -1370,6 +1472,7 @@ const StationUI = (() => {
     wireProviderActions(body);
     wireKeyActions(body);
     wireBudget(body);
+    wireFallbackChain(body);
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
     body.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t; applySettings(); save(); sfx('click');

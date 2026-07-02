@@ -1676,6 +1676,17 @@ input[type=number].key-input:focus { border-color: var(--ph); box-shadow: inset 
 #budget-form .set-row .bg-cap { flex: 1; font-size: 16px; padding: 5px 9px; text-align: right; }
 #budget-spend { font-size: 13px; margin: 2px 0 8px; }
 #budget-spend b { color: var(--ph-bright); }
+/* MODELS panel — the ordered fallback chain (P0-3). Additive: new selectors only, on-theme via the same vars. */
+.mc-list-fb { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
+.fbc-row { display: flex; align-items: center; gap: 6px; border: 1px solid var(--ph-dim); background: rgba(0,0,0,.32); padding: 4px 8px; }
+.fbc-ord { flex: 0 0 auto; color: var(--ph-dim); font-size: 12px; }
+.fbc-id { flex: 1; color: var(--ph-bright); font-size: 13px; text-shadow: 0 0 5px var(--ph-glow2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fbc-row .bb[disabled] { opacity: .35; cursor: default; }
+select.fbc-sel {
+  flex: 1; font-family: inherit; font-size: 13px; color: var(--ph);
+  background: #000; border: 2px solid var(--ph-dim); padding: 5px 8px; outline: none;
+}
+select.fbc-sel:focus { border-color: var(--ph); box-shadow: 0 0 12px var(--ph-glow2); }
 .mc-seg { display: flex; gap: 0; margin: 2px 0 4px; }
 .mc-seg-btn {
   flex: 1; cursor: pointer; font-family: inherit; font-size: 12px; letter-spacing: .5px;
