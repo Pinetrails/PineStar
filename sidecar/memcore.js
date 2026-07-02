@@ -41,7 +41,7 @@
   }
 
   // ---- near-duplicate detection (Hermes-parity: Jaccard token overlap, dependency-free) ----
-  // catches PARAPHRASE dupes that exact-text equality misses ("Andrew prefers npm start" vs "prefers npm start
+  // catches PARAPHRASE dupes that exact-text equality misses ("the user prefers npm start" vs "prefers npm start
   // over serve"), so reflection doesn't clutter the turn-in beat and the panel can flag redundant beliefs.
   const SIM_STOP = new Set(('a an the of to in on for and or but is are was were be been it its this that with as at by from your you i we they').split(/\s+/));
   function simTokens(s) {   // mirrors context.tokenize (3+ char alnum, stopword-stripped) — kept inline so memcore stays standalone

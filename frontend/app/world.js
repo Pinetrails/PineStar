@@ -152,7 +152,7 @@ const World = (() => {
      simply stops engaging — the existing self-heal (decideIdle clears stilling on entry) returns the body
      to its normal idle life (quirks/social/chase/wander resume). Re-engaging re-warms it indefinitely. */
   const CHAT_WARM_MIN = 30000, CHAT_WARM_MAX = 90000;  // 30s–90s: a FRESH random window is drawn on each engagement, so the
-                                                        // moment the stare loses interest is never predictable (Andrew: "Less predictable")
+                                                        // moment the stare loses interest is never predictable (design call: "Less predictable")
   let chatWarmUntil = -1e9;                  // absolute deadline (frame clock, fnow) past which the stare goes cold; -1e9 = never warm
   /* TIER D · D3 SOCIAL ENCOUNTERS — Tier C (gaze-only) grows bounded MOVEMENT beats. ONE live encounter
      station-wide (G4): `socialBeat` is the single slot — null, or {kind, aId, bId, until}. `until` is a HARD
@@ -2166,7 +2166,7 @@ const World = (() => {
   }
 
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
-  // Petz "it knows where you are". RETUNED 2026-07-02 (Andrew: "not constantly following the mouse, only so
+  // Petz "it knows where you are". RETUNED 2026-07-02 (design call: "not constantly following the mouse, only so
   // often"): at the old shares (hero 0.32 / crew 0.15) an actively-moving cursor stayed fresh continuously, so
   // roughly a third of ALL ambient glances (which re-fire every ~4-11s) pointed at the mouse — it read as
   // tracking, not noticing. Now a cursor-directed ambient glance is (a) rarer per roll (0.12 / 0.06) and

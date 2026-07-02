@@ -7,7 +7,7 @@
    timer, the real now-source, id minting, persistence) lives only in sidecar/index.js — see
    docs/CRON_INTEGRATION_PLAN.md §3.1.
 
-   Scope (andro, 2026-06-18): `interval`, `once`, and a deterministic 5-field cron subset:
+   Scope (locked 2026-06-18): `interval`, `once`, and a deterministic 5-field cron subset:
    numeric fields with *, lists, ranges, and steps. It is intentionally not a full croniter port
    (no named months/days, seconds/year fields).
 

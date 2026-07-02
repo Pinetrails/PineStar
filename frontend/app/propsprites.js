@@ -81,7 +81,7 @@ const PropSprites = (() => {
      the shared ramps below; color identity lives in ACCENTS + emissives, not casings. */
   const LINE = '#06090c';                        // universal silhouette outline
   /* casings are toned DOWN ~15% (sheen rows 20%) from the authoring values so props sit inside the
-     station's dim CRT lighting instead of popping against it — Andrew's pre-merge call. Emissives
+     station's dim CRT lighting instead of popping against it — a locked pre-merge call. Emissives
      and ACC accents keep full brightness; only the body ramps dim. */
   const dim = (c, k) => {   // module-load-safe darken (U isn't defined under a bare Node require)
     k = k || -0.15;
@@ -126,7 +126,7 @@ const PropSprites = (() => {
   const underAO = (x, y, w, h2) => {             // shade the open gap under furniture
     ctx.globalAlpha = 0.20; px(x, y, w, h2, '#000'); ctx.globalAlpha = 1;
   };
-  /* Andrew's locked style law (2026-07-01): projection MIX — low furniture is TOP-BIAS OBLIQUE
+  /* The locked style law (2026-07-01): projection MIX — low furniture is TOP-BIAS OBLIQUE
      (big visible top, short face, ~10px rise: Pokemon/Zelda), naturally tall props are TALL 3/4
      (full height, may briefly occlude an agent: y-sort handles it). SYSTEMS props read as
      machinery BOLTED to the deck (baseplate + floor cable socket); decor/lounge is freestanding.
