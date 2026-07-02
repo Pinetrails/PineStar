@@ -1570,7 +1570,25 @@ const StationUI = (() => {
       // B4 — opt in to a Telegram ping when an autonomous (cron) routine runs on its own and produces work. Default
       // off (anti-spam); the global flag persists server-side so the cron path reads it. Only meaningful once connected.
       '<label class="set-row" style="margin-top:6px"><input type="checkbox" id="tg-notify"> PING ME WHEN I WORK ON MY OWN <span class="dim">— message me when a routine runs autonomously and produces something</span></label>' +
-      '<div id="tg-msg" class="msg"></div>';
+      '<div id="tg-msg" class="msg"></div>' +
+      // DISCORD — the same agent reachable over a Discord bot. Mirrors the Telegram card idioms exactly (masked
+      // token, connect/disconnect, live status, the SHARED global autonomous-ping opt-in). The token is stored by
+      // the sidecar and never displayed; a blank token on reconnect reuses the saved one.
+      '<h4 class="ms-h" style="margin-top:14px">DISCORD</h4>' +
+      '<div id="dc-status" class="set-row">checking…</div>' +
+      '<p class="set-about">DM your agent from Discord. ' +
+        '<b>1.</b> Open the <b>Discord Developer Portal</b> → <b>New Application</b> → <b>Bot</b> → <b>Reset Token</b> → copy the token. ' +
+        '<b>2.</b> Enable <b>MESSAGE CONTENT INTENT</b> on the Bot page, then invite the bot to a server (OAuth2 → URL Generator → <code>bot</code> scope). ' +
+        '<b>3.</b> Paste the token below and connect. Your agent answers using this app\'s current provider + model, ' +
+        'with its own memory + workspace per chat. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span></p>' +
+      '<label class="ms-h" for="dc-token">BOT TOKEN <span class="dim">— from the Discord Developer Portal</span></label>' +
+      '<input id="dc-token" type="password" class="key-input" placeholder="MTE...Bot token" autocomplete="off" spellcheck="false">' +
+      '<div class="set-save"><button class="bb sm" id="dc-connect">⏼ CONNECT</button> ' +
+      '<button class="bb sm danger" id="dc-disconnect">⏏ DISCONNECT</button></div>' +
+      // the SAME global "ping me when I work on my own" opt-in as Telegram (channelSecrets.notifyAutonomous is one
+      // flag; the notifier fans out to every connected channel incl. Discord). Reflects + sets the shared state.
+      '<label class="set-row" style="margin-top:6px"><input type="checkbox" id="dc-notify"> PING ME WHEN I WORK ON MY OWN <span class="dim">— message me when a routine runs autonomously and produces something</span></label>' +
+      '<div id="dc-msg" class="msg"></div>';
 
     const statusEl = body.querySelector('#tg-status');
     const msgEl = body.querySelector('#tg-msg');
@@ -1637,7 +1655,70 @@ const StationUI = (() => {
       try { await fetch('/api/channels/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: notifyBox.checked }) }); sfx('click'); msgEl.textContent = notifyBox.checked ? '✓ i’ll ping you when i work on my own' : 'autonomous pings off'; }
       catch (_) { msgEl.textContent = 'could not reach the sidecar'; }
     });
+
+    // ---- DISCORD card — the exact Telegram flow against the /api/channels/discord/* endpoints ----
+    const dcStatusEl = body.querySelector('#dc-status');
+    const dcMsgEl = body.querySelector('#dc-msg');
+    let dcConfigured = false;   // a token is already saved -> Connect can reconnect without re-pasting
+    function dcPaint(st) {
+      const conn = st && st.connected;
+      dcConfigured = !!(st && st.configured);
+      dcStatusEl.style.color = conn ? 'var(--ok)' : (dcConfigured ? 'var(--gold)' : 'var(--ph-dim)');
+      dcStatusEl.textContent = conn ? ('● CONNECTED' + (st.state && st.state !== 'up' ? ' (' + st.state + ')' : ''))
+        : dcConfigured ? ('○ saved but offline — click CONNECT to reconnect' + (st.detail ? ' — ' + st.detail : ''))
+        : '○ not connected';
+      const nb = body.querySelector('#dc-notify'); if (nb) nb.checked = !!(st && st.notifyAutonomous);   // shared global opt-in
+    }
+    async function dcRefresh() {
+      try { const r = await fetch('/api/channels/discord/status'); dcPaint(await r.json()); }
+      catch (_) { dcConfigured = false; dcStatusEl.style.color = 'var(--ph-dim)'; dcStatusEl.textContent = '○ sidecar offline'; }
+    }
+    buildMessaging._refreshDiscord = dcRefresh;
+    if (!buildMessaging._wiredDiscord && typeof U !== 'undefined' && U.bus) {
+      buildMessaging._wiredDiscord = true;
+      U.bus.on('channel.connect', p => {
+        if (p && p.channel === 'discord' && buildMessaging._refreshDiscord && document.querySelector('#dc-status')) buildMessaging._refreshDiscord();
+      });
+    }
+    body.querySelector('#dc-connect').addEventListener('click', async () => {
+      const token = (body.querySelector('#dc-token').value || '').trim();
+      if (!token && !dcConfigured) { sfx('bad'); dcMsgEl.textContent = 'paste your Discord bot token first'; return; }
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+      const usingCodex = provider === 'codex' || provider === 'openai-codex';
+      const key = (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey(provider) || '') : '';
+      const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? (Harness.getBaseUrl(provider) || '') : '';
+      const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured(provider));
+      const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
+      if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); dcMsgEl.textContent = 'connect your agent (provider + model) on the title screen first'; return; }
+      const ag = present[0] || {};
+      const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
+      const agentId = (ws && ws.agentId) || 'agent';
+      const system = (ag && ag.systemPrompt) || '';
+      const agentName = (ag && ag.name) || '';
+      dcMsgEl.textContent = 'connecting…';
+      try {
+        const r = await fetch('/api/channels/discord/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, baseUrl, agentId, system, agentName }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) { dcMsgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
+        else { dcMsgEl.textContent = '✓ connected — DM your bot on Discord'; sfx('click'); notify('Discord bot connected', 'good'); body.querySelector('#dc-token').value = ''; }
+      } catch (e) { dcMsgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
+      dcRefresh();
+    });
+    body.querySelector('#dc-disconnect').addEventListener('click', async () => {
+      try { await fetch('/api/channels/discord/disconnect', { method: 'POST' }); dcMsgEl.textContent = 'disconnected'; sfx('click'); }
+      catch (_) { dcMsgEl.textContent = 'could not reach the sidecar'; }
+      dcRefresh();
+    });
+    body.querySelector('#dc-token').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); body.querySelector('#dc-connect').click(); } });
+    // the Discord card's notify checkbox drives the SAME global opt-in; keep the Telegram checkbox in sync on change.
+    const dcNotifyBox = body.querySelector('#dc-notify');
+    if (dcNotifyBox) dcNotifyBox.addEventListener('change', async () => {
+      try { await fetch('/api/channels/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: dcNotifyBox.checked }) }); sfx('click'); if (notifyBox) notifyBox.checked = dcNotifyBox.checked; dcMsgEl.textContent = dcNotifyBox.checked ? '✓ i’ll ping you when i work on my own' : 'autonomous pings off'; }
+      catch (_) { dcMsgEl.textContent = 'could not reach the sidecar'; }
+    });
+
     refresh();
+    dcRefresh();
   }
 
   /* ============== CONNECTORS — attach MCP servers so agents gain external tools ==============

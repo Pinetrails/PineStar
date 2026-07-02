@@ -1186,9 +1186,10 @@ function startDiscord(token, key, model, agentCfg) {
   stopDiscord();
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
+  const reasoningEffort = resolveReasoningEffort(provider, cfg.reasoningEffort);
   const prev = (channelSecrets && channelSecrets.discord) || {};
   channelSecrets = Object.assign({}, channelSecrets, { discord: {
-    token: token, key: key, model: model, provider: provider, baseUrl: cfg.baseUrl || cfg.base_url || '', enabled: true,
+    token: token, key: key, model: model, provider: provider, baseUrl: cfg.baseUrl || cfg.base_url || '', reasoningEffort: reasoningEffort, enabled: true,
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
@@ -1201,7 +1202,7 @@ function startDiscord(token, key, model, agentCfg) {
         const provider = normalizeProvider(d.provider);
         const k = providerRuntimeKey(provider, d.key || '');
         const baseUrl = providerRuntimeBaseUrl(provider, d.baseUrl || d.base_url || '');
-        return { key: k, model: d.model, provider, baseUrl, configured: providerHasCredential(provider, k, baseUrl), agentId: d.agentId, system: d.system };
+        return { key: k, model: d.model, provider, baseUrl, configured: providerHasCredential(provider, k, baseUrl), reasoningEffort: resolveReasoningEffort(provider, d.reasoningEffort), agentId: d.agentId, system: d.system };
       },
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(),
@@ -1268,6 +1269,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
   if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/discord/connect') return handleDiscordConnect(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/discord/sync') return handleDiscordSync(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/discord/disconnect') return handleDiscordDisconnect(req, res);
+  if (req.method === 'GET' && req.url === '/api/channels/discord/status') return handleDiscordStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/notify') return handleChannelNotify(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
@@ -1365,7 +1370,7 @@ server.listen(PORT, '127.0.0.1', () => {
     const envTok = String(ENV('DISCORD_TOKEN') || '').trim();
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (d.enabled && d.token && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '' }); console.log('  · discord auto-started from saved config'); }
+    if (d.enabled && d.token && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '', reasoningEffort: d.reasoningEffort }); console.log('  · discord auto-started from saved config'); }
     else if (envTok && envKey && envModel) { startDiscord(envTok, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
   } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
@@ -2819,6 +2824,67 @@ function handleChannelStatus(req, res) {
   const t = (channelSecrets && channelSecrets.telegram) || {};
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ connected: telegramStatus.connected, configured: !!t.token, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
+}
+
+// POST /api/channels/discord/connect { token, key?, model, provider? } — the Messaging tab's Discord card hands over
+// the bot token (Discord Developer Portal) plus the app's current provider config, exactly like the Telegram connect.
+// The sidecar persists the channel config (protected sibling file) and starts the adapter through the generic
+// registry/wireChannel path. Secrets are NEVER echoed back. Mirrors handleChannelConnect (Telegram).
+async function handleDiscordConnect(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const saved = (channelSecrets && channelSecrets.discord) || {};
+  const provider = normalizeProvider(body.provider || saved.provider);
+  const token = String(body.token || '').trim() || String(saved.token || '');
+  const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(saved.key || ''));
+  const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || saved.baseUrl || saved.base_url || '');
+  const model = String(body.model || '').trim() || String(saved.model || '');
+  const reasoningEffort = resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || saved.reasoningEffort);
+  const agentId = String(body.agentId || '').trim() || String(saved.agentId || '');
+  const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');
+  const name = String(body.agentName || '').trim() || String(saved.name || '');
+  if (!token) return json(400, { error: 'missing bot token — create a bot in the Discord Developer Portal and paste its token here' });
+  if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
+  if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
+  try { startDiscord(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  json(200, { connected: true, state: discordStatus.state });
+}
+
+// POST /api/channels/discord/sync — refresh the agent identity the Discord bot runs as (mirrors handleChannelSync).
+async function handleDiscordSync(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const d = (channelSecrets && channelSecrets.discord) || null;
+  if (!d || !d.token) return json(200, { synced: false });
+  const patch = {};
+  if (typeof body.agentId === 'string' && body.agentId.trim()) patch.agentId = body.agentId.trim();
+  if (typeof body.system === 'string') patch.system = body.system;
+  if (typeof body.model === 'string' && body.model.trim()) patch.model = body.model.trim();
+  if (typeof body.provider === 'string' && body.provider.trim()) patch.provider = normalizeProvider(body.provider.trim());
+  if (body.reasoningEffort || body.reasoning_effort) patch.reasoningEffort = normalizeReasoningEffort(body.reasoningEffort || body.reasoning_effort);
+  if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
+  if (typeof body.agentName === 'string') patch.name = body.agentName;
+  channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, d, patch) });
+  saveChannelSecrets(channelSecrets);
+  json(200, { synced: true });
+}
+
+// POST /api/channels/discord/disconnect — stop the bot and mark it disabled (kept in config so the token can be
+// re-enabled without re-entry). Mirrors handleChannelDisconnect (Telegram).
+async function handleDiscordDisconnect(req, res) {
+  stopDiscord();
+  if (channelSecrets && channelSecrets.discord) {
+    channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, channelSecrets.discord, { enabled: false }) });
+    saveChannelSecrets(channelSecrets);
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+}
+
+// GET /api/channels/discord/status — booleans + gateway state ONLY; never the token/key. Mirrors handleChannelStatus.
+function handleDiscordStatus(req, res) {
+  const d = (channelSecrets && channelSecrets.discord) || {};
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ connected: discordStatus.connected, configured: !!d.token, state: discordStatus.state, detail: discordStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
 }
 
 // POST /api/channels/notify { on } — the GLOBAL opt-in (default off): ping a connected channel when an AUTONOMOUS
