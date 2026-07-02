@@ -795,6 +795,61 @@ const PropSprites = (() => {
     }
   };
 
+  F.trophycase = (x, y, w, h, f) => {
+    // TROPHY CASE — the station's real achievements made permanent (G3b). A glass museum cabinet: dark bolted
+    // frame, two lit shelves of GOLD trophies (one per earned milestone/completed quest, f.trophies), an
+    // engraved VT323 plaque, and an eerie cold museum uplight. Cap 6 visible + a '+N' counter (the OUTBOX/board
+    // idiom). EMPTY = honest dust on bare shelves, never a placeholder trophy (the honesty law). Grants nothing.
+    const won = Math.max(0, (f && f.trophies) | 0);
+    sh(x + 2, y + h - 1, w - 4);                                            // floor contact shadow
+    box(x, y, w, h, '#1c1712');                                            // dark cabinet carcass (walnut/iron)
+    px(x + 1, y + 1, w - 2, 1, '#3a2f22');                                 // top rail sheen
+    rivets(x + 1, y + 1, w - 2, h - 2, '#5a4a34', '#0a0806');              // corner bolts
+    inset(x + 2, y + 2, w - 4, h - 8, '#0b0d0e');                          // the glass interior (dark)
+    // eerie museum uplight: a cold spill washing up the case from below the glass (a state, not an event)
+    const up = 0.14 + 0.05 * (0.5 + 0.5 * Math.sin(now / 900));
+    glow(x + 2, y + 3, w - 4, h - 9, won > 0 ? '#c9e6ff' : '#3a4a58', up);
+    // two shelves; trophies stand in a row on each (up to 3 per shelf → 6 visible)
+    const shelfY = [y + 4, y + h - 12];
+    const shown = Math.min(won, 6);
+    for (let s = 0; s < 2; s++) {
+      const sy = shelfY[s];
+      px(x + 3, sy + 6, w - 6, 1, '#221b12'); px(x + 3, sy + 6, w - 6, 1, '#2e2415');   // shelf plank
+      const nOn = Math.max(0, Math.min(3, shown - s * 3));
+      for (let i = 0; i < 3; i++) {
+        const tx = x + 4 + i * ((w - 8) / 3), on = i < nOn;
+        if (on) {
+          // a small gold trophy: cup + stem + base, with a glint
+          const gc = '#f3c94a', gd = '#a8842a';
+          px(tx + 1, sy + 1, 3, 2, gc); px(tx, sy + 1, 1, 1, gd); px(tx + 4, sy + 1, 1, 1, gd);   // cup + handles
+          px(tx + 2, sy + 3, 1, 2, gd);                                    // stem
+          px(tx + 1, sy + 5, 3, 1, gc);                                    // base
+          if (blink(1100, (i + s) * 0.3)) px(tx + 2, sy + 1, 1, 1, '#fff2c0');   // slow glint
+          glow(tx, sy, 5, 6, gc, 0.16);
+        } else if (won === 0 && s === 0 && i === 1) {
+          // EMPTY case honesty: a single dust mote drifting on the centre of the top shelf — nothing earned yet
+          if (blink(1700, 0)) px(tx + 2, sy + 3, 1, 1, '#2a3138');
+        }
+      }
+    }
+    if (won > 6) {
+      ctx.fillStyle = '#ffe6a0'; ctx.font = "7px 'VT323','Courier New',monospace";
+      ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('+' + (won - 6), x + w - 3, y + 12);
+    }
+    // engraved plaque across the base — VT323, phosphor-gold on won, cold-dim when the case is empty
+    const py = y + h - 5;
+    px(x + 3, py, w - 6, 4, '#100c08');                                    // plaque recess
+    px(x + 3, py, w - 6, 1, '#2c2318');
+    ctx.fillStyle = won > 0 ? '#e8c860' : '#3e4650';
+    ctx.font = "6px 'VT323','Courier New',monospace"; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(won > 0 ? 'HONOURS' : 'EMPTY', x + 4, py + 4);
+    // glass reflection: a soft diagonal sheen across the front (reads as glass, not an open shelf)
+    ctx.save(); ctx.globalAlpha = 0.07; ctx.fillStyle = '#dff0ff';
+    ctx.beginPath(); ctx.moveTo(x + 3, y + 3); ctx.lineTo(x + 3 + (w >> 1), y + 3); ctx.lineTo(x + 3, y + 3 + (h >> 1)); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  };
+
   F.splitter = (x, y, w, h, f) => {
     // SPLITTER — a 1-tile router that fans the work stream across its out-lanes (load-balance = real parallelism)
     box(x + 1, y + 1, w - 2, h - 2, '#2b332e');
@@ -3982,6 +4037,7 @@ const PropSprites = (() => {
     // station's real state readable + clickable. The workstation-model rule: functional props that aren't
     // capability objects get their own category, never mixed into cosmetics).
     { id: "missionboard", label: "MISSION BOARD", cat: "command", tier: "functional", w: 3, h: 1, animated: true, blocks: false, desc: "MISSION BOARD — the quest log made physical. Every pinned card is a real open quest; click the board to read them. It suggests, never gates." },
+    { id: "trophycase", label: "TROPHY CASE", cat: "command", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "TROPHY CASE — the station's real achievements made permanent. Earned milestones, completed quests, and your living tools stand behind glass; click to open the case. It grants nothing — it remembers." },
 
     /* ===================== COSMETIC ===================== */
     // SCREENS — ops & display dressing.
@@ -4103,6 +4159,10 @@ const PropSprites = (() => {
   // both from the real quest projection (throttled ~1s) — the sprite stays a pure function of its inputs.
   let missionPins = 0, missionHot = false;
   function setMissionPins(open, hot) { missionPins = Math.max(0, open | 0); missionHot = !!hot; }
+  // G3b — the TROPHY CASE's live readout: how many trophies are EARNED (real completed quests + milestones).
+  // The world layer feeds it from the trophy projection (throttled ~1s); the sprite stays a pure function.
+  let trophyCount = 0;
+  function setTrophyCount(n) { trophyCount = Math.max(0, n | 0); }
   function propFired(id) { const s = id && propPulse[id]; return (s && s.at) ? Math.max(0, 1 - (now - s.at) / PULSE_MS) : 0; }
 
   /* draw one prop. f = {t, x, y, w, h} in LOCAL tile coords; `work` lights its screens.
@@ -4123,6 +4183,7 @@ const PropSprites = (() => {
     if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
     if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
     if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; }   // G1b: open quests pinned + the station-gap beacon
+    if (f.t === 'trophycase') o.trophies = trophyCount;   // G3b: earned trophies stand behind glass (real completions only)
     fn(X, Y, W, H, o);
     // G0.3 ACTIVITY-HEAT WASH: real token/tool flow burns the working screens brighter + shimmers faster
     // (the monitors live in the prop's upper band); a stalled run cools back to the base work-glow in ~2s.
@@ -4165,6 +4226,8 @@ const PropSprites = (() => {
     setOutboxCrates,
     // G1b MISSION BOARD pins + station-gap beacon (the world layer feeds these from the live quest projection)
     setMissionPins,
+    // G3b TROPHY CASE earned-trophy count (the world layer feeds this from the live trophy projection)
+    setTrophyCount,
     // exposed for tests / reuse
     _F: F,
   };

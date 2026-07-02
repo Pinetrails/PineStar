@@ -1170,6 +1170,7 @@ const App = (() => {
     if (typeof AutopilotStore !== 'undefined') AutopilotStore.reset();   // …and a fresh idle autopilot (no inherited idle/armed state — its decision is re-earned by the new Commander's posture + dossier)
     if (typeof ReturnStore !== 'undefined') ReturnStore.reset();   // …and no inherited return-ritual trail — a fresh Commander gets no prior hero's pending OUTBOX crates or attendance stamp (own key)
     if (typeof PrideStore !== 'undefined') PrideStore.reset();   // …and a brand-new station record — a fresh Commander founds their OWN colony, inheriting no prior hero's lifetime tasks/deliverables/routines/founding-date (own key)
+    if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
     if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
@@ -1220,6 +1221,7 @@ const App = (() => {
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
     if (World.setOnOutbox) World.setOnOutbox(() => { if (typeof ReturnStore !== 'undefined' && ReturnStore.reviewNext) ReturnStore.reviewNext(); });   // G2.3: click the stacked OUTBOX → review the oldest uncollected while-away run
     if (World.setOnMissionBoard) World.setOnMissionBoard(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests'); });   // G1b: click the MISSION BOARD → the QUEST LOG (the board is a projection, never a gate)
+    if (World.setOnTrophyCase) World.setOnTrophyCase(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('trophies'); });   // G3b: click the TROPHY CASE → the TROPHY surface (a projection of real completions, never a gate)
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
     else if (opts.wake) { World.wakeIn(); SFX.level(); }
     // the canonical station the builder edits — restored from the save, or a fresh starter room. LOAD it
@@ -1372,6 +1374,11 @@ const App = (() => {
     // work-items / fired routines / summed run durations into counters that persist across sessions (own key,
     // read-only on the bus). The COMMANDER DOSSIER panel renders snapshot() as the STATION RECORD block.
     if (typeof PrideStore !== 'undefined') PrideStore.init();
+    // G3b SEED-REUSE AGGREGATE: arm the durable per-seed run tally (own key). The digest feeds it the
+    // provenance-matched while-away rows; it powers the TROPHY CASE's living-tools shelf + the once-per-window
+    // "your seed ran 5× this week" callout. ReturnStore's digest is delayed (setTimeout), so this synchronous
+    // init lands before the first digest can feed it — the first while-away digest is tallied.
+    if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.init();
     // AUTOPILOT (autonomy Slice A — the idle self-direction driver): when the Commander goes idle with autonomy
     // enabled, the station either EARNS context (asks one gentle get-to-know-you question — A1) or, once the dial
     // permits acting AND the dossier is hot AND today's leash has budget, it ACTS — runs the anti-slop pipeline as
