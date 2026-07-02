@@ -418,6 +418,70 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(reset.body.agent, 'agent', 'reset echoes the agent it cleared');
     const declAfter = await j('GET', '/api/memory/declined?agent=agent');
     A.eq(JSON.stringify(declAfter.body.declined), '[]', 'the declined list reads empty after a reset');
+
+    // ================= P1 SETTINGS ROWS =================
+
+    // ---- P1-9 ADVANCED runtime knobs: token-gated, persist an override, report env-precedence, reset ----
+    const knobsNoTok = await fetch(B + '/api/runtime/knobs');
+    A.eq(knobsNoTok.status, 403, 'GET /api/runtime/knobs WITHOUT a token -> 403');
+    const knobs = await j('GET', '/api/runtime/knobs');
+    A.eq(knobs.status, 200, 'GET /api/runtime/knobs -> 200');
+    A.ok(knobs.body.fields && knobs.body.fields.maxIters, 'knobs report the maxIters field');
+    A.eq(knobs.body.fields.maxIters.default, 40, 'maxIters default is 40');
+    A.eq(knobs.body.fields.maxIters.saved, null, 'no saved override before any POST');
+    const knobsSet = await j('POST', '/api/runtime/knobs', { maxIters: 55, cronTickMs: 30000 });
+    A.eq(knobsSet.status, 200, 'POST /api/runtime/knobs -> 200');
+    A.eq(knobsSet.body.fields.maxIters.saved, 55, 'the saved override is recorded');
+    A.eq(knobsSet.body.fields.maxIters.effective, 55, 'the saved override becomes effective');
+    const knobsBad = await j('POST', '/api/runtime/knobs', { maxIters: 9999 });
+    A.eq(knobsBad.status, 400, 'an out-of-range knob value -> 400');
+    A.ok(fs.existsSync(path.join(ws, 'runtime.knobs.json')), 'the knobs override persisted to disk');
+    const knobsReset = await j('POST', '/api/runtime/knobs', { maxIters: null, cronTickMs: null });
+    A.eq(knobsReset.body.fields.maxIters.saved, null, 'a null clears the override');
+
+    // ---- P1-10 memory controls: reflection on/off + cooldown, persisted + validated ----
+    const memCfg = await j('GET', '/api/memory/config');
+    A.eq(memCfg.status, 200, 'GET /api/memory/config -> 200');
+    A.eq(memCfg.body.reflectEnabled, true, 'reflection defaults ON');
+    A.ok(typeof memCfg.body.scopeNote === 'string' && memCfg.body.scopeNote.length > 0, 'a scope note is returned');
+    const memSet = await j('POST', '/api/memory/config', { reflectEnabled: false, reflectCooldownMs: 300000 });
+    A.eq(memSet.status, 200, 'POST /api/memory/config -> 200');
+    A.eq(memSet.body.reflectEnabled, false, 'reflection can be turned off');
+    A.eq(memSet.body.reflectCooldownMs, 300000, 'the cooldown persists');
+    const memBad = await j('POST', '/api/memory/config', { reflectCooldownMs: 99999999 });
+    A.eq(memBad.status, 400, 'an over-range cooldown -> 400');
+    A.ok(fs.existsSync(path.join(ws, 'memory.config.json')), 'the memory config persisted to disk');
+
+    // ---- P1-7 STATION BACKUP: export excludes secrets; import round-trips + reset ----
+    // first seed a real budget override so the export has something server-side to carry.
+    await j('POST', '/api/budget/caps', { perRun: 7 });
+    const exp = await j('POST', '/api/config/export', { sections: { settings: { theme: 'blue' }, autonomy: { initiative: 'wait', reach: 'sandbox' } } });
+    A.eq(exp.status, 200, 'POST /api/config/export -> 200');
+    A.eq(exp.body.starnetExport, 1, 'the export carries the schema-version pivot');
+    A.eq(exp.body.sections.budget.perRun, 7, 'the export carries the saved budget override');
+    A.eq(exp.body.sections.settings.theme, 'blue', 'the export carries the browser-owned settings slice');
+    // SECURITY: the seeded Discord token / provider keys must NOT appear anywhere in the export.
+    A.ok(JSON.stringify(exp.body).indexOf('discord-token') < 0, 'the export never contains the Discord bot token');
+    A.ok(JSON.stringify(exp.body).indexOf('sk-') < 0, 'the export never contains a key-shaped secret');
+
+    // now reset the budget, then import the envelope back and prove the value is restored.
+    const rst = await j('POST', '/api/config/reset', { section: 'budget' });
+    A.eq(rst.status, 200, 'POST /api/config/reset{budget} -> 200');
+    const afterReset = await j('GET', '/api/budget/status');
+    A.ok(!Object.prototype.hasOwnProperty.call(afterReset.body.saved, 'perRun'), 'budget override cleared by reset');
+    const imp = await j('POST', '/api/config/import', { envelope: exp.body });
+    A.eq(imp.status, 200, 'POST /api/config/import -> 200');
+    A.ok(imp.body.applied.indexOf('budget') >= 0, 'import reports budget applied');
+    A.ok(imp.body.browser && imp.body.browser.settings && imp.body.browser.settings.theme === 'blue', 'import echoes the browser settings slice for local restore');
+    const afterImport = await j('GET', '/api/budget/status');
+    A.eq(afterImport.body.saved.perRun, 7, 'the imported budget override is restored (round-trip)');
+    const impBad = await j('POST', '/api/config/import', { envelope: { not: 'a backup' } });
+    A.eq(impBad.status, 400, 'import of a file with no version marker -> 400');
+    const rstBad = await j('POST', '/api/config/reset', { section: 'nonsense' });
+    A.eq(rstBad.status, 400, 'reset of an unknown section -> 400');
+    const expNoTok = await fetch(B + '/api/config/export', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: '{}' });
+    A.eq(expNoTok.status, 403, 'POST /api/config/export WITHOUT a token -> 403');
+
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);

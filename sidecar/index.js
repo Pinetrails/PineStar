@@ -82,6 +82,7 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
+const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
@@ -175,9 +176,38 @@ function defaultWorkspaces() {
   return neu;
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
+
+/* ---- P1-9 ADVANCED runtime knobs: a handful of limits that were environment-only (MAX_ITERS,
+   MAX_CONCURRENT_AGENTS, the consent timeout, the cron tick) are now editable + PERSISTED so a beginner who can't
+   set env vars can still tune them. PRECEDENCE is strict and disclosed in the UI: an explicit ENVIRONMENT VARIABLE
+   ALWAYS WINS (a locked-down deploy stays in control), else a value SAVED here, else the built-in default. Read at
+   BOOT (these feed const CAPS / gates), so a change applies on the next restart — the UI says so. Stored in a
+   PROTECTED sibling of the fs jail (runtime.knobs.json). Loaded with a tiny self-contained reader (this runs before
+   loadResilient/num are defined); a torn/absent file → no overrides (fail-soft to env/default). */
+const RUNTIME_KNOBS_FILE = path.join(WORKSPACES, 'runtime.knobs.json');
+let runtimeKnobs = (function loadRuntimeKnobsAtBoot() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(RUNTIME_KNOBS_FILE, 'utf8'));
+    const k = (raw && typeof raw === 'object' && raw.knobs && typeof raw.knobs === 'object') ? raw.knobs : {};
+    const out = {};
+    for (const key of ['maxIters', 'maxConcurrentAgents', 'consentTimeoutMs', 'cronTickMs']) {
+      const v = k[key];
+      if (typeof v === 'number' && isFinite(v) && v >= 0) out[key] = Math.floor(v);
+    }
+    return out;
+  } catch (_) { return {}; }
+})();
+// resolve a knob: explicit env (via ENV suffix) > saved override > built-in default. envSuffix null = no env for it.
+function resolveKnob(envSuffix, savedKey, def) {
+  if (envSuffix) { const e = ENV(envSuffix); if (e != null && String(e).trim() !== '' && Number(e) >= 0) return Math.floor(Number(e)); }
+  const s = runtimeKnobs[savedKey];
+  return (typeof s === 'number' && s >= 0) ? s : def;
+}
+function knobEnvLocked(envSuffix) { const e = envSuffix ? ENV(envSuffix) : null; return e != null && String(e).trim() !== '' && Number(e) >= 0; }
+
 // maxIters: per-run tool-turn ceiling. Raised 16→40 (P0.3) so real multi-step work isn't truncated early;
-// env-overridable. Parsed inline (num() is defined below). The loop adds one grace turn on top to finish cleanly.
-const CAPS = { maxIters: (Number(ENV('MAX_ITERS')) > 0 ? Math.floor(Number(ENV('MAX_ITERS'))) : 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+// env-overridable, now also UI-tunable (resolveKnob: env > saved > default). The loop adds one grace turn on top.
+const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
 // Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
 // (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
 // can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.
@@ -193,11 +223,13 @@ const BUDGET_CAPS = {
 // Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
 // (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
 // parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
-const MAX_CONCURRENT_AGENTS = num(ENV('MAX_CONCURRENT_AGENTS'), 3);
+const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurrentAgents', 3);   // P1-9: env > saved > default
 // Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
 // runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
 const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
-const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered this long auto-denies (never hangs a run)
+// a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
+// STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
+const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the same
 // provider seam as /api/run: OpenRouter needs the live BYOK key (runtimeKey), while Codex uses the protected
@@ -205,7 +237,7 @@ const CONSENT_TIMEOUT_MS = 120000;   // a live permission.prompt left unanswered
 // absent model/credentials, a due job no-capability-skips rather than firing. Cadence + the self-healing lease
 // ceiling are env-tunable. The fire's consent surface is 'autonomous' (default-deny ungranted mutation).
 const CRON_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CRON_ENABLED') || '').trim());
-const CRON_TICK_MS = num(ENV('CRON_TICK_MS'), 60000);
+const CRON_TICK_MS = resolveKnob('CRON_TICK_MS', 'cronTickMs', 60000);   // P1-9: env > saved > default
 // Host IANA timezone, captured ONCE at boot as a boot-frozen constant (G4.1). A cron schedule with no
 // explicit tz fires on this LOCAL wall-clock (so "0 9 * * *" means 09:00 here and shifts across DST),
 // while the pure cron-math (sidecar/cron.js) stays determinism-clean by receiving this as an INJECTED
@@ -655,7 +687,27 @@ const saveStore = makeSaveStore({ fs, pathMod: path, root: WORKSPACES, clock: { 
 const REFLECT_TIMEOUT_MS = 30000;
 const PROPOSALS_CAP = 64;
 const DECLINED_CAP = 200;   // permanent per-agent reject-list of Discarded proposals (FIFO) fed into reflection dedup
-const REFLECT_COOLDOWN_MS = 180000;    // batch rapid-fire runs: at most one turn-in beat per agent per few minutes
+const REFLECT_COOLDOWN_MS = 180000;    // batch rapid-fire runs: at most one turn-in beat per agent per few minutes (default)
+/* ---- P1-10 MEMORY controls: user-facing knobs on the reflection ("turn-in") loop, persisted + HONORED live at
+   the reflect gate below (not decorative). `reflectEnabled` (default on) master-switches whether a completed run
+   proposes memories at all; `reflectCooldownMs` (default 180s) is the min gap between turn-in beats per agent.
+   Both read live on every run (no restart) and stored in a protected sibling of the fs jail. ---- */
+const MEMORY_CONFIG_FILE = path.join(WORKSPACES, 'memory.config.json');
+let memoryConfig = (function loadMemoryConfig() {
+  try {
+    const raw = loadResilient(MEMORY_CONFIG_FILE, 'memory-config');
+    const c = (raw && typeof raw === 'object') ? raw : {};
+    const cd = Number(c.reflectCooldownMs);
+    return {
+      reflectEnabled: c.reflectEnabled !== false,   // default ON
+      reflectCooldownMs: (isFinite(cd) && cd >= 0) ? Math.floor(cd) : REFLECT_COOLDOWN_MS
+    };
+  } catch (_) { return { reflectEnabled: true, reflectCooldownMs: REFLECT_COOLDOWN_MS }; }
+})();
+function saveMemoryConfig() {
+  try { saveResilient(MEMORY_CONFIG_FILE, { version: 1, reflectEnabled: memoryConfig.reflectEnabled, reflectCooldownMs: memoryConfig.reflectCooldownMs }); }
+  catch (e) { console.warn('[memory-config] persist failed:', (e && e.message) || e); }
+}
 const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, proposals:[{id,kind,content,scope}] }
 const latestProposalRun = new Map();   // agentId -> newest pending runId (fetch fallback when the runId is unknown)
 const lastReflectAt = new Map();       // agentId -> ts of the last reflection we fired (the cooldown gate)
@@ -1369,6 +1421,11 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
   if (req.method === 'GET' && req.url === '/api/fallback/chain') return handleFallbackStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/fallback/chain') return handleFallbackChain(req, res);
+  if (req.method === 'POST' && req.url === '/api/config/export') return handleConfigExport(req, res);   // P1-7 station backup
+  if (req.method === 'POST' && req.url === '/api/config/import') return handleConfigImport(req, res);
+  if (req.method === 'POST' && req.url === '/api/config/reset') return handleConfigReset(req, res);
+  if (req.method === 'GET' && req.url === '/api/runtime/knobs') return handleRuntimeKnobsGet(req, res);   // P1-9 advanced knobs
+  if (req.method === 'POST' && req.url === '/api/runtime/knobs') return handleRuntimeKnobsSet(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/start') return handleCodexStart(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
@@ -1421,6 +1478,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/memory/pin') return handleMemoryPin(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/edit') return handleMemoryEdit(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/forget') return handleMemoryForget(req, res);
+  if (req.method === 'GET' && req.url === '/api/memory/config') return handleMemoryConfigGet(req, res);   // P1-10 memory controls
+  if (req.method === 'POST' && req.url === '/api/memory/config') return handleMemoryConfigSet(req, res);
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
@@ -1605,6 +1664,192 @@ async function handleFallbackChain(req, res) {
     chain: effectiveFallbackChain(), saved: fallbackSaved != null, envDefault: ENV_FALLBACK.slice(),
     maxEntries: fallbackChain.MAX_ENTRIES, warnings: v.warnings || []
   }));
+}
+
+/* ---- P1-7 STATION BACKUP: export / import / reset the station's persisted config to ONE portable JSON file.
+   The SERVER-side stores (budget/fallback/roster/dossier/permissions/connectors) are read/written here directly;
+   the BROWSER-owned slices (settings/autonomy/notifyPrefs — localStorage state) are carried in the request body
+   on export and echoed back to the app on import (the sidecar can't reach localStorage). SECURITY: secrets never
+   enter the envelope — configexport.js redacts connector auth to a configured-marker; provider keys / bot tokens
+   / OAuth are omitted entirely and surfaced as "re-enter your key" on import. Every route is token-gated (main
+   route table) like all /api. ---- */
+
+// gather the SERVER-side live config into the plain snapshot buildExport reads. Browser-owned sections are
+// overlaid from the request body (the app knows its own localStorage). NO secrets are ever read in.
+function collectExportSnapshot(bodySections) {
+  const b = (bodySections && typeof bodySections === 'object') ? bodySections : {};
+  const roster = [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider, role: a.role, system: a.system }));
+  const connectors = (connectorConfigs || []).map(c => Object.assign({}, c, { hasToken: !!(c && (c.token || c.hasToken)) }));
+  const snap = {
+    budget: Object.assign({}, budgetOverrides),
+    fallback: effectiveFallbackChain(),
+    roster: roster,
+    dossier: commanderDossier.get(),
+    permissions: [...grantsPermanent],
+    connectors: connectors
+  };
+  // browser-owned slices, only if the app supplied them (partial export stays clean).
+  if (b.settings && typeof b.settings === 'object') snap.settings = b.settings;
+  if (b.autonomy && typeof b.autonomy === 'object') snap.autonomy = b.autonomy;
+  if (b.notifyPrefs && typeof b.notifyPrefs === 'object') snap.notifyPrefs = b.notifyPrefs;
+  return snap;
+}
+
+/* POST /api/config/export { sections?: {settings,autonomy,notifyPrefs}, only?: [names] } -> the export envelope.
+   POST (not GET) because the browser-owned localStorage sections ride in the body. Never emits a secret. */
+async function handleConfigExport(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const snap = collectExportSnapshot(body.sections);
+  const env = configExport.buildExport(snap, { now: Date.now(), app: 'StarNet', only: Array.isArray(body.only) ? body.only : null });
+  return json(200, env);
+}
+
+/* POST /api/config/import { envelope, only?: [names] } -> validate + APPLY to the server-side stores, live.
+   Returns { ok, applied:[names], secretsNeeded:[...], notes:[...], browser:{settings,autonomy,notifyPrefs} } so
+   the app can (a) surface re-enter-your-key states and (b) restore its own localStorage slices. Additive/durable:
+   each store's own save path runs, so nothing bypasses the .bak/fsync discipline. */
+async function handleConfigImport(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const envelope = body.envelope || body;   // tolerate a bare envelope or a wrapped one
+  const parsed = configExport.parseImport(envelope);
+  if (!parsed.ok) return json(400, { error: parsed.error });
+  const only = Array.isArray(body.only) && body.only.length ? new Set(body.only) : null;
+  const want = (name) => (!only || only.has(name)) && Object.prototype.hasOwnProperty.call(parsed.sections, name);
+  const applied = [];
+  const sec = parsed.sections;
+
+  if (want('budget')) {
+    const v = budgetCaps.cleanOverrides(sec.budget || {});
+    budgetOverrides = v; saveBudgetOverrides(); applyBudgetCaps(); applied.push('budget');
+  }
+  if (want('fallback')) {
+    const models = (sec.fallback && Array.isArray(sec.fallback.models)) ? fallbackChain.cleanChain(sec.fallback.models) : [];
+    fallbackSaved = models; saveFallbackChain(); applied.push('fallback');
+  }
+  if (want('roster') && Array.isArray(sec.roster)) {
+    // MERGE over the live roster: an imported entry updates/adds metadata but preserves the live system prompt
+    // (never in the export). A roster with no live match is added with an empty system (re-woken later).
+    for (const a of sec.roster) {
+      const cur = agentRoster.get(a.agentId) || { system: '', name: a.agentId, model: null, provider: null, role: '', approvalMode: 'ask' };
+      agentRoster.set(a.agentId, Object.assign({}, cur, {
+        name: a.name || cur.name, model: a.model || cur.model,
+        provider: a.provider ? normalizeProviderId(a.provider) : cur.provider, role: a.role || cur.role
+      }));
+    }
+    saveAgentRoster(); applied.push('roster');
+  }
+  if (want('dossier') && sec.dossier) { commanderDossier.set(sec.dossier.block || ''); applied.push('dossier'); }
+  if (want('permissions') && sec.permissions && Array.isArray(sec.permissions.allow)) {
+    // UNION with existing grants (import never silently REVOKES a live grant); stamp provenance for new keys.
+    const next = new Set([...grantsPermanent]);
+    for (const k of sec.permissions.allow) next.add(k);
+    grantsPermanent.clear(); for (const k of next) grantsPermanent.add(k);
+    const meta = Object.assign({}, grantMeta);
+    for (const k of grantsPermanent) { if (!meta[k]) meta[k] = { grantedAt: Date.now() }; }
+    try { persistAllowlist(grantsPermanent, meta); Object.assign(grantMeta, meta); } catch (_) {}
+    applied.push('permissions');
+  }
+  if (want('connectors') && Array.isArray(sec.connectors)) {
+    // upsert each imported connector by id (secrets stripped → they land unconfigured; user re-enters). Preserve
+    // any live secret for an id that already exists so a re-import doesn't wipe a working connector's token.
+    const byId = new Map((connectorConfigs || []).map(c => [c.id, c]));
+    for (const c of sec.connectors) {
+      const live = byId.get(c.id);
+      const merged = Object.assign({}, c);
+      if (live && live.token) merged.token = live.token;             // keep an existing secret
+      if (live && live.headers) merged.headers = Object.assign({}, c.headers, redactSecretKeep(live.headers, c.headers));
+      byId.set(c.id, merged);
+    }
+    connectorConfigs = [...byId.values()];
+    saveConnectorConfigs(); applied.push('connectors');
+  }
+
+  // browser-owned slices are echoed back for the app to restore into its own localStorage.
+  const browser = {};
+  if (want('settings') && sec.settings) browser.settings = sec.settings;
+  if (want('autonomy') && sec.autonomy) browser.autonomy = sec.autonomy;
+  if (want('notifyPrefs') && sec.notifyPrefs) browser.notifyPrefs = sec.notifyPrefs;
+
+  return json(200, { ok: true, applied, secretsNeeded: parsed.secretsNeeded || [], notes: parsed.notes || [], browser });
+}
+
+// tiny helper: keep a live header value only for keys the imported config left blank (i.e. the redacted ones),
+// so re-importing a redacted export doesn't clobber a header the user already re-entered live.
+function redactSecretKeep(liveHeaders, importedHeaders) {
+  const out = {}; const imp = importedHeaders || {};
+  for (const k of Object.keys(liveHeaders || {})) { if (!(k in imp)) out[k] = liveHeaders[k]; }
+  return out;
+}
+
+/* POST /api/config/reset { section } -> reset ONE server-side section to its environment/empty default, live.
+   section ∈ budget|fallback|roster|dossier|permissions|connectors. Browser sections (settings/autonomy/
+   notifyPrefs) reset in the app itself (localStorage). Returns { ok, section }. */
+async function handleConfigReset(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const section = String(body.section || '').trim();
+  switch (section) {
+    case 'budget': budgetOverrides = {}; saveBudgetOverrides(); applyBudgetCaps(); break;
+    case 'fallback': fallbackSaved = null; saveFallbackChain(); break;
+    case 'roster': agentRoster.clear(); saveAgentRoster(); break;
+    case 'dossier': commanderDossier.set(''); break;
+    case 'permissions': {
+      grantsPermanent.clear();
+      for (const k of Object.keys(grantMeta)) delete grantMeta[k];
+      try { persistAllowlist(grantsPermanent, {}); } catch (_) {}
+      break;
+    }
+    case 'connectors': connectorConfigs = []; saveConnectorConfigs(); break;
+    default: return json(400, { error: 'unknown or non-resettable section: ' + (section || '(empty)') });
+  }
+  return json(200, { ok: true, section });
+}
+
+/* ---- P1-9 ADVANCED runtime knobs API. GET reports each knob's effective/default/saved value + whether an env
+   var locks it (so the UI can gray it out honestly). POST persists overrides (env-locked knobs ignore the write).
+   Saved values apply at NEXT BOOT (they feed the boot-frozen constants) — the UI discloses this. ---- */
+const RUNTIME_KNOB_DEFS = [
+  { key: 'maxIters', env: 'MAX_ITERS', def: 40, min: 1, max: 200 },
+  { key: 'maxConcurrentAgents', env: 'MAX_CONCURRENT_AGENTS', def: 3, min: 0, max: 32 },
+  { key: 'consentTimeoutMs', env: 'CONSENT_TIMEOUT_MS', def: 120000, min: 5000, max: 600000 },
+  { key: 'cronTickMs', env: 'CRON_TICK_MS', def: 60000, min: 5000, max: 600000 }
+];
+function saveRuntimeKnobs() {
+  try { saveResilient(RUNTIME_KNOBS_FILE, { version: 1, knobs: runtimeKnobs }); }
+  catch (e) { console.warn('[knobs] persist failed:', (e && e.message) || e); }
+}
+function runtimeKnobsStatus() {
+  const fields = {};
+  for (const d of RUNTIME_KNOB_DEFS) {
+    const locked = knobEnvLocked(d.env);
+    const saved = (typeof runtimeKnobs[d.key] === 'number') ? runtimeKnobs[d.key] : null;
+    const effective = resolveKnob(d.env, d.key, d.def);
+    fields[d.key] = { effective, default: d.def, saved, envLocked: locked, min: d.min, max: d.max };
+  }
+  return { fields };
+}
+function handleRuntimeKnobsGet(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(runtimeKnobsStatus()));
+}
+async function handleRuntimeKnobsSet(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const next = Object.assign({}, runtimeKnobs);
+  for (const d of RUNTIME_KNOB_DEFS) {
+    if (!Object.prototype.hasOwnProperty.call(body, d.key)) continue;
+    if (knobEnvLocked(d.env)) continue;                 // an env-locked knob can't be overridden from the UI
+    const v = body[d.key];
+    if (v == null || v === '') { delete next[d.key]; continue; }   // clear the override
+    const n = Number(v);
+    if (!isFinite(n) || n < d.min || n > d.max) return json(400, { error: d.key + ' must be ' + d.min + '–' + d.max });
+    next[d.key] = Math.floor(n);
+  }
+  runtimeKnobs = next;
+  saveRuntimeKnobs();
+  return json(200, runtimeKnobsStatus());
 }
 
 function setProviderRuntimeConfig(provider, patch) {
@@ -2273,11 +2518,17 @@ async function handleRun(req, res) {
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
   const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
-  const providerId = normalizeProvider(o.provider);
+  // P1-6 per-agent model/provider OVERRIDE: when a run carries NO explicit model/provider (headless hub, delegated
+  // worker, or any caller that didn't pass one), fall back to THIS AGENT's pinned identity in the roster before the
+  // station default. An explicit per-run o.model/o.provider still wins (the interactive dock path is unchanged), so
+  // this only fills a gap — it never overrides a choice the caller actually made. Honest: the pin lives in the same
+  // roster the dossier writes + cron already reads (cronModelFor), so what the UI shows == what the run uses.
+  const rosterIdent = agentRoster.get(String(agentId || '')) || null;
+  const providerId = normalizeProvider(o.provider || (rosterIdent && rosterIdent.provider) || '');
   const usingCodex = providerUsesCodex(providerId);
   const providerUnmetered = !!((getProviderProfile(providerId) || {}).unmetered);
   const reasoningEffort = resolveReasoningEffort(providerId, o.reasoningEffort || o.reasoning_effort || (o.reasoning && o.reasoning.effort));
-  let model = String((o && o.model) || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
+  let model = String((o && o.model) || '').trim() || (rosterIdent && rosterIdent.model ? String(rosterIdent.model).trim() : '') || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   const baseUrl = providerRuntimeBaseUrl(providerId, o.baseUrl || o.base_url || '');
   const runKey = providerRuntimeKey(providerId, key);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
@@ -2784,8 +3035,8 @@ async function runOnce(o) {
   // low-value run yields nothing and raises no beat (§5.6). REFLECT_MODEL optionally points reflection at a cheaper
   // aux model; it defaults to the run's own model (no behaviour change unless configured).
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
-  if (o.reflect && isTask && result && result.reason === 'done' && !signal.aborted && reflectSalient(result.messages, o.recurring)
-      && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= REFLECT_COOLDOWN_MS)) {
+  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && !signal.aborted && reflectSalient(result.messages, o.recurring)
+      && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs)) {
     // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
     // so a run that yields nothing never blocks the next substantive run's turn-in. reflectingNow closes the window
     // BETWEEN this gate and that arming: two same-agent runs finishing inside one reflection's round-trip would both
@@ -3740,6 +3991,35 @@ function handleMemoryForget(req, res) {
     if (out.found) out.emit = { name: 'memory.forget', payload: { agentId, id: String(body.id), reason: String(body.reason || 'user') } };
     return out;
   });
+}
+/* ---- P1-10 MEMORY controls API. GET reports the live reflection config + a plain-English scope note (what the
+   station may remember). POST persists { reflectEnabled?, reflectCooldownMs? } and applies LIVE (the reflect gate
+   reads memoryConfig on every run). Cooldown clamps to a sane 0–1h so a typo can't wedge or spam the loop. ---- */
+function memoryScopeNote() {
+  return 'After a completed task, the station may propose short factual notes it learned about your work — always ' +
+    'shown for you to Keep, Edit or Discard first. Nothing is remembered without your say-so; a Discard is remembered ' +
+    'as "never propose this again". Turn reflection off to stop it proposing new memories entirely.';
+}
+function handleMemoryConfigGet(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    reflectEnabled: memoryConfig.reflectEnabled,
+    reflectCooldownMs: memoryConfig.reflectCooldownMs,
+    defaultCooldownMs: REFLECT_COOLDOWN_MS,
+    scopeNote: memoryScopeNote()
+  }));
+}
+async function handleMemoryConfigSet(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  if (Object.prototype.hasOwnProperty.call(body, 'reflectEnabled')) memoryConfig.reflectEnabled = !!body.reflectEnabled;
+  if (Object.prototype.hasOwnProperty.call(body, 'reflectCooldownMs')) {
+    const n = Number(body.reflectCooldownMs);
+    if (!isFinite(n) || n < 0 || n > 3600000) return json(400, { error: 'reflectCooldownMs must be 0–3600000 (up to 1 hour)' });
+    memoryConfig.reflectCooldownMs = Math.floor(n);
+  }
+  saveMemoryConfig();
+  return handleMemoryConfigGet(req, res);
 }
 async function serveStatic(req, res) {
   try {

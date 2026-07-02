@@ -29,13 +29,17 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true, keepComputerAwake: false }; }
+  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
+  // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
+  function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
   function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [] }; }
   function load() {
     try {
       const r = JSON.parse(localStorage.getItem(KEY));
       if (r && r.v === 1) {
         r.settings = Object.assign(defaults(), r.settings || {});
+        r.settings.notifyPrefs = Object.assign(notifyDefaults(), r.settings.notifyPrefs || {});   // merge new keys onto an old save
         if (!Array.isArray(r.tasks)) r.tasks = [];
         if (!Array.isArray(r.notifs)) r.notifs = [];
         return r;
@@ -724,6 +728,13 @@ const StationUI = (() => {
     return '<div class="gx">' +
       '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // MEMORY CORE</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
       '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">PROVENANCE</div><span class="gx-clear"><span class="k">TRACED</span><span class="v">&#10003;</span></span></div></div>' +
+      // P1-10 REFLECTION controls — the master on/off + the cooldown, both HONORED live at the reflect gate in the
+      // sidecar (station-wide, not per-agent — the reflect loop is a station engine). Plus a plain scope note.
+      '<div class="gx-sec"><span class="gx-ref">◈</span><span class="gx-title">Reflection</span></div>' +
+      '<div class="mc-note" id="mc-scope">How the station learns from finished work.</div>' +
+      '<label class="set-row"><input type="checkbox" id="mc-reflect-on"> REFLECTION ON <span class="dim">— propose memories after a completed task</span></label>' +
+      '<div class="set-row"><label for="mc-cooldown">COOLDOWN (MINUTES)</label><input id="mc-cooldown" class="key-input" type="number" min="0" max="60" step="1" style="max-width:90px" title="minimum gap between turn-in beats per agent"></div>' +
+      '<div class="mc-acts"><button class="bb sm" id="mc-reflect-save">SAVE</button><span class="msg" id="mc-reflect-msg"></span></div>' +
       '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
       '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">reading memory core&hellip;</span></div>' +
@@ -743,6 +754,35 @@ const StationUI = (() => {
       const cnt = $('#mc-count'); if (cnt) cnt.textContent = records.length + (records.length === 1 ? ' belief' : ' beliefs');
     }).catch(() => { const cur = $('#mc-list'); if (cur) cur.textContent = 'Could not read the Memory Core.'; });
     loadDeclined(a);   // the reject-list renders alongside (its own fetch; absent/empty → the section stays hidden)
+    loadReflectionConfig();   // P1-10 reflection on/off + cooldown (station-wide)
+  }
+
+  // P1-10: hydrate the reflection controls from /api/memory/config + wire SAVE (persist + live-apply server-side).
+  function loadReflectionConfig() {
+    const onBox = $('#mc-reflect-on'), cd = $('#mc-cooldown'), scope = $('#mc-scope'), msg = $('#mc-reflect-msg'), saveBtn = $('#mc-reflect-save');
+    if (!onBox || !cd) return;
+    const setMsg = (t, ok) => { if (msg) { msg.textContent = t || ''; msg.className = 'msg' + (ok ? ' ok' : ''); } };
+    fetch('/api/memory/config', { cache: 'no-store' }).then(r => r.json()).then(cfg => {
+      const o = $('#mc-reflect-on'), c = $('#mc-cooldown'), s = $('#mc-scope');
+      if (!o || !c) return;   // retabbed mid-fetch
+      o.checked = cfg.reflectEnabled !== false;
+      c.value = String(Math.round((cfg.reflectCooldownMs != null ? cfg.reflectCooldownMs : 180000) / 60000));
+      if (s && cfg.scopeNote) s.textContent = cfg.scopeNote;
+    }).catch(() => {});
+    if (saveBtn && !saveBtn._wired) {
+      saveBtn._wired = true;
+      saveBtn.addEventListener('click', () => {
+        const o = $('#mc-reflect-on'), c = $('#mc-cooldown');
+        const mins = Number(String(c.value).trim());
+        if (!isFinite(mins) || mins < 0 || mins > 60) { setMsg('cooldown: 0–60 minutes'); sfx('bad'); c.focus(); return; }
+        setMsg('saving…');
+        fetch('/api/memory/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reflectEnabled: !!o.checked, reflectCooldownMs: Math.floor(mins * 60000) }) })
+          .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => {
+            if (!ok) { setMsg((j && j.error) || 'could not save'); sfx('bad'); return; }
+            setMsg('✓ saved', true); sfx('click');
+          }).catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
+      });
+    }
   }
 
   // the permanent reject-list, shown below the stored beliefs. Each entry can be Restored (un-declined) so a
@@ -870,7 +910,30 @@ const StationUI = (() => {
 
   function agConfig(a) {
     return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
-      CONFIG_FILES.map(f => fileCard(a, f)).join('');
+      CONFIG_FILES.map(f => fileCard(a, f)).join('') +
+      modelCard(a);
+  }
+
+  // P1-6 per-agent MODEL/PROVIDER pin. Shows what this agent runs on and lets you override it independently of the
+  // station default. Writes a.model/a.provider via App.setAgentModel → pushRoster, so the sidecar roster records
+  // the pin (honored by runOnce when a run carries no explicit model, and by cron). "Follow station default" clears
+  // it. The primary interactive model still lives in the COMMS dock; this is the durable per-agent floor.
+  function modelCard(a) {
+    const model = (a && a.model) ? String(a.model) : '';
+    const prov = (a && a.provider) ? String(a.provider) : '';
+    const pinned = !!model;
+    return '<div class="cf-card">' +
+      '<div class="cf-head"><span class="cf-file">▣ model</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-desc">What this agent runs on. Pin a model + provider here to run this agent on it everywhere — chat, delegated work, scheduled routines — independent of the station default in the COMMS dock. Leave blank to follow the station default.</div>' +
+      '<div class="set-row"><label for="ag-model-in">MODEL</label><input id="ag-model-in" class="key-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. anthropic/claude-sonnet-4-5 — blank = station default" value="' + esc(model) + '"></div>' +
+      '<div class="set-row"><label for="ag-prov-in">PROVIDER</label><input id="ag-prov-in" class="key-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. openrouter · anthropic · codex" value="' + esc(prov) + '"></div>' +
+      '<div class="mc-hint">' + (pinned ? 'pinned — this agent ignores the station default' : 'following the station default') + '</div>' +
+      '<div class="mc-acts">' +
+        '<button class="bb sm" id="ag-model-save">SAVE PIN</button>' +
+        (pinned ? '<button class="bb xs" id="ag-model-clear" title="run this agent on the station default model again">FOLLOW STATION DEFAULT</button>' : '') +
+      '</div>' +
+      '<div id="ag-model-msg" class="msg"></div>' +
+    '</div>';
   }
 
   function wireConfig(body) {
@@ -892,6 +955,24 @@ const StationUI = (() => {
     // keep focus in the editor across the rerender that opened it
     const openKey = Object.keys(agEdit).find(k => agEdit[k]);
     if (openKey) { const ta = body.querySelector('#cf-ta-' + openKey); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+    // P1-6 per-agent MODEL pin — save / clear via App.setAgentModel (updates a.model/a.provider + pushRoster).
+    const a = present[sel];
+    const mSave = body.querySelector('#ag-model-save');
+    const mMsg = body.querySelector('#ag-model-msg');
+    const setMMsg = (t, ok) => { if (mMsg) { mMsg.textContent = t || ''; mMsg.className = 'msg' + (ok ? ' ok' : ''); } };
+    const applyModel = (model, provider) => {
+      if (!(access.config && access.config.setModel)) { setMMsg('per-agent model unavailable'); return; }
+      const ok = access.config.setModel(a && a.id, model, provider);
+      if (ok === false) { setMMsg('could not update this agent'); sfx('bad'); return; }
+      sfx('click'); rerender('agents');
+    };
+    if (mSave) mSave.addEventListener('click', () => {
+      const model = (body.querySelector('#ag-model-in') || {}).value || '';
+      const provider = (body.querySelector('#ag-prov-in') || {}).value || '';
+      applyModel(model.trim(), provider.trim());
+    });
+    const mClear = body.querySelector('#ag-model-clear');
+    if (mClear) mClear.addEventListener('click', () => applyModel('', ''));
   }
 
   function buildAgents(body) {
@@ -1608,11 +1689,148 @@ const StationUI = (() => {
     if (resetBtn) resetBtn.addEventListener('click', () => post(null, 'reset to environment default'));
   }
 
+  // P1-8 NOTIFICATION PREFS — persist per-category on/off + sound to store.settings.notifyPrefs (localStorage);
+  // notify() reads it live at emit time, so a toggle takes effect on the very next notification with no rerender.
+  function wireNotifyPrefs(body) {
+    const s = store.settings;
+    if (!s.notifyPrefs) s.notifyPrefs = notifyDefaults();
+    const bind = (id, key) => { const el = body.querySelector(id); if (el) el.addEventListener('change', ev => { s.notifyPrefs[key] = !!ev.target.checked; save(); sfx('click'); }); };
+    bind('#ntp-runComplete', 'runComplete');
+    bind('#ntp-needsApproval', 'needsApproval');
+    bind('#ntp-cronDigest', 'cronDigest');
+    bind('#ntp-sound', 'sound');
+    const test = body.querySelector('#ntp-test');
+    if (test) test.addEventListener('click', () => notify('test notification — this is what a ping looks like', 'good', 'runComplete'));
+  }
+
+  // P1-9 ADVANCED runtime knobs — fetch the server's current + effective values, render an editable form, POST
+  // saved overrides. Precedence (env > saved > default) is enforced + reported by the sidecar; the UI just shows
+  // whether a field is env-locked (read-only + a note) or a saved override.
+  const ADV_FIELDS = [
+    { key: 'maxIters', label: 'MAX ITERATIONS', hint: 'tool-turns a single run may take before it stops. Higher = deeper multi-step work; more spend.', min: 1, max: 200, step: 1 },
+    { key: 'maxConcurrentAgents', label: 'MAX CONCURRENT AGENTS', hint: 'how many agents may run paid loops at once. 0 = unlimited.', min: 0, max: 32, step: 1 },
+    { key: 'consentTimeoutMs', label: 'CONSENT TIMEOUT (MS)', hint: 'how long a permission prompt waits for your answer before auto-denying (so a run never hangs).', min: 5000, max: 600000, step: 1000 },
+    { key: 'cronTickMs', label: 'ROUTINE TICK (MS)', hint: 'how often the scheduler checks for due routines.', min: 5000, max: 600000, step: 1000 }
+  ];
+  function wireAdvanced(body) {
+    const form = body.querySelector('#adv-form');
+    const msgEl = body.querySelector('#adv-msg');
+    if (!form) return;
+    const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
+    const render = (st) => {
+      const fields = (st && st.fields) || {};
+      form.innerHTML = ADV_FIELDS.map(f => {
+        const d = fields[f.key] || {};
+        const envLocked = !!d.envLocked;
+        const val = (d.effective != null) ? d.effective : (d.default != null ? d.default : '');
+        const note = envLocked ? '<span class="dim"> — locked by an environment variable</span>'
+          : (d.saved != null ? '<span class="dim"> — saved override</span>' : '<span class="dim"> — default</span>');
+        return '<div class="set-row"><label for="adv-' + f.key + '">' + f.label + note + '</label>' +
+          '<input id="adv-' + f.key + '" class="key-input adv-in" data-key="' + f.key + '" type="number" min="' + f.min + '" max="' + f.max + '" step="' + f.step + '" value="' + esc(String(val)) + '"' + (envLocked ? ' disabled' : '') + '></div>' +
+          '<div class="mc-hint">' + esc(f.hint) + '</div>';
+      }).join('') +
+        '<div class="mc-acts"><button class="bb sm" id="adv-save">SAVE</button>' +
+        '<button class="bb xs" id="adv-reset" title="clear every saved override so these follow the environment / built-in defaults again">RESET TO DEFAULTS</button></div>';
+      const saveBtn = form.querySelector('#adv-save');
+      if (saveBtn) saveBtn.addEventListener('click', () => {
+        const payload = {};
+        for (const f of ADV_FIELDS) {
+          const el = form.querySelector('#adv-' + f.key); if (!el || el.disabled) continue;
+          const raw = String(el.value).trim();
+          if (raw === '') { payload[f.key] = null; continue; }   // blank -> clear override
+          const n = Number(raw);
+          if (!isFinite(n) || n < f.min || n > f.max) { setMsg(f.label + ': enter ' + f.min + '–' + f.max); sfx('bad'); el.focus(); return; }
+          payload[f.key] = Math.floor(n);
+        }
+        setMsg('saving…');
+        fetch('/api/runtime/knobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+          .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => {
+            if (!ok) { setMsg((j && j.error) || 'could not save'); sfx('bad'); return; }
+            render(j); setMsg('✓ saved (some limits apply on next restart)', true); sfx('click');
+          }).catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
+      });
+      const resetBtn = form.querySelector('#adv-reset');
+      if (resetBtn) resetBtn.addEventListener('click', () => {
+        const payload = {}; ADV_FIELDS.forEach(f => { payload[f.key] = null; });
+        setMsg('resetting…');
+        fetch('/api/runtime/knobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+          .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => { if (!ok) { setMsg('reset failed'); sfx('bad'); return; } render(j); setMsg('✓ reset to defaults', true); sfx('click'); })
+          .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
+      });
+    };
+    fetch('/api/runtime/knobs', { cache: 'no-store' }).then(r => r.json()).then(render)
+      .catch(() => { form.innerHTML = '<div class="dim">runtime settings unavailable</div>'; });
+  }
+
+  // P1-7 STATION BACKUP — export/import the whole station config to one JSON file. Export bundles the browser-owned
+  // slices (settings/autonomy/notifyPrefs) with the server-side stores; import applies server sections + restores
+  // the browser slices locally, then surfaces "re-enter your key" states the server flags. Secrets never travel.
+  function wireBackup(body) {
+    const msgEl = body.querySelector('#bk-msg');
+    const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
+    const exportBtn = body.querySelector('#bk-export');
+    const importBtn = body.querySelector('#bk-import');
+    const fileIn = body.querySelector('#bk-file');
+    // gather the browser-owned slices the sidecar can't see (localStorage).
+    const browserSections = () => {
+      const out = { settings: {
+        theme: store.settings.theme, scanlines: store.settings.scanlines, flicker: store.settings.flicker,
+        sound: store.settings.sound, music: store.settings.music, keepComputerAwake: store.settings.keepComputerAwake
+      }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
+      try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
+      return out;
+    };
+    if (exportBtn) exportBtn.addEventListener('click', () => {
+      setMsg('building export…');
+      fetch('/api/config/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sections: browserSections() }) })
+        .then(r => r.json()).then(env => {
+          const blob = new Blob([JSON.stringify(env, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const stamp = new Date().toISOString().slice(0, 10);
+          a.href = url; a.download = 'starnet-station-' + stamp + '.json';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          setMsg('✓ exported (secrets excluded — re-enter keys after importing)', true); sfx('sale');
+        }).catch(() => { setMsg('export failed'); sfx('bad'); });
+    });
+    if (importBtn && fileIn) {
+      importBtn.addEventListener('click', () => fileIn.click());
+      fileIn.addEventListener('change', () => {
+        const f = fileIn.files && fileIn.files[0]; if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let env; try { env = JSON.parse(String(reader.result || '')); } catch (_) { setMsg('that is not a valid StarNet backup file'); sfx('bad'); fileIn.value = ''; return; }
+          setMsg('importing…');
+          fetch('/api/config/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envelope: env }) })
+            .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => {
+              fileIn.value = '';
+              if (!ok) { setMsg((j && j.error) || 'import failed'); sfx('bad'); return; }
+              // restore the browser-owned slices locally.
+              const b = (j && j.browser) || {};
+              if (b.settings) { Object.assign(store.settings, b.settings); }
+              if (b.notifyPrefs) { store.settings.notifyPrefs = Object.assign(notifyDefaults(), b.notifyPrefs); }
+              save(); applySettings();
+              try { if (b.autonomy && typeof AutonomyStore !== 'undefined' && AutonomyStore.importState) AutonomyStore.importState(b.autonomy); } catch (_) {}
+              const need = (j && j.secretsNeeded) || [];
+              const needTxt = need.length ? ' — re-enter secrets for: ' + need.map(n => n.id || n.kind).join(', ') : '';
+              setMsg('✓ imported ' + ((j.applied || []).length) + ' section' + (((j.applied || []).length) === 1 ? '' : 's') + needTxt, true);
+              sfx('level');
+              rerender('settings');   // repaint so the imported budgets/chains/prefs show
+            }).catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
+        };
+        reader.readAsText(f);
+      });
+    }
+  }
+
   function buildSettings(body) {
     refreshCodexConnectionStatus();
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
     const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
+    if (!s.notifyPrefs) s.notifyPrefs = notifyDefaults();   // defensive: an old save may predate P1-8
+    const npf = k => s.notifyPrefs[k] !== false;            // per-category checked-state (default on)
     body.innerHTML =
       '<h4 class="ms-h">PROVIDERS</h4>' +
       '<div class="prov-list">' + providersHtml() + '</div>' +
@@ -1695,6 +1913,31 @@ const StationUI = (() => {
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO</label>' +
       '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>' +
+      // NOTIFICATIONS — per-category on/off + a notification sound toggle (P1-8). Each is HONORED at emit time in
+      // notify(): a muted category is dropped before it ever reaches the panel/toast (not decorative).
+      '<h4 class="ms-h">NOTIFICATIONS <span class="dim">— what pings you, and whether it chimes</span></h4>' +
+      '<p class="set-about">Turn off a category to stop those pings (panel + toast). Everything defaults on. A muted category is dropped at the source — nothing important is silently swallowed.</p>' +
+      '<label class="set-row"><input type="checkbox" id="ntp-runComplete"' + (npf('runComplete') ? ' checked' : '') + '> RUN COMPLETE <span class="dim">— a run saved or made something</span></label>' +
+      '<label class="set-row"><input type="checkbox" id="ntp-needsApproval"' + (npf('needsApproval') ? ' checked' : '') + '> NEEDS APPROVAL <span class="dim">— an agent is waiting on your yes/no</span></label>' +
+      '<label class="set-row"><input type="checkbox" id="ntp-cronDigest"' + (npf('cronDigest') ? ' checked' : '') + '> AUTONOMOUS DIGEST <span class="dim">— what it did while you were away</span></label>' +
+      '<label class="set-row"><input type="checkbox" id="ntp-sound"' + (npf('sound') ? ' checked' : '') + '> NOTIFICATION SOUND <span class="dim">— a chime on each ping (also needs TERMINAL AUDIO on)</span></label>' +
+      '<div class="set-save"><button class="bb xs" id="ntp-test">TEST NOTIFICATION</button></div>' +
+      // ADVANCED — env-only runtime knobs, now editable + persisted server-side (P1-9). PRECEDENCE is spelled out
+      // in the card: an explicit environment variable ALWAYS wins over a value saved here (a deploy stays in control).
+      '<h4 class="ms-h">ADVANCED <span class="dim">— runtime limits (usually leave these alone)</span></h4>' +
+      '<p class="set-about">Tuning knobs that were environment-only. Saved here on this machine and read by the sidecar at boot. <b>An environment variable always overrides a value saved here</b> — a locked-down deploy stays in control. Blank a field to clear the override (follow the environment / built-in default again).</p>' +
+      '<div class="mc-form" id="adv-form"><div class="dim" id="adv-loading">reading runtime settings…</div></div>' +
+      '<div id="adv-msg" class="msg"></div>' +
+      // DATA / STATION BACKUP — export the whole station config to one JSON file, import it back, reset a section.
+      // Secrets NEVER leave the machine (configexport.js redacts to a configured-marker); import surfaces re-enter states.
+      '<h4 class="ms-h">STATION BACKUP <span class="dim">— export / import your setup</span></h4>' +
+      '<p class="set-about">Save your whole station configuration — settings, budgets, model chains, connectors (without secrets), autonomy, placed-agent metadata — to one JSON file, and load it back on another machine. <b>Your keys and tokens are never included</b>; after importing you re-enter them once. A shareable station recipe.</p>' +
+      '<div class="set-save">' +
+        '<button class="bb sm" id="bk-export">EXPORT STATION</button>' +
+        '<button class="bb sm" id="bk-import">IMPORT STATION…</button>' +
+        '<input type="file" id="bk-file" accept="application/json,.json" style="display:none">' +
+      '</div>' +
+      '<div id="bk-msg" class="msg"></div>' +
       ((typeof Updates !== 'undefined' && Updates.settingsHtml) ? Updates.settingsHtml() : '') +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
@@ -1703,6 +1946,9 @@ const StationUI = (() => {
     wireKeyActions(body);
     wireBudget(body);
     wireFallbackChain(body);
+    wireNotifyPrefs(body);
+    wireAdvanced(body);
+    wireBackup(body);
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
     body.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t; applySettings(); save(); sfx('click');
@@ -1848,18 +2094,32 @@ const StationUI = (() => {
     if (c === 'gold') return 'gold';
     return 'info';
   }
-  function notify(text, cls) {
+  // P1-8: an optional 3rd `category` gates a whole class of notifications at emit time (persisted per-category
+  // toggles in settings.notifyPrefs). A caller with no category ('general') is ALWAYS shown — only the named
+  // categories can be muted, so nothing important is ever silently dropped by an unset default. Recognized
+  // categories: 'runComplete' (a run finished), 'needsApproval' (consent prompt), 'cronDigest' (autonomous run).
+  function notifyPrefOf(category) {
+    const p = (store.settings && store.settings.notifyPrefs) || notifyDefaults();
+    if (!category || category === 'general') return { show: true, sound: p.sound !== false };
+    return { show: p[category] !== false, sound: p.sound !== false };
+  }
+  function notify(text, cls, category) {
+    const pref = notifyPrefOf(category);
+    if (!pref.show) return;   // this category is muted — honored here, at the real emit point (not decorative)
     store.notifs.push({ id: uid('n'), t: Date.now(), txt: String(text || ''), cls: cls || '', read: false });
     if (store.notifs.length > 60) store.notifs = store.notifs.slice(-60);
     save(); badges();
     if (open.notifs) rerender('notifs');
-    toast(String(text || ''), cls || '');
+    toast(String(text || ''), cls || '', pref.sound);
   }
   // transient on-screen toast — slides in, auto-dismisses with a fade-out, stacks cleanly.
   // The persistent record still lives in the NOTIFICATIONS panel (buildNotifs); this is the
   // ephemeral heads-up so a result isn't silent when that panel is closed.
-  function toast(text, cls) {
+  function toast(text, cls, playSound) {
     if (typeof document === 'undefined' || !text) return;
+    // P1-8: a notification chime, gated by the notification-sound toggle (default on). Rides the existing SFX bank
+    // (which itself respects the master TERMINAL AUDIO switch), so muting either silences it. undefined = on.
+    if (playSound !== false) sfx(severityOf(cls) === 'bad' ? 'bad' : 'notify');
     let stack = document.getElementById('toast-stack');
     if (!stack) { stack = el('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
     const sev = severityOf(cls);

@@ -41,7 +41,12 @@ const AutonomyStore = (() => {
   // onWake new-hero reset block so a fresh Commander isn't handed the previous one's autonomy posture.
   function reset() { state = floor(); try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, get, summary, describe, applyPreset, setInitiative, setReach, setLeash, reset, _state: () => state };
+  // P1-7 station backup: dump/restore the posture as plain data. exportState is the normalized posture (safe to
+  // serialize); importState clamps whatever it's handed back to a valid posture and persists it.
+  function exportState() { return get(); }
+  function importState(obj) { if (!obj || typeof obj !== 'object') return get(); state = ready() ? Autonomy.normalize(obj) : obj; save(); return get(); }
+
+  return { init, get, summary, describe, applyPreset, setInitiative, setReach, setLeash, reset, exportState, importState, _state: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { AutonomyStore };

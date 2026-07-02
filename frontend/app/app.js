@@ -167,6 +167,27 @@ const App = (() => {
     persist();
   }
 
+  // P1-6 per-agent MODEL/PROVIDER pin: set (or clear, with blank) this agent's own model/provider. Writes the same
+  // a.model/a.provider the dock + focusAgent already use, then pushRoster() so the sidecar roster records the pin
+  // (runOnce honors it when a run carries no explicit model; cron already reads it via cronModelFor). Persists.
+  // If the pinned agent is the FOCUSED one, retarget the live harness so the very next chat run uses it immediately.
+  function setAgentModelPin(agentId, model, provider) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return false;
+    const m = String(model || '').trim();
+    const p = String(provider || '').trim();
+    a.model = m || null;
+    a.provider = p || null;
+    if (agent && a.id === agent.id) {   // focused agent — apply live so the next run reflects the pin at once
+      if (m && typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(m);
+      if (p && typeof Harness !== 'undefined' && Harness.setProv) Harness.setProv(p);
+      if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+    }
+    pushRoster();   // the pin reaches the sidecar roster (honored by runOnce + cron)
+    persist();
+    return true;
+  }
+
   /* ---------- the live agent registry (multi-agent) ----------
      `agent` is the FOCUSED agent; `agents` holds the whole crew. liveAgents() is what the world / bay /
      builder / dossier read. focusAgent(id) repoints COMMS + the run identity at one crew member — the
@@ -1260,7 +1281,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig }   // dossier edits to identity/purpose/manual .md re-shape the live prompt
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider (P1-6)
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }
@@ -1421,7 +1442,7 @@ const App = (() => {
       // otherwise it's a desk draft. Either way nothing is sent/published/spent.
       present: (d) => {
         const didWrite = !!(d && d.wrote && d.wrote.path);
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((didWrite ? 'wrote a file while you were away: ' : 'drafted while you were away: ') + d.title, 'gold');
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((didWrite ? 'wrote a file while you were away: ' : 'drafted while you were away: ') + d.title, 'gold', 'cronDigest');   // P1-8 category: autonomous run
         if (typeof World !== 'undefined' && World.say) World.say(didWrite ? '✦ saved a file to your workspace' : '✦ left a draft on your desk');
         if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
           didWrite
@@ -1450,7 +1471,7 @@ const App = (() => {
         const lines = (info.lines && info.lines.length) ? '\n' + info.lines.join('\n') : '';
         const canUndo = !!(sum.wroteCount && sum.undoSnapshot);
         const restore = (snap) => fetch('/api/checkpoint/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: (agent && agent.id) || 'agent', snapshotId: snap }) }).then(r => r.ok).catch(() => false);
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + headline, 'gold');
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + headline, 'gold', 'cronDigest');   // P1-8 category: autonomous digest
         if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
           '✦ welcome back — while you were away (' + mins + 'm): ' + headline + lines + (canUndo ? '\n(undo rolls your workspace back to before i wrote them)' : ''),
           canUndo ? [{ label: 'got it', value: 'ok', skip: true }, { label: 'undo the writes', value: 'undo' }] : [{ label: 'got it', value: 'ok', skip: true }],
