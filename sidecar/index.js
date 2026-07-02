@@ -18,6 +18,7 @@ const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
 const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) + validate patch — SETTINGS→Budget (P0-2)
+const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
@@ -347,6 +348,36 @@ function applyBudgetCaps() {
 }
 budgetOverrides = loadBudgetOverrides();
 applyBudgetCaps();
+
+/* ---- P0-3 fallback-chain persistence (SETTINGS → Models). The ordered "if the primary model fails, try these
+   next" list was env-only (SKYNET_FALLBACK_MODELS) — nothing but that env var ever set it. Now it persists in a
+   PROTECTED sibling file (durable + .bak, like budget/connectors) and applies LIVE to every run path (browser,
+   cron, channels) without a restart. PRECEDENCE (additive, never breaks an env deploy): a SAVED chain wins — even
+   the saved-empty "no fallback" choice beats a non-empty env default (that's how the UI turns the chain OFF); an
+   ABSENT saved chain (never saved) follows the env default. An explicit per-RUN request list (o.fallbackModels
+   from the browser) still overrides both — that layering lives in runOnce. `fallbackSaved` is null until the user
+   saves; ENV_FALLBACK is the frozen env-default baseline. The loop CONSUMES this chain on a shouldFallback /
+   shouldRotateCredential error class (errorClass.js): overloaded (502/503), server_error (500), model_not_found
+   (404), and auth/billing/rate_limit — see loop.js. */
+const FALLBACK_FILE = path.join(WORKSPACES, 'fallback.json');
+const ENV_FALLBACK = fallbackChain.parseEnvChain(ENV('FALLBACK_MODELS') || '');   // frozen env default baseline
+let fallbackSaved = null;   // null = never saved (use env); an array (incl. []) = an explicit saved choice that wins
+function loadFallbackChain() {
+  try {
+    const raw = loadResilient(FALLBACK_FILE, 'fallback');
+    if (raw && Array.isArray(raw.models)) return fallbackChain.cleanChain(raw.models);   // present (incl. empty) -> explicit choice
+    return null;   // no file / no models key -> never saved -> env default
+  } catch (e) { return null; }   // unrecoverable -> fall back entirely to env default
+}
+function saveFallbackChain() {
+  // null = the user reset to env default: remove the file so a torn/leftover blob can't resurrect a stale chain.
+  if (fallbackSaved == null) { try { fs.unlinkSync(FALLBACK_FILE); } catch (_) {} try { fs.unlinkSync(FALLBACK_FILE + '.bak'); } catch (_) {} return; }
+  try { saveResilient(FALLBACK_FILE, { version: 1, models: fallbackSaved }); }   // fsync-durable + .bak last-known-good
+  catch (e) { console.warn('[fallback] persist failed:', (e && e.message) || e); }
+}
+// the fallback chain actually in force for a run that DOESN'T carry its own per-run list = saved-or-env.
+function effectiveFallbackChain() { return fallbackChain.resolveChain(ENV_FALLBACK, fallbackSaved); }
+fallbackSaved = loadFallbackChain();
 
 // admission gate: bounds how many distinct agents run paid loops concurrently (multi-agent fan-out guard).
 const concurrencyGate = makeConcurrencyGate({ max: MAX_CONCURRENT_AGENTS });
@@ -1314,6 +1345,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/budget/caps') return handleBudgetCaps(req, res);
   if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
+  if (req.method === 'GET' && req.url === '/api/fallback/chain') return handleFallbackStatus(req, res);
+  if (req.method === 'POST' && req.url === '/api/fallback/chain') return handleFallbackChain(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/start') return handleCodexStart(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
@@ -1501,6 +1534,55 @@ async function handleBudgetResume(req, res) {
   const cap = budget.resume(scope);
   if (cap == null) return json(409, { error: 'that budget scope is not governed (no cap set)' });
   json(200, { resumed: scope, cap, status: budget.status(Date.now()) });
+}
+
+/* ---- best-effort catalog for fallback-id validation. Returns a Set of known OpenRouter model ids from the WARM
+   catalog (cached module-level after the boot warmup), or null if the catalog is cold. null => the endpoint skips
+   validation entirely and accepts the ids with no warnings (never false-refuse a brand-new / stale-catalog slug). */
+async function warmModelCatalogSet() {
+  try {
+    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE });
+    const models = await provider.listModels();   // cache hit after boot warmup; a cold fetch is bounded by the provider
+    if (!Array.isArray(models) || !models.length) return null;
+    const s = new Set();
+    for (const m of models) { if (m && m.id) s.add(String(m.id)); }
+    return s.size ? s : null;
+  } catch (_) { return null; }
+}
+
+/* ---- GET /api/fallback/chain — the ordered fallback model chain the SETTINGS→Models panel edits (P0-3).
+   Read-only. Reports the EFFECTIVE chain (saved-or-env), whether it's a saved override vs the env default, and the
+   raw env baseline — so the panel can honestly show "env default" when nothing is saved. ---- */
+function handleFallbackStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    chain: effectiveFallbackChain(),                 // the list actually in force for a run with no per-run override
+    saved: fallbackSaved != null,                    // true = an explicit saved choice; false = following the env default
+    envDefault: ENV_FALLBACK.slice(),                // the SKYNET_FALLBACK_MODELS baseline (frozen at boot)
+    maxEntries: fallbackChain.MAX_ENTRIES
+  }));
+}
+
+/* ---- POST /api/fallback/chain { models: ["slug", …] | null } — set (or clear) the ordered fallback chain.
+   { models: [...] } SAVES that ordered chain (even []=off, an explicit "no fallback" choice that beats a non-empty
+   env default); { models: null } (or { clear:true } / {}) CLEARS the override so the chain follows the env default
+   again. Persisted durably (+ .bak) and applied LIVE to every run path (no restart). Unknown model ids are WARNED,
+   never refused (catalogs go stale; a brand-new model must still be settable). Additive: leaves env-only setups
+   untouched until saved. Echoes the fresh status so the UI repaints from one round-trip. ---- */
+async function handleFallbackChain(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 8192)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const catalog = await warmModelCatalogSet();     // null when cold -> validation skipped (warn, never refuse)
+  const v = fallbackChain.validateChainPatch(body, { catalog: catalog });
+  if (!v.ok) return json(400, { error: v.error });
+  fallbackSaved = v.present ? v.chain : null;       // present:false = CLEAR -> back to env default
+  saveFallbackChain();                              // durable + .bak (or remove the file on reset)
+  // echo the fresh status + any unknown-id warnings so the panel can surface them (non-blocking).
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    chain: effectiveFallbackChain(), saved: fallbackSaved != null, envDefault: ENV_FALLBACK.slice(),
+    maxEntries: fallbackChain.MAX_ENTRIES, warnings: v.warnings || []
+  }));
 }
 
 function setProviderRuntimeConfig(provider, patch) {
@@ -2348,9 +2430,11 @@ async function runOnce(o) {
 
   // Provider FALLBACK chain (consumes the loop's failover seam). Cost-correct by construction: each entry reuses
   // THIS provider object (same priceOf catalog) with an alternate model, so a fallback's spend is priced right.
-  // Source: o.fallbackModels (array of slugs from the run request) or env SKYNET_FALLBACK_MODELS (comma list).
-  // On overload/429/5xx/auth/billing the loop retries the turn on the next model instead of dying. Empty = off.
-  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : String(ENV('FALLBACK_MODELS') || '').split(','))
+  // Source PRECEDENCE (P0-3, additive): an explicit per-run request list (o.fallbackModels) wins; else the
+  // SETTINGS→Models persisted chain (effectiveFallbackChain: saved-or-env); env SKYNET_FALLBACK_MODELS remains the
+  // default when nothing is saved. On overload/5xx/404/auth/billing/rate_limit the loop retries the turn on the
+  // next model instead of dying (errorClass shouldFallback/shouldRotateCredential). Empty = off.
+  const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : effectiveFallbackChain())
     .map(s => String(s || '').trim()).filter(s => s && s !== model);
   // CREDENTIAL ROTATION (P0.2): on a rate-limit/auth/billing failure the loop rotates to an alternate KEY for the
   // SAME model BEFORE trying alternate models. Pool source: o.keyPool (array) or env SKYNET_KEY_POOL (comma list).
