@@ -1535,7 +1535,7 @@ const StationUI = (() => {
 
   // display a USD amount for the spend readout / cap echo. Whole-cent granularity for readability (the ledger
   // itself keeps micro-dollar precision; this is presentation only). No app-wide formatter exists to reuse.
-  function fmtUsd(v) { const n = Number(v); return '$' + (isFinite(n) ? n : 0).toFixed(2); }
+  function fmtUsd(v) { return U.usd(v); }   // canonical spend formatter (util.js U.usd)
   // BUDGET panel — read the live caps + real spend from the sidecar, fill the four inputs, wire SAVE / RESET.
   // Caps persist server-side and apply live; this is the ONLY UI for money limits (previously env-var-only).
   const BG_KEYS = ['perRun', 'perAgent', 'perDay', 'global'];

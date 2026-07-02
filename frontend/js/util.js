@@ -27,6 +27,32 @@ const U = {
     return (neg ? '-$' : '$') + s;
   },
 
+  /* CANONICAL spend formatter — the one true way to render an AI-cost dollar figure across the UI.
+     Sub-dime keeps precision so a $0.0123 haiku ping stays visible; normal sums round to cents;
+     whole dollars past $100 get a thousands separator; zero/invalid is a quiet $0.00. Mirrors the
+     conventions the topbar/chat/world readouts converged on so no display shifts. */
+  usd(n) {
+    const v = Number(n);
+    if (!isFinite(v)) return '$0.00';
+    const neg = v < 0, a = Math.abs(v);
+    let s;
+    if (a === 0) s = '0.00';
+    else if (a < 0.1) s = a.toFixed(4);                 // sub-dime: 4 decimals ($0.0123)
+    else if (a < 100) s = a.toFixed(2);                 // normal: cents ($1.23 / $12.00)
+    else s = Math.round(a).toLocaleString();            // large: whole dollars ($1,204)
+    return (neg ? '-$' : '$') + s;
+  },
+
+  /* CANONICAL token-count formatter — compact k/M with one decimal under 10, rounded above, so
+     1234 -> "1.2k" and 3,400,000 -> "3.4M". Mirrors the context-gauge convention. */
+  tokens(n) {
+    const v = Number(n);
+    if (!isFinite(v) || v <= 0) return '0';
+    if (v < 1000) return String(Math.round(v));
+    if (v < 1000000) { const k = v / 1000; return (k < 10 ? k.toFixed(1).replace(/\.0$/, '') : String(Math.round(k))) + 'k'; }
+    const m = v / 1000000; return (m < 10 ? m.toFixed(1).replace(/\.0$/, '') : String(Math.round(m))) + 'M';
+  },
+
   // sim minutes -> "D3 14:05"
   fmtClock(mins) {
     const day = Math.floor(mins / 1440) + 1;

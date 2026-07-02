@@ -184,7 +184,7 @@ const Chat = (() => {
     const bits = [];
     if (dur) bits.push(dur);
     if (typeof opts.steps === 'number' && opts.steps > 0) bits.push(opts.steps + (opts.steps === 1 ? ' step' : ' steps'));
-    if (typeof opts.cost === 'number' && opts.cost > 0) bits.push('$' + (Math.round(opts.cost * 100) / 100).toFixed(2));
+    if (typeof opts.cost === 'number' && opts.cost > 0) bits.push(U.usd(opts.cost));
     card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
     card.setAttribute('role', 'note');
     autoscroll();
@@ -654,7 +654,7 @@ const Chat = (() => {
     if (entry.unmetered) return 'subscription';
     const v = Number(entry.usd) || 0;
     if (v <= 0) return '';                                   // a free/unpriced run shows no fake $0
-    return '$' + (v >= 0.01 ? v.toFixed(2) : v.toFixed(4));
+    return U.usd(v);                                         // canonical spend formatter (util.js)
   }
   function fmtBytes(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
   function recapArtifactLine(a, agentId) {
@@ -892,7 +892,7 @@ const Chat = (() => {
   function awayRowLabel(rw) {
     const name = rw.routine ? ('“' + rw.routine + '” ran on its own') : (rw.title || 'an unnamed run');
     const who = (rw.agentId && rw.agentId !== 'agent') ? (' · ' + String(rw.agentId).slice(0, 12)) : '';
-    const usd = (+rw.usd > 0) ? (' · $' + (Math.round(rw.usd * 100) / 100).toFixed(2)) : '';
+    const usd = (+rw.usd > 0) ? (' · ' + U.usd(+rw.usd)) : '';
     // G3a seed callout: an unattended run that reuses a Commander-saved seed credits it inline (rw.seed is
     // annotated by ReturnStore via SeedCredit — provenance-matched, never guessed). A credit line, not a beat.
     const seed = rw.seed ? (' · from the seed you saved — “' + rw.seed + '”') : '';

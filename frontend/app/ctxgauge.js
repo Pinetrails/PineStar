@@ -29,7 +29,10 @@
     return Math.floor(n);
   }
 
-  // human token count: 850 → "850", 64000 → "64k", 1500000 → "1.5M"
+  // human token count: 850 → "850", 64000 → "64k", 1500000 → "1.5M".
+  // NOTE: kept self-contained (not routed through U.tokens) because this UMD module is pure +
+  // node-testable and must not depend on the browser-global U (util.js). U.tokens mirrors this exact
+  // logic — they are the one canonical token format, just duplicated across the node/browser seam.
   function fmtTokens(n) {
     n = clampInt(n);
     if (n < 1000) return String(n);
