@@ -1686,7 +1686,10 @@ const StationUI = (() => {
     function addProvider(provider) {
       if (!provider || provider === 'codex' || out.some(k => k.provider === provider)) return;
       if (provider === 'ollama' && provider !== active) return;
-      const set = (h.configured && h.configured(provider)) || !!(h.getKey && h.getKey(provider));
+      // Truthful list: only providers with an ACTUALLY-stored credential show a row/badge (never DEVMODE-fabricated).
+      // hasStoredCredential is the honest getter; fall back to the older signals if an old harness lacks it.
+      const set = h.hasStoredCredential ? h.hasStoredCredential(provider)
+        : ((h.configured && h.configured(provider)) || !!(h.getKey && h.getKey(provider)));
       if (set) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
     }
     addProvider(active);
@@ -1826,8 +1829,15 @@ const StationUI = (() => {
           rerender('settings');
         } else if (act === 'rm') {
           if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); sfx('bad'); rerender('settings'); return; }
-          b.dataset.armed = '1'; b.textContent = '✕ CONFIRM'; sfx('bad');
-          setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '✕ REMOVE'; } }, 5000);
+          // Arm: make the destructive state impossible to miss — filled --bad button + pulse, red hairline on the row,
+          // and an inline "click again to confirm" hint. Disarms after 5s, restoring the calm state.
+          const rowEl = b.closest('.key-row');
+          b.dataset.armed = '1'; b.textContent = '✕ CONFIRM'; b.classList.add('armed'); sfx('bad');
+          if (rowEl) rowEl.classList.add('rm-armed');
+          let hint = b.parentElement && b.parentElement.querySelector('.rm-hint');
+          if (!hint && b.parentElement) { hint = document.createElement('span'); hint.className = 'rm-hint'; hint.textContent = 'click again to confirm removal'; b.parentElement.appendChild(hint); }
+          const disarm = () => { if (!b.isConnected) return; delete b.dataset.armed; b.textContent = '✕ REMOVE'; b.classList.remove('armed'); if (rowEl) rowEl.classList.remove('rm-armed'); const hn = b.parentElement && b.parentElement.querySelector('.rm-hint'); if (hn) hn.remove(); };
+          setTimeout(disarm, 5000);
         }
       });
     });

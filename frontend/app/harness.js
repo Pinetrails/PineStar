@@ -140,6 +140,26 @@ const Harness = (() => {
     return DESKTOP ? !!(_configuredByProvider[p] || (p === 'openrouter' && _configured)) : (DEVMODE || !providerNeedsKey(p) || !!getKey(p));
   }
 
+  // Truthful-telemetry getter for the SETTINGS credential list/badges: true IFF a real credential
+  // actually exists for this provider — never fabricated by DEVMODE. Unlike configured() (which gates
+  // run-ability and intentionally reports true in DEVMODE for auto-resume), this answers ONLY "does a
+  // stored credential back this row?" so removing a key makes the row/badge disappear on rerender.
+  //   - a real API key is stored (browser localStorage), OR
+  //   - desktop OS keychain reports it (getKey returns '' by design there; _configuredByProvider holds truth), OR
+  //   - a deliberately keyless endpoint is configured (custom with a baseUrl; ollama is a local endpoint), OR
+  //   - codex OAuth is connected, OR
+  //   - DEV seed: the host holds a server-side runtime credential for exactly DEV.prov (the seeded provider).
+  function hasStoredCredential(provider) {
+    const p = normalizeProviderId(provider);
+    if (p === 'codex') return DESKTOP ? !!_configuredByProvider.codex : (getProv() === 'codex');
+    if (p === 'ollama') return true;                       // local endpoint — no key by design
+    if (p === 'custom') return !!getBaseUrl(p);            // keyless only when a baseUrl is deliberately set
+    if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
+    if (!!readScoped(LS.key, p)) return true;              // a real key is stored in this browser
+    if (DEVMODE && DEV && normalizeProviderId(DEV.prov) === p) return true;  // server-held runtime key for the seeded provider
+    return false;
+  }
+
   // getKey() returns the real key in the browser; in desktop it returns '' (the key isn't here).
   const getKey = provider => DESKTOP ? '' : readScoped(LS.key, provider);
   const setKey = (k, provider) => {
@@ -497,7 +517,7 @@ const Harness = (() => {
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
 
   return {
-    getKey, setKey, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured,
+    getKey, setKey, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,
