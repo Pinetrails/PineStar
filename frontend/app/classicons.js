@@ -33,11 +33,27 @@
     archivist: '<svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2" fill="currentColor"/><g fill="' + D + '"><rect x="6" y="5.6" width="12" height="3.1" rx=".6"/><rect x="6" y="10.4" width="12" height="3.1" rx=".6"/><rect x="6" y="15.3" width="12" height="3.1" rx=".6"/></g><g fill="currentColor"><rect x="10.5" y="6.6" width="3" height="1.1" rx=".5"/><rect x="10.5" y="11.4" width="3" height="1.1" rx=".5"/><rect x="10.5" y="16.3" width="3" height="1.1" rx=".5"/></g></svg>',
     designer: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="1.6" fill="currentColor"/><circle cx="15.5" cy="15.5" r="5.7" fill="none" stroke="currentColor" stroke-width="3"/></svg>',
     liaison: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="currentColor"/><path fill="' + D + '" d="M4.6 7.4 L12 12.9 L19.4 7.4 L19.4 8.9 L12 14.4 L4.6 8.9 Z"/></svg>',
+    // ---- S2 new class seals (same matte/debossed engraved-coin style, currentColor) ----
+    // broker: a scale/balance — weighing the deal.
+    broker: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="11" y="3.4" width="2" height="15.4" rx=".5"/><rect x="6" y="18.6" width="12" height="2" rx=".8"/><path d="M4 6.6 H20 V8 H4 Z"/></g><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7.3 L1.8 12.4"/><path d="M4 7.3 L6.2 12.4"/><path d="M20 7.3 L17.8 12.4"/><path d="M20 7.3 L22.2 12.4"/></g><path fill="' + D + '" d="M1.8 12.4 A2.6 2.6 0 0 0 6.2 12.4 Z"/><path fill="' + D + '" d="M17.8 12.4 A2.6 2.6 0 0 0 22.2 12.4 Z"/></svg>',
+    // publicist: a megaphone — the broadcast of copy.
+    publicist: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9.5 L11 9.5 L18.5 4.5 V19.5 L11 14.5 L3 14.5 Z"/><rect x="4.4" y="14.5" width="3.4" height="5.4" rx=".8" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20.6 8 L22.4 6.8"/><path d="M20.9 12 H23"/><path d="M20.6 16 L22.4 17.2"/></g></svg>',
+    // tutor: an open book with a rising spark — teaching.
+    tutor: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 6 C5.4 4.6 8.6 4.6 11 6 V19 C8.6 17.6 5.4 17.6 2.6 19 Z"/><path fill="currentColor" d="M21.4 6 C18.6 4.6 15.4 4.6 13 6 V19 C15.4 17.6 18.6 17.6 21.4 19 Z"/><path fill="' + D + '" d="M11.2 6.2 H12.8 V18.8 H11.2 Z"/><path fill="currentColor" d="M12 1.4 L13 3.6 L15.2 4.6 L13 5.6 L12 7.8 L11 5.6 L8.8 4.6 L11 3.6 Z"/></svg>',
+    // auditor: a shield with a magnifier — the security sweep.
+    auditor: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 L20 5 V11 C20 16 16.5 19.4 12 21.4 C7.5 19.4 4 16 4 11 V5 Z"/><circle cx="10.6" cy="10.4" r="3.3" fill="none" stroke="' + D + '" stroke-width="1.8"/><path d="M13 12.8 L16 15.8" stroke="' + D + '" stroke-width="2.1" stroke-linecap="round"/></svg>',
+    // bookkeeper: a ledger book with ruled lines and a balance mark.
+    bookkeeper: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="15" height="18" rx="1.6" fill="currentColor"/><rect x="4" y="3" width="3" height="18" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M9.4 7.4 H16"/><path d="M9.4 10.6 H16"/><path d="M9.4 13.8 H16"/></g><path fill="' + D + '" d="M9.2 16.4 L11 18.2 L15.4 15 L16.4 16 L11 20 L8.2 17.4 Z"/></svg>',
+    // translator: two-way arrows over glyphs — swapping languages.
+    translator: '<svg viewBox="0 0 24 24"><g fill="currentColor" font-family="serif"><text x="3" y="10" font-size="9" fill="currentColor">A</text><text x="14" y="22" font-size="9" fill="currentColor">文</text></g><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5 H21 M18 2.4 L21 5 L18 7.6"/><path d="M11 19 H3 M6 16.4 L3 19 L6 21.6"/></g></svg>',
+    // herald: a banner/pennant on a staff — the periodic broadcast.
+    herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
 
   const CODE = {
     chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
-    scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN', liaison: 'LIA'
+    scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN', liaison: 'LIA',
+    broker: 'BRK', publicist: 'PUB', tutor: 'TUT', auditor: 'AUD', bookkeeper: 'LDG', translator: 'XLT', herald: 'HLD'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
