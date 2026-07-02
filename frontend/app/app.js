@@ -158,6 +158,18 @@ const App = (() => {
       if (typeof patch.purpose === 'string') { d.purpose = patch.purpose; agent.purpose = patch.purpose.trim(); }
       if (typeof patch.manual === 'string') d.manual = patch.manual;
       if (typeof patch.context === 'string') d.context = patch.context;
+      if (typeof patch.model === 'string' && patch.model.trim()) {
+        agent.model = patch.model.trim();
+        if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(agent.model);
+        const gtM = el('gt-model'); if (gtM) gtM.textContent = agent.model;
+      }
+      if (typeof patch.personaId === 'string' && typeof Personas !== 'undefined' && Personas.exists(patch.personaId)) {
+        agent.personaId = Personas.resolve ? Personas.resolve(patch.personaId) : patch.personaId;
+        if (typeof Voice !== 'undefined' && Voice.init) Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: false });
+      }
+      if (typeof patch.approvalMode === 'string') {
+        agent.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
+      }
     }
     if (typeof DossierStore !== 'undefined') DossierStore.syncDocs(d);   // seed the dossier from any newly-authored onboarding doc (first-seed-wins per doc) BEFORE the recompose
     agent.systemPrompt = composeSystemPrompt(agent);
@@ -1691,7 +1703,12 @@ const App = (() => {
   // crewCount: the live crew size (hero + summoned minds) — read by the quest log's station arc.
   // agentName/heroId (G1b): the station-quest generator names the acting agent from the LIVE roster
   // (never an id in the UI) and keys its standing candidates against the focused hero.
+  // currentAgent/agents/applyConfig (slash-plan): the slash-command suite reads/writes the live roster
+  // and per-agent config (/agents, /model, /personality, …).
   return { show, refreshUsage, persist, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size,
     agentName: id => { const a = agents.get(id); return a ? (a.name || a.id) : null; },
-    heroId: () => (agent ? agent.id : 'agent') };
+    heroId: () => (agent ? agent.id : 'agent'),
+    currentAgent: () => agent,
+    agents: () => liveAgents().map(serializeAgentLite),
+    applyConfig: applyAgentConfig };
 })();

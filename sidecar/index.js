@@ -95,6 +95,8 @@ const skillPackages = require('./skills/package.js');       // package-backed SK
 const skillGuard = require('./skills/guard.js');            // guard scanner for runtime/external skill packages
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
+const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
+const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
@@ -1497,6 +1499,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/slash/catalog') === 0) return serveSlashCatalog(req, res);
+  if (req.method === 'POST' && req.url === '/api/slash/dispatch') return handleSlashDispatch(req, res);
   if (req.method === 'POST' && req.url === '/api/skills/toggle') return handleSkillToggle(req, res);
   if (req.method === 'POST' && req.url === '/api/agent-skills/manage') return handleAgentSkillManage(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/agent-skills') === 0) return serveAgentSkills(req, res);
@@ -2219,6 +2223,39 @@ async function handleDossier(req, res) {
   commanderDossier.set(body && body.block);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, chars: commanderDossier.get().length }));
+}
+
+function placedTypesFrom(v) {
+  if (Array.isArray(v)) return v.map(e => (e && typeof e === 'object') ? e.objectType : e).map(s => String(s || '').trim()).filter(Boolean);
+  return String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function slashOptions(placedTypes) {
+  const skills = skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes || [] });
+  const recipes = (Recipes && Recipes.builtins) ? Recipes.builtins() : [];
+  return { skills, recipes };
+}
+
+// GET /api/slash/catalog -- server-owned command metadata for chat palettes and future gateway surfaces.
+function serveSlashCatalog(req, res) {
+  let placedTypes = [];
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    placedTypes = placedTypesFrom(u.searchParams.get('placed') || '');
+  } catch (_) {}
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(slash.catalog(slashOptions(placedTypes))));
+}
+
+// POST /api/slash/dispatch { input } -- resolve a slash command to a typed client directive. The browser
+// performs local UI actions for Plan 1; this endpoint establishes the shared dispatch seam without changing
+// shared bus/schema contracts.
+async function handleSlashDispatch(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
+  const input = body.input != null ? body.input : ('/' + String(body.command || ''));
+  const out = slash.dispatch(input, slashOptions(placedTypesFrom(body.placed)));
+  json(out.ok ? 200 : (out.status || 400), out);
 }
 
 // GET /api/skills?placed=cabinet,workbench — the bundled recipe library + per-workstation flags for the SKILLS

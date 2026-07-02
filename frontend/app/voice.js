@@ -664,6 +664,15 @@ const Voice = (() => {
     reflectToggle();
     if (typeof SFX !== 'undefined') SFX.click();
   }
+  function setSpeakReplies(on) {
+    const want = on !== false;
+    if (speakReplies === want) { reflectToggle(); return speakReplies; }
+    speakReplies = want; savePref(LS_SPEAK, speakReplies);
+    forcedSpeak = false;
+    if (!speakReplies) stopSpeaking();
+    reflectToggle();
+    return speakReplies;
+  }
 
   // init is called from app.js right after Chat.init — agentName seeds this agent's voice.
   function init(opts) {
@@ -709,7 +718,7 @@ const Voice = (() => {
   function isOn() { return !!(synth && speakReplies); }
 
   return {
-    init, speak, speakChunk, endReply, mutter, ambientLine, setAgent, isOn,
+    init, speak, speakChunk, endReply, mutter, ambientLine, setAgent, isOn, setSpeakReplies,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak, personaId: () => activePersonaId,

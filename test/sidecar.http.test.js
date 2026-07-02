@@ -263,6 +263,68 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(sseWithTok.status, 200, 'GET /api/channels/events with the token query -> 200');
     try { if (sseWithTok.body && sseWithTok.body.cancel) await sseWithTok.body.cancel(); } catch (_) {}
 
+    // ---- slash command catalog + dispatch seam ----
+    const slashCat = await j('GET', '/api/slash/catalog');
+    A.eq(slashCat.status, 200, 'GET /api/slash/catalog -> 200');
+    A.ok(Array.isArray(slashCat.body.commands), 'slash catalog returns commands');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'retry'), 'slash catalog includes /retry');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'new'), 'slash catalog includes /new');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'branch' && c.aliases && c.aliases.indexOf('fork') >= 0), 'slash catalog includes /branch with /fork alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'queue' && c.aliases && c.aliases.indexOf('q') >= 0), 'slash catalog includes /queue with /q alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'model'), 'slash catalog includes /model');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'skills'), 'slash catalog includes /skills');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'resume' && c.aliases && c.aliases.indexOf('sessions') >= 0), 'slash catalog includes /resume with /sessions alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'background' && c.aliases && c.aliases.indexOf('bg') >= 0), 'slash catalog includes /background with /bg alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'cron'), 'slash catalog includes /cron');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'memory'), 'slash catalog includes /memory');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'reload-mcp' && c.aliases && c.aliases.indexOf('reload_mcp') >= 0), 'slash catalog includes /reload-mcp alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'version' && c.aliases && c.aliases.indexOf('v') >= 0), 'slash catalog includes /version alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'reload-skills' && c.aliases && c.aliases.indexOf('reload_skills') >= 0), 'slash catalog includes /reload-skills alias');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'morning-brief'), 'slash catalog includes built-in recipe commands');
+    A.ok(slashCat.body.commands.some(c => c && c.name === 'plan' && c.source === 'skill'), 'slash catalog includes available compute-only skill commands');
+    A.ok(!slashCat.body.commands.some(c => c && c.name === 'test-driven-development'), 'slash catalog omits unavailable workbench skill without placed workbench');
+
+    const slashBench = await j('GET', '/api/slash/catalog?placed=workbench');
+    A.ok(slashBench.body.commands.some(c => c && c.name === 'test-driven-development'), 'slash catalog includes workbench skill when workbench is placed');
+
+    const slashRun = await j('POST', '/api/slash/dispatch', { input: '/retry' });
+    A.eq(slashRun.status, 200, 'POST /api/slash/dispatch /retry -> 200');
+    A.eq(slashRun.body.directive, { type: 'client', action: 'retry', args: '' }, 'slash dispatch returns a client retry directive');
+
+    const slashFork = await j('POST', '/api/slash/dispatch', { input: '/fork copy this' });
+    A.eq(slashFork.status, 200, 'POST /api/slash/dispatch /fork -> 200');
+    A.eq(slashFork.body.command.name, 'branch', '/fork dispatch canonicalizes to branch');
+    A.eq(slashFork.body.directive, { type: 'client', action: 'branch', args: 'copy this' }, 'fork dispatch returns branch client directive');
+
+    const slashModel = await j('POST', '/api/slash/dispatch', { input: '/model openai/gpt-5' });
+    A.eq(slashModel.status, 200, 'POST /api/slash/dispatch /model -> 200');
+    A.eq(slashModel.body.directive, { type: 'client', action: 'model', args: 'openai/gpt-5' }, 'model dispatch returns client directive with model id');
+
+    const slashReload = await j('POST', '/api/slash/dispatch', { input: '/reload_skills' });
+    A.eq(slashReload.status, 200, 'POST /api/slash/dispatch /reload_skills -> 200');
+    A.eq(slashReload.body.command.name, 'reload-skills', 'reload_skills dispatch canonicalizes');
+
+    const slashSessions = await j('POST', '/api/slash/dispatch', { input: '/sessions 1' });
+    A.eq(slashSessions.status, 200, 'POST /api/slash/dispatch /sessions -> 200');
+    A.eq(slashSessions.body.directive, { type: 'client', action: 'resume', args: '1' }, 'sessions dispatch returns resume directive');
+
+    const slashMcp = await j('POST', '/api/slash/dispatch', { input: '/reload_mcp github' });
+    A.eq(slashMcp.status, 200, 'POST /api/slash/dispatch /reload_mcp -> 200');
+    A.eq(slashMcp.body.directive, { type: 'client', action: 'reload-mcp', args: 'github' }, 'reload_mcp dispatch returns reload-mcp directive');
+
+    const slashRecipe = await j('POST', '/api/slash/dispatch', { input: '/summarize launch notes' });
+    A.eq(slashRecipe.status, 200, 'POST /api/slash/dispatch recipe -> 200');
+    A.eq(slashRecipe.body.directive.type, 'insert', 'recipe slash dispatch returns insert directive');
+    A.ok(String(slashRecipe.body.directive.text || '').indexOf('launch notes') >= 0, 'recipe slash dispatch carries typed args into the draft');
+
+    const slashSkill = await j('POST', '/api/slash/dispatch', { input: '/plan refactor commands' });
+    A.eq(slashSkill.status, 200, 'POST /api/slash/dispatch skill -> 200');
+    A.eq(slashSkill.body.directive.source, 'skill', 'skill slash dispatch returns a skill directive');
+    A.ok(String(slashSkill.body.directive.text || '').indexOf('refactor commands') >= 0, 'skill slash dispatch carries typed args into the task');
+
+    const slashUnknown = await j('POST', '/api/slash/dispatch', { input: '/unknown' });
+    A.eq(slashUnknown.status, 404, 'POST /api/slash/dispatch unknown -> 404');
+
     const noApiToken = await fetch(B + '/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ scope: 'day' }) });
     A.eq(noApiToken.status, 403, 'privileged POST without X-StarNet-Token -> 403');
 
