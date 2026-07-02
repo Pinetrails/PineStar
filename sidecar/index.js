@@ -170,6 +170,11 @@ if (runtimeKey) runtimeKeys.openrouter = runtimeKey;
 // the provider at a local mock so the real streaming path is tested end-to-end without a live key.
 const OPENROUTER_BASE = String(ENV('OPENROUTER_BASE') || '').trim() || undefined;
 const FRONTEND = path.resolve(__dirname, '..', 'frontend');
+// Class Loadouts S1: the browser needs the SHARED catalog (shared/specialties.js) as a <script>, but the
+// static server jails to FRONTEND (a /../shared request is 403). Serve the shared/ dir through a narrow,
+// read-only, .js-only allowlist so the browser + the desktop bundle (which ships ../shared as a resource)
+// can load it without escaping into arbitrary repo files. Path-jailed to SHARED exactly like FRONTEND.
+const SHARED = path.resolve(__dirname, '..', 'shared');
 // the agent workspaces + their protected siblings (notebook/ledger/permissions/channels). SKYNET_WORKSPACES
 // wins (the desktop shell + isolated tests set it); otherwise resolve a PER-USER, writable OS app-data dir.
 // CRITICAL for a packaged install: NEVER default under __dirname — a shipped app lives in read-only Program
@@ -1768,6 +1773,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/memory/forget') return handleMemoryForget(req, res);
   if (req.method === 'GET' && req.url === '/api/memory/config') return handleMemoryConfigGet(req, res);   // P1-10 memory controls
   if (req.method === 'POST' && req.url === '/api/memory/config') return handleMemoryConfigSet(req, res);
+  if (req.method === 'GET' && /^\/shared\//.test((req.url || '').split('?')[0])) return serveShared(req, res);
   return serveStatic(req, res);
 });
 server.on('error', (e) => {
@@ -4577,6 +4583,21 @@ async function handleMemoryConfigSet(req, res) {
   saveMemoryConfig();
   return handleMemoryConfigGet(req, res);
 }
+// Class Loadouts S1: serve read-only .js from the shared/ dir for the browser (the shared specialty catalog).
+// Path-jailed to SHARED and restricted to .js so it can never leak arbitrary repo files. Mirrors serveStatic.
+async function serveShared(req, res) {
+  try {
+    const url = decodeURIComponent((req.url || '/').split('?')[0]);   // e.g. /shared/specialties.js
+    const rel = url.replace(/^\/shared\/+/, '');
+    if (!/^[A-Za-z0-9_.-]+\.js$/.test(rel)) { res.writeHead(403); return res.end('forbidden'); }
+    const abs = path.resolve(SHARED, rel);
+    if (abs.indexOf(SHARED + path.sep) !== 0) { res.writeHead(403); return res.end('forbidden'); }
+    const data = await fsp.readFile(abs);
+    res.writeHead(200, { 'Content-Type': MIME['.js'] || 'application/javascript', 'Cache-Control': 'no-store' });
+    res.end(data);
+  } catch (e) { res.writeHead(404); res.end('not found'); }
+}
+
 async function serveStatic(req, res) {
   try {
     const url = decodeURIComponent((req.url || '/').split('?')[0]);
