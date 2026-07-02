@@ -3612,7 +3612,7 @@ const World = (() => {
       const usd = +p.usd;
       let line = tickerName(p.agentId) + ' ▸ RUN COMPLETE';
       if (turns > 0) line += ' · ' + turns + ' TURN' + (turns === 1 ? '' : 'S');
-      if (isFinite(usd) && usd > 0) line += ' · $' + (Math.round(usd * 100) / 100).toFixed(2);
+      if (isFinite(usd) && usd > 0) line += ' · ' + U.usd(usd);
       pushTicker(line, '', tickerSuit(p.agentId));
     });
     U.bus.on('provider.fallback', p => {
@@ -3729,7 +3729,7 @@ const World = (() => {
       if (!p || !isFinite(+p.usd) || !isFinite(+p.cap) || +p.cap <= 0) return;
       const usd = +p.usd, cap = +p.cap;
       const scopeWord = p.scope === 'run' ? 'this run' : (p.scope === 'day' ? 'today' : 'the global pool');
-      const money = v => '$' + (Math.round(v * 100) / 100).toFixed(2);
+      const money = v => U.usd(v);
       if (usd >= cap) hudNote('⛔ budget cap hit for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap), 'warn');
       else hudNote('⚠ budget warning for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap) + ' (' + Math.round(usd / cap * 100) + '%)', 'warn');
     });

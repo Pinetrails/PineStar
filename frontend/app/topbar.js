@@ -30,15 +30,9 @@ const Topbar = (() => {
 
   const $ = sel => document.querySelector(sel);
 
-  /* ---- SPEND: format a dollar figure sensibly. Sub-cent shows more precision so a
-     $0.0043 haiku ping is visible; larger sums round to cents; zero is a quiet $0.00. */
-  function fmtSpend(v) {
-    v = Number(v);
-    if (!isFinite(v) || v <= 0) return '$0.00';
-    if (v < 0.1) return '$' + v.toFixed(4);      // sub-dime: 4 decimals ($0.0043)
-    if (v < 100) return '$' + v.toFixed(2);      // normal: cents ($4.32)
-    return '$' + Math.round(v).toLocaleString(); // large: whole dollars ($1,204)
-  }
+  /* ---- SPEND: the canonical U.usd() formatter (sub-dime 4dp, cents under $100,
+     whole dollars with separators above) — one source of truth for spend display. */
+  function fmtSpend(v) { return U.usd(v); }
 
   // the number to display = the authoritative ledger day-total (if we have one) PLUS any
   // live cost that has landed since that poll; else just the live session sum.

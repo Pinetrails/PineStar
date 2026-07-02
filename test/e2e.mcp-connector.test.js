@@ -1,0 +1,263 @@
+/* node test/e2e.mcp-connector.test.js - real sidecar proof for MCP connectors.
+
+   Boots the actual sidecar with a fake MCP HTTP server and fake OpenRouter.
+   Configures the connector through /api/connectors, runs a manual routine, and
+   proves the model can call the discovered MCP tool with SSE portal activity. */
+'use strict';
+
+const A = require('./_assert.js');
+const http = require('http');
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const { spawn } = require('child_process');
+const { bootToken } = require('./_httpToken.js');
+
+const HOST = '127.0.0.1';
+const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function readJsonBody(req) {
+  return new Promise(resolve => {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch (_) { resolve({}); } });
+  });
+}
+
+function startMockMcp() {
+  const calls = [];
+  return new Promise(resolve => {
+    const server = http.createServer(async (req, res) => {
+      if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+      if (req.method !== 'POST') { res.writeHead(404); res.end(); return; }
+      const msg = await readJsonBody(req);
+      calls.push({ msg, headers: req.headers });
+      const reply = (result, status) => {
+        const headers = { 'Content-Type': 'application/json' };
+        if (msg.method === 'initialize') headers['Mcp-Session-Id'] = 'sess-demo';
+        res.writeHead(status || 200, headers);
+        if ((status || 200) === 202) { res.end(); return; }
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+      };
+      if (msg.method === 'initialize') {
+        reply({ protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'demo-mcp' } });
+        return;
+      }
+      if (msg.method === 'notifications/initialized') { reply({}, 202); return; }
+      if (msg.method === 'tools/list') {
+        reply({ tools: [{
+          name: 'lookup',
+          description: 'Lookup demo data',
+          annotations: { readOnlyHint: true },
+          inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } }
+        }] });
+        return;
+      }
+      if (msg.method === 'tools/call') {
+        const q = msg.params && msg.params.arguments && msg.params.arguments.query;
+        reply({ content: [{ type: 'text', text: 'lookup result for ' + q }], isError: false });
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'unknown method' } }));
+    });
+    server.listen(0, HOST, () => resolve({ server, calls, url: 'http://' + HOST + ':' + server.address().port + '/mcp' }));
+  });
+}
+
+function startMockOpenRouter() {
+  const requests = [];
+  return new Promise(resolve => {
+    const server = http.createServer((req, res) => {
+      if (req.url.indexOf('/models') >= 0) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: [{ id: 'test/model', context_length: 8000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }] }));
+        return;
+      }
+      if (req.url.indexOf('/chat/completions') >= 0) {
+        let body = '';
+        req.on('data', d => { body += d; });
+        req.on('end', () => {
+          let parsed = {}, msgs = [];
+          try { parsed = JSON.parse(body); msgs = parsed.messages || []; } catch (_) {}
+          const hasToolResult = msgs.some(m => m && m.role === 'tool');
+          requests.push(parsed);
+
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          if (!hasToolResult) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'mcp_lookup', type: 'function', function: { name: 'mcp__demo__lookup', arguments: JSON.stringify({ query: 'alpha' }) } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ finish_reason: 'tool_calls', delta: {} }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
+          } else {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'MCP answer delivered' } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
+          }
+          res.write('data: [DONE]\n\n');
+          res.end();
+        });
+        return;
+      }
+      res.writeHead(404); res.end();
+    });
+    server.listen(0, HOST, () => resolve({ server, requests, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+  });
+}
+
+function boot(port, env, attemptsLeft) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [INDEX], {
+      env: Object.assign({}, process.env, env, { SKYNET_PORT: String(port), STARNET_PORT: String(port) }),
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let out = '', settled = false;
+    const onData = d => {
+      out += d.toString();
+      if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
+      else if (!settled && /already in use/i.test(out)) {
+        settled = true; try { child.kill(); } catch (_) {}
+        if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1));
+        else reject(new Error('no free port'));
+      }
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.on('error', e => { if (!settled) { settled = true; reject(e); } });
+    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout:\n' + out)); } }, 9000);
+  });
+}
+
+async function startSseCollector(url) {
+  const ac = new AbortController();
+  const events = [];
+  const waiters = [];
+  const res = await fetch(url, { signal: ac.signal });
+  A.eq(res.status, 200, 'SSE feed opens with token');
+  const reader = res.body.getReader();
+  function notify() {
+    for (let i = waiters.length - 1; i >= 0; i--) {
+      const w = waiters[i];
+      try {
+        if (w.pred(events)) { waiters.splice(i, 1); clearTimeout(w.timer); w.resolve(events); }
+      } catch (e) { waiters.splice(i, 1); clearTimeout(w.timer); w.reject(e); }
+    }
+  }
+  (async () => {
+    const dec = new TextDecoder();
+    let buf = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line || line[0] === ':') continue;
+          if (line.indexOf('data:') === 0) {
+            const raw = line.slice(5).trim();
+            try { events.push(JSON.parse(raw)); notify(); } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+  })();
+  return {
+    events,
+    waitFor(pred, ms, label) {
+      if (pred(events)) return Promise.resolve(events);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timed out waiting for ' + label)), ms);
+        waiters.push({ pred, resolve, reject, timer });
+      });
+    },
+    close() { try { ac.abort(); } catch (_) {} }
+  };
+}
+
+async function readNdjson(res) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', events = [];
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) { try { events.push(JSON.parse(line)); } catch (_) {} }
+    }
+  }
+  return events;
+}
+
+(async () => {
+  const mcp = await startMockMcp();
+  const llm = await startMockOpenRouter();
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-mcp-e2e-'));
+  const env = {
+    SKYNET_WORKSPACES: ws,
+    STARNET_WORKSPACES: ws,
+    SKYNET_OPENROUTER_BASE: llm.base,
+    STARNET_OPENROUTER_BASE: llm.base,
+    SKYNET_OPENROUTER_KEY: 'sk-or-v1-mcp-fake',
+    STARNET_OPENROUTER_KEY: 'sk-or-v1-mcp-fake',
+    SKYNET_DEFAULT_MODEL: 'test/model',
+    STARNET_DEFAULT_MODEL: 'test/model'
+  };
+  const { child, port } = await boot(9020 + (process.pid % 50), env, 20);
+  const B = 'http://' + HOST + ':' + port;
+  let sse = null;
+  try {
+    const token = await bootToken(B, B);
+    A.ok(token.length >= 32, 'got a session API token');
+    const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+
+    const upsert = await fetch(B + '/api/connectors', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ id: 'demo', label: 'Demo MCP', transport: 'http', url: mcp.url, token: 'mcp-secret-token' })
+    });
+    A.eq(upsert.status, 200, 'configured MCP connector');
+    const configured = await upsert.json();
+    A.eq(configured.state, 'up', 'connector state is up');
+    A.eq(configured.toolCount, 1, 'one MCP tool discovered');
+    A.eq(configured.status.hasToken, true, 'connector status reports token presence');
+    A.eq('token' in configured.status, false, 'connector status does not leak token value');
+
+    const listed = await (await fetch(B + '/api/connectors', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok((listed.connectors || []).some(c => c.id === 'demo' && c.tools && c.tools.indexOf('lookup') >= 0), '/api/connectors lists the discovered MCP tool');
+
+    sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
+    const create = await fetch(B + '/api/cron', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'MCP proof', prompt: 'use the demo connector lookup for alpha', schedule: 'every 1h', agentId: 'mcp-agent', model: 'test/model', provider: 'openrouter' })
+    });
+    A.eq(create.status, 200, 'created MCP proof routine');
+    const job = (await create.json()).job;
+
+    const run = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: job.id }) });
+    A.eq(run.status, 200, 'Run Now returns a stream');
+    const panel = await readNdjson(run);
+    A.ok(panel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'), 'panel stream includes the MCP tool call');
+    A.ok(panel.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('').indexOf('MCP answer delivered') >= 0, 'panel stream includes the post-MCP model answer');
+    A.ok(mcp.calls.some(c => c.msg && c.msg.method === 'tools/call' && c.msg.params && c.msg.params.name === 'lookup' && c.msg.params.arguments.query === 'alpha'), 'MCP server received tools/call with model arguments');
+    A.ok(mcp.calls.some(c => c.headers && c.headers.authorization === 'Bearer mcp-secret-token'), 'MCP transport sent bearer token to the configured connector');
+    A.ok(llm.requests.some(r => (r.tools || []).some(t => t.function && t.function.name === 'mcp__demo__lookup')), 'model request exposed the discovered MCP tool');
+
+    await sse.waitFor(events => events.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'), 5000, 'SSE MCP tool call');
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'mcp-agent'), 5000, 'SSE run end');
+  } finally {
+    if (sse) sse.close();
+    try { child.kill(); } catch (_) {}
+    try { mcp.server.close(); } catch (_) {}
+    try { llm.server.close(); } catch (_) {}
+    await sleep(150);
+    try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+  }
+  A.report('e2e.mcp-connector.test');
+})().catch(e => { console.log('FAIL: e2e.mcp-connector.test threw - ' + (e && e.stack || e)); process.exit(1); });
