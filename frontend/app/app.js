@@ -1638,13 +1638,23 @@ const App = (() => {
     if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
     if (saved && saved.reasoningEffort && Harness.setReasoningEffort) Harness.setReasoningEffort(saved.reasoningEffort);
     if (saved && saved.agent) {
-      if (Harness.getProv && Harness.getProv() !== 'codex' && Harness.listModels) await Harness.listModels();
       // AUTO-RESUME: a saved station goes STRAIGHT back into the world when creds are available — an OpenRouter
-      // key in hand, the desktop keychain holds one (configured), OR the Codex provider (OAuth tokens live
-      // server-side; a missing/expired one surfaces as a run error that prompts re-sign-in). No title screen.
-      if (Harness.getKey() || (Harness.configured && Harness.configured()) || Harness.getProv() === 'codex') { resumeInto(saved); return; }
+      // key in hand, the desktop keychain holds one (configured, incl. the DEV fast-path), OR the Codex provider
+      // (OAuth tokens live server-side; a missing/expired one surfaces as a run error that prompts re-sign-in).
+      // NEVER gate reaching the floor on the model catalog: listModels() proxies a LIVE external OpenRouter fetch
+      // and if that is slow/blocked, awaiting it here strands boot on the connect screen forever (the seeded DEV
+      // shoot regression). The catalog is cosmetic for resume (dropdown/pricing/context gauge), so fire it in the
+      // BACKGROUND and enter the station immediately — pricing fills in a beat later, the floor never waits.
+      const canResume = !!(Harness.getKey() || (Harness.configured && Harness.configured()) || Harness.getProv() === 'codex');
+      if (canResume) {
+        if (Harness.getProv && Harness.getProv() !== 'codex' && Harness.listModels) { Promise.resolve(Harness.listModels()).catch(() => {}); }
+        resumeInto(saved); return;
+      }
       // saved station, but the credentials are gone (cache/origin wipe). RESUME-mode recovery screen: a banner,
       // the model pre-filled, identity locked read-only — the agent is preserved, only the brain re-connects.
+      // Here the model dropdown DOES want the catalog, but bound the wait so a hung network can't strand the
+      // recovery screen either — a timeout just yields an empty dropdown the Commander can still type a slug into.
+      if (Harness.getProv && Harness.getProv() !== 'codex' && Harness.listModels) await Harness.listModels();
       resumingSaved = saved;
       show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
       return;
