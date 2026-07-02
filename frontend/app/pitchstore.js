@@ -32,6 +32,7 @@ const PitchStore = (() => {
   function hydrate(raw) {
     const s = (typeof Pitch !== 'undefined') ? Pitch.fresh() : { v: 1, pitched: false };
     if (raw && typeof raw === 'object' && raw.pitched) s.pitched = true;
+    if (raw && typeof raw === 'object' && raw.starterDone) s.starterDone = true;   // the tour-close floor fired once already
     return s;
   }
 
@@ -155,6 +156,37 @@ const PitchStore = (() => {
     } catch (_) { return false; }
   }
 
+  // THE FLOOR — when the handoff pitch can't fire (skipped/denied demo, cold dossier, no brain), the tour
+  // must still end POINTING somewhere. One gentle COMMS nudge: a generated first move when the brain is
+  // live (Pitch.buildStarterDirective — honest about a toolless station), the quest-log pointer when it
+  // isn't. Fire-once (persisted on offer, so an ignored nudge never re-nags); a delivered First Pitch
+  // makes it moot; "run it" starts a real run — whose end is exactly what unlocks the real First Pitch.
+  async function offerStarter() {
+    try {
+      if (!ready() || firing) return false;
+      if (state.pitched || state.starterDone) return false;         // a delivered pitch IS the floor; never both, never twice
+      if (typeof Chat === 'undefined' || !Chat.nudge) return false;
+      if (Chat.isBusy && Chat.isBusy()) return false;                // a live run IS a next thing — don't talk over it
+      if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return false;
+      state.starterDone = true; save();                              // mark on OFFER — ignored still means never re-nag
+      let text = null, move = null;
+      if (typeof Harness !== 'undefined' && Harness.chat && Harness.configured && Harness.configured()) {
+        const directive = Pitch.buildStarterDirective({ capabilities: deps.getCaps ? deps.getCaps() : [] });
+        const call = Harness.chat({ system: deps.getSystem ? deps.getSystem() : '', messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true }).catch(() => null);
+        const res = await Promise.race([call, new Promise(r => setTimeout(() => r(null), 20000))]);   // a late move is a weird move — cap it
+        const parsed = (res && !res.error && res.text) ? Pitch.parseStarter(res.text) : null;
+        if (parsed) { move = parsed.move; text = Pitch.presentStarter(parsed); }
+      }
+      if (!text) text = '✦ your next moves are pinned under ⚑ QUESTS in the ▤ WORK dock. or skip the list — name one real chore and i’ll take it right now.';
+      Chat.nudge(text, move ? Pitch.starterChoices() : [{ label: 'got it', value: 'ok', skip: true }], item => {
+        if (!item || item.value !== 'run' || !move) return;
+        if (deps.launchDirective) deps.launchDirective(move);
+        else if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(move);
+      });
+      return true;
+    } catch (_) { return false; }
+  }
+
   // S2: a brand-new hero re-earns its First Pitch. Drop the self-persisted flag (Save.clear() only wipes the
   // main save envelope; this store owns its own key, like curiositystore).
   function reset() { state = (typeof Pitch !== 'undefined') ? Pitch.fresh() : { v: 1, pitched: false }; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
@@ -163,7 +195,7 @@ const PitchStore = (() => {
   function done() { return !!(state && state.pitched); }
 
   // _-prefixed handles are exposed for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, done, offerAtHandoff, _decide: decide, _fire: fire, _state: () => state };
+  return { init, reset, onRunEnd, done, offerAtHandoff, offerStarter, _decide: decide, _fire: fire, _state: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { PitchStore };

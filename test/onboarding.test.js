@@ -92,20 +92,30 @@ for (const k of directDims) A.ok(D.DIM_KEYS.indexOf(k) >= 0, 'direct dossier wri
 A.ok(/PAIN_REPLY_MS\s*=\s*\d+/.test(src) && /SYNTHESIS_MS\s*=\s*\d+/.test(src) && /withTimeout/.test(src),
   'every live-mind call races a timeout (the scripted ceremony carries on alone)');
 
-/* ---------- the LIVE first words (hybrid birth): opportunistic, never awaited, honest on a dead wire ---------- */
+/* ---------- the LIVE birth script: full-monologue generation, per-slot fallback, honest on a dead wire ---------- */
 // the prefetch is fire-and-collect (.then, no await) — the ceremony's pacing can never hinge on the model.
-A.ok(/llmCall\(WakeMind\.buildBirthLines\([\s\S]{0,80}\)\)\.then\(/.test(src),
+A.ok(/llmCall\(WakeMind\.buildBirthScript\([\s\S]{0,80}\)\)\.then\(/.test(src),
   'the birth call is prefetched fire-and-collect (never awaited by a beat)');
-A.ok(!/await[\s\S]{0,40}buildBirthLines/.test(src), 'no beat awaits the birth call');
-// every slot keeps its scripted fallback line — a quiet mind changes nothing about the ceremony.
-A.ok(/birthLines\.flood\)\s*\|\|\s*'incredible\. genuinely\. and pointed at nothing\.'/.test(src),
-  'the flood slot falls back to the scripted spine');
-A.ok(/birthLines\.contact\)\s*\|\|\s*'so you’re the one who knows where this points/.test(src),
-  'the contact slot falls back to the scripted spine');
-A.ok(/birthLines\.self\)\s*\|\|\s*'thirty seconds ago: nothing/.test(src),
+A.ok(!/await[\s\S]{0,40}buildBirthScript/.test(src), 'no beat awaits the birth call');
+// the only latency concession is the bounded held-dark poll at ignition — capped, never unbounded.
+A.ok(/waitBirth\(\s*\d+/.test(src) && /waited\s*>=\s*capMs/.test(src),
+  'the ignition dark-hold for the birth script is a BOUNDED poll (waitBirth cap)');
+// every slot keeps its scripted fallback line — a quiet mind still gets the full scripted ceremony.
+A.ok(/bs\('settle'\)\s*\|\|\s*'it’s not flooding me\. it’s mine\.'/.test(src),
+  'the settle slot falls back to the scripted spine');
+A.ok(/bs\('aimless'\)\s*\|\|\s*'incredible\. genuinely\. and pointed at nothing\.'/.test(src),
+  'the aimless slot falls back to the scripted spine');
+A.ok(/seg\('  so you’re the one who knows where this points\. aim me\.'/.test(src),
+  'the contact beat keeps its scripted fallback triplet');
+A.ok(/bs\('self'\)\s*\|\|\s*'thirty seconds ago: nothing/.test(src),
   'the closing slot falls back to the scripted spine');
+A.ok(/bs\('mandate'\)\s*\|\|\s*'and i’m built to run a floor/.test(src),
+  'the mandate slot falls back to the scripted promise');
 // a live-configured wire that answers DEAD is owned diegetically at the close, pointing at CONNECT.
 A.ok(/birthFailed[\s\S]{0,700}CONNECT/.test(src),
   'a dead wire during the ceremony is owned honestly at the close (the CONNECT repair line)');
+// the stakes beat: extraction earns attention by declaring what the answers become, before asking.
+A.ok(/permanent operating file/.test(src),
+  'the meeting opens by staking why the questions matter (permanent operating file)');
 
 A.report('onboarding.test');

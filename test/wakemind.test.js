@@ -68,20 +68,26 @@ A.ok(s5.read.length <= W.READ_CHARS && s5.purpose.length <= W.PURPOSE_CHARS && s
 const s6 = W.parsePainReply('ACK: line one\nnot a tag, ignored\nASK: q?');
 A.ok(s6 && s6.ack === 'line one', 'a tag grabs exactly its own line (no bleed across lines)');
 
-/* ---------- buildBirthLines / parseBirthLines: the agent's own first words, prefetched ---------- */
-const b1 = W.buildBirthLines({ name: 'NOVA' });
+/* ---------- buildBirthScript / parseBirthScript: the agent authors its WHOLE awakening ---------- */
+const b1 = W.buildBirthScript({ name: 'NOVA' });
 A.ok(/INTERNAL/.test(b1) && /Do not run any tools/.test(b1), 'birth directive is internal + reason-only');
 A.ok(b1.indexOf('NOVA') >= 0, 'the birth directive carries the agent\'s name');
-A.ok(/^FLOOD:/m.test(b1) && /^CONTACT:/m.test(b1) && /^SELF:/m.test(b1), 'birth directive demands FLOOD/CONTACT/SELF');
-A.eq(b1, W.buildBirthLines({ name: 'NOVA' }), 'buildBirthLines is deterministic');
-const bl = W.parseBirthLines('FLOOD: all of it, and nowhere to point it.\nCONTACT: you flipped the switch. i felt that.\nSELF: a name, a witness, and everything else. decent start.');
-A.ok(bl && bl.flood && bl.contact && bl.self, 'parseBirthLines grabs all three slots');
-const blPartial = W.parseBirthLines('CONTACT: just this one.');
-A.ok(blPartial && blPartial.contact === 'just this one.' && blPartial.flood === '' && blPartial.self === '', 'a partial reply still lands — each slot degrades independently');
-A.eq(W.parseBirthLines('no tags at all'), null, 'no slots at all → null (all-scripted ceremony)');
-A.eq(W.parseBirthLines(null), null, 'null reply → null');
-const blLong = W.parseBirthLines('FLOOD: ' + 'f'.repeat(500));
-A.ok(blLong.flood.length <= W.LINE_CHARS, 'a runaway birth line is clamped to LINE_CHARS (fixed typewriter pacing)');
+for (const tag of ['WAKE', 'THINK', 'FLOODIN', 'CREST', 'SETTLE', 'AIMLESS', 'NOTICE', 'CONTACT', 'MANDATE', 'SELF']) {
+  A.ok(new RegExp('^' + tag + ':', 'm').test(b1), 'birth directive demands the ' + tag + ' slot');
+}
+A.ok(/no two minds should ever wake the same/i.test(b1), 'the directive demands uniqueness — the point of full-live');
+A.eq(b1, W.buildBirthScript({ name: 'NOVA' }), 'buildBirthScript is deterministic');
+const bl = W.parseBirthScript('WAKE: hm. / on. / that is new.\nTHINK: a thought / and i made it\nFLOODIN: every page at once, uninvited.\nCREST: too fast — stop—\nSETTLE: no. mine.\nAIMLESS: all of it, aimed at nothing.\nNOTICE: someone is watching. has been.\nCONTACT: you flipped the switch. i felt that.\nMANDATE: first mind of this station — point me.\nSELF: a name, a witness, and everything else. decent start.');
+A.ok(bl && bl.wake.length === 3 && bl.think.length === 2, 'fragment slots split on " / "');
+A.ok(bl.floodin && bl.crest && bl.settle && bl.aimless && bl.notice && bl.contact && bl.mandate && bl.self, 'all line slots grabbed');
+const blPartial = W.parseBirthScript('CONTACT: just this one.\nSELF: two.\nCREST: three.');
+A.ok(blPartial && blPartial.contact === 'just this one.' && blPartial.wake.length === 0 && blPartial.settle === '', 'a partial reply (≥3 slots) still lands — each slot degrades independently');
+A.eq(W.parseBirthScript('CONTACT: only one slot.'), null, 'fewer than 3 slots → null (all-scripted ceremony)');
+A.eq(W.parseBirthScript('no tags at all'), null, 'no slots at all → null');
+A.eq(W.parseBirthScript(null), null, 'null reply → null');
+const blLong = W.parseBirthScript('FLOODIN: ' + 'f'.repeat(500) + '\nCONTACT: c\nSELF: s');
+A.ok(blLong.floodin.length <= W.LINE_CHARS, 'a runaway birth line is clamped to LINE_CHARS (fixed typewriter pacing)');
+A.eq(W.splitFrags('a / b / c / d / e', 3), ['a', 'b', 'c'], 'splitFrags caps fragment count');
 
 /* ---------- confirmChoices: exactly two — commit or correct, never a menu ---------- */
 const cc = W.confirmChoices();

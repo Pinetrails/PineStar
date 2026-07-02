@@ -575,6 +575,17 @@ const Tutorial = (() => {
     save();
     if (skipped) { if (hasChat()) Chat.localLine('right. i’m here when you need me — just type. the field manual’s in the bottom bar when you want it.'); }
     else { sfx('level'); if (!state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 600); }   // hand them the first-steps map
+    // THE FLOOR — the tour NEVER ends in silence, the skip path included. Two guaranteed beats, both
+    // one-shot: (1) the station offers one concrete first move (PitchStore.offerStarter — generated from
+    // the dossier when the brain is live, the quest-log pointer when it isn't; moot if the handoff pitch
+    // already delivered), and (2) a coachmark points at the quest log itself — the map says NOTHING glowed
+    // at tour end, so a skipper never even learned quests exist. Anchored on the always-visible WORK dock
+    // button (never a hidden menu item — the dock-menu spotlight trap).
+    setTimeout(() => {
+      if (typeof PitchStore !== 'undefined' && PitchStore.offerStarter) PitchStore.offerStarter();
+      showCoach('quests', '.bb-group[data-group="work"] .bb-grp',
+        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. nothing in there is ever gated.');
+    }, skipped ? 900 : 1400);
   }
 
   function seen(key) { return !!state.seen[key]; }

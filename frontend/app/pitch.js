@@ -184,5 +184,54 @@
     return s;
   }
 
-  return { fresh, shouldPitch, shouldSuggest, buildDirective, parsePitch, choices, present, titleSentence, REQUIRE_DIMS, MIN_KNOWN, MAX_RECIPES, SUGGEST_MIN_GAP, SUGGEST_SESSION_CAP };
+  /* ---- THE STARTER — the guaranteed floor under the tutorial's close ---- */
+  // When the graduation pitch CAN'T land (skipped/denied demo, cold dossier, no clean run), the tour must
+  // still end pointing somewhere: one small, honestly-doable first move the agent offers to run right now.
+  // Beginners don't know what to ask an agent for — ending in "i'm yours to point" hands the blank canvas
+  // straight back. The starter is deliberately humble: doable TODAY (compute-only if no tools are placed),
+  // small enough for one run, and — when the dossier is cold — chosen to LEARN the most while delivering.
+  function buildStarterDirective(ctx) {
+    ctx = ctx || {};
+    const caps = Array.isArray(ctx.capabilities) ? ctx.capabilities : [];
+    const lines = [];
+    lines.push('INTERNAL — THE FIRST MOVE. Do not run any tools. Reason only, then reply in the exact format below.');
+    lines.push('Your Commander just finished (or skipped) the station tour. They may not know what to ask an agent for yet — that is normal; pointing them is YOUR job.');
+    lines.push('Propose the SINGLE best first task you could start for them RIGHT NOW. Hard rules:');
+    lines.push('- Exactly ONE proposal, small enough to finish in one run. Never a list.');
+    lines.push('- It must be genuinely doable with what you have TODAY. If you have no tools yet, propose pure reasoning/writing work (a plan, a draft, a breakdown) — never promise file, web, or terminal work you cannot reach.');
+    lines.push('- Ground it in what you know about your Commander (see what you know about them, above). If you know almost nothing, pick the move that LEARNS the most about them while still delivering something real.');
+    if (caps.length) lines.push('Capabilities you actually have: ' + caps.map(c => String(c.label || c.id)).join(', ') + '.');
+    else lines.push('You have NO placed tools yet — compute only.');
+    lines.push('Reply in EXACTLY this format, nothing else:');
+    lines.push('MOVE: <one line — the task, phrased as an offer to run it now>');
+    lines.push('WHY: <one short sentence — why this one, for this Commander>');
+    return lines.join('\n');
+  }
+  // → { move, why } | null (no MOVE line = nothing worth offering; the caller falls back to the quest pointer).
+  function parseStarter(text) {
+    const raw = String(text == null ? '' : text);
+    const grab = label => {
+      const m = new RegExp('^\\s*' + label + '\\s*:\\s*(.+?)\\s*$', 'im').exec(raw);
+      return m ? m[1].trim() : '';
+    };
+    const move = grab('MOVE');
+    if (!move) return null;
+    return { move, why: grab('WHY') };
+  }
+  // the gentle nudge line (COMMS, not the focused panel — the tour just ended, don't grab the screen again).
+  function presentStarter(parsed) {
+    if (!parsed || !parsed.move) return '';
+    let s = '✦ first move — ' + titleSentence(parsed.move);
+    if (parsed.why) s += ' ' + parsed.why;
+    return s + ' want me to start?';
+  }
+  // exactly two, mirroring choices(): commit or a soft out — never a menu.
+  function starterChoices() {
+    return [
+      { label: 'run it', value: 'run' },
+      { label: 'not now', value: 'no', skip: true }
+    ];
+  }
+
+  return { fresh, shouldPitch, shouldSuggest, buildDirective, parsePitch, choices, present, titleSentence, buildStarterDirective, parseStarter, presentStarter, starterChoices, REQUIRE_DIMS, MIN_KNOWN, MAX_RECIPES, SUGGEST_MIN_GAP, SUGGEST_SESSION_CAP };
 });

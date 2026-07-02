@@ -121,4 +121,26 @@ A.eq(P.shouldSuggest({}).go, false, 'defensive: empty state never suggests, neve
 A.eq(P.SUGGEST_MIN_GAP, 3, 'default cooldown is 3 tasks');
 A.eq(P.SUGGEST_SESSION_CAP, 1, 'default session cap is one idea');
 
+/* ---------- the STARTER — the guaranteed floor under the tutorial's close ---------- */
+const sd0 = P.buildStarterDirective({ capabilities: [] });
+A.ok(/INTERNAL/.test(sd0) && /Do not run any tools/.test(sd0), 'starter directive is internal + reason-only');
+A.ok(/NO placed tools yet — compute only/.test(sd0), 'a toolless station is stated honestly (no promised reach)');
+A.ok(/^MOVE:/m.test(sd0) && /^WHY:/m.test(sd0), 'starter directive demands MOVE/WHY');
+A.ok(/LEARNS the most/.test(sd0), 'a cold dossier steers the move toward learning-while-delivering');
+const sd1 = P.buildStarterDirective({ capabilities: [{ id: 'cabinet', label: 'FILES' }, { id: 'web', label: 'WEB' }] });
+A.ok(sd1.indexOf('FILES, WEB') >= 0, 'placed capabilities are named (the honest envelope)');
+A.eq(sd0, P.buildStarterDirective({ capabilities: [] }), 'buildStarterDirective is deterministic');
+const sp = P.parseStarter('chatter\nMOVE: draft a one-page plan for your channel\nWHY: it maps the work you keep shelving.\nmore chatter');
+A.ok(sp && sp.move === 'draft a one-page plan for your channel' && /shelving/.test(sp.why), 'parseStarter grabs MOVE/WHY through chatter');
+A.eq(P.parseStarter('WHY: reasons but no move'), null, 'no MOVE → null (the caller falls back to the quest pointer)');
+A.eq(P.parseStarter(''), null, 'empty starter reply → null');
+const spres = P.presentStarter(sp);
+A.ok(spres.indexOf('✦ first move — ') === 0 && /want me to start\?$/.test(spres), 'presentStarter composes the gentle offer');
+A.ok(spres.indexOf('..') < 0, 'no double punctuation in the starter line');
+A.eq(P.presentStarter(null), '', 'presentStarter is defensive');
+const sch = P.starterChoices();
+A.eq(sch.length, 2, 'starter is exactly two choices — commit or a soft out, never a menu');
+A.eq(sch[0].value, 'run', 'first choice runs it');
+A.ok(sch[1].skip === true, 'the out is a skip');
+
 A.report('pitch.test');
