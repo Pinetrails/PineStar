@@ -1,4 +1,4 @@
-// Skynet — native desktop shell (Tauri v2).
+// StarNet — native desktop shell (Tauri v2).
 //
 // Wraps the existing browser app: spawns the zero-dependency Node sidecar on a
 // private loopback port, waits for it to listen, then opens that URL in a native
@@ -600,7 +600,7 @@ fn spawn_sidecar(state: &AppState) -> bool {
             }
             Err(e) => {
                 log_startup(&state.startup_log, format!("spawn_sidecar failed: {e}"));
-                eprintln!("[skynet] failed to spawn node sidecar: {e}");
+                eprintln!("[starnet] failed to spawn node sidecar: {e}");
                 return false;
             }
         }
@@ -1041,7 +1041,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("failed to build the Skynet desktop shell")
+        .expect("failed to build the StarNet desktop shell")
         .run(|app, event| {
             if let RunEvent::ExitRequested { .. } = event {
                 if let Some(state) = app.try_state::<AppState>() {
