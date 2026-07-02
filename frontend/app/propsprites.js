@@ -176,24 +176,46 @@ const PropSprites = (() => {
     glow(x + 2, y + 2, w - 4, h - 5, '#ff4a3d', 0.04 + 0.02 * Math.sin(now / 800)); // emissive spill
   };
 
-  F.consoleL = (x, y, w, h, f) => {
-    sh(x + 1, y + h - 1, w - 2);
-    box(x, y + 3, w, h - 3, '#26322c');
-    px(x + 1, y + 4, w - 2, 1, '#3e524a');                      // top sheen
-    px(x + 1, y + 4, 1, h - 6, '#36463e');                      // lit left edge
-    px(x + w - 2, y + 4, 1, h - 6, '#1a241f');                  // shaded right edge
-    px(x + 4, y + 2, 2, 1, '#161f1a'); px(x + w - 6, y + 2, 2, 1, '#161f1a'); // rear cable stubs
-    for (let i = 0; i < w / 6 - 1; i++) {
-      inset(x + 1 + i * 6, y + 4, 5, 4, '#0b1511');
-      px(x + 2 + i * 6, y + 5, 3, 2, scr(i + (f.x || 0)));
-      if (blink(160, i * 1.7)) px(x + 2 + i * 6, y + 5, 3, 1, U.shade(scr(i + (f.x || 0)), 0.35));
-      px(x + 2 + i * 6, y + 5, 1, 1, '#eafff2');                // phosphor hot pixel
-      px(x + 2 + i * 6, y + 9, 2, 1, blink(700, i * 0.4) ? '#ff9d2e' : '#33241a');
-      px(x + 5 + i * 6, y + 9, 1, 1, '#141c17');                // toggle switch
+  F.consoleL = (x, y, w, h, f) => {   // long ops console (3x1) — TOP-BIAS OBLIQUE trapezoid, bolted to deck
+    const r = RAMP.gun, ph = (f && f.x) || 0;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x - 1, y + 8, w + 2, h - 8);
+    deckSocket(x + w + 1, y + h - 3, f && f.work);            // socket east
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    for (const lx of [x + 2, x + Math.floor(w / 2) - 1, x + w - 5]) { // three legs (long span)
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
     }
-    seamH(x + 1, y + h - 3, w - 2, '#26322c');                  // kick panel seam
-    rivets(x + 1, y + 4, w - 2, h - 5, '#46584e', '#101814');
-    wear(x, y + 3, w, h - 3, 3, '#1d2722');
+    underAO(x + 5, y + 9, w - 10, 2);
+    // trapezoid front face, wider south, chamfered
+    rr(x - 2, y + 5, w + 4, 5, LINE);
+    px(x - 1, y + 6, w + 2, 3, r.face);
+    px(x - 1, y + 6, w + 2, 1, r.lit);
+    px(x - 1, y + 8, w + 2, 1, r.ao);
+    for (let i = 0; i < 5; i++) px(x + 4 + i * (w >> 3), y + 7, 2, 1, r.dk); // front vents
+    // rear cable stubs poking above the back edge (kept from old)
+    px(x + 4, y - 4, 2, 1, '#141a16'); px(x + w - 6, y - 4, 2, 1, '#141a16');
+    // the long top surface dominates
+    rr(x - 1, y - 4, w + 2, 11, LINE);
+    rr(x, y - 3, w, 9, r.top);
+    px(x + 1, y - 3, w - 2, 1, r.sheen);
+    px(x, y - 2, 1, 7, r.lit); px(x + w - 1, y - 2, 1, 7, r.dk);
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.16));
+    wear(x + 1, y - 2, w - 2, 6, 4, U.shade(r.top, -0.10));
+    // a bank of recessed terminal cells across the top, each scrolling code
+    const cells = Math.floor((w - 6) / 8);
+    for (let i = 0; i < cells; i++) {
+      const cx = x + 2 + i * 8;
+      inset(cx, y - 2, 6, 5, '#0b1511');
+      px(cx + 1, y - 1, 4, 2, scr(i + ph));                    // screen fill
+      if (blink(160, i * 1.7)) px(cx + 1, y - 1, 4, 1, U.shade(scr(i + ph), 0.35)); // scanline sweep
+      px(cx + 1, y - 1, 1, 1, '#eafff2');                      // phosphor hot pixel
+      px(cx + 1, y + 2, 2, 1, blink(700, i * 0.4) ? '#ff9d2e' : '#33241a'); // amber blink row
+      px(cx + 4, y + 2, 1, 1, '#141c17');                      // toggle switch
+      if (f && f.work) glow(cx, y - 2, 6, 4, ACC.work, 0.10);
+    }
+    // amber status ribbon on the near lip
+    px(x + 4, y + 4, w - 8, 1, blink(800) ? U.shade(ACC.flow, -0.1) : U.shade(ACC.flow, -0.55));
+    px(x + 4, y + 4, 6, 1, blink(800) ? ACC.flow : U.shade(ACC.flow, -0.4));
   };
 
   F.holotable = (x, y, w, h, f) => {
@@ -317,66 +339,125 @@ const PropSprites = (() => {
     px(x + 16, y + 6, 2, 1, '#8a98a8');                         // eraser block
   };
 
-  F.rack = (x, y, w, h) => {
-    sh(x + 1, y + h + 4, w - 2);
-    box(x, y + 1, w, h + 4, '#222c2a');
-    px(x + 1, y + 1, 1, h + 3, '#36443e'); px(x + w - 2, y + 1, 1, h + 3, '#121a16'); // rails
-    for (let r = 0; r < 3; r++) {
-      px(x + 1, y + 2 + r * 5, w - 2, 4, r % 2 ? '#1b2422' : '#1e2826');
-      px(x + 2, y + 2 + r * 5, w - 4, 1, r % 2 ? '#28332f' : '#2c3a34'); // unit face catch
-      px(x + 1, y + 6 + r * 5, w - 2, 1, '#101816');
-      px(x + 1, y + 3 + r * 5, 1, 2, '#3a4a42'); px(x + w - 2, y + 3 + r * 5, 1, 2, '#3a4a42'); // mount ears
-      for (let i = 0; i < (w - 8) / 5; i++)
-        px(x + 2 + i * 5, y + 3 + r * 5, 2, 1, blink(400 + r * 130, i + r) ? '#41ff8a' : '#16302a');
-      px(x + 2, y + 4 + r * 5, 1, 1, blink(900, r * 1.7) ? '#ffd34a' : '#2a2418'); // drive light
-      for (let i = 0; i < 3; i++) px(x + w - 9 + i * 2, y + 4 + r * 5, 1, 1, '#0e1413'); // vents
+  F.rack = (x, y, w, h, f) => {   // TOP-BIAS OBLIQUE server rack (2x1): big top + LED-row face; bolted; ACC.work green
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x - 1, y + h - 4, w + 2, 4);                            // bolted plate peeks at feet
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    for (const lx of [x + 2, x + w - 5]) {                            // chunky corner legs
+      px(lx, y + h - 5, 3, 3, LINE); px(lx, y + h - 5, 1, 3, r.lit); px(lx + 1, y + h - 5, 1, 3, r.dk);
     }
-    // cable bundle dropping off the right side
-    px(x + w - 4, y + h + 2, 1, 2, '#101816'); px(x + w - 3, y + h + 3, 1, 1, '#101816');
-    wear(x, y + 1, w, h + 4, 3, '#161e1b');
+    underAO(x + 5, y + h - 5, w - 10, 2);
+    // front face with 3 stacked rack-unit rows (short face, top-bias)
+    rr(x - 1, y + 2, w + 2, h - 3, LINE);
+    px(x, y + 3, w, h - 5, r.face);
+    px(x, y + 3, 1, h - 5, U.shade(r.face, 0.08)); px(x + w - 1, y + 3, 1, h - 5, r.dk);
+    for (let ru = 0; ru < 3; ru++) {
+      const ry = y + 3 + ru * 3;
+      inset(x + 2, ry, w - 4, 2, U.shade(r.face, -0.16));            // rack unit bay
+      px(x + 3, ry, w - 6, 1, U.shade(r.face, 0.06));                // unit face catch
+      for (let i = 0; i < (w - 12) / 4; i++)                          // LED row — ACC.work blink pattern (preserved)
+        px(x + 4 + i * 4, ry, 2, 1, blink(400 + ru * 130, i + ru) ? ACC.work : U.shade(ACC.work, -0.6));
+      px(x + w - 6, ry, 1, 1, blink(900, ru * 1.7) ? ACC.flow : '#2a2418'); // amber drive light
+      for (let i = 0; i < 3; i++) px(x + w - 4, ry, 1, 1, '#0e1413');       // vent
+    }
+    px(x, y + h - 3, w, 1, r.ao);                                     // floor-line AO
+    // big rounded TOP surface (dominant)
+    rr(x - 1, y - 3, w + 2, 6, LINE);
+    rr(x, y - 2, w, 5, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x, y - 1, 1, 3, r.lit); px(x + w - 1, y - 1, 1, 3, r.dk);
+    px(x + 3, y - 1, 8, 1, U.shade(r.top, 0.06));                     // brushed streak
+    for (let i = 1; i < w / 8; i++) px(x + i * 8, y - 1, 1, 2, r.ao); // top vent slits
+    px(x + 1, y + 2, w - 2, 1, U.shade(r.top, -0.16));               // top front edge
+    wear(x + 2, y - 1, w - 4, 3, 3, U.shade(r.top, -0.10));
+    if (f && f.work) glow(x, y + 3, w, h - 5, ACC.work, 0.05 + 0.03 * Math.sin(now / 500));
   };
 
   F.rackV = (x, y, w, h) => {
-    box(x + 1, y, w - 2, h, '#222c34');
-    px(x + 2, y + 1, 1, h - 2, '#394552'); px(x + w - 3, y + 1, 1, h - 2, '#141a20'); // rails
-    for (let r = 0; r < 4; r++) {
-      px(x + 2, y + 1 + r * 5, w - 4, 4, r % 2 ? '#1a2229' : '#1d2630');
-      px(x + 3, y + 1 + r * 5, w - 6, 1, r % 2 ? '#262f38' : '#2a3540'); // unit catch
-      px(x + 2, y + 5 + r * 5, w - 4, 1, '#11161c');
-      px(x + 3, y + 2 + r * 5, 2, 1, blink(420 + r * 110, x + r) ? '#7fd0ff' : '#16242e');
-      px(x + 6, y + 2 + r * 5, 3, 1, '#2a3640');
-      px(x + 8, y + 2 + r * 5, 1, 1, blink(700, x + r * 2) ? '#41ff8a' : '#16302a'); // link light
-      px(x + 3, y + 4 + r * 5, 6, 1, '#141b22');
-      px(x + 4, y + 4 + r * 5, 1, 1, '#1e2832'); px(x + 7, y + 4 + r * 5, 1, 1, '#1e2832'); // vent dots
+    // TALL 3/4 server rack: rises ~6px above the 1x2 footprint, every LED row/link-light blink kept.
+    const r = RAMP.steel, cw = w, rise = 6, topY = y - rise;
+    shadow2(x + 1, y + h - 1, cw - 2);
+    // slim east-side facet (gives the tower depth) then the lit front face
+    rr(x - 1, topY - 3, cw + 2, (y + h) - topY + 3, LINE);
+    px(x + cw - 3, topY - 1, 2, (y + h) - topY, r.dk);          // dark east flank
+    px(x + 1, topY, cw - 4, (y + h - 2) - topY, r.face);        // front chassis
+    px(x + 1, topY, 1, (y + h - 2) - topY, r.lit);              // west sheen column
+    px(x + 2, topY, cw - 5, 1, U.shade(r.face, 0.14));          // upper catch
+    // rounded cap we look slightly down onto
+    rr(x, topY - 4, cw - 2, 4, LINE);
+    px(x + 1, topY - 3, cw - 4, 3, r.top);
+    px(x + 1, topY - 3, cw - 4, 1, r.sheen);
+    px(x + 1, topY - 3, 4, 1, U.shade(r.sheen, 0.12));         // west-biased sheen streak
+    px(x + 1, topY - 1, cw - 4, 1, U.shade(r.top, -0.18));      // cap front lip
+    px(x + 2, topY - 3, 1, 1, '#8693a0'); px(x + cw - 5, topY - 3, 1, 1, r.dk); // cap corner beads
+    // rail posts framing the rack units
+    px(x + 2, topY + 1, 1, (y + h - 3) - topY, U.shade(r.face, 0.20));
+    px(x + cw - 4, topY + 1, 1, (y + h - 3) - topY, r.dk);
+    // 5 rack units, each with a blade catch, blinking status LED + link light, vents
+    const uh = 4, u0 = topY + 1;
+    for (let rr2 = 0; rr2 < 5; rr2++) {
+      const uy = u0 + rr2 * (uh + 1);
+      px(x + 3, uy, cw - 8, uh, rr2 % 2 ? '#1c242c' : '#212a34'); // blade body
+      px(x + 3, uy, cw - 8, 1, rr2 % 2 ? '#2a3540' : '#2e3a46');  // unit top catch
+      px(x + 3, uy + uh, cw - 8, 1, '#0f151b');                   // seam shadow
+      px(x + 4, uy + 1, 2, 1, blink(420 + rr2 * 110, x + rr2) ? '#7fd0ff' : '#16242e'); // status LED
+      px(x + 7, uy + 1, 3, 1, '#2a3640');                         // label strip
+      px(x + cw - 6, uy + 1, 1, 1, blink(700, x + rr2 * 2) ? '#41ff8a' : '#16302a'); // link light
+      px(x + 4, uy + 3, cw - 10, 1, '#141b22');                   // vent slot
+      px(x + 5, uy + 3, 1, 1, '#1e2832'); px(x + 8, uy + 3, 1, 1, '#1e2832'); // vent dots
     }
-    px(x + 2, y + h - 3, w - 4, 2, '#161d24');
-    px(x + 3, y + h - 2, 2, 1, blink(1300, x) ? '#ff9d2e' : '#33241a'); // psu light
-    px(x + w - 4, y + h - 1, 1, 2, '#11161c');                  // floor cable
+    // PSU strip at the base with its blinking light + floor cable
+    px(x + 3, y + h - 4, cw - 8, 2, '#161d24');
+    px(x + 3, y + h - 4, cw - 8, 1, U.shade(r.face, -0.10));
+    px(x + 4, y + h - 3, 2, 1, blink(1300, x) ? '#ff9d2e' : '#33241a'); // psu light
+    px(x + cw - 5, y + h - 3, 1, 1, blink(1600, x + 3) ? '#41ff8a' : '#16302a'); // aux light
+    px(x + cw - 4, y + h - 1, 1, 1, '#11161c');                   // floor cable stub
+    // freestanding feet + under-gap AO
+    px(x + 1, y + h - 2, 2, 2, r.dk); px(x + cw - 5, y + h - 2, 2, 2, r.dk);
+    px(x + 1, y + h - 2, 1, 1, r.lit); px(x + cw - 5, y + h - 2, 1, 1, r.lit);
+    underAO(x + 3, y + h - 1, cw - 8, 1);
   };
 
-  F.bench = (x, y, w, h) => {
-    sh(x + 1, y + h - 1, w - 2);
-    box(x, y + 2, w, h - 1, '#2e3c34');
-    px(x + 1, y + 3, w - 2, h - 4, '#3a4c40');
-    px(x + 1, y + 3, w - 2, 1, '#4c6253');
-    px(x + 1, y + 3, 5, 1, '#5e7464');                          // worktop sheen
-    px(x + 1, y + h - 3, w - 2, 1, '#243029');                  // apron shade
-    for (let i = 1; i < w / 18; i++) px(x + i * 18, y + h - 2, 1, 1, '#1a241e'); // leg shadows
-    wear(x + 1, y + 3, w - 2, h - 4, 4, '#2f3e34');
-    for (let i = 0; i < w / 10; i++) {
-      const bx = x + 3 + i * 10;
-      if (i % 3 === 0) { // flask of culture fluid on a heat pad
-        px(bx - 1, y + 7, 5, 1, '#222c26');
-        px(bx, y + 4, 3, 3, '#7adfd0'); px(bx + 1, y + 3, 1, 1, '#9aeae0'); px(bx, y + 6, 3, 1, '#4aa89c');
-        px(bx, y + 4, 1, 2, '#bffff2');                         // glass shine
-        if (blink(800, i)) px(bx + 1, y + 2, 1, 1, '#9aeae0');  // vapor wisp
-      } else if (i % 3 === 1) { // reagent bottle with label
-        px(bx + 1, y + 3, 2, 4, '#caa86a'); px(bx + 1, y + 3, 1, 4, '#e0c084'); px(bx + 1, y + 2, 2, 1, '#6a5836');
-        px(bx + 1, y + 5, 2, 1, '#e8e0d0');                     // label band
-      } else { // papers + tool
-        px(bx, y + 5, 4, 2, '#dfe8df'); px(bx, y + 5, 4, 1, '#f0f6f0');
-        px(bx + 1, y + 6, 2, 1, '#9aaa9a');                     // print lines
-        px(bx + 1, y + 4, 4, 1, '#8a98a8'); px(bx + 4, y + 4, 1, 1, '#aab8c8'); // tool glint
+  F.bench = (x, y, w, h, f) => {   // long work bench (4x1) — TOP-BIAS OBLIQUE, bolted to the deck
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x - 1, y + 8, w + 2, h - 8);
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    for (const lx of [x + 2, x + Math.floor(w / 3) - 1, x + Math.floor(2 * w / 3) - 1, x + w - 5]) { // four legs
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 9, w - 10, 2);
+    // short apron / front lip
+    rr(x - 1, y + 5, w + 2, 5, LINE);
+    px(x, y + 6, w, 3, r.face);
+    px(x, y + 6, w, 1, r.lit);
+    px(x, y + 8, w, 1, r.ao);
+    // the big rounded worktop dominates the whole 4-tile span
+    rr(x - 1, y - 4, w + 2, 11, LINE);
+    rr(x, y - 3, w, 9, r.top);
+    px(x + 1, y - 3, w - 2, 1, r.sheen);
+    px(x, y - 2, 1, 7, r.lit); px(x + w - 1, y - 2, 1, 7, r.dk);
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.16));
+    px(x + 4, y - 1, 7, 1, U.shade(r.top, 0.06)); px(x + 20, y + 2, 8, 1, U.shade(r.top, 0.05)); // brushed streaks
+    wear(x + 1, y - 2, w - 2, 6, 6, U.shade(r.top, -0.10));
+    // rotating bench-top clutter, spread along the surface (kept: flasks/reagents/papers)
+    const slots = Math.floor((w - 4) / 10);
+    for (let i = 0; i < slots; i++) {
+      const bx = x + 4 + i * 10;
+      if (i % 3 === 0) {                                       // flask of culture fluid with vapor blink
+        px(bx - 1, y + 2, 5, 1, '#222c26');                   // heat pad
+        px(bx, y - 1, 3, 3, '#7adfd0'); px(bx + 1, y - 2, 1, 1, '#9aeae0'); px(bx, y + 1, 3, 1, '#4aa89c');
+        px(bx, y - 1, 1, 2, '#bffff2');                       // glass shine
+        if (blink(800, i)) px(bx + 1, y - 3, 1, 1, '#9aeae0'); // vapor wisp
+      } else if (i % 3 === 1) {                                // reagent bottle with label
+        px(bx + 1, y - 2, 2, 4, '#caa86a'); px(bx + 1, y - 2, 1, 4, '#e0c084'); px(bx + 1, y - 3, 2, 1, '#6a5836');
+        px(bx + 1, y, 2, 1, '#e8e0d0');                       // label band
+      } else {                                                // papers + tool glint
+        px(bx, y, 4, 2, '#dfe8df'); px(bx, y, 4, 1, '#f0f6f0');
+        px(bx + 1, y + 1, 2, 1, '#9aaa9a');                   // print lines
+        px(bx + 1, y - 1, 4, 1, '#8a98a8'); px(bx + 4, y - 1, 1, 1, '#aab8c8'); // tool glint
       }
     }
   };
@@ -432,64 +513,103 @@ const PropSprites = (() => {
     px(x + 11, y + 2, 2, 2, '#ffe066'); px(x + 11, y + 2, 2, 1, '#fff0a8'); // sticky note
   };
 
-  F.desk2 = (x, y, w, h, f) => { // dual monitor battle-station
-    sh(x + 1, y + h, w - 2);
-    box(x, y + 3, w, h - 2, '#33333f');
-    px(x + 1, y + 4, w - 2, h - 4, '#41414f');
-    px(x + 1, y + 4, w - 2, 1, '#535364');
-    px(x + 1, y + 4, 5, 1, '#636376'); // sheen
-    seamH(x + 1, y + h - 3, w - 2, '#41414f');
-    rivets(x + 1, y + 4, w - 2, h - 5, '#5c5c70', '#22222c');
-    glow(x + 1, y + h - 2, w - 2, 1, '#b44aff', f.work ? 0.22 + 0.08 * Math.sin(now / 300) : 0.08); // underglow strip
-    px(x + 5, y + 4, 2, 1, '#181826'); px(x + 16, y + 4, 2, 1, '#181826');
-    box(x + 1, y - 3, 9, 7, '#181826'); box(x + 12, y - 3, 9, 7, '#181826');
-    px(x + 2, y - 3, 7, 1, '#2a2a3c'); px(x + 13, y - 3, 7, 1, '#2a2a3c'); // bezel catch
-    inset(x + 2, y - 2, 7, 5, '#0c0c16'); inset(x + 13, y - 2, 7, 5, '#0c0c16');
-    if (f.work) {
-      px(x + 3, y - 1, 5, 3, scr(f.x)); px(x + 14, y - 1, 5, 3, scr(f.x + 2));
-      px(x + 3, y - 1, 2, 1, '#dfffe8'); px(x + 14, y, 3, 1, U.shade(scr(f.x + 2), -0.3)); // code rows
-      if (blink(180, f.x)) px(x + 3, y - 1, 3, 1, '#dfffe8');
-      px(x + 18, y + 1, 1, 1, blink(350, f.x) ? '#dfffe8' : '#0c0c16'); // cursor
-      scanl(x + 3, y - 1, 5, 3, 0.2); scanl(x + 14, y - 1, 5, 3, 0.2);
-      glow(x + 2, y + 4, 19, 2, scr(f.x), 0.15);
-    } else {
-      px(x + 3, y - 1, 5, 3, '#0e0e1a'); px(x + 14, y - 1, 5, 3, '#0e0e1a');
-      px(x + 3, y - 1, 1, 1, '#1a1a2a'); px(x + 14, y - 1, 1, 1, '#1a1a2a');
-      px(x + 20, y + 1, 1, 1, blink(1600, x) ? '#ff9d2e' : '#33241a'); // standby
+  F.desk2 = (x, y, w, h, f) => {   // dual-monitor battlestation — TOP-BIAS OBLIQUE, bolted to the deck
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);                          // floor contact
+    deckPlate(x - 1, y + 8, w + 2, h - 8);                     // mounting plate peeks out under the slab
+    deckSocket(x + w + 1, y + h - 3, f.work);                  // cable runs into a floor socket, east
+    px(x + w, y + h - 3, 1, 1, '#0e1418');                     // conduit stub off the plate
+    for (const lx of [x + 2, x + w - 5]) {                     // chunky corner legs standing on the plate
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
     }
-    px(x + 10, y + 4, 1, 2, '#22222c'); // cable channel between monitors
-    inset(x + 8, y + 7, 7, 3, '#262630'); px(x + 9, y + 8, 5, 1, '#3a3a48');
-    px(x + 9, y + 8, 2, 1, '#4a4a5c'); // key glint
-    px(x + 3, y + 7, 4, 2, '#2a2a36'); px(x + 3, y + 7, 4, 1, '#3a3a4a'); // headset on desk
-    px(x + 17, y + 8, 2, 1, '#3a3a48'); // mouse
+    underAO(x + 5, y + 9, w - 10, 2);                          // dark open gap under the desk
+    // short front lip (the slab's south face) with the signature purple underglow strip
+    rr(x - 1, y + 5, w + 2, 5, LINE);
+    px(x, y + 6, w, 3, r.face);
+    px(x, y + 6, w, 1, r.lit);
+    px(x + 6, y + 7, 3, 1, r.dk); px(x + w - 8, y + 7, 3, 1, r.dk); // drawer pulls
+    px(x, y + 8, w, 1, r.ao);
+    glow(x + 1, y + 8, w - 2, 1, ACC.mem, f.work ? 0.30 + 0.10 * Math.sin(now / 300) : 0.10); // mem underglow
+    // the big rounded tabletop dominates (top-down game)
+    rr(x - 1, y - 4, w + 2, 11, LINE);
+    rr(x, y - 3, w, 9, r.top);
+    px(x + 1, y - 3, w - 2, 1, r.sheen);
+    px(x, y - 2, 1, 7, r.lit); px(x + w - 1, y - 2, 1, 7, r.dk);
+    px(x + 3, y - 1, 6, 1, U.shade(r.top, 0.07)); px(x + 13, y + 2, 5, 1, U.shade(r.top, 0.05)); // brushed streaks
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.16));         // top's front edge
+    wear(x + 1, y - 2, w - 2, 7, 3, U.shade(r.top, -0.10));
+    // twin monitors standing on the back edge — mem-purple bezels
+    for (const [mx, ph] of [[x + 1, f.x], [x + 12, f.x + 2]]) {
+      rr(mx, y - 10, 10, 8, LINE);
+      rr(mx + 1, y - 9, 8, 6, '#1a1626');
+      px(mx + 2, y - 9, 6, 1, '#2c2440');                      // bezel catch
+      px(mx + 2, y - 8, 6, 4, '#0c0a16');
+      if (f.work) {
+        px(mx + 3, y - 7, 4, 2, scr(ph));
+        px(mx + 3, y - 7, 2, 1, '#dfffe8');                    // top code line
+        if (blink(180, ph)) px(mx + 3, y - 7, 3, 1, '#dfffe8');
+        px(mx + 6, y - 6, 1, 1, blink(400, ph) ? '#dfffe8' : '#0c0a16'); // cursor
+        scanl(mx + 3, y - 7, 4, 2, 0.2);
+        glow(mx, y - 2, 10, 3, scr(ph), 0.16);                 // screen light pools on the tabletop
+        glow(mx + 2, y - 8, 6, 4, scr(ph), 0.10);              // bezel glow
+      } else {
+        px(mx + 3, y - 7, 4, 2, '#0e0c1a');
+        px(mx + 3, y - 7, 1, 1, '#1c1830');                    // faint reflection
+      }
+    }
+    if (!f.work) px(x + 20, y - 6, 1, 1, blink(1600, x) ? '#ff9d2e' : '#33241a'); // standby amber
+    px(x + 5, y - 2, 2, 1, '#141018'); px(x + 16, y - 2, 2, 1, '#141018'); // monitor feet on the top
+    rr(x + 8, y - 1, 8, 3, U.shade(r.top, -0.28));             // keyboard well between the stands
+    px(x + 9, y, 5, 1, r.face); px(x + 9, y, 2, 1, r.lit);     // key glint
+    px(x + 3, y + 1, 4, 2, '#2a2436'); px(x + 3, y + 1, 4, 1, '#3a3450'); // headset resting on the desk
+    px(x + 3, y + 1, 1, 2, ACC.mem);                          // headset accent strip
+    px(x + 18, y + 2, 2, 1, r.lit); px(x + 18, y + 2, 1, 1, r.sheen); // mouse
   };
 
-  F.pixelrig = (x, y, w, h, f) => {
-    sh(x + 1, y + h, w - 2);
-    box(x, y + 3, w, h - 2, '#2a3c3a');
-    px(x + 1, y + 4, w - 2, h - 4, '#354a47');
-    px(x + 1, y + 4, w - 2, 1, '#46605c');
-    px(x + 1, y + 4, 5, 1, '#557a72'); // sheen
-    seamH(x + 1, y + h - 3, w - 2, '#354a47');
-    rivets(x + 1, y + 4, w - 2, h - 5, '#4e6a62', '#1c2826');
-    // canvas display with corner clamps
-    box(x + 2, y - 3, w - 4, 7, '#16302e');
-    px(x + 2, y - 3, 2, 1, '#2a4a44'); px(x + w - 4, y - 3, 2, 1, '#2a4a44'); // clamps
-    inset(x + 3, y - 2, w - 6, 5, '#0a1d1b');
-    // tiny pixel-art canvas being painted
+  F.pixelrig = (x, y, w, h, f) => {   // art workstation — TOP-BIAS OBLIQUE, bolted to the deck
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x - 1, y + 8, w + 2, h - 8);
+    deckSocket(x + w + 1, y + h - 3, f.work);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    for (const lx of [x + 2, x + w - 5]) {
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 9, w - 10, 2);
+    // short front lip
+    rr(x - 1, y + 5, w + 2, 5, LINE);
+    px(x, y + 6, w, 3, r.face);
+    px(x, y + 6, w, 1, r.lit);
+    px(x, y + 8, w, 1, r.ao);
+    glow(x + 1, y + 8, w - 2, 1, ACC.lounge, f.work ? 0.24 + 0.08 * Math.sin(now / 320) : 0.08); // art-pink underglow
+    // the rounded worktop dominates
+    rr(x - 1, y - 4, w + 2, 11, LINE);
+    rr(x, y - 3, w, 9, r.top);
+    px(x + 1, y - 3, w - 2, 1, r.sheen);
+    px(x, y - 2, 1, 7, r.lit); px(x + w - 1, y - 2, 1, 7, r.dk);
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.16));
+    wear(x + 1, y - 2, w - 2, 6, 3, U.shade(r.top, -0.10));
+    // canvas display standing on the back edge with corner clamps
+    rr(x + 1, y - 11, w - 2, 9, LINE);
+    rr(x + 2, y - 10, w - 4, 7, '#141c1a');
+    px(x + 3, y - 10, w - 6, 1, '#2a4a44');                    // bezel catch
+    px(x + 2, y - 10, 2, 1, '#2a4a44'); px(x + w - 4, y - 10, 2, 1, '#2a4a44'); // clamps
+    inset(x + 3, y - 9, w - 6, 5, '#0a1d1b');
+    // tiny pixel-art canvas being painted (kept animation)
+    const cols = ['#2ee6c8', '#ff9d2e', '#ff6ad5'];
     for (let i = 0; i < 5; i++) for (let j = 0; j < 2; j++)
       if ((i + j + Math.floor(now / 500)) % 3 === 0)
-        px(x + 5 + i * 3, y - 1 + j * 2, 2, 1, ['#2ee6c8', '#ff9d2e', '#ff6ad5'][(i + j) % 3]);
-    // paint cursor blinking at the active cell
-    const cc = Math.floor(now / 500) % 5;
-    if (blink(250)) px(x + 5 + cc * 3, y - 1 + (cc % 2) * 2, 2, 1, '#ffffff');
-    glow(x + 3, y - 2, w - 6, 5, '#2ee6c8', f.work ? 0.10 : 0.04);
-    // swatch palette row on the desk
-    for (let i = 0; i < 4; i++) px(x + 2 + i * 2, y + 6, 1, 1, ['#2ee6c8', '#ff9d2e', '#ff6ad5', '#ffd34a'][i]);
-    inset(x + 6, y + 6, 9, 4, '#1c2a28'); px(x + 8, y + 7, 5, 2, '#0e1816'); // tablet
-    if (f.work) px(x + 9 + (Math.floor(now / 300) % 3), y + 7, 1, 1, '#2ee6c8'); // pen tracking dot
-    px(x + 17, y + 7, 3, 1, '#caa86a'); px(x + 19, y + 7, 1, 1, '#e8e0d0'); // stylus
-    px(x + 17, y + 9, 2, 1, '#26403c'); // pen dock
+        px(x + 5 + i * 3, y - 8 + j * 2, 2, 1, cols[(i + j) % 3]);
+    const cc = Math.floor(now / 500) % 5;                     // paint cursor blinking at the active cell
+    if (blink(250)) px(x + 5 + cc * 3, y - 8 + (cc % 2) * 2, 2, 1, '#ffffff');
+    glow(x + 3, y - 9, w - 6, 5, '#2ee6c8', f.work ? 0.12 : 0.04);
+    if (!f.work) px(x + w - 5, y - 4, 1, 1, blink(1600, x) ? '#ff9d2e' : '#33241a'); // standby amber
+    // swatch palette row + tablet + stylus on the worktop (kept)
+    for (let i = 0; i < 4; i++) px(x + 2 + i * 2, y - 1, 1, 1, ['#2ee6c8', '#ff9d2e', '#ff6ad5', '#ffd34a'][i]);
+    inset(x + 11, y - 1, 8, 4, '#1c2a28'); px(x + 13, y, 4, 2, '#0e1816'); // tablet
+    if (f.work) px(x + 13 + (Math.floor(now / 300) % 3), y, 1, 1, '#2ee6c8'); // pen tracking dot
+    px(x + 3, y + 2, 3, 1, '#caa86a'); px(x + 5, y + 2, 1, 1, '#e8e0d0'); // stylus lying on the top
+    px(x + 3, y + 4, 2, 1, '#26403c'); // pen dock
   };
 
   F.coffee = (x, y, w, h) => {
@@ -585,19 +705,44 @@ const PropSprites = (() => {
     wear(x, y + 1, w, h + 3, 5, '#16261f');
   };
 
-  F.console = (x, y, w, h) => {
-    box(x, y + 1, w, h - 1, '#243430');
-    inset(x + 1, y + 2, w - 2, 6, '#0a1d12');
-    px(x + 2, y + 3, w - 4, 4, scr(1));
-    for (let j = 0; j < 3; j++) { // terminal text lines
-      const lw = 2 + ((j * 3 + Math.floor(now / 400)) % 5);
-      px(x + 2, y + 3 + j, lw, 1, '#dfffe8');
+  F.console = (x, y, w, h, f) => {   // ops console — TOP-BIAS OBLIQUE trapezoid, bolted to the deck
+    const r = RAMP.gun, ph = (f && f.x) || 0;
+    shadow2(x + 1, y + h - 1, w - 2);                          // floor contact
+    deckPlate(x - 1, y + 8, w + 2, h - 8);                     // mounting plate
+    deckSocket(x - 3, y + h - 3, f && f.work);                 // conduit into floor socket, west
+    px(x - 1, y + h - 3, 1, 1, '#0e1418');                     // conduit stub
+    for (const lx of [x + 2, x + w - 5]) {                     // corner legs on the plate
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
     }
-    px(x + 1, y + 9, w - 2, 2, '#1a2a24');
-    for (let i = 0; i < 3; i++) px(x + 2 + i * 3, y + 9, 2, 1, blink(600, i) ? '#ff9d2e' : '#33241a');
-    px(x + 2, y + 12, w - 4, 2, blink(800) ? '#ffd34a' : '#3a4a40');
-    px(x + 2, y + 16, w - 4, 5, '#1c2824');
-    for (let i = 0; i < 3; i++) px(x + 3, y + 17 + i, w - 6, 1, '#141e1b'); // vents
+    underAO(x + 5, y + 9, w - 10, 2);
+    // trapezoid front face — wider toward the user (south), chamfered corners
+    rr(x - 2, y + 5, w + 4, 5, LINE);
+    px(x - 1, y + 6, w + 2, 3, r.face);
+    px(x - 1, y + 6, w + 2, 1, r.lit);
+    px(x - 1, y + 8, w + 2, 1, r.ao);
+    // vents cut into the front face
+    for (let i = 0; i < 3; i++) px(x + 3 + i * (w >> 2), y + 7, 2, 1, r.dk);
+    // the console top dominates: rounded, tilted, brightest — the amber ops slab
+    rr(x - 1, y - 4, w + 2, 11, LINE);
+    rr(x, y - 3, w, 9, r.top);
+    px(x + 1, y - 3, w - 2, 1, r.sheen);
+    px(x, y - 2, 1, 7, r.lit); px(x + w - 1, y - 2, 1, 7, r.dk);
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.16));         // front lip of the top
+    wear(x + 1, y - 2, w - 2, 6, 3, U.shade(r.top, -0.10));
+    // recessed terminal screen on the top surface with scrolling text lines
+    inset(x + 2, y - 2, w - 12, 6, '#0a1d12');
+    px(x + 3, y - 1, w - 14, 4, scr(1 + ph));
+    for (let j = 0; j < 3; j++) {                              // terminal text lines (kept behavior)
+      const lw = 2 + ((j * 3 + Math.floor(now / 400)) % 5);
+      px(x + 3, y - 1 + j, Math.min(lw, w - 14), 1, '#dfffe8');
+    }
+    scanl(x + 3, y - 1, w - 14, 4, 0.18);
+    if (f && f.work) glow(x + 2, y - 2, w - 12, 6, ACC.work, 0.12);
+    // amber blink control rows on the near part of the top
+    for (let i = 0; i < 3; i++) px(x + w - 8 + i * 2, y - 1, 1, 2, blink(600, i) ? '#ff9d2e' : '#33241a');
+    px(x + w - 8, y + 2, 6, 1, blink(800) ? ACC.flow : U.shade(ACC.flow, -0.6)); // amber status bar
+    px(x + w - 8, y + 4, 5, 1, U.shade(r.top, -0.24));        // knurled grip strip
+    px(x + 3, y + 3, 3, 1, r.dk); px(x + 3, y + 3, 1, 1, r.lit); // small dial on the top
   };
 
   F.crate = (x, y, w, h) => {   // TOP-BIAS OBLIQUE cargo crate: big rounded lid, short ribbed face, skids
@@ -727,163 +872,314 @@ const PropSprites = (() => {
   };
 
   F.beltH = (x, y, w, h) => {
-    box(x, y + 2, w, h - 2, '#222a26');
-    px(x + 1, y + 3, w - 2, h - 4, '#161c1a');
+    // CONVEYOR — a FLOOR-FLAT belt segment carrying work boxes between stations (walk-level deck
+    // hardware, integral to the floor — no separate plate). Moving tread + hazard ends + a drive-motor
+    // indicator. Bolder restyle in the RAMP/ACC language, matched to conveyor.js's live-belt look.
+    const r = RAMP.steel;
+    const top = y + 2, bh = h - 4;                            // belt bed sits between two rails
+    // bed: dark recessed channel
+    rr(x - 1, top - 1, w + 2, bh + 2, LINE);
+    px(x, top, w, bh, U.shade(r.face, -0.3));
+    px(x, top, w, 1, r.ao);
+    // moving tread: diagonal cleats scrolling east (matches conveyor.js direction)
     const off = Math.floor(now / 110) % 6;
     for (let i = -1; i < w / 6 + 1; i++) {
-      px(x + 1 + i * 6 + off, y + 3, 1, h - 4, '#3a4a42');
-      px(x + 2 + i * 6 + off, y + 3, 1, 1, '#2a3830'); // tread plate edge
+      const cx = x + 1 + i * 6 + off;
+      px(cx, top + 1, 1, bh - 2, r.lit);                     // cleat lit face
+      px(cx + 1, top + 1, 1, bh - 2, r.dk);                  // cleat shadow
     }
-    px(x, y + 2, w, 1, '#46544c'); px(x, y + h - 2, w, 1, '#46544c'); // rails
-    px(x, y + 2, w, 1, '#54645a'); // rail top catch
-    px(x + 1, y + 3, w - 2, 1, '#0e1412'); // rail shadow
-    for (let i = 0; i < w / 12; i++) {
-      px(x + 2 + i * 12, y + 2, 1, 1, '#6a7a70'); // bolts
-      px(x + 8 + i * 12, y + h - 1, 2, 1, '#141a16'); // roller shadows
+    px(x, top + 1, w, 1, U.shade(r.top, -0.10));             // subtle bed sheen over the tread
+    // side RAILS (raised guide walls, lit top / dark inner)
+    px(x - 1, y + 1, w + 2, 2, LINE); px(x - 1, y + h - 3, w + 2, 2, LINE);
+    px(x, y + 1, w, 1, r.sheen); px(x, y + 2, w, 1, r.lit);  // north rail
+    px(x, y + h - 3, w, 1, r.top); px(x, y + h - 2, w, 1, r.dk); // south rail (faces us)
+    for (let i = 0; i < w / 12; i++) {                       // rail bolts + roller shadows
+      px(x + 2 + i * 12, y + 1, 1, 1, r.sheen);
+      px(x + 8 + i * 12, y + h - 1, 2, 1, '#141a16');
     }
-    // drive motor box at the left end with spinning indicator
-    px(x + 1, y + h - 1, 5, 2, '#2a3530'); px(x + 1, y + h - 1, 5, 1, '#39463f');
-    px(x + 2 + (Math.floor(now / 150) % 3), y + h, 1, 1, '#41ff8a');
-    px(x, y, 2, 2, '#caa84a'); px(x + 1, y, 1, 2, '#2a2418'); // hazard ends
-    px(x + w - 2, y, 2, 2, '#caa84a'); px(x + w - 2, y, 1, 2, '#2a2418');
-    wear(x + 1, y + 3, w - 2, h - 4, 6, '#1d2420');
+    // hazard ends (yellow/black chevron caps)
+    px(x, y, 2, h > 6 ? 3 : 2, '#caa84a'); px(x + 1, y, 1, h > 6 ? 3 : 2, '#2a2418');
+    px(x + w - 2, y, 2, h > 6 ? 3 : 2, '#caa84a'); px(x + w - 2, y, 1, h > 6 ? 3 : 2, '#2a2418');
+    // drive-motor housing at the left end with a spinning green run indicator
+    px(x + 1, y + h - 2, 6, 3, '#232d33'); px(x + 1, y + h - 2, 6, 1, r.lit);
+    px(x + 1, y + h - 2, 1, 3, r.dk);
+    px(x + 2 + (Math.floor(now / 150) % 3), y + h + 1, 1, 1, ACC.work); // drive pulse
+    glow(x + 2, y + h, 4, 1, ACC.work, 0.25);
+    wear(x + 1, top + 1, w - 2, bh - 2, 5, U.shade(r.face, -0.4));
   };
 
   F.intake = (x, y, w, h, f) => {
-    // INTAKE BAY — where a real work-item (e.g. an admitted Telegram DM) enters the station and drops
-    // onto a belt. Echoes the conveyor SOURCE feeder (amber) + a signal hint that the bay LISTENS.
-    sh(x + 1, y + h - 1, w - 2);                                    // floor contact shadow
-    // hopper body — gunmetal cabinet with a raised intake collar
-    box(x, y + 3, w, h - 3, '#2b332e');
-    px(x + 1, y + 4, w - 2, 1, '#3c463f');                          // top-lit edge
-    px(x + 1, y + h - 2, w - 2, 1, '#161c19');                      // bottom shade
-    px(x + 3, y + 1, w - 6, 2, '#222a26');                          // raised collar
-    px(x + 3, y + 1, w - 6, 1, '#39463f');                          // collar lit edge
-    rivets(x + 1, y + 5, w - 2, h - 7, '#46584e', '#0c1410');
-    // amber feeder MOUTH (same language as the belt SOURCE) — pulses; flares brighter on active intake
-    const cyc = (now / 900) % 1, active = !!f.work;
-    const mx = x + 4, my = y + h - 7, mw = w - 8, mh = 4;
-    px(mx - 1, my - 1, mw + 2, mh + 2, '#2a2418');                  // dark-amber frame
-    inset(mx, my, mw, mh, (cyc < 0.5) ? '#161210' : '#3a3320');     // the slot
-    for (let i = 0; i < mw - 2; i += 3) px(mx + 1 + i, my + 1, 1, mh - 2, '#caa84a'); // feeder bars
-    if (active || cyc > 0.86) { px(mx, my, mw, 1, '#e8c860'); glow(mx - 1, my - 1, mw + 2, mh + 2, '#e8c860', active ? 0.5 : 0.3); }
-    // INTAKE caret stencilled on the collar
-    px(x + 5, y + 1, 1, 1, '#8a9a90'); px(x + 6, y + 2, 1, 1, '#8a9a90'); px(x + 7, y + 1, 1, 1, '#8a9a90');
-    // signal hint — mast + ping (the bay LISTENS for inbound work; cyan = a data packet arriving)
-    const ax = x + w - 5;
-    px(ax, y - 2, 1, 4, '#3c463f'); px(ax - 1, y - 2, 3, 1, '#46584e');
+    // INTAKE — where outside work (a DM / a job) enters the station and drops onto a belt.
+    // TOP-BIAS OBLIQUE hopper bolted to the deck: dominant lit top with an AMBER feeder MOUTH
+    // (pulses; flares on active intake f.work) + a cyan SIGNAL MAST that pings (the bay LISTENS).
+    const r = RAMP.steel, active = !!f.work, cyc = (now / 900) % 1;
+    shadow2(x + 1, y + h - 1, w - 2);                         // floor contact
+    deckPlate(x - 1, y + h - 6, w + 2, 6);                    // bolted mounting plate peeks out
+    deckSocket(x + w + 1, y + h - 3, active);                 // cable into floor conduit, east
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    for (const lx of [x + 2, x + w - 5]) {                    // chunky corner legs on the plate
+      px(lx, y + h - 5, 3, 3, LINE); px(lx, y + h - 5, 1, 3, r.lit); px(lx + 1, y + h - 5, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + h - 5, w - 10, 2);
+    // short south face of the hopper body (chamfered corners kill the box)
+    rr(x - 1, y + h - 12, w + 2, 8, LINE);
+    px(x, y + h - 11, w, 6, r.face);
+    px(x, y + h - 11, w, 1, r.lit);                           // catch under the top lip
+    px(x + 1, y + h - 6, w - 2, 1, r.ao);                     // floor-line AO band
+    // AMBER feeder mouth set into the front face (belt SOURCE language: dark slot + feeder bars)
+    const mx = x + 4, my = y + h - 10, mw = w - 8, mh = 4;
+    px(mx - 1, my - 1, mw + 2, mh + 2, '#2a2418');            // dark-amber frame
+    inset(mx, my, mw, mh, (cyc < 0.5) ? '#161210' : '#3a3320');
+    for (let i = 0; i < mw - 2; i += 3) px(mx + 1 + i, my + 1, 1, mh - 2, ACC.flow); // feeder bars (amber)
+    if (active || cyc > 0.86) {
+      px(mx, my, mw, 1, '#ffe27a');
+      glow(mx - 1, my - 1, mw + 2, mh + 2, ACC.flow, active ? 0.5 : 0.3);
+    }
+    // the big lit TOP surface dominates: rounded, back-edge sheen, chute collar + intake caret
+    rr(x - 1, y + h - 20, w + 2, 10, LINE);
+    rr(x, y + h - 19, w, 8, r.top);
+    px(x + 1, y + h - 19, w - 2, 1, r.sheen);
+    px(x, y + h - 18, 1, 6, r.lit); px(x + w - 1, y + h - 18, 1, 6, r.dk);
+    px(x + 3, y + h - 17, 6, 1, U.shade(r.top, 0.07));       // west brushed streak
+    px(x + 1, y + h - 12, w - 2, 1, U.shade(r.top, -0.16));  // top front edge
+    wear(x + 2, y + h - 18, w - 4, 6, 3, U.shade(r.top, -0.10));
+    // raised intake COLLAR + caret stencil on the top (work drops IN here)
+    rr(x + 4, y + h - 18, w - 8, 5, U.shade(r.top, -0.22));
+    px(x + 5, y + h - 17, w - 10, 3, '#1a1410');             // dark throat
+    px(x + w / 2 - 2, y + h - 16, 1, 1, '#8a9a90'); px(x + w / 2 - 1, y + h - 15, 1, 1, '#8a9a90');
+    px(x + w / 2, y + h - 16, 1, 1, '#8a9a90');              // ▽ intake caret
+    if (active) glow(x + 5, y + h - 17, w - 10, 3, ACC.flow, 0.22 + 0.1 * Math.sin(now / 300));
+    // cyan SIGNAL MAST rising above the footprint with a listen-ping
+    const ax = x + w - 4;
+    px(ax, y + h - 26, 1, 6, r.dk); px(ax - 1, y + h - 26, 3, 1, r.lit); // mast + crossbar
+    px(ax, y + h - 21, 1, 1, r.sheen);
     const ping = blink(640, 0);
-    px(ax, y - 3, 1, 1, ping ? '#7df0ff' : '#1d3a44');
-    if (ping) glow(ax - 2, y - 4, 5, 4, '#4ad9ff', 0.30);
-    wear(x + 2, y + 5, w - 4, h - 8, 3, '#1d2420');
+    px(ax, y + h - 27, 1, 1, ping ? '#7df0ff' : U.shade(ACC.data, -0.55));
+    if (ping) glow(ax - 2, y + h - 28, 5, 4, ACC.data, 0.30);
   };
 
   F.outbox = (x, y, w, h, f) => {
-    // OUTBOX / DISPATCH CHUTE — where the agent's reply LEAVES the station. Mirror of INTAKE, but cyan/green
-    // (outgoing) vs INTAKE's amber (incoming). Flares brighter on f.work when a reply box arrives.
-    sh(x + 1, y + h - 1, w - 2);                                    // floor contact shadow
-    box(x, y + 3, w, h - 3, '#2a322f');
-    px(x + 1, y + 4, w - 2, 1, '#3a463f');                          // top-lit edge
-    px(x + 1, y + h - 2, w - 2, 1, '#161c19');                      // bottom shade
-    px(x + 3, y + 1, w - 6, 2, '#212a26');                          // raised collar
-    px(x + 3, y + 1, w - 6, 1, '#39463f');                          // collar lit edge
-    rivets(x + 1, y + 5, w - 2, h - 7, '#46584e', '#0c1410');
-    // dispatch MOUTH — the dark chute a reply box drops into, with a cyan/green dispatch glow
-    const cyc = (now / 900) % 1, active = !!f.work;
-    const mx = x + 4, my = y + h - 7, mw = w - 8, mh = 4;
-    px(mx - 1, my - 1, mw + 2, mh + 2, '#0a1816');                  // dark chute frame
-    inset(mx, my, mw, mh, '#06100e');                              // the slot
-    for (let i = 0; i < mw - 2; i += 3) px(mx + 1 + i, my + 1, 1, mh - 2, active ? '#5ad1b3' : '#1d4a44'); // dispatch bars
-    if (active || cyc > 0.86) { px(mx, my, mw, 1, '#7df0c8'); glow(mx - 1, my - 1, mw + 2, mh + 2, '#5ad1b3', active ? 0.5 : 0.25); }
-    // OUT caret stencilled on the collar (work leaves the station here)
-    px(x + 5, y + 2, 1, 1, '#8a9a90'); px(x + 6, y + 1, 1, 1, '#8a9a90'); px(x + 7, y + 2, 1, 1, '#8a9a90');
-    // uplink light — blinks idle; solid + bright while dispatching
-    const ax = x + w - 5;
-    px(ax, y - 2, 1, 4, '#3a463f'); px(ax - 1, y - 2, 3, 1, '#46584e');
-    px(ax, y - 3, 1, 1, active ? '#7df0c8' : (blink(720, 1) ? '#41ff8a' : '#173026'));
-    if (active) glow(ax - 2, y - 4, 5, 4, '#5ad1b3', 0.35);
-    wear(x + 2, y + 5, w - 4, h - 8, 3, '#1d2420');
+    // OUTBOX — the dispatch chute where a finished reply LEAVES the station. Mirror of INTAKE but
+    // GREEN/CYAN (outgoing) vs amber (incoming). Uplink light solid + bright while dispatching (f.work).
+    const r = RAMP.steel, active = !!f.work, cyc = (now / 900) % 1;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x - 1, y + h - 6, w + 2, 6);
+    deckSocket(x + w + 1, y + h - 3, active);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    for (const lx of [x + 2, x + w - 5]) {
+      px(lx, y + h - 5, 3, 3, LINE); px(lx, y + h - 5, 1, 3, r.lit); px(lx + 1, y + h - 5, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + h - 5, w - 10, 2);
+    // short south face + dark dispatch chute mouth (green dispatch bars)
+    rr(x - 1, y + h - 12, w + 2, 8, LINE);
+    px(x, y + h - 11, w, 6, r.face);
+    px(x, y + h - 11, w, 1, r.lit);
+    px(x + 1, y + h - 6, w - 2, 1, r.ao);
+    const mx = x + 4, my = y + h - 10, mw = w - 8, mh = 4;
+    px(mx - 1, my - 1, mw + 2, mh + 2, '#0a1816');           // dark chute frame
+    inset(mx, my, mw, mh, '#06100e');
+    for (let i = 0; i < mw - 2; i += 3) px(mx + 1 + i, my + 1, 1, mh - 2, active ? '#5ad1b3' : U.shade(ACC.work, -0.42)); // dispatch bars
+    if (active || cyc > 0.86) {
+      px(mx, my, mw, 1, '#7df0c8');
+      glow(mx - 1, my - 1, mw + 2, mh + 2, '#5ad1b3', active ? 0.5 : 0.25);
+    }
+    // lit TOP dominates: rounded, sheen, dispatch collar + OUT caret (▲ leaving)
+    rr(x - 1, y + h - 20, w + 2, 10, LINE);
+    rr(x, y + h - 19, w, 8, r.top);
+    px(x + 1, y + h - 19, w - 2, 1, r.sheen);
+    px(x, y + h - 18, 1, 6, r.lit); px(x + w - 1, y + h - 18, 1, 6, r.dk);
+    px(x + 3, y + h - 17, 6, 1, U.shade(r.top, 0.07));
+    px(x + 1, y + h - 12, w - 2, 1, U.shade(r.top, -0.16));
+    wear(x + 2, y + h - 18, w - 4, 6, 3, U.shade(r.top, -0.10));
+    rr(x + 4, y + h - 18, w - 8, 5, U.shade(r.top, -0.22));
+    px(x + 5, y + h - 17, w - 10, 3, '#0e1a16');             // dark dispatch throat
+    px(x + w / 2, y + h - 17, 1, 1, '#8a9a90'); px(x + w / 2 - 1, y + h - 16, 1, 1, '#8a9a90');
+    px(x + w / 2 + 1, y + h - 16, 1, 1, '#8a9a90');          // ▲ OUT caret
+    if (active) glow(x + 5, y + h - 17, w - 10, 3, ACC.work, 0.24 + 0.12 * Math.sin(now / 300));
+    // UPLINK light on a mast: blinks idle, solid + bright while dispatching
+    const ax = x + w - 4;
+    px(ax, y + h - 26, 1, 6, r.dk); px(ax - 1, y + h - 26, 3, 1, r.lit);
+    px(ax, y + h - 21, 1, 1, r.sheen);
+    px(ax, y + h - 27, 1, 1, active ? '#7df0c8' : (blink(720, 1) ? ACC.work : U.shade(ACC.work, -0.6)));
+    if (active) glow(ax - 2, y + h - 28, 5, 4, '#5ad1b3', 0.35);
   };
 
   F.splitter = (x, y, w, h, f) => {
-    // SPLITTER — a 1-tile router that fans the work stream across its out-lanes (load-balance = real parallelism)
-    box(x + 1, y + 1, w - 2, h - 2, '#2b332e');
-    px(x + 2, y + 2, w - 4, h - 4, '#161c1a');
-    const c = '#5ad1b3', cy = y + (h >> 1);
-    px(x + 2, cy, w - 4, 1, c);                                       // trunk (incoming lane)
-    px(x + w - 5, y + 3, 1, (h >> 1) - 2, c);                         // branch up
-    px(x + w - 5, cy, 1, (h >> 1) - 2, c);                            // branch down
-    px(x + w - 4, y + 3, 2, 1, c); px(x + w - 4, y + h - 4, 2, 1, c); // lane tips
-    px(x + 3, cy - 1, 1, 1, blink(360, 0) ? '#7df0c8' : '#1d4a44');   // routing LED (cycles as it dispatches lanes)
-    if (f.work) glow(x + 1, y + 1, w - 2, h - 2, c, 0.3);
+    // SPLITTER — a 1-tile belt router that FANS one work stream across its out-lanes (load-balance =
+    // real parallelism). Low bolted deck box (~4px rise), symmetric green fan + cycling routing LED.
+    const r = RAMP.steel, c = '#5ad1b3';
+    shadow2(x + 1, y + h - 1, w - 2);
+    // low bolted body: short south face + lit top
+    rr(x - 1, y + h - 8, w + 2, 5, LINE);
+    px(x, y + h - 7, w, 3, r.face); px(x, y + h - 7, w, 1, r.lit); px(x + 1, y + h - 5, w - 2, 1, r.ao);
+    px(x + 2, y + h - 6, 1, 1, '#caa84a'); px(x + w - 3, y + h - 6, 1, 1, '#caa84a'); // bolt hazard ticks
+    rr(x - 1, y + h - 13, w + 2, 7, LINE);
+    rr(x, y + h - 12, w, 6, r.top);
+    px(x + 1, y + h - 12, w - 2, 1, r.sheen);
+    px(x, y + h - 11, 1, 4, r.lit); px(x + w - 1, y + h - 11, 1, 4, r.dk);
+    px(x + 1, y + h - 7, w - 2, 1, U.shade(r.top, -0.16));
+    // FAN-OUT lane graphic recessed into the lit top (neutral steel well — identity lives in the
+    // glowing LANES, never the casing): trunk-in fans to two out-lanes
+    inset(x + 2, y + h - 11, w - 4, 5, '#131b20');
+    const cy = y + h - 9, lc = f.work ? U.shade(c, 0.28) : c; // lanes run hotter while routing
+    px(x + 2, cy, w - 5, 1, lc);                              // trunk (incoming lane)
+    px(x + w - 4, y + h - 11, 1, 3, lc);                      // branch up
+    px(x + w - 4, cy, 1, 3, lc);                              // branch down
+    px(x + w - 3, y + h - 11, 2, 1, lc); px(x + w - 3, y + h - 6, 2, 1, lc); // lane tips
+    glow(x + w - 3, y + h - 11, 2, 1, c, 0.25); glow(x + w - 3, y + h - 6, 2, 1, c, 0.25); // tips glow
+    px(x + 3, cy - 1, 1, 1, blink(360, 0) ? '#7df0c8' : U.shade(c, -0.55)); // routing LED cycles as it dispatches
+    if (f.work) {                                             // lane-shaped halo on work — casing stays steel
+      glow(x + 1, cy - 1, w - 3, 3, c, 0.22);                 // trunk halo
+      glow(x + w - 5, y + h - 12, 3, 7, c, 0.20);             // fan-branch halo
+    }
   };
 
   F.filter = (x, y, w, h, f) => {
-    // FILTER — the content-router: sorts the work stream by a box's TAG to a chosen out-lane (code/research/…).
-    // Violet casing + tri-coloured lane tips set it apart from the SPLITTER's symmetric green load-balance fan.
-    box(x + 1, y + 1, w - 2, h - 2, '#2e2b36');
-    px(x + 2, y + 2, w - 4, h - 4, '#181520');
-    const cy = y + (h >> 1);
-    px(x + 2, cy, w - 5, 1, '#b48af0');                               // trunk in (violet accent)
-    px(x + w - 5, y + 3, 1, h - 6, '#6a4a9a');                        // sorting rail
-    px(x + w - 4, y + 3, 2, 1, '#4ad9ff');                            // top lane tip — cyan (code)
-    px(x + w - 4, cy, 2, 1, '#e8c860');                               // mid lane tip — amber (research)
-    px(x + w - 4, y + h - 4, 2, 1, '#8a9a90');                        // bottom lane tip — neutral (default)
-    px(x + 3, cy - 1, 1, 1, blink(420, 0) ? '#d8b8ff' : '#3a2a4a');   // sorting LED
-    if (f.work) glow(x + 1, y + 1, w - 2, h - 2, '#b48af0', 0.3);
+    // FILTER — the content router: sorts the work stream by a box's TAG to a chosen out-lane
+    // (code/research/default). Steel casing; the violet SORT-LANE graphic + TRI-COLOURED lane tips
+    // carry its identity vs the splitter's symmetric green fan. Low bolted deck box (~4px rise).
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    rr(x - 1, y + h - 8, w + 2, 5, LINE);
+    px(x, y + h - 7, w, 3, r.face); px(x, y + h - 7, w, 1, r.lit); px(x + 1, y + h - 5, w - 2, 1, r.ao);
+    px(x + 2, y + h - 6, 1, 1, '#caa84a'); px(x + w - 3, y + h - 6, 1, 1, '#caa84a');
+    rr(x - 1, y + h - 13, w + 2, 7, LINE);
+    rr(x, y + h - 12, w, 6, r.top);
+    px(x + 1, y + h - 12, w - 2, 1, r.sheen);
+    px(x, y + h - 11, 1, 4, r.lit); px(x + w - 1, y + h - 11, 1, 4, r.dk);
+    px(x + 1, y + h - 7, w - 2, 1, U.shade(r.top, -0.16));
+    // SORT-LANE graphic recessed in the top (neutral steel well): violet trunk + rail,
+    // tri-colour lane tips = the filter's identity
+    inset(x + 2, y + h - 11, w - 4, 5, '#131b20');
+    const cy = y + h - 9, lc = f.work ? U.shade(ACC.mem, 0.28) : ACC.mem; // trunk runs hotter while sorting
+    px(x + 2, cy, w - 5, 1, lc);                             // trunk in (violet)
+    px(x + w - 4, y + h - 11, 1, 5, U.shade(ACC.mem, -0.28)); // sorting rail
+    px(x + w - 3, y + h - 11, 2, 1, ACC.data);              // top tip — cyan (code)
+    px(x + w - 3, cy, 2, 1, ACC.flow);                      // mid tip — amber (research)
+    px(x + w - 3, y + h - 6, 2, 1, '#8a9a90');              // bottom tip — neutral (default)
+    glow(x + w - 3, y + h - 11, 2, 1, ACC.data, 0.25); glow(x + w - 3, cy, 2, 1, ACC.flow, 0.25); // tips glow
+    px(x + 3, cy - 1, 1, 1, blink(420, 0) ? '#d8b8ff' : U.shade(ACC.mem, -0.5)); // sorting LED
+    if (f.work) {                                            // lane-shaped halo on work — casing stays steel
+      glow(x + 1, cy - 1, w - 3, 3, ACC.mem, 0.22);          // trunk halo
+      glow(x + w - 5, y + h - 12, 3, 7, ACC.mem, 0.18);      // sorting-rail halo
+    }
   };
 
   F.merger = (x, y, w, h, f) => {
-    // MERGER — buffers K inbound boxes and emits ONE combined box (a map-reduce barrier). Amber, with two
-    // input stubs converging to a single out lane — the visual inverse of the splitter's fan.
-    box(x + 1, y + 1, w - 2, h - 2, '#33302b');
-    px(x + 2, y + 2, w - 4, h - 4, '#1c1813');
-    const cy = y + (h >> 1), c = '#e0a45a';
-    px(x + 3, y + 3, 2, 1, c); px(x + 3, y + h - 4, 2, 1, c);         // two input stubs (top-left + bottom-left)
-    px(x + 4, y + 3, 1, Math.max(1, cy - (y + 3)), c);               // top input converges to centre
-    px(x + 4, cy, 1, Math.max(1, (y + h - 4) - cy), c);             // bottom input converges to centre
-    px(x + 4, cy, w - 6, 1, c);                                       // combined out lane
-    px(x + w - 4, cy, 2, 1, c);                                       // out tip
-    px(x + 3, cy + 1, 1, 1, blink(520, 0) ? '#ffd488' : '#5a4424');   // buffer LED
-    if (f.work) glow(x + 1, y + 1, w - 2, h - 2, c, 0.3);
+    // MERGER — buffers K inbound boxes and emits ONE combined box (a join / map-reduce barrier).
+    // Steel casing; the amber K-JOIN trunk graphic (two inputs converging to one out lane — the
+    // visual INVERSE of the splitter's fan) carries its identity. Low bolted deck box (~4px rise).
+    const r = RAMP.steel, c = '#e0a45a';
+    shadow2(x + 1, y + h - 1, w - 2);
+    rr(x - 1, y + h - 8, w + 2, 5, LINE);
+    px(x, y + h - 7, w, 3, r.face); px(x, y + h - 7, w, 1, r.lit); px(x + 1, y + h - 5, w - 2, 1, r.ao);
+    px(x + 2, y + h - 6, 1, 1, '#caa84a'); px(x + w - 3, y + h - 6, 1, 1, '#caa84a');
+    rr(x - 1, y + h - 13, w + 2, 7, LINE);
+    rr(x, y + h - 12, w, 6, r.top);
+    px(x + 1, y + h - 12, w - 2, 1, r.sheen);
+    px(x, y + h - 11, 1, 4, r.lit); px(x + w - 1, y + h - 11, 1, 4, r.dk);
+    px(x + 1, y + h - 7, w - 2, 1, U.shade(r.top, -0.16));
+    // K-JOIN trunk graphic recessed in the top (neutral steel well): two inputs converge to one
+    // out lane = the merger's identity
+    inset(x + 2, y + h - 11, w - 4, 5, '#131b20');
+    const cy = y + h - 9, top = y + h - 11, bot = y + h - 7;
+    px(x + 3, top, 2, 1, c); px(x + 3, bot, 2, 1, c);        // two input stubs (top-left + bottom-left)
+    px(x + 4, top, 1, Math.max(1, cy - top), c);            // top input converges to centre
+    px(x + 4, cy, 1, Math.max(1, bot - cy), c);             // bottom input converges to centre
+    px(x + 4, cy, w - 6, 1, c);                              // combined out lane
+    px(x + w - 3, cy, 2, 1, c);                              // out tip
+    glow(x + w - 3, cy, 2, 1, c, 0.25);                      // out tip glows
+    px(x + 3, cy + 1, 1, 1, blink(520, 0) ? '#ffd488' : U.shade(c, -0.5)); // buffer LED
+    if (f.work) glow(x + 2, y + h - 11, w - 4, 5, c, 0.3);   // lanes flare on work, casing stays steel
   };
 
   F.bay = (x, y, w, h, f) => {
-    // BAY — a docking bay where a SPECIFIC agent receives work off the belt. Nameplate names the bound
-    // agent (lit) or reads UNASSIGNED (dim). Routing (who runs) is the bay's agentId; capability is its room.
-    const bound = !!(f && f.agentId), c = bound ? '#5ad1b3' : '#3a464a';
-    box(x + 1, y + 2, w - 2, h - 3, '#252d2a');                       // platform casing
-    px(x + 2, y + 3, w - 4, h - 6, '#161c1a');
-    const cy = y + ((h - 2) >> 1);
-    // docking guides (chevrons pointing IN — work arrives here)
-    px(x + 3, cy, 2, 1, c); px(x + 4, cy - 1, 1, 3, c);
-    px(x + w - 5, cy, 2, 1, c); px(x + w - 5, cy - 1, 1, 3, c);
-    // nameplate
-    const npx = x + 3, npy = y + h - 7, npw = w - 6;
-    px(npx - 1, npy - 1, npw + 2, 7, '#0c1210');
-    px(npx, npy, npw, 5, bound ? '#13211a' : '#101619');
-    if (bound) {
-      px(npx, npy, npw, 1, '#1e3a2c');                                // lit top edge
-      ctx.fillStyle = '#7df0c8'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText(String(f.agentId).replace(/^tg_/, '').slice(0, 5).toUpperCase(), npx + 1, npy);
-      if (f.work) glow(x + 1, y + 2, w - 2, h - 3, c, 0.3);
-    } else {
-      px(npx + 2, npy + 2, npw - 4, 1, '#2a3438');                    // dim "unassigned" bar
+    // BAY — the agent DOCK. Work routed here runs as the bound agent; props in the room become its
+    // powers. TOP-BIAS OBLIQUE docking platform bolted to the deck. Nameplate on the top names the
+    // bound agent (lit) or reads UNASSIGNED (dim). Docking chevrons point IN; bound LED pulses.
+    const bound = !!(f && f.agentId), c = bound ? '#5ad1b3' : '#3a464a', r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x - 1, y + h - 6, w + 2, 6);                    // bolted deck plate
+    deckSocket(x + w + 1, y + h - 3, bound);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    for (const lx of [x + 2, x + w - 5]) {
+      px(lx, y + h - 5, 3, 3, LINE); px(lx, y + h - 5, 1, 3, r.lit); px(lx + 1, y + h - 5, 1, 3, r.dk);
     }
-    px(x + 2, y + 2, 1, 1, bound ? (blink(700, 0) ? '#7df0c8' : '#1d4a44') : '#3a2418');   // bound LED
+    underAO(x + 5, y + h - 5, w - 10, 2);
+    // short south face of the platform
+    rr(x - 1, y + h - 11, w + 2, 7, LINE);
+    px(x, y + h - 10, w, 5, r.face);
+    px(x, y + h - 10, w, 1, r.lit);
+    px(x + 1, y + h - 6, w - 2, 1, r.ao);
+    // the big lit deck TOP: rounded, sheen, corner dock guides + recessed nameplate
+    rr(x - 1, y + h - 20, w + 2, 10, LINE);
+    rr(x, y + h - 19, w, 8, r.top);
+    px(x + 1, y + h - 19, w - 2, 1, r.sheen);
+    px(x, y + h - 18, 1, 6, r.lit); px(x + w - 1, y + h - 18, 1, 6, r.dk);
+    px(x + 1, y + h - 12, w - 2, 1, U.shade(r.top, -0.16));   // top front edge
+    wear(x + 2, y + h - 18, w - 4, 5, 3, U.shade(r.top, -0.10));
+    // hazard dock guides / chevrons pointing IN (work berths here) — corners of the pad
+    px(x + 2, y + h - 18, 3, 1, '#caa84a'); px(x + 2, y + h - 18, 1, 3, '#caa84a');
+    px(x + w - 5, y + h - 18, 3, 1, '#caa84a'); px(x + w - 3, y + h - 18, 1, 3, '#caa84a');
+    px(x + w / 2 - 2, y + h - 17, 5, 1, c); px(x + w / 2, y + h - 16, 1, 2, c); // centre-in chevron
+    // recessed NAMEPLATE inset into the top surface
+    const npx = x + 3, npy = y + h - 15, npw = w - 6;
+    px(npx - 1, npy - 1, npw + 2, 6, '#0c1210');
+    px(npx, npy, npw, 4, bound ? '#13211a' : '#101619');
+    if (bound) {
+      px(npx, npy, npw, 1, '#1e3a2c');                        // lit top edge
+      ctx.fillStyle = '#7df0c8'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(String(f.agentId).replace(/^tg_/, '').slice(0, 5).toUpperCase(), npx + 1, npy - 1);
+      if (f.work) glow(x, y + h - 19, w, 8, c, 0.28);         // active dock spill on the pad
+    } else {
+      px(npx + 2, npy + 1, npw - 4, 1, '#2a3438');            // dim "unassigned" bar
+      px(npx + 2, npy + 2, npw - 7, 1, '#232c30');
+    }
+    // bound status LED on the pad corner
+    px(x + 2, y + h - 18, 1, 1, bound ? (blink(700, 0) ? '#7df0c8' : U.shade(c, -0.55)) : '#3a2418');
+    if (bound && blink(700, 0)) glow(x + 1, y + h - 19, 3, 3, c, 0.3);
   };
 
   F.boxes = (x, y, w, h) => {
-    sh(x + 1, y + 10, w - 2);
-    px(x + 1, y + 4, 8, 7, '#36424c'); px(x + 1, y + 4, 8, 1, '#46525a'); px(x + 4, y + 4, 2, 7, '#56646e'); // tape
-    px(x + 1, y + 5, 1, 5, '#3e4a54'); // lit side
-    px(x + 2, y + 8, 2, 1, '#2a343c'); px(x + 2, y + 9, 3, 1, '#2a343c'); // barcode
-    px(x + 10, y + 6, 7, 5, '#2e3840'); px(x + 10, y + 6, 7, 1, '#3e4a52');
-    px(x + 10, y + 6, 7, 1, '#46525c'); px(x + 13, y + 6, 1, 5, '#262e36'); // flap crease
-    px(x + 5, y, 7, 5, '#36424c'); px(x + 5, y, 7, 1, '#46525a'); px(x + 8, y, 1, 5, '#6a7882');
-    px(x + 5, y, 1, 1, '#56646e'); px(x + 11, y + 4, 1, 1, '#222a30'); // corner wear
-    px(x + 7, y + 1, 3, 1, '#caa84a'); px(x + 12, y + 8, 2, 1, '#dfe8df'); // labels
-    px(x + 15, y + 7, 1, 1, '#ff5c5c'); // fragile dot
+    // TOP-BIAS OBLIQUE clutter: cartons at varied heights & 1px offsets, each a BIG lid + short face.
+    const cw = w, floorY = y + h - 1;
+    // one carton: big rounded lid (depth ld) over a short front face (fh), base sits at fb.
+    const carton = (bx, fb, bw, fh, ld, ramp, tint) => {
+      const ty = fb - fh - ld;                                  // lid top y
+      // short front face
+      rr(bx, ty + ld, bw, fh, LINE);
+      px(bx + 1, ty + ld + 1, bw - 2, fh - 2, ramp.face);
+      px(bx + 1, ty + ld + 1, 1, fh - 2, ramp.lit);             // west lit edge
+      px(bx + bw - 2, ty + ld + 1, 1, fh - 2, ramp.dk);         // east dark edge
+      px(bx + 1, fb - 1, bw - 2, 1, ramp.ao);                   // floor-line AO
+      px(bx + Math.floor(bw / 2), ty + ld + 1, 1, fh - 2, U.shade(ramp.face, 0.12)); // tape seam
+      // shipping label on the face
+      px(bx + 2, ty + ld + 2, 3, 2, '#dfe8df'); px(bx + 2, ty + ld + 2, 3, 1, '#f0f6f0');
+      px(bx + 2, ty + ld + 3, 2, 1, '#9aaa9a');                 // barcode
+      px(bx + bw - 4, ty + ld + 2, 2, 1, tint);                 // priority sticker
+      // DOMINANT rounded lid
+      rr(bx - 1, ty, bw + 2, ld + 1, LINE);
+      px(bx, ty + 1, bw, ld, ramp.top);
+      px(bx, ty + 1, bw, 1, ramp.sheen);                        // back edge catches light
+      px(bx, ty + 2, 4, 1, U.shade(ramp.sheen, 0.14));          // west sheen streak
+      px(bx, ty + 2, 1, ld - 1, ramp.lit); px(bx + bw - 1, ty + 2, 1, ld - 1, ramp.dk);
+      px(bx + Math.floor(bw / 2), ty + 1, 1, ld, U.shade(ramp.top, -0.20)); // flap crease
+      px(bx, ty + ld, bw, 1, U.shade(ramp.top, -0.16));         // lid front lip
+      px(bx + bw - 5, ty + 1, 3, 1, tint);                      // cargo tag on the lid
+    };
+    shadow2(x + 1, floorY, cw - 2);
+    // big front-left carton (steel), a TALLER back-right one nudged east, then a small one perched
+    carton(x + 1, floorY, 13, 4, 5, RAMP.steel, ACC.data);
+    carton(x + 13, floorY - 1, 10, 3, 6, RAMP.fabric, ACC.flow);
+    // small carton perched on the left one's lid, 1px-rotated (offset edges)
+    const sx = x + 3, sb = floorY - 8;
+    rr(sx, sb - 4, 7, 5, LINE);
+    px(sx + 1, sb - 2, 5, 2, RAMP.fabric.face); px(sx + 1, sb - 2, 1, 2, RAMP.fabric.lit);
+    px(sx + 1, sb - 3, 5, 2, RAMP.fabric.top); px(sx + 1, sb - 3, 5, 1, RAMP.fabric.sheen);
+    px(sx + 4, sb - 3, 1, 2, U.shade(RAMP.fabric.top, -0.18));  // flap
+    px(sx + 2, sb - 3, 1, 1, ACC.alert);                       // fragile dot
+    // scattered floor wear
+    px(x + cw - 6, floorY, 3, 1, U.shade(RAMP.steel.face, -0.22));
   };
 
   F.poster = (x, y) => {
@@ -969,41 +1265,49 @@ const PropSprites = (() => {
     px(x + 8, y + 1, 1, 1, f.work && blink(400, x) ? '#ff6ad5' : '#2c1c40'); // power LED
   };
 
-  F.vault = (x, y, w, h) => {
-    box(x, y + 1, w, h + 3, '#3a4434');
-    px(x + 1, y + 2, w - 2, 1, '#4c5844');
-    px(x + 1, y + 2, 1, h + 1, '#46523e'); px(x + w - 2, y + 2, 1, h + 1, '#28321f'); // door facets
-    // armored plate seams + bolt rows
-    px(x + 1, y + h / 2 + 2, w - 2, 1, '#2c3626'); px(x + w / 2 + 11, y + 2, 1, h + 1, '#2c3626');
-    px(x + w / 2 - 12, y + 2, 1, h + 1, '#2c3626');
-    for (let i = 0; i < 4; i++) { px(x + 2 + i * 10, y + 2, 1, 1, '#6a7a60'); px(x + 2 + i * 10, y + h + 2, 1, 1, '#222c1e'); } // bolts
-    for (let i = 0; i < 3; i++) { px(x + 6 + i * 10, y + 3, 1, 1, '#5a6a50'); px(x + 6 + i * 10, y + h + 1, 1, 1, '#1c241a'); } // second bolt row
+  F.vault = (x, y, w, h, f) => {   // heavy LOW BUNKER (3x2): big top mass + thick door face; combo dial; ACC.work green
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x + 1, y + h - 4, w - 2, 4);                            // bolted plate
+    deckSocket(x + 1, y + h - 3, f && f.work); deckSocket(x + w - 5, y + h - 3, f && f.work);
+    // THICK door face (south wall of the bunker) — spans most of the height
+    rr(x - 1, y + 4, w + 2, h - 4, LINE);
+    px(x, y + 5, w, h - 6, r.face);
+    px(x, y + 5, 1, h - 6, U.shade(r.face, 0.10)); px(x + w - 1, y + 5, 1, h - 6, r.dk);
+    px(x, y + h - 2, w, 1, r.ao);                                     // floor-line AO
+    // armored plate seams + two bolt rows across the door
+    for (const sxp of [x + 14, x + w - 15]) px(sxp, y + 5, 1, h - 6, U.shade(r.face, -0.2));
+    for (let i = 0; i < 5; i++) { px(x + 4 + i * ((w - 8) / 4), y + 6, 1, 1, r.sheen); px(x + 4 + i * ((w - 8) / 4), y + h - 3, 1, 1, r.ao); }
     // hinge knuckles on the left edge
-    px(x + 1, y + 4, 2, 3, '#2c3626'); px(x + 1, y + 4, 2, 1, '#49563e');
-    px(x + 1, y + h - 2, 2, 3, '#2c3626'); px(x + 1, y + h - 2, 2, 1, '#49563e');
-    const cx = x + w / 2, cy = y + h / 2 + 2;
-    ctx.fillStyle = '#2a3426'; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 7); ctx.fill();
-    ctx.strokeStyle = '#1c241a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 7); ctx.stroke();
-    ctx.strokeStyle = '#4c5844'; ctx.beginPath(); ctx.arc(cx, cy, 7, 0, 7); ctx.stroke();
-    // top-light catch on the dial housing
-    ctx.strokeStyle = '#5a6a50'; ctx.beginPath(); ctx.arc(cx, cy, 8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-    ctx.strokeStyle = '#9bff4a'; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 7); ctx.stroke();
-    ctx.strokeStyle = '#67785c'; ctx.beginPath(); // slowly turning spokes
-    for (let k = 0; k < 3; k++) {
-      const a = k * Math.PI / 3 + now / 4000;
-      ctx.moveTo(cx - Math.cos(a) * 5, cy - Math.sin(a) * 5);
-      ctx.lineTo(cx + Math.cos(a) * 5, cy + Math.sin(a) * 5);
-    }
+    px(x, y + 7, 2, 3, r.dk); px(x, y + 7, 2, 1, r.lit); px(x, y + h - 5, 2, 3, r.dk); px(x, y + h - 5, 2, 1, r.lit);
+    // big BOLD top mass (we look down on it — dominant surface of a low bunker)
+    rr(x - 1, y - 4, w + 2, 9, LINE);
+    rr(x, y - 3, w, 8, r.top);
+    px(x + 1, y - 3, w - 2, 1, r.sheen);
+    px(x, y - 2, 1, 7, r.lit); px(x + w - 1, y - 2, 1, 7, r.dk);
+    px(x + 3, y - 2, 8, 1, U.shade(r.top, 0.06)); px(x + 18, y + 1, 6, 1, U.shade(r.top, 0.05)); // brushed streaks
+    px(x + w / 2, y - 3, 1, 8, U.shade(r.top, -0.18));               // top seam
+    px(x + 1, y + 4, w - 2, 1, U.shade(r.top, -0.16));               // top front edge
+    wear(x + 2, y - 2, w - 4, 6, 4, U.shade(r.top, -0.10));
+    // massive central combination dial on the door (3-tone, turning spokes)
+    const cx = x + Math.round(w / 2), cy = y + Math.round((h + 4) / 2) + 2;
+    ctx.fillStyle = LINE; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = r.face; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = r.dk; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, 7, 0, 6.2832); ctx.stroke();
+    ctx.strokeStyle = r.sheen; ctx.beginPath(); ctx.arc(cx, cy, 8, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); // top-light catch
+    ctx.strokeStyle = U.shade(ACC.work, -0.2); ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 6.2832); ctx.stroke();
+    ctx.strokeStyle = r.lit; ctx.beginPath();                        // slowly turning spokes
+    for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3 + now / 4000; ctx.moveTo(cx - Math.cos(a) * 5, cy - Math.sin(a) * 5); ctx.lineTo(cx + Math.cos(a) * 5, cy + Math.sin(a) * 5); }
     ctx.stroke();
-    px(cx - 1, cy - 1, 2, 2, '#9bff4a');
-    glow(cx - 2, cy - 2, 4, 4, '#9bff4a', 0.18 + 0.08 * Math.sin(now / 600)); // hub glow
-    // keypad with cycling digit
-    px(x + w - 7, y + 4, 4, 5, '#2c3626'); px(x + w - 7, y + 4, 4, 1, '#49563e');
-    px(x + w - 6, y + 5, 2, 1, '#0e1608');
-    if (blink(500)) px(x + w - 6, y + 5, 1, 1, '#9bff4a');
-    for (let i = 0; i < 4; i++) px(x + w - 7 + (i % 2) * 2, y + 7 + (i >> 1), 1, 1, '#3c4a34');
-    px(x + 1, y + 2, 2, 1, blink(1000) ? '#9bff4a' : '#2a3a26');
-    wear(x + 1, y + 2, w - 2, h + 1, 5, '#333d2e');
+    px(cx - 1, cy - 1, 2, 2, U.shade(ACC.work, 0.1));                // hub
+    glow(cx - 2, cy - 2, 4, 4, ACC.work, 0.18 + 0.08 * Math.sin(now / 600));
+    // keypad with cycling digit + secured LED, east of the dial
+    inset(x + w - 8, y + 7, 4, 5, '#141b18');
+    if (blink(500)) px(x + w - 7, y + 8, 2, 1, ACC.work);
+    for (let i = 0; i < 4; i++) px(x + w - 8 + (i % 2) * 2, y + 10 + (i >> 1), 1, 1, U.shade(r.face, -0.1));
+    px(x + 2, y + 6, 2, 1, blink(1000) ? ACC.work : U.shade(ACC.work, -0.55));
+    // heavy handle west of the dial
+    px(cx - 12, cy - 2, 2, 6, r.dk); px(cx - 12, cy - 2, 2, 1, r.lit); px(cx - 12, cy - 2, 1, 6, r.face);
   };
 
   F.ticker = (x, y, w, h) => {
@@ -1032,49 +1336,83 @@ const PropSprites = (() => {
     rivets(x + 1, y + 3, w - 2, h + 1, '#3c4e36', '#0e160c');
   };
 
-  F.safe = (x, y, w, h) => {
-    box(x + 1, y + 2, 10, h + 8, '#37412f');
-    px(x + 2, y + 3, 8, 1, '#49563e');
-    px(x + 2, y + 4, 1, h + 4, '#41503a'); px(x + 9, y + 4, 1, h + 4, '#28301f'); // body facets
-    px(x + 3, y + 3, 4, 1, '#5c6a4e'); // brand plate
-    inset(x + 3, y + 4, 6, 6, '#222c1e');
-    px(x + 4, y + 5, 4, 4, '#19210f');
-    px(x + 5, y + 6, 2, 2, '#9bff4a');
-    glow(x + 5, y + 6, 2, 2, '#9bff4a', blink(900) ? 0.5 : 0.15);
-    px(x + 4, y + 5, 1, 1, '#2c3a1e'); // panel glint
-    px(x + 2, y + 12, 8, 1, '#222c1e'); // door seam
-    px(x + 2, y + 13, 8, 1, '#41503a'); // seam catch
-    px(x + 2, y + 12, 1, 1, '#19210f'); // hinge notch
-    px(x + 8, y + 14, 2, 4, '#49563e'); px(x + 8, y + 14, 2, 1, '#5c6a4e'); // handle
-    px(x + 8, y + 17, 1, 1, '#2c3626'); // handle base shade
-    px(x + 3, y + 15, 3, 1, '#2c3626'); px(x + 3, y + 17, 2, 1, '#2c3626'); // dial scratches
-    for (let i = 0; i < 3; i++) {
-      px(x + 3, y + 20 + i * 3, 6, 1, '#2c3626'); // vents
-      px(x + 3, y + 21 + i * 3, 6, 1, '#404c38'); // vent catch
-    }
-    px(x + 2, y + h + 9, 2, 1, '#222c1e'); px(x + 8, y + h + 9, 2, 1, '#222c1e'); // foot pads
+  F.safe = (x, y, w, h, f) => {   // TALL 3/4 armored safe (1x2), bolted; combo dial; ACC.work green (files)
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x - 1, y + h - 5, w + 2, 5);                            // bolted plate at feet
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    // TALL armored body: chamfered slab, lit W / dark E
+    rr(x - 1, y - 3, w + 2, h + 2, LINE);
+    px(x + 1, y - 1, w - 2, h, r.face);
+    px(x + 1, y - 1, 1, h, U.shade(r.face, 0.10)); px(x + w - 2, y - 1, 1, h, r.dk);
+    rr(x, y - 5, w, 3, LINE);                                         // heavy top cap
+    px(x + 1, y - 4, w - 2, 2, r.top); px(x + 1, y - 4, w - 2, 1, r.sheen);
+    px(x + 2, y - 3, 3, 1, U.shade(r.sheen, 0.12));
+    // recessed armored door with a thick frame + corner rivets
+    const doorX = x + 2, doorY = y + 1, doorW = w - 4, doorH = h - 4;
+    inset(doorX, doorY, doorW, doorH, U.shade(r.face, -0.22));
+    rivets(doorX + 1, doorY + 1, doorW - 2, doorH - 2, r.sheen, r.ao);
+    // brand/keypad plate near the top of the door
+    inset(doorX + 1, doorY + 1, doorW - 2, 3, '#141b18');
+    const kp = blink(900);
+    px(doorX + 2, doorY + 2, 2, 1, kp ? ACC.work : U.shade(ACC.work, -0.55));
+    if (kp) glow(doorX + 1, doorY + 1, 4, 3, ACC.work, 0.4);
+    // big central combination dial (3-tone) with a lit crown catch
+    const cx = x + Math.round(w / 2), cy = y + Math.round(h / 2) + 1;
+    ctx.fillStyle = LINE; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = r.face; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = r.sheen; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, 4, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); // top-light catch
+    ctx.strokeStyle = r.ao; ctx.beginPath();                         // slowly turning spokes
+    for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3 + now / 4000; ctx.moveTo(cx - Math.cos(a) * 3, cy - Math.sin(a) * 3); ctx.lineTo(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3); }
+    ctx.stroke();
+    px(cx - 1, cy - 1, 2, 2, U.shade(ACC.work, 0.1));                // dial hub
+    glow(cx - 2, cy - 2, 4, 4, ACC.work, 0.14 + 0.06 * Math.sin(now / 600));
+    // heavy handle east of the dial
+    px(cx + 4, cy - 2, 2, 5, r.dk); px(cx + 4, cy - 2, 2, 1, r.lit);
+    // secured LED + vents low on the door
+    px(doorX + 1, doorY + doorH - 2, 2, 1, blink(1000) ? ACC.work : U.shade(ACC.work, -0.55));
+    for (let i = 0; i < 3; i++) px(cx - 3, doorY + doorH - 4 + i, 6, 1, i % 2 ? U.shade(r.face, 0.06) : r.ao);
+    px(x + 1, y + h - 2, w - 2, 1, r.ao);                             // floor-line AO
   };
 
   F.goldcrate = (x, y, w, h) => {
-    sh(x + 1, y + h - 1, w - 2);
-    box(x + 1, y + 2, w - 2, h - 2, '#36424c');
-    px(x + 2, y + 3, w - 4, 1, '#56646e');
-    px(x + 2, y + 4, 1, h - 7, '#46525c'); px(x + w - 3, y + 4, 1, h - 7, '#2a343c'); // bin facets
-    // strapping bands
-    px(x + 4, y + 2, 1, h - 2, '#2a343c'); px(x + w - 5, y + 2, 1, h - 2, '#2a343c');
-    for (let i = 0; i < 3; i++) { // gold bars, two rows
-      px(x + 3 + i * 6, y + 4, 5, 2, '#e8c860'); px(x + 3 + i * 6, y + 4, 5, 1, '#ffe88c'); px(x + 3 + i * 6, y + 5, 5, 1, '#caa84a');
-      px(x + 4 + i * 6, y + 4, 1, 1, '#fff4c8'); // ingot stamp glint
+    // TOP-BIAS OBLIQUE treasury crate (F.crate construction) with gold ACC.flow accents + lock.
+    const r = RAMP.steel, cw = w, gold = ACC.flow;
+    shadow2(x + 1, y + h - 1, cw - 2);
+    // short ribbed front face
+    rr(x, y + 3, cw, h - 4, LINE);
+    px(x + 1, y + 4, cw - 2, h - 6, r.face);
+    for (let i = 1; i < (cw - 2) / 6; i++) {
+      px(x + 1 + i * 6, y + 4, 1, h - 6, r.ao);            // ribs cut deep
+      px(x + 2 + i * 6, y + 4, 1, h - 6, U.shade(r.face, 0.16));
     }
-    for (let i = 0; i < 2; i++) {
-      px(x + 6 + i * 6, y + 7, 5, 2, '#e8c860'); px(x + 6 + i * 6, y + 7, 5, 1, '#ffe88c');
-      px(x + 6 + i * 6, y + 8, 5, 1, '#caa84a');
-    }
-    glow(x + 3, y + 4, w - 6, 5, '#ffe88c', 0.07 + 0.03 * Math.sin(now / 900)); // bullion sheen
-    if (blink(1300, x)) px(x + 5 + (U.hash('g' + x) % 10), y + 4, 1, 1, '#fffbe8'); // sparkle
-    px(x + w / 2 - 2, y + h - 2, 4, 1, '#1e262c'); px(x + w / 2 - 1, y + h - 3, 2, 1, '#161c22'); // lock hasp
-    px(x + 2, y + h - 2, 1, 1, blink(1100) ? '#9bff4a' : '#1c3a14'); // secured LED
-    px(x + 3, y + h - 2, 3, 1, '#caa84a'); // serial stencil
+    px(x + 1, y + 4, 2, 2, r.sheen); px(x + cw - 3, y + 4, 2, 2, r.sheen); // corner braces
+    px(x + 1, y + h - 4, 2, 2, r.dk); px(x + cw - 3, y + h - 4, 2, 2, r.dk);
+    // gold banding straps across the face (treasury identity)
+    px(x + 4, y + 4, 1, h - 6, U.shade(gold, -0.25)); px(x + 5, y + 4, 1, h - 6, gold);
+    px(x + cw - 6, y + 4, 1, h - 6, U.shade(gold, -0.25)); px(x + cw - 5, y + 4, 1, h - 6, gold);
+    glow(x + 5, y + 4, 1, h - 6, gold, 0.18); glow(x + cw - 5, y + 4, 1, h - 6, gold, 0.18);
+    px(x + 1, y + h - 3, cw - 2, 1, r.ao);                 // floor-line AO
+    // the lid dominates: big rounded gold-stencilled top
+    rr(x - 1, y - 3, cw + 2, 9, LINE);
+    rr(x, y - 2, cw, 7, r.top);
+    px(x + 1, y - 2, cw - 2, 1, r.sheen);
+    px(x, y - 1, 1, 5, r.lit); px(x + cw - 1, y - 1, 1, 5, r.dk);
+    px(x + Math.floor(cw / 2), y - 1, 1, 5, U.shade(r.top, -0.20)); // lid seam
+    // gold bullion-mark stencil + sparkle on the lid
+    px(x + 4, y, 5, 2, U.shade(gold, -0.20)); px(x + 5, y, 3, 1, gold);
+    glow(x + 4, y - 1, 5, 3, gold, 0.14 + 0.06 * Math.sin(now / 900));
+    if (blink(1300, x)) px(x + 5 + (U.hash('gc' + x) % 3), y, 1, 1, '#fffbe8'); // sparkle
+    px(x + 1, y + 4, cw - 2, 1, U.shade(r.top, -0.16));         // lid front edge
+    // heavy padlock hasp centred on the lid front, with a secured LED
+    const lx = x + Math.floor(cw / 2) - 2;
+    px(lx, y + 4, 4, 3, '#1e262c'); px(lx, y + 4, 4, 1, '#3a444c'); // hasp body
+    px(lx + 1, y + 3, 2, 1, U.shade(gold, -0.30));             // shackle
+    px(lx + 1, y + 5, 1, 1, blink(1100) ? '#9bff4a' : '#1c3a14'); // secured LED
+    px(x + 2, y - 2, 1, 1, '#8693a0');                          // rivet glint
+    wear(x + 2, y - 1, cw - 4, 5, 3, U.shade(r.top, -0.10));
+    // skid rails on the floor
+    px(x + 2, y + h - 1, 3, 1, r.dk); px(x + cw - 5, y + h - 1, 3, 1, r.dk);
   };
 
   F.chartwall = (x, y, w, h) => {
@@ -1202,64 +1540,118 @@ const PropSprites = (() => {
   };
 
   F.parcels = (x, y, w, h) => {
-    sh(x + 1, y + 13, 10);
-    px(x + 1, y + 2, 9, 6, '#36424c'); px(x + 1, y + 2, 9, 1, '#46525a'); px(x + 4, y + 2, 2, 6, '#6a7882');
-    px(x + 1, y + 3, 1, 4, '#3e4a54'); // lit side
-    px(x + 1, y + 7, 9, 1, '#2a343c'); // base shade
-    px(x + 2, y + 9, 8, 5, '#2e3840'); px(x + 2, y + 9, 8, 1, '#3e4a52'); px(x + 5, y + 9, 2, 5, '#6a7882');
-    px(x + 2, y + 9, 8, 1, '#46525c'); px(x + 8, y + 10, 1, 3, '#262e36'); // crease
-    px(x + 3, y + 4, 3, 1, '#ffe066'); px(x + 7, y + 11, 2, 1, '#dfe8df'); // labels
-    px(x + 3, y + 5, 2, 1, '#8a7a34'); // address scrawl
-    px(x + 7, y + 4, 1, 1, '#ff5c5c'); // priority sticker
-    px(x + 9, y + 6, 3, 3, '#39434b'); px(x + 9, y + 6, 3, 1, '#46525a'); // small parcel leaning
+    // TALL 3/4 leaning tower of stacked parcels: BOLD offset stacking on a 1x2 footprint.
+    const cw = w, floorY = y + h - 1;
+    shadow2(x + 1, floorY, cw - 2);
+    // one parcel: rounded box, dominant lid (2px) + face; drawn with (bx,fb)=front-base-left corner.
+    const parcel = (bx, fb, bw, fh, ramp, tint) => {
+      const ty = fb - fh;
+      rr(bx, ty, bw, fh, LINE);
+      // front face
+      px(bx + 1, ty + 2, bw - 2, fh - 3, ramp.face);
+      px(bx + 1, ty + 2, 1, fh - 3, ramp.lit);                  // west lit edge
+      px(bx + bw - 2, ty + 2, 1, fh - 3, ramp.dk);              // east dark edge
+      px(bx + 1, fb - 1, bw - 2, 1, ramp.ao);                   // base AO
+      // lid slab (top-bias)
+      px(bx + 1, ty + 1, bw - 2, 2, ramp.top);
+      px(bx + 1, ty + 1, bw - 2, 1, ramp.sheen);                // back edge sheen
+      px(bx + 1, ty + 1, 3, 1, U.shade(ramp.sheen, 0.14));      // west streak
+      // cross-strap (bold) + priority tab
+      px(bx + Math.floor(bw / 2) - 1, ty + 2, 2, fh - 3, U.shade(ramp.face, 0.16)); // vertical tape
+      px(bx + 1, ty + 4, bw - 2, 1, U.shade(ramp.face, -0.20));                     // horizontal tape shade
+      px(bx + 2, ty + 3, 3, 1, '#dfe8df');                      // shipping label
+      px(bx + bw - 4, ty + 1, 2, 1, tint);                      // bold color tab on the lid
+      px(bx + bw - 4, ty + 3, 2, 1, U.shade(tint, -0.2));       // sticker on the face
+    };
+    // base (widest) flush to floor, then tiers narrow & LEAN alternately (bold 2px offsets)
+    parcel(x + 0, floorY, cw + 0, 8, RAMP.steel, ACC.flow);      // base carton, full width
+    parcel(x + 2, floorY - 8, cw - 3, 7, RAMP.fabric, ACC.data); // middle, leaning EAST
+    parcel(x - 1, floorY - 15, cw - 4, 6, RAMP.steel, ACC.alert);// upper, leaning WEST (juts past footprint)
+    // small crowning parcel catching the most light
+    const tb = floorY - 21, tx = x + 2;
+    rr(tx, tb - 5, 7, 5, LINE);
+    px(tx + 1, tb - 3, 5, 2, RAMP.fabric.face); px(tx + 1, tb - 3, 1, 2, RAMP.fabric.lit);
+    px(tx + 1, tb - 4, 5, 2, RAMP.fabric.top); px(tx + 1, tb - 4, 5, 1, RAMP.fabric.sheen);
+    px(tx + 4, tb - 3, 1, 1, ACC.work);                         // sticker
+    // secured-strap glint travelling down the stack
+    if (blink(1400, x)) px(x + Math.floor(cw / 2), floorY - 11, 1, 1, '#fff4c8');
+    px(x + Math.floor(cw / 2) - 1, floorY, 3, 1, U.shade(RAMP.steel.face, -0.22)); // base scuff
   };
 
-  F.core = (x, y, w, h) => {
-    // heavy caps top and bottom
-    px(x + 1, y, 10, 2, '#1c2832'); px(x + 1, y, 10, 1, '#324252');
-    px(x + 2, y, 1, 1, '#46586a'); px(x + 9, y, 1, 1, '#46586a'); // cap bolts
-    box(x + 2, y + 1, 8, h + 8, '#24303c');
-    px(x + 3, y + 2, 6, 1, '#3a4a58');
+  F.core = (x, y, w, h, f) => {   // TALL 3/4 memory core (1x2), bolted; cylindrical glowing column; ACC.mem purple
+    const r = RAMP.steel, cx = x + Math.round(w / 2);
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x - 1, y + h - 5, w + 2, 5);                            // bolted plate at feet
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    // cylindrical housing: dark caps top & bottom + a tall barrel with side facets
+    const bx = x + 2, bw = w - 4, colTop = y - 1, colBot = y + h - 4;
+    rr(bx - 1, colTop - 2, bw + 2, colBot - colTop + 4, LINE);
+    px(bx, colTop, bw, colBot - colTop, r.face);
+    px(bx, colTop, 1, colBot - colTop, r.lit);                       // west sheen
+    px(bx + 1, colTop, 1, colBot - colTop, U.shade(r.face, 0.06));
+    px(bx + bw - 1, colTop, 1, colBot - colTop, r.dk);               // east shade
+    // heavy top cap (we look down on it) + bottom cap
+    rr(bx - 1, colTop - 3, bw + 2, 3, LINE);
+    px(bx, colTop - 2, bw, 2, r.top); px(bx, colTop - 2, bw, 1, r.sheen);
+    px(bx, colBot, bw, 2, U.shade(r.face, -0.24)); px(bx, colBot + 1, bw, 1, r.ao);
+    px(bx + 1, colBot, 1, 1, r.dk); px(bx + bw - 2, colBot, 1, 1, r.dk);
+    // central glowing memory column — ACC.mem purple pulse (preserved behavior)
     const g = 0.55 + 0.35 * Math.sin(now / 350);
-    glow(x + 4, y + 3, 4, h + 4, '#7fd0ff', g);
-    px(x + 5, y + 3, 2, h + 4, '#bfeaff'); // hot core line
-    px(x + 5, y + 3, 1, h + 4, '#eaffff'); // white-hot edge
-    for (let i = 0; i < 3; i++) { // rising energy motes
+    const gx = cx - 2, gTop = colTop + 1, gLen = colBot - colTop - 2;
+    inset(gx, gTop, 4, gLen, '#12081c');                             // recessed glass well
+    glow(gx - 1, gTop, 6, gLen, ACC.mem, 0.28 + 0.22 * g);           // soft outer bloom, continuous
+    px(gx + 1, gTop, 2, gLen, U.shade(ACC.mem, 0.15 + 0.2 * g));     // lit plasma body
+    px(cx, gTop, 1, gLen, '#e8d6ff');                                // white-hot core line, unbroken
+    for (let i = 0; i < 3; i++) {                                     // rising energy motes
       const ph = (now / (800 + i * 230) + i * 0.5) % 1;
-      px(x + 4 + (i % 2) * 3, y + 3 + Math.floor((1 - ph) * (h + 3)), 1, 1, '#eaffff');
+      px(cx - 1 + (i % 2), gTop + Math.floor((1 - ph) * (gLen - 2)), 1, 1, '#f9f2ff');
     }
-    // containment cage struts in front of the column
-    for (let r = 0; r < 4; r++) {
-      px(x + 3, y + 5 + r * 7, 6, 1, '#1c2832'); // rings
-      px(x + 3, y + 6 + r * 7, 6, 1, '#2e3e4c'); // ring catch
+    // containment cage rings across the column — thin 1px hoops, sit IN FRONT without killing the glow
+    for (let ri = 0; ri < 5; ri++) {
+      const ry = gTop + 2 + ri * Math.floor((gLen - 2) / 5);
+      px(gx - 1, ry, 6, 1, U.shade(r.face, -0.28));                  // dark hoop
+      px(gx - 1, ry, 1, 1, r.lit); px(gx + 4, ry, 1, 1, r.dk);       // hoop end catches
     }
-    px(x + 4, y + 3, 1, h + 4, '#203040'); px(x + 8, y + 3, 1, h + 4, '#16222c'); // cage bars
-    glow(x + 3, y + 2, 6, 2, '#7fd0ff', g * 0.4); // heat shimmer at the crown
-    px(x + 1, y + h + 8, 10, 2, '#1c2832'); px(x + 1, y + h + 8, 10, 1, '#2a3a48');
-    px(x + 3, y + h + 9, 2, 1, '#101a22'); px(x + 7, y + h + 9, 2, 1, '#101a22'); // base vents
-    px(x + 2, y + h + 7, 1, 1, blink(600) ? '#7fd0ff' : '#1c2832'); // containment LED
-    px(x + 10, y + h + 8, 2, 1, '#141e26'); // floor cable
+    glow(gx - 1, colTop - 2, 6, 3, ACC.mem, g * 0.4);                // heat shimmer at the crown
+    // base vents + containment LED
+    px(bx + 1, colBot + 1, 2, 1, '#101a22'); px(bx + bw - 3, colBot + 1, 2, 1, '#101a22');
+    px(bx, colBot + 2, 1, 1, blink(600) ? ACC.mem : U.shade(ACC.mem, -0.55));
   };
 
-  F.shelf = (x, y, w, h) => { // bottle shelf behind bar
-    box(x, y + 1, w, h + 3, '#333d44');
-    px(x + 1, y + 2, w - 2, 1, '#46525a');
-    px(x + 1, y + 2, 1, h + 1, '#3e4a52'); px(x + w - 2, y + 2, 1, h + 1, '#262e34'); // cabinet sides
-    glow(x + 1, y + 3, w - 2, 6, '#ffb86a', 0.10 + 0.04 * Math.sin(now / 800)); // backlight
-    px(x + 1, y + 8, w - 2, 1, '#1d242a'); // mirror base shadow line
-    for (let i = 0; i < (w - 4) / 5; i++) {
-      const c = ['#7adf7a', '#b48adf', '#e07a5a', '#7ab8df', '#caca6a'][i % 5];
-      const bh = 4 + (U.hash('b' + i) % 3);
-      px(x + 2 + i * 5, y + 8 - bh, 2, bh, c);
-      px(x + 2 + i * 5, y + 8 - bh, 1, bh, U.shade(c, 0.3));
-      px(x + 2 + i * 5, y + 7 - bh, 2, 1, '#333');
-      if (U.hash('lb' + i) % 3 === 0) px(x + 2 + i * 5, y + 6, 2, 1, '#e8e0d0'); // label band
-      px(x + 2 + i * 5, y + 9, 2, 1, '#23150f'); // bottle reflection stub
+  F.shelf = (x, y, w, h, f) => {   // TOP-BIAS OBLIQUE storage shelf (4x1): big top + binned face; bolted; ACC.work green
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x - 1, y + h - 4, w + 2, 4);                            // bolted plate
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    for (const lx of [x + 2, x + Math.floor(w / 2) - 1, x + w - 5]) { // legs along the long footprint
+      px(lx, y + h - 5, 3, 3, LINE); px(lx, y + h - 5, 1, 3, r.lit); px(lx + 1, y + h - 5, 1, 3, r.dk);
     }
-    px(x + 1, y + 9, w - 2, 1, '#222a30'); // shelf lip
-    px(x + 1, y + 10, w - 2, 1, '#3c464e'); // lip catch
-    px(x + 1, y + h + 2, w - 2, 1, '#1a2228');
-    rivets(x + 1, y + 2, w - 2, h + 1, '#4e5a64', '#161c20');
+    underAO(x + 5, y + h - 5, w - 10, 2);
+    // short front face: a row of storage bins with green data labels
+    rr(x - 1, y + 2, w + 2, h - 3, LINE);
+    px(x, y + 3, w, h - 5, r.face);
+    px(x, y + 3, w, 1, r.lit);
+    const nbin = Math.floor((w - 2) / 6);
+    for (let i = 0; i < nbin; i++) {
+      const bx = x + 2 + i * 6;
+      inset(bx, y + 4, 5, h - 7, U.shade(r.face, -0.18));            // bin recess
+      px(bx + 1, y + 5, 3, 1, U.shade(r.face, 0.06));                // bin face catch
+      const on = blink(700 + i * 90, i);                             // per-bin status label — ACC.work
+      px(bx + 1, y + h - 4, 3, 1, on ? ACC.work : U.shade(ACC.work, -0.6));
+      if (on) glow(bx, y + h - 5, 5, 2, ACC.work, 0.14);
+    }
+    px(x, y + h - 3, w, 1, r.ao);                                     // floor-line AO
+    // big rounded TOP surface (dominant), with folder tabs sitting on it
+    rr(x - 1, y - 3, w + 2, 6, LINE);
+    rr(x, y - 2, w, 5, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x, y - 1, 1, 3, r.lit); px(x + w - 1, y - 1, 1, 3, r.dk);
+    for (let i = 0; i < 4; i++) px(x + 4 + i * 9, y - 1, 5, 1, U.shade(r.top, 0.05)); // brushed streaks
+    // a couple of green-tabbed file folders resting on the deck
+    for (const fx of [x + 6, x + Math.floor(w * 0.55)]) { px(fx, y - 1, 6, 2, U.shade(r.top, -0.06)); px(fx + 1, y - 1, 2, 1, ACC.work); }
+    px(x + 1, y + 2, w - 2, 1, U.shade(r.top, -0.16));               // top front edge
+    wear(x + 2, y - 1, w - 4, 3, 4, U.shade(r.top, -0.10));
+    if (f && f.work) glow(x, y + 3, w, h - 5, ACC.work, 0.05 + 0.03 * Math.sin(now / 500));
   };
 
   F.bar = (x, y, w, h) => {
@@ -1627,51 +2019,44 @@ const PropSprites = (() => {
   // faint emissive spill of the screen onto the bezel
   glow(sx, sy, sw, sh2, red, (on ? 0.10 : 0.05) * pulse);
 };
-  F.bridge_relaystack = (x, y, w, h, f) => {
-  // tall floor-standing comms relay tower hugging the left wall (1x2 footprint)
-  sh(x + 1, y + h - 1, w - 2);                                 // contact shadow pooling at base
-  // antenna nub at the crown â€” rises a few px above the cabinet
-  px(x + w - 5, y - 4, 1, 4, '#2a332f');                       // mast
-  px(x + w - 7, y - 5, 4, 1, '#3a463f');                       // angled dish nub
-  px(x + w - 4, y - 6, 1, 1, blink(900) ? '#ff4a3d' : '#3a201c'); // beacon tip
-  // main cabinet: grey-green metal, top-lit / bottom-shaded
-  box(x + 1, y, w - 2, h, '#2f3a36');
-  px(x + 2, y + 1, w - 4, h - 2, '#46544d');                   // mid-tone face
-  px(x + 2, y + 1, w - 4, 1, '#5c6c63');                       // top sheen
-  px(x + 2, y + 1, 1, h - 2, '#586b61');                       // left light edge
-  px(x + w - 3, y + 1, 1, h - 3, '#26302c');                   // right shade edge
-  // horizontal seam lines every few px down the body
-  for (let s = 0; s < 5; s++) {
-    px(x + 2, y + 5 + s * 4, w - 4, 1, '#26302c');
-    px(x + 2, y + 6 + s * 4, w - 4, 1, '#566459');            // seam highlight
-  }
-  // top vent slit with faint red glow bleeding out
-  inset(x + 3, y + 2, w - 6, 2, '#1c2420');
-  glow(x + 2, y + 1, w - 4, 3, '#ff4a3d', 0.08 + 0.05 * Math.sin(now / 600));
-  // two thin vent slits lower on the face
-  px(x + 3, y + h - 6, w - 6, 1, '#1a201d');
-  px(x + 3, y + h - 4, w - 6, 1, '#1a201d');
-  // six small square indicator lights, two columns of three (steady status)
-  for (let r = 0; r < 3; r++) {
-    px(x + 3, y + 9 + r * 4, 2, 2, blink(1100, r * 1.3) ? '#41ff8a' : '#173026');
-    px(x + 6, y + 9 + r * 4, 2, 2, blink(1300, r * 0.7 + 1) ? '#ffd34a' : '#33271a');
-  }
-  // EMISSIVE ACCENT: vertical column of red data LEDs chasing upward like a loading bar
-  const N = 6, lit = Math.floor((now / 130) % (N + 1));        // how many are filled this cycle
-  for (let i = 0; i < N; i++) {
-    const ly = y + h - 5 - i * 2;                              // bottom-up stack
-    const on = (N - i) <= lit;                                 // fill rises from bottom
-    px(x + w - 4, ly, 2, 1, on ? '#ff4a3d' : '#3a1714');
-    if (on) {
-      px(x + w - 4, ly, 1, 1, '#ff8378');                     // lit pixel highlight
-      glow(x + w - 5, ly, 3, 1, '#ff4a3d', 0.3);
+  F.bridge_relaystack = (x, y, w, h, f) => {   // TALL 3/4 comms relay tower (1x2), bolted; climbing data LEDs; ACC.mem
+    const r = RAMP.steel, cx = x + Math.round(w / 2);
+    shadow2(x + 1, y + h - 1, w - 2);                                 // contact shadow at base
+    deckPlate(x - 1, y + h - 5, w + 2, 5);                            // bolted plate peeks at feet
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    // antenna nub at the crown — rises a few px above the cabinet
+    px(x + w - 5, y - 5, 1, 4, r.dk);                                 // mast
+    px(x + w - 7, y - 6, 4, 1, r.face); px(x + w - 7, y - 6, 4, 1, r.lit);  // angled dish nub
+    px(x + w - 4, y - 7, 1, 1, blink(900) ? ACC.alert : U.shade(ACC.alert, -0.6)); // beacon tip
+    // TALL body: chamfered slab, lit W / dark E facet, top cap
+    rr(x - 1, y - 3, w + 2, h + 2, LINE);
+    px(x + 1, y - 1, w - 2, h, r.face);
+    px(x + 1, y - 1, 1, h, U.shade(r.face, 0.10)); px(x + w - 2, y - 1, 1, h, r.dk);
+    rr(x, y - 5, w, 3, LINE);
+    px(x + 1, y - 4, w - 2, 2, r.top); px(x + 1, y - 4, w - 2, 1, r.sheen);
+    px(x + 2, y - 3, 3, 1, U.shade(r.sheen, 0.12));
+    // horizontal seam lines down the body
+    for (let s = 0; s < 5; s++) { px(x + 2, y + 3 + s * 4, w - 4, 1, r.ao); px(x + 2, y + 4 + s * 4, w - 4, 1, U.shade(r.face, 0.08)); }
+    // top vent slit with faint purple glow bleeding out
+    inset(x + 3, y, w - 6, 2, '#12081c');
+    glow(x + 2, y - 1, w - 4, 3, ACC.mem, 0.08 + 0.05 * Math.sin(now / 600));
+    // two thin vent slits lower on the face
+    px(x + 3, y + h - 6, w - 6, 1, r.ao); px(x + 3, y + h - 4, w - 6, 1, r.ao);
+    // six small indicator lights, two columns of three (steady status)
+    for (let ri = 0; ri < 3; ri++) {
+      px(x + 3, y + 6 + ri * 4, 2, 2, blink(1100, ri * 1.3) ? ACC.mem : U.shade(ACC.mem, -0.6));
+      px(x + 6, y + 6 + ri * 4, 2, 2, blink(1300, ri * 0.7 + 1) ? ACC.flow : '#33271a');
     }
-  }
-  // corner bolts
-  px(x + 2, y + 2, 1, 1, '#6a7a70');
-  px(x + w - 3, y + 2, 1, 1, '#6a7a70');
-  px(x + 2, y + h - 2, 1, 1, '#1e2622');
-};
+    // EMISSIVE ACCENT: vertical column of purple data LEDs chasing upward like a loading bar (preserved)
+    const N = 6, lit = Math.floor((now / 130) % (N + 1));
+    for (let i = 0; i < N; i++) {
+      const ly = y + h - 5 - i * 2, on = (N - i) <= lit;
+      px(x + w - 4, ly, 2, 1, on ? ACC.mem : U.shade(ACC.mem, -0.6));
+      if (on) { px(x + w - 4, ly, 1, 1, '#e0b8ff'); glow(x + w - 5, ly, 3, 1, ACC.mem, 0.3); }
+    }
+    px(x + 2, y, 1, 1, r.sheen); px(x + w - 3, y, 1, 1, r.sheen);     // corner bolts
+    px(x + 1, y + h - 2, w - 2, 1, r.ao);                             // floor-line AO
+  };
   F.bridge_dispatch_pylon = (x, y, w, h, f) => {
   // contact shadow at base
   sh(x + 1, y + h - 1, w - 2);
@@ -2085,87 +2470,60 @@ const PropSprites = (() => {
   const a = f.work ? 0.55 : 0.18 + 0.12 * Math.sin(now / 700);
   glow(tx + 1 + k * 2, ty + 8 - bars[k], 1, 1, '#9aeaff', a);
 };
-  F.comms_dish = (x, y, w, h, f) => {
-  // ground contact shadow under the tripod
-  sh(x + 2, y + h - 1, w - 4);
-
-  // ---- squat hexagonal mount base ----
-  const cx = x + w / 2;
-  const bw = w - 6;            // base width
-  const by = y + h - 8;        // base top
-  box(x + 3, by, bw, 7, '#2c322e');                 // dark grey-green station metal
-  px(x + 4, by + 1, bw - 2, 1, '#3a423c');          // top-lit edge
-  px(x + 4, by + 5, bw - 2, 1, '#181d1a');          // bottom shade
-  // two bolt plates
-  inset(x + 4, by + 2, 4, 3, '#21272300'.slice(0, 7));
-  inset(x + 4, by + 2, 4, 3, '#212723');
-  inset(x + w - 8, by + 2, 4, 3, '#212723');
-  px(x + 5, by + 3, 1, 1, '#4a524a'); px(x + 6, by + 3, 1, 1, '#4a524a');
-  px(x + w - 7, by + 3, 1, 1, '#4a524a'); px(x + w - 6, by + 3, 1, 1, '#4a524a');
-
-  // coiled cable trailing to floor
-  px(x + 2, by + 4, 1, 3, '#14110d');
-  px(x + 1, by + 6, 3, 1, '#14110d');
-  px(x + 3, by + 6, 2, 1, '#1c1812');
-
-  // red status LED on base, blinks offbeat
-  px(x + w - 6, by + 4, 1, 1, blink(900, 0.37) ? '#ff4a3a' : '#3a1410');
-
-  // ---- tripod legs rising to the yoke ----
-  const yoke = y + 5;          // pivot height
-  px(cx - 1, yoke, 2, by - yoke, '#262b27');        // central mast
-  px(cx, yoke, 1, by - yoke, '#333a35');            // mast highlight
-  px(x + 4, by, cx - x - 4, 1, '#222723');          // splayed leg L
-  px(cx + 1, by, x + w - 4 - cx, 1, '#222723');     // splayed leg R
-  for (let i = 0; i < (by - yoke) / 3; i++) {       // angled left leg
-    px(x + 4 + i, by - 1 - i, 1, 1, '#2a302b');
-    px(x + w - 5 - i, by - 1 - i, 1, 1, '#2a302b');
-  }
-
-  // ---- tilted shallow oval dish, angled up-left (3-tone) ----
-  const dcx = cx - 2, dcy = yoke - 1, rx = w * 0.42, ry = w * 0.22;
-  ctx.save();
-  // outer charcoal rim
-  ctx.fillStyle = '#1c211e';
-  ctx.beginPath(); ctx.ellipse(dcx, dcy, rx, ry, -0.55, 0, Math.PI * 2); ctx.fill();
-  // mid steel-grey face
-  ctx.fillStyle = '#5a655e';
-  ctx.beginPath(); ctx.ellipse(dcx, dcy, rx - 1.5, ry - 1.5, -0.55, 0, Math.PI * 2); ctx.fill();
-  // inner concave shadow
-  ctx.fillStyle = '#2b332e';
-  ctx.beginPath(); ctx.ellipse(dcx + 1, dcy + 0.5, rx - 4, ry - 3, -0.55, 0, Math.PI * 2); ctx.fill();
-  // upper-left specular sliver on the face
-  ctx.fillStyle = U.shade('#5a655e', 28);
-  ctx.beginPath(); ctx.ellipse(dcx - rx * 0.35, dcy - ry * 0.35, rx * 0.32, ry * 0.26, -0.55, 0, Math.PI * 2); ctx.fill();
-
-  // ---- radar sweep arc across the concave (once per cycle) ----
-  const cyc = (now / 1500) % 1;
-  if (cyc < 0.45) {
-    ctx.globalAlpha = 0.32 * (1 - cyc / 0.45);
-    ctx.strokeStyle = '#5ad1b3';
-    ctx.lineWidth = 1;
-    const a0 = -2.2 + cyc * 3.2;
-    ctx.beginPath();
-    ctx.ellipse(dcx + 1, dcy + 0.5, rx - 4, ry - 3, -0.55, a0, a0 + 0.9);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-  ctx.restore();
-
-  // ---- feed-arm and emitter horn at the focus ----
-  const fx = dcx + rx * 0.5, fy = dcy + ry * 0.5; // focus, lower-right of dish
-  px(dcx, dcy, 1, 1, '#3a423c');
-  ctx.strokeStyle = '#20251f'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(dcx, dcy); ctx.lineTo(fx, fy); ctx.stroke();
-  px(Math.round(fx) - 1, Math.round(fy) - 1, 3, 3, '#2a302b');   // horn body
-  px(Math.round(fx) - 1, Math.round(fy) - 1, 3, 1, '#3a423c');
-
-  // ---- ONE emissive accent: feed-horn teal pulse (~1.5s) ----
-  const pulse = 0.45 + 0.55 * Math.max(0, Math.sin(now / 750));
-  const active = f && f.work ? 1 : 0.55;
-  glow(Math.round(fx) - 2, Math.round(fy) - 2, 4, 4, '#5ad1b3', 0.45 * pulse * active);
-  px(Math.round(fx), Math.round(fy), 1, 1, pulse > 0.7 ? '#9af0da' : '#5ad1b3');
-};
+  F.comms_dish = (x, y, w, h, f) => {   // bolted deck base + BOLD oval dish on a mast (2x2); ACC.data cyan reach
+    const r = RAMP.steel, active = f && f.work;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x + 1, y + h - 5, w - 2, 5);                            // bolted mounting plate under the pedestal
+    deckSocket(x + 1, y + h - 3, active);                             // cable into a floor socket, W side
+    // squat pedestal base: top-bias oblique block the mast rises from
+    const bw = w - 6, bx = x + 3, by = y + h - 9;
+    rr(bx - 1, by, bw + 2, 8, LINE);
+    px(bx, by + 1, bw, 5, r.face);
+    px(bx, by + 1, bw, 1, r.lit);                                     // under-lip catch
+    px(bx, by + 1, 1, 5, U.shade(r.face, 0.08)); px(bx + bw - 1, by + 1, 1, 5, r.dk);
+    px(bx, by + 5, bw, 1, r.ao);
+    rr(bx - 1, by - 3, bw + 2, 4, LINE);                              // pedestal top surface (we look down on it)
+    px(bx, by - 2, bw, 3, r.top); px(bx, by - 2, bw, 1, r.sheen);
+    px(bx + 2, by - 1, 4, 1, U.shade(r.sheen, 0.10));
+    inset(bx + 1, by + 2, 4, 2, '#10161a'); inset(bx + bw - 5, by + 2, 4, 2, '#10161a'); // bolt plates
+    px(bx + 2, by + 3, 1, 1, r.sheen); px(bx + bw - 4, by + 3, 1, 1, r.sheen);
+    px(bx + bw - 4, by + 3, 1, 1, blink(900, 0.37) ? ACC.data : U.shade(ACC.data, -0.6)); // status LED
+    // yoke mast rising toward the dish
+    const cx = x + Math.round(w / 2), yoke = y + 5;
+    px(cx - 1, yoke, 3, by - yoke, LINE);
+    px(cx, yoke, 1, by - yoke, r.lit); px(cx + 1, yoke, 1, by - yoke, r.dk);            // lit W / dark E column
+    // BOLD tilted oval dish, angled up-left (3-tone), rimmed
+    const dcx = cx - 2, dcy = yoke - 1, rx = w * 0.44, ry = w * 0.24;
+    ctx.save();
+    ctx.fillStyle = LINE;                                             // heavy silhouette rim
+    ctx.beginPath(); ctx.ellipse(dcx, dcy, rx + 0.6, ry + 0.6, -0.55, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = r.face;                                           // dish back (mid steel)
+    ctx.beginPath(); ctx.ellipse(dcx, dcy, rx, ry, -0.55, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = r.dk;                                             // concave shadow interior
+    ctx.beginPath(); ctx.ellipse(dcx + 1, dcy + 0.5, rx - 3, ry - 2.4, -0.55, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = r.sheen;                                          // upper-left specular sliver
+    ctx.beginPath(); ctx.ellipse(dcx - rx * 0.34, dcy - ry * 0.34, rx * 0.30, ry * 0.24, -0.55, 0, 6.2832); ctx.fill();
+    // radar sweep arc across the concave (once per cycle) — ACC.data
+    const cyc = (now / 1500) % 1;
+    if (cyc < 0.45) {
+      ctx.globalAlpha = 0.36 * (1 - cyc / 0.45); ctx.strokeStyle = ACC.data; ctx.lineWidth = 1;
+      const a0 = -2.2 + cyc * 3.2;
+      ctx.beginPath(); ctx.ellipse(dcx + 1, dcy + 0.5, rx - 3, ry - 2.4, -0.55, a0, a0 + 0.9); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    // feed-arm + emitter horn at the focus
+    const fx = dcx + rx * 0.5, fy = dcy + ry * 0.5;
+    px(dcx, dcy, 1, 1, r.sheen);
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(dcx, dcy); ctx.lineTo(fx, fy); ctx.stroke();
+    px(Math.round(fx) - 1, Math.round(fy) - 1, 3, 3, r.face); px(Math.round(fx) - 1, Math.round(fy) - 1, 3, 1, r.lit); // horn
+    // ONE emissive accent: feed-horn cyan pulse (~1.5s)
+    const pulse = 0.45 + 0.55 * Math.max(0, Math.sin(now / 750));
+    const gain = active ? 1 : 0.55;
+    glow(Math.round(fx) - 2, Math.round(fy) - 2, 4, 4, ACC.data, 0.45 * pulse * gain);
+    px(Math.round(fx), Math.round(fy), 1, 1, pulse > 0.7 ? '#c7f4ff' : ACC.data);
+  };
   F.comms_inbox = (x, y, w, h, f) => {
   // ---- floor contact shadow ----
   sh(x + 1, y + h - 1, w - 2);
@@ -2241,261 +2599,223 @@ const PropSprites = (() => {
     px(cardX - 1, y - 2, 1, 1, '#bff5e6');
   }
 };
-  F.comms_uplink = (x, y, w, h, f) => {
-  // ---- pneumatic message-capsule sorter (2x2 floor unit) ----
-  sh(x + 1, y + h - 1, w - 2);
-
-  // rubber feet
-  px(x + 2, y + h - 2, 3, 2, '#15110d');
-  px(x + w - 5, y + h - 2, 3, 2, '#15110d');
-
-  // main housing: charcoal / steel grey-green casing
-  box(x, y + 3, w, h - 4, '#2a322e');
-  px(x + 1, y + 4, w - 2, h - 6, '#323c37');
-  px(x + 1, y + 4, w - 2, 1, '#46524c');          // top-lit edge
-  px(x + 1, y + h - 3, w - 2, 1, '#1a201d');       // bottom shade
-  // brushed-metal trim band
-  px(x + 1, y + 7, w - 2, 1, '#5a6660');
-  px(x + 1, y + 8, w - 2, 1, '#232b27');
-
-  // ---- two clear vertical tubes rising from the top ----
-  const txA = x + 4, txB = x + w - 7;
-  const tTop = y - 4, tBot = y + 6;
-  for (const tx of [txA, txB]) {
-    // tube glass well + frame
-    inset(tx, tTop, 3, tBot - tTop, '#1b2420');
-    px(tx, tTop, 3, 1, '#525e58');                 // cap rim
-    px(tx, tTop + 1, 1, tBot - tTop - 1, '#3e4a44');// left highlight
-    px(tx + 2, tTop + 1, 1, tBot - tTop - 1, '#161d1a'); // right shade
-    glow(tx, tTop, 3, tBot - tTop, '#5ad1b3', 0.05);
-  }
-
-  // ---- capsules sitting in the tubes (teal glow) + one dropping ----
-  // static capsules
-  px(txA + 1, y - 2, 1, 2, '#5ad1b3'); px(txA + 1, y - 2, 1, 1, '#aef0e0');
-  px(txB + 1, y + 1, 1, 2, '#5ad1b3'); px(txB + 1, y + 1, 1, 1, '#aef0e0');
-  px(txB + 1, tTop + 1, 1, 1, '#3f9d86');
-  // animated drop down tube A every ~1.8s
-  const drop = (now % 1800) / 1800;
-  const dy = tTop + 1 + Math.floor(drop * (tBot - tTop - 2));
-  px(txA + 1, dy, 1, 2, '#5ad1b3'); px(txA + 1, dy, 1, 1, '#cdf6ec');
-  glow(txA, dy - 1, 3, 3, '#5ad1b3', 0.22);
-
-  // ---- central circular viewport showing rotating drum ----
-  const cx = x + Math.round(w / 2), cy = y + 13, r = 6;
-  // viewport bezel
-  ctx.fillStyle = '#1a201d'; ctx.beginPath(); ctx.arc(cx, cy, r + 1, 0, 6.2832); ctx.fill();
-  ctx.fillStyle = '#3a463f'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832); ctx.fill();
-  // glass well (dark drum interior)
-  ctx.fillStyle = '#0f1714'; ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, 6.2832); ctx.fill();
-  // rotating drum: 6 spokes stepping one notch every 1.8s
-  const notch = Math.floor(now / 1800) % 6;
-  ctx.save();
-  ctx.strokeStyle = '#46524c'; ctx.lineWidth = 1;
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * 6.2832 + (notch / 6) * 6.2832;
-    ctx.beginPath(); ctx.moveTo(cx + 0.5, cy + 0.5);
-    ctx.lineTo(cx + 0.5 + Math.cos(a) * (r - 1.5), cy + 0.5 + Math.sin(a) * (r - 1.5));
-    ctx.stroke();
-  }
-  // drum hub
-  ctx.fillStyle = '#5a6660'; ctx.beginPath(); ctx.arc(cx, cy, 1.4, 0, 6.2832); ctx.fill();
-  ctx.restore();
-  // catch-slot teal flash briefly after each notch
-  const catchT = (now % 1800) / 1800;
-  if (catchT < 0.18) {
-    const a = (notch / 6) * 6.2832 - 1.5708; // top catch slot
-    const sx = cx + Math.cos(a) * (r - 2), sy = cy + Math.sin(a) * (r - 2);
-    px(Math.round(sx), Math.round(sy), 1, 1, '#cdf6ec');
-    glow(cx - r, cy - r, r * 2, r * 2, '#5ad1b3', 0.18 * (1 - catchT / 0.18));
-  }
-  // glass top highlight
-  px(cx - 3, cy - 4, 3, 1, '#2c3833');
-
-  // ---- labeled routing panel with tiny lit destination tabs ----
-  const px0 = x + 2, py0 = y + h - 8;
-  inset(px0, py0, w - 4, 5, '#1c2420');
-  const activeTab = Math.floor(now / 1800) % 4;
-  for (let i = 0; i < 4; i++) {
-    const lit = (i === activeTab);
-    px(px0 + 2 + i * 5, py0 + 1, 3, 1, '#3a463f');         // tab label slot
-    px(px0 + 2 + i * 5, py0 + 3, 2, 1, lit ? '#5ad1b3' : '#1f3a33'); // dest LED
-    if (lit) glow(px0 + 1 + i * 5, py0 + 2, 4, 2, '#5ad1b3', 0.25);
-  }
-
-  // ---- amber active chute + strobing route light ----
-  const chx = x + w - 6;
-  inset(chx, y + 9, 4, 5, '#241c12');
-  px(chx + 1, y + 10, 2, 3, '#6a4a1e');                     // chute throat
-  const route = blink(450) && (drop > 0.7);                 // strobe as capsule routes
-  if (route) {
-    px(chx + 1, y + 9, 2, 1, '#ffd34a');
-    glow(chx, y + 8, 4, 5, '#ff9d2e', 0.3);
-  } else {
-    px(chx + 1, y + 9, 2, 1, '#5a3c18');
-  }
-  // amber status pip on casing
-  px(x + 2, y + 5, 1, 1, blink(900) ? '#ffb347' : '#3a2a14');
-};
-  F.comms_beacon = (x, y, w, h, f) => {
-  // 1x2 floor beacon mast. cx = pole center.
-  const cx = x + Math.floor(w / 2);
-  sh(cx - 3, y + h - 1, 7);
-
-  // --- round weighted base ---
-  const baseY = y + h - 5;
-  px(cx - 4, baseY + 2, 9, 3, '#2a322f');
-  px(cx - 5, baseY + 3, 11, 2, '#222a28');
-  px(cx - 4, baseY + 2, 9, 1, '#3a4540');           // top-lit rim
-  px(cx - 5, baseY + 4, 11, 1, '#161c1a');          // bottom shade
-  // two rivet plates on the base
-  px(cx - 3, baseY + 3, 1, 1, '#525c57');
-  px(cx + 3, baseY + 3, 1, 1, '#525c57');
-  // thin coiled cable spilling from base
-  px(cx + 4, baseY + 3, 3, 1, '#15201d');
-  px(cx + 6, baseY + 2, 1, 2, '#1a2622');
-  px(cx + 5, baseY + 1, 1, 1, '#202c28');
-
-  // --- gunmetal pole ---
-  const poleTop = y + 3;
-  const poleBot = baseY + 1;
-  px(cx - 1, poleTop, 3, poleBot - poleTop, '#3a4541');   // gunmetal body
-  px(cx - 1, poleTop, 1, poleBot - poleTop, '#4e5a55');   // left highlight
-  px(cx + 1, poleTop, 1, poleBot - poleTop, '#252e2b');   // right shade
-
-  // --- three stacked signal-strength rings climbing upper pole ---
-  // light upward in sequence then reset (outgoing transmission)
-  const seq = Math.floor(now / 320) % 4; // 0..3 (3 = brief all-dark reset)
-  for (let r = 0; r < 3; r++) {
-    const ry = poleTop + 3 + r * 4;
-    const lit = seq < 3 && (2 - r) <= seq; // fill from bottom ring upward
-    px(cx - 2, ry, 5, 1, lit ? '#5ad1b3' : '#1e3a33');
-    if (lit) px(cx - 2, ry, 5, 1, U.shade('#5ad1b3', 12 - r * 6));
-  }
-
-  // --- caged emitter lamp at top ---
-  const lampY = poleTop - 6;
-  box(cx - 3, lampY, 7, 7, '#202824');               // dark cage housing
-  inset(cx - 2, lampY + 1, 5, 5, '#0c1411');         // recessed well
-  // slow lighthouse pulse bright->dim over ~2s
-  const pulse = 0.5 + 0.5 * Math.sin(now / 318);
-  const core = f.work ? 1 : 0.45;
-  const a = (0.25 + 0.6 * pulse) * (0.6 + 0.4 * core);
-  px(cx - 1, lampY + 2, 3, 3, U.shade('#5ad1b3', -8 + Math.round(pulse * 20)));
-  if (pulse > 0.55) px(cx, lampY + 3, 1, 1, '#f0fffb'); // faint white-hot center
-  glow(cx - 4, lampY - 1, 9, 9, '#5ad1b3', 0.10 + a * 0.22);
-  // black cage bars over the lamp
-  px(cx - 1, lampY, 1, 7, '#0a0f0d');
-  px(cx + 1, lampY, 1, 7, '#0a0f0d');
-  px(cx - 3, lampY + 3, 7, 1, '#0a0f0d');
-
-  // --- two short whip antennas forming a shallow V ---
-  px(cx - 1, lampY - 1, 1, 1, '#3a4541');
-  px(cx - 2, lampY - 2, 1, 1, '#46524d');
-  px(cx - 3, lampY - 3, 1, 1, '#46524d');
-  px(cx + 1, lampY - 1, 1, 1, '#3a4541');
-  px(cx + 2, lampY - 2, 1, 1, '#46524d');
-  px(cx + 3, lampY - 3, 1, 1, '#46524d');
-
-  // --- tiny red collision-light blinking at the very tip ---
-  if (blink(560)) {
-    px(cx, lampY - 2, 1, 1, '#ff3a2a');
-    glow(cx - 1, lampY - 3, 3, 3, '#ff3a2a', 0.4);
-  } else {
-    px(cx, lampY - 2, 1, 1, '#4a1410');
-  }
-};
-  F.connector_portal = (x, y, w, h, f) => {
-  // CONNECTOR PORTAL (1x2) — an agent's on-ramp to an EXTERNAL MCP server. Unlike the dish (web) or the relay,
-  // this gateway is BOUND to one connector and rides its LIVE state: the crown aperture + status lamp + conduit
-  // glow go green=connected · amber=offline/warming · red=error · grey=unbound. A tool call fires a bright
-  // packet UP the conduit and out the aperture (the external reach lighting up); f.fired decays 1 -> 0.
-  const st  = (f && f.state) || (f && f.bound ? 'offline' : 'unbound');
-  const ACC = { connected: '#41ff8a', offline: '#ffd34a', error: '#ff4a3d', unbound: '#586b61' };
-  const HOT = { connected: '#c7ffe0', offline: '#ffe9a8', error: '#ff8378', unbound: '#8aa093' };
-  const acc = ACC[st] || ACC.unbound, hot = HOT[st] || HOT.unbound;
-  const live = st === 'connected', bad = st === 'error';
-  const fired = Math.max(0, Math.min(1, (f && f.fired) || 0));
-  const cx = x + Math.round(w / 2);
-  const apX = cx + 3, apY = y - 5;                                  // crown aperture = the "outside" port
-
-  sh(x + 1, y + h - 1, w - 2);                                      // contact shadow at base
-
-  // crown: a 3-dot arc climbing to the aperture; chases upward when connected
-  const arc = [[cx - 1, y - 1], [cx + 1, y - 3], [apX, apY + 1]];
-  for (let i = 0; i < arc.length; i++) {
-    const on = live ? (Math.floor(now / 160) % arc.length === i) : (i === 0);
-    px(arc[i][0], arc[i][1], 1, 1, on ? hot : U.shade(acc, -0.45));
-    if (on && live) glow(arc[i][0] - 1, arc[i][1] - 1, 3, 3, acc, 0.28);
-  }
-  // aperture ring (flickers when error; flares with a firing packet or when live)
-  ctx.strokeStyle = (bad && blink(260)) ? U.shade(acc, -0.5) : acc; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(apX + 0.5, apY + 0.5, 2, 0, 6.2832); ctx.stroke();
-  if (live || fired > 0) glow(apX - 2, apY - 2, 5, 5, acc, 0.16 + 0.5 * fired);
-
-  // main casing: charcoal/steel, top-lit
-  box(x + 1, y, w - 2, h, '#2b322f');
-  px(x + 2, y + 1, w - 4, h - 2, '#39433d');                       // mid face
-  px(x + 2, y + 1, w - 4, 1, '#4c5a52');                           // top sheen
-  px(x + 2, y + 1, 1, h - 2, '#46544c');                           // left light edge
-  px(x + w - 3, y + 1, 1, h - 3, '#222a26');                       // right shade edge
-
-  // recessed conduit channel up the center (the data path)
-  const condX = cx - 1, condTop = y + 5, condBot = y + h - 7;
-  inset(condX, condTop, 2, condBot - condTop, '#141b18');
-
-  // status lamp on the face near the crown
-  const lampOn = bad ? blink(300) : (live ? true : (st === 'offline' ? blink(1400) : false));
-  px(x + 3, y + 3, 2, 2, lampOn ? acc : U.shade(acc, -0.55));
-  if (lampOn) glow(x + 2, y + 2, 4, 4, acc, 0.3);
-
-  // socket bay near the base: two ports = the literal "connector"
-  const syb = y + h - 6;
-  for (const sx of [cx - 4, cx + 1]) {
-    inset(sx, syb, 3, 3, '#10100c');                               // socket well
-    px(sx + 1, syb + 1, 1, 1, U.shade(acc, -0.2));                 // contact pin, state-tinted
-  }
-
-  // idle: a dim packet drifts UP the conduit when connected
-  if (live && fired === 0) {
-    const t = (now % 1400) / 1400;
-    const py = condBot - 1 - Math.floor(t * (condBot - condTop - 1));
-    px(condX, py, 2, 1, U.shade(acc, 0.1));
-  }
-  // FIRING: a bright packet rises the conduit toward the aperture
-  if (fired > 0) {
-    const py = condBot - 1 - Math.floor((1 - fired) * (condBot - condTop - 1));
-    px(condX, py, 2, 2, hot);
-    glow(condX - 1, py - 1, 4, 4, acc, 0.45);
-  }
-};
-  F.workbench = (x, y, w, h, f) => {
-  // WORKBENCH (2x1) — the agent's POWERED BENCH: placing it grants shell.exec + verify.run. A steel tool surface
-  // with a vise + scattered tools and a small status monitor that PULSES green when a command runs (f.fired 1->0)
-  // and flashes RED when a verify FAILS (f.bad). Idle = a calm amber standby heartbeat.
-  const fired = Math.max(0, Math.min(1, (f && f.fired) || 0));
-  const bad = !!(f && f.bad) && fired > 0;
-  const acc = bad ? '#ff4a3d' : '#41ff8a', hot = bad ? '#ff8378' : '#c7ffe0';
-  sh(x + 1, y + h - 1, w - 2);                                      // contact shadow
-  // steel benchtop + apron
-  box(x, y + 2, w, h - 2, '#2c352f');
-  px(x + 1, y + 2, w - 2, 1, '#46544c');                           // top sheen
-  px(x + 1, y + 3, w - 2, h - 5, '#39433d');                       // apron face
-  px(x + 1, y + h - 2, w - 2, 1, '#1f2723');                       // base shade
-  px(x + 1, y + h - 1, 1, 1, '#222a26'); px(x + w - 2, y + h - 1, 1, 1, '#222a26');   // legs
-  // a vise clamped at the left edge
-  inset(x + 2, y + 1, 3, 2, '#10100c'); px(x + 3, y, 1, 1, U.shade('#9aa39c', -0.1));
-  // scattered tools on the surface (wrench + driver) — tiny pixel marks
-  px(x + 7, y + 1, 3, 1, U.shade('#9aa39c', -0.2)); px(x + 7, y + 2, 1, 1, U.shade('#9aa39c', -0.35));
-  px(x + 12, y + 1, 1, 2, U.shade('#c9a14a', -0.1));               // a screwdriver shaft
-  // status MONITOR on the right: idle amber standby; green pulse on a run; red on a verify-fail
-  const mx = x + w - 5, my = y + 1;
-  inset(mx, my, 4, 3, '#0c120f');
-  if (fired > 0) { px(mx + 1, my + 1, 2, 1, hot); glow(mx, my, 4, 4, acc, 0.25 + 0.5 * fired); }
-  else { const standby = blink(1600); px(mx + 1, my + 1, 1, 1, standby ? '#ffd34a' : U.shade('#ffd34a', -0.5)); }
-  // a small bar-graph "work" readout under the monitor when the bench is active
-  if (f && f.work) for (let i = 0; i < 3; i++) px(mx + i, my + 3, 1, 1, (Math.floor(now / 180) % 3 === i) ? acc : U.shade(acc, -0.5));
-};
+  F.comms_uplink = (x, y, w, h, f) => {   // TOP-BIAS OBLIQUE capsule sorter (2x2): big top deck + short face; ACC.data
+    const r = RAMP.steel, active = f && f.work;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x + 1, y + h - 5, w - 2, 5);                            // bolted plate
+    deckSocket(x + w + 1, y + h - 3, active);                         // cable into floor socket, E side
+    for (const lx of [x + 2, x + w - 5]) {                            // chunky corner legs on the plate
+      px(lx, y + h - 6, 3, 3, LINE); px(lx, y + h - 6, 1, 3, r.lit); px(lx + 1, y + h - 6, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + h - 6, w - 10, 2);
+    // short front face (south wall of the sorter)
+    rr(x - 1, y + 6, w + 2, 6, LINE);
+    px(x, y + 7, w, 4, r.face); px(x, y + 7, w, 1, r.lit);
+    px(x, y + 10, w, 1, r.ao);
+    // routing panel with lit destination tabs on the face
+    inset(x + 2, y + 7, w - 8, 3, '#141b18');
+    const activeTab = Math.floor(now / 1800) % 4;
+    for (let i = 0; i < 4; i++) {
+      const on = i === activeTab;
+      px(x + 3 + i * 4, y + 8, 2, 1, on ? ACC.data : '#1f3a33');
+      if (on) glow(x + 2 + i * 4, y + 7, 4, 2, ACC.data, 0.25);
+    }
+    // amber active chute on the face's right end
+    const chx = x + w - 5; inset(chx, y + 7, 3, 3, '#241c12');
+    const route = blink(450) && ((now % 1800) / 1800 > 0.7);
+    px(chx + 1, y + 8, 1, 1, route ? ACC.flow : '#5a3c18');
+    if (route) glow(chx, y + 7, 4, 3, ACC.flow, 0.3);
+    // big rounded TOP DECK (dominates)
+    rr(x - 1, y - 3, w + 2, 10, LINE);
+    rr(x, y - 2, w, 8, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x, y - 1, 1, 6, r.lit); px(x + w - 1, y - 1, 1, 6, r.dk);
+    px(x + 3, y - 1, 6, 1, U.shade(r.top, 0.06));                     // brushed streak
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.16));               // top front edge
+    wear(x + 2, y - 1, w - 4, 5, 3, U.shade(r.top, -0.10));
+    // two capsule tubes rising THROUGH the deck (glass wells) + a dropping capsule
+    const txA = x + 4, txB = x + w - 7, tTop = y - 8, tBot = y + 2;
+    for (const tx of [txA, txB]) {
+      rr(tx - 1, tTop - 1, 4, tBot - tTop + 2, LINE);
+      inset(tx, tTop, 3, tBot - tTop, '#1b2420');
+      px(tx, tTop, 3, 1, r.sheen);                                    // cap rim
+      glow(tx, tTop, 3, tBot - tTop, ACC.data, 0.06);
+    }
+    px(txB + 1, y - 4, 1, 2, ACC.data); px(txB + 1, y - 4, 1, 1, '#c7f4ff'); // resting capsule
+    const drop = (now % 1800) / 1800, dy = tTop + 1 + Math.floor(drop * (tBot - tTop - 2));
+    px(txA + 1, dy, 1, 2, ACC.data); px(txA + 1, dy, 1, 1, '#e0fbff');       // dropping capsule
+    glow(txA, dy - 1, 3, 3, ACC.data, 0.22);
+    // circular drum viewport set into the deck between tubes
+    const cx = x + Math.round(w / 2), cy = y + 1, rad = 4;
+    ctx.fillStyle = LINE; ctx.beginPath(); ctx.arc(cx, cy, rad + 1, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = '#0f1714'; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 6.2832); ctx.fill();
+    const notch = Math.floor(now / 1800) % 6;
+    ctx.save(); ctx.strokeStyle = r.lit; ctx.lineWidth = 1;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * 6.2832 + (notch / 6) * 6.2832;
+      ctx.beginPath(); ctx.moveTo(cx + 0.5, cy + 0.5);
+      ctx.lineTo(cx + 0.5 + Math.cos(a) * (rad - 1), cy + 0.5 + Math.sin(a) * (rad - 1)); ctx.stroke();
+    }
+    ctx.restore();
+    const catchT = (now % 1800) / 1800;
+    if (catchT < 0.18) glow(cx - rad, cy - rad, rad * 2, rad * 2, ACC.data, 0.18 * (1 - catchT / 0.18));
+    px(cx - 2, cy - 3, 3, 1, U.shade(r.top, 0.10));                  // glass highlight
+    if (active) glow(x + 2, y - 2, w - 4, 8, ACC.data, 0.06 + 0.03 * Math.sin(now / 500));
+  };
+  F.comms_beacon = (x, y, w, h, f) => {   // TALL 3/4 signal mast (1x2), bolted; caged lamp + climbing rings; ACC.data
+    const r = RAMP.steel, cx = x + Math.round(w / 2);
+    shadow2(cx - 4, y + h - 1, 9);                                    // floor contact
+    deckPlate(cx - 5, y + h - 5, 11, 5);                             // bolted round base plate
+    deckSocket(cx + 4, y + h - 3, f && f.work);                      // cable into floor socket
+    // weighted base drum (top-bias block)
+    const baseY = y + h - 8;
+    rr(cx - 5, baseY, 11, 5, LINE);
+    px(cx - 4, baseY + 1, 9, 3, r.face); px(cx - 4, baseY + 1, 9, 1, r.lit);
+    px(cx - 4, baseY + 3, 9, 1, r.ao);
+    rr(cx - 5, baseY - 2, 11, 3, LINE);                              // base top surface
+    px(cx - 4, baseY - 1, 9, 2, r.top); px(cx - 4, baseY - 1, 9, 1, r.sheen);
+    px(cx - 3, baseY + 2, 1, 1, r.sheen); px(cx + 3, baseY + 2, 1, 1, r.sheen); // rivets
+    // gunmetal pole
+    const poleTop = y - 1, poleBot = baseY - 1;
+    px(cx - 2, poleTop, 4, poleBot - poleTop, LINE);
+    px(cx - 1, poleTop, 1, poleBot - poleTop, r.lit);                // west highlight
+    px(cx, poleTop, 1, poleBot - poleTop, r.face);
+    px(cx + 1, poleTop, 1, poleBot - poleTop, r.dk);                 // east shade
+    // three stacked signal-strength rings climbing the pole (outgoing transmission) — ACC.data
+    const seq = Math.floor(now / 320) % 4;
+    for (let ri = 0; ri < 3; ri++) {
+      const ry = poleTop + 4 + ri * 4;
+      const lit = seq < 3 && (2 - ri) <= seq;                        // fill from bottom ring upward
+      px(cx - 2, ry, 5, 1, lit ? ACC.data : '#1e3a33');
+      if (lit) { px(cx - 2, ry, 5, 1, U.shade(ACC.data, 0.12 - ri * 0.06)); glow(cx - 3, ry, 7, 1, ACC.data, 0.2); }
+    }
+    // caged emitter lamp at the crown (rises above the footprint)
+    const lampY = poleTop - 6;
+    rr(cx - 4, lampY, 9, 8, LINE);
+    px(cx - 3, lampY + 1, 7, 6, r.face); px(cx - 3, lampY + 1, 7, 1, r.lit);           // housing
+    inset(cx - 2, lampY + 2, 5, 4, '#0c1411');                                          // recessed well
+    const pulse = 0.5 + 0.5 * Math.sin(now / 318), core = f && f.work ? 1 : 0.45;
+    const a = (0.25 + 0.6 * pulse) * (0.6 + 0.4 * core);
+    px(cx - 1, lampY + 3, 3, 2, U.shade(ACC.data, -0.1 + pulse * 0.25));
+    if (pulse > 0.55) px(cx, lampY + 3, 1, 1, '#e6fffb');            // white-hot center
+    glow(cx - 5, lampY, 11, 8, ACC.data, 0.10 + a * 0.22);
+    px(cx - 1, lampY + 1, 1, 6, '#0a0f0d'); px(cx + 1, lampY + 1, 1, 6, '#0a0f0d'); px(cx - 2, lampY + 3, 5, 1, '#0a0f0d'); // cage bars
+    // two short whip antennas forming a shallow V
+    for (const s of [-1, 1]) { px(cx + s, lampY - 1, 1, 1, r.face); px(cx + 2 * s, lampY - 2, 1, 1, r.lit); px(cx + 3 * s, lampY - 3, 1, 1, r.lit); }
+    // tiny red collision-light blinking at the very tip
+    if (blink(560)) { px(cx, lampY - 2, 1, 1, ACC.alert); glow(cx - 1, lampY - 3, 3, 3, ACC.alert, 0.4); }
+    else px(cx, lampY - 2, 1, 1, U.shade(ACC.alert, -0.6));
+  };
+  F.connector_portal = (x, y, w, h, f) => {   // TALL 3/4 gateway cabinet, bolted to deck; rides live connector state
+    // CONNECTOR PORTAL (1x2) — an agent's on-ramp to an EXTERNAL MCP server. BOUND to one connector, rides its LIVE
+    // state: crown aperture + status lamp + conduit go green=connected · amber=offline/warming · red=error · grey=unbound.
+    // A tool call fires a bright packet UP the conduit and out the aperture; f.fired decays 1 -> 0. States must stay distinct.
+    const st  = (f && f.state) || (f && f.bound ? 'offline' : 'unbound');
+    const SACC = { connected: ACC.work, offline: ACC.flow, error: ACC.alert, unbound: '#586b61' };
+    const SHOT = { connected: '#c7ffe0', offline: '#ffe9a8', error: '#ff8378', unbound: '#8aa093' };
+    const acc = SACC[st] || SACC.unbound, hot = SHOT[st] || SHOT.unbound;
+    const live = st === 'connected', bad = st === 'error';
+    const fired = Math.max(0, Math.min(1, (f && f.fired) || 0));
+    const r = RAMP.steel, cw = 13, cx = x + Math.round(cw / 2);
+    const apX = cx + 3, apY = y - 6;                                  // crown aperture = the "outside" port, above the cabinet
+    shadow2(x + 1, y + h - 1, cw - 2);                                // contact shadow at base
+    deckPlate(x - 1, y + h - 6, cw + 2, 6);                           // bolted mounting plate peeks at its feet
+    deckSocket(x + cw + 1, y + h - 3, live);                          // cable runs into a floor socket, live-tinted
+    // crown: a 3-dot arc climbing to the aperture; chases upward when connected
+    const arc = [[cx - 1, y - 2], [cx + 1, y - 4], [apX, apY + 1]];
+    for (let i = 0; i < arc.length; i++) {
+      const on = live ? (Math.floor(now / 160) % arc.length === i) : (i === 0);
+      px(arc[i][0], arc[i][1], 1, 1, on ? hot : U.shade(acc, -0.45));
+      if (on && live) glow(arc[i][0] - 1, arc[i][1] - 1, 3, 3, acc, 0.28);
+    }
+    // aperture ring (flickers when error; flares with a firing packet or when live)
+    ctx.strokeStyle = (bad && blink(260)) ? U.shade(acc, -0.5) : acc; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(apX + 0.5, apY + 0.5, 2, 0, 6.2832); ctx.stroke();
+    if (live || fired > 0) glow(apX - 2, apY - 2, 5, 5, acc, 0.16 + 0.5 * fired);
+    // TALL 3/4 body: chamfered slab, side facets, top cap we look down on
+    rr(x - 1, y - 4, cw + 2, h + 3, LINE);
+    px(x + 1, y - 2, cw - 2, h, r.face);
+    px(x + 1, y - 2, 1, h, U.shade(r.face, 0.10)); px(x + cw - 2, y - 2, 1, h, r.dk);   // lit W / dark E facet
+    rr(x, y - 6, cw, 3, LINE);
+    px(x + 1, y - 5, cw - 2, 2, r.top); px(x + 1, y - 5, cw - 2, 1, r.sheen);           // cap top surface
+    px(x + 1, y - 4, 4, 1, U.shade(r.sheen, 0.12));                                     // west sheen streak
+    // recessed conduit channel up the center (the data path)
+    const condX = cx - 1, condTop = y - 2, condBot = y + h - 8;
+    inset(condX, condTop, 2, condBot - condTop, '#141b18');
+    px(condX, condTop, 2, 1, U.shade(acc, -0.4));                                       // conduit mouth ring
+    // brushed side seams
+    for (let s = 0; s < 3; s++) { px(x + 2, y + 2 + s * 5, cw - 4, 1, r.ao); px(x + 2, y + 3 + s * 5, cw - 4, 1, U.shade(r.face, 0.08)); }
+    // status lamp on the face near the crown
+    const lampOn = bad ? blink(300) : (live ? true : (st === 'offline' ? blink(1400) : false));
+    px(x + 2, y - 1, 2, 2, lampOn ? acc : U.shade(acc, -0.55));
+    if (lampOn) glow(x + 1, y - 2, 4, 4, acc, 0.3);
+    // socket bay near the base: two ports = the literal "connector"
+    const syb = y + h - 6;
+    for (const sx of [cx - 4, cx + 1]) {
+      inset(sx, syb, 3, 3, '#10100c');                                                  // socket well
+      px(sx + 1, syb + 1, 1, 1, U.shade(acc, -0.2));                                     // contact pin, state-tinted
+    }
+    px(x + 1, y + h - 2, cw - 2, 1, r.ao);                                              // floor-line AO
+    // idle: a dim packet drifts UP the conduit when connected
+    if (live && fired === 0) {
+      const t = (now % 1400) / 1400;
+      const py = condBot - 1 - Math.floor(t * (condBot - condTop - 1));
+      px(condX, py, 2, 1, U.shade(acc, 0.1));
+    }
+    // FIRING: a bright packet rises the conduit toward the aperture
+    if (fired > 0) {
+      const py = condBot - 1 - Math.floor((1 - fired) * (condBot - condTop - 1));
+      px(condX, py, 2, 2, hot);
+      glow(condX - 1, py - 1, 4, 4, acc, 0.45);
+    }
+  };
+  F.workbench = (x, y, w, h, f) => {   // POWERED bench (2x1) — TOP-BIAS OBLIQUE, bolted to deck. f.fired 1->0 pulse, f.bad = fail
+    const r = RAMP.steel;
+    const fired = Math.max(0, Math.min(1, (f && f.fired) || 0));
+    const bad = !!(f && f.bad) && fired > 0;
+    const acc = bad ? ACC.alert : ACC.work, hot = bad ? '#ff8378' : '#c7ffe0';
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x - 1, y + 8, w + 2, h - 8);
+    deckSocket(x + w + 1, y + h - 3, fired > 0 || (f && f.work));
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    for (const lx of [x + 2, x + w - 5]) {
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 9, w - 10, 2);
+    // short apron / front lip, with the run-status underglow strip (green pulse / red fail)
+    rr(x - 1, y + 5, w + 2, 5, LINE);
+    px(x, y + 6, w, 3, r.face);
+    px(x, y + 6, w, 1, r.lit);
+    px(x, y + 8, w, 1, r.ao);
+    glow(x + 1, y + 8, w - 2, 1, acc, fired > 0 ? 0.30 + 0.5 * fired : 0.06); // fires green, red on bad
+    // heavy steel worktop dominates
+    rr(x - 1, y - 4, w + 2, 11, LINE);
+    rr(x, y - 3, w, 9, r.top);
+    px(x + 1, y - 3, w - 2, 1, r.sheen);
+    px(x, y - 2, 1, 7, r.lit); px(x + w - 1, y - 2, 1, 7, r.dk);
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.16));
+    wear(x + 1, y - 2, w - 2, 6, 4, U.shade(r.top, -0.10));
+    // a vise clamped at the left edge of the top
+    rr(x + 1, y - 2, 4, 3, LINE); px(x + 2, y - 1, 2, 1, U.shade('#9aa39c', -0.1));
+    px(x + 2, y, 2, 1, U.shade('#9aa39c', -0.3));
+    // scattered tools on the surface (wrench + driver)
+    px(x + 7, y - 1, 3, 1, U.shade('#9aa39c', -0.2)); px(x + 7, y, 1, 1, U.shade('#9aa39c', -0.35));
+    px(x + 12, y - 1, 1, 2, U.shade('#c9a14a', -0.1));         // screwdriver shaft
+    // status MONITOR on the right: idle amber standby; green pulse on run; red on verify-fail
+    const mx = x + w - 6, my = y - 2;
+    inset(mx, my, 5, 4, '#0c120f');
+    if (fired > 0) {
+      px(mx + 1, my + 1, 3, 1, hot);
+      px(mx + 1, my + 2, 2, 1, U.shade(acc, 0.1));
+      glow(mx - 1, my - 1, 7, 6, acc, 0.25 + 0.5 * fired);
+    } else {
+      const standby = blink(1600);
+      px(mx + 1, my + 1, 1, 1, standby ? ACC.flow : U.shade(ACC.flow, -0.5)); // amber heartbeat
+    }
+    // a small bar-graph "work" readout under the monitor when active
+    if (f && f.work) for (let i = 0; i < 3; i++)
+      px(mx + i, my + 3, 1, 1, (Math.floor(now / 180) % 3 === i) ? acc : U.shade(acc, -0.5));
+  };
   F.etsy_threadrack = (x, y, w, h, f) => {
   // wall-mounted thread/filament spool rack â€” sits flush under north wall
   sh(x + 1, y + h, w - 2);
@@ -2761,123 +3081,95 @@ const PropSprites = (() => {
   // 1px violet status LED in the bottom-left corner, blinks
   px(x + 1, y + h - 2, 1, 1, blink(700) ? '#c46bff' : '#3a2050');
 };
-  F.gigs_servercart = (x, y, w, h, f) => {
-  // --- floor contact shadow ---
-  sh(x + 1, y + h - 1, w - 2);
-  // --- caster wheels poking out the front edge (2px) ---
-  px(x + 3, y + h - 1, 2, 2, '#0c0d0f'); px(x + 3, y + h - 1, 1, 1, '#34373c');
-  px(x + w - 5, y + h - 1, 2, 2, '#0c0d0f'); px(x + w - 5, y + h - 1, 1, 1, '#34373c');
-  // --- charcoal chassis, top-lit / bottom-shaded ---
-  box(x, y + 1, w, h - 2, '#23262a');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#23262a', 22));
-  px(x + 1, y + h - 3, w - 2, 1, U.shade('#23262a', -16));
-  // --- thin chrome push-handle: 1px light line along the back ---
-  px(x + 2, y, w - 4, 1, '#aeb6c0');
-  px(x + 2, y, 1, 1, '#6c727a'); px(x + w - 3, y, 1, 1, '#6c727a');
-  // --- recessed face well holding the blade stack ---
-  inset(x + 2, y + 3, w - 4, h - 7, '#15171a');
-  // --- 3 stacked mini blade units ---
-  const cols = Math.floor((w - 8) / 4);
-  for (let r = 0; r < 3; r++) {
-    const by = y + 4 + r * 3;
-    // blade body, alternating tone for the stacked look
-    px(x + 3, by, w - 6, 2, r % 2 ? '#2a2e33' : '#262a2f');
-    px(x + 3, by, w - 6, 1, U.shade(r % 2 ? '#2a2e33' : '#262a2f', 12));
-    px(x + 3, by + 2, w - 6, 1, '#101214');
-    // tiny vent slits on the left of each blade
-    px(x + 3, by, 1, 1, '#0c0e10'); px(x + 5, by, 1, 1, '#0c0e10');
-    // row of status LEDs â€” mostly cool blue/cyan, one/two amber
-    for (let i = 0; i < cols; i++) {
-      const lx = x + 7 + i * 4;
-      // deterministic amber pick: ~1-2 per row
-      const amber = (U.hash('cart' + r + i) % 9) === 0;
-      const lit = blink(360 + r * 110 + i * 47, i + r * 2);
-      let c;
-      if (amber) c = lit ? '#ffb24a' : '#3a2a14';
-      else c = lit ? '#7fd0ff' : '#1a2c38';
-      px(lx, by, 1, 1, c);
+  F.gigs_servercart = (x, y, w, h, f) => {   // TOP-BIAS OBLIQUE blade cart (1x1): big top + blade face on casters; ACC.mem
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    // caster wheels poking out the front edge (mobile — no deck plate, it rolls)
+    px(x + 3, y + h - 2, 2, 2, LINE); px(x + 3, y + h - 2, 1, 1, r.lit);
+    px(x + w - 5, y + h - 2, 2, 2, LINE); px(x + w - 5, y + h - 2, 1, 1, r.lit);
+    // short front face: recessed well holding a stack of horizontal blade servers
+    rr(x - 1, y + 2, w + 2, h - 4, LINE);
+    px(x, y + 3, w, h - 6, r.face); px(x, y + 3, w, 1, r.lit);
+    inset(x + 2, y + 3, w - 4, h - 7, '#12081c');
+    const nrow = 4, bw2 = w - 6, rowH = Math.floor((h - 8) / nrow);
+    const scan = Math.floor((now / 130) % (nrow + 1));               // purple data scroll across rows
+    for (let ru = 0; ru < nrow; ru++) {
+      const ry = y + 4 + ru * rowH;
+      px(x + 3, ry, bw2, rowH - 1, ru % 2 ? U.shade(r.face, -0.08) : U.shade(r.face, 0.02)); // blade body
+      px(x + 3, ry, bw2, 1, U.shade(r.face, 0.12));                  // blade top catch
+      px(x + 3, ry, 1, 1, '#0c0e10'); px(x + 5, ry, 1, 1, '#0c0e10'); // left vent slits
+      // horizontal LED strip on each blade — mem purple, one scans bright
+      for (let i = 0; i < 3; i++) {
+        const lx = x + 8 + i * 2;
+        const lit = blink(360 + ru * 110 + i * 47, i + ru);
+        const hot = (nrow - 1 - ru) === scan;                        // scroll head lights this row
+        px(lx, ry, 1, 1, hot ? '#e0b8ff' : (lit ? ACC.mem : U.shade(ACC.mem, -0.62)));
+      }
     }
-  }
-  // --- ONE LED column: soft purple data-transfer shimmer scrolling top-to-bottom ---
-  const shCol = x + 7 + (cols - 2) * 4; // second-from-right LED column
-  const span = 3 * 3; // pixel height across the 3 blade rows
-  const head = Math.floor((now / 130) % span); // scroll position
-  for (let r = 0; r < 3; r++) {
-    const by = y + 4 + r * 3;
-    const rel = by - (y + 4);
-    const d = ((rel - head) % span + span) % span;
-    if (d < 3) {
-      const a = d === 0 ? '#d79bff' : d === 1 ? '#b44aff' : '#6e2a9c';
-      px(shCol, by, 1, 1, a);
-    }
-  }
-  glow(shCol - 1, y + 3, 3, h - 7, '#b44aff', 0.10 + 0.05 * Math.sin(now / 300));
-  // --- coiled black cable looping off the right onto the floor ---
-  px(x + w - 1, y + h - 4, 2, 1, '#0a0b0c');
-  px(x + w, y + h - 3, 1, 2, '#0a0b0c');
-  px(x + w - 1, y + h - 1, 2, 1, '#101214');
-  // --- subtle cyan light spill from the face when an agent is using it ---
-  if (f && f.work) glow(x + 2, y + 3, w - 4, h - 7, '#7fd0ff', 0.06 + 0.03 * Math.sin(now / 500));
-};
+    px(x, y + h - 4, w, 1, r.ao);                                     // floor-line AO
+    glow(x + 2, y + 3, w - 4, h - 7, ACC.mem, 0.08 + 0.05 * Math.sin(now / 300));
+    // big rounded TOP surface with a chrome push-handle bar (dominant)
+    rr(x - 1, y - 3, w + 2, 6, LINE);
+    rr(x, y - 2, w, 5, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x, y - 1, 1, 3, r.lit); px(x + w - 1, y - 1, 1, 3, r.dk);
+    px(x + 2, y - 1, w - 4, 1, U.shade(r.top, 0.06));                // brushed streak
+    px(x + 2, y - 3, w - 4, 1, '#aeb6c0'); px(x + 2, y - 3, 1, 1, '#6c727a'); px(x + w - 3, y - 3, 1, 1, '#6c727a'); // chrome push-handle
+    px(x + 1, y + 2, w - 2, 1, U.shade(r.top, -0.16));              // top front edge
+    // coiled cable looping off the right onto the floor
+    px(x + w - 1, y + h - 4, 2, 1, '#0a0b0c'); px(x + w, y + h - 3, 1, 2, '#0a0b0c');
+    if (f && f.work) glow(x + 2, y + 3, w - 4, h - 7, ACC.mem, 0.06 + 0.03 * Math.sin(now / 500));
+  };
   F.gigs_partsbin = (x, y, w, h, f) => {
-  // contact shadow on floor
-  sh(x + 1, y + h - 1, w - 2);
-  // outer tray casing (grey-green station metal), top-lit / bottom-shaded
-  box(x, y + 2, w, h - 3, '#3a423d');
-  // worn rim highlight + scuffs
-  px(x + 1, y + 2, w - 2, 1, '#525c54');
-  px(x + 1, y + 3, 1, h - 5, '#525c54');
-  px(x + w - 2, y + 3, 1, h - 5, '#2c332e');
-  px(x + 4, y + 2, 2, 1, '#2c332e');           // scuff
-  px(x + w - 7, y + 2, 3, 1, '#46504a');       // scuff highlight
-  px(x + Math.floor(w * 0.55), y + h - 3, 2, 1, '#2c332e');
-  // recessed interior well
-  inset(x + 2, y + 4, w - 4, h - 7, '#262d29');
-  // compartment geometry: 4 cells across the inner well
-  const ix = x + 3, iy = y + 5, iw = w - 6, ih = h - 9;
-  const cw = (iw - 3) / 4;                       // 3 dividers of 1px
-  const cx = i => Math.round(ix + i * (cw + 1));
-  // 1px dividers (dark, top-lit edge)
-  for (let d = 1; d < 4; d++) {
-    const dx = Math.round(ix + d * cw + (d - 1));
-    px(dx, iy, 1, ih, '#171c19');
-    px(dx, iy, 1, 1, '#39433c');
-  }
-  const cwI = Math.max(2, Math.floor(cw));
-  // --- compartment 0: green pixel sprite-sheet swatch ---
-  const c0 = cx(0);
-  px(c0, iy, cwI, ih, '#0f1a12');
-  for (let sy = 0; sy < 3; sy++) for (let sx = 0; sx < 3; sx++)
-    if ((sx + sy + U.hash('ss' + sx + sy)) % 2) px(c0 + sx, iy + sy, 1, 1, sx === 1 && sy === 1 ? '#7aff9e' : '#2faa55');
-  // --- compartment 1: stack of teal tile chips (ATLAS) â€” this is the 'warm' freshly-rendered one ---
-  const c1 = cx(1);
-  px(c1, iy + ih - 4, cwI, 4, '#1f8c7a');
-  px(c1, iy + ih - 4, cwI, 1, '#2ee6c8');
-  px(c1, iy + ih - 6, cwI - 1, 2, '#26c4ab');
-  px(c1, iy + ih - 6, cwI - 1, 1, '#43f0d6');
-  px(c1, iy + ih - 8, cwI - 2, 2, '#2ee6c8');
-  px(c1, iy + ih - 8, cwI - 2, 1, '#9bffee');
-  // soft emissive: warm teal glow pulsing over the fresh chip stack
-  const warm = 0.16 + 0.12 * Math.sin(now / 760);
-  glow(c1 - 1, iy - 1, cwI + 2, ih + 2, '#2ee6c8', warm);
-  if (blink(900)) px(c1 + 1, iy, 1, 1, '#d6fff6');   // tiny render sparkle
-  // --- compartment 2: coil of orange filament ---
-  const c2 = cx(2);
-  const cmx = c2 + Math.floor(cwI / 2), cmy = iy + Math.floor(ih / 2);
-  px(cmx - 2, cmy - 2, 5, 5, '#b35a1c');
-  px(cmx - 1, cmy - 1, 3, 3, '#3a2414');             // coil hole
-  px(cmx - 2, cmy - 2, 5, 1, '#ff9d2e');
-  px(cmx - 2, cmy - 2, 1, 5, '#e07a22');
-  px(cmx + 2, cmy + 1, 1, 1, '#ffc870');             // loose strand end
-  // --- compartment 3: loose 1px screws / gems ---
-  const c3 = cx(3);
-  px(c3 + 1, iy + 1, 1, 1, '#c8ccc4');               // screw
-  px(c3 + 1, iy + 1, 1, 1, U.hash('scrw') % 2 ? '#e4e8e0' : '#c8ccc4');
-  px(c3 + Math.max(2, cwI - 2), iy + 2, 1, 1, '#9aa09a'); // screw
-  px(c3 + 1, iy + ih - 2, 1, 1, '#5ad6ff');          // gem
-  if (blink(1400, 2)) px(c3 + 1, iy + ih - 2, 1, 1, '#c4f4ff'); // gem glint
-  px(c3 + Math.max(2, cwI - 1), iy + ih - 3, 1, 1, '#ff7ad0'); // gem
-};
+    // TOP-BIAS OPEN-TOP bin: you look INTO it. Freestanding, 4 compartments of parts visible inside the rim.
+    const cw = w, r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, cw - 2);
+    // short outer front face (bin wall)
+    rr(x, y + 3, cw, h - 4, LINE);
+    px(x + 1, y + 4, cw - 2, h - 6, r.face);
+    px(x + 1, y + 4, 1, h - 6, r.lit); px(x + cw - 2, y + 4, 1, h - 6, r.dk);
+    px(x + 1, y + h - 3, cw - 2, 1, r.ao);
+    // scuffs + a hazard tick on the front wall
+    px(x + 3, y + 4, 2, 1, r.dk); px(x + cw - 6, y + 4, 3, 1, r.sheen);
+    px(x + Math.floor(cw / 2), y + h - 4, 2, 1, '#8a7434');
+    // OPEN TOP: thick lit rim we look over, dark interior well inside it
+    rr(x - 1, y - 1, cw + 2, 7, LINE);
+    px(x, y, cw, 6, r.top);                                     // rim slab
+    px(x, y, cw, 1, r.sheen);                                   // back rim catches light
+    px(x, y + 1, 4, 1, U.shade(r.sheen, 0.12));                 // west sheen streak
+    px(x, y, 1, 6, r.lit); px(x + cw - 1, y, 1, 6, r.dk);       // side rim walls
+    // recessed interior floor (dark), inset from the rim
+    const ix = x + 2, iy = y + 1, iw = cw - 4, ih = 4;
+    px(ix, iy, iw, ih, U.shade(r.face, -0.42));                 // interior back wall shade
+    px(ix, iy + 1, iw, ih - 1, '#161c22');                      // interior floor
+    px(ix, iy + ih, iw, 1, U.shade(r.top, -0.20));              // front inner lip
+    // 3 dividers -> 4 compartments of visible parts
+    const cc = (iw - 3) / 4;
+    for (let d = 1; d < 4; d++) { const dx = Math.round(ix + d * cc + (d - 1)); px(dx, iy, 1, ih, '#0d1116'); px(dx, iy, 1, 1, U.shade(r.face, 0.10)); }
+    const cx0 = i => Math.round(ix + i * (cc + 1)) + 1;
+    // c0: green sprite-chip swatch
+    for (let sy = 0; sy < 2; sy++) for (let sx = 0; sx < 2; sx++)
+      px(cx0(0) + sx, iy + 1 + sy, 1, 1, (sx + sy) % 2 ? '#2faa55' : ACC.work);
+    // c1: warm freshly-rendered teal chip stack + soft emissive glow (kept behavior)
+    const c1 = cx0(1), warm = 0.16 + 0.12 * Math.sin(now / 760);
+    px(c1, iy + 2, 3, 2, '#1f8c7a'); px(c1, iy + 2, 3, 1, '#2ee6c8'); px(c1, iy + 1, 2, 1, '#43f0d6');
+    glow(c1 - 1, iy, 4, ih, '#2ee6c8', warm);
+    if (blink(900)) px(c1 + 1, iy + 1, 1, 1, '#d6fff6');       // render sparkle
+    // c2: coil of orange filament
+    const c2 = cx0(2);
+    px(c2, iy + 1, 3, 3, '#b35a1c'); px(c2 + 1, iy + 2, 1, 1, '#3a2414'); // coil + hole
+    px(c2, iy + 1, 3, 1, '#ff9d2e'); px(c2 + 2, iy + 3, 1, 1, '#ffc870');
+    // c3: loose screws + gems (with the kept gem glint)
+    const c3 = cx0(3);
+    px(c3, iy + 1, 1, 1, U.hash('scrw') % 2 ? '#e4e8e0' : '#c8ccc4'); // screw
+    px(c3 + 2, iy + 2, 1, 1, '#9aa09a');                        // screw
+    px(c3, iy + 3, 1, 1, '#5ad6ff'); if (blink(1400, 2)) px(c3, iy + 3, 1, 1, '#c4f4ff'); // gem glint
+    px(c3 + 2, iy + 3, 1, 1, '#ff7ad0');                        // gem
+    // freestanding feet + under-gap AO
+    px(x + 1, y + h - 2, 2, 2, r.dk); px(x + cw - 3, y + h - 2, 2, 2, r.dk);
+    px(x + 1, y + h - 2, 1, 1, r.lit); px(x + cw - 3, y + h - 2, 1, 1, r.lit);
+    underAO(x + 3, y + h - 1, cw - 6, 1);
+  };
   F.gigs_amp = (x, y, w, h, f) => {
   sh(x + 1, y + h - 1, w - 2);
   // dark vinyl casing, top-lit
@@ -2921,145 +3213,122 @@ const PropSprites = (() => {
   if (on) glow(x + w - 4, y, 3, 3, '#ff5a4a', 0.25);
 };
   F.treasury_coinsorter = (x, y, w, h, f) => {
-  sh(x + 1, y + h - 1, w - 2);
-  box(x, y + 1, w, h - 1, '#2b3330');
-  px(x + 1, y + 2, w - 2, 1, '#3e4a44');
-  px(x + 1, y + h - 1, w - 2, 1, '#14110d');
-  px(x + w - 1, y + 2, 1, h - 2, '#14110d');
-  const hw = Math.floor((w - 2) * 2 / 3);
-  inset(x + 1, y + 3, hw, h - 5, '#1c211e');
-  px(x + 1, y + 3, hw, 1, '#222b27');
-  const jit = Math.floor(now / 220) % 2;
-  const cols = [
-    [x + 3, y + h - 3, 3, '#c9a440'],
-    [x + 5, y + h - 5, 4, '#d9b24a'],
-    [x + 8, y + h - 4, 3, '#cfa844'],
-    [x + 10, y + h - 6, 5, '#d9b24a'],
-    [x + 13, y + h - 3, 3, '#c9a440'],
-    [x + 15, y + h - 5, 4, '#d9b24a']
-  ];
-  for (let i = 0; i < cols.length; i++) {
-    const c = cols[i];
-    const dy = (i + Math.floor(now / 220)) % 2 === jit ? 0 : -1;
-    px(c[0], c[1] + dy, 3, c[2], '#8a6a25');
-    px(c[0], c[1] + dy, 3, c[2] - 1, c[3]);
-    px(c[0], c[1] + dy, 3, 1, '#f5e08a');
-    px(c[0] + 2, c[1] + dy + 1, 1, c[2] - 1, '#8a6a25');
-  }
-  const sx = x + 1 + hw + 1;
-  const sw = w - hw - 3;
-  box(sx, y + 3, sw, h - 5, '#3e4a44');
-  px(sx + 1, y + 4, sw - 2, 1, '#52605a');
-  inset(sx + 1, y + 5, sw - 2, 4, '#0c1a0c');
-  const on = (f && f.work) ? 1 : 0.35;
-  const n = 100 + Math.floor(now / 1000) % 900;
-  const dg = String(n);
-  for (let d = 0; d < 3; d++) {
-    glow(sx + 2 + d * 2, y + 6, 1, 2, '#9bff4a', 0.22 + 0.7 * on * ((dg.charCodeAt(d) % 2) ? 1 : 0.6));
-    px(sx + 2 + d * 2, y + 6, 1, (d % 2) ? 2 : 1, U.shade('#9bff4a', -10 * (1 - on)));
-  }
-  glow(sx + 1, y + 5, sw - 2, 4, '#9bff4a', 0.10 * on);
-  const led = blink(1000) ? '#9bff4a' : '#1f3a16';
-  px(sx + sw - 2, y + 6, 1, 1, led);
-  if (blink(1000)) glow(sx + sw - 3, y + 5, 3, 3, '#9bff4a', 0.30);
-  px(x + 1, y + 1, w - 2, 1, '#5a6a62');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#5a6a62', -28));
-};
-  F.treasury_token_furnace = (x, y, w, h, f) => {
-  // 1x2 vertical wall-mounted token-burn furnace. Heavy charcoal-iron cabinet.
-  sh(x + 1, y + h - 1, w - 2);
-
-  // --- stovepipe vent from top edge ---
-  const pw = 3, pxv = x + Math.round(w / 2) - 1;
-  px(pxv, y - 4, pw, 5, '#2c3234');
-  px(pxv, y - 4, 1, 5, '#3c4446');           // top-lit left edge
-  px(pxv + pw - 1, y - 4, 1, 5, '#181c1d');  // shaded right edge
-  px(pxv - 1, y - 5, pw + 2, 1, '#353c3e');  // pipe cap rim
-  px(pxv - 1, y - 5, pw + 2, 1, U.shade('#353c3e', 14));
-  // faint upward heat-shimmer pixel (drifts/blinks)
-  if (blink(520)) px(pxv + (Math.floor(now / 260) % 2), y - 7, 1, 1, '#4a564a');
-  if (blink(520, 1)) px(pxv + 1, y - 6, 1, 1, '#3e4a3e');
-
-  // --- main cabinet body ---
-  box(x, y + 1, w, h - 1, '#23282a');
-  px(x + 1, y + 2, w - 2, h - 3, '#23282a');
-  // raised paneling
-  px(x + 2, y + 3, w - 4, 1, U.shade('#353c3e', 8)); // top lip highlight
-  inset(x + 2, y + 3, w - 4, h - 6, '#1c2123');
-  px(x + 2, y + 3, w - 4, h - 6, '#23282a');
-  px(x + 3, y + 4, w - 6, 1, '#353c3e');             // panel top edge lit
-  px(x + 3, y + 4, w - 6, 1, U.shade('#353c3e', 6));
-  px(x + 3, y + 4, 1, h - 8, '#3a4244');             // panel left lit
-  px(x + w - 4, y + 4, 1, h - 8, '#171b1c');         // panel right shade
-  px(x + 3, y + h - 4, w - 6, 1, '#15191a');         // panel bottom shade
-
-  // riveted corners
-  const rv = '#4a5254';
-  px(x + 1, y + 2, 1, 1, rv); px(x + w - 2, y + 2, 1, 1, rv);
-  px(x + 1, y + h - 3, 1, 1, rv); px(x + w - 2, y + h - 3, 1, 1, rv);
-  px(x + 1, y + Math.round(h / 2), 1, 1, U.shade(rv, -6));
-  px(x + w - 2, y + Math.round(h / 2), 1, 1, U.shade(rv, -6));
-
-  // --- digital readout 'TOKENS BURNED' above grate ---
-  const ry = y + 6;
-  inset(x + 2, ry, w - 4, 4, '#0c1410');
-  // tiny green text dots / scrolling segments
-  const lit = f.work ? 1 : 0.55;
-  for (let i = 0; i < w - 6; i++) {
-    if ((U.hash('tb' + i) + Math.floor(now / 240)) % 3 === 0) {
-      const on = blink(300, i) || f.work;
-      px(x + 3 + i, ry + 1, 1, 1, on ? scr(i) : '#13261c');
+    // TOP-BIAS OBLIQUE coin sorter: rounded top hopper, short face; coin-stack jitter + counter kept.
+    const cw = w, r = RAMP.steel, gold = ACC.flow;
+    shadow2(x + 1, y + h - 1, cw - 2);
+    // short front face of the machine
+    rr(x, y + 3, cw, h - 4, LINE);
+    px(x + 1, y + 4, cw - 2, h - 6, r.face);
+    px(x + 1, y + 4, 1, h - 6, r.lit); px(x + cw - 2, y + 4, 1, h - 6, r.dk);
+    px(x + 1, y + h - 3, cw - 2, 1, r.ao);
+    // dominant rounded top deck
+    rr(x - 1, y - 2, cw + 2, 7, LINE);
+    px(x, y - 1, cw, 6, r.top);
+    px(x, y - 1, cw, 1, r.sheen); px(x, y, 4, 1, U.shade(r.sheen, 0.12));
+    px(x, y - 1, 1, 6, r.lit); px(x + cw - 1, y - 1, 1, 6, r.dk);
+    px(x, y + 4, cw, 1, U.shade(r.top, -0.16));                 // deck front lip
+    // LEFT 2/3: recessed sorting bay (open, we see into it) with the jittering coin stacks
+    const hw = Math.floor((cw - 2) * 2 / 3);
+    inset(x + 1, y + 4, hw, h - 7, '#1c211e');
+    px(x + 2, y + 5, hw - 2, 1, '#222b27');
+    const jit = Math.floor(now / 220) % 2, base = y + h - 4;
+    const cols = [
+      [x + 3, base, 3, '#c9a440'], [x + 5, base - 2, 4, '#d9b24a'],
+      [x + 8, base - 1, 3, '#cfa844'], [x + 10, base - 3, 5, '#d9b24a'],
+      [x + 13, base, 3, '#c9a440'], [x + 15, base - 2, 4, '#d9b24a']
+    ];
+    for (let i = 0; i < cols.length; i++) {
+      const c = cols[i]; if (c[0] > x + hw - 1) continue;
+      const dy = (i + Math.floor(now / 220)) % 2 === jit ? 0 : -1;
+      px(c[0], c[1] + dy, 3, c[2], '#8a6a25');
+      px(c[0], c[1] + dy, 3, c[2] - 1, c[3]);
+      px(c[0], c[1] + dy, 3, 1, '#f5e08a');                     // coin-edge sheen
+      px(c[0] + 2, c[1] + dy + 1, 1, c[2] - 1, '#8a6a25');
     }
-  }
-  px(x + 3, ry + 2, w - 6, 1, '#0a120e');
-  // tiny counter glow line
-  px(x + 3, ry, w - 6, 1, U.shade('#0c1410', 6));
-
-  // --- arched grate window, lower-middle ---
-  const gw = w - 6, gx = x + 3, gy = y + 13, gh = h - 17;
-  inset(gx, gy, gw, gh, '#0a0d0a');
-  // arch top (rounded by trimming corners)
-  px(gx, gy, 1, 1, '#1c2123'); px(gx + gw - 1, gy, 1, 1, '#1c2123');
-  px(gx + 1, gy - 1, gw - 2, 1, '#15191a'); // arch crown frame
-  px(gx, gy + 1, gw, gh - 1, '#070a07');     // dark furnace interior
-
-  // animated ember/flame core
-  const beat = 0.5 + 0.5 * Math.sin(now / 260);
-  const beat2 = 0.5 + 0.5 * Math.sin(now / 170 + 1.3);
-  const fh = Math.max(2, Math.round((gh - 2) * (0.55 + 0.4 * beat)));
-  const fx = gx + 1, fy = gy + (gh - 1) - fh;
-  const fw = gw - 2;
-  // outer toxic-green flame body
-  glow(gx, gy, gw, gh, '#9bff4a', 0.10 + 0.10 * beat);
-  px(fx, fy, fw, fh, '#3a6b1e');                       // dim base
-  px(fx, fy + 1, fw, fh - 1, '#5fae2c');
-  // toxic-green core
-  const cw = Math.max(1, fw - 2);
-  px(fx + 1, fy + 1, cw, fh - 1, '#9bff4a');
-  // hotter white-green center, flickering height
-  const hw = Math.max(1, Math.round(cw * (0.4 + 0.3 * beat2)));
-  const hcx = fx + 1 + Math.floor((cw - hw) / 2);
-  px(hcx, fy + Math.max(1, fh - Math.round(fh * 0.7)), hw, Math.max(1, Math.round(fh * 0.6)), '#d6ffb0');
-  px(hcx, fy + fh - 2, hw, 1, '#eaffd8');             // hottest pixel near base
-  // flickering ember sparks
-  if (blink(190)) px(fx + (U.hash('s1' + Math.floor(now / 190)) % fw), fy - 1, 1, 1, '#d6ffb0');
-  if (blink(330, 2)) px(fx + (U.hash('s2' + Math.floor(now / 330)) % fw), fy, 1, 1, '#9bff4a');
-
-  // --- grate bars over the window ---
-  for (let i = 1; i < gw - 1; i += 2) px(gx + i, gy + 1, 1, gh - 1, '#0d130d');
-  px(gx, gy + Math.floor(gh / 2), gw, 1, '#0d130d');  // horizontal bar
-  // grate frame riveted edge
-  px(gx - 1, gy, 1, gh + 1, '#353c3e'); px(gx + gw, gy, 1, gh + 1, '#1a1f20');
-  px(gx - 1, gy - 1, gw + 2, 1, '#2a3133');
-
-  // --- soft pulsing 2px green glow halo onto surrounding metal ---
-  const halo = 0.14 + 0.12 * beat;
-  glow(gx - 2, gy - 2, gw + 4, gh + 4, '#9bff4a', halo);
-  glow(gx - 1, gy - 1, gw + 2, gh + 2, '#d6ffb0', halo * 0.5);
-  // glow catch-light on nearest panel edges
-  px(gx - 2, gy + 1, 1, gh - 2, U.shade('#3a4244', 4));
-  px(gx + gw + 1, gy + 1, 1, gh - 2, U.shade('#23282a', 6));
-};
+    glow(x + 2, y + 4, hw - 2, h - 8, gold, 0.06);          // faint bullion cast
+    // RIGHT 1/3: readout tower with the live counter (kept) + status LED
+    const sx = x + 1 + hw + 1, sw = cw - hw - 3;
+    px(sx, y + 4, sw, h - 7, r.face);
+    px(sx, y + 4, 1, h - 7, r.lit); px(sx + sw - 1, y + 4, 1, h - 7, r.dk);
+    inset(sx + 1, y + 5, sw - 2, 4, '#0c1a0c');
+    const on = (f && f.work) ? 1 : 0.35;
+    const nDisp = 100 + Math.floor(now / 1000) % 900, dg = String(nDisp);
+    for (let d = 0; d < 3; d++) {
+      glow(sx + 2 + d * 2, y + 6, 1, 2, '#9bff4a', 0.22 + 0.7 * on * ((dg.charCodeAt(d) % 2) ? 1 : 0.6));
+      px(sx + 2 + d * 2, y + 6, 1, (d % 2) ? 2 : 1, U.shade('#9bff4a', -10 * (1 - on)));
+    }
+    glow(sx + 1, y + 5, sw - 2, 4, '#9bff4a', 0.10 * on);
+    const led = blink(1000) ? '#9bff4a' : '#1f3a16';
+    px(sx + sw - 2, y + 6, 1, 1, led);
+    if (blink(1000)) glow(sx + sw - 3, y + 5, 3, 3, '#9bff4a', 0.30);
+    // freestanding feet + under-gap AO
+    px(x + 1, y + h - 2, 2, 2, r.dk); px(x + cw - 3, y + h - 2, 2, 2, r.dk);
+    px(x + 1, y + h - 2, 1, 1, r.lit); px(x + cw - 3, y + h - 2, 1, 1, r.lit);
+    underAO(x + 3, y + h - 1, cw - 6, 1);
+  };
+  F.treasury_token_furnace = (x, y, w, h, f) => {
+    // TALL 3/4 token-burn furnace: rises ~5px above the 1x2 footprint. Furnace glow/ember pulse kept.
+    const cw = w, r = RAMP.gun, rise = 5, topY = y - rise, botY = y + h - 1;
+    shadow2(x + 1, botY, cw - 2);
+    // stovepipe vent rising from the cap, with heat-shimmer
+    const pw = 3, pvx = x + Math.round(cw / 2) - 1;
+    px(pvx - 1, topY - 8, pw + 2, 1, U.shade(r.top, 0.20));      // pipe cap rim
+    px(pvx, topY - 8, pw, 4, r.face); px(pvx, topY - 8, 1, 4, r.lit); px(pvx + pw - 1, topY - 8, 1, 4, r.dk);
+    if (blink(520)) px(pvx + (Math.floor(now / 260) % 2), topY - 10, 1, 1, '#4a564a');
+    if (blink(520, 1)) px(pvx + 1, topY - 9, 1, 1, '#3e4a3e');
+    // front cabinet face (tall) + slim east flank
+    rr(x - 1, topY - 3, cw + 2, botY - topY + 3, LINE);
+    px(x + cw - 3, topY - 1, 2, botY - topY, r.dk);              // east flank
+    px(x + 1, topY, cw - 4, (botY - 1) - topY, r.face);          // face
+    px(x + 1, topY, 1, (botY - 1) - topY, r.lit);                // west lit column
+    px(x + 2, topY, cw - 5, 1, U.shade(r.face, 0.14));
+    // rounded cap
+    rr(x, topY - 4, cw - 2, 4, LINE);
+    px(x + 1, topY - 3, cw - 4, 3, r.top); px(x + 1, topY - 3, cw - 4, 1, r.sheen);
+    px(x + 1, topY - 1, cw - 4, 1, U.shade(r.top, -0.18));
+    // riveted corners
+    const rv = '#4a5254';
+    px(x + 1, topY + 1, 1, 1, rv); px(x + cw - 5, topY + 1, 1, 1, rv);
+    px(x + 1, botY - 3, 1, 1, U.shade(rv, -0.15)); px(x + cw - 5, botY - 3, 1, 1, U.shade(rv, -0.15));
+    // 'TOKENS BURNED' readout near the top of the face
+    const ry = topY + 2;
+    inset(x + 2, ry, cw - 6, 4, '#0c1410');
+    for (let i = 0; i < cw - 8; i++) {
+      if ((U.hash('tb' + i) + Math.floor(now / 240)) % 3 === 0) {
+        const lit = blink(300, i) || (f && f.work);
+        px(x + 3 + i, ry + 1, 1, 1, lit ? scr(i) : '#13261c');
+      }
+    }
+    // arched grate window in the lower face
+    const gw = cw - 8, gx = x + 3, gy = topY + 8, gh = (botY - 4) - gy;
+    inset(gx, gy, gw, gh, '#0a0d0a');
+    px(gx, gy, 1, 1, '#1c2123'); px(gx + gw - 1, gy, 1, 1, '#1c2123'); // arch corners trimmed
+    px(gx + 1, gy - 1, gw - 2, 1, '#15191a');                   // arch crown
+    px(gx, gy + 1, gw, gh - 1, '#070a07');                      // furnace interior
+    // animated ember/flame core (kept behavior)
+    const beat = 0.5 + 0.5 * Math.sin(now / 260), beat2 = 0.5 + 0.5 * Math.sin(now / 170 + 1.3);
+    const fh = Math.max(2, Math.round((gh - 2) * (0.55 + 0.4 * beat)));
+    const fx = gx + 1, fy = gy + (gh - 1) - fh, fw = gw - 2;
+    glow(gx, gy, gw, gh, '#9bff4a', 0.10 + 0.10 * beat);
+    px(fx, fy, fw, fh, '#3a6b1e'); px(fx, fy + 1, fw, fh - 1, '#5fae2c');
+    const cwF = Math.max(1, fw - 2);
+    px(fx + 1, fy + 1, cwF, fh - 1, '#9bff4a');
+    const hwF = Math.max(1, Math.round(cwF * (0.4 + 0.3 * beat2))), hcx = fx + 1 + Math.floor((cwF - hwF) / 2);
+    px(hcx, fy + Math.max(1, fh - Math.round(fh * 0.7)), hwF, Math.max(1, Math.round(fh * 0.6)), '#d6ffb0');
+    px(hcx, fy + fh - 2, hwF, 1, '#eaffd8');                    // hottest pixel
+    if (blink(190)) px(fx + (U.hash('s1' + Math.floor(now / 190)) % fw), fy - 1, 1, 1, '#d6ffb0');
+    if (blink(330, 2)) px(fx + (U.hash('s2' + Math.floor(now / 330)) % fw), fy, 1, 1, '#9bff4a');
+    // grate bars + halo
+    for (let i = 1; i < gw - 1; i += 2) px(gx + i, gy + 1, 1, gh - 1, '#0d130d');
+    px(gx, gy + Math.floor(gh / 2), gw, 1, '#0d130d');
+    px(gx - 1, gy, 1, gh + 1, '#353c3e'); px(gx + gw, gy, 1, gh + 1, '#1a1f20');
+    glow(gx - 2, gy - 2, gw + 4, gh + 4, '#9bff4a', 0.14 + 0.12 * beat);
+    glow(gx - 1, gy - 1, gw + 2, gh + 2, '#d6ffb0', (0.14 + 0.12 * beat) * 0.5);
+    // freestanding feet + under-gap AO
+    px(x + 1, botY - 1, 2, 2, r.dk); px(x + cw - 5, botY - 1, 2, 2, r.dk);
+    px(x + 1, botY - 1, 1, 1, r.lit); px(x + cw - 5, botY - 1, 1, 1, r.lit);
+    underAO(x + 3, botY, cw - 8, 1);
+  };
   F.treasury_pnl_holo = (x, y, w, h, f) => {
   // ---- floor puck base (matte black, thin green rim light) ----
   sh(x + 2, y + h - 1, w - 4);
@@ -3179,69 +3448,46 @@ const PropSprites = (() => {
   glow(sx, fy + 2 + Math.floor(fh / 2), 1, 2, '#ff5c7a', 0.25 + 0.65 * pulse);
   if (pulse > 0.6) px(sx, fy + 2 + Math.floor(fh / 2), 1, 1, '#ffd0d9');
 };
-  F.war_intelcab = (x, y, w, h, f) => {
-  // contact shadow on floor
-  sh(x + 1, y + h - 1, w - 2);
-
-  // ---- main body: floor-to-ceiling grey-green cabinet ----
-  box(x, y + 1, w, h - 1, '#3a423d');
-  // body shading: dark base, light top edge
-  px(x + 1, y + 2, w - 2, h - 3, '#3a423d');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#3a423d', 22));      // top hi line
-  px(x + 1, y + h - 2, w - 2, 1, '#20251f');                // bottom shade
-
-  // ---- beveled side rails (two-tone) ----
-  // left rail
-  px(x + 1, y + 2, 2, h - 4, '#5a6358');                    // left hi
-  px(x + 1, y + 2, 1, h - 4, U.shade('#5a6358', 12));
-  // right rail (a touch darker â€” light from the left)
-  px(x + w - 3, y + 2, 2, h - 4, '#2e362f');
-  px(x + w - 2, y + 2, 1, h - 4, '#20251f');
-
-  // ---- four stacked sealed drawers ----
-  const dx = x + 4;                 // drawer well left
-  const dw = w - 9;                 // drawer width (leaves room for label strip on right)
-  const top = y + 4;
-  const span = h - 7;               // vertical span for 4 drawers
-  const dh = Math.floor(span / 4);  // per-drawer height
-  // ripple phase: 0..3 top-to-bottom
-  const rip = Math.floor(now / 320) % 4;
-
-  for (let d = 0; d < 4; d++) {
-    const dy = top + d * dh;
-    // recessed drawer face
-    inset(dx, dy + 1, dw, dh - 2, '#2e352f');
-    px(dx + 1, dy + 2, dw - 2, dh - 4, '#343c37');          // face plate
-    px(dx + 1, dy + 2, dw - 2, 1, '#4a534c');               // face top hi
-    px(dx + 1, dy + dh - 3, dw - 2, 1, '#20251f');          // face seam shade
-    // thin recessed handle (horizontal slot, centred)
-    const hy = dy + Math.floor(dh / 2);
-    inset(dx + Math.floor(dw / 2) - 3, hy, 6, 2, '#191e18');
-    px(dx + Math.floor(dw / 2) - 3, hy, 6, 1, '#20251f');
-    // status LED â€” blinks in slow top-to-bottom ripple
-    const lit = (d === rip);
-    const ledC = lit ? '#ff5c7a' : U.shade('#ff5c7a', -55);
-    px(dx + 2, hy, 2, 2, ledC);
-    if (lit) glow(dx + 1, hy - 1, 4, 4, '#ff5c7a', 0.5);
-  }
-
-  // ---- top drawer cracked open: sliver of glowing cyan paper edge ----
-  const odY = top + 1;              // sits at lip of top drawer
-  px(dx, odY, dw, 2, '#191e18');                            // dark gap above paper
-  const cyan = '#7af0ff';
-  px(dx + 1, odY + 2, dw - 2, 1, cyan);                     // glowing paper edge
-  px(dx + 1, odY + 2, dw - 2, 1, blink(700) ? '#bafcff' : cyan);
-  glow(dx, odY, dw, 4, '#3ad0e0', 0.22 + 0.06 * Math.sin(now / 600));
-
-  // ---- vertical label strip down the right edge, faint periwinkle glow ----
-  const sx = x + w - 6;             // strip well left
-  inset(sx, y + 3, 3, h - 6, '#23291f');
-  // strip body
-  px(sx + 1, y + 4, 1, h - 8, '#a0a8ff');
-  // tiny tick marks down the strip
-  for (let i = 0; i < (h - 10); i += 4) px(sx, y + 5 + i, 3, 1, U.shade('#a0a8ff', -30));
-  glow(sx - 1, y + 3, 5, h - 6, '#a0a8ff', 0.14);
-};
+  F.war_intelcab = (x, y, w, h, f) => {   // TALL 3/4 file cabinet (1x2), bolted; sealed drawers; ACC.work green (files)
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
+    deckPlate(x - 1, y + h - 5, w + 2, 5);                            // bolted plate peeks at feet
+    deckSocket(x + w + 1, y + h - 3, f && f.work);                    // cable into floor socket
+    // TALL body: chamfered slab, lit W / dark E facets, top cap
+    rr(x - 1, y - 3, w + 2, h + 2, LINE);
+    px(x + 1, y - 1, w - 2, h, r.face);
+    px(x + 1, y - 1, 2, h, U.shade(r.face, 0.10)); px(x + w - 3, y - 1, 2, h, r.dk);   // beveled side rails
+    px(x + 1, y - 1, 1, h, r.lit);
+    rr(x, y - 5, w, 3, LINE);
+    px(x + 1, y - 4, w - 2, 2, r.top); px(x + 1, y - 4, w - 2, 1, r.sheen);            // top cap
+    px(x + 2, y - 3, 4, 1, U.shade(r.sheen, 0.12));
+    // four stacked sealed drawers
+    const dx = x + 3, dw = w - 8, top = y + 1, span = h - 4, dh = Math.floor(span / 4);
+    const rip = Math.floor(now / 320) % 4;                            // ripple phase top-to-bottom
+    for (let d = 0; d < 4; d++) {
+      const dy = top + d * dh;
+      inset(dx, dy + 1, dw, dh - 2, U.shade(r.face, -0.18));
+      px(dx + 1, dy + 2, dw - 2, dh - 4, U.shade(r.face, 0.06));      // face plate
+      px(dx + 1, dy + 2, dw - 2, 1, r.lit);                           // face top hi
+      px(dx + 1, dy + dh - 3, dw - 2, 1, r.ao);                       // face seam shade
+      const hy = dy + Math.floor(dh / 2);
+      inset(dx + Math.floor(dw / 2) - 3, hy, 6, 2, '#141b18');        // recessed handle
+      const lit = d === rip;                                          // status LED ripple — ACC.work
+      px(dx + 2, hy, 2, 2, lit ? ACC.work : U.shade(ACC.work, -0.6));
+      if (lit) glow(dx + 1, hy - 1, 4, 4, ACC.work, 0.45);
+    }
+    // top drawer cracked open: sliver of glowing green file edge
+    const odY = top + 1;
+    px(dx, odY, dw, 2, '#141b18');                                    // dark gap above the files
+    px(dx + 1, odY + 2, dw - 2, 1, blink(700) ? '#c7ffe0' : ACC.work); // glowing paper edge
+    glow(dx, odY, dw, 4, ACC.work, 0.20 + 0.06 * Math.sin(now / 600));
+    // vertical label strip down the right edge, faint green glow
+    const sx = x + w - 5; inset(sx, y + 1, 3, h - 4, '#1c2420');
+    px(sx + 1, y + 2, 1, h - 6, U.shade(ACC.work, 0.05));
+    for (let i = 0; i < (h - 6); i += 4) px(sx, y + 3 + i, 3, 1, U.shade(ACC.work, -0.5));
+    glow(sx - 1, y + 1, 5, h - 4, ACC.work, 0.12);
+    px(x + 1, y + h - 2, w - 2, 1, r.ao);                             // floor-line AO
+  };
   F.war_threatcore = (x, y, w, h, f) => {
   // floor prop: contact shadow + rose emissive halo bleeding onto floor
   sh(x + 1, y + h - 1, w - 2);
@@ -3930,28 +4176,64 @@ const PropSprites = (() => {
 };
 
   F.airlock = (x, y, w, h, f) => {
-    // AIRLOCK — the room-seal handle (spatial floor containment, not capability isolation). A blast-door panel whose status lamp + shutter reflect the
-    // room's merge state: open = green / retracted (a lit central gap) · closed = amber / sealed seam ·
-    // jammed = red / a sparking seam. Drawn per-frame so f.door drives it live (set via setDoorState).
+    // AIRLOCK — the room-seal hatch (spatial floor containment, not capability isolation). A FLOOR-FLAT
+    // OCTAGONAL IRIS whose blades + status lamp reflect the room's merge state:
+    //   open   = green, blades retracted to a lit central gap
+    //   closed = amber, blades meet at a sealed seam
+    //   jammed = red,   a sparking, half-jammed seam
+    // f.door drives it live (set via setDoorState). Bolder = a round iris, not a square shutter.
     const st = (f && f.door) || 'open';
     const sealed = st === 'closed' || st === 'jammed', jam = st === 'jammed';
-    const lc = jam ? '#ff5a4a' : sealed ? '#ffb347' : '#41ff8a';     // status colour
-    sh(x + 1, y + h - 1, w - 2);                                      // floor contact shadow
-    box(x + 1, y + 2, w - 2, h - 3, '#222a2e');                       // door-frame casing
-    inset(x + 2, y + 3, w - 4, h - 6, '#0c1417');                     // recessed track
-    // shutter leaves: retracted (open) leave a lit central gap; sealed they meet in the middle
-    const cx = x + (w >> 1), back = sealed ? 0 : 2, leafW = (w >> 1) - 2 - back;
-    const dc = jam ? '#3a2a24' : '#2a333a';
-    px(x + 2, y + 3, leafW, h - 6, dc); px(cx + back, y + 3, leafW, h - 6, dc);              // left + right leaves
-    px(x + 2, y + 3, leafW, 1, U.shade(dc, 0.28)); px(cx + back, y + 3, leafW, 1, U.shade(dc, 0.28)); // leaf sheen
-    px(x + 3, y + 4, 1, 1, '#caa84a'); px(cx + back + leafW - 2, y + 4, 1, 1, '#caa84a');    // hazard ticks
-    if (sealed) {
-      px(cx - 1, y + 3, 2, h - 6, U.shade(dc, -0.5));                 // the sealed seam
-      if (jam && blink(150)) { px(cx, y + 5, 1, 1, '#fff'); px(cx + 1, y + 4, 1, 1, '#ffd9a0'); } // jam spark
-    } else {
-      glow(cx - 2, y + 3, 4, h - 6, '#41ff8a', 0.22 + 0.1 * Math.sin(now / 400));            // open-gap glow
+    const lc = jam ? '#ff5a4a' : sealed ? '#ffb347' : ACC.work;   // status colour
+    const cx = x + (w >> 1), cy = y + (h >> 1);
+    const rad = Math.min(w, h) / 2 - 1;
+    shadow2(x + 1, y + h - 1, w - 2);                            // floor contact
+    // octagonal deck rim (bolted frame) — draw the ring by clipping a rounded well
+    rr(x + 1, y + 1, w - 2, h - 2, '#151d20');                   // outer bezel
+    rr(x + 2, y + 2, w - 4, h - 4, U.shade(RAMP.steel.face, -0.2));
+    px(x + 2, y + 2, w - 4, 1, RAMP.steel.lit);                  // north rim catch
+    px(x + 2, y + h - 3, w - 4, 1, RAMP.steel.ao);              // south rim AO
+    // hazard bolts at the 4 diagonal corners of the octagon frame
+    px(x + 2, y + 2, 1, 1, '#caa84a'); px(x + w - 3, y + 2, 1, 1, '#caa84a');
+    px(x + 2, y + h - 3, 1, 1, '#8a7434'); px(x + w - 3, y + h - 3, 1, 1, '#8a7434');
+    // recessed circular track
+    const trk = '#0c1417';
+    for (let dy = -rad + 1; dy <= rad - 1; dy++) {
+      const half = Math.floor(Math.sqrt(Math.max(0, (rad - 1) * (rad - 1) - dy * dy)));
+      if (half <= 0) continue;
+      px(cx - half, cy + dy, half * 2, 1, trk);
     }
-    // status lamp on the lintel
+    // IRIS BLADES: 4 wedges. Retracted (open) leave a lit central eye; sealed they close to the centre.
+    const close = sealed ? rad - 1 : 1;                          // how far blades reach inward
+    const bc = jam ? '#3a2a24' : U.shade(RAMP.steel.top, -0.05);
+    const be = U.shade(bc, 0.3), bs = U.shade(bc, -0.4);
+    for (let dy = -rad + 1; dy <= rad - 1; dy++) {
+      const half = Math.floor(Math.sqrt(Math.max(0, (rad - 1) * (rad - 1) - dy * dy)));
+      if (half <= 0) continue;
+      // blades come in from the rim toward the centre by `close` px, leaving a central gap when open
+      const gap = Math.max(0, half - close);
+      if (gap < half) {
+        // left blade
+        px(cx - half, cy + dy, half - gap, 1, bc);
+        px(cx - half, cy + dy, 1, 1, dy < 0 ? be : bs);         // blade edge shading
+        // right blade
+        px(cx + gap, cy + dy, half - gap, 1, bc);
+        px(cx + half - 1, cy + dy, 1, 1, dy < 0 ? be : bs);
+      }
+    }
+    // spokes between blades (cross of the iris) — subtle, always visible over the blades
+    px(cx - 1, cy - rad + 1, 2, (rad - 1) * 2, U.shade(bc, -0.5));
+    if (sealed) {
+      // sealed centre boss + seam
+      px(cx - 1, cy - 1, 2, 2, U.shade(bc, -0.3));
+      px(cx - 1, cy - rad + 2, 2, rad * 2 - 3, U.shade(bc, -0.55)); // vertical sealed seam
+      if (jam && blink(150)) { px(cx, cy - 1, 1, 1, '#fff'); px(cx + 1, cy - 2, 1, 1, '#ffd9a0'); } // jam spark
+    } else {
+      // open: lit central eye
+      px(cx - 1, cy - 1, 2, 2, U.shade(ACC.work, -0.1));
+      glow(cx - 2, cy - 2, 4, 4, ACC.work, 0.24 + 0.1 * Math.sin(now / 400));
+    }
+    // status lamp on the north lintel of the frame
     px(cx - 1, y, 2, 2, '#0c1417');
     const on = jam ? blink(170) : sealed ? blink(680) : true;
     px(cx - 1, y, 2, 2, on ? lc : U.shade(lc, -0.65));
