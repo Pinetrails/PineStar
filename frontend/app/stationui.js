@@ -2141,7 +2141,12 @@ const StationUI = (() => {
     const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
     if (!s.notifyPrefs) s.notifyPrefs = notifyDefaults();   // defensive: an old save may predate P1-8
     const npf = k => s.notifyPrefs[k] !== false;            // per-category checked-state (default on)
-    body.innerHTML =
+    // ── SECTION FRAGMENTS ──────────────────────────────────────────────────────────────────
+    // Each fragment is the EXACT markup the monolithic panel used, regrouped under a console section.
+    // The inner <h4 class="ms-h"> sub-headers stay (they read as sub-labels within a section and every
+    // settings test source-locks them). mountConsole builds these panes once and returns a content host
+    // that spans them all, so the wireX calls below reach every control with no per-section rewire.
+    const secProviders =
       '<h4 class="ms-h">PROVIDERS</h4>' +
       '<div class="prov-list">' + providersHtml() + '</div>' +
       '<h4 class="ms-h">API KEYS</h4>' +
@@ -2150,7 +2155,8 @@ const StationUI = (() => {
       // STORE / MANAGED CREDITS — rendered ONLY when the sidecar reports a configured credits backend (/api/credits).
       // When credits aren't wired this stays an empty node (no dead card, no fake balance — the honesty law). wireCredits
       // fetches the real balance + history and the external purchase link; buying opens a browser tab, never an in-app form.
-      '<div id="credits-store"></div>' +
+      '<div id="credits-store"></div>';
+    const secAutonomy =
       // AUTONOMY — the "alive between sessions" dial: two independent axes (autonomy.js). Reuses the theme-picker
       // button idiom (.set-themes/.set-theme) so it needs no new CSS. The live describe() line keeps it honest.
       '<h4 class="ms-h">AUTONOMY <span class="dim">— how much it runs on its own while you’re away</span></h4>' +
@@ -2181,7 +2187,8 @@ const StationUI = (() => {
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FULLY AUTONOMOUS</button>' +
       '</div>' +
       '<div class="set-row"><span class="dim">STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
-      '<div class="key-list" id="perm-grants"></div>' +
+      '<div class="key-list" id="perm-grants"></div>';
+    const secBudget =
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
       // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
       '<h4 class="ms-h">BUDGET <span class="dim">— real USD spend limits</span></h4>' +
@@ -2201,7 +2208,8 @@ const StationUI = (() => {
           '<button class="bb xs" id="bg-reset" title="clear the saved value so this cap follows the environment default again" style="display:none">RESET TO DEFAULTS</button>' +
         '</div>' +
       '</div>' +
-      '<div id="budget-msg" class="msg"></div>' +
+      '<div id="budget-msg" class="msg"></div>';
+    const secModels =
       // MODELS — the ordered FALLBACK CHAIN (P0-3). The primary model is chosen live in the COMMS model dock; this
       // sets what the loop tries NEXT if that model fails mid-run. Persisted server-side + applied live to every run
       // path (browser, cron, channels); env SKYNET_FALLBACK_MODELS is the default until you save one here.
@@ -2216,9 +2224,8 @@ const StationUI = (() => {
           '<button class="bb xs" id="fbc-reset" title="clear the saved chain so it follows the environment default again" style="display:none">RESET TO DEFAULT</button>' +
         '</div>' +
       '</div>' +
-      '<div id="fbc-msg" class="msg"></div>' +
-      '<h4 class="ms-h">SCHEDULED TASKS</h4>' +
-      '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">- ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
+      '<div id="fbc-msg" class="msg"></div>';
+    const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
       '</div>' +
@@ -2226,7 +2233,8 @@ const StationUI = (() => {
       '<label class="set-row"><input type="checkbox" id="set-scan" ' + (s.scanlines ? 'checked' : '') + '> CRT SCANLINES</label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO</label>' +
-      '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>' +
+      '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>';
+    const secNotifs =
       // NOTIFICATIONS — per-category on/off + a notification sound toggle (P1-8). Each is HONORED at emit time in
       // notify(): a muted category is dropped before it ever reaches the panel/toast (not decorative).
       '<h4 class="ms-h">NOTIFICATIONS <span class="dim">— what pings you, and whether it chimes</span></h4>' +
@@ -2235,7 +2243,10 @@ const StationUI = (() => {
       '<label class="set-row"><input type="checkbox" id="ntp-needsApproval"' + (npf('needsApproval') ? ' checked' : '') + '> NEEDS APPROVAL <span class="dim">— an agent is waiting on your yes/no</span></label>' +
       '<label class="set-row"><input type="checkbox" id="ntp-cronDigest"' + (npf('cronDigest') ? ' checked' : '') + '> AUTONOMOUS DIGEST <span class="dim">— what it did while you were away</span></label>' +
       '<label class="set-row"><input type="checkbox" id="ntp-sound"' + (npf('sound') ? ' checked' : '') + '> NOTIFICATION SOUND <span class="dim">— a chime on each ping (also needs TERMINAL AUDIO on)</span></label>' +
-      '<div class="set-save"><button class="bb xs" id="ntp-test">TEST NOTIFICATION</button></div>' +
+      '<div class="set-save"><button class="bb xs" id="ntp-test">TEST NOTIFICATION</button></div>';
+    const secSystem =
+      '<h4 class="ms-h">SCHEDULED TASKS</h4>' +
+      '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">- ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
       // ADVANCED — env-only runtime knobs, now editable + persisted server-side (P1-9). PRECEDENCE is spelled out
       // in the card: an explicit environment variable ALWAYS wins over a value saved here (a deploy stays in control).
       '<h4 class="ms-h">ADVANCED <span class="dim">— runtime limits (usually leave these alone)</span></h4>' +
@@ -2256,22 +2267,35 @@ const StationUI = (() => {
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
-    wireProviderActions(body);
-    wireKeyActions(body);
-    wireCredits(body);
-    wireBudget(body);
-    wireFallbackChain(body);
-    wireNotifyPrefs(body);
-    wireAdvanced(body);
-    wireBackup(body);
+
+    const frag = html => (el => { el.innerHTML = html; });  // curried: fill a pane element with a fragment
+    const sections = [
+      { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
+      { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How much your agents may do on their own, and exactly what they’re allowed to touch.', build: frag(secAutonomy) },
+      { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
+      { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
+      { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
+      { id: 'notifs', label: 'NOTIFICATIONS', glyph: '◔', desc: 'What pings you while you work, and whether it chimes.', build: frag(secNotifs) },
+      { id: 'system', label: 'SYSTEM', glyph: '⚙', desc: 'Keep-awake, advanced runtime limits, station backup, and updates.', build: frag(secSystem) }
+    ];
+    const host = mountConsole(body, 'settings', sections, { search: true, searchPlaceholder: 'search settings…' });
+
+    wireProviderActions(host);
+    wireKeyActions(host);
+    wireCredits(host);
+    wireBudget(host);
+    wireFallbackChain(host);
+    wireNotifyPrefs(host);
+    wireAdvanced(host);
+    wireBackup(host);
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
-    body.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
+    host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t; applySettings(); save(); sfx('click');
-      body.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
+      host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
     }));
-    const bind = (id, key) => body.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
+    const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
     bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
-    const awakeToggle = body.querySelector('#set-awake');
+    const awakeToggle = host.querySelector('#set-awake');
     if (awakeToggle) awakeToggle.addEventListener('change', ev => {
       const desired = !!ev.target.checked;
       s.keepComputerAwake = desired;
@@ -2292,7 +2316,7 @@ const StationUI = (() => {
     // AUTONOMY dial — retune Initiative / Reach in place (AutonomyStore persists; no rerender so it won't wipe an
     // open key editor). The describe() line repaints live so the posture is always honestly spelled out.
     if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {
-      const initWrap = body.querySelector('#auto-init'), reachWrap = body.querySelector('#auto-reach'), autoDesc = body.querySelector('#auto-desc');
+      const initWrap = host.querySelector('#auto-init'), reachWrap = host.querySelector('#auto-reach'), autoDesc = host.querySelector('#auto-desc');
       const paintAuto = () => {
         const a = AutonomyStore.summary() || {};
         if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
@@ -2308,14 +2332,14 @@ const StationUI = (() => {
     // (permissionsstore). Grants live server-side, so paint from cache now, refresh from the sidecar, repaint. A
     // level click sets BOTH posture + the write grant (so it repaints the dial); the dial syncs back via syncPerm.
     if (typeof PermissionsStore !== 'undefined' && PermissionsStore.snapshot) {
-      const levelWrap = body.querySelector('#perm-level'), grantsWrap = body.querySelector('#perm-grants'), permDesc = body.querySelector('#perm-desc');
+      const levelWrap = host.querySelector('#perm-level'), grantsWrap = host.querySelector('#perm-grants'), permDesc = host.querySelector('#perm-desc');
       const pdesc = (lvl) => (typeof Permissions !== 'undefined' && Permissions.describeLevel) ? Permissions.describeLevel(lvl) : '';
       const plabel = (k) => (typeof Permissions !== 'undefined' && Permissions.catalogLabel) ? Permissions.catalogLabel(k) : k;
       const pcurated = () => (typeof Permissions !== 'undefined' && Permissions.grantableKeys) ? Permissions.grantableKeys() : [];
       const repaintDial = () => {
         if (typeof AutonomyStore === 'undefined' || !AutonomyStore.summary) return;
         const a = AutonomyStore.summary() || {};
-        const iw = body.querySelector('#auto-init'), rw = body.querySelector('#auto-reach'), ad = body.querySelector('#auto-desc');
+        const iw = host.querySelector('#auto-init'), rw = host.querySelector('#auto-reach'), ad = host.querySelector('#auto-desc');
         if (iw) iw.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
         if (rw) rw.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
         if (ad && AutonomyStore.describe) ad.textContent = AutonomyStore.describe();
@@ -2386,9 +2410,9 @@ const StationUI = (() => {
       repaintPerm();
       if (PermissionsStore.refresh) Promise.resolve(PermissionsStore.refresh()).then(repaintPerm).catch(() => {});
     }
-    if (typeof Updates !== 'undefined' && Updates.wireSettings) Updates.wireSettings(body);
+    if (typeof Updates !== 'undefined' && Updates.wireSettings) Updates.wireSettings(host);
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
-    const clr = body.querySelector('#set-clear');
+    const clr = host.querySelector('#set-clear');
     clr.addEventListener('click', () => {
       if (clr.dataset.armed) { store.notifs = []; save(); badges(); rerender('notifs'); sfx('bad'); return; }
       clr.dataset.armed = '1'; clr.textContent = '✕ CONFIRM CLEAR'; sfx('bad');
@@ -3688,10 +3712,10 @@ const StationUI = (() => {
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
-    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { w: '680px', className: 'skills-term', fitViewport: true }],
+    skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { console: true }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
-    settings: ['SETTINGS',               buildSettings,  { w: '500px' }],
+    settings: ['SETTINGS',               buildSettings,  { console: true }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
     connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
     routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
