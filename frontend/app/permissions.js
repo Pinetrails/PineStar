@@ -84,6 +84,28 @@
   // grant with no object requirement is always effective; a null caps (unknown) is treated as effective (no false alarm).
   function grantEffective(key, caps) { const need = grantObject(key); if (!need) return true; if (!Array.isArray(caps)) return true; return caps.indexOf(need) >= 0; }
 
+  // the teaching empty-state for the Standing-Approvals ledger: shown when NOTHING is blessed, so the panel
+  // explains how a row gets here instead of looking broken. (Kept here as the single source of the copy.)
+  const EMPTY_APPROVALS = 'No standing approvals yet — when you answer ALWAYS to a permission prompt, it appears here.';
+  function emptyApprovals() { return EMPTY_APPROVALS; }
+
+  // PROVENANCE (additive B1.1): a short "granted <when>" line for a standing grant, from the sidecar meta map
+  // (meta[key] = { grantedAt } epoch ms). Deterministic given (grantedAt, nowMs) — the caller passes Date.now()
+  // so the engine stays clock-free. Unknown/absent grantedAt → 'granted earlier' (honest: legacy grants carry no
+  // timestamp; we never fabricate one). We do NOT surface a prompt/run id — that provenance isn't persisted.
+  function grantAgeText(grantedAt, nowMs) {
+    if (typeof grantedAt !== 'number' || !isFinite(grantedAt)) return 'granted earlier';
+    const now = (typeof nowMs === 'number' && isFinite(nowMs)) ? nowMs : grantedAt;
+    const s = Math.max(0, Math.floor((now - grantedAt) / 1000));
+    if (s < 45) return 'granted just now';
+    const m = Math.floor(s / 60);
+    if (m < 60) return 'granted ' + m + (m === 1 ? ' min ago' : ' mins ago');
+    const h = Math.floor(m / 60);
+    if (h < 24) return 'granted ' + h + (h === 1 ? ' hour ago' : ' hours ago');
+    const d = Math.floor(h / 24);
+    return 'granted ' + d + (d === 1 ? ' day ago' : ' days ago');
+  }
+
   // keep only well-formed danger keys (capability:scope). Defensive against a malformed api payload.
   function normalizeGrants(arr) {
     if (!Array.isArray(arr)) return [];
@@ -122,6 +144,7 @@
     isLevel, normalizeLevel, levelPlan, describeLevel,
     grantableKeys, isGrantable, catalogEntry, catalogLabel, describeGrant,
     grantObject, objectHint, grantEffective,
-    normalizeGrants, levelFromState, reconcileToLevel
+    normalizeGrants, levelFromState, reconcileToLevel,
+    emptyApprovals, grantAgeText, EMPTY_APPROVALS
   };
 });

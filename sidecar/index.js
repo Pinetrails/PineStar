@@ -691,15 +691,49 @@ function loadAllowlist() {
     return new Set((raw && Array.isArray(raw.allow) ? raw.allow : []).filter(x => typeof x === 'string'));
   } catch (e) { return new Set(); }   // unrecoverable -> nothing pre-allowed (fail-closed, the safe default)
 }
-function persistAllowlist(nextAllow) {   // throws on failure -> the broker degrades the grant to a deny
-  saveResilient(ALLOWLIST_FILE, { version: 1, allow: nextAllow });   // fsync-durable + .bak; throws on a real write failure
+// ADDITIVE provenance (B1.1): a sibling `meta` map { dangerKey: { grantedAt } } persisted INSIDE the same file
+// as a NEW field. Old files with no `meta` load fine (→ {}); the broker never reads it. Only well-formed rows
+// for still-held keys are kept, so a hand-edited/legacy file can't inject junk provenance.
+function loadAllowMeta() {
+  try {
+    const raw = loadResilient(ALLOWLIST_FILE, 'permissions');
+    const m = raw && raw.meta && typeof raw.meta === 'object' ? raw.meta : {};
+    const out = {};
+    for (const k of Object.keys(m)) {
+      const g = m[k] && typeof m[k] === 'object' ? m[k].grantedAt : null;
+      out[k] = { grantedAt: (typeof g === 'number' && isFinite(g)) ? g : null };
+    }
+    return out;
+  } catch (e) { return {}; }
 }
 const grantsPermanent = loadAllowlist();   // process-wide, restored from disk
+const grantMeta = loadAllowMeta();         // process-wide provenance, restored alongside (additive; may be {})
+// throws on failure -> the broker degrades the grant to a deny. Two callers, ONE durable format:
+//   • permgrants.js passes (nextAllow, nextMeta) — the panel's grant/revoke ships the provenance it computed.
+//   • permissions.js (the broker's 'always' path) passes ONLY (nextAllow) — we preserve the live grantMeta and
+//     opportunistically STAMP a grantedAt for any newly-blessed key so a mid-run "always" is also timestamped.
+function persistAllowlist(nextAllow, nextMeta) {   // throws on failure -> the broker degrades the grant to a deny
+  let metaToWrite;
+  if (nextMeta && typeof nextMeta === 'object') {
+    metaToWrite = nextMeta;
+  } else {
+    // broker path: keep existing provenance, drop rows for keys no longer allowed, stamp any brand-new key.
+    const nowMs = Date.now();
+    metaToWrite = {};
+    for (const k of nextAllow) metaToWrite[k] = grantMeta[k] || { grantedAt: nowMs };
+  }
+  saveResilient(ALLOWLIST_FILE, { version: 1, allow: nextAllow, meta: metaToWrite });   // fsync-durable + .bak; throws on a real write failure
+  // commit the provenance to the shared in-memory store ONLY after the durable write succeeds (fail-closed):
+  // mirror-replace so a revoke's dropped rows and a grant's new stamp both land coherently.
+  for (const k of Object.keys(grantMeta)) delete grantMeta[k];
+  for (const k of Object.keys(metaToWrite)) grantMeta[k] = { grantedAt: metaToWrite[k] && metaToWrite[k].grantedAt != null ? metaToWrite[k].grantedAt : null };
+}
 // the standing-grant manager behind the Permissions Panel (B1): proactively grant / see / revoke the curated,
 // LOCAL-only danger classes (cabinet:write = autonomous file writes). It mutates the SAME grantsPermanent Set
 // every per-run broker reads, so a grant takes effect for the very next autonomous run with no restart; persist
-// is the same fail-closed durable sink the broker's 'always' path uses.
-const grantManager = makeGrantManager({ grantsPermanent, persist: persistAllowlist });
+// is the same fail-closed durable sink the broker's 'always' path uses. `meta` shares grantMeta so the panel's
+// grantedAt provenance survives a round-trip and the broker path stays untouched.
+const grantManager = makeGrantManager({ grantsPermanent, persist: persistAllowlist, meta: grantMeta, now: () => Date.now() });
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
 // single click stops the prompts for the rest of this session but RESETS on sidecar restart — never persisted

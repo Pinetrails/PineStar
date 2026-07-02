@@ -18,11 +18,21 @@ const PermissionsStore = (() => {
   let deps = {};
   let grants = [];        // cached standing grants (dangerKey strings) — last seen from the server
   let grantable = [];     // cached curated catalog keys the server will accept
+  let meta = {};          // cached provenance { dangerKey: { grantedAt } } — additive, may be {} for legacy stores
   let loaded = false;     // a successful load/refresh has happened at least once
 
   const ready = () => typeof Permissions !== 'undefined';
   const posture = () => { try { return (deps.getPosture ? deps.getPosture() : null) || {}; } catch (_) { return {}; } };
   const norm = (arr) => ready() ? Permissions.normalizeGrants(arr) : (Array.isArray(arr) ? arr.slice() : []);
+  // keep only well-formed provenance rows ({ grantedAt:number|null }) so a malformed payload can't poison the cache.
+  const normMeta = (m) => {
+    const out = {};
+    if (m && typeof m === 'object') for (const k of Object.keys(m)) {
+      const g = m[k] && typeof m[k] === 'object' ? m[k].grantedAt : null;
+      out[k] = { grantedAt: (typeof g === 'number' && isFinite(g)) ? g : null };
+    }
+    return out;
+  };
 
   // pull the authoritative grant snapshot from the sidecar (token-gated). Failures leave the cache as-is.
   async function refresh() {
@@ -31,6 +41,7 @@ const PermissionsStore = (() => {
         const r = await deps.api.load();
         if (r && Array.isArray(r.grants)) grants = norm(r.grants);
         if (r && Array.isArray(r.grantable)) grantable = r.grantable.slice();
+        meta = normMeta(r && r.meta);   // additive: absent → {}, no provenance shown (legacy store)
         loaded = true;
       } catch (_) {}
     }
@@ -44,21 +55,24 @@ const PermissionsStore = (() => {
     return {
       grants: grants.slice(),
       grantable: grantable.length ? grantable.slice() : (ready() ? Permissions.grantableKeys() : []),
+      meta: Object.assign({}, meta),   // provenance { key: { grantedAt } } — additive; {} when the store is legacy
       level: currentLevel(),
       loaded
     };
   }
 
-  // grant / revoke ONE capability through the api; refresh the cache from the authoritative response.
+  // grant / revoke ONE capability through the api; refresh the cache from the authoritative response. The grant
+  // response may carry no meta (the sidecar snapshot does), so we re-read provenance on the next refresh; a grant
+  // that DOES return meta updates it here so the "granted just now" line shows without a round-trip.
   async function grant(key) {
     if (deps.api && typeof deps.api.grant === 'function') {
-      try { const r = await deps.api.grant(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); } catch (_) {}
+      try { const r = await deps.api.grant(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); if (r && r.meta) meta = normMeta(r.meta); } catch (_) {}
     }
     return snapshot();
   }
   async function revoke(key) {
     if (deps.api && typeof deps.api.revoke === 'function') {
-      try { const r = await deps.api.revoke(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); } catch (_) {}
+      try { const r = await deps.api.revoke(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); if (r && r.meta) meta = normMeta(r.meta); else { const m = Object.assign({}, meta); delete m[key]; meta = m; } } catch (_) {}
     }
     return snapshot();
   }
@@ -78,7 +92,7 @@ const PermissionsStore = (() => {
   // opts: { api:{ load(), grant(key), revoke(key) }, getPosture(), applyPreset(id), load:bool }
   function init(opts) {
     deps = opts || {};
-    grants = []; grantable = []; loaded = false;
+    grants = []; grantable = []; meta = {}; loaded = false;
     if (deps.load !== false) { try { refresh(); } catch (_) {} }
   }
 
@@ -90,7 +104,7 @@ const PermissionsStore = (() => {
   // with no api wired); the revoke calls are still INITIATED synchronously. Non-curated grants are left to the user.
   function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
-    grants = []; grantable = []; loaded = false;
+    grants = []; grantable = []; meta = {}; loaded = false;
     if (!deps.api || typeof deps.api.revoke !== 'function') return Promise.resolve();
     const jobs = [];
     for (const k of keys) { try { jobs.push(Promise.resolve(deps.api.revoke(k)).catch(() => {})); } catch (_) {} }

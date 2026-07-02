@@ -104,4 +104,48 @@ ok(GRANTABLE.every(k => /^cabinet:/.test(k)), 'v1 grantable capability is the lo
   ok(r.ok === false && set.has('cabinet:write'), 'fail-closed: a torn persist keeps the grant');
 }
 
+// --- PROVENANCE (additive B1.1): a grant stamps grantedAt; snapshot exposes it; revoke drops it ---
+{
+  const set = new Set(); const s = fakeStore(); const meta = {};
+  const gm = makeGrantManager({ grantsPermanent: set, persist: s.persist, meta, now: () => 1700000000000 });
+  ok(gm.snapshot().meta && Object.keys(gm.snapshot().meta).length === 0, 'clean snapshot has an empty meta map');
+  gm.grant('cabinet:write');
+  const snap = gm.snapshot();
+  ok(snap.meta['cabinet:write'] && snap.meta['cabinet:write'].grantedAt === 1700000000000, 'grant stamped grantedAt from the injected clock');
+  ok(meta['cabinet:write'] && meta['cabinet:write'].grantedAt === 1700000000000, 'provenance committed to the shared meta store');
+  // persist carried BOTH the allow array and the new meta (second arg) so index.js can durably write it.
+  ok(s.calls.length === 1, 'grant persisted once');
+  gm.revoke('cabinet:write');
+  ok(!gm.snapshot().meta['cabinet:write'], 'revoke dropped the provenance row');
+  ok(!meta['cabinet:write'], 'shared meta store no longer carries the revoked key');
+}
+
+// --- meta VIEW is scoped to held grants: an orphan meta row (no matching grant) is never surfaced ---
+{
+  const set = new Set(['cabinet:write']); const s = fakeStore();
+  const meta = { 'cabinet:write': { grantedAt: 111 }, 'ghost:write': { grantedAt: 222 } };
+  const gm = makeGrantManager({ grantsPermanent: set, persist: s.persist, meta });
+  const snap = gm.snapshot();
+  ok(snap.meta['cabinet:write'] && snap.meta['cabinet:write'].grantedAt === 111, 'held grant surfaces its provenance');
+  ok(!snap.meta['ghost:write'], 'an orphan meta row (no held grant) is NOT surfaced');
+}
+
+// --- LEGACY store (no meta injected) still works: grants list, snapshot.meta is {} not undefined ---
+{
+  const set = new Set(['cabinet:write']); const s = fakeStore();
+  const gm = makeGrantManager({ grantsPermanent: set, persist: s.persist });   // no meta / no now → old callers
+  const snap = gm.snapshot();
+  ok(snap.grants.includes('cabinet:write'), 'legacy manager still lists grants');
+  ok(snap.meta && typeof snap.meta === 'object', 'snapshot.meta is always an object (no provenance → empty)');
+}
+
+// --- fail-closed provenance: a torn persist commits NEITHER the grant NOR its meta ---
+{
+  const set = new Set(); const s = fakeStore(); s.fail(); const meta = {};
+  const gm = makeGrantManager({ grantsPermanent: set, persist: s.persist, meta, now: () => 42 });
+  const r = gm.grant('cabinet:write');
+  ok(r.ok === false, 'grant denied when persist throws');
+  ok(!set.has('cabinet:write') && !meta['cabinet:write'], 'fail-closed: neither the grant nor its provenance committed');
+}
+
 console.log('permgrants.test.js OK —', n, 'assertions');

@@ -22,6 +22,16 @@ ok(/>NEVER</.test(src), 'the "never" extreme is offered');
 ok(/id="perm-grants"/.test(src), '#perm-grants standing-grant list present');
 ok(/data-perm-grant=|data-perm-revoke=/.test(src), 'per-capability grant/revoke buttons rendered');
 
+// STANDING APPROVALS ledger (P0-5): the section is titled as a ledger, every grant is revocable, provenance +
+// teaching empty state are wired, and REVOKE is a destructive two-step arm/confirm (the app's idiom).
+ok(/STANDING APPROVALS/.test(src), 'the standing-grant section is titled STANDING APPROVALS');
+ok(/data-perm-revoke=/.test(src), 'a REVOKE control is rendered for standing grants');
+ok(/pwhen|grantAgeText/.test(src), 'each row shows WHEN it was granted (provenance line)');
+ok(/emptyApprovals|No standing approvals yet/.test(src), 'teaching empty state ("answer ALWAYS…") is wired');
+ok(/data-perm-revoke\][\s\S]*dataset\.armed/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
+ok(/held\.filter\(k => curated\.indexOf\(k\) < 0\)/.test(src), 'NON-curated standing grants are listed too (nothing hidden/irrevocable)');
+ok(/pre-approve a capability|pre-bless/i.test(src), 'the curated GRANT offer is kept separate from the active-approvals ledger');
+
 // the store hooks
 ok(/PermissionsStore\.setLevel\(/.test(src), 'level click drives PermissionsStore.setLevel');
 ok(/PermissionsStore\.grant\(/.test(src) && /PermissionsStore\.revoke\(/.test(src), 'grant + revoke wired to the store');

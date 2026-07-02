@@ -75,4 +75,22 @@ eq(P.reconcileToLevel('never', ['cabinet:write']), { toGrant: [], toRevoke: ['ca
 eq(P.reconcileToLevel('full', ['cabinet:write']), { toGrant: [], toRevoke: [] }, 'already at full → no change');
 eq(P.reconcileToLevel('draft', ['cabinet:write', 'net:send']), { toGrant: [], toRevoke: ['cabinet:write'] }, 'leveling down revokes the write grant but NEVER auto-touches a non-curated grant (net:send)');
 
+// --- STANDING-APPROVALS ledger copy (P0-5): teaching empty state + provenance line ---
+ok(/no standing approvals yet/i.test(P.emptyApprovals()), 'empty-state teaches how a row appears (answer ALWAYS)');
+ok(/always/i.test(P.emptyApprovals()), 'empty-state names the ALWAYS answer that creates a standing grant');
+eq(P.EMPTY_APPROVALS, P.emptyApprovals(), 'the empty-state constant and getter agree (single source of copy)');
+
+// grantAgeText is deterministic given (grantedAt, now) — clock is injected, never read internally.
+{
+  const t = 1700000000000; const min = 60000, hr = 3600000, day = 86400000;
+  ok(/just now/i.test(P.grantAgeText(t, t + 5000)), '5s → just now');
+  ok(/5 mins ago/i.test(P.grantAgeText(t, t + 5 * min)), '5m → 5 mins ago');
+  ok(/1 min ago/i.test(P.grantAgeText(t, t + 1 * min)), 'singular minute');
+  ok(/3 hours ago/i.test(P.grantAgeText(t, t + 3 * hr)), '3h → 3 hours ago');
+  ok(/2 days ago/i.test(P.grantAgeText(t, t + 2 * day)), '2d → 2 days ago');
+  // legacy grants carry no timestamp — honest fallback, never a fabricated time.
+  ok(/granted earlier/i.test(P.grantAgeText(null, t)), 'no grantedAt → "granted earlier" (never fabricated)');
+  ok(/granted earlier/i.test(P.grantAgeText(undefined)), 'undefined grantedAt is tolerated');
+}
+
 console.log('permpanel.test.js OK —', n, 'assertions');

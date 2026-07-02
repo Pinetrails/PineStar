@@ -1331,7 +1331,7 @@ const StationUI = (() => {
         '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">DRAFT FOR ME</button>' +
         '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FULLY AUTONOMOUS</button>' +
       '</div>' +
-      '<div class="set-row"><span class="dim">STANDING GRANTS — capabilities it may use unattended (revocable any time)</span></div>' +
+      '<div class="set-row"><span class="dim">STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
       '<div class="key-list" id="perm-grants"></div>' +
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
       // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
@@ -1431,24 +1431,55 @@ const StationUI = (() => {
       // placed object is the capability). null = unknown → no false alarm.
       const permAgent = () => (typeof Workstreams !== 'undefined' && Workstreams.active && Workstreams.active() && Workstreams.active().agentId) || 'agent';
       const heroCapsNow = () => (typeof World !== 'undefined' && World.heroCaps) ? (World.heroCaps(permAgent()) || []) : null;
+      // "granted <when>" provenance line for a standing grant, from the sidecar meta map (additive B1.1). Legacy
+      // grants with no timestamp read "granted earlier" — honest, never fabricated. We never claim a prompt/run id
+      // because that provenance isn't persisted.
+      const pwhen = (snap, k) => {
+        const m = snap.meta && snap.meta[k];
+        const at = m ? m.grantedAt : null;
+        return (typeof Permissions !== 'undefined' && Permissions.grantAgeText) ? Permissions.grantAgeText(at, Date.now()) : '';
+      };
+      const pempty = () => (typeof Permissions !== 'undefined' && Permissions.emptyApprovals) ? Permissions.emptyApprovals()
+        : 'No standing approvals yet — when you answer ALWAYS to a permission prompt, it appears here.';
       const renderGrants = (snap) => {
         const curated = pcurated(); const caps = heroCapsNow(); const rows = [];
-        curated.forEach(k => {
-          const on = snap.grants.indexOf(k) >= 0;
-          const eff = (typeof Permissions !== 'undefined' && Permissions.grantEffective) ? Permissions.grantEffective(k, caps) : true;
-          const hint = (on && !eff && typeof Permissions !== 'undefined' && Permissions.objectHint) ? Permissions.objectHint(k) : '';
-          rows.push('<div class="set-row"><span>' + (on ? '✓ ' : '') + esc(plabel(k)) + (hint ? ' <span class="dim">— ' + esc(hint) + '</span>' : '') + '</span> <button class="bb sm' + (on ? ' danger' : '') + '" data-perm-' + (on ? 'revoke' : 'grant') + '="' + esc(k) + '">' + (on ? 'REVOKE' : 'GRANT') + '</button></div>');
-        });
-        snap.grants.filter(k => curated.indexOf(k) < 0).forEach(k => {
-          rows.push('<div class="set-row"><span class="dim">' + esc(k) + '</span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">REVOKE</button></div>');
-        });
-        if (!rows.length) rows.push('<p class="set-about">No standing permissions — it can draft, but can’t change anything on its own yet.</p>');
+        // THE LEDGER (P0-5) — every capability ACTUALLY blessed right now: what, WHEN, and a per-row REVOKE. A held
+        // CURATED cap shows its friendly label + object-effect hint; a NON-curated class (blessed via a past "always"
+        // prompt) shows its raw danger key — so nothing the agent can do unattended is ever hidden or irrevocable.
+        const held = snap.grants.slice();
+        if (held.length) {
+          curated.filter(k => held.indexOf(k) >= 0).forEach(k => {
+            const eff = (typeof Permissions !== 'undefined' && Permissions.grantEffective) ? Permissions.grantEffective(k, caps) : true;
+            const hint = (!eff && typeof Permissions !== 'undefined' && Permissions.objectHint) ? Permissions.objectHint(k) : '';
+            rows.push('<div class="set-row"><span>✓ ' + esc(plabel(k)) + (hint ? ' <span class="dim">— ' + esc(hint) + '</span>' : '') + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
+          });
+          held.filter(k => curated.indexOf(k) < 0).forEach(k => {
+            rows.push('<div class="set-row"><span class="dim">' + esc(k) + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
+          });
+        } else {
+          // teaching empty state (P0-5): explains how a row lands here instead of looking broken.
+          rows.push('<p class="set-about">' + esc(pempty()) + '</p>');
+        }
+        // BELOW the ledger: the curated capabilities NOT yet granted — an explicit "pre-bless this" offer (GRANT).
+        // Kept visually separate from the ledger so the offer is never mistaken for an active approval.
+        const offers = curated.filter(k => held.indexOf(k) < 0);
+        if (offers.length) {
+          rows.push('<div class="set-row"><span class="dim">— pre-approve a capability —</span></div>');
+          offers.forEach(k => {
+            rows.push('<div class="set-row"><span>' + esc(plabel(k)) + '</span> <button class="bb sm" data-perm-grant="' + esc(k) + '">GRANT</button></div>');
+          });
+        }
         return rows.join('');
       };
       const wireGrants = () => {
         if (!grantsWrap) return;
         grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
-        grantsWrap.querySelectorAll('[data-perm-revoke]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm); sfx('click'); }));
+        // REVOKE is destructive → two-step arm/confirm (same idiom as cron delete / key remove): first click arms
+        // the button, a second within 5s withdraws the grant, so the next occurrence prompts again.
+        grantsWrap.querySelectorAll('[data-perm-revoke]').forEach(b => b.addEventListener('click', () => {
+          if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '✕ REVOKE'; } }, 5000); return; }
+          sfx('bad'); Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm);
+        }));
       };
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();

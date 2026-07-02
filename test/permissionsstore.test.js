@@ -94,6 +94,32 @@ const wire = (h) => PermissionsStore.init({ api: h.api, getPosture: h.getPosture
     await p;
   }
 
+  // --- provenance (P0-5): the store caches the sidecar's meta map and exposes it in the snapshot ---
+  {
+    const server = new Set(['cabinet:write', 'net:send']);
+    const api = {
+      load: async () => ({ grants: Array.from(server).sort(), grantable: ['cabinet:write'], meta: { 'cabinet:write': { grantedAt: 1700000000000 }, 'net:send': { grantedAt: 1690000000000 } } }),
+      grant: async () => ({ ok: true, grants: Array.from(server).sort() }),
+      revoke: async (k) => { server.delete(k); return { ok: true, grants: Array.from(server).sort() }; }
+    };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'free', actsUnattended: true }), applyPreset: () => {}, load: false });
+    const snap = await PermissionsStore.refresh();
+    eq(snap.meta['cabinet:write'].grantedAt, 1700000000000, 'store cached the curated grant provenance');
+    eq(snap.meta['net:send'].grantedAt, 1690000000000, 'store cached the non-curated grant provenance');
+    // a revoke with no meta in the response still drops that key's provenance locally.
+    const after = await PermissionsStore.revoke('net:send');
+    ok(!after.meta['net:send'], 'revoke dropped the provenance for the withdrawn key');
+    ok(after.meta['cabinet:write'], 'the surviving grant keeps its provenance');
+  }
+
+  // --- legacy store (no meta in the payload): snapshot.meta is always an object, never undefined ---
+  {
+    const api = { load: async () => ({ grants: ['cabinet:write'], grantable: ['cabinet:write'] }), grant: async () => ({ ok: true }), revoke: async () => ({ ok: true }) };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'wait' }), applyPreset: () => {}, load: false });
+    const snap = await PermissionsStore.refresh();
+    ok(snap.meta && typeof snap.meta === 'object', 'a meta-less payload still yields an object meta (empty)');
+  }
+
   // --- read-only citizen: never emits, no bus dependency ---
   {
     const src = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'permissionsstore.js'), 'utf8');
