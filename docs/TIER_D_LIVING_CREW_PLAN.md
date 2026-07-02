@@ -525,3 +525,101 @@ build). `dbg()` now exposes `social`/`chase`/`chaseGateIn`/`cursorFresh`/`cursor
 **Residual/unverifiable:** the live FEEL (does the chase read as eerie-and-alive vs silly?) and the tick-driven
 phase progressions are code-review + rate-model verified only; an attended foreground multi-crew soak is the sole
 way to SEE the beats — deferred to an attended check.
+
+## D5 — THE OVERSEER OVERSEES (additive; hero-only role-shaped movement) — implementation notes (as built)
+
+> Andrew's ask: the main agent should read as the station's OVERSEER — role-shaped movement that makes the floor
+> feel like an organization, not a fish tank. Zero tokens (G1), deterministic (G6), work-always-wins (G2),
+> containment inviolable (G3). Single writer: `frontend/app/world.js` (+ this doc). No chat.js, no shared/*, no new
+> bus wire, no persistence. Commit `tier-d D5: THE OVERSEER OVERSEES …` (+ the hunt-3 hard-until hardening).
+
+### What "the Overseer" resolved to (ground truth, grepped 2026-07-02)
+There is **no separate overseer concept in-world** — grep of `frontend/app/world.js` finds none. The OVERSEER is a
+UI/identity concept (app.js: "CREATE YOUR OVERSEER", the first agent runs the station and recruits the rest). In the
+canvas, the **HERO body `agent` (its `agent.id` is the literal `'agent'`) IS the Overseer** — the Commander's main
+agent. So every D5 beat is on the HERO body only (gated `self === agent` where the shared want-engine could otherwise
+run it on crew), and rides existing hero machinery. **Zero crew behavior change.**
+
+### Reused machinery (scope-locked, no new pathing/clamping)
+- **`maybeRounds`/`roundsNext`** (caretaker rounds, Tier 1) — goal `'rounds'`, own cooldown `roundsCd` (60-130 s,
+  OUTSIDE the D2 noticeable-beat budget), arrive gives a 1.5-3 s ownership hold (`studyUntil`). Beat 1 re-flavors
+  its stops; its budget/cooldown model is UNCHANGED (verified: rounds is not gated by `crewBeatDamp`).
+- **The D3 watch-a-peer stand-point** (`planWatch`'s "behind the worker" geometry) — beat 1's `supStandBehind`
+  reuses the same candidate ring (`[2,3,1]` tiles along the observer→worker vector + the 4 cardinals), each
+  `tileInZone`+`walkable` checked, facing via `dirToward`.
+- **`missionPinCounts(now)` → `mpOpen`** — the frontend-visible task/mission QUEUE count, projected from
+  `QuestStore.view()`/`QuestStateStore.visible()` and cached at 1 Hz. **This is state the frontend ALREADY holds for
+  the board render — no new fetch, no new `U.bus.on`, no bus round-trip (G1 honored).** This is why beats 2+3 SHIPPED
+  rather than being skipped (self-review hunt 4).
+- **`boardAnchorTile()`** — the MISSION BOARD's approach tile via the shared `PropAnchor` law (already used by the
+  autojob pin beat). Beat 2 models its goal `'post'` directly on the existing `maybePinProposal`/goal `'pin'` beat.
+- **`crewBeatDamp`/`armBeat`** (D2 station budget) — beat 2 consults + arms it (it IS a noticeable beat).
+- **`zoneFor(self)` + `tileInZone`** (Tier A containment) — every new target clamped at pick, as the whole idle
+  stack already does. Hero zone kind may be `'room'`/`'leash'`/`'multi'`; with crew present the hero can be caged to
+  its own room, so beats 1+2 both re-check `tileInZone(zoneFor(agent), …)` and never reach outside.
+
+### The three role-beats (all hero-only, all within the hero's zone)
+1. **Inspection rounds** (beat 1) — in `maybeRounds`, a `self === agent` block scans `crew` for bodies `b.working`
+   whose tile is `tileInZone` the hero's zone, and appends a `{ sup: supStandBehind(hero, b) }` stop (a ready
+   `{tx,ty,face}` behind the worker, facing it). The stop rides the normal shuffle/pick + queue. On arrival the
+   `'rounds'` case gives the **same brief 1.5-3 s hold** (a supervisor's GLANCE — deliberately shorter than the D3
+   watch's 3-7 s STUDY) with an over-the-shoulder line (`SELF_SUPERVISE`) instead of the ownership beat, keyed off
+   `self.roundsSup`. **No working crew in-zone (incl. every N=1 floor) ⇒ the block appends nothing, draws no RNG,
+   and rounds are byte-identical to trunk.** It does NOT touch the D3 `socialBeat` slot (single-body, no partner
+   state) and does NOT consult `crewBeatDamp` (rounds are a Tier-1 beat already outside that budget — kept so).
+2. **Mission-board post** (beat 2) — `maybeBoardPost(now)`, called from `decideIdle` under the `self === agent`
+   reflex block, goal `'post'`. Gates, in order (all pre-RNG): `now < postCd` → `crewBeatDamp < 1` (D2 budget) →
+   `missionPinCounts(now)[0] <= 0` (queue empty ⇒ nothing to survey) → board absent/no approach → **approach tile
+   outside the hero's zone ⇒ no-op** (containment; no reach, no exception) → `setPathTo` fails ⇒ skip. Only AFTER the
+   queue is confirmed non-empty does it draw RNG (`U.irnd` for `postCd`, `armBeat`). Walks to the board, faces it,
+   **holds 3-6 s (a real queue survey)** via `studyUntil`, then the `'post'` dwell-release branch drifts back to
+   idle. 2-4 min per-hero cooldown. **HARD UNTIL (hunt 3):** `maybeBoardPost` also sets `studyUntil = now + 12000`
+   as a walk-cap so a board deleted/refit mid-walk (path cleared, arrive never fires) can never strand the goal —
+   the dwell-release frees it by the ceiling even without an arrival; `arrive()` overwrites it with the real hold.
+3. **Queue-aware idle bias** (beat 3) — in `decideIdle`'s bored/restless branch, the caretaker-lap chance leans
+   `0.3 → 0.45` (×1.5, never absolute) **only when `self === agent` AND the queue is non-empty**. The multiplier is
+   derived from the cached `missionPinCounts` (NO RNG), so the `U.chance` DRAW COUNT is unchanged — a no-queue floor
+   keeps the exact `0.3` (byte-identical) and crew always use `0.3`. Rounds visit desks/belts/props (the
+   work-adjacent points), so a busy station gets an overseer that hovers near the work — a WEIGHT shift, no new
+   movement machinery.
+
+### Constants
+Beat 1: supervisor stand ring `[2,3,1]` tiles + 4 cardinals (from `planWatch`); hold reuses the rounds `U.irnd(1500,
+3000)`. Beat 2: `postCd = U.irnd(120000, 240000)` (2-4 min); survey hold `U.irnd(3000, 6000)` (3-6 s); walk-cap
+`studyUntil = now + 12000`. Beat 3: rounds bias `0.45` (queue non-empty) vs the existing `0.3`.
+
+### Mutual exclusion / work-wins
+Every beat is goal-keyed. Beat 2's goal `'post'` and beat 1's `'rounds'` require `goal == null` at entry (decideIdle
+only runs on a genuinely idle body) and are BELOW the summon-seize block, which overwrites `goal → 'summon'` and
+re-paths to the desk the moment `activity==='task'` arms — so **work always wins with no extra teardown** (same as
+the pre-existing `'rounds'`/`'pin'` beats). Beat 2 is single-body and not a station slot, so it needs no
+`socialBeat`/`chaseId` check beyond its own `goal == null`; it never runs under chat focus (D1's `chatStareHold`
+early-out in decideIdle) or during a live social/mimic/chase (those hold `goal != null`).
+
+### The 6 self-review hunts — how each cleared
+1. **Crew byte-parity (zero crew-side diff).** Beat 1's worker scan is `if (self === agent)`; `roundsNext`'s
+   `self.roundsSup = !!s.sup` is `false` for crew (undefined `sup`) and only read by arrive's ternary → `SELF_ROUNDS`
+   (identical). Beat 2 is only ever called under `self === agent`. Beat 3's bias is `0.3` for crew. CLEAR.
+2. **No-queue-no-crew hero byte-parity (RNG order).** Beat 1: empty/no-working-crew loop appends nothing, draws no
+   RNG → identical stops/shuffle/pick. Beat 2: returns at the `missionPinCounts[0] <= 0` gate BEFORE any `U.*` draw
+   (the cd + damp + cached-queue reads are RNG-free). Beat 3: no-queue → `0.3`, identical `U.chance` draw.
+   ⇒ a floor with no queue and no crew is byte-identical to trunk. CLEAR.
+3. **Board-post stuck state** (board deleted/refit mid-walk). The self-heal drops a pathless walker to idle; the
+   `'post'` dwell-release frees the goal, and the `studyUntil = now + 12000` HARD UNTIL guarantees release even if
+   arrive never fires. An unreachable board is caught by `setPathTo` returning false (goal never set). CLEAR.
+4. **Queue state from EXISTING frontend state only.** `missionPinCounts` reads the QuestStore projection already
+   computed for the board render (cached 1 Hz). No new fetch/bus subscription added anywhere → beats 2+3 shipped
+   (not skipped). CLEAR.
+5. **Containment on every new target.** `supStandBehind` checks `tileInZone`+`walkable` on every candidate (worker
+   itself pre-checked in-zone); `maybeBoardPost` explicitly checks `tileInZone(zoneFor(agent), tile)` before pathing;
+   beat 3 reuses already-clamped rounds. CLEAR.
+6. **Work-seize precedence untouched.** The summon-seize block is unchanged and above all idle stepping; it clears
+   `'post'`/`'rounds'`; decideIdle (beats 2+3) only runs on `activity==='idle'`. CLEAR.
+
+### Verification (honest limits — same as D1-D4)
+`node --check` clean; full `npm run test:fast` green incl. `lint-determinism` + `lint-emits` + `zones.test` +
+`social-border.test`. **Residual/unverifiable:** the canvas FSM is not headless-testable (rAF pauses in a
+backgrounded tab — the plan's honest-limits section); the role-beats are code-review + RNG-order verified. Seeing
+them (the supervisor glance behind a working crew body; the board survey when the queue fills; the idle drift toward
+the work) needs an attended foreground `?dev` soak with ≥1 summoned+working crew body sharing the hero's zone AND a
+non-empty quest queue — deferred to an attended check.

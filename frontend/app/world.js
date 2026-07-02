@@ -515,6 +515,10 @@ const World = (() => {
     if (!setPathTo({ x: tile.tx, y: tile.ty })) return false;    // unreachable → skip (leaves postCd untouched; re-considered next idle tick)
     postTargetTile = tile;
     agent.goal = 'post'; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.working = false; agent.stilling = false; agent.state = 'idle';
+    // HARD UNTIL (hunt 3): a walk-cap on studyUntil so a board deleted/refit mid-walk (path cleared, arrive never
+    // fires) can NEVER strand the 'post' goal — the dwell-release branch frees it by this ceiling even without an
+    // arrival. arrive() overwrites this with the real 3-6s survey hold once the board is reached.
+    agent.studyUntil = now + 12000;
     postCd = now + U.irnd(120000, 240000);                       // 2-4 min per-hero cooldown
     armBeat(now);                                                // count it against the shared station beat budget (G5)
     if (!agent.target) arrive(now);                             // already standing on the approach tile → survey now
