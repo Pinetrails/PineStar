@@ -60,7 +60,26 @@ const Chat = (() => {
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
   function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
-  function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; }
+  function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; else if (log) showNewPill(); }
+
+  /* COMMS-PREMIUM · "new messages ↓" pill — when the Commander has scrolled UP to re-read (stick=false) and
+     fresh content lands (autoscroll can't follow the bottom), a pill fades in over the transcript foot. Click
+     jumps to the bottom and re-arms stickiness; it also self-hides the moment the scroll listener re-detects
+     near-bottom. Reuses the existing stick machinery — no new scroll state. */
+  function jumpToBottom() { if (log) { log.scrollTop = log.scrollHeight; stick = true; hideNewPill(); } }
+  function showNewPill() {
+    const panel = el('chat-panel'); if (!panel || stick) return;
+    let pill = el('comms-newpill');
+    if (!pill) {
+      pill = document.createElement('button'); pill.id = 'comms-newpill'; pill.type = 'button'; pill.className = 'comms-newpill';
+      pill.setAttribute('aria-label', 'Jump to newest messages');
+      pill.textContent = 'new messages ↓';
+      pill.onclick = () => { if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); jumpToBottom(); };
+      panel.appendChild(pill);
+    }
+    pill.classList.add('show');
+  }
+  function hideNewPill() { const p = el('comms-newpill'); if (p) p.classList.remove('show'); }
 
   /* COMMS PROCESSING TIMER — a live wall-clock readout in the header (▸ thinking · 3s) that counts how long
      the DISPLAYED stream's turn has been running. The start instant lives on the channel (Channels.startedAt),
@@ -82,6 +101,7 @@ const Chat = (() => {
     let num = ce.querySelector('.ce-num');
     if (!num) { ce.textContent = ''; num = document.createElement('span'); num.className = 'ce-num'; ce.appendChild(num); }
     if (num.textContent !== txt) num.textContent = txt;   // only the digits change → the pulsing dot never restarts
+    renderPresence();   // the presence card rides the same tick (single source of the elapsed wall-clock)
   }
   function ensureElapsedTimer() {
     renderElapsed();
@@ -91,6 +111,83 @@ const Chat = (() => {
   function stopElapsedTimer() {
     if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = 0; }
     const ce = el('chat-elapsed'); if (ce && ce.firstChild) ce.textContent = '';
+  }
+
+  /* ── COMMS-PREMIUM · LIVE WORKING-PRESENCE CARD ─────────────────────────────────────────────────────
+     While a run is in flight ONE presence card is pinned at the transcript bottom (a real last-child of
+     #chat-log, so it sits above the composer and scrolls with the feed): a blinking ▮, the current status
+     VERB (THINKING / WORKING / AWAITING APPROVAL — derived from the SAME state that drives #chat-status),
+     the CURRENT tool (latest onToolCall name, cleared on its result), and the elapsed time (reuses the
+     existing per-stream wall-clock — Channels.startedAtOf — never a second counter). It appears on run
+     start, updates IN PLACE via the elapsed tick (no transcript spam), and on run end resolves into a
+     compact one-line summary (■ RUN COMPLETE · 2:14 [· N steps][· $x]); on error it resolves red. Truthful
+     telemetry only: turns/cost are shown ONLY when a real value is handed in, never invented. */
+  let presenceCurTool = null;   // the DISPLAYED stream's latest un-resolved tool name (or null)
+  function presenceCard() {
+    if (!log) return null;
+    let card = log.querySelector('#comms-presence');
+    if (!card) {
+      clearEmptyState();
+      card = document.createElement('div'); card.id = 'comms-presence'; card.className = 'comms-presence';
+      card.setAttribute('aria-live', 'polite');
+      const dot = document.createElement('span'); dot.className = 'cp-dot'; dot.textContent = '▮';
+      const verb = document.createElement('span'); verb.className = 'cp-verb';
+      const tool = document.createElement('span'); tool.className = 'cp-tool';
+      const time = document.createElement('span'); time.className = 'cp-time';
+      card.appendChild(dot); card.appendChild(verb); card.appendChild(tool); card.appendChild(time);
+      log.appendChild(card);   // last child → pinned at the transcript bottom
+    } else if (card !== log.lastElementChild) {
+      log.appendChild(card);   // a row landed after it (tool chip / prose) → re-pin to the bottom
+    }
+    return card;
+  }
+  // derive the presence VERB from the same real state syncStatus() reads (pending approval > working > thinking)
+  function presenceVerb() {
+    const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
+    if (p) return 'AWAITING APPROVAL';
+    const cs = (activeWs && typeof Channels !== 'undefined' && Channels.statusOf) ? Channels.statusOf(activeWs.id) : '';
+    return (cs && /work/i.test(cs)) ? 'WORKING' : 'THINKING';
+  }
+  function renderPresence() {
+    if (!log) return;
+    const started = (activeWs && typeof Channels !== 'undefined') ? Channels.startedAtOf(activeWs.id) : 0;
+    if (!isBusy() || !started) return;   // teardown resolves/removes it; never draw an idle presence card
+    const card = presenceCard(); if (!card) return;
+    const verb = card.querySelector('.cp-verb'); if (verb) verb.textContent = presenceVerb();
+    const tool = card.querySelector('.cp-tool');
+    if (tool) { const t = presenceCurTool ? shortName(presenceCurTool) : ''; if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t); }
+    const time = card.querySelector('.cp-time'); const txt = fmtElapsed(Date.now() - started);
+    if (time && time.textContent !== txt) time.textContent = txt;
+  }
+  function startPresence(ws) {
+    presenceCurTool = null;
+    if (isActiveWs(ws)) { renderPresence(); ensureElapsedTimer(); }   // the elapsed tick also drives the presence update
+  }
+  function presenceToolCall(ws, name) { presenceCurTool = name || null; if (isActiveWs(ws)) renderPresence(); }
+  function presenceToolResult(ws) { presenceCurTool = null; if (isActiveWs(ws)) renderPresence(); }
+  // remove any live presence card without a summary (used when switching away / re-rendering a stream)
+  function clearPresence() { const c = log && log.querySelector('#comms-presence'); if (c) c.remove(); presenceCurTool = null; }
+  // resolve the live card into a compact one-line summary that STAYS in the transcript. opts: { error, raw,
+  // stopped, endReason, steps, cost }. Truthful: steps/cost only appear when a real number is supplied.
+  function resolvePresence(ws, opts) {
+    if (!isActiveWs(ws)) { clearPresence(); return; }
+    opts = opts || {};
+    const started = (typeof Channels !== 'undefined') ? Channels.startedAtOf(ws.id) : 0;
+    const dur = started ? fmtElapsed(Date.now() - started) : '';
+    const card = log && log.querySelector('#comms-presence');
+    if (!card) return;
+    card.classList.remove('cp-live');
+    presenceCurTool = null;
+    const isErr = !!opts.error, isStop = !!opts.stopped || (opts.endReason && opts.endReason !== 'done');
+    card.classList.add('resolved'); if (isErr) card.classList.add('err'); else if (isStop) card.classList.add('stopped');
+    let label = isErr ? '■ RUN FAILED' : isStop ? '■ RUN STOPPED' : '■ RUN COMPLETE';
+    const bits = [];
+    if (dur) bits.push(dur);
+    if (typeof opts.steps === 'number' && opts.steps > 0) bits.push(opts.steps + (opts.steps === 1 ? ' step' : ' steps'));
+    if (typeof opts.cost === 'number' && opts.cost > 0) bits.push('$' + (Math.round(opts.cost * 100) / 100).toFixed(2));
+    card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
+    card.setAttribute('role', 'note');
+    autoscroll();
   }
 
   // RETIRE A SETTLED BEAT: a decided memory card / answered nudge fades + collapses, then drops out of the
@@ -110,6 +207,15 @@ const Chat = (() => {
   }
 
   const KIND_TAG = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
+
+  // COMMS-PREMIUM — a subtle HH:MM stamp for a transmission-card header. The stored history carries no
+  // per-message time, so replayed history gets NO stamp (never fabricate one); only rows created live at
+  // render time get a real wall-clock stamp. Pure presentation, dim + right-aligned in the header row.
+  function fmtClock(d) {
+    d = d || new Date();
+    const h = d.getHours(), m = d.getMinutes();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
 
   // LINKIFY (XSS-safe): model output is untrusted, so we NEVER assign raw model text to innerHTML. Instead we
   // HTML-escape the WHOLE string first, then wrap only matched http(s) URL substrings in anchors. Escaping before
@@ -164,12 +270,15 @@ const Chat = (() => {
     onTurn = opts.onTurn || null; interview = null;
     proposalRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
-    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); });   // track whether the user is following the bottom
+    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
     // row's prose, then flashes a ✓ confirm. Wired once per log element so a re-init can't stack handlers.
     if (log && !log.__copyWired) {
       log.__copyWired = true;
       log.addEventListener('click', e => {
+        // TOOL CHIP: clicking a chip's head toggles its expanded detail (checked before the copy button)
+        const chipHead = e.target.closest('.tc-head');
+        if (chipHead) { toggleChip(chipHead); if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); return; }
         const btn = e.target.closest('.cmsg-copy'); if (!btn) return;
         const bodyEl = btn.closest('.cmsg') && btn.closest('.cmsg').querySelector('.body');
         const txt = bodyEl ? bodyEl.textContent : '';
@@ -216,10 +325,11 @@ const Chat = (() => {
   function load(ws) {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
     activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
+    endToolRail(); presenceCurTool = null;   // COMMS-PREMIUM: the tool rail + live-tool state belong to the OUTGOING stream's DOM
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
     if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
     if (log) log.innerHTML = '';
-    stick = true;   // a freshly-loaded / switched-to stream starts pinned to its latest line
+    stick = true; hideNewPill();   // a freshly-loaded / switched-to stream starts pinned to its latest line
     renderHistory();
     replayChannel();   // re-render an in-flight stream we left running: tool lines / partial reply / pending approval
     syncStatus();      // also paints the Stop control + this stream's queued pills (updateControls)
@@ -273,10 +383,20 @@ const Chat = (() => {
   function row(role, opts) {
     clearEmptyState();   // any real row supersedes the first-run hint
     const d = document.createElement('div'); d.className = 'cmsg ' + role;
+    // COMMS-PREMIUM: the speaker chip + a dim HH:MM stamp share one header row (a flex .cmsg-head). The
+    // stamp is a REAL wall-clock render-time stamp — replayed history passes stamp:false (no fabricated time).
     const who = document.createElement('span'); who.className = 'who';
     who.textContent = role === 'user' ? 'COMMANDER' : name;
     const body = document.createElement('span'); body.className = 'body';
-    d.appendChild(who); d.appendChild(body);
+    const wantStamp = !!(opts && opts.stamp);
+    if (wantStamp) {
+      const head = document.createElement('span'); head.className = 'cmsg-head';
+      const ts = document.createElement('span'); ts.className = 'cmsg-ts'; ts.textContent = fmtClock();
+      head.appendChild(who); head.appendChild(ts);
+      d.appendChild(head); d.appendChild(body);
+    } else {
+      d.appendChild(who); d.appendChild(body);
+    }
     // COPY: a hover-revealed copy button on the agent's MESSAGE rows. CSS hides it on the work-log beats
     // (tool / consent / turn-in / nudge / deliverable) — those aren't prose to copy. One delegated handler
     // in init() reads the row's .body text, so a streamed reply gains the button the moment its row exists.
@@ -289,15 +409,90 @@ const Chat = (() => {
     autoscroll();
     return { d, body };
   }
-  function addUser(t) { row('user').body.textContent = t; autoscroll(); }
-  function localLine(t) { row('agent').body.textContent = t; autoscroll(); }
-  // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible
+  function addUser(t) { row('user', { stamp: true }).body.textContent = t; autoscroll(); }
+  function localLine(t) { row('agent', { stamp: true }).body.textContent = t; autoscroll(); }
+  // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible. Kept for
+  // REPLAY (Channels stores pre-formatted strings) and for the ⏹ stop-reason line; the LIVE call/result path
+  // now renders structured tool CHIPS (toolChip / resolveChip) instead. Ends any open chip rail first so the
+  // stored line lands after the rail, not glued into it.
   function toolLine(text, isErr) {
+    endToolRail();
     const r = row('agent'); r.d.classList.add('tool'); if (isErr) r.d.classList.add('err');
     r.body.textContent = text; autoscroll();
   }
   function brief(s) { s = String(s || ''); return s.length > 56 ? s.slice(0, 53) + '…' : s; }
   function fmtMs(ms) { return ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's'; }   // 8423 → '8.4s'
+
+  /* ── COMMS-PREMIUM · TOOL CHIPS ──────────────────────────────────────────────────────────────────────
+     The agent's real actions render as compact one-line chips (glyph · tool name · short args) instead of
+     the old "▶ toolname args" text lines. Consecutive chips in the same run group tightly into ONE thin
+     activity rail (.tool-rail). When the result callback pairs to the call (by callId), the result FOLDS
+     back into the same chip (✓/✗ + duration) rather than emitting a second line. Click toggles an expanded
+     view (full args + result summary, length-capped). Cheap by design: a one-time fade-in per chip, no
+     per-chip looping animation, and the expanded text is capped so a long run stays DOM-lean. */
+  let toolRail = null;                 // the currently-open .tool-rail container (consecutive chips join it)
+  const pendingChips = new Map();      // callId -> chip element awaiting its result (for call→result folding)
+  const CHIP_CAP = 600;                // cap on stored expand text length — a long run must not bloat the DOM
+  const cap = s => { s = String(s == null ? '' : s); return s.length > CHIP_CAP ? s.slice(0, CHIP_CAP) + '…' : s; };
+  const shortName = n => String(n || 'tool').replace(/^mcp__/, '').replace(/_/g, '.');   // mcp__x__y → x.y, readable
+  function ensureToolRail() {
+    if (toolRail && toolRail.isConnected) return toolRail;
+    clearEmptyState();
+    toolRail = document.createElement('div'); toolRail.className = 'tool-rail';
+    log.appendChild(toolRail); autoscroll();
+    return toolRail;
+  }
+  function endToolRail() { toolRail = null; pendingChips.clear(); }   // a break (prose / beat / deliverable) closes the rail
+  // one delegated toggle handler for the whole log's chips (wired once alongside the copy handler)
+  function toggleChip(head) {
+    const chip = head && head.closest && head.closest('.tool-chip'); if (!chip) return;
+    const body = chip.querySelector('.tc-detail'); if (!body) return;
+    const open = chip.classList.toggle('open');
+    chip.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  // render a tool CALL as a chip; returns the chip element. ev: { callId, name, argsSummary }
+  function toolChip(ev) {
+    const rail = ensureToolRail();
+    const chip = document.createElement('div'); chip.className = 'tool-chip pending';
+    chip.setAttribute('aria-expanded', 'false');
+    const head = document.createElement('button'); head.type = 'button'; head.className = 'tc-head';
+    const glyph = document.createElement('span'); glyph.className = 'tc-glyph'; glyph.textContent = '▸';
+    const nm = document.createElement('span'); nm.className = 'tc-name'; nm.textContent = shortName(ev.name);
+    const args = document.createElement('span'); args.className = 'tc-args'; args.textContent = ev.argsSummary ? brief(ev.argsSummary) : '';
+    const stat = document.createElement('span'); stat.className = 'tc-stat'; stat.textContent = '';   // filled by resolveChip
+    head.appendChild(glyph); head.appendChild(nm); if (ev.argsSummary) head.appendChild(args); head.appendChild(stat);
+    const detail = document.createElement('div'); detail.className = 'tc-detail';
+    const dArgs = document.createElement('div'); dArgs.className = 'tc-d-args';
+    dArgs.textContent = ev.argsSummary ? cap(ev.argsSummary) : '(no arguments)';
+    detail.appendChild(dArgs);
+    chip.appendChild(head); chip.appendChild(detail);
+    rail.appendChild(chip);
+    if (ev.callId != null) { pendingChips.set(ev.callId, chip); if (pendingChips.size > 200) pendingChips.delete(pendingChips.keys().next().value); }
+    autoscroll();
+    return chip;
+  }
+  // fold a tool RESULT into its paired chip (✓/✗ + duration + result summary). ev: { callId, summary, isError, ms }
+  function resolveChip(ev, fallbackName) {
+    let chip = (ev.callId != null) ? pendingChips.get(ev.callId) : null;
+    if (chip) pendingChips.delete(ev.callId);
+    if (!chip) {
+      // ORPHAN result (no paired call — e.g. switched-to mid-run): render a standalone resolved chip
+      chip = toolChip({ callId: null, name: fallbackName || 'tool', argsSummary: '' });
+    }
+    chip.classList.remove('pending');
+    chip.classList.add(ev.isError ? 'err' : 'ok');
+    const glyph = chip.querySelector('.tc-glyph'); if (glyph) glyph.textContent = ev.isError ? '✗' : '✓';
+    const stat = chip.querySelector('.tc-stat');
+    if (stat) stat.textContent = ev.ms ? fmtMs(ev.ms) : (ev.isError ? 'failed' : '');
+    const detail = chip.querySelector('.tc-detail');
+    if (detail) {
+      const dRes = document.createElement('div'); dRes.className = 'tc-d-res' + (ev.isError ? ' err' : '');
+      dRes.textContent = (ev.isError ? '✗ ' : '✓ ') + cap(ev.summary || (ev.isError ? 'error' : 'ok'));
+      detail.appendChild(dRes);
+    }
+    autoscroll();
+    return chip;
+  }
   // a clickable COMMS row for a file the agent produced — opens it via the sidecar's jailed /api/file route
   function fileBlobUrl(title, agentId) {
     const url = fileUrl(title, agentId);
@@ -909,7 +1104,7 @@ const Chat = (() => {
     for (const m of h) {
       if (m.role === 'user') { addUser(m.content); continue; }
       if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
-      const r = row('agent');   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
+      const r = row('agent', { stamp: true });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
     }
@@ -939,7 +1134,8 @@ const Chat = (() => {
   function streamingAgent() {
     let seg = null, caret = null, raw = '';   // seg: the currently-open agent row; raw: its accumulated prose (so URLs can be linkified as they complete)
     function open() {
-      seg = row('agent'); raw = '';
+      endToolRail();   // a fresh prose paragraph opening below a rail closes it, so the next tool call starts a NEW rail under this prose (keeps chronological "said → did → said → did")
+      seg = row('agent', { stamp: true }); raw = '';
       caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
       seg.d.appendChild(caret);   // caret is a sibling of .body, so re-rendering .body's content never disturbs it
     }
@@ -968,8 +1164,10 @@ const Chat = (() => {
       }
     };
   }
-  // close the live paragraph (if any) so the action about to render lands BELOW the prose, in order
-  function breakLive() { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); }
+  // close the live paragraph (if any) so the action about to render lands BELOW the prose, in order.
+  // Also closes any open tool-chip rail — prose resuming means the next tool call starts a fresh rail
+  // below the new paragraph, so the feed reads "said → did (rail) → said → did (rail)" in order.
+  function breakLive() { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); endToolRail(); }
 
   // task-vs-chat classification lives in app/classify.js (pure + unit-tested); see Classify.isTaskDirective.
 
@@ -1229,6 +1427,7 @@ const Chat = (() => {
     if (!isTask && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
     status('thinking…');
     ensureElapsedTimer();   // start the live wall-clock the instant the turn begins (before the first token)
+    if (isActiveWs(ws)) startPresence(ws);   // COMMS-PREMIUM: pin the live working-presence card at the transcript bottom
     updateControls();       // reveal the ⏹ Stop control for this run
     // for a task the agent works at the computer (lit screen) and the result streams to this panel;
     // for talk it speaks the reply as a bubble in the room. The voice rule is appended LAST so it
@@ -1281,8 +1480,12 @@ const Chat = (() => {
         onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); if (isActiveWs(ws)) { breakLive(); toolLine(t); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
-        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); if (isActiveWs(ws)) { breakLive(); toolLine(t, ev.isError); } },
+        // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is
+        // unchanged — replayChannel renders those via toolLine), but the LIVE surface renders a structured CHIP.
+        // breakLive() closes the prose paragraph AND the prior chip rail only when it's a *call after prose*; a
+        // run of consecutive calls shares one rail because onToolResult below never breaks it.
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
+        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
           // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the Hermes model), not
@@ -1321,6 +1524,7 @@ const Chat = (() => {
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…' + (v.userMessage.length > 40 ? v.userMessage.slice(0, 40) + '…' : v.userMessage)); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
+        if (isActiveWs(ws)) resolvePresence(ws, { error: true });   // COMMS-PREMIUM: presence card resolves red
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
       } else {
         const replyText = reply || acc;
@@ -1345,14 +1549,18 @@ const Chat = (() => {
         // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
         if (!endReason || endReason === 'done') wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
         // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
-        if (thisRunId) { const cost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: cost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); }
+        let runCost = 0;
+        if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); }
+        // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
+        // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
+        if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, steps: runToolsOk, cost: runCost });
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
       const stopped = interrupted.has(ws.id);   // the Commander pressed Stop on THIS stream — a graceful interrupt, not a fault
       if (stopped) {
         // keep whatever already streamed, mark it stopped, and log NO error (the stop was intentional).
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); }
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
         if (acc.trim()) ws.history.push({ role: 'assistant', content: acc });   // the partial reply survives a switch
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
       } else {
@@ -1362,7 +1570,7 @@ const Chat = (() => {
         const v = (typeof Friendly !== 'undefined')
           ? Friendly.friendlyError(aborted ? new Error('cannot reach the STARNET sidecar — connection dropped') : e)
           : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…connection trouble…'); }
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…connection trouble…'); resolvePresence(ws, { error: true }); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // keep a readable trace of the failure
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (a dropped connection is retryable)
       }
