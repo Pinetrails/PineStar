@@ -37,9 +37,12 @@
     server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
     network:       { retryable: true,  action: null,       msg: "Can't reach the StarNet sidecar — make sure it's still running." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is rate-limiting — wait a few seconds and retry.' },
-    auth:          { retryable: false, action: 'settings', msg: 'Your model key was rejected — check it in Settings.' },
-    oauth:         { retryable: false, action: 'settings', msg: 'Your ChatGPT sign-in is missing or expired — check the ChatGPT connection in Settings.' },
+    auth:          { retryable: false, action: 'settings', msg: 'No working model connection — sign in with ChatGPT (no API key needed) or add a provider key in Settings.' },
+    oauth:         { retryable: false, action: 'settings', msg: 'Your ChatGPT sign-in is missing or expired — reconnect it in Settings, or add a provider API key instead.' },
     billing:       { retryable: false, action: 'settings', msg: "Your model provider says the account is out of credit — check billing in Settings." },
+    // managed StarNet credits ran out (only reachable when a managed-credit backend is wired). Point at the STORE
+    // to top up; a BYOK station never hits this kind (it gets `billing`/`auth` instead).
+    managed_credit:{ retryable: false, action: 'store',    msg: "You're out of managed credit — add credits in the STORE to keep running, or connect your own provider key in Settings." },
     capdenied:     { retryable: false, action: 'skills',   msg: "This needs a capability that's currently off — enable it in SKILLS." },
     timeout:       { retryable: true,  action: null,       msg: 'That took too long and timed out — try again.' },
     user_abort:    { retryable: false, action: null,       msg: 'Stopped.' },
@@ -114,6 +117,11 @@
       return { userMessage: k.msg, kind: 'user_abort', retryable: k.retryable, action: k.action, raw: raw };
     }
     let kind = null;
+    // Managed-credit exhaustion (only emitted when a credits backend is wired) — a UI-level fault the sidecar
+    // classifier doesn't model. Catch it before everything else so the CTA points at the STORE, not blind retry.
+    if (/managed credit|add credits in the store|out of managed credit/.test(raw.toLowerCase())) {
+      kind = 'managed_credit';
+    } else
     // Harness pre-flight misconfig ("no API key set" / "no model selected") is UI-level — catch before delegating
     // (the sidecar classifier never sees these) so both paths point at Settings, not a blind retry.
     if (/chatgpt.*sign-?in|sign-?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|chatgpt subscription.*connect/.test(raw.toLowerCase())) {

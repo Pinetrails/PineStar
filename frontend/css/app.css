@@ -908,6 +908,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 .ov-field-brain { margin-bottom: 0; }
 .ov-brain { border: 2px solid var(--ph-dim); border-radius: 7px; background: rgba(255,170,51,.04); padding: 10px 12px; }
+/* beginner-funnel lead-in: names the no-API-key path before the provider row so a newcomer knows the easy
+   option exists and that BYOK is still one click away. */
+.ov-brain-lead { font-size: 12px; line-height: 1.32; color: var(--ph-bright); margin: 0 0 9px; opacity: .95; }
 .ov-brain .provider-row { margin: 0 0 8px; }
 .ov-brain input { margin-bottom: 8px; }
 .ov-brain .model-picks { margin: 2px 0 6px; }

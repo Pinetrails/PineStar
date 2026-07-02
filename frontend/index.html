@@ -101,10 +101,14 @@
 
         <div class="ov-field ov-field-brain">
           <label>THE BRAIN <span class="dim">— the model that powers its mind</span></label>
+          <!-- BEGINNER FUNNEL: lead with the no-API-key path. A ChatGPT Plus/Pro login (Codex OAuth) needs
+               no key at all, so it's the recommended default and sits first; BYOK (OpenRouter etc.) stays a
+               fully visible one-click alternative for anyone who already has a key. -->
           <div class="ov-brain">
+            <div class="ov-brain-lead">Easiest start: sign in with the ChatGPT account you already have — no API key to find or paste. Already have a key? Pick any provider below instead.</div>
             <div class="provider-row ov-prov">
-              <button class="prov sel" data-prov="openrouter">OPENROUTER</button>
-              <button class="prov" data-prov="codex">CHATGPT SUB</button>
+              <button class="prov sel" data-prov="codex">CHATGPT — NO KEY</button>
+              <button class="prov" data-prov="openrouter">OPENROUTER</button>
               <button class="prov" data-prov="openai">OPENAI</button>
               <button class="prov" data-prov="anthropic">ANTHROPIC</button>
               <button class="prov" data-prov="gemini">GEMINI</button>
@@ -137,7 +141,7 @@
                   <button type="button" id="btn-codex-open" class="btn hidden">↗ OPEN PAGE</button>
                   <button type="button" id="btn-codex-logout" class="btn hidden">✕ DISCONNECT</button>
                 </div>
-                <div class="dim hint">uses your existing ChatGPT subscription</div>
+                <div class="dim hint">Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.</div>
               </div>
             </div>
 

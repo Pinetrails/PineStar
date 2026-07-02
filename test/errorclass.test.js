@@ -155,7 +155,7 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(v.kind, 'auth', '401 -> auth');
   A.eq(v.retryable, false, 'auth not retryable');
   A.eq(v.action, 'settings', 'auth points at Settings');
-  A.ok(/key was rejected.*Settings/i.test(v.userMessage), 'auth friendly headline names Settings');
+  A.ok(/Settings/i.test(v.userMessage) && /ChatGPT|key/i.test(v.userMessage), 'auth friendly headline points at Settings and offers a fix path');
   A.eq(F(new Error('sidecar HTTP 403')).kind, 'auth', '403 -> auth');
   A.eq(F(new Error('invalid api key')).kind, 'auth', '"invalid api key" -> auth');
 
@@ -207,7 +207,7 @@ const F = (err, status) => friendlyError(err, status);
   for (const k of Object.keys(KINDS)) {
     const def = KINDS[k];
     A.ok(typeof def.retryable === 'boolean' && typeof def.msg === 'string' && def.msg.length > 0, 'kind "' + k + '" has a boolean retryable + a non-empty message');
-    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills', 'kind "' + k + '" action is null|settings|skills');
+    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills' || def.action === 'store', 'kind "' + k + '" action is null|settings|skills|store');
   }
 }
 

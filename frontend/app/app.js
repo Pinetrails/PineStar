@@ -18,7 +18,7 @@ const App = (() => {
   let pickedTraits = {};        // the VOICE & MANNER fine-tune dials (warmth/humor/formality/length + emoji/blunt) — only set keys contribute prompt text
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
   let pickedApproval = 'ask';   // the APPROVAL mode — 'ask' (consent-gated) | 'full' (auto-approve). Drives the REAL consent broker (sidecar bypass), not a cosmetic toggle.
-  let pickedProvider = 'openrouter';   // 'openrouter' (BYO API key) | 'codex' (personal ChatGPT subscription via OAuth)
+  let pickedProvider = 'codex';   // BEGINNER-FIRST default: 'codex' (personal ChatGPT sign-in, NO API key) leads the funnel; 'openrouter' (BYO API key) + the rest stay one click away. initConnect() still honours a returning agent's saved provider (selectProviderUI(Harness.getProv())).
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
   let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
   let codexPoll = null;                // the setTimeout handle for the device-code poll loop
@@ -1061,7 +1061,9 @@ const App = (() => {
     document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
     el('btn-codex-signin').onclick = startCodexSignIn;
     el('btn-codex-logout').onclick = codexLogout;
-    selectProviderUI(Harness.getProv());
+    // RESUME/recovery honours the agent's saved provider; a FRESH create screen leads with the beginner-first
+    // default (pickedProvider = 'codex' — sign in with ChatGPT, no API key), the top of the zero-to-value funnel.
+    selectProviderUI(recovery ? Harness.getProv() : pickedProvider);
   }
 
   // RESUME mode dressing for the connect screen. Recovery = an existing station re-entering (missing creds or a
