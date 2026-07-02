@@ -143,6 +143,16 @@ const World = (() => {
      The focused body, while idle, drops its wander/quirk/social life and holds its attention on the Commander
      (see the chat-stare beat in decideIdle + the per-tick hold in tick/crewEngineStep). D0 plumbing only. */
   let chatFocusId = null;
+  /* TIER D · D1 WARMTH (tune fix 2026-07-02) — COMMS is a PERSISTENT panel: it always has an active
+     stream, so setChatFocus fires at boot and never clears. Without a decay the focused (usually hero)
+     body would stare FOREVER — "it will just endlessly follow the users mouse." The stare is therefore
+     held only while the conversation is WARM: `chatWarmT` is stamped on every genuine engagement
+     (a focus switch/open = setChatFocus; typing / sending / a reply-run boundary = chatFocusPing), and
+     chatStareHold additionally requires `fnow - chatWarmT < CHAT_WARM_MS`. When warmth lapses the hold
+     simply stops engaging — the existing self-heal (decideIdle clears stilling on entry) returns the body
+     to its normal idle life (quirks/social/chase/wander resume). Re-engaging re-warms it indefinitely. */
+  const CHAT_WARM_MS = 120000;              // ~2 min: how long after the last real engagement the chat-stare keeps holding
+  let chatWarmT = -1e9;                      // last engagement stamp (frame clock, fnow); -1e9 = never warm
   /* TIER D · D3 SOCIAL ENCOUNTERS — Tier C (gaze-only) grows bounded MOVEMENT beats. ONE live encounter
      station-wide (G4): `socialBeat` is the single slot — null, or {kind, aId, bId, until}. `until` is a HARD
      whole-encounter timeout so the slot ALWAYS frees, even if pathing fails / a body gets stuck / a participant
@@ -155,6 +165,15 @@ const World = (() => {
      U.chance/U.irnd/U.pick/U.hash only. reduceMotion degrades D3 to Tier C glances (no walking). */
   let socialBeat = null;                    // the single live encounter slot (G4)
   const socialPairCd = new Map();           // "idA|idB" (sorted) -> earliest `now` the pair may re-encounter
+  /* TIER D · D3 STATION LANE (rate retune 2026-07-02) — social used to select INSIDE the shared quirk gate
+     (crewBeatDamp), so it lost the per-decide race to the quirk families (~0.085 vs 0.02) and starved to
+     ~1 encounter/25min. It now has its OWN station cooldown lane (like THE CHASE's chaseGateUntil), decoupled
+     from the quirk race so the encounter RATE is governed by this cooldown, not by whoever wins the gate — but
+     a fired encounter STILL arms the shared gate (armBeat, in startEncounter) so total station calm is preserved
+     (we re-slice the pie, we don't grow it). MC-calibrated (5-8min lane + selRoll 0.08) → ~9.5 encounters/hr on
+     a 3-6 body idle floor (target 7-12), total noticeable beats within ~6% of before, N=1 provably unchanged
+     (a solo floor never has a pair → never rolls → never arms this lane). */
+  let socialGateUntil = -1e9;               // earliest `now` the next social encounter may be selected (own lane)
   /* TIER D · D4 THE CHASE (the headline, ultra-rare). Exactly ONE chaser station-wide, mutually exclusive
      WITH a live social beat (the same one-noticeable-thing-at-a-time discipline as the social slot). `chaseId`
      is the agentId of the current chaser (null = nobody chasing); the per-body chase plan lives on
@@ -812,7 +831,17 @@ const World = (() => {
      stare behavior reads chatFocusId from the idle path. Airtight cleanup: when focus moves off a body (null
      or another id) its next idle decision restores normal wander (decideIdle clears stilling on entry), so no
      stuck stillness / suppressed-forever wander can leak. Unknown / not-yet-spawned id → the resolver no-ops. */
-  function setChatFocus(agentId) { chatFocusId = agentId || null; }
+  function setChatFocus(agentId) {
+    const next = agentId || null;
+    chatFocusId = next;
+    // A switch/open IS engagement — warm the (new) focus so the stare holds for a fresh window. When focus
+    // moves to another id the old body just lapses (next decideIdle restores its idle life). null → no warmth.
+    if (next) chatWarmT = fnow;
+  }
+  /* D1 WARMTH ping — re-stamp the focus as WARM so an ACTIVE conversation never goes cold mid-use. Called from
+     chat.js at the genuine engagement points (typing at / sending to / a reply-run boundary of the focused
+     stream). O(1) timestamp write, RNG-free; no-ops when there's no live focus (so pinging a closed panel is inert). */
+  function chatFocusPing() { if (chatFocusId) chatWarmT = fnow; }
   // the body (hero or crew) the Commander is chatting with, or null. bodyForAgent maps 'agent'→hero + crew by id.
   function chatFocusBody() { return chatFocusId ? bodyForAgent(chatFocusId) : null; }
 
@@ -1613,12 +1642,22 @@ const World = (() => {
      neighborsOf, per-pair cooldowns, a beat never spawns another, K4); station rarity (consult crewBeatDamp + arm
      via armBeat, G5); Tier B self-discipline (startEncounter is the ONE cross-body write; stepSocial mutates only
      self, K2); chat-stare exclusion (a chatFocus body never joins). */
-  const SOCIAL_SEL_ROLL = 0.02;             // per idle re-decide, when a candidate pair exists + station gate open (G5: RARE)
+  const SOCIAL_SEL_ROLL = 0.08;             // per idle re-decide, when a candidate pair exists + the social LANE is open (G5: rare; the lane cooldown — not this roll — sets the rate)
+  const SOCIAL_STATION_CD_MIN = 300000, SOCIAL_STATION_CD_MAX = 480000;   // dedicated social station cooldown LANE (5-8 min) — the rate governor (MC: ~9.5 encounters/hr on a 3-6 body floor; one at a time, G4)
   const SOCIAL_HOLD_MIN = 3000, SOCIAL_HOLD_MAX = 7000;   // the silent face-each-other hold (varied)
   const SOCIAL_HARD_MS = 25000;             // whole-encounter hard timeout — the slot ALWAYS frees by this (G4)
   const SOCIAL_PAIR_CD_MIN = 180000, SOCIAL_PAIR_CD_MAX = 360000;   // per-pair cooldown (minutes) so a duo never loops (K4)
   const SOCIAL_NEAR_RADIUS = 5;             // tiles — huddle/watch candidate proximity (within the observer's zone via neighborsOf)
   const SOCIAL_FOLLOW_MIN = 2, SOCIAL_FOLLOW_MAX = 4;   // half-follow distance (tiles) — bounded, never completes
+
+  /* armSocialBudget — the two station-level side-effects EVERY fired encounter must do, at ALL fire sites
+     (startEncounter for huddle/border, and the one-sided planWatch/planFollow which set the slot inline):
+     (1) armBeat — count it against the SHARED station calm budget so quirks stay quiet in its shadow (total
+     station beat rate is preserved — G5), and (2) draw the dedicated social LANE cooldown (5-8min) so the
+     encounter RATE is governed here, decoupled from the quirk-gate race. Kept as one helper so a new social
+     beat can never forget one half (a lane-arm-without-armBeat would grow the total rate; the reverse would
+     let social loop). */
+  function armSocialBudget(now) { armBeat(now); socialGateUntil = now + U.irnd(SOCIAL_STATION_CD_MIN, SOCIAL_STATION_CD_MAX); }
 
   // stable sorted-pair key for the per-pair cooldown map
   function pairKey(aId, bId) { return (String(aId) < String(bId)) ? (aId + '|' + bId) : (bId + '|' + aId); }
@@ -1688,7 +1727,7 @@ const World = (() => {
     // paths are excluded by socialEligible, so a/b are genuinely idle here).
     for (const body of [a, b]) { body.stilling = false; body.usingProp = null; body.sitting = false; body.pauseUntil = 0; body.pauseLook = null; body.studyKey = null; }
     socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS };
-    armBeat(now);                                                         // G5: a social encounter is a noticeable beat — count it against the station budget
+    armSocialBudget(now);                                                 // G5 shared-gate arm + the 5-8min social LANE draw (total calm preserved; rate governed by the lane)
     return true;
   }
 
@@ -1773,7 +1812,7 @@ const World = (() => {
     if (chaseId != null) return false;                                   // TIER D · D4: mutual exclusion — no social beat while THE CHASE is live (one noticeable station-level thing at a time, from EITHER body's decideIdle)
     if (self.social) return false;                                       // already in one (defensive)
     if (!socialEligible(self, now)) return false;
-    if (crewBeatDamp(now) === 0) return false;                           // G5: station calm budget closed for crew (hero: damp=1)
+    if (now < socialGateUntil) return false;                             // TIER D · D3 LANE: social has its OWN station cooldown (5-8min) — decoupled from the quirk-gate race so the RATE is governed here, not by whoever wins the shared gate. RNG-free (N=1 parity preserved). A fired encounter STILL arms the shared gate (armBeat) so total station calm holds.
     // in-sight SAME-ZONE neighbors (Tier C read-only scan) + whether ANY other placed body exists (adjacent-zone
     // border candidates aren't same-zone, so the border precheck scans allBodies). CRITICAL N=1 PARITY (hunt 6):
     // the U.chance roll is gated BEHIND candidate existence — a solo floor (no other body) returns here BEFORE the
@@ -1844,7 +1883,7 @@ const World = (() => {
       obs.social = { phase: 'walk', tx: c.x, ty: c.y, faceTile: { x: wt.x, y: wt.y }, kind: 'watch', partnerId: worker.id };
       obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
       socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS };
-      armBeat(now);
+      armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter — one-sided beats govern the lane too)
       return true;
     }
     return false;
@@ -1871,7 +1910,7 @@ const World = (() => {
     if (!setPathTo({ x: first.x, y: first.y })) { obs.social = null; obs.goal = null; return false; }
     obs.social.followLeft -= 1;
     socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS };
-    armBeat(now);
+    armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter)
     return true;
   }
 
@@ -2200,6 +2239,7 @@ const World = (() => {
      working / walking / mid-goal) — it sits BELOW the summon-seize, which the callers gate for us. */
   function chatStareHold(now) {
     if (!self || self !== chatFocusBody()) return false;                 // not the focused body → normal life
+    if ((now - chatWarmT) >= CHAT_WARM_MS) return false;                 // D1 WARMTH: the conversation went cold → stop holding; the body falls to normal idle (decideIdle clears stilling on entry) and its quirks/social/chase/wander resume
     if (self === agent && activity !== 'idle') return false;            // G2: working-at-desk (task) wins; and a live VOICE conversation ('talk') keeps its own listening-glances (maybeGlance) — the stare is an IDLE beat only
     if (self.working || self.unplaced) return false;                    // a live run owns the body (crew) — never stare mid-work
     if (self.state === 'walk' || self.target) return false;             // let an in-flight walk finish before holding
@@ -4610,7 +4650,7 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, setChatFocus, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

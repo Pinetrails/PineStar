@@ -29,6 +29,12 @@ function voiceModeRules() {
 const Chat = (() => {
   let log, input, statusEl;
   let system = '', name = 'AGENT', activeWs = null;
+  // TIER D · D1 WARMTH (2026-07-02): COMMS is a persistent panel, so setChatFocus never clears — the focused
+  // body would otherwise chat-stare (track your cursor) forever. world.js decays the stare after CHAT_WARM_MS
+  // of no engagement; this re-stamps "warm" on the genuine engagement moments (typing / sending / run-end
+  // return-to-stare of the focused stream) so an ACTIVE conversation holds the stare, an idle one lets go.
+  // O(1) timestamp write, RNG-free; no-ops when no focus is set. Only engagement points call it (not per-frame).
+  function warmChat() { if (typeof World !== 'undefined' && World.chatFocusPing) World.chatFocusPing(); }
   let onTurn = null, interview = null;   // interview: the AWAKENING answer handler — while set, COMMS input feeds onboarding, not the model
   // THE GATE: per-workstream run-state (busy / runId / in-flight text / tool lines / pending approval) lives in
   // Channels (channels.js) so streams are isolated and survive a switch — chat.js is the DOM view over it. The
@@ -317,7 +323,7 @@ const Chat = (() => {
       }
     };
     // SLASH PALETTE: a leading "/" opens the command menu and filters it live as you type past it.
-    input.addEventListener('input', () => { const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });
+    input.addEventListener('input', () => { warmChat(); const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });
     const stopBtn = el('chat-stop'); if (stopBtn) stopBtn.onclick = stopActive;
   }
 
@@ -2082,6 +2088,7 @@ const Chat = (() => {
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
     if (Channels.isBusy(ws.id)) return;   // one run per stream — but OTHER streams may be running concurrently
+    warmChat();   // D1 WARMTH: sending to the focused stream is real engagement — keep the chat-stare alive
     // FIRST-TURN TITLE UPGRADE: is THIS the stream's first user turn (still on its machine-derived placeholder)?
     // Captured BEFORE we push this message, so after the run lands we can replace the truncated first-sentence
     // title with a model-written summary. General is excluded — it stays the untitled chat home.
@@ -2314,6 +2321,10 @@ const Chat = (() => {
       // background crew run must stop "working"). The hero keeps its original active-stream-gated stance.
       if ((ws.agentId || 'agent') !== 'agent') { if (World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
       else if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
+      // D1 WARMTH: a run for the on-screen stream just ended → the focused agent returns to the chat-stare per the
+      // D1 loop; re-warm so the stare holds for a fresh window after it answers (the "watch you type ↔ work the
+      // answer" beat), instead of the reply-run wall-clock counting against warmth. Only the visible stream re-warms.
+      if (isActiveWs(ws)) warmChat();
       // fold this run's REAL usage delta into the origin stream's per-conversation cost — no double-count:
       // the same deltas already minted the lifetime total inside Harness.
       if (typeof Workstreams !== 'undefined') {

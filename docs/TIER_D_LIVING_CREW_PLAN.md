@@ -248,6 +248,37 @@ and (by intent) THE LONG STARE hold.
   body's next `decideIdle` clears `stilling` on entry (:1848) and re-enters the normal menu. If the focused id
   doesn't resolve to a live body, `chatStareHold` no-ops.
 
+### D1 WARMTH FIX (2026-07-02) — the stare must not follow the cursor FOREVER
+- **The bug (live-reported by Andrew + confirmed in a headless soak):** COMMS is a PERSISTENT panel — it ALWAYS
+  has an active stream — so `load(ws)` announces `setChatFocus(agentId)` at boot and NEVER clears it. The focused
+  (usually hero) body was therefore in `stare-chat` for the entire session: it endlessly tracked the cursor and
+  its whole idle life (quirks/social/chase/wander) was permanently suppressed. Andrew: "it will just endlessly
+  follow the users mouse."
+- **The fix — hold the stare only while the conversation is WARM.** A module-local `chatWarmT` timestamp + a
+  `CHAT_WARM_MS = 120000` (~2 min) constant: `chatStareHold` now additionally requires `(now - chatWarmT) <
+  CHAT_WARM_MS` (added as the SECOND guard, right after the focused-body check). Warmth is stamped on genuine
+  engagement: `setChatFocus(id)` stamps it (a switch/open = engagement — and only stamps for a non-null id, so
+  `setChatFocus(null)` never warms), and a new tiny public `World.chatFocusPing()` re-stamps it (no-op when no
+  focus is set).
+- **Re-warm points (chat.js, pings only — the chosen design, NOT a world-side signal, to avoid double machinery):**
+  a one-line `warmChat()` helper (`if (World.chatFocusPing) World.chatFocusPing()`) is called at the three genuine
+  engagement moments: (a) the compose input's `input` handler (typing at the focused stream — O(1) timestamp write
+  per keystroke, RNG-free), (b) `send()` past its busy-guard (sending a message), and (c) the run-lifecycle
+  `finally` when the on-screen stream's run ends (the agent returns to the stare per the D1 loop → re-warm so it
+  holds for a FRESH window after answering, instead of the reply-run wall-clock counting against warmth). Blast
+  radius stays chat.js pings + world.js + this doc (G7).
+- **Warmth-lapse self-heal (verified, no leak):** when warmth lapses, `chatStareHold` returns false; the last warm
+  tick left `idleUntil = now + 400`, so within ~400ms the idle branch's terminal `now >= idleUntil` fires
+  `decideIdle`, which clears `stilling` on entry and — with the stare cold — falls through to the normal want-engine
+  (a picked beat, e.g. `standStill`, sets `goal = null`, overwriting `'stare-chat'`). No stuck stilling / suppressed
+  wander. A focus SWITCH while warm: `setChatFocus(newId)` warms the NEW body; the OLD body lapses via the same
+  self-heal on its next decision. `activity==='talk'` (voice) stays excluded as before.
+- **Determinism:** warmth reads/writes `fnow` (the frame clock) only — zero RNG. N=1: adds no `U.*` draw, so the
+  RNG stream is unchanged; the only behavior change (the hero stops staring forever) IS the intended fix.
+- **Acceptance:** boot COMMS open + don't interact → the agent stares for at most ~`CHAT_WARM_MS` then returns to
+  its idle life (quirks/social/chase resume). Type or converse → the stare holds indefinitely while you keep
+  engaging. Switch conversations → the focused agent warms.
+
 ## D2 — implementation notes (as built)
 
 ### Half 1 — hero-only-beat extension: per-beat disposition
@@ -345,9 +376,10 @@ encounters …` (557dccb2) + the fall-through / one-sided-break fixes.
 - **Selection — `maybeSocial(now)`** is called from `decideIdle` at the existing idle cadence (K4 — off
   `neighborsOf`, never off observing another encounter). Order of gates: reduceMotion → no walking beats (degrade to
   Tier C glances); slot free; self eligible (`socialEligible`: idle + placed + not chat-focused + not already in a
-  beat); station gate open (`crewBeatDamp`); **candidate exists** (a same-zone neighbor OR any other placed body)
-  BEFORE the `U.chance(0.02)` roll — so a solo-hero floor never even rolls (N=1 parity, hunt 6); then try
-  watch→huddle→follow→border, first legal plan wins.
+  beat); **social LANE open** (`now >= socialGateUntil` — the dedicated 5-8min station cooldown, NOT the shared
+  `crewBeatDamp` gate anymore — see the RATE RETUNE note below); **candidate exists** (a same-zone neighbor OR any
+  other placed body) BEFORE the `U.chance(SOCIAL_SEL_ROLL)` roll — so a solo-hero floor never even rolls (N=1
+  parity, hunt 6); then try watch→huddle→follow→border, first legal plan wins.
 - **Release — `endEncounter(now)`** frees the slot, clears each body's own plan (`goal==='social'` → idle), and arms
   the per-pair cooldown. Idempotent. `encounterBroken(now)` (READ-ONLY) is the tear-down trigger: despawn, the
   observer losing its plan / being seized (working / hero `activity==='task'`), or EITHER body pulled into a
@@ -371,11 +403,49 @@ the extracted block and source locks on the live wiring. The two helpers are als
 API as `_dbgSocialGeom` for the in-browser DEV harness.
 
 ### Final tuning constants
-`SOCIAL_SEL_ROLL = 0.02` (per idle re-decide, only when a candidate pair exists + gate open); hold `U.irnd(3000,
-7000)` ms; whole-encounter hard timeout `SOCIAL_HARD_MS = 25000` ms; per-pair cooldown `U.irnd(180000, 360000)` ms
-(3-6 min); candidate radius 5 tiles; half-follow `U.irnd(2,4)` tiles. These start from the brief's suggested values
-unchanged — RARE by design (a 6-agent floor sees an encounter every few minutes at most; the station beat gate
-(G5/`armBeat`) further keeps social beats inside the same calm budget as quirks).
+`SOCIAL_SEL_ROLL = 0.08` (per idle re-decide, only when a candidate pair exists + the social LANE is open);
+`SOCIAL_STATION_CD_MIN/MAX = 300000/480000` ms (the dedicated social LANE, **5-8 min** — the rate governor);
+hold `U.irnd(3000, 7000)` ms; whole-encounter hard timeout `SOCIAL_HARD_MS = 25000` ms; per-pair cooldown
+`U.irnd(180000, 360000)` ms (3-6 min); candidate radius 5 tiles; half-follow `U.irnd(2,4)` tiles.
+
+### RATE RETUNE (2026-07-02) — social was starved; give it its own lane
+- **The bug (observed + modeled):** at the shipped `SOCIAL_SEL_ROLL = 0.02`, social SELECTED *inside* the shared
+  D2 quirk gate (`crewBeatDamp`). Two compounding causes at those constants: social's `0.02` per-re-decide roll
+  competed against the quirk families' ~`0.085` effective for the SAME gate-open windows, AND every fired beat
+  (usually a quirk, which rolls FIRST in `decideIdle`) re-armed the shared 45-90s gate — closing social's window.
+  Net: social won only ~6% of station beats → ~1 encounter per 20-30 min on a 3-6 body floor (two 5-9 min soaks
+  saw ZERO). The D3 intent ("one every few minutes at most") was unmet.
+- **The lever chosen — a dedicated social station cooldown LANE** (mirrors THE CHASE's `chaseGateUntil`): social
+  selection no longer consults `crewBeatDamp`; instead it gates on `now >= socialGateUntil`, a lane drawn `U.irnd(
+  300000, 480000)` (5-8 min) at each fire. This DECOUPLES the encounter rate from the fragile quirk race — the rate
+  is now governed by the lane cooldown, so it's *predictable and tunable to a target* regardless of quirk dynamics
+  or pair scarcity. **Crucially, a fired encounter STILL arms the shared gate** (`armBeat`, factored with the lane
+  draw into one `armSocialBudget(now)` helper called at ALL three fire sites — `startEncounter` for huddle/border,
+  and the one-sided `planWatch`/`planFollow`), so quirks stay quiet in social's shadow and the **total** station
+  beat rate is preserved (we re-slice the pie, not grow it — G5 honored). `SOCIAL_SEL_ROLL` raised `0.02→0.08` only
+  so that, once the lane opens, an eligible pair is selected within a few idle re-decides (organic, not clockwork).
+- **Validation — Monte-Carlo** (throwaway, not committed; the D2 pattern) with the real constants (2s idle
+  re-decides; quirk families p≈0.085 per re-decide throttled by per-body 45-90s `quirkCd` + the shared gate; hero
+  exempt from `crewBeatDamp`; single social slot busy `SOCIAL_HARD_MS`=25s; every noticeable beat arms the shared
+  45-90s gate). 5000 runs × 60 min. Encounters/hr and TOTAL noticeable beats/hr, before vs after:
+
+  | N | BEFORE enc/hr | AFTER enc/hr | BEFORE total/hr | AFTER total/hr | Δ total |
+  | --- | --- | --- | --- | --- | --- |
+  | 1 | 0.00 | 0.00 | 40.3 | 40.3 | **0.0% (byte-identical)** |
+  | 3 | (starved) | ~9.9 | 75.8 | 73.3 | within budget |
+  | 6 | (starved) | ~9.5 | 83.1 | 77.9 | **−6.2%** |
+
+  **N=1 is a provable no-op:** a solo floor never has a candidate pair, so `maybeSocial` returns BEFORE any
+  `U.chance` roll — zero extra RNG draws, and `armSocialBudget`'s `U.irnd` lane draw is never reached (fires only
+  on a started encounter). Quirks 40.3/hr identical across every config ⇒ byte-parity at N=1 (matches the D2 J1
+  property). **Pair-availability sensitivity:** the AFTER lane lands in **7.9-9.6 enc/hr across pairAvail 0.10-0.70**
+  — robustly inside the 7-12/hr target band and saturating near the lane ceiling (~1 per ~6.3 min), because the
+  lane cooldown (not the quirk race or partner scarcity) is the binding constraint. Total N=6 stays within ~6% of
+  before (< the ~10% bar). **Alternatives tried:** 4-7min lane → ~11.1 enc/hr (top of band, Δ −5.0%); 4.5-7.5min →
+  ~10.2 (Δ −5.7%). 5-8min chosen: mid-band with margin on both sides, symmetric with the per-pair 3-6min cooldown.
+- **Honest rate:** a 3-6 body idle floor now sees roughly **one encounter every ~6 minutes** (~9.5/hr) — the D3
+  "one every few minutes" intent, met. Still RARE (the lane + one-slot G4 + per-pair 3-6min cooldown all hold); an
+  unattended / read-only / solo-hero floor sees ZERO (no pairs). Total station calm is unchanged (G5).
 
 ### The 7 self-review hunts — how each was cleared
 1. **Social target outside the mover's zone** — every plan builder clamps via `tileInZone(zoneFor(mover))`
