@@ -1657,9 +1657,26 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .mc-detail { font-size: 12px; color: var(--bad); margin-top: 4px; }
 .mc-tools { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
 .mc-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px; padding: 1px 5px; background: rgba(0,0,0,.4); }
-.mc-acts { margin-top: 8px; display: flex; gap: 6px; }
+.mc-acts { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .mc-form { display: flex; flex-direction: column; gap: 6px; }
 .bb.xs { font-size: 11px; padding: 2px 7px; }
+/* connector add/edit form: one-line help, transport toggle, key:value textareas, transport tag on a row */
+.mc-hint { font-size: 11px; color: var(--ph-dim); margin: -2px 0 2px; line-height: 1.35; }
+.mc-hint code { color: var(--ph); }
+.mc-seg { display: flex; gap: 0; margin: 2px 0 4px; }
+.mc-seg-btn {
+  flex: 1; cursor: pointer; font-family: inherit; font-size: 12px; letter-spacing: .5px;
+  color: var(--ph-dim); background: rgba(0,0,0,.32); border: 1px solid var(--ph-dim); padding: 4px 8px;
+}
+.mc-seg-btn + .mc-seg-btn { border-left: none; }
+.mc-seg-btn:hover { color: var(--ph); }
+.mc-seg-btn.active { color: var(--ph-bright); background: var(--ph-faint); box-shadow: inset 0 0 0 1px var(--ph); }
+.mc-tp-fields { display: flex; flex-direction: column; gap: 6px; }
+.mc-kv { resize: vertical; min-height: 40px; font-family: inherit; }
+.mc-tag {
+  font-size: 10px; letter-spacing: .5px; color: var(--ph); border: 1px solid var(--ph-dim);
+  border-radius: 3px; padding: 0 4px; margin-right: 4px; text-transform: uppercase;
+}
 
 .rt-agent-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 5px; }
 .rt-agent-btn {

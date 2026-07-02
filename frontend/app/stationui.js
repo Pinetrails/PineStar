@@ -1571,20 +1571,113 @@ const StationUI = (() => {
       '<h4 class="ms-h">MCP CONNECTORS</h4>' +
       '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
         'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
-        '<span class="dim">(Remote http(s) servers; bearer token optional. The token is stored locally by the sidecar and never displayed.)</span></p>' +
+        '<span class="dim">(Remote http(s) servers, or a local <code>stdio</code> command. Secrets are stored locally by the sidecar and never displayed.)</span></p>' +
       '<div id="mc-list" class="mc-list">loading…</div>' +
-      '<h4 class="ms-h">ADD A CONNECTOR</h4>' +
-      '<div class="mc-form">' +
+      '<h4 class="ms-h" id="mc-form-h">ADD A CONNECTOR</h4>' +
+      '<div class="mc-form" id="mc-form">' +
         '<input id="mc-id" class="key-input" placeholder="id — e.g. github (a-z 0-9 _ -)" autocomplete="off" spellcheck="false" maxlength="40">' +
-        '<input id="mc-label" class="key-input" placeholder="label (optional)" autocomplete="off" spellcheck="false">' +
-        '<input id="mc-url" class="key-input" placeholder="https://server.example/mcp" autocomplete="off" spellcheck="false">' +
-        '<input id="mc-token" type="password" class="key-input" placeholder="bearer token (optional)" autocomplete="off" spellcheck="false">' +
-        '<button class="bb sm" id="mc-add">+ ADD &amp; CONNECT</button>' +
+        '<div class="mc-hint">A short handle for this server. Its tools appear to agents as <code>mcp__&lt;id&gt;__&lt;tool&gt;</code>.</div>' +
+        '<input id="mc-label" class="key-input" placeholder="label (optional) — e.g. GitHub" autocomplete="off" spellcheck="false">' +
+        '<div class="mc-seg" id="mc-transport" role="tablist">' +
+          '<button type="button" class="mc-seg-btn active" data-tp="http" role="tab" aria-selected="true">HTTP</button>' +
+          '<button type="button" class="mc-seg-btn" data-tp="stdio" role="tab" aria-selected="false">STDIO (local)</button>' +
+        '</div>' +
+        // ---- HTTP fields ----
+        '<div class="mc-tp-fields" data-tp="http">' +
+          '<input id="mc-url" class="key-input" placeholder="https://server.example/mcp" autocomplete="off" spellcheck="false">' +
+          '<div class="mc-hint">The server’s Streamable-HTTP endpoint. <code>http://</code> is allowed only for localhost.</div>' +
+          '<input id="mc-token" type="password" class="key-input" placeholder="bearer token (optional)" autocomplete="off" spellcheck="false">' +
+          '<div class="mc-hint">Sent as <code>Authorization: Bearer …</code>. Leave blank when editing to keep the saved token.</div>' +
+          '<textarea id="mc-headers" class="key-input mc-kv" placeholder="extra headers (optional), one per line:&#10;X-Api-Version: 2024-01" spellcheck="false" rows="2"></textarea>' +
+          '<div class="mc-hint">Custom request headers as <code>Name: value</code>, one per line.</div>' +
+        '</div>' +
+        // ---- STDIO fields ----
+        '<div class="mc-tp-fields" data-tp="stdio" style="display:none">' +
+          '<input id="mc-command" class="key-input" placeholder="command — e.g. npx" autocomplete="off" spellcheck="false">' +
+          '<div class="mc-hint">Allowed launchers: <code>node</code>, <code>npx</code>, <code>npm</code>, <code>pnpm</code>, <code>yarn</code>, <code>python</code>, <code>uvx</code>.</div>' +
+          '<input id="mc-args" class="key-input" placeholder="args (space-separated) — e.g. -y @modelcontextprotocol/server-github" autocomplete="off" spellcheck="false">' +
+          '<input id="mc-cwd" class="key-input" placeholder="working directory (optional)" autocomplete="off" spellcheck="false">' +
+          '<textarea id="mc-env" class="key-input mc-kv" placeholder="env vars (optional), one per line:&#10;GITHUB_TOKEN=ghp_…" spellcheck="false" rows="2"></textarea>' +
+          '<div class="mc-hint">Environment for the child process as <code>NAME=value</code>, one per line. Secret-looking values are never echoed back.</div>' +
+        '</div>' +
+        '<input id="mc-timeout" class="key-input" type="number" min="1000" max="600000" placeholder="timeout ms (optional, default 30000)" autocomplete="off">' +
+        '<div class="mc-hint">How long to wait for the handshake / a tool call before giving up. Default 30s.</div>' +
+        '<div class="mc-acts">' +
+          '<button class="bb sm" id="mc-add">+ ADD &amp; CONNECT</button>' +
+          '<button class="bb xs" id="mc-cancel" style="display:none">CANCEL EDIT</button>' +
+        '</div>' +
       '</div>' +
       '<div id="mc-msg" class="msg"></div>';
 
     const listEl = body.querySelector('#mc-list');
     const msgEl = body.querySelector('#mc-msg');
+    const formH = body.querySelector('#mc-form-h');
+    const addBtn = body.querySelector('#mc-add');
+    const cancelBtn = body.querySelector('#mc-cancel');
+    const idInput = body.querySelector('#mc-id');
+    let editing = null;   // id being edited (null = adding a new connector)
+
+    // ----- transport segmented toggle -----
+    function transport() { const on = body.querySelector('.mc-seg-btn.active'); return (on && on.dataset.tp) || 'http'; }
+    function setTransport(tp) {
+      body.querySelectorAll('.mc-seg-btn').forEach(b => { const a = b.dataset.tp === tp; b.classList.toggle('active', a); b.setAttribute('aria-selected', a ? 'true' : 'false'); });
+      body.querySelectorAll('.mc-tp-fields').forEach(f => { f.style.display = f.dataset.tp === tp ? '' : 'none'; });
+    }
+    body.querySelector('#mc-transport').addEventListener('click', ev => {
+      const b = ev.target.closest('.mc-seg-btn'); if (!b) return; setTransport(b.dataset.tp); sfx('tick');
+    });
+
+    // ----- key:value textarea parsers (headers use ':' , env uses '=') -----
+    function parseKV(text, sep) {
+      const out = {}; let bad = null;
+      for (const raw of String(text || '').split(/\r?\n/)) {
+        const line = raw.trim(); if (!line) continue;
+        const i = line.indexOf(sep); if (i < 1) { bad = line; break; }
+        out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+      }
+      return { out, bad };
+    }
+
+    function resetForm() {
+      editing = null;
+      formH.textContent = 'ADD A CONNECTOR';
+      addBtn.textContent = '+ ADD & CONNECT';
+      cancelBtn.style.display = 'none';
+      idInput.disabled = false;
+      ['#mc-id', '#mc-label', '#mc-url', '#mc-token', '#mc-headers', '#mc-command', '#mc-args', '#mc-cwd', '#mc-env', '#mc-timeout']
+        .forEach(s => { const el = body.querySelector(s); if (el) el.value = ''; });
+      setTransport('http');
+    }
+    cancelBtn.addEventListener('click', () => { resetForm(); msgEl.textContent = ''; sfx('click'); });
+
+    // populate the form from an existing connector for EDIT (secrets stay blank = keep-saved).
+    function startEdit(c) {
+      editing = c.id;
+      formH.textContent = 'EDIT CONNECTOR — ' + (c.label || c.id);
+      addBtn.textContent = '✓ SAVE & RECONNECT';
+      cancelBtn.style.display = '';
+      idInput.disabled = true;
+      idInput.value = c.id;
+      body.querySelector('#mc-label').value = c.label && c.label !== c.id ? c.label : '';
+      body.querySelector('#mc-timeout').value = (c.timeoutMs && c.timeoutMs !== 30000) ? c.timeoutMs : '';
+      setTransport(c.transport === 'stdio' ? 'stdio' : 'http');
+      if (c.transport === 'stdio') {
+        body.querySelector('#mc-command').value = c.command || '';
+        body.querySelector('#mc-args').value = (c.args || []).join(' ');
+        body.querySelector('#mc-cwd').value = c.cwd || '';
+        // env values are redacted server-side; show keys with a placeholder so the user knows what's set.
+        const envKeys = Object.keys(c.env || {});
+        body.querySelector('#mc-env').value = envKeys.map(k => k + '=' + (c.env[k] === '<redacted>' ? '' : c.env[k])).join('\n');
+      } else {
+        body.querySelector('#mc-url').value = c.url || '';
+        body.querySelector('#mc-token').value = '';   // never round-trip the token
+        const hKeys = Object.keys(c.headers || {});
+        body.querySelector('#mc-headers').value = hKeys.map(k => k + ': ' + (c.headers[k] === '<redacted>' ? '' : c.headers[k])).join('\n');
+      }
+      formH.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      idInput.focus();
+      sfx('click');
+    }
 
     function badge(state) {
       return ({ up: ['var(--ok)', '● connected'], connecting: ['var(--gold)', '◌ connecting…'],
@@ -1594,57 +1687,89 @@ const StationUI = (() => {
       const b = badge(c.state);
       const tools = (c.tools && c.tools.length) ? '<div class="mc-tools">' + c.tools.map(t => '<code>' + esc(t) + '</code>').join('') + '</div>' : '';
       const detail = (c.state === 'error' && c.detail) ? '<div class="mc-detail">' + esc(c.detail) + '</div>' : '';
-      return '<div class="mc-row" data-id="' + esc(c.id) + '" data-url="' + esc(c.url) + '" data-enabled="' + (c.enabled ? '1' : '0') + '">' +
+      const where = c.transport === 'stdio'
+        ? ('<span class="mc-tag">stdio</span> <code>' + esc([c.command].concat(c.args || []).join(' ')) + '</code>' + (c.hasEnv ? ' · env set' : ''))
+        : ('<span class="mc-tag">http</span> ' + esc(c.url) + (c.hasToken ? ' · token saved' : '') + (c.hasHeaders ? ' · headers set' : ''));
+      const timeout = (c.timeoutMs && c.timeoutMs !== 30000) ? '<span class="dim"> · ' + Math.round(c.timeoutMs / 1000) + 's</span>' : '';
+      return '<div class="mc-row" data-id="' + esc(c.id) + '" data-enabled="' + (c.enabled ? '1' : '0') + '">' +
         '<div class="mc-top"><b>' + esc(c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
           '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
-        '<div class="mc-url dim">' + esc(c.url) + (c.hasToken ? ' · token saved' : '') + '</div>' + detail + tools +
+        '<div class="mc-url dim">' + where + timeout + '</div>' + detail + tools +
         '<div class="mc-acts">' +
-          '<button class="bb xs" data-act="refresh">↻ REFRESH</button>' +
+          '<button class="bb xs" data-act="reload">↻ RELOAD</button>' +
+          '<button class="bb xs" data-act="edit">✎ EDIT</button>' +
           '<button class="bb xs" data-act="toggle">' + (c.enabled ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
           '<button class="bb xs danger" data-act="remove">✕ REMOVE</button>' +
         '</div></div>';
     }
+    let lastList = [];
     async function refresh() {
       try {
         const j = await (await fetch('/api/connectors')).json();
-        const list = (j && j.connectors) || [];
+        const list = (j && j.connectors) || []; lastList = list;
         listEl.innerHTML = list.length ? list.map(row).join('')
           : '<div class="fb-empty">NO CONNECTORS YET.<br><span>Add an MCP server below to give your agents new tools.</span></div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage connectors.</div>'; }
     }
+    const postJSON = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     listEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-act]'); if (!btn) return;
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
-      const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const act = btn.dataset.act;
+      if (act === 'edit') { const c = lastList.find(x => x.id === id); if (c) startEdit(c); return; }
       btn.disabled = true;
       try {
-        if (btn.dataset.act === 'remove') { await post('/api/connectors/remove', { id }); notify('Connector "' + id + '" removed'); sfx('click'); }
-        else if (btn.dataset.act === 'refresh') {
-          msgEl.textContent = 'refreshing ' + id + '…';
-          const j = await (await post('/api/connectors/refresh', { id })).json().catch(() => ({}));
-          msgEl.textContent = (j.status && j.status.state === 'up') ? ('✓ ' + id + ' — ' + (j.status.toolCount || 0) + ' tool(s)') : ('✕ ' + id + ' — ' + ((j.status && j.status.detail) || j.error || 'not connected'));
+        if (act === 'remove') { await postJSON('/api/connectors/remove', { id }); notify('Connector "' + id + '" removed'); sfx('click'); if (editing === id) resetForm(); }
+        else if (act === 'reload') {
+          msgEl.classList.remove('ok'); msgEl.textContent = 'reloading ' + id + '…';
+          const j = await (await postJSON('/api/connectors/refresh', { id })).json().catch(() => ({}));
+          if (j.status && j.status.state === 'up') { msgEl.classList.add('ok'); msgEl.textContent = '✓ ' + id + ' — ' + (j.status.toolCount || 0) + ' tool(s)'; }
+          else { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + id + ' — ' + ((j.status && j.status.detail) || j.error || 'not connected'); }
           sfx('click');
-        } else if (btn.dataset.act === 'toggle') {
-          await post('/api/connectors', { id, url: rowEl.dataset.url, enabled: rowEl.dataset.enabled !== '1' }); sfx('click');
+        } else if (act === 'toggle') {
+          const c = lastList.find(x => x.id === id) || {};
+          await postJSON('/api/connectors', { id, transport: c.transport, enabled: rowEl.dataset.enabled !== '1' }); sfx('click');
         }
-      } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'request failed'); sfx('bad'); }
+      } catch (e) { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((e && e.message) || 'request failed'); sfx('bad'); }
       refresh();
     });
-    body.querySelector('#mc-add').addEventListener('click', async () => {
-      const id = (body.querySelector('#mc-id').value || '').trim();
-      const url = (body.querySelector('#mc-url').value || '').trim();
+    addBtn.addEventListener('click', async () => {
+      const id = (idInput.value || '').trim();
       const label = (body.querySelector('#mc-label').value || '').trim();
-      const token = (body.querySelector('#mc-token').value || '').trim();
-      if (!id || !url) { sfx('bad'); msgEl.textContent = 'an id and a server URL are required'; return; }
-      msgEl.textContent = 'connecting ' + id + '…';
+      const tp = transport();
+      if (!id) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'an id is required'; return; }
+      const payload = { id, label, transport: tp, enabled: true };
+      if (tp === 'http') {
+        const url = (body.querySelector('#mc-url').value || '').trim();
+        if (!url) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'a server URL is required'; return; }
+        payload.url = url;
+        const token = body.querySelector('#mc-token').value || '';
+        if (token) payload.token = token;   // blank keeps the saved one (on edit)
+        const h = parseKV(body.querySelector('#mc-headers').value, ':');
+        if (h.bad) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'header needs "Name: value" — check: ' + h.bad; return; }
+        payload.headers = h.out;
+      } else {
+        const command = (body.querySelector('#mc-command').value || '').trim();
+        if (!command) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'a stdio command is required'; return; }
+        payload.command = command;
+        payload.args = (body.querySelector('#mc-args').value || '').trim().split(/\s+/).filter(Boolean);
+        const cwd = (body.querySelector('#mc-cwd').value || '').trim(); if (cwd) payload.cwd = cwd;
+        const e = parseKV(body.querySelector('#mc-env').value, '=');
+        if (e.bad) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'env var needs "NAME=value" — check: ' + e.bad; return; }
+        payload.env = e.out;
+      }
+      const to = (body.querySelector('#mc-timeout').value || '').trim();
+      if (to) payload.timeout = Number(to);
+      msgEl.classList.remove('ok'); msgEl.textContent = (editing ? 'saving ' : 'connecting ') + id + '…';
       try {
-        const j = await (await fetch('/api/connectors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, url, label, token }) })).json().catch(() => ({}));
-        if (j.error) { msgEl.textContent = '✕ ' + j.error; sfx('bad'); }
+        const j = await (await postJSON('/api/connectors', payload)).json().catch(() => ({}));
+        if (j.error) { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + j.error; sfx('bad'); }
         else if (j.status && j.status.state === 'up') {
-          msgEl.textContent = '✓ connected — ' + (j.status.toolCount || 0) + ' tool(s) available'; sfx('click'); notify('Connector "' + id + '" connected', 'good');
-          ['#mc-id', '#mc-label', '#mc-url', '#mc-token'].forEach(s => { body.querySelector(s).value = ''; });
-        } else { msgEl.textContent = '✕ ' + ((j.status && j.status.detail) || ('state: ' + (j.state || 'error'))); sfx('bad'); }
-      } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
+          msgEl.classList.add('ok'); msgEl.textContent = '✓ connected — ' + (j.status.toolCount || 0) + ' tool(s) available'; sfx('click');
+          notify('Connector "' + id + '" ' + (editing ? 'saved' : 'connected'), 'good');
+          resetForm();
+        } else { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((j.status && j.status.detail) || ('state: ' + (j.state || 'error'))); sfx('bad'); }
+      } catch (e) { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
       refresh();
     });
     refresh();
