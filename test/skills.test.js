@@ -198,4 +198,40 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(/deploy-api/.test(skillCurator.buildPrompt({ skills })), 'curator prompt includes candidate skills');
 }
 
+// ---- M. (A2) background review observer un-silences a pass: deliverable + one audit line per change ----
+{
+  // a WRITE action fires the EXISTING deliverable (kind:'skill') through the injected emit + one audit line.
+  const emits = []; const logs = [];
+  const obs = skillReview.makeReviewObserver({ emit: (n, p) => emits.push({ n, p }), log: (s) => logs.push(s), now: () => 42, source: 'skill-review' });
+  const skill = { id: 'sk1', agentId: 'a', name: 'Deploy the site' };
+  A.eq(obs.onManage(skill, 'create'), true, 'a create is a surfaced write');
+  A.eq(emits.length, 1, 'exactly one deliverable emitted');
+  A.eq(emits[0].n, 'deliverable', 'the EXISTING deliverable event is used (no new schema)');
+  A.eq(emits[0].p.kind, 'skill', 'deliverable carries kind:skill');
+  A.eq(emits[0].p.title, 'Deploy the site', 'deliverable carries the skill name as title');
+  A.eq(emits[0].p.id, 'sk1', 'deliverable carries the skill id for the panel refresh');
+  A.eq(logs.length, 1, 'exactly one auditable log line (C1)');
+  A.ok(/skill-review/.test(logs[0]) && /Deploy the site/.test(logs[0]) && /create/.test(logs[0]), 'the audit line names source, action, and skill');
+
+  // dedup: a re-fired SAME action on the same skill does not double-emit.
+  A.eq(obs.onManage(skill, 'create'), false, 'a duplicate create is dropped (deduped)');
+  A.eq(emits.length, 1, 'no second deliverable for the duplicate');
+
+  // a distinct action on the same skill IS a fresh change (create then edit within one pass).
+  A.eq(obs.onManage(skill, 'edit'), true, 'a distinct action on the same skill surfaces once');
+  A.eq(emits.length, 2, 'the edit emits its own deliverable');
+
+  // a READ-shaped action (view/list) stays silent — no aside for merely consulting a skill.
+  A.eq(obs.onManage(skill, 'view'), false, 'a read action never surfaces');
+  A.eq(obs.onManage(null, 'create'), false, 'a missing skill never surfaces');
+  A.eq(emits.length, 2, 'reads and null skills add no deliverable');
+}
+
+// ---- N. (A2) isWriteAction classifies mutations vs reads ----
+{
+  A.ok(skillReview.isWriteAction('create') && skillReview.isWriteAction('patch') && skillReview.isWriteAction('archive'), 'create/patch/archive are writes');
+  A.ok(skillReview.isWriteAction('saved') && skillReview.isWriteAction('edited'), 'store verbs saved/edited count as writes');
+  A.ok(!skillReview.isWriteAction('view') && !skillReview.isWriteAction('list') && !skillReview.isWriteAction(''), 'view/list/empty are not writes');
+}
+
 A.report('skills.test');

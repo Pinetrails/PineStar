@@ -4593,7 +4593,7 @@ const PropSprites = (() => {
   const D_WS = 'WORKSTATION — assign an agent here and it walks over and sits to work whenever it gets a task.';
   const D_FILES = 'CAPABILITY — gives the agent in this room file access (read & write its own files).';
   const D_WEB = 'CAPABILITY — gives the agent in this room web access (live search & fetch).';
-  const D_MEM = 'CAPABILITY — gives the agent in this room long-term memory (a notebook it can recall).';
+  const D_MEM = 'CAPABILITY — gives the agent in this room long-term memory AND its skill library (a notebook it recalls facts from, and where it saves & reloads reusable skills).';
 
   /* CATALOG is split into two TIERS for the builder palette (shown as ⚙ SYSTEMS / ✦ DECOR):
        functional — SYSTEMS: props that DO something (place · assign · wire into real workflows)

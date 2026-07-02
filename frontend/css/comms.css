@@ -126,6 +126,10 @@
 .tool-chip.err .tc-glyph,
 .tool-chip.err .tc-stat   { color: var(--bad); }
 .tool-chip.err { border-color: var(--bad); background: rgba(255,92,77,.05); }
+/* A1: a skill-flavored chip (consulting / writing a skill) — a subtle left rule keeps the phosphor language
+   but marks it as skillbase activity so the Commander can spot the agent tending its own recipes. */
+.tool-chip.skill { border-left: 2px solid var(--ph-dim); }
+.tool-chip.skill .tc-name { letter-spacing: .3px; }
 /* expanded detail — hidden until the chip is .open; caps + wraps the full args/result text */
 .tool-chip .tc-detail {
   display: none; padding: 0 8px 6px 8px; border-top: 1px solid var(--ph-faint);

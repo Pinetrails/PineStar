@@ -110,7 +110,7 @@ const Tutorial = (() => {
     { grant: 'FILES',    prop: 'war_intelcab',    label: 'INTEL CAB',   power: 'FILES',      got: 'now i can read and write files — that’s where i keep anything that matters.' },
     { grant: 'WEB',      prop: 'comms_dish',      label: 'DISH',        power: 'the WEB',    got: 'and now the live web — real search, real pages, not just what i woke up knowing.' },
     { grant: 'TERMINAL', prop: 'workbench',       label: 'WORKBENCH',   power: 'a TERMINAL', got: 'a real terminal — i can run commands and check what they did, and you approve each one.' },
-    { grant: 'MEMORY',   prop: 'gigs_servercart', label: 'SERVER CART', power: 'MEMORY',     got: 'memory that survives a restart, so i don’t wake up blank every time.' }
+    { grant: 'MEMORY',   prop: 'gigs_servercart', label: 'SERVER CART', power: 'MEMORY',     got: 'memory that survives a restart — and my skill library, where i save and reload the procedures i work out, so i don’t wake up blank every time.' }
   ];
   let KIT = KIT_SPEC.slice();   // resolveKit() rebuilds this with live labels/categories at kit start
 
@@ -839,7 +839,7 @@ const Tutorial = (() => {
         + fmEntry('REAL', 'WORKSTATION → a desk to work at', 'desk · console · bench · pixel rig. compute to think is always mine — a workstation just gives my body a real desk to walk to and sit at, and its screens light while i work.')
         + fmEntry('REAL', 'CABINET → files', 'intel cab · safe · vault · rack · shelf. read &amp; write files in my workspace.')
         + fmEntry('REAL', 'DISH → web', 'comms dish · uplink · beacon. reach the live web.')
-        + fmEntry('REAL', 'SERVER → memory', 'server cart · relay stack · core. a notebook that survives restarts.')
+        + fmEntry('REAL', 'SERVER → memory + skills', 'server cart · relay stack · core. a notebook that survives restarts — and the skill library where i save &amp; reload reusable procedures.')
         + fmEntry('REAL', 'CONNECTOR PORTAL → live tools', 'binds one MCP server; its tools land in my hands. lamp = health: green live, amber warming, red broken.')
         + fmEntry('REAL', 'WORKBENCH → terminal', 'the powered bench. place it in my room and i can run real shell commands and verify what they did — consent-gated, like every tool. it glows while i’m running code.')
         + fmEntry('SHOW', 'everything else', 'plants, rugs, screens, lounge gear — flavour. they grant nothing; place them because the place is yours.');
