@@ -117,7 +117,10 @@
           let result;
           try {
             result = await runOnce({
-              key, provider, baseUrl, reasoningEffort,
+              key, provider, baseUrl,
+              // Class Loadouts S1: the WORKER runs at its OWN class-applied reasoning effort (roster record), not the
+              // lead's — a dispatched specialist honors its loadout. Falls back to the lead's effort when unset.
+              reasoningEffort: (job.ident && job.ident.reasoningEffort) || reasoningEffort,
               model: (job.ident && job.ident.model) || model,
               system: (job.ident && job.ident.system) || '',
               messages: [{ role: 'user', content: job.prompt }],
@@ -325,7 +328,8 @@
         let result;
         try {
           result = await runOnce({
-            key, provider, baseUrl, reasoningEffort,
+            key, provider, baseUrl,
+            reasoningEffort: (ident && ident.reasoningEffort) || reasoningEffort,   // Class Loadouts S1: worker's own class effort (see runWorker)
             model: (ident && ident.model) || model,
             system: (ident && ident.system) || '',
             messages: [{ role: 'user', content: rec.prompt || '' }],
