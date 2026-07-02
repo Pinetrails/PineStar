@@ -25,6 +25,7 @@
       { capId: 'memory', tool: 'todo', scope: 'write', requiresConsent: false, network: false },             // in-session task plan — the agent's working memory (see todo.js)
       { capId: 'memory', tool: 'recall_conversation', scope: 'read', requiresConsent: false, network: false }, // H1.3: search your own past dialogue (transcriptstore) — read-only, no consent (see recall.js)
       { capId: 'memory', tool: 'skill.write', scope: 'write', requiresConsent: false, network: false },        // H4: save/edit a reusable procedure (see skills.js)
+      { capId: 'memory', tool: 'skill.manage', scope: 'write', requiresConsent: false, network: false },       // H4: create/patch/archive saved skills
       { capId: 'memory', tool: 'skill.list', scope: 'read', requiresConsent: false, network: false },          // H4: list saved skills (metadata only)
       { capId: 'memory', tool: 'skill.view', scope: 'read', requiresConsent: false, network: false }           // H4: load a saved skill's full body
     ],

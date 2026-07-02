@@ -1047,14 +1047,14 @@ const Chat = (() => {
         if (decided) return; decided = true;
         const r = await Harness.memoryTurnin({ agentId: batch.agentId, runId: batch.runId, id: prop.id, verdict, content });
         if (r && r.ok) settle(label, isDeny);
-        else { decided = false; if (typeof StationUI !== 'undefined') StationUI.notify('could not save that memory — try again', 'warn'); }
+        else { decided = false; if (typeof StationUI !== 'undefined') StationUI.notify('could not save that ' + (prop.kind === 'skill' ? 'skill' : 'memory') + ' - try again', 'warn'); }
       }
       function mkBtn(label, cls, onClick) {
         const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = onClick; btns.appendChild(b); return b;
       }
       function renderChoices() {
         btns.innerHTML = '';
-        mkBtn('Keep', '', () => submit('keep', null, '✓ kept in memory', false));
+        mkBtn(prop.kind === 'skill' ? 'Save skill' : 'Keep', '', () => submit('keep', null, prop.kind === 'skill' ? 'saved as skill' : 'kept in memory', false));
         mkBtn('Edit', '', enterEdit);
         mkBtn('Discard', 'deny', () => submit('discard', null, '✕ discarded', true));
       }
@@ -1063,7 +1063,7 @@ const Chat = (() => {
         if (decided) return;
         const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'turnin-edit'; inp.value = prop.content;
         item.replaceChild(inp, text); inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
-        const commit = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } text.textContent = v; item.replaceChild(text, inp); submit('edit', v, '✓ saved (edited)', false); };
+        const commit = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } text.textContent = v; item.replaceChild(text, inp); submit('edit', v, prop.kind === 'skill' ? 'saved skill (edited)' : 'saved (edited)', false); };
         const cancel = () => { item.replaceChild(text, inp); renderChoices(); };
         btns.innerHTML = '';
         mkBtn('Save', '', commit);
