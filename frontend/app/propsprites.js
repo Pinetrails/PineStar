@@ -140,40 +140,60 @@ const PropSprites = (() => {
   /* ============ FURNITURE (ported verbatim from v7 sprites.js) ============ */
   const F = {};
 
-  F.bigscreen = (x, y, w, h, f) => {
-    // wall-mount lugs + heavy bezel
-    px(x + 8, y, 4, 2, '#1a261f'); px(x + w - 12, y, 4, 2, '#1a261f');
-    px(x + 9, y, 2, 1, '#2c3a32'); px(x + w - 11, y, 2, 1, '#2c3a32');
-    box(x, y + 1, w, h - 1, '#13211a');
-    px(x + 1, y + 2, w - 2, 1, '#2c3e34');                      // bezel sheen
-    rivets(x + 1, y + 2, w - 2, h - 4, '#46584e', '#0c1410');
-    inset(x + 2, y + 2, w - 4, h - 5, '#0e2418');
-    // phosphor backdrop: faint graticule + baseline
-    for (let gx = 6; gx < w - 10; gx += 8) px(x + 3 + gx, y + 3, 1, h - 7, '#123020');
-    px(x + 4, y + h / 2 - 1, w - 8, 1, '#153a26');
-    glow(x + 3, y + 3, w - 6, 1, '#9adcb0', 0.10);
-    glow(x + 3, y + 3, 14, h - 7, '#bfffd9', 0.05);
-    // twin waveforms: dim echo behind the live red trace
+  F.bigscreen = (x, y, w, h, f) => {   // v2 freestanding: HUGE display on two heavy floor pylon mounts
+    const r = RAMP.steel;
+    const py = y - 9, pH = 15;                                   // panel rides y-9..y+6; floor gap below
+    shadow2(x + 4, y + h - 1, w - 8);
+    // two heavy pylon mounts carrying the panel down to the floor line
+    for (const mx of [x + 12, x + w - 20]) {
+      px(mx - 1, y + 3, 10, 8, LINE);
+      px(mx, y + 4, 8, 6, r.face);
+      px(mx, y + 4, 1, 6, r.lit); px(mx + 7, y + 4, 1, 6, r.dk);
+      px(mx + 3, y + 4, 2, 6, r.ao);                            // cable channel up the pylon
+      rr(mx - 3, y + h - 3, 14, 3, LINE);                       // splayed base shoe
+      px(mx - 2, y + h - 3, 12, 2, r.face);
+      px(mx - 2, y + h - 3, 12, 1, r.lit);
+      px(mx - 2, y + h - 1, 12, 1, r.ao);
+      ctx.globalAlpha = 0.30; px(mx - 3, y + h, 14, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    // chamfered panel body
+    rr(x - 1, py - 1, w + 2, pH + 2, LINE);
+    px(x, py, w, pH, r.face);
+    px(x, py, w, 1, r.lit);                                     // frame top catch
+    px(x, py + 1, 6, 1, U.shade(r.lit, 0.12));                  // west sheen streak
+    px(x, py + 1, 1, pH - 2, U.shade(r.face, 0.08));
+    px(x + w - 1, py + 1, 1, pH - 2, r.dk);
+    px(x, py + pH - 1, w, 1, r.ao);
+    px(x + 2, py, 1, 1, '#8693a0'); px(x + w - 3, py, 1, 1, '#8693a0'); // frame screws
+    wear(x + 1, py + 1, w - 2, pH - 2, 4, U.shade(r.face, -0.10));
+    // recessed phosphor screen
+    inset(x + 2, py + 2, w - 4, pH - 5, '#0e2418');
+    const cy0 = py + 3, ch0 = pH - 6, cyc = cy0 + 4;
+    for (let gx = 6; gx < w - 10; gx += 8) px(x + 3 + gx, cy0, 1, ch0, '#123020'); // graticule
+    px(x + 4, cyc, w - 8, 1, '#153a26');                        // baseline
+    glow(x + 3, cy0, w - 6, 1, '#9adcb0', 0.10);
+    glow(x + 3, cy0, 14, ch0, '#bfffd9', 0.05);
+    // twin waveforms: dim echo behind the live red trace (kept 1:1)
     ctx.strokeStyle = '#5c241e'; ctx.lineWidth = 1; ctx.beginPath();
     for (let i = 0; i < w - 8; i++) {
-      const yy = y + h / 2 - 1 + Math.sin(now / 260 + i * 0.35 + 1.3) * 2.2;
+      const yy = cyc + Math.sin(now / 260 + i * 0.35 + 1.3) * 2.2;
       i ? ctx.lineTo(x + 4 + i, yy) : ctx.moveTo(x + 4 + i, yy);
     }
     ctx.stroke();
     ctx.strokeStyle = '#ff4a3d'; ctx.beginPath();
     for (let i = 0; i < w - 8; i++) {
-      const yy = y + h / 2 - 1 + Math.sin(now / 260 + i * 0.35) * 2.4;
+      const yy = cyc + Math.sin(now / 260 + i * 0.35) * 2.4;
       i ? ctx.lineTo(x + 4 + i, yy) : ctx.moveTo(x + 4 + i, yy);
     }
     ctx.stroke();
     // hot pixel riding the live trace
     const hp = Math.floor((now / 30) % (w - 9));
-    px(x + 4 + hp, y + h / 2 - 1 + Math.round(Math.sin(now / 260 + hp * 0.35) * 2.4), 1, 1, '#ffd0c8');
-    scanl(x + 3, y + 3, w - 6, h - 7, 0.10);
-    glow(x + 3 + ((now / 40) % (w - 10)), y + 3, 4, h - 7, '#dfffe8', 0.06); // drifting scan band
-    for (let i = 0; i < 4; i++) px(x + 4 + i * 8, y + h - 2, 4, 1, blink(900, i) ? '#ffd34a' : '#2c3a32');
-    for (let i = 0; i < 7; i++) px(x + w - 26 + i * 3, y + h - 2, 2, 1, '#0c1410'); // vent slits
-    glow(x + 2, y + 2, w - 4, h - 5, '#ff4a3d', 0.04 + 0.02 * Math.sin(now / 800)); // emissive spill
+    px(x + 4 + hp, cyc + Math.round(Math.sin(now / 260 + hp * 0.35) * 2.4), 1, 1, '#ffd0c8');
+    scanl(x + 3, cy0, w - 6, ch0, 0.10);
+    glow(x + 3 + ((now / 40) % (w - 10)), cy0, 4, ch0, '#dfffe8', 0.06); // drifting scan band
+    for (let i = 0; i < 4; i++) px(x + 4 + i * 8, py + pH - 2, 4, 1, blink(900, i) ? '#ffd34a' : '#2c3a32');
+    for (let i = 0; i < 7; i++) px(x + w - 26 + i * 3, py + pH - 2, 2, 1, '#0c1410'); // vent slits
+    glow(x + 2, py + 2, w - 4, pH - 5, '#ff4a3d', 0.04 + 0.02 * Math.sin(now / 800)); // emissive spill
   };
 
   F.consoleL = (x, y, w, h, f) => {   // long ops console (3x1) — TOP-BIAS OBLIQUE trapezoid, bolted to deck
@@ -218,85 +238,130 @@ const PropSprites = (() => {
     px(x + 4, y + 4, 6, 1, blink(800) ? ACC.flow : U.shade(ACC.flow, -0.4));
   };
 
-  F.holotable = (x, y, w, h, f) => {
-    sh(x + 2, y + h - 1, w - 4);
-    box(x + 1, y + 2, w - 2, h - 3, '#1b2a33');
-    px(x + 2, y + 3, w - 4, 1, '#2c4250');                      // rim sheen
-    px(x + 2, y + 3, 1, h - 5, '#24394a'); px(x + w - 3, y + 3, 1, h - 5, '#101c24'); // side facets
-    inset(x + 3, y + 4, w - 6, h - 7, '#0c1a22');
-    // corner emitter studs
-    for (const [ex, ey] of [[x + 3, y + 4], [x + w - 5, y + 4], [x + 3, y + h - 5], [x + w - 5, y + h - 5]])
+  F.holotable = (x, y, w, h, f) => {   // v2 TOP-BIAS OBLIQUE hero table: big top, short face, plinth; holo floats ABOVE
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, w - 4);
+    // central plinth pedestal on the floor
+    rr(x + 7, y + h - 7, w - 14, 6, LINE);
+    px(x + 8, y + h - 6, w - 16, 4, r.dk);
+    px(x + 8, y + h - 6, w - 16, 1, U.shade(r.dk, 0.28));
+    px(x + 8, y + h - 3, w - 16, 1, r.ao);
+    underAO(x + 3, y + h - 7, w - 6, 2);                        // open gap under the slab lip
+    // short south face of the slab
+    rr(x - 1, y + h - 12, w + 2, 6, LINE);
+    px(x, y + h - 11, w, 4, r.face);
+    px(x, y + h - 11, w, 1, r.lit);
+    px(x, y + h - 10, 1, 3, U.shade(r.face, 0.08));
+    px(x + w - 1, y + h - 10, 1, 3, r.dk);
+    px(x, y + h - 8, w, 1, r.ao);
+    // control strip on the near face (kept beat)
+    px(x + 5, y + h - 10, 8, 1, '#0e1a20');
+    for (let i = 0; i < 3; i++) px(x + 6 + i * 3, y + h - 10, 1, 1, blink(500, i) ? '#4ad9ff' : '#1d4a5a');
+    // the big rounded top surface
+    rr(x - 1, y, w + 2, h - 11, LINE);
+    px(x, y + 1, w, h - 13, r.top);
+    px(x + 1, y + 1, w - 2, 1, r.sheen);
+    px(x + 1, y + 2, 5, 1, U.shade(r.sheen, 0.12));             // west sheen streak
+    px(x, y + 2, 1, h - 15, r.lit); px(x + w - 1, y + 2, 1, h - 15, r.dk);
+    px(x + 1, y + h - 13, w - 2, 1, U.shade(r.top, -0.16));     // top front lip
+    wear(x + 1, y + 1, w - 2, h - 14, 3, U.shade(r.top, -0.08));
+    // projection well recessed into the top
+    inset(x + 4, y + 3, w - 8, h - 17, '#0c1a22');
+    // corner emitter studs (kept)
+    for (const [ex, ey] of [[x + 5, y + 4], [x + w - 7, y + 4], [x + 5, y + 8], [x + w - 7, y + 8]])
       px(ex, ey, 2, 1, blink(600, ex + ey) ? '#9aeaff' : '#1d4a5a');
     const rim = 0.35 + 0.2 * Math.sin(now / 600);
-    glow(x + 3, y + 4, w - 6, 1, '#4ad9ff', rim); glow(x + 3, y + h - 4, w - 6, 1, '#4ad9ff', rim);
-    glow(x + 3, y + 5, 1, h - 9, '#4ad9ff', rim); glow(x + w - 4, y + 5, 1, h - 9, '#4ad9ff', rim);
-    // projection well: dot grid + faint cross axes
-    for (let i = 0; i < 5; i++) for (let j = 0; j < 2; j++) px(x + 6 + i * 8, y + h / 2 - 3 + j * 6, 1, 1, '#1d4a5a');
-    px(x + 5, y + h / 2, w - 10, 1, '#13313e'); px(x + w / 2 - 1, y + 6, 1, h - 11, '#13313e');
-    // hologram of the station + orbiting blip + orbit ring
+    glow(x + 5, y + 4, w - 10, 1, '#4ad9ff', rim); glow(x + 5, y + 9, w - 10, 1, '#4ad9ff', rim);
+    glow(x + 5, y + 5, 1, h - 20, '#4ad9ff', rim); glow(x + w - 6, y + 5, 1, h - 20, '#4ad9ff', rim);
+    // projection well: dot grid + faint cross axes (kept)
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 2; j++) px(x + 8 + i * 8, y + 5 + j * 3, 1, 1, '#1d4a5a');
+    px(x + 6, y + 6, w - 12, 1, '#13313e'); px(x + w / 2 - 1, y + 4, 1, 5, '#13313e');
+    // hologram of the station floats ABOVE the top + orbit ring + orbiting blip (kept 1:1)
+    const hcx = x + w / 2, hcy = y - 4;
+    glow(hcx - 1, hcy + 4, 2, 4, '#4ad9ff', 0.10);              // projection beam up from the well
     const g = 0.45 + 0.25 * Math.sin(now / 400);
     ctx.globalAlpha = g;
-    px(x + w / 2 - 7, y + h / 2 - 1, 14, 2, '#4ad9ff');
-    px(x + w / 2 - 1, y + h / 2 - 5, 2, 10, '#4ad9ff');
-    px(x + w / 2 - 4, y + h / 2 - 4, 8, 1, '#9aeaff');
-    px(x + w / 2 - 8, y + h / 2 - 1, 1, 1, '#9aeaff'); px(x + w / 2 + 7, y + h / 2 - 1, 1, 1, '#9aeaff'); // wing tips
+    px(hcx - 7, hcy - 1, 14, 2, '#4ad9ff');
+    px(hcx - 1, hcy - 5, 2, 10, '#4ad9ff');
+    px(hcx - 4, hcy - 4, 8, 1, '#9aeaff');
+    px(hcx - 8, hcy - 1, 1, 1, '#9aeaff'); px(hcx + 7, hcy - 1, 1, 1, '#9aeaff'); // wing tips
     ctx.globalAlpha = g * 0.4;
     ctx.strokeStyle = '#4ad9ff'; ctx.lineWidth = 1; ctx.beginPath();
-    ctx.ellipse(x + w / 2, y + h / 2, 9.5, 4.5, 0, 0, 7); ctx.stroke();
+    ctx.ellipse(hcx, hcy, 9.5, 4.5, 0, 0, 7); ctx.stroke();
     ctx.globalAlpha = 1;
     const oa = now / 700;
-    px(x + w / 2 - 1 + Math.round(Math.cos(oa) * 9), y + h / 2 + Math.round(Math.sin(oa) * 4), 1, 1, '#dffaff');
-    glow(x + w / 2 - 8, y + h / 2 - 5, 16, 10, '#4ad9ff', 0.05 + 0.03 * Math.sin(now / 400)); // volume haze
-    // control strip on the near rim
-    px(x + 5, y + h - 3, 8, 1, '#0e1a20');
-    for (let i = 0; i < 3; i++) px(x + 6 + i * 3, y + h - 3, 1, 1, blink(500, i) ? '#4ad9ff' : '#1d4a5a');
+    px(hcx - 1 + Math.round(Math.cos(oa) * 9), hcy + Math.round(Math.sin(oa) * 4), 1, 1, '#dffaff');
+    glow(hcx - 8, hcy - 5, 16, 10, '#4ad9ff', 0.05 + 0.03 * Math.sin(now / 400)); // volume haze
   };
 
-  F.screens = (x, y, w, h) => {
-    box(x, y + 2, w, h - 2, '#1a2a26');
-    px(x + 1, y + 3, w - 2, 1, '#2c4038');                      // bezel sheen
+  F.screens = (x, y, w, h) => {   // v2 freestanding: monitor bank riding rolling posts (was a wall-mural)
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, w - 4);
+    // rolling posts on splayed T-feet with casters
+    for (const pxx of [x + 4, x + w - 6]) {
+      px(pxx - 1, y + 5, 4, h - 7, LINE);
+      px(pxx, y + 6, 1, h - 8, r.lit); px(pxx + 1, y + 6, 1, h - 8, r.dk);
+      rr(pxx - 3, y + h - 3, 8, 2, LINE);
+      px(pxx - 2, y + h - 3, 6, 1, r.face);
+      px(pxx - 2, y + h - 1, 2, 1, '#1a1e22'); px(pxx + 2, y + h - 1, 2, 1, '#1a1e22'); // casters
+      ctx.globalAlpha = 0.30; px(pxx - 3, y + h, 8, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    // panel riding the posts: rounded steel frame, three monitor units
+    rr(x, y - 5, w, 12, LINE);
+    px(x + 1, y - 4, w - 2, 10, r.face);
+    px(x + 1, y - 4, w - 2, 1, r.lit);
+    px(x + 2, y - 4, 1, 1, '#56645c'); px(x + w - 3, y - 4, 1, 1, '#56645c'); // frame screws
+    px(x + 1, y + 5, w - 2, 1, r.ao);
     for (let i = 0; i < w / 8; i++) {
-      inset(x + 1 + i * 8, y + 3, 7, 6, '#0c1f16');
-      const dead = (U.hash('scr' + x + i) % 7) === 0;           // one unit runs diagnostics
+      inset(x + 1 + i * 8, y - 3, 7, 6, '#0c1f16');
+      const dead = (U.hash('scr' + x + i) % 7) === 0;           // one unit runs diagnostics (kept)
       if (dead) {
         for (let k = 0; k < 5; k++)
-          px(x + 2 + i * 8 + (U.hash('st' + i + k + Math.floor(now / 150)) % 5), y + 4 + (U.hash('su' + i + k + Math.floor(now / 150)) % 4), 1, 1, '#3a5a50');
+          px(x + 2 + i * 8 + (U.hash('st' + i + k + Math.floor(now / 150)) % 5), y - 2 + (U.hash('su' + i + k + Math.floor(now / 150)) % 4), 1, 1, '#3a5a50');
       } else {
-        px(x + 2 + i * 8, y + 4 + Math.floor((now / 300 + i) % 3), 5, 1, '#4ad9ff');
-        px(x + 2 + i * 8, y + 4 + Math.floor((now / 300 + i) % 3), 2, 1, '#bfeeff'); // bright lead
-        px(x + 2 + i * 8, y + 7, 3, 1, '#16424e');              // dim history row
-        if (blink(1700, i * 2.3)) glow(x + 2 + i * 8, y + 4, 5, 4, '#4ad9ff', 0.15);
+        px(x + 2 + i * 8, y - 2 + Math.floor((now / 300 + i) % 3), 5, 1, '#4ad9ff');
+        px(x + 2 + i * 8, y - 2 + Math.floor((now / 300 + i) % 3), 2, 1, '#bfeeff'); // bright lead
+        px(x + 2 + i * 8, y + 1, 3, 1, '#16424e');              // dim history row
+        if (blink(1700, i * 2.3)) glow(x + 2 + i * 8, y - 2, 5, 4, '#4ad9ff', 0.15);
       }
-      px(x + 6 + i * 8, y + 8, 1, 1, blink(900, i) ? '#2ee6c8' : '#143028'); // unit LED
+      px(x + 6 + i * 8, y + 4, 1, 1, blink(900, i) ? '#2ee6c8' : '#143028'); // unit LED on the bezel
     }
-    seamH(x + 1, y + h - 2, w - 2, '#1a2a26');
-    rivets(x + 1, y + 3, w - 2, h - 4, '#3a5048', '#0c1612');
+    px(x + 2, y + 4, 3, 1, r.dk);                               // label strip
   };
 
-  F.tank = (x, y, w, h) => {
-    sh(x + 1, y + h + 3, w - 2);
-    box(x, y + 1, w, h + 3, '#1e3434');
-    px(x + 1, y + 1, w - 2, 1, '#3e6a62');                      // cap sheen
-    for (let i = 0; i < 3; i++) px(x + 3 + i * ((w - 7) >> 1), y + 1, 1, 1, '#5a8a80'); // cap bolts
-    inset(x + 1, y + 2, w - 2, h + 1, '#0f3a3a');
-    // murky depth gradient
-    px(x + 2, y + h - 1, w - 4, 3, '#0b2c2c'); px(x + 2, y + h + 1, w - 4, 1, '#082222');
-    px(x + 2, y + 3, w - 4, 1, '#2a6a62'); // liquid surface
-    glow(x + 2, y + 3, w - 4, 1, '#7adfd0', 0.4 + 0.2 * Math.sin(now / 500));
-    glow(x + 3, y + 4, 2, h - 2, '#bffff2', 0.18); // glass highlight
-    glow(x + w - 5, y + 5, 1, h - 4, '#bffff2', 0.08); // second faint streak
-    // suspended specimen, bobbing slowly
+  F.tank = (x, y, w, h) => {   // v2 oblique aquarium: visible glass top rim, front glass face, low stand
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    // low stand with feet
+    rr(x, y + h - 4, w, 4, LINE);
+    px(x + 1, y + h - 3, w - 2, 2, r.dk);
+    px(x + 1, y + h - 3, w - 2, 1, U.shade(r.dk, 0.25));
+    px(x + 1, y + h - 1, 2, 1, r.ao); px(x + w - 3, y + h - 1, 2, 1, r.ao); // feet
+    px(x + 2, y + h - 3, 2, 1, blink(1000) ? '#2ee6c8' : '#143028'); // pump LED (kept)
+    // oblique top rim: we look down onto the liquid surface
+    rr(x, y - 9, w, 4, LINE);
+    px(x + 1, y - 8, w - 2, 1, r.sheen);                        // rim ring catches light
+    px(x + 2, y - 7, w - 4, 1, '#2a6a62');                      // liquid surface seen from above
+    glow(x + 2, y - 7, w - 4, 1, '#7adfd0', 0.4 + 0.2 * Math.sin(now / 500));
+    for (let i = 0; i < 3; i++) px(x + 3 + i * ((w - 7) >> 1), y - 9, 1, 1, '#5a8a80'); // cap bolts (kept)
+    // front glass face
+    rr(x, y - 6, w, h + 2, LINE);
+    px(x + 1, y - 5, w - 2, h, '#0f3a3a');
+    px(x + 2, y + 4, w - 4, 3, '#0b2c2c'); px(x + 2, y + 6, w - 4, 1, '#082222'); // murky depth
+    px(x + 1, y - 5, 1, h, '#1e4a48'); px(x + w - 2, y - 5, 1, h, '#0a2624'); // lit west / dark east glass
+    px(x + 2, y - 5, w - 4, 1, '#2a6a62');                      // surface line behind the glass
+    glow(x + 3, y - 4, 2, h - 2, '#bffff2', 0.18);              // glass highlight (kept)
+    glow(x + w - 5, y - 2, 1, h - 4, '#bffff2', 0.08);          // second faint streak (kept)
+    // suspended specimen, bobbing slowly (kept 1:1)
     const bob = Math.round(Math.sin(now / 1100) * 1.5);
-    px(x + w / 2 - 2, y + 6 + bob, 4, 3, '#16504a'); px(x + w / 2 - 1, y + 5 + bob, 2, 1, '#16504a');
-    px(x + w / 2 - 2, y + 6 + bob, 1, 1, '#2a7a6e'); // rim light on specimen
+    px(x + w / 2 - 2, y - 1 + bob, 4, 3, '#16504a'); px(x + w / 2 - 1, y - 2 + bob, 2, 1, '#16504a');
+    px(x + w / 2 - 2, y - 1 + bob, 1, 1, '#2a7a6e');            // rim light on specimen
     for (let i = 0; i < 3; i++) {
       const ph = (now / (700 + i * 160) + i * 0.7) % 1;
-      px(x + 4 + i * 6, y + 3 + Math.floor((1 - ph) * (h - 2)), 1, 1, '#7adfd0');
-      px(x + 5 + i * 6, y + 3 + Math.floor((1 - ((ph + 0.4) % 1)) * (h - 2)), 1, 1, '#3a8a80'); // dim bubble
+      px(x + 4 + i * 6, y - 5 + Math.floor((1 - ph) * (h - 2)), 1, 1, '#7adfd0');
+      px(x + 5 + i * 6, y - 5 + Math.floor((1 - ((ph + 0.4) % 1)) * (h - 2)), 1, 1, '#3a8a80'); // dim bubble
     }
-    px(x, y + 1, w, 1, '#3e6a62'); px(x, y + h + 3, w, 1, '#16302a');
-    px(x + 1, y + h + 2, w - 2, 1, '#143028');                  // base band
-    px(x + 2, y + h + 2, 2, 1, blink(1000) ? '#2ee6c8' : '#143028'); // pump LED
+    px(x + 1, y + h - 5, w - 2, 1, '#143028');                  // base band where glass meets stand
   };
 
   F.whiteboard = (x, y, w, h) => {   // v2 freestanding: rolling frame — posts + casters carry the board
@@ -612,24 +677,46 @@ const PropSprites = (() => {
     px(x + 3, y + 4, 2, 1, '#26403c'); // pen dock
   };
 
-  F.coffee = (x, y, w, h) => {
-    sh(x + 2, y + 10, 8);
-    box(x + 2, y, 8, 10, '#36424c');
-    px(x + 3, y + 1, 6, 3, '#1a2228');
-    px(x + 3, y + 1, 6, 1, '#46525a');
-    px(x + 3, y + 2, 1, 2, '#26323a'); // hopper shade
-    const lvl = 1 + Math.floor(((now / 4000) % 1) * 2); // pot slowly fills
-    px(x + 4, y + 5, 4, 4, '#141b1e'); // carafe glass
-    px(x + 4, y + 6 + (3 - lvl), 4, lvl, '#2f4a46');
-    px(x + 4, y + 6 + (3 - lvl), 4, 1, '#3e5e58'); // brew surface
-    px(x + 4, y + 5, 1, 4, '#2a363c'); // glass shine
-    px(x + 4, y + 5, 4, 1, '#8a98a8');
-    px(x + 9, y + 4, 1, 1, blink(1200) ? '#41ff8a' : '#1c2a22'); // ready light
-    px(x + 9, y + 6, 1, 1, '#222c32'); px(x + 9, y + 7, 1, 1, '#222c32'); // buttons
-    if (blink(600)) { px(x + 5, y - 2, 1, 2, '#8a8a8a'); px(x + 7, y - 3, 1, 2, '#6a6a6a'); } // steam
-    px(x + 4, y + 9, 4, 1, '#241c14'); // drip tray
-    px(x + 5, y + 9, 2, 1, '#3a2c20'); // old stain
-    px(x, y + 8, 2, 2, '#3a6a62'); px(x, y + 8, 2, 1, '#5aa89c'); // waiting mug
+  F.coffee = (x, y, w, h) => {   // v2: counter-height brewer — rounded head + column, carafe filling in a lit alcove
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, 10);                              // floor contact
+    // waiting mug on the deck, west of the machine
+    px(x, y + 9, 2, 2, '#3a6a62'); px(x, y + 9, 2, 1, '#5aa89c');
+    px(x + 2, y + 10, 1, 1, '#2a4a44');                         // mug handle
+    ctx.globalAlpha = 0.25; px(x, y + 11, 3, 1, '#000'); ctx.globalAlpha = 1;
+    // rounded body column
+    rr(x + 3, y - 1, 9, 13, LINE);
+    px(x + 4, y, 7, 10, r.face);
+    px(x + 4, y, 1, 10, r.lit); px(x + 10, y, 1, 10, r.dk);
+    px(x + 4, y + 10, 7, 1, r.ao);                              // floor-line AO
+    // rounded head unit juts over the body (top-bias cap with the water lid)
+    rr(x + 2, y - 4, 11, 4, LINE);
+    px(x + 3, y - 3, 9, 2, r.top);
+    px(x + 3, y - 3, 9, 1, r.sheen);
+    px(x + 3, y - 2, 2, 1, U.shade(r.top, 0.10));               // west sheen streak
+    px(x + 7, y - 3, 1, 2, U.shade(r.top, -0.20));              // lid seam
+    px(x + 10, y - 3, 1, 1, '#8693a0');                         // hinge glint
+    // control strip: ready light + buttons
+    px(x + 5, y, 1, 1, blink(1200) ? ACC.work : '#1c2a22');     // ready light (kept)
+    if (blink(1200)) glow(x + 4, y - 1, 3, 3, ACC.work, 0.22);
+    px(x + 7, y, 1, 1, '#222c32'); px(x + 8, y, 1, 1, '#222c32'); // buttons (kept)
+    // brew alcove: dark recess, spout dripping into the glass carafe
+    px(x + 5, y + 2, 5, 6, '#0d1216');
+    px(x + 5, y + 2, 5, 1, '#06090c');                          // recess top shadow
+    px(x + 6, y + 2, 3, 1, '#1a2228');                          // spout housing
+    px(x + 7, y + 3, 1, 1, '#10161a');                          // spout
+    const lvl = 1 + Math.floor(((now / 4000) % 1) * 3);         // pot slowly fills (kept)
+    px(x + 6, y + 4, 3, 1, '#8a98a8');                          // carafe rim
+    px(x + 6, y + 5, 3, 3, '#141b1e');                          // carafe glass
+    px(x + 6, y + 8 - lvl, 3, lvl, '#2f4a46');                  // brew
+    px(x + 6, y + 8 - lvl, 3, 1, '#3e5e58');                    // brew surface
+    px(x + 6, y + 5, 1, 3, '#2a363c');                          // glass shine
+    px(x + 9, y + 5, 1, 2, '#6a7888');                          // carafe handle
+    if (blink(400)) px(x + 7, y + 4, 1, 1, '#3e5e58');          // drip stream
+    px(x + 5, y + 8, 5, 1, '#241c14');                          // drip tray
+    px(x + 6, y + 8, 2, 1, '#3a2c20');                          // old stain (kept)
+    px(x + 5, y + 9, 2, 1, '#caa84a');                          // serial tag
+    if (blink(600)) { px(x + 6, y - 6, 1, 2, '#8a8a8a'); px(x + 8, y - 7, 1, 2, '#6a6a6a'); } // steam (kept)
   };
 
   F.plant = (x, y) => {   // v2 oblique: tapered pot with a lit rim, layered fronds rising above the tile
@@ -662,18 +749,38 @@ const PropSprites = (() => {
     px(x + 8, y + 7, 1, 1, blink(2000, x) ? '#2ee6c8' : '#1a3a34');
   };
 
-  F.cans = (x, y) => { // empty energy cans
-    ctx.globalAlpha = 0.18; px(x + 2, y + 10, 9, 2, '#000'); ctx.globalAlpha = 1;
-    px(x + 1, y + 7, 3, 4, '#8a98a8'); px(x + 1, y + 7, 1, 4, '#aab8c8'); px(x + 1, y + 7, 3, 1, '#caa84a');
-    px(x + 2, y + 9, 1, 1, '#6a7888'); // dent
-    px(x + 2, y + 8, 1, 1, '#41ff8a'); // brand stripe
-    px(x + 6, y + 8, 4, 3, '#8a98a8'); px(x + 6, y + 8, 4, 1, '#aab8c8'); px(x + 9, y + 9, 1, 2, '#6a7888');
-    px(x + 7, y + 9, 1, 1, '#41ff8a');
-    px(x + 10, y + 8, 1, 1, '#caa84a');
-    px(x + 4, y + 4, 3, 3, '#7a8898'); px(x + 4, y + 4, 3, 1, '#98a8b8'); // crushed third can
-    px(x + 5, y + 5, 1, 1, '#5a6878');
-    px(x + 4, y + 10, 3, 1, '#3a4440'); // stale spill
-    px(x + 8, y + 11, 2, 1, '#343c3a'); // ring stain
+  F.cans = (x, y) => {   // v2: floor litter — standing, tipped + crushed cans, ring stain, stale spill
+    // deck stains first (they are the floor)
+    px(x + 4, y + 5, 2, 1, '#3a4440'); px(x + 3, y + 6, 1, 1, '#3a4440'); // ring stain
+    px(x + 6, y + 6, 1, 1, '#3a4440'); px(x + 4, y + 7, 2, 1, '#3a4440');
+    // crushed can, flattened NW
+    px(x + 1, y + 2, 6, 3, LINE);
+    px(x + 2, y + 2, 3, 1, '#7a8898');                          // folded rim on top
+    px(x + 2, y + 3, 4, 1, '#98a8b8');
+    px(x + 4, y + 3, 1, 1, '#5a6878');                          // crush crease
+    px(x + 2, y + 3, 1, 1, '#c0ccd8');                          // rim glint
+    ctx.globalAlpha = 0.20; px(x + 1, y + 5, 6, 1, '#000'); ctx.globalAlpha = 1;
+    // standing tall can, east
+    rr(x + 7, y + 2, 5, 8, LINE);
+    px(x + 8, y + 3, 3, 6, '#8a98a8');
+    px(x + 8, y + 3, 1, 6, '#aab8c8'); px(x + 10, y + 3, 1, 6, '#6a7888');
+    px(x + 8, y + 3, 3, 1, '#c8d4e0');                          // top rim
+    px(x + 9, y + 3, 1, 1, '#e8f0f8');                          // pull tab
+    px(x + 8, y + 5, 3, 2, '#16302a');                          // brand band
+    px(x + 9, y + 5, 1, 1, ACC.work);                           // brand glyph
+    px(x + 8, y + 8, 3, 1, '#5a6878');                          // bottom rim
+    ctx.globalAlpha = 0.22; px(x + 7, y + 10, 5, 1, '#000'); ctx.globalAlpha = 1;
+    // tipped can lying E-W, southwest
+    rr(x, y + 7, 7, 4, LINE);
+    px(x + 1, y + 8, 5, 2, '#8a98a8');
+    px(x + 1, y + 8, 5, 1, '#aab8c8'); px(x + 1, y + 9, 5, 1, '#6a7888');
+    px(x + 1, y + 8, 1, 2, '#4e5c6c');                          // rim end circle
+    px(x + 1, y + 8, 1, 1, '#1a2024');                          // dark opening
+    px(x + 3, y + 8, 2, 2, '#16302a');                          // brand band
+    px(x + 3, y + 9, 2, 1, ACC.work);                           // brand stripe
+    px(x + 5, y + 8, 1, 1, '#c8d4e0');                          // tab glint
+    px(x + 1, y + 11, 3, 1, '#343c3a');                         // stale spill from the opening
+    ctx.globalAlpha = 0.20; px(x, y + 11, 7, 1, '#000'); ctx.globalAlpha = 1;
   };
 
   F.commswall = (x, y, w, h) => {
@@ -774,101 +881,155 @@ const PropSprites = (() => {
     px(x + 2, y + h - 1, 3, 1, r.dk); px(x + w - 5, y + h - 1, 3, 1, r.dk);
   };
 
-  F.fabricator = (x, y, w, h, f) => { // apparel printer
-    sh(x + 1, y + h - 1, w - 2);
-    box(x, y + 1, w, h - 1, '#36424c');
-    px(x + 1, y + 2, w - 2, 1, '#46525a');
-    px(x + 1, y + 2, 1, h - 4, '#414d56'); px(x + w - 2, y + 2, 1, h - 4, '#2a343c'); // side facets
-    rivets(x + 1, y + 2, w - 2, h - 3, '#5a6872', '#1e262c');
-    // print window with frame screws
-    inset(x + 2, y + 3, w - 4, 6, '#28323a');
-    px(x + 2, y + 3, 1, 1, '#4a565e'); px(x + w - 3, y + 3, 1, 1, '#4a565e');
-    px(x + 3, y + 4, w - 6, 4, f.work ? '#2e3840' : '#1a2228');
+  F.fabricator = (x, y, w, h, f) => { // apparel printer — top-bias oblique, bolted machine
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x, y + 14, w, h - 14);
+    deckSocket(x + w + 1, y + h - 3, f.work);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');                     // conduit stub
+    for (const lx of [x + 2, x + w - 5]) {                     // chunky corner feet on the plate
+      px(lx, y + 15, 3, 3, LINE); px(lx, y + 15, 1, 3, r.lit); px(lx + 1, y + 15, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 15, w - 10, 2);
+    // output hopper jutting onto the plate: finished apparel lands here
+    rr(x + 12, y + 16, 12, 6, LINE);
+    px(x + 13, y + 17, 10, 4, '#232d33');
+    px(x + 13, y + 17, 10, 1, '#39454d');
+    px(x + 15, y + 18, 6, 2, '#e8e0d0'); px(x + 15, y + 18, 6, 1, '#f6f0e4'); // folded shirt
+    px(x + 17, y + 18, 2, 1, '#c8c0b0');                       // collar
+    // short south face: progress well + status lights
+    rr(x - 1, y + 9, w + 2, 6, LINE);
+    px(x, y + 10, w, 4, r.face);
+    px(x, y + 10, w, 1, r.lit);
+    px(x, y + 13, w, 1, r.ao);
+    inset(x + 3, y + 11, w - 14, 2, '#10161a');                // progress well
+    if (f.work) px(x + 4, y + 11, 1 + Math.floor(((now / 900) % 1) * (w - 17)), 1, '#ff9d2e'); // progress (kept)
+    px(x + w - 8, y + 11, 2, 2, blink(400) && f.work ? ACC.work : '#2a3a30'); // run light (kept)
+    px(x + w - 5, y + 11, 1, 1, blink(900) ? '#ffd34a' : '#33291a');          // heater light (kept)
+    // the big rounded top dominates: casing with a recessed print bed seen from above
+    rr(x - 1, y - 3, w + 2, 13, LINE);
+    rr(x, y - 2, w, 11, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x + 1, y - 1, 5, 1, U.shade(r.sheen, 0.12));
+    px(x, y - 1, 1, 9, r.lit); px(x + w - 1, y - 1, 1, 9, r.dk);
+    px(x + 1, y + 8, w - 2, 1, U.shade(r.top, -0.16));         // top front edge
+    wear(x + 1, y + 6, w - 2, 3, 3, U.shade(r.top, -0.10));
+    // recessed print bed window (looking down into the machine)
+    inset(x + 5, y, w - 10, 6, '#10161a');
+    px(x + 5, y, 1, 1, '#4a565e'); px(x + w - 6, y, 1, 1, '#4a565e'); // frame screws
+    px(x + 6, y + 1, w - 12, 4, f.work ? '#2e3840' : '#1a2228');
+    px(x + 6, y + 1, w - 12, 1, '#39454d');                    // gantry rail
     if (f.work) {
-      glow(x + 3, y + 4, w - 6, 4, '#ff9d2e', 0.35 + 0.15 * Math.sin(now / 300));
-      const hd = x + 3 + Math.floor((now / 120) % (w - 8));
-      px(hd, y + 4, 2, 4, '#ffd9a0'); // print head
-      px(hd, y + 3, 2, 1, '#8a98a8'); // head carriage
-      px(hd - 1, y + 7, 1, 1, '#ffeccc'); // fresh thread
-      px(x + 3, y + 8, Math.floor(((now / 900) % 1) * (w - 6)), 1, '#ff9d2e'); // progress
-      scanl(x + 3, y + 4, w - 6, 4, 0.15);
+      glow(x + 6, y + 1, w - 12, 4, '#ff9d2e', 0.35 + 0.15 * Math.sin(now / 300)); // amber work glow (kept)
+      const hd = x + 6 + Math.floor((now / 120) % (w - 14));   // moving print head (kept)
+      px(hd, y + 1, 2, 4, '#ffd9a0');
+      px(hd, y, 2, 1, '#8a98a8');                              // head carriage
+      px(hd - 1, y + 4, 1, 1, '#ffeccc');                      // fresh thread
+      scanl(x + 6, y + 1, w - 12, 4, 0.15);
     } else {
-      px(x + 4, y + 5, 2, 1, '#222c34'); // idle gantry
+      px(x + 7, y + 2, 2, 1, '#222c34');                       // parked gantry (kept)
+      px(x + w - 8, y + 2, 1, 1, blink(1600) ? '#ff9d2e' : '#33241a'); // standby
     }
-    px(x + 1, y + 4, 1, 8, '#46525a'); px(x + w - 2, y + 4, 1, 8, '#2e3840'); // side pipes
-    px(x + 1, y + 6, 1, 1, '#5a6872'); px(x + w - 2, y + 6, 1, 1, '#222a30'); // pipe clamps
-    for (let i = 0; i < 4; i++) px(x + 3 + i * 3, y + 11, 2, 1, '#28323a'); // vents
-    // filament spool on the left flank, spinning while printing
-    px(x - 1, y + 6, 3, 3, '#2a343c'); px(x - 1, y + 6, 3, 1, '#3a4650');
-    if (f.work) px(x - 1 + (Math.floor(now / 200) % 3), y + 7, 1, 1, '#ffd9a0');
-    inset(x + 2, y + h - 6, w - 4, 4, '#28323a'); // output tray
-    px(x + 3, y + h - 3, w - 6, 1, '#1c242a'); // tray lip shade
-    px(x + w / 2 - 3, y + h - 5, 6, 2, '#e8e0d0'); px(x + w / 2 - 4, y + h - 5, 1, 1, '#e8e0d0'); px(x + w / 2 + 3, y + h - 5, 1, 1, '#e8e0d0');
-    px(x + w / 2 - 3, y + h - 5, 6, 1, '#f6f0e4'); // fold highlight
-    px(x + w / 2 - 1, y + h - 5, 2, 1, '#c8c0b0'); // collar
-    px(x + 1, y + 1, 2, 2, blink(400) && f.work ? '#41ff8a' : '#2a3a30');
-    px(x + 4, y + 1, 1, 1, blink(900) ? '#ffd34a' : '#33291a'); // heater light
-    wear(x, y + 1, w, h - 1, 4, '#2e3a42');
+    // filament spool on the west flank, spinning while printing (kept)
+    rr(x - 2, y + 2, 5, 5, LINE);
+    px(x - 1, y + 3, 3, 3, '#2a343c'); px(x - 1, y + 3, 3, 1, '#3a4650');
+    px(x, y + 4, 1, 1, '#10161a');                             // hub
+    if (f.work) px(x - 1 + (Math.floor(now / 200) % 3), y + 5, 1, 1, '#ffd9a0');
+    for (let i = 0; i < 3; i++) px(x + w - 5, y + 1 + i * 2, 3, 1, U.shade(r.top, -0.22)); // east vents
   };
 
-  F.vat = (x, y, w, h, f) => { // candle wax vat
-    sh(x + 1, y + h - 1, w - 2);
-    box(x, y + 1, w, h - 1, '#36424c');
-    px(x + 1, y + 2, w - 2, 1, '#46525a');
-    rivets(x + 1, y + 2, w - 2, h - 3, '#5a6872', '#1e262c');
-    inset(x + 2, y + 2, w - 4, 7, '#28323a');
-    px(x + 2, y + 2, 1, 1, '#4a565e'); px(x + w - 3, y + 2, 1, 1, '#4a565e'); // rim bolts
-    const lvl = 3 + Math.round(Math.sin(now / 900));
-    px(x + 3, y + 3 + (5 - lvl), w - 6, lvl, '#ffd9a0');
-    px(x + 3, y + 3 + (5 - lvl), w - 6, 1, '#ffeccc');
-    px(x + 4, y + 4 + (5 - lvl), 1, lvl - 1, '#f0c890'); // wax meniscus
-    glow(x + 3, y + 3, w - 6, 6, '#ff9d2e', 0.12 + 0.08 * Math.sin(now / 700));
-    px(x + 5 + Math.floor((now / 500) % (w - 12)), y + 4 + (5 - lvl), 2, 1, '#fff4dd'); // shimmer
-    // stirrer paddle sweeping the surface
-    const stx = x + 4 + Math.floor((0.5 + 0.5 * Math.sin(now / 1300)) * (w - 11));
-    px(stx, y + 2 + (5 - lvl), 1, 2, '#8a98a8'); px(stx, y + 2 + (5 - lvl), 1, 1, '#aab8c8');
-    if (f.work && blink(300)) { px(x + w / 2, y, 1, 2, '#ff9d2e'); px(x + w / 2, y - 1, 1, 1, '#ffd34a'); } // flame test
-    // heater coil glow under the basin
-    glow(x + 3, y + 9, w - 6, 1, '#ff4a3d', f.work ? 0.25 + 0.12 * Math.sin(now / 250) : 0.08);
-    for (let i = 0; i < (w - 4) / 4; i++) px(x + 2 + i * 4, y + 10, 2, 1, i % 2 ? '#caa84a' : '#28323a'); // hazard stripe
-    px(x + w - 3, y + 5, 1, 4, '#2a343c'); px(x + w - 3, y + 5, 1, 1, '#caa84a'); // temp gauge
-    inset(x + 1, y + h - 7, w - 2, 6, '#28323a'); // candle tray
-    px(x + 2, y + h - 2, w - 4, 1, '#1c242a'); // tray shade
-    px(x + 3, y + h - 5, 3, 3, '#caa86a'); px(x + 8, y + h - 6, 3, 4, '#d8b87a'); px(x + 13, y + h - 5, 3, 3, '#e0c890');
-    px(x + 3, y + h - 5, 1, 3, '#dfc28a'); px(x + 8, y + h - 6, 1, 4, '#e8cc92'); // candle lit sides
-    px(x + 4, y + h - 6, 1, 1, '#888'); px(x + 9, y + h - 7, 1, 1, '#888'); px(x + 14, y + h - 6, 1, 1, '#888');
-    px(x + 5, y + h - 3, 2, 1, '#b89858'); // wax drip on tray
+  F.vat = (x, y, w, h, f) => { // candle wax vat — open round basin seen from above, bolted machine
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x, y + 15, w, h - 15);
+    deckSocket(x + w + 1, y + h - 3, f.work);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    // candle tray on the plate (kept: candles, wicks, drip)
+    rr(x + 3, y + 16, 15, 6, LINE);
+    px(x + 4, y + 17, 13, 4, '#232d33'); px(x + 4, y + 17, 13, 1, '#39454d');
+    px(x + 5, y + 18, 2, 3, '#caa86a'); px(x + 8, y + 17, 2, 4, '#d8b87a'); px(x + 11, y + 18, 2, 3, '#e0c890');
+    px(x + 5, y + 18, 1, 3, '#dfc28a'); px(x + 8, y + 17, 1, 4, '#e8cc92'); // candle lit sides
+    px(x + 5, y + 17, 1, 1, '#888'); px(x + 8, y + 16, 1, 1, '#888'); px(x + 11, y + 17, 1, 1, '#888'); // wicks
+    px(x + 14, y + 19, 2, 1, '#b89858');                       // wax drip
+    // drum body: curved band under the rim
+    rr(x, y + 2, w, 14, LINE);
+    px(x + 1, y + 3, w - 2, 12, r.face);
+    px(x + 1, y + 3, 2, 12, r.lit); px(x + w - 3, y + 3, 2, 12, r.dk);
+    px(x + 2, y + 14, w - 4, 1, r.ao);
+    glow(x + 3, y + 11, w - 6, 1, '#ff4a3d', f.work ? 0.25 + 0.12 * Math.sin(now / 250) : 0.08); // heater coil (kept)
+    for (let i = 0; i < (w - 6) / 4; i++) px(x + 3 + i * 4, y + 13, 2, 1, i % 2 ? '#caa84a' : '#28323a'); // hazard (kept)
+    px(x + w - 5, y + 11, 3, 3, '#2a343c'); px(x + w - 5, y + 11, 3, 1, '#caa84a'); // temp gauge (kept)
+    // the oval rim + molten wax pool dominate the top
+    const cx2 = x + w / 2, cy2 = y + 3;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, w / 2, 7, 0, 0, Math.PI * 2); ctx.fillStyle = LINE; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, w / 2 - 1, 6, 0, 0, Math.PI * 2); ctx.fillStyle = r.top; ctx.fill();
+    ctx.globalAlpha = 0.8; ctx.strokeStyle = r.sheen; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(cx2, cy2 - 0.5, w / 2 - 2.5, 5, 0, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+    ctx.globalAlpha = 1;                                        // back rim catches the light
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, w / 2 - 3.5, 4.6, 0, 0, Math.PI * 2); ctx.fillStyle = '#1e1408'; ctx.fill(); // well
+    const lvl = 3 + Math.round(Math.sin(now / 900));            // wax level breathes (kept)
+    const wrx = w / 2 - 4.5 - (4 - lvl) * 0.7, wry = 3.8 - (4 - lvl) * 0.4;
+    ctx.beginPath(); ctx.ellipse(cx2, cy2 + 0.4, wrx, wry, 0, 0, Math.PI * 2); ctx.fillStyle = '#ffd9a0'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2 + 0.4, wrx - 2, wry - 1.2, 0, 0, Math.PI * 2); ctx.fillStyle = '#ffeccc'; ctx.fill();
+    px(Math.round(cx2 - wrx) + 1, cy2, 1, 1, '#f0c890');        // meniscus (kept)
+    px(x + 6 + Math.floor((now / 500) % (w - 14)), cy2 - 1, 2, 1, '#fff4dd'); // shimmer (kept)
+    // stirrer paddle sweeping the surface (kept sweep)
+    const stx = x + 7 + Math.floor((0.5 + 0.5 * Math.sin(now / 1300)) * (w - 15));
+    px(stx, cy2 - 4, 1, 5, '#8a98a8'); px(stx, cy2 - 4, 1, 1, '#aab8c8');
+    px(stx - 1, cy2 + 1, 3, 1, '#f0c890');                      // wake in the wax
+    ctx.restore();
+    px(x + 6, y - 3, w - 12, 1, '#4a5862');                     // stirrer gantry rail over the basin
+    if (f.work && blink(300)) { px(x + w / 2, y - 5, 1, 2, '#ff9d2e'); px(x + w / 2, y - 6, 1, 1, '#ffd34a'); } // flame test (kept)
+    glow(x + 4, y - 2, w - 8, 10, '#ff9d2e', 0.12 + 0.08 * Math.sin(now / 700)); // pool glow (kept)
   };
 
-  F.easel = (x, y, w, h, f) => { // portrait station
-    sh(x + 1, y + h - 1, w - 2);
-    box(x, y + 1, w, h - 1, '#3a3242');
-    px(x + 1, y + 2, w - 2, 1, '#4c4256');
-    px(x + 1, y + 2, 1, h - 4, '#463c52'); px(x + w - 2, y + 2, 1, h - 4, '#2c2434'); // side facets
-    rivets(x + 1, y + 2, w - 2, h - 3, '#5c5070', '#221c2c');
-    inset(x + 2, y + 2, w - 4, 9, '#1c1626');
-    px(x + 2, y + 2, 2, 1, '#4c4258'); px(x + w - 4, y + 2, 2, 1, '#4c4258'); // canvas clamps
-    if (f.work) { // scanline reveal of the commissioned portrait
+  F.easel = (x, y, w, h, f) => { // portrait station — freestanding A-frame, BOLD diagonal legs
+    const r = RAMP.gun;
+    shadow2(x + 3, y + h - 1, w - 6);
+    // rear mast, visible under the canvas
+    px(x + w / 2 - 1, y + 14, 3, h - 16, LINE);
+    px(x + w / 2, y + 15, 1, h - 18, r.dk);
+    // splayed A-frame legs stepping down to wide feet
+    for (const [tx, fx] of [[x + 10, x + 4], [x + w - 12, x + w - 6]]) {
+      for (let i = 0; i < 9; i++) {
+        const lx = Math.round(tx + (fx - tx) * (i / 8));
+        px(lx - 1, y + 5 + i * 2, 4, 3, LINE);
+      }
+      for (let i = 0; i < 9; i++) {
+        const lx = Math.round(tx + (fx - tx) * (i / 8));
+        px(lx, y + 5 + i * 2, 1, 2, r.lit); px(lx + 1, y + 5 + i * 2, 1, 2, r.dk);
+      }
+      px(fx - 1, y + h - 2, 4, 2, LINE); px(fx, y + h - 2, 2, 1, r.face); // foot pad
+    }
+    // the canvas dominates: big rounded board riding the frame
+    rr(x + 6, y - 8, w - 12, 21, LINE);
+    px(x + 7, y - 7, w - 14, 19, '#4c4256');
+    px(x + 7, y - 7, w - 14, 1, '#5c5070');                    // frame top catch
+    px(x + 7, y - 6, 1, 17, '#564a62'); px(x + w - 8, y - 6, 1, 17, '#3a3242');
+    inset(x + 9, y - 5, w - 18, 13, '#1c1626');
+    px(x + 9, y - 5, 2, 1, '#4c4258'); px(x + w - 11, y - 5, 2, 1, '#4c4258'); // canvas clamps (kept)
+    if (f.work) { // scanline reveal of the commissioned portrait (kept, all beats)
       const rev = (now / 2000) % 1;
-      const rh = Math.floor(7 * rev) + 1;
-      px(x + 3, y + 3, w - 6, rh, '#ff6ad5');
-      px(x + 3, y + 3, w - 6, 1, '#ffa8e8');
-      px(x + 5, y + 4, 2, 1, '#ffd9a0'); px(x + 8, y + 5, 1, 1, '#2a1a24'); // pet face hint
-      if (rh > 3) { px(x + w - 8, y + 5, 2, 1, '#ffd9a0'); px(x + w - 7, y + 6, 1, 1, '#2a1a24'); } // second ear
-      px(x + 3, y + 3 + rh, w - 6, 1, blink(120) ? '#ffffff' : '#ff6ad5'); // scan head
-      glow(x + 3, y + 3, w - 6, rh, '#ff6ad5', 0.12);
-    } else {
-      px(x + 5, y + 4, 4, 4, '#5a4a6a'); px(x + 6, y + 5, 2, 2, '#6e5a80');
-      px(x + w - 9, y + 4, 3, 3, '#4a3c58');
-      px(x + 4, y + 9, w - 8, 1, '#2a2236'); // sketch guide line
+      const rh = Math.floor(10 * rev) + 1;
+      px(x + 10, y - 4, w - 20, rh, '#ff6ad5');
+      px(x + 10, y - 4, w - 20, 1, '#ffa8e8');
+      px(x + 12, y - 3, 2, 1, '#ffd9a0'); px(x + 15, y - 2, 1, 1, '#2a1a24'); // pet face hint
+      if (rh > 4) { px(x + w - 15, y - 2, 2, 1, '#ffd9a0'); px(x + w - 14, y - 1, 1, 1, '#2a1a24'); }
+      px(x + 10, y - 4 + rh, w - 20, 1, blink(120) ? '#ffffff' : '#ff6ad5'); // scan head
+      glow(x + 10, y - 4, w - 20, rh, '#ff6ad5', 0.12);
+    } else { // idle sketch state (kept)
+      px(x + 12, y - 3, 5, 5, '#5a4a6a'); px(x + 13, y - 2, 3, 3, '#6e5a80');
+      px(x + w - 16, y - 2, 4, 4, '#4a3c58');
+      px(x + 11, y + 5, w - 22, 1, '#2a2236');                 // sketch guide line
     }
-    px(x + 1, y + h - 4, w - 2, 3, '#2e2838');
-    px(x + 2, y + h - 4, w - 4, 1, '#3c3448'); // ledge catch
-    // paint pots + splatter on the ledge
-    px(x + w - 6, y + h - 3, 2, 2, '#ff6ad5'); px(x + w - 6, y + h - 3, 1, 1, '#ffa8e8');
-    px(x + w - 9, y + h - 3, 2, 2, '#4ad9ff');
-    px(x + 2, y + h - 2, 1, 1, '#ff6ad5'); px(x + 5, y + h - 2, 1, 1, '#4ad9ff'); // splatter
-    for (let i = 0; i < 4; i++) px(x + 3 + i * 4, y + h - 3, 2, 1, blink(500, i) && f.work ? '#ff6ad5' : '#473a54');
+    // paint ledge bolted across the front legs
+    rr(x + 5, y + 12, w - 10, 4, LINE);
+    px(x + 6, y + 13, w - 12, 2, r.face); px(x + 6, y + 13, w - 12, 1, r.lit);
+    px(x + w - 12, y + 11, 2, 2, '#ff6ad5'); px(x + w - 12, y + 11, 1, 1, '#ffa8e8'); // paint pots (kept)
+    px(x + w - 15, y + 11, 2, 2, '#4ad9ff');
+    px(x + 8, y + 12, 1, 1, '#ff6ad5'); px(x + 11, y + 12, 1, 1, '#4ad9ff');  // splatter (kept)
+    for (let i = 0; i < 4; i++) px(x + 9 + i * 4, y + 14, 2, 1, blink(500, i) && f.work ? '#ff6ad5' : '#473a54'); // mix LEDs (kept)
   };
 
   F.beltH = (x, y, w, h) => {
@@ -1182,87 +1343,128 @@ const PropSprites = (() => {
     px(x + cw - 6, floorY, 3, 1, U.shade(RAMP.steel.face, -0.22));
   };
 
-  F.poster = (x, y) => {
-    px(x + 1, y, 10, 12, '#0c1410');
-    px(x + 2, y + 1, 8, 10, '#1a2620');
-    px(x + 2, y + 1, 8, 1, '#243228'); // top catch
-    px(x + 3, y + 2, 6, 8, '#24382c');
-    px(x + 4, y + 3, 4, 2, '#41ff8a'); px(x + 5, y + 2, 2, 1, '#41ff8a'); // logo
-    glow(x + 4, y + 2, 4, 3, '#41ff8a', 0.18 + 0.06 * Math.sin(now / 900));
-    px(x + 4, y + 6, 4, 1, '#9adcb0'); px(x + 4, y + 8, 3, 1, '#9adcb0'); // text
-    px(x + 4, y + 9, 2, 1, '#5a7a64'); // fine print
-    px(x + 2, y + 1, 1, 1, '#56645c'); px(x + 9, y + 1, 1, 1, '#56645c'); // pins
-    px(x + 2, y + 10, 1, 1, '#56645c');
-    px(x + 9, y + 10, 1, 1, '#16241a'); // peeling corner
-    glow(x + 3, y + 2, 2, 8, '#ffffff', 0.05);
+  F.poster = (x, y) => {   // v2: freestanding A-board standee — trapezoid face, splayed legs, glowing logo
+    const r = RAMP.steel;
+    shadow2(x + 1, y + 11, 10);                                 // floor contact
+    // rear legs splay out behind the board
+    px(x, y + 9, 1, 2, '#1c242a'); px(x + 11, y + 9, 1, 2, '#1c242a');
+    // hinge ridge cap on top (the A-fold)
+    px(x + 2, y - 3, 8, 1, LINE);
+    px(x + 3, y - 3, 6, 1, r.face); px(x + 3, y - 3, 3, 1, r.lit);
+    // stepped trapezoid silhouette: narrow at the ridge, wide at the floor
+    px(x + 2, y - 2, 8, 5, LINE);
+    px(x + 1, y + 2, 10, 4, LINE);
+    px(x, y + 5, 12, 5, LINE);
+    // board face (merged across the steps)
+    px(x + 3, y - 1, 6, 4, '#1a2620');
+    px(x + 2, y + 2, 8, 4, '#1a2620');
+    px(x + 1, y + 5, 10, 4, '#1a2620');
+    px(x + 3, y - 1, 1, 3, '#243228'); px(x + 2, y + 2, 1, 3, '#243228'); px(x + 1, y + 5, 1, 3, '#243228'); // west lit
+    px(x + 8, y - 1, 1, 3, '#101812'); px(x + 9, y + 2, 1, 3, '#101812'); px(x + 10, y + 5, 1, 3, '#101812'); // east shade
+    // content: logo + clip bar + text lines
+    px(x + 4, y, 4, 2, '#41ff8a'); px(x + 5, y + 1, 1, 1, '#1a2620'); // logo glyph
+    glow(x + 4, y, 4, 2, '#41ff8a', 0.18 + 0.06 * Math.sin(now / 900)); // kept glow
+    px(x + 4, y + 3, 4, 1, r.face); px(x + 4, y + 3, 1, 1, r.lit); // paper clip bar
+    px(x + 3, y + 4, 6, 1, '#9adcb0');                          // headline
+    px(x + 2, y + 6, 7, 1, '#9adcb0');                          // text line
+    px(x + 8, y + 7, 2, 1, '#41ff8a');                          // accent tick
+    px(x + 2, y + 8, 5, 1, '#5a7a64');                          // fine print
+    px(x + 2, y + 5, 1, 1, '#caa84a');                          // old tape bit
+    wear(x + 2, y + 5, 8, 4, 3, '#141e18');
+    // front feet under the wide base
+    px(x + 1, y + 10, 2, 1, '#242e35'); px(x + 9, y + 10, 2, 1, '#242e35');
   };
 
-  F.djbooth = (x, y, w, h, f) => {
-    sh(x + 1, y + h - 1, w - 2);
-    box(x, y + 2, w, h - 2, '#2a1a3a');
-    px(x + 1, y + 3, w - 2, 1, '#3e2a52');
-    px(x + 1, y + 3, 1, h - 6, '#372348'); px(x + w - 2, y + 3, 1, h - 6, '#1d1129'); // side facets
-    glow(x, y + 2, w, 1, '#b44aff', f.work ? 0.5 + 0.3 * Math.sin(now / 200) : 0.25); // neon trim
-    glow(x + 1, y + h - 1, w - 2, 2, '#b44aff', f.work ? 0.18 + 0.08 * Math.sin(now / 200) : 0.06); // floor spill
-    inset(x + 2, y + 3, w - 4, 5, '#1a0e28');
-    for (let i = 0; i < (w - 8) / 3; i++) { // EQ bars with peak-hold dots
-      const hh = f.work ? 1 + Math.abs(Math.floor(flick(90, i) * 3)) : 1;
-      px(x + 4 + i * 3, y + 7 - hh, 2, hh, ['#b44aff', '#ff6ad5', '#4ad9ff'][i % 3]);
-      if (f.work) px(x + 4 + i * 3, y + 7 - hh - 1, 2, 1, U.shade(['#b44aff', '#ff6ad5', '#4ad9ff'][i % 3], 0.45));
-    }
-    for (const tx of [x + 4, x + w - 12]) { // turntables with grooves + tonearm
-      px(tx - 1, y + h - 11, 10, 10, '#160d20');
-      px(tx - 1, y + h - 11, 10, 1, '#241636'); // deck plate catch
-      px(tx, y + h - 10, 8, 8, '#111'); px(tx + 1, y + h - 9, 6, 6, '#222');
-      px(tx + 1, y + h - 9, 6, 1, '#2c2c2c'); px(tx + 1, y + h - 6, 6, 1, '#1c1c1c'); // groove rings
-      px(tx + 2, y + h - 8, 4, 4, '#333'); px(tx + 3, y + h - 7, 2, 2, '#0a0a0a');
-      px(tx + 3, y + h - 7, 1, 1, '#b44aff'); // label dot
-      px(tx + 7, y + h - 10, 1, 4, '#4a3a5e'); px(tx + 6, y + h - 7, 1, 1, '#5c4a72'); // tonearm
+  F.djbooth = (x, y, w, h, f) => {   // TOP-BIAS OBLIQUE dj console: big deck top, turntables + mixer, EQ riser
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 3, x + 23, x + w - 6]) leg(lx, y + 21, 3, r);
+    underAO(x + 5, y + 21, w - 10, 2);
+    // short south face: panel dividers + neon rail
+    rr(x - 1, y + 16, w + 2, 6, LINE);
+    px(x, y + 17, w, 4, r.face);
+    px(x, y + 17, w, 1, r.lit);
+    for (let i = 1; i < 4; i++) px(x + i * 12, y + 18, 1, 3, r.dk);
+    px(x, y + 20, w, 1, r.ao);
+    glow(x + 1, y + 18, w - 2, 1, ACC.lounge, f.work ? 0.5 + 0.3 * Math.sin(now / 200) : 0.22); // neon rail
+    glow(x + 2, y + 21, w - 4, 2, ACC.lounge, f.work ? 0.16 + 0.08 * Math.sin(now / 200) : 0.05); // floor spill
+    // the big deck top dominates
+    rr(x - 1, y - 3, w + 2, 20, LINE);
+    rr(x, y - 2, w, 18, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x + 1, y - 1, 6, 1, U.shade(r.sheen, 0.12));
+    px(x, y - 1, 1, 16, r.lit); px(x + w - 1, y - 1, 1, 16, r.dk);
+    px(x + 1, y + 15, w - 2, 1, U.shade(r.top, -0.16));         // top front lip
+    wear(x + 2, y, w - 4, 14, 4, U.shade(r.top, -0.08));
+    // twin turntables (top view): rounded platter + grooves + label + tonearm + stylus orbit
+    for (const tx of [x + 5, x + w - 16]) {
+      rr(tx - 1, y + 1, 13, 12, LINE);
+      rr(tx, y + 2, 11, 10, '#161a20');
+      px(tx + 1, y + 2, 9, 1, '#262c36');                       // plinth catch
+      rr(tx + 1, y + 3, 9, 8, '#111');
+      rr(tx + 2, y + 4, 7, 6, '#222');
+      px(tx + 2, y + 4, 7, 1, '#2e2e2e'); px(tx + 2, y + 8, 7, 1, '#1a1a1a'); // groove rings
+      px(tx + 4, y + 6, 3, 2, '#0a0a0a');
+      px(tx + 4, y + 6, 1, 1, ACC.lounge);                      // label dot
+      px(tx + 9, y + 3, 1, 4, '#4a5866'); px(tx + 8, y + 7, 1, 1, '#5c6c7c'); // tonearm
       if (f.work) {
         const a = now / 250 + tx;
-        px(tx + 3 + Math.round(Math.cos(a) * 3), y + h - 6 + Math.round(Math.sin(a) * 3), 1, 1, '#dfd0ff');
+        px(tx + 5 + Math.round(Math.cos(a) * 3), y + 7 + Math.round(Math.sin(a) * 2), 1, 1, '#ffe0f4'); // stylus glint
       }
     }
-    inset(x + w / 2 - 5, y + h - 10, 10, 8, '#241636'); // mixer
-    px(x + w / 2 - 4, y + h - 10, 8, 1, '#382454'); // mixer face catch
+    // mixer between the decks: faders + cue LEDs
+    inset(x + w / 2 - 6, y + 3, 12, 9, '#1a1420');
+    px(x + w / 2 - 5, y + 3, 10, 1, '#332840');                 // mixer face catch
     for (let i = 0; i < 3; i++) {
-      px(x + w / 2 - 3 + i * 3, y + h - 9, 1, 6, '#3a2a4e');
+      px(x + w / 2 - 3 + i * 3, y + 5, 1, 6, '#3a2a4e');        // fader slots
       const sv = f.work ? Math.abs(Math.floor(flick(150, i) * 2)) : 1;
-      px(x + w / 2 - 3 + i * 3, y + h - 5 - sv, 1, 2, '#ff6ad5');
-      px(x + w / 2 - 3 + i * 3, y + h - 5 - sv, 1, 1, '#ffa8e8'); // fader cap shine
+      px(x + w / 2 - 3 + i * 3, y + 9 - sv, 1, 2, ACC.lounge);
+      px(x + w / 2 - 3 + i * 3, y + 9 - sv, 1, 1, '#ffa8e8');   // fader cap shine
     }
-    px(x + w / 2 - 4, y + h - 3, 8, 1, '#1a0e28'); // mixer base shade
-    for (let i = 0; i < 4; i++) px(x + w / 2 - 4 + i * 2, y + h - 11, 1, 1, blink(300, i) && f.work ? '#4ad9ff' : '#2c1c40'); // cue LEDs
-    // cable run from booth to floor
-    px(x + 2, y + h - 1, 1, 1, '#160d20'); px(x + 3, y + h, 2, 1, '#160d20');
-    if (f.work) px(x + w / 2 - 1, y + 1, 2, 1, blink(150) ? '#ff6ad5' : '#4ad9ff');
-    // record crate leaning on the right side
-    px(x + w - 3, y + h - 4, 3, 3, '#1d1129'); px(x + w - 3, y + h - 4, 3, 1, '#33204a');
-    px(x + w - 2, y + h - 5, 1, 1, '#b44aff'); px(x + w - 1, y + h - 5, 1, 1, '#4ad9ff'); // sleeve edges
+    for (let i = 0; i < 4; i++) px(x + w / 2 - 4 + i * 2, y + 4, 1, 1, blink(300, i) && f.work ? ACC.data : '#2c1c40'); // cue LEDs
+    // EQ riser standing on the back edge (the signature animation, facing south)
+    rr(x + 9, y - 9, w - 18, 8, LINE);
+    px(x + 10, y - 8, w - 20, 6, '#151021');
+    px(x + 10, y - 8, w - 20, 1, '#2a2038');                    // riser catch
+    for (let i = 0; i < (w - 24) / 3; i++) {                    // EQ bars with peak-hold dots
+      const hh = f.work ? 1 + Math.abs(Math.floor(flick(90, i) * 3)) : 1;
+      const c = ['#b44aff', ACC.lounge, ACC.data][i % 3];
+      px(x + 12 + i * 3, y - 2 - hh, 2, hh, c);
+      if (f.work) px(x + 12 + i * 3, y - 3 - hh, 2, 1, U.shade(c, 0.45));
+    }
+    glow(x + 10, y - 8, w - 20, 6, ACC.lounge, f.work ? 0.12 : 0.05);
+    if (f.work) px(x + w / 2 - 1, y - 9, 2, 1, blink(150) ? ACC.lounge : ACC.data); // beat lamp
+    // record crate resting on the east end of the top
+    px(x + w - 9, y + 12, 6, 3, '#1d1826'); px(x + w - 9, y + 12, 6, 1, '#332c44');
+    px(x + w - 8, y + 11, 1, 1, '#b44aff'); px(x + w - 6, y + 11, 1, 1, ACC.data); // sleeve edges
   };
 
-  F.speaker = (x, y, w, h, f) => {
-    sh(x + 2, y + 11, 8);
-    box(x + 2, y, 8, 12, '#1a1424');
-    px(x + 3, y + 1, 6, 1, '#2c2240');
-    px(x + 3, y + 2, 1, 9, '#241b32'); px(x + 8, y + 2, 1, 9, '#120d1c'); // cabinet facets
-    px(x + 2, y, 1, 1, '#3a2c52'); px(x + 9, y, 1, 1, '#3a2c52'); // corner protectors
-    px(x + 2, y + 11, 1, 1, '#0e0a16'); px(x + 9, y + 11, 1, 1, '#0e0a16');
-    px(x + 4, y, 4, 1, '#241b32'); // top handle slot
-    for (const dy of [2, 7]) { // drivers: surround ring + cone + dust cap
-      px(x + 4, y + dy, 4, 4, '#2a2038');
-      px(x + 4, y + dy, 4, 1, '#382a4c'); px(x + 4, y + dy + 3, 4, 1, '#1c1428'); // ring shading
-      px(x + 5, y + dy + 1, 2, 2, '#0a0612');
-      px(x + 5, y + dy + 1, 1, 1, '#3c3050');
-      if (f.work) {
-        glow(x + 3, y + dy, 6, 4, '#b44aff', blink(170, x + dy) ? 0.25 : 0.08);
-        if (blink(170, x + dy)) px(x + 5, y + dy + 1, 2, 2, '#1a1026'); // cone throb
-      }
+  F.speaker = (x, y, w, h, f) => {   // small rounded lounge speaker cab, freestanding
+    const r = RAMP.fabric;
+    shadow2(x + 2, y + h - 1, 8);
+    for (const lx of [x + 2, x + 7]) {                          // stub feet
+      px(lx, y + 10, 3, 2, LINE); px(lx, y + 10, 1, 2, r.lit); px(lx + 1, y + 10, 1, 2, r.dk);
     }
-    px(x + 5, y + 6, 2, 1, '#0e0a18'); // port
-    px(x + 5, y + 6, 1, 1, '#1c1428'); // port shading
-    px(x + 6, y + 12, 2, 1, '#120d1c'); // cable to floor
-    px(x + 8, y + 1, 1, 1, f.work && blink(400, x) ? '#ff6ad5' : '#2c1c40'); // power LED
+    underAO(x + 4, y + 10, 4, 1);
+    // rounded cab with a narrow lit top
+    rr(x + 1, y - 3, 10, 13, LINE);
+    px(x + 2, y - 2, 8, 11, r.face);
+    px(x + 2, y, 1, 9, U.shade(r.face, 0.10)); px(x + 9, y, 1, 9, r.dk); // side facets
+    px(x + 2, y - 2, 8, 2, r.top);
+    px(x + 2, y - 2, 8, 1, r.sheen);                            // top catch
+    px(x + 2, y + 8, 8, 1, r.ao);                               // base AO
+    // driver: surround ring + cone + dust cap
+    rr(x + 3, y + 1, 6, 6, '#2c3641');
+    px(x + 4, y + 1, 4, 1, '#40495a');                          // ring catch
+    rr(x + 4, y + 2, 4, 4, '#10151b');
+    px(x + 5, y + 3, 2, 2, '#06090c');
+    px(x + 5, y + 3, 1, 1, '#39434f');                          // cap glint
+    if (f.work) {
+      glow(x + 3, y + 1, 6, 6, ACC.lounge, blink(170, x) ? 0.28 : 0.08); // cone throb
+      if (blink(170, x)) px(x + 5, y + 3, 2, 2, '#1c1220');
+    }
+    px(x + 5, y + 7, 2, 1, '#0e1216');                          // bass port
+    px(x + 8, y - 1, 1, 1, f.work && blink(400, x) ? ACC.lounge : '#3a2434'); // power LED
   };
 
   F.vault = (x, y, w, h, f) => {   // heavy LOW BUNKER (3x2): big top mass + thick door face; combo dial; ACC.work green
@@ -1310,30 +1512,42 @@ const PropSprites = (() => {
     px(cx - 12, cy - 2, 2, 6, r.dk); px(cx - 12, cy - 2, 2, 1, r.lit); px(cx - 12, cy - 2, 1, 6, r.face);
   };
 
-  F.ticker = (x, y, w, h) => {
-    box(x, y + 2, w, h + 2, '#1c2a1a');
-    px(x + 1, y + 3, w - 2, 1, '#2e3e2a');
-    px(x + 1, y + 2, 2, 1, '#3c4e36'); px(x + w - 3, y + 2, 2, 1, '#3c4e36'); // mount lugs
-    inset(x + 1, y + 3, w - 2, 6, '#0a1608');
-    ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 4, w - 4, 5); ctx.clip();
+  F.ticker = (x, y, w, h) => {   // v2 freestanding: crawl display riding rolling posts
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, w - 4);
+    for (const pxx of [x + 4, x + w - 6]) {
+      px(pxx - 1, y + 5, 4, h - 7, LINE);
+      px(pxx, y + 6, 1, h - 8, r.lit); px(pxx + 1, y + 6, 1, h - 8, r.dk);
+      rr(pxx - 3, y + h - 3, 8, 2, LINE);
+      px(pxx - 2, y + h - 3, 6, 1, r.face);
+      px(pxx - 2, y + h - 1, 2, 1, '#1a1e22'); px(pxx + 2, y + h - 1, 2, 1, '#1a1e22');
+      ctx.globalAlpha = 0.30; px(pxx - 3, y + h, 8, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    // slim rounded marquee body
+    rr(x, y - 5, w, 12, LINE);
+    px(x + 1, y - 4, w - 2, 10, r.face);
+    px(x + 1, y - 4, w - 2, 1, r.lit);
+    px(x + 2, y - 4, 1, 1, '#56645c'); px(x + w - 3, y - 4, 1, 1, '#56645c');
+    px(x + 1, y + 5, w - 2, 1, r.ao);
+    inset(x + 2, y - 3, w - 4, 7, '#0a1608');
+    // scrolling quote crawl with dim ghost pass (kept 1:1)
+    ctx.save(); ctx.beginPath(); ctx.rect(x + 3, y - 2, w - 6, 5); ctx.clip();
     const off = Math.floor(now / 200) % 8;
-    // dim ghost pass behind the live quote
     ctx.fillStyle = '#2c5218'; ctx.font = '7px monospace';
-    ctx.fillText('Q' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off + 14, y + 9);
+    ctx.fillText('Q' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off + 14, y + 3);
     ctx.fillStyle = '#9bff4a';
-    ctx.fillText('Q' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off, y + 9);
+    ctx.fillText('Q' + (8 - off) + '4' + off + '.. +' + off + '%', x + 3 - off, y + 3);
     ctx.restore();
-    scanl(x + 2, y + 4, w - 4, 5, 0.14);
-    glow(x + 2, y + 4, w - 4, 5, '#9bff4a', 0.05 + 0.02 * Math.sin(now / 700));
-    px(x + 1, y + 9, w - 2, 1, '#13200f'); // display divider
-    for (let i = 0; i < (w - 6) / 4; i++) { // mini bar chart strip
+    scanl(x + 3, y - 2, w - 6, 5, 0.14);
+    glow(x + 3, y - 2, w - 6, 5, '#9bff4a', 0.05 + 0.02 * Math.sin(now / 700));
+    px(x + 2, y + 3, w - 4, 1, '#13200f');                      // display divider (kept)
+    for (let i = 0; i < (w - 6) / 4; i++) {                     // mini bar chart strip (kept)
       const bh = 1 + (U.hash('tk' + i) % 2);
       const red = i % 4 === 3;
-      px(x + 3 + i * 4, y + h + 2 - bh, 2, bh, red ? '#ff5c5c' : '#41ff8a');
-      px(x + 3 + i * 4, y + h + 2 - bh, 1, 1, red ? '#ff8a8a' : '#8affb8'); // bar cap
+      px(x + 3 + i * 4, y + 6 - bh, 2, bh, red ? '#ff5c5c' : '#41ff8a');
+      px(x + 3 + i * 4, y + 6 - bh, 1, 1, red ? '#ff8a8a' : '#8affb8'); // bar cap
     }
-    px(x + 1, y + 2, 1, 1, blink(700) ? '#9bff4a' : '#1c2a1a');
-    rivets(x + 1, y + 3, w - 2, h + 1, '#3c4e36', '#0e160c');
+    px(x + 2, y + 5, 1, 1, blink(700) ? '#9bff4a' : '#1c2a1a'); // power LED (kept)
   };
 
   F.safe = (x, y, w, h, f) => {   // TALL 3/4 armored safe (1x2), bolted; combo dial; ACC.work green (files)
@@ -1415,128 +1629,188 @@ const PropSprites = (() => {
     px(x + 2, y + h - 1, 3, 1, r.dk); px(x + cw - 5, y + h - 1, 3, 1, r.dk);
   };
 
-  F.chartwall = (x, y, w, h) => {
-    box(x, y + 2, w, h + 2, '#2e2026');
-    px(x + 1, y + 3, w - 2, 1, '#3e2c34');
-    rivets(x + 1, y + 3, w - 2, h, '#54404a', '#181014');
+  F.chartwall = (x, y, w, h) => {   // v2 freestanding: triple chart bank riding rolling posts
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, w - 4);
+    for (const pxx of [x + 4, x + w - 6]) {
+      px(pxx - 1, y + 5, 4, h - 7, LINE);
+      px(pxx, y + 6, 1, h - 8, r.lit); px(pxx + 1, y + 6, 1, h - 8, r.dk);
+      rr(pxx - 3, y + h - 3, 8, 2, LINE);
+      px(pxx - 2, y + h - 3, 6, 1, r.face);
+      px(pxx - 2, y + h - 1, 2, 1, '#1a1e22'); px(pxx + 2, y + h - 1, 2, 1, '#1a1e22');
+      ctx.globalAlpha = 0.30; px(pxx - 3, y + h, 8, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    rr(x, y - 5, w, 12, LINE);
+    px(x + 1, y - 4, w - 2, 10, r.face);
+    px(x + 1, y - 4, w - 2, 1, r.lit);
+    px(x + 2, y - 4, 1, 1, '#56645c'); px(x + w - 3, y - 4, 1, 1, '#56645c');
+    px(x + 1, y + 5, w - 2, 1, r.ao);
     const pw = Math.floor((w - 6) / 3) - 2;
     for (let i = 0; i < 3; i++) {
       const px0 = x + 3 + i * (pw + 2);
-      inset(px0, y + 3, pw, 8, '#1a1218');
-      px(px0 + 1, y + 3, 3, 1, i === 1 ? '#ff5c7a' : '#a0a8ff'); // panel color tab
-      for (let gx = 0; gx < pw - 2; gx += 4) px(px0 + 1 + gx, y + 8, 1, 1, '#241a20'); // grid
-      px(px0 + 1, y + 5, pw - 2, 1, '#221820'); // mid gridline
-      // dim echo trace behind the live one
+      inset(px0, y - 3, pw, 8, '#1a1218');
+      px(px0 + 1, y - 3, 3, 1, i === 1 ? '#ff5c7a' : '#a0a8ff'); // panel color tab (kept)
+      for (let gx = 0; gx < pw - 2; gx += 4) px(px0 + 1 + gx, y + 2, 1, 1, '#241a20'); // grid
+      px(px0 + 1, y - 1, pw - 2, 1, '#221820');                 // mid gridline
+      // dim echo trace behind the live one (kept 1:1)
       ctx.strokeStyle = '#3a2832'; ctx.lineWidth = 1; ctx.beginPath();
       for (let j = 0; j < pw - 2; j++) {
-        const yy = y + 9 - (U.hash('ch' + i + ((j + 3) >> 1)) % 5);
+        const yy = y + 3 - (U.hash('ch' + i + ((j + 3) >> 1)) % 5);
         j ? ctx.lineTo(px0 + 1 + j, yy) : ctx.moveTo(px0 + 1 + j, yy);
       }
       ctx.stroke();
       ctx.strokeStyle = i === 1 ? '#ff5c7a' : '#a0a8ff'; ctx.beginPath();
       for (let j = 0; j < pw - 2; j++) {
-        const yy = y + 9 - (U.hash('ch' + i + (j >> 1)) % 5) - (i === 1 && j > pw - 6 ? -2 : 0);
+        const yy = y + 3 - (U.hash('ch' + i + (j >> 1)) % 5) - (i === 1 && j > pw - 6 ? -2 : 0);
         j ? ctx.lineTo(px0 + 1 + j, yy) : ctx.moveTo(px0 + 1 + j, yy);
       }
       ctx.stroke();
-      px(px0 + pw - 3, y + 4 + (Math.floor(now / 400 + i) % 4), 1, 1, i === 1 ? '#ff5c7a' : '#a0a8ff'); // live tick
-      glow(px0, y + 3, pw, 8, i === 1 ? '#ff5c7a' : '#a0a8ff', 0.04); // panel cast
-      if (i < 2) px(px0 + pw + 0, y + 5, 1, 4, '#1c1218'); // inter-panel conduit
+      px(px0 + pw - 3, y - 2 + (Math.floor(now / 400 + i) % 4), 1, 1, i === 1 ? '#ff5c7a' : '#a0a8ff'); // live tick
+      glow(px0, y - 3, pw, 8, i === 1 ? '#ff5c7a' : '#a0a8ff', 0.04); // panel cast
+      if (i < 2) px(px0 + pw, y - 1, 1, 4, '#1c1218');          // inter-panel conduit
     }
-    seamH(x + 1, y + h + 1, w - 2, '#2e2026');
   };
 
-  F.wartable = (x, y, w, h) => {
-    sh(x + 3, y + h - 1, w - 6);
-    box(x + 2, y + 1, w - 4, h - 1, '#33222a');
-    px(x + 3, y + 2, w - 6, 1, '#46303a');
-    px(x + 3, y + 3, 1, h - 5, '#3e2a34'); px(x + w - 4, y + 3, 1, h - 5, '#231219'); // rim facets
-    // corner posts with status studs
-    for (const [cx2, cy2] of [[x + 3, y + 2], [x + w - 5, y + 2], [x + 3, y + h - 4], [x + w - 5, y + h - 4]]) {
-      px(cx2, cy2, 2, 2, '#46303a');
+  F.wartable = (x, y, w, h) => {   // v2 TOP-BIAS OBLIQUE war table: tactical map on the big top, legs on the floor
+    const r = RAMP.gun;
+    shadow2(x + 2, y + h - 1, w - 4);
+    // chunky corner legs
+    for (const lx of [x + 2, x + w - 5]) {
+      px(lx, y + h - 6, 3, 5, LINE);
+      px(lx, y + h - 6, 1, 5, r.lit); px(lx + 1, y + h - 6, 1, 5, r.dk);
+      ctx.globalAlpha = 0.30; px(lx - 1, y + h - 1, 5, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    underAO(x + 6, y + h - 6, w - 12, 2);
+    // short south face
+    rr(x - 1, y + h - 12, w + 2, 7, LINE);
+    px(x, y + h - 11, w, 5, r.face);
+    px(x, y + h - 11, w, 1, r.lit);
+    px(x, y + h - 10, 1, 4, U.shade(r.face, 0.08));
+    px(x + w - 1, y + h - 10, 1, 4, r.dk);
+    px(x, y + h - 7, w, 1, r.ao);
+    // edge control strips on the face (kept)
+    px(x + 7, y + h - 9, 6, 1, '#241218');
+    for (let i = 0; i < 3; i++) px(x + 8 + i * 2, y + h - 9, 1, 1, blink(500, i) ? '#ff5c7a' : '#3a2030');
+    px(x + w - 13, y + h - 9, 6, 1, '#241218');
+    for (let i = 0; i < 3; i++) px(x + w - 12 + i * 2, y + h - 9, 1, 1, blink(700, i + 4) ? '#ffd34a' : '#3a3020');
+    // the big rounded top
+    rr(x - 1, y, w + 2, h - 11, LINE);
+    px(x, y + 1, w, h - 13, r.top);
+    px(x + 1, y + 1, w - 2, 1, r.sheen);
+    px(x + 1, y + 2, 5, 1, U.shade(r.sheen, 0.12));
+    px(x, y + 2, 1, h - 15, r.lit); px(x + w - 1, y + 2, 1, h - 15, r.dk);
+    px(x + 1, y + h - 13, w - 2, 1, U.shade(r.top, -0.16));
+    wear(x + 1, y + 1, w - 2, h - 14, 3, U.shade(r.top, -0.08));
+    // corner posts with status studs on the top (kept)
+    for (const [cx2, cy2] of [[x + 2, y + 2], [x + w - 4, y + 2], [x + 2, y + h - 15], [x + w - 4, y + h - 15]]) {
+      px(cx2, cy2, 2, 2, U.shade(r.top, 0.14));
       px(cx2, cy2, 1, 1, blink(800, cx2 + cy2) ? '#ff5c7a' : '#52303c');
     }
-    inset(x + 4, y + 2, w - 8, h - 4, '#1a1016');
-    for (let gx = 8; gx < w - 10; gx += 8) px(x + 2 + gx, y + 3, 1, h - 6, '#241620'); // grid
-    for (let gy = 4; gy < h - 5; gy += 4) px(x + 5, y + 2 + gy, w - 10, 1, '#241620');
-    // sector coordinate dashes along the top of the map
-    for (let gx = 8; gx < w - 12; gx += 8) px(x + 3 + gx, y + 3, 3, 1, '#3a2030');
+    // recessed map well in the top
+    inset(x + 4, y + 3, w - 8, h - 16, '#1a1016');
+    const wx = x + 5, wy = y + 4, ww = w - 10, wh = h - 18;
+    for (let gx = 8; gx < ww - 2; gx += 8) px(wx + gx, wy, 1, wh, '#241620'); // grid (kept)
+    px(wx, wy + 3, ww, 1, '#241620');
+    for (let gx = 8; gx < ww - 4; gx += 8) px(wx + gx - 1, wy, 3, 1, '#3a2030'); // sector dashes (kept)
     const a = 0.5 + 0.3 * Math.sin(now / 500);
-    for (let i = 0; i < 5; i++) { // threat blips + expanding pulse rings
-      const bx = x + 8 + i * 9, by = y + 5 + (i % 3) * 4;
+    for (let i = 0; i < 5; i++) {                               // threat blips + pulse rings (kept)
+      const bx = wx + 3 + i * 9, by = wy + (i % 3) * 2;
       ctx.globalAlpha = a; px(bx, by, 2, 2, '#ff5c7a');
-      px(bx, by, 1, 1, '#ffb0c0'); // blip core
-      const r = ((now / 600 + i * 0.4) % 1) * 4;
-      ctx.strokeStyle = '#ff5c7a'; ctx.globalAlpha = a * (1 - r / 4);
-      ctx.beginPath(); ctx.arc(bx + 1, by + 1, r + 1, 0, 7); ctx.stroke();
+      px(bx, by, 1, 1, '#ffb0c0');                              // blip core
+      const rad = ((now / 600 + i * 0.4) % 1) * 3;
+      ctx.strokeStyle = '#ff5c7a'; ctx.globalAlpha = a * (1 - rad / 3);
+      ctx.beginPath(); ctx.arc(bx + 1, by + 1, rad + 1, 0, 7); ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    // targeting reticle stepping between blips
+    // targeting reticle stepping between blips (kept)
     const tgt = Math.floor(now / 2400) % 5;
-    const tx2 = x + 8 + tgt * 9, ty2 = y + 5 + (tgt % 3) * 4;
+    const tx2 = wx + 3 + tgt * 9, ty2 = wy + (tgt % 3) * 2;
     if (blink(300)) {
-      px(tx2 - 2, ty2 - 2, 2, 1, '#ffd34a'); px(tx2 + 2, ty2 - 2, 2, 1, '#ffd34a');
-      px(tx2 - 2, ty2 + 3, 2, 1, '#ffd34a'); px(tx2 + 2, ty2 + 3, 2, 1, '#ffd34a');
+      px(tx2 - 2, ty2 - 1, 2, 1, '#ffd34a'); px(tx2 + 2, ty2 - 1, 2, 1, '#ffd34a');
+      px(tx2 - 2, ty2 + 2, 2, 1, '#ffd34a'); px(tx2 + 2, ty2 + 2, 2, 1, '#ffd34a');
     }
-    glow(x + 5 + ((now / 25) % (w - 12)), y + 3, 1, h - 6, '#ff8ba0', 0.35); // radar sweep
-    glow(x + 4, y + 2, w - 8, h - 4, '#ff5c7a', 0.04 + 0.02 * Math.sin(now / 800)); // table haze
-    // edge control strips
-    px(x + 7, y + h - 3, 6, 1, '#241218');
-    for (let i = 0; i < 3; i++) px(x + 8 + i * 2, y + h - 3, 1, 1, blink(500, i) ? '#ff5c7a' : '#3a2030');
-    px(x + w - 13, y + h - 3, 6, 1, '#241218');
-    for (let i = 0; i < 3; i++) px(x + w - 12 + i * 2, y + h - 3, 1, 1, blink(700, i + 4) ? '#ffd34a' : '#3a3020');
+    glow(wx + ((now / 25) % (ww - 2)), wy, 1, wh, '#ff8ba0', 0.35); // radar sweep (kept)
+    glow(x + 4, y + 3, w - 8, h - 16, '#ff5c7a', 0.04 + 0.02 * Math.sin(now / 800)); // table haze (kept)
   };
 
-  F.calwall = (x, y, w, h) => {
-    box(x, y + 2, w, h + 2, '#2e3840');
-    px(x + 1, y + 3, w - 2, 1, '#3e4a52');
-    rivets(x + 1, y + 3, w - 2, h, '#54626c', '#161e24');
+  F.calwall = (x, y, w, h) => {   // v2 freestanding: schedule board on two heavy rolling posts
+    const r = RAMP.steel;
+    shadow2(x + 3, y + h - 1, w - 6);
+    for (const pxx of [x + 8, x + w - 10]) {
+      px(pxx - 1, y + 5, 4, h - 7, LINE);
+      px(pxx, y + 6, 1, h - 8, r.lit); px(pxx + 1, y + 6, 1, h - 8, r.dk);
+      rr(pxx - 4, y + h - 3, 10, 2, LINE);                      // wide T-foot
+      px(pxx - 3, y + h - 3, 8, 1, r.face);
+      px(pxx - 3, y + h - 1, 2, 1, '#1a1e22'); px(pxx + 3, y + h - 1, 2, 1, '#1a1e22');
+      ctx.globalAlpha = 0.30; px(pxx - 4, y + h, 10, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    rr(x, y - 6, w, 13, LINE);
+    px(x + 1, y - 5, w - 2, 11, r.face);
+    px(x + 1, y - 5, w - 2, 1, r.lit);
+    px(x + 2, y - 5, 1, 1, '#56645c'); px(x + w - 3, y - 5, 1, 1, '#56645c');
+    px(x + 1, y + 5, w - 2, 1, r.ao);
+    // 7x2 day grid with the marching week (kept 1:1, fitted to the footprint)
+    const cw2 = Math.floor((w - 4) / 7);
+    const gx0 = x + 2 + ((w - 4 - 7 * cw2) >> 1);
     const prog = (now / 1400) % 14;
     for (let i = 0; i < 7; i++) for (let j = 0; j < 2; j++) {
       const idx = i + j * 7;
       const lit = idx < prog;
-      const wknd = i > 4; // weekend columns tinted
-      inset(x + 2 + i * 15, y + 3 + j * 5, 13, 5, lit ? (wknd ? '#42434e' : '#3a4750') : (wknd ? '#26262e' : '#222a30'));
+      const wknd = i > 4;                                       // weekend columns tinted (kept)
+      const cx3 = gx0 + i * cw2, cy3 = y - 4 + j * 5;
+      inset(cx3, cy3, cw2 - 1, 5, lit ? (wknd ? '#42434e' : '#3a4750') : (wknd ? '#26262e' : '#222a30'));
       if (lit) {
-        px(x + 3 + i * 15, y + 4 + j * 5, 7, 1, '#ffe066');
-        px(x + 3 + i * 15, y + 4 + j * 5, 2, 1, '#fff4c0'); // entry highlight
-        px(x + 11 + i * 15, y + 6 + j * 5, 2, 1, '#41ff8a'); // done check
+        px(cx3 + 1, cy3 + 1, 5, 1, '#ffe066');
+        px(cx3 + 1, cy3 + 1, 2, 1, '#fff4c0');                  // entry highlight
+        px(cx3 + cw2 - 4, cy3 + 3, 2, 1, '#41ff8a');            // done check
       }
       if (Math.floor(prog) === idx) {
-        if (blink(400)) px(x + 3 + i * 15, y + 6 + j * 5, 4, 1, '#fff4c0'); // today cursor
-        px(x + 2 + i * 15, y + 3 + j * 5, 13, 1, '#ffe066'); // today ring top
-        px(x + 2 + i * 15, y + 7 + j * 5, 13, 1, '#8a7a34');
+        if (blink(400)) px(cx3 + 1, cy3 + 3, 3, 1, '#fff4c0');  // today cursor
+        px(cx3, cy3, cw2 - 1, 1, '#ffe066');                    // today ring top
+        px(cx3, cy3 + 4, cw2 - 1, 1, '#8a7a34');
       }
-      px(x + 10 + i * 15, y + 4 + j * 5, 2, 1, '#2e3840'); // date notch
+      px(cx3 + cw2 - 4, cy3 + 1, 2, 1, '#2e3840');              // date notch
     }
-    seamH(x + 1, y + h + 1, w - 2, '#2e3840');
   };
 
-  F.tube = (x, y, w, h) => {
-    box(x + 1, y, w - 2, h + 6, '#36424c');
-    px(x + 2, y + 1, w - 4, 1, '#46525a');
-    inset(x + 3, y + 1, w - 6, 5, '#1a2228');
-    glow(x + 4, y + 2, 2, 3, '#fffbe0', 0.12); // glass highlight
-    px(x + 4, y + 5, w - 8, 1, '#222e36'); // tube floor shading
-    const ph = (now / 900) % 1;
+  F.tube = (x, y, w, h) => { // horizontal specimen tube: glass cylinder on cradle stands
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    // two cradle stands with splayed bases
+    for (const sx of [x + 3, x + w - 7]) {
+      px(sx - 1, y + 4, 6, h - 5, LINE);
+      px(sx, y + 5, 4, h - 7, r.face);
+      px(sx, y + 5, 1, h - 7, r.lit); px(sx + 3, y + 5, 1, h - 7, r.dk);
+      px(sx - 1, y + h - 2, 6, 1, r.ao);
+    }
+    px(x + 4, y + 6, 2, 2, blink(800, 0) ? '#ffe066' : '#2e3840'); // end lights (kept)
+    px(x + w - 6, y + 6, 2, 2, blink(800, 1) ? '#ffe066' : '#2e3840');
+    // pressure gauge hung under the barrel (kept wobble)
+    px(x + w / 2 - 2, y + 5, 4, 3, '#28323a'); px(x + w / 2 - 2, y + 5, 4, 1, '#3a464e');
+    px(x + w / 2 - 1 + Math.round(Math.sin(now / 400)), y + 6, 1, 1, '#ffe066');
+    // the glass cylinder lying across the cradles: bold capsule silhouette
+    rr(x - 1, y - 4, w + 2, 10, LINE);
+    rr(x, y - 3, w, 8, '#1a2228');
+    px(x + 3, y - 3, w - 6, 1, '#3a4a55');                     // top curve catch
+    px(x + 3, y - 2, w - 6, 1, '#56707e');                     // glass sheen line
+    px(x + 3, y + 3, w - 6, 1, '#0e161c');                     // barrel underside
+    glow(x + 4, y - 2, 3, 4, '#fffbe0', 0.12);                 // glass highlight (kept)
+    const ph = (now / 900) % 1;                                // capsule whoosh (kept)
     if (ph < 0.4) {
       const capx = x + 4 + Math.floor(ph / 0.4 * (w - 11));
-      px(capx, y + 2, 3, 2, '#ffe066'); // capsule whoosh
-      px(capx - 1, y + 2, 1, 2, '#8a7a34'); px(capx - 2, y + 3, 1, 1, '#5a5024'); // speed lines
-      px(capx, y + 2, 1, 1, '#fff4c0'); // nose shine
+      px(capx, y - 1, 3, 2, '#ffe066');
+      px(capx - 1, y - 1, 1, 2, '#8a7a34'); px(capx - 2, y, 1, 1, '#5a5024'); // speed lines
+      px(capx, y - 1, 1, 1, '#fff4c0');                        // nose shine
     } else if (ph < 0.45 && blink(80)) {
-      px(x + w - 8, y + 2, 2, 2, '#fff4c0'); // arrival flash
+      px(x + w - 8, y - 1, 2, 2, '#fff4c0');                   // arrival flash (kept)
     }
-    px(x + 2, y, w - 4, 1, '#56646e'); px(x + 2, y + 6, w - 4, 1, '#56646e'); // brass fittings
-    px(x + 2, y, 1, 1, '#6e7c86'); px(x + w - 3, y + 6, 1, 1, '#3a444c'); // fitting shine/shade
-    for (let i = 1; i < (w - 4) / 8; i++) { px(x + 2 + i * 8, y, 1, 1, '#3a444c'); px(x + 2 + i * 8, y + 6, 1, 1, '#3a444c'); } // pipe clamps
-    for (let i = 0; i < 2; i++) px(x + 3 + i * (w - 8), y + 8, 2, 2, blink(800, i) ? '#ffe066' : '#2e3840');
-    // pressure gauge with wobbling needle
-    px(x + w / 2 - 2, y + 8, 4, 3, '#28323a'); px(x + w / 2 - 2, y + 8, 4, 1, '#3a464e');
-    px(x + w / 2 - 1 + Math.round(Math.sin(now / 400)), y + 9, 1, 1, '#ffe066');
-    px(x + 2, y + h + 4, w - 4, 2, '#28323a'); // base plate
-    px(x + 2, y + h + 4, w - 4, 1, '#343f47');
-    px(x + 4, y + h + 5, 2, 1, '#1c242a'); px(x + w - 6, y + h + 5, 2, 1, '#1c242a'); // base vents
+    // brass end fittings + center clamp ring (kept)
+    px(x, y - 3, 3, 8, '#56646e'); px(x + w - 3, y - 3, 3, 8, '#56646e');
+    px(x, y - 3, 1, 8, '#6e7c86'); px(x + w - 1, y - 3, 1, 8, '#3a444c');
+    px(x, y - 3, 3, 1, '#7e8c96'); px(x + w - 3, y - 3, 3, 1, '#6e7c86');
+    px(x, y + 4, 3, 1, '#2e3a44'); px(x + w - 3, y + 4, 3, 1, '#2e3a44');
+    px(x + w / 2 - 1, y - 3, 2, 8, '#46525c'); px(x + w / 2 - 1, y - 3, 2, 1, '#5a6a76');
+    px(x + w / 2 - 1, y + 4, 2, 1, '#2e3a44');
   };
 
   F.parcels = (x, y, w, h) => {
@@ -1654,81 +1928,130 @@ const PropSprites = (() => {
     if (f && f.work) glow(x, y + 3, w, h - 5, ACC.work, 0.05 + 0.03 * Math.sin(now / 500));
   };
 
-  F.bar = (x, y, w, h) => {
-    sh(x + 1, y + h + 2, w - 2);
-    box(x, y + 1, w, h + 2, '#363f47');
-    px(x, y + 1, w, 2, '#4a5660');
-    px(x, y + 1, w, 1, '#5c6a74');
-    for (let i = 0; i < w / 7; i++) px(x + 3 + i * 7, y + 2, 3, 1, '#56646e'); // brushed sheen
-    px(x, y + 4, w, 1, '#222a30'); // counter edge
-    glow(x + 1, y + 5, w - 2, 1, '#5ad1b3', 0.16 + 0.06 * Math.sin(now / 700)); // under-counter accent
-    seamH(x + 1, y + 7, w - 2, '#363f47'); // front panel seam
-    for (let i = 1; i < w / 16; i++) px(x + i * 16, y + 5, 1, h - 3, '#2c343c'); // panel dividers
-    px(x + 1, y + h + 1, w - 2, 1, '#8a98a8'); // steel foot rail
-    px(x + 1, y + h + 2, w - 2, 1, '#3e4a52'); // rail shadow
-    // beer tap with drip
-    px(x + w / 2 - 6, y + 2, 1, 3, '#aab8c8'); px(x + w / 2 - 6, y + 1, 2, 1, '#caa84a');
-    if ((now % 2400) < 200) px(x + w / 2 - 6, y + 5, 1, 1, '#ffd9a0'); // drip
-    px(x + 4, y + 4, 3, 3, '#8a98a8'); px(x + 4, y + 4, 3, 1, '#caa84a'); px(x + 4, y + 4, 1, 3, '#aab8c8'); // can
-    px(x + w - 9, y + 3, 2, 4, '#7adfd0'); px(x + w - 9, y + 2, 2, 1, '#3a6a62'); px(x + w - 9, y + 3, 1, 4, '#bffff2'); // glass bottle
-    // upside-down glasses drying near the tap
-    px(x + w / 2 + 2, y + 3, 2, 2, '#9ab8c8'); px(x + w / 2 + 5, y + 3, 2, 2, '#9ab8c8');
-    px(x + w / 2 + 2, y + 4, 2, 1, '#6a8898'); px(x + w / 2 + 5, y + 4, 2, 1, '#6a8898');
-    px(x + w / 2 - 2, y + 5, 4, 2, '#222a26'); // bar mat
-    px(x + w / 2 - 2, y + 5, 4, 1, '#2c362f');
-    px(x + w / 2 + 8, y + 4, 3, 2, '#dfe8df'); // napkin
-    wear(x + 1, y + 2, w - 2, 2, 4, '#414c55'); // counter scuffs
+  F.bar = (x, y, w, h) => {   // TOP-BIAS OBLIQUE counter: big steel top with drinks, kick gap + foot rail
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 2, x + w - 5]) {                      // end feet blocks
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 9, w - 10, 2);
+    px(x + 4, y + 10, w - 8, 1, '#78868f');                     // chrome foot rail in the kick gap
+    px(x + 4, y + 11, w - 8, 1, '#2c363c');                     // rail shadow
+    // short front face: panel dividers + under-counter neon
+    rr(x - 1, y + 4, w + 2, 6, LINE);
+    px(x, y + 5, w, 4, r.face);
+    px(x, y + 5, w, 1, r.lit);
+    for (let i = 1; i < 3; i++) px(x + i * 16, y + 6, 1, 3, r.dk); // panel dividers
+    px(x, y + 8, w, 1, r.ao);
+    glow(x + 1, y + 8, w - 2, 1, ACC.lounge, 0.16 + 0.06 * Math.sin(now / 700)); // under-counter accent
+    // the counter top dominates
+    rr(x - 1, y - 3, w + 2, 9, LINE);
+    rr(x, y - 2, w, 7, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    for (let i = 0; i < w / 8; i++) px(x + 3 + i * 8, y - 1, 3, 1, U.shade(r.sheen, 0.06)); // brushed streaks
+    px(x, y - 1, 1, 5, r.lit); px(x + w - 1, y - 1, 1, 5, r.dk);
+    px(x + 1, y + 4, w - 2, 1, U.shade(r.top, -0.16));          // top front edge
+    wear(x + 2, y - 1, w - 4, 5, 4, U.shade(r.top, -0.08));
+    // beer tap rising off the back edge, with drip
+    px(x + w / 2 - 6, y - 6, 1, 5, '#aab8c8'); px(x + w / 2 - 6, y - 7, 2, 1, '#caa84a'); // column + brass handle
+    px(x + w / 2 - 7, y - 3, 1, 1, '#8a98a8');                  // spout
+    px(x + w / 2 - 6, y - 1, 3, 1, U.shade(r.top, -0.22));      // tap base plate
+    if ((now % 2400) < 200) px(x + w / 2 - 7, y - 2, 1, 1, '#ffd9a0'); // drip
+    // drinks ON the counter
+    px(x + 5, y, 3, 3, '#8a98a8'); px(x + 5, y, 3, 1, '#caa84a'); px(x + 5, y, 1, 3, '#aab8c8'); // can
+    px(x + w - 9, y - 2, 2, 5, '#7adfd0'); px(x + w - 9, y - 3, 2, 1, '#3a6a62'); px(x + w - 9, y - 1, 1, 3, '#bffff2'); // bottle
+    px(x + w / 2 + 3, y + 1, 2, 2, '#9ab8c8'); px(x + w / 2 + 6, y + 1, 2, 2, '#9ab8c8'); // drying glasses
+    px(x + w / 2 + 3, y + 2, 2, 1, '#6a8898'); px(x + w / 2 + 6, y + 2, 2, 1, '#6a8898');
+    rr(x + w / 2 - 3, y + 1, 6, 3, '#20282a');                  // bar mat
+    px(x + w / 2 - 2, y + 1, 4, 1, '#2a3436');
+    px(x + w / 2 + 10, y + 1, 3, 2, '#dfe8df');                 // napkin
   };
 
-  F.stool = (x, y) => {
-    ctx.globalAlpha = 0.18; px(x + 3, y + 10, 7, 2, '#000'); ctx.globalAlpha = 1;
-    px(x + 3, y + 4, 6, 3, '#3a444c');
-    px(x + 3, y + 4, 6, 1, '#4e5a64');
-    px(x + 4, y + 4, 4, 1, '#2f6a62'); px(x + 4, y + 4, 2, 1, '#4a8a82'); // cushion pad
-    px(x + 4, y + 5, 1, 1, '#26554e'); px(x + 7, y + 5, 1, 1, '#26554e'); // piping stitches
-    px(x + 3, y + 6, 6, 1, '#2c343c'); // seat rim shade
-    px(x + 5, y + 7, 2, 1, '#39434b'); // gas lift collar
-    px(x + 4, y + 7, 1, 4, '#46535c'); px(x + 7, y + 7, 1, 4, '#46535c'); // chrome legs
-    px(x + 4, y + 7, 1, 1, '#5e6c76'); px(x + 7, y + 7, 1, 1, '#5e6c76'); // leg shine
-    px(x + 4, y + 10, 4, 1, '#2a3138'); // foot ring
-    px(x + 5, y + 11, 2, 1, '#1e252b'); // ring shadow
+  F.stool = (x, y) => {   // v2: round gas-lift task stool — big oval seat, chrome lift, splayed foot ring
+    const r = RAMP.steel;
+    shadow2(x + 3, y + 10, 7);                                  // floor contact
+    // oval foot ring + rubber pads
+    px(x + 3, y + 8, 6, 1, LINE);
+    px(x + 2, y + 9, 8, 1, LINE);
+    px(x + 3, y + 10, 6, 1, LINE);
+    px(x + 3, y + 9, 6, 1, '#46535c');
+    px(x + 3, y + 9, 2, 1, '#5e6c76');                          // ring glint west
+    px(x + 3, y + 10, 2, 1, '#1a1e22'); px(x + 7, y + 10, 2, 1, '#1a1e22'); // pads
+    // gas-lift column (kept construction)
+    px(x + 4, y + 5, 4, 4, LINE);
+    px(x + 5, y + 5, 1, 3, '#5e6c76'); px(x + 6, y + 5, 1, 3, '#39434b');
+    px(x + 5, y + 6, 2, 1, '#6d7a84');                          // lift collar
+    px(x + 8, y + 5, 2, 1, '#39434b'); px(x + 10, y + 5, 1, 1, '#1a1e22'); // adjust lever
+    // BIG round cushioned seat (dominates: this is a top-down game)
+    px(x + 3, y, 6, 1, LINE);
+    px(x + 2, y + 1, 8, 1, LINE);
+    px(x + 1, y + 2, 10, 2, LINE);
+    px(x + 2, y + 4, 8, 1, LINE);
+    px(x + 3, y + 5, 6, 1, LINE);
+    px(x + 3, y + 1, 6, 1, '#4a8a82');                          // pad top, brightest
+    px(x + 3, y + 1, 2, 1, '#5aa89c');                          // west sheen
+    px(x + 2, y + 2, 8, 1, '#2f6a62');
+    px(x + 2, y + 2, 1, 1, '#4a8a82'); px(x + 9, y + 2, 1, 1, '#26554e');
+    px(x + 2, y + 3, 8, 1, '#2f6a62');
+    px(x + 2, y + 3, 1, 1, '#4a8a82'); px(x + 9, y + 3, 1, 1, '#26554e');
+    px(x + 3, y + 3, 1, 1, '#26554e'); px(x + 8, y + 3, 1, 1, '#26554e'); // piping stitches (kept)
+    px(x + 3, y + 4, 6, 1, r.dk);                               // rounded underside rim
   };
 
-  F.tv = (x, y, w, h, f) => {
-    px(x - 1, y, w + 2, h + 6, '#0a0a0a');
-    px(x, y + 1, w, h + 4, '#1a1a1a');
-    px(x, y + 1, w, 1, '#2e2e2e');
-    px(x, y + 2, 1, h + 2, '#242424'); px(x + w - 1, y + 2, 1, h + 2, '#101010'); // bezel facets
+  F.tv = (x, y, w, h, f) => {   // screen slab standing on a LOW media credenza; screen faces south
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 2, x + w - 5]) {                      // credenza feet
+      px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 9, w - 10, 2);
+    // credenza face: doors + pulls
+    rr(x - 1, y + 4, w + 2, 6, LINE);
+    px(x, y + 5, w, 4, r.face);
+    px(x, y + 5, w, 1, r.lit);
+    px(x + 12, y + 6, 1, 3, r.dk); px(x + 24, y + 6, 1, 3, r.dk); // door seams
+    px(x + 5, y + 6, 2, 1, r.dk); px(x + 17, y + 6, 2, 1, r.dk); px(x + 29, y + 6, 2, 1, r.dk); // pulls
+    px(x, y + 8, w, 1, r.ao);
+    // credenza top
+    rr(x - 1, y + 1, w + 2, 5, LINE);
+    rr(x, y + 2, w, 3, r.top);
+    px(x + 1, y + 2, w - 2, 1, r.sheen);
+    // the TV slab
+    px(x + 7, y + 2, 2, 1, '#0c1014'); px(x + w - 9, y + 2, 2, 1, '#0c1014'); // stand feet
+    rr(x + 2, y - 11, w - 4, 14, LINE);
+    px(x + 3, y - 10, w - 6, 12, '#12181d');                    // bezel
+    px(x + 3, y - 10, w - 6, 1, '#232d33');                     // bezel catch
+    const sx = x + 4, sy = y - 9, sw = w - 8, sh2 = 9;
     const mode = Math.floor(now / 4000) % 3;
     if (mode === 0) { // static
-      px(x + 2, y + 2, w - 4, h + 1, '#101418');
-      for (let i = 0; i < 30; i++) px(x + 2 + (U.hash('tv' + i + Math.floor(now / 90)) % (w - 4)), y + 2 + (U.hash('tw' + i + Math.floor(now / 90)) % (h + 1)), 1, 1, '#9aa');
-      px(x + 2, y + 2 + (Math.floor(now / 130) % (h + 1)), w - 4, 1, '#202830'); // rolling bar
+      px(sx, sy, sw, sh2, '#101418');
+      for (let i = 0; i < 30; i++) px(sx + (U.hash('tv' + i + Math.floor(now / 90)) % sw), sy + (U.hash('tw' + i + Math.floor(now / 90)) % sh2), 1, 1, '#9aa');
+      px(sx, sy + (Math.floor(now / 130) % sh2), sw, 1, '#202830'); // rolling bar
     } else if (mode === 1) { // movie: sunset over water
-      px(x + 2, y + 2, w - 4, h + 1, '#1a3a5a'); px(x + 2, y + 2, w - 4, 2, '#2a5a7a');
-      px(x + 5, y + 3, 6, 2, '#e8c860'); px(x + 6, y + 2, 4, 1, '#f0d880'); // sun dome
-      px(x + 5, y + 6, 6, 1, '#8a7a4a'); px(x + 6, y + 8, 4, 1, '#6a6038'); // water glints
-      px(x + 20, y + 5, 8, 3, '#0e2436');
-      px(x + 20, y + 5, 8, 1, '#16344a'); // island rim light
+      px(sx, sy, sw, sh2, '#1a3a5a'); px(sx, sy, sw, 2, '#2a5a7a');
+      px(sx + 3, sy + 2, 6, 2, '#e8c860'); px(sx + 4, sy + 1, 4, 1, '#f0d880'); // sun dome
+      px(sx + 3, sy + 5, 6, 1, '#8a7a4a'); px(sx + 4, sy + 7, 4, 1, '#6a6038'); // water glints
+      px(sx + 18, sy + 4, 8, 3, '#0e2436');
+      px(sx + 18, sy + 4, 8, 1, '#16344a');                     // island rim light
     } else { // news: anchor + headlines
-      px(x + 2, y + 2, w - 4, h + 1, '#3a1a2a');
-      px(x + 4, y + 2, 8, 1, '#4a2436'); // studio backdrop band
-      px(x + 5, y + 3, 5, 5, '#caa088'); px(x + 6, y + 4, 1, 1, '#222'); px(x + 8, y + 4, 1, 1, '#222');
-      px(x + 6, y + 6, 3, 1, '#a08068'); // mouth shadow
-      px(x + 5, y + 8, 5, 1, '#2a3a5a'); // suit
-      px(x + 12, y + 4, 12, 1, '#e0e0e0'); px(x + 12, y + 6, 9, 1, '#b0b0b0');
-      px(x + 12, y + 4, 4, 1, '#ffffff'); // headline pop
-      px(x + 2, y + h + 1, w - 4, 2, '#2a1220'); px(x + 3 + (Math.floor(now / 160) % (w - 16)), y + h + 1, 10, 1, '#ff5c7a'); // crawling ticker
-      px(x + w - 8, y + 2, 4, 2, '#ff5c7a'); px(x + w - 7, y + 2, 2, 1, '#ffa8b8'); // LIVE bug
+      px(sx, sy, sw, sh2, '#3a1a2a');
+      px(sx + 2, sy, 8, 1, '#4a2436');                          // studio backdrop band
+      px(sx + 3, sy + 1, 5, 5, '#caa088'); px(sx + 4, sy + 2, 1, 1, '#222'); px(sx + 6, sy + 2, 1, 1, '#222');
+      px(sx + 4, sy + 4, 3, 1, '#a08068');                      // mouth shadow
+      px(sx + 3, sy + 6, 5, 1, '#2a3a5a');                      // suit
+      px(sx + 10, sy + 2, 12, 1, '#e0e0e0'); px(sx + 10, sy + 4, 9, 1, '#b0b0b0');
+      px(sx + 10, sy + 2, 4, 1, '#ffffff');                     // headline pop
+      px(sx, sy + 7, sw, 2, '#2a1220'); px(sx + 1 + (Math.floor(now / 160) % (sw - 11)), sy + 7, 10, 1, '#ff5c7a'); // crawling ticker
+      px(sx + sw - 6, sy, 4, 2, '#ff5c7a'); px(sx + sw - 5, sy, 2, 1, '#ffa8b8'); // LIVE bug
     }
-    scanl(x + 2, y + 2, w - 4, h + 1, 0.08);
-    glow(x + 2, y + 2, 6, 2, '#ffffff', 0.06); // glass glint
-    const watched = !!(f && f.work);   // an agent is on the couch watching → screen spills more light, LED goes solid
-    glow(x + 2, y + h + 5, w - 4, 2, mode === 1 ? '#2a5a7a' : '#3a1a2a', watched ? 0.30 : 0.15); // screen light under tv
-    px(x + 1, y + h + 5, w - 2, 1, '#000');
-    px(x + 8, y + h + 5, w - 16, 1, '#1c1c1c'); // soundbar
-    px(x + 10, y + h + 5, 1, 1, '#2e2e2e'); px(x + w - 11, y + h + 5, 1, 1, '#2e2e2e');
-    px(x + w - 3, y + h + 4, 1, 1, watched ? '#ff6a6a' : (blink(1400) ? '#ff3030' : '#3a1010')); // standby LED (solid when watched)
+    scanl(sx, sy, sw, sh2, 0.08);
+    glow(sx, sy, 6, 2, '#ffffff', 0.06);                        // glass glint
+    const watched = !!(f && f.work);   // someone on the couch → screen spills more light, LED goes solid
+    glow(x + 4, y + 3, w - 8, 2, mode === 1 ? '#2a5a7a' : '#3a1a2a', watched ? 0.30 : 0.15);
+    px(x + w / 2 - 1, y, 2, 1, '#1e262c');                      // brand chip on the chin
+    px(x + 8, y + 3, w - 16, 1, '#161c22');                     // soundbar on the credenza
+    px(x + 10, y + 3, 1, 1, '#2e2e2e'); px(x + w - 11, y + 3, 1, 1, '#2e2e2e');
+    px(x + w - 6, y, 1, 1, watched ? '#ff6a6a' : (blink(1400) ? '#ff3030' : '#3a1010')); // standby LED
   };
 
   F.couch = (x, y, w, h) => {   // TOP-BIAS OBLIQUE lounge sofa, freestanding (locked style law)
@@ -1817,117 +2140,183 @@ const PropSprites = (() => {
     wear(x + 1, y + bh - 7, cw - 2, 4, 3, U.shade(r.face, -0.12)); // kick scuffs
   };
 
-  F.arcade2 = (x, y, w, h, f) => {
-    const cw = 13, bh = h;                     // slim 1-tile cabinet, exactly 2 tiles tall — see F.arcade
-    sh(x + 1, y + bh, cw - 1);
-    px(x, y, cw, bh, '#0e1a1e');
-    px(x + 1, y, cw - 2, bh, '#1e3038');
-    px(x + 1, y, cw - 2, 1, '#2c424c');
-    px(x + 1, y + 1, 1, bh - 2, '#263a44'); px(x + cw - 2, y + 1, 1, bh - 2, '#15242a'); // cab facets
-    px(x + cw - 2, y + 3, 1, bh - 9, '#2ee6c8'); // side art stripe
-    px(x + 1, y, cw - 2, 2, blink(900, 2) ? '#2ee6c8' : '#1a2a30'); // marquee
-    px(x + 3, y, 2, 1, '#bff8ee'); // marquee glint
-    glow(x + 1, y, cw - 2, 2, '#2ee6c8', blink(900, 2) ? 0.4 : 0.1);
-    inset(x + 2, y + 2, cw - 4, 8, '#0a1216'); // screen
+  F.arcade2 = (x, y, w, h, f) => {   // TALL 3/4 rhythm cabinet — sibling of F.arcade, teal identity
+    const cw = 13, bh = h, r = RAMP.steel;
+    shadow2(x + 1, y + bh - 1, cw - 2);
+    // body: chamfered slab, side facets
+    rr(x - 1, y - 5, cw + 2, bh + 4, LINE);
+    px(x + 1, y - 3, cw - 2, bh + 1, r.face);
+    px(x + 1, y - 3, 1, bh, U.shade(r.face, 0.10)); px(x + cw - 2, y - 3, 1, bh, r.dk);
+    // cap: the top surface we look down on
+    rr(x, y - 7, cw, 3, LINE);
+    px(x + 1, y - 6, cw - 2, 2, r.top);
+    px(x + 1, y - 6, cw - 2, 1, r.sheen);
+    // marquee JUTS out wider than the body — teal
+    rr(x - 2, y - 5, cw + 4, 4, LINE);
+    px(x - 1, y - 4, cw + 2, 2, blink(900, 2) ? '#2ee6c8' : '#1a3a3a');
+    px(x + 2, y - 4, 3, 1, '#bff8ee');                          // marquee glint
+    glow(x - 1, y - 4, cw + 2, 2, '#2ee6c8', blink(900, 2) ? 0.45 : 0.12);
+    px(x - 1, y - 2, cw + 2, 1, U.shade('#1a3a3a', -0.35));     // marquee underside shadow
+    px(x + 1, y + 2, 1, bh - 10, '#2ee6c8');                    // side art stripe
+    px(x + 1, y + 3, 1, 2, '#bff8ee');
+    // screen: the waveform game
+    inset(x + 2, y - 1, cw - 4, 9, '#0a1216');
     const fr = Math.floor(now / 200) % 5;
-    px(x + 2, y + 6, cw - 4, 1, '#12262a'); // midline
+    px(x + 3, y + 3, cw - 6, 1, '#12262a');                     // midline
     for (let i = 0; i < 4; i++) {
-      px(x + 3 + i * 2, y + 8 - ((fr + i) % 5), 1, 1, '#2ee6c8'); // waveform game
-      px(x + 3 + i * 2, y + 9 - ((fr + i + 2) % 5), 1, 1, '#15564c'); // echo trace
+      px(x + 3 + i * 2, y + 5 - ((fr + i) % 5), 1, 1, '#2ee6c8');   // waveform
+      px(x + 3 + i * 2, y + 6 - ((fr + i + 2) % 5), 1, 1, '#15564c'); // echo trace
     }
-    px(x + 3 + ((fr + 2) % 4) * 2, y + 8 - ((fr * 2) % 5), 1, 1, '#dffaf4'); // combo spark
-    scanl(x + 2, y + 3, cw - 4, 7, 0.12);
-    glow(x + 2, y + 2, cw - 4, 8, '#2ee6c8', 0.05);
-    px(x + 2, y + 11, cw - 4, 3, '#2a3e46'); // control panel
-    px(x + 2, y + 11, cw - 4, 1, '#3a525c');
-    px(x + 2, y + 13, cw - 4, 1, '#1c2c32'); // panel shade
-    px(x + 3, y + 12, 2, 1, '#2ee6c8'); px(x + 3, y + 12, 1, 1, '#bff8ee'); // pads + shine
-    px(x + 7, y + 12, 1, 1, '#caa84a'); // pad
-    px(x + 3, y + bh - 4, cw - 6, 3, '#15242a'); px(x + 3, y + bh - 4, cw - 6, 1, '#263a44'); // coin door
-    px(x + 5, y + bh - 3, 2, 1, blink(1100) ? '#2ee6c8' : '#16242a'); // coin light
-    wear(x + 1, y + 11, cw - 2, 4, 3, '#192b31');
+    px(x + 3 + ((fr + 2) % 4) * 2, y + 5 - ((fr * 2) % 5), 1, 1, '#dffaf4'); // combo spark
+    scanl(x + 2, y, cw - 4, 8, 0.12);
+    glow(x + 2, y - 1, cw - 4, 9, '#2ee6c8', 0.06);
+    // control deck JUTS toward the camera: rhythm pads
+    rr(x - 1, y + 9, cw + 2, 4, LINE);
+    px(x, y + 10, cw, 2, r.top);
+    px(x, y + 10, cw, 1, r.sheen);
+    px(x + 3, y + 11, 2, 1, '#2ee6c8'); px(x + 3, y + 11, 1, 1, '#bff8ee'); // pad + shine
+    px(x + 7, y + 11, 2, 1, '#caa84a');                         // second pad
+    px(x + 10, y + 11, 1, 1, '#ff5c5c');                        // stop button
+    px(x, y + 12, cw, 1, r.dk);                                 // deck front lip
+    // coin door on the lower face
+    px(x + 3, y + bh - 7, cw - 6, 3, r.dk); px(x + 3, y + bh - 7, cw - 6, 1, U.shade(r.face, 0.10));
+    px(x + 5, y + bh - 6, 2, 1, blink(1100) ? '#2ee6c8' : '#16302e'); // coin light
+    // kick plate + feet with a floor gap
+    px(x + 1, y + bh - 3, cw - 2, 1, r.ao);
+    underAO(x + 2, y + bh - 2, cw - 4, 1);
+    px(x + 1, y + bh - 2, 2, 2, r.dk); px(x + cw - 3, y + bh - 2, 2, 2, r.dk); // feet
+    px(x + 1, y + bh - 2, 1, 1, r.lit); px(x + cw - 3, y + bh - 2, 1, 1, r.lit);
+    wear(x + 1, y + bh - 7, cw - 2, 4, 3, U.shade(r.face, -0.12));
   };
 
-  F.jukebox = (x, y, w, h) => {
-    sh(x + 1, y + h + 9, 10);
-    px(x, y, 12, h + 11, '#222a30');
-    px(x + 1, y + 1, 10, h + 9, '#3a444c');
-    px(x + 2, y + 1, 8, 1, '#4e5a64');
-    px(x + 2, y + 2, 8, 3, blink(500) ? '#ffd34a' : '#b88a3a'); // arch lamp
-    px(x + 3, y + 2, 6, 1, '#ffe88c');
-    glow(x + 2, y + 2, 8, 3, '#ffd34a', 0.3 + 0.2 * Math.sin(now / 400));
-    // bubble tubes climbing both sides of the arch
+  F.jukebox = (x, y, w, h) => {   // TALL 3/4 jukebox: rounded dome, bubble chase, spinning record
+    const cw = 13, bh = h, r = RAMP.steel;
+    shadow2(x + 1, y + bh - 1, cw - 2);
+    // body slab
+    rr(x - 1, y - 5, cw + 2, bh + 4, LINE);
+    px(x + 1, y - 4, cw - 2, bh + 2, r.face);
+    px(x + 1, y - 4, 1, bh + 1, U.shade(r.face, 0.10)); px(x + cw - 2, y - 4, 1, bh + 1, r.dk);
+    // rounded DOME top
+    px(x + 3, y - 8, cw - 6, 1, LINE);
+    px(x + 1, y - 7, cw - 2, 1, LINE);
+    px(x, y - 6, cw, 2, LINE);
+    px(x + 4, y - 8, cw - 8, 1, U.shade(r.sheen, 0.15));        // dome crown catch
+    px(x + 2, y - 7, cw - 4, 1, r.sheen);
+    px(x + 1, y - 6, cw - 2, 1, r.lit);
+    // arch lamp under the dome
+    px(x + 2, y - 4, cw - 4, 3, blink(500) ? '#ffd34a' : '#b88a3a');
+    px(x + 3, y - 4, cw - 6, 1, '#ffe88c');
+    glow(x + 2, y - 4, cw - 4, 3, '#ffd34a', 0.3 + 0.2 * Math.sin(now / 400));
+    // bubble tubes climbing both flanks
     for (let i = 0; i < 2; i++) {
-      const bx = i ? x + 9 : x + 2;
-      px(bx, y + 5, 1, 7, '#2c3a42');
+      const bx = i ? x + cw - 3 : x + 2;
+      px(bx, y + 1, 1, 9, '#2c3a42');
       const bp = (now / (900 + i * 300)) % 1;
-      px(bx, y + 5 + Math.floor((1 - bp) * 6), 1, 1, '#7fd0ff');
+      px(bx, y + 1 + Math.floor((1 - bp) * 8), 1, 1, '#7fd0ff');
     }
-    inset(x + 3, y + 6, 6, 5, '#10161c'); // record window
-    px(x + 4, y + 7, 4, 3, '#111');
-    px(x + 4, y + 7, 4, 1, '#1c1c1c'); // groove ring
+    // record window + spinning disc
+    inset(x + 3, y + 1, cw - 6, 6, '#10161c');
+    px(x + 4, y + 2, cw - 8, 4, '#26262e');                     // platter
+    px(x + 4, y + 2, cw - 8, 1, '#3a3a44');                     // groove ring catch
+    px(x + 5, y + 3, cw - 10, 2, '#15151a');                    // vinyl
+    px(x + 6, y + 3, 1, 1, ACC.lounge);                         // label dot
     const a = now / 300;
-    px(x + 5 + Math.round(Math.cos(a) * 1.5), y + 8 + Math.round(Math.sin(a)), 1, 1, '#7fd0ff'); // spinning disc glint
-    px(x + 2, y + 1, 1, h + 9, '#56646e'); // chrome edge
-    px(x + 9, y + 1, 1, h + 9, '#2c343a'); // shaded edge
-    // selection button grid
-    px(x + 3, y + 12, 6, 1, '#1c242a');
-    for (let i = 0; i < 3; i++) px(x + 3 + i * 2, y + 12, 1, 1, blink(600, i) ? '#ffd34a' : '#3a3020');
-    for (let i = 0; i < 2; i++) {
-      px(x + 3, y + 14 + i * 2, 6, 1, '#2a333a'); // grille
-      px(x + 3, y + 15 + i * 2, 6, 1, '#434e57'); // grille catch
-    }
-    glow(x + 2, y + h + 9, 8, 2, '#ffd34a', 0.10 + 0.05 * Math.sin(now / 400)); // floor glow
-    px(x + 2, y + h + 7, 2, 2, blink(400) ? '#ff5c5c' : '#5c1c1c');
-    px(x + 8, y + h + 7, 2, 2, blink(400, 1) ? '#41ff8a' : '#1c5c2c');
-  };
-
-  F.bunk = (x, y, w, h) => {
-    sh(x + 1, y + h - 1, w - 2);
-    px(x - 1, y + 1, w + 2, h - 1, '#1a2228');
-    px(x, y + 2, w, h - 2, '#2e3840');
-    px(x, y + 2, w, 1, '#3e4a52');
-    // top bunk
-    px(x + 1, y + 3, w - 2, 5, '#3a464e');
-    px(x + 1, y + 3, 6, 5, '#d8d0c0'); px(x + 1, y + 3, 6, 1, '#eae4d6'); // pillow
-    px(x + 2, y + 5, 4, 1, '#c4bcac'); // pillow crease
-    px(x + 7, y + 3, w - 8, 5, '#2f5a62'); px(x + 7, y + 3, w - 8, 1, '#3e6e74'); // blanket
-    px(x + 9, y + 5, w - 12, 1, '#274c53'); px(x + 8, y + 7, w - 10, 1, '#234449'); // blanket folds
-    px(x + 1, y + 8, w - 2, 1, '#1a2228'); // rail
-    px(x + 1, y + 9, w - 2, 1, '#39454e'); // rail catch
-    // reading light over the top pillow
-    px(x + 2, y + 2, 2, 1, '#1c242a');
-    glow(x + 1, y + 3, 5, 2, '#ffd34a', 0.10 + 0.04 * Math.sin(now / 1300));
-    // bottom bunk
-    px(x + 1, y + 10, w - 2, 5, '#34404a');
-    px(x + 1, y + 10, 6, 5, '#c8c0b0'); px(x + 1, y + 10, 6, 1, '#dad2c2');
-    px(x + 2, y + 12, 4, 1, '#b4ac9c');
-    px(x + 7, y + 10, w - 8, 5, '#274e54'); px(x + 7, y + 10, w - 8, 1, '#356065');
-    px(x + 9, y + 12, w - 12, 1, '#1f4046'); px(x + 8, y + 14, w - 10, 1, '#1c3a40');
-    px(x + 1, y + 15, w - 2, 1, '#1a2228');
-    px(x, y + 2, 1, h - 2, '#222a30'); px(x + w - 1, y + 2, 1, h - 2, '#222a30'); // posts
-    px(x, y + 2, 1, 1, '#39454e'); px(x + w - 1, y + 2, 1, 1, '#39454e'); // post caps
+    px(x + 6 + Math.round(Math.cos(a) * 1.5), y + 3 + Math.round(Math.sin(a)), 1, 1, '#bfe6ff'); // disc glint
+    px(x + 2, y - 1, 1, 2, r.sheen); px(x + cw - 3, y - 1, 1, 2, r.sheen); // chrome shoulder trims
+    // selection buttons
+    px(x + 3, y + 9, cw - 6, 2, '#1c242a');
+    for (let i = 0; i < 3; i++) px(x + 4 + i * 2, y + 9, 1, 1, blink(600, i) ? '#ffd34a' : '#3a3020');
+    // speaker grille skirt
     for (let i = 0; i < 3; i++) {
-      px(x + w - 4, y + 4 + i * 4, 3, 1, '#56646e'); // ladder
-      px(x + w - 4, y + 5 + i * 4, 3, 1, '#222a30'); // rung shadow
+      px(x + 2, y + 12 + i * 2, cw - 4, 1, r.ao);
+      px(x + 2, y + 13 + i * 2, cw - 4, 1, U.shade(r.face, 0.10));
     }
-    px(x + 1, y + 17, w - 2, 5, '#28323a'); // under-bed drawers
-    px(x + 1, y + 17, w - 2, 1, '#323e48');
-    px(x + 3, y + 18, 6, 2, '#34404a'); px(x + 11, y + 18, 6, 2, '#34404a');
-    px(x + 5, y + 19, 2, 1, '#1e262c'); px(x + 13, y + 19, 2, 1, '#1e262c'); // drawer pulls
-    px(x + 2, y + 4, 1, 1, '#caa84a'); // name tag on post
+    // base lamps + kick + feet
+    px(x + 2, y + bh - 5, 2, 2, blink(400) ? '#ff5c5c' : '#5c1c1c');
+    px(x + cw - 4, y + bh - 5, 2, 2, blink(400, 1) ? '#41ff8a' : '#1c5c2c');
+    px(x + 1, y + bh - 3, cw - 2, 1, r.ao);
+    underAO(x + 2, y + bh - 2, cw - 4, 1);
+    px(x + 1, y + bh - 2, 2, 2, r.dk); px(x + cw - 3, y + bh - 2, 2, 2, r.dk);
+    px(x + 1, y + bh - 2, 1, 1, r.lit); px(x + cw - 3, y + bh - 2, 1, 1, r.lit);
+    glow(x + 1, y + bh - 2, cw - 2, 2, '#ffd34a', 0.10 + 0.05 * Math.sin(now / 400)); // floor glow
   };
 
-  F.rug = (x, y, w, h) => { // synthetic deck mat — cool slate, no textile/wood warmth
-    px(x, y, w, h, '#20272d');
-    px(x + 1, y + 1, w - 2, h - 2, '#28313a');
-    px(x + 2, y + 2, w - 4, h - 4, '#2f3a43');
-    for (let i = 0; i < (w - 8) / 4; i++) { px(x + 4 + i * 4, y + 2, 2, 1, '#3a4750'); px(x + 4 + i * 4, y + h - 3, 2, 1, '#3a4750'); } // dashed border
-    for (let j = 0; j < (h - 8) / 4; j++) { px(x + 2, y + 4 + j * 4, 1, 2, '#3a4750'); px(x + w - 3, y + 4 + j * 4, 1, 2, '#3a4750'); }
-    px(x + w / 2 - 6, y + h / 2 - 1, 12, 2, '#39454e'); // center motif
-    px(x + w / 2 - 3, y + h / 2 - 3, 6, 6, '#324049');
-    px(x + w / 2 - 1, y + h / 2 - 1, 2, 2, '#48565f');
-    for (let j = 0; j < h; j += 3) { px(x - 1, y + j, 1, 1, '#46545c'); px(x + w, y + j, 1, 1, '#46545c'); } // edge trim
+  F.bunk = (x, y, w, h) => {   // TOP-BIAS OBLIQUE berth: Zelda bed — pillow + blanket seen from above
+    const r = RAMP.fabric;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 2, x + w - 5]) {                      // footboard legs
+      px(lx, y + 21, 3, 3, LINE); px(lx, y + 21, 1, 3, r.lit); px(lx + 1, y + 21, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 21, w - 10, 2);
+    // footboard face (south)
+    rr(x - 1, y + 15, w + 2, 6, LINE);
+    px(x, y + 16, w, 4, r.face);
+    px(x, y + 16, w, 1, r.lit);
+    px(x + 2, y + 18, 2, 1, '#caa84a');                         // name tag
+    px(x, y + 19, w, 1, r.ao);
+    // headboard cap (north) rising above the mattress
+    rr(x, y - 6, w, 5, LINE);
+    px(x + 1, y - 5, w - 2, 2, r.sheen);
+    px(x + 1, y - 5, 6, 1, U.shade(r.sheen, 0.12));
+    px(x + 1, y - 3, w - 2, 1, r.lit);
+    // mattress top (dominant)
+    rr(x - 1, y - 2, w + 2, 18, LINE);
+    px(x, y - 1, w, 16, '#cfc8b8');                             // sheet
+    px(x, y - 1, 1, 16, U.shade('#cfc8b8', 0.08)); px(x + w - 1, y - 1, 1, 16, U.shade('#cfc8b8', -0.18));
+    // pillow
+    rr(x + 5, y, 14, 5, '#e2dccc');
+    px(x + 6, y, 12, 1, '#f0ecdc');
+    px(x + 7, y + 2, 9, 1, '#c8c0ac');                          // crease
+    px(x + 5, y + 4, 14, 1, '#b8b09c');                         // pillow under-shade
+    // blanket from mid-bed to the foot, turned-down fold at the top
+    px(x, y + 6, w, 9, '#2f5a62');
+    px(x, y + 6, w, 2, '#3e6e74');                              // turned-down fold
+    px(x, y + 6, w, 1, '#4d7f84');                              // fold catch
+    px(x, y + 8, 1, 7, '#3a686e'); px(x + w - 1, y + 8, 1, 7, '#234449'); // side tucks
+    px(x + 3, y + 10, w - 6, 1, '#274c53'); px(x + 5, y + 13, w - 10, 1, '#234449'); // folds
+    px(x, y + 14, w, 1, '#1d3c41');                             // blanket hem shade
+    wear(x + 2, y + 7, w - 4, 7, 4, '#2a525a');
+    // reading lamp on the headboard corner + warm pool on the pillow
+    px(x + 3, y - 5, 2, 2, '#1c242a'); px(x + 3, y - 5, 2, 1, '#39454e');
+    px(x + 4, y - 4, 1, 1, '#ffd34a');                          // lit bulb
+    glow(x + 3, y - 5, 3, 3, '#ffd34a', 0.25);
+    glow(x + 4, y - 1, 8, 4, '#ffd34a', 0.12 + 0.05 * Math.sin(now / 1300));
+  };
+
+  F.rug = (x, y, w, h) => {   // v2: floor-flat lounge rug — rounded corners, woven field, medallion, worn patches
+    const edge = '#1b2126', band = '#28313a', field = '#2f3a43', motif = '#48565f', acc = '#2f6a62';
+    // rounded slab: union of two rects + corner steps (it IS the floor — no shadow)
+    px(x + 2, y, w - 4, h, edge); px(x, y + 2, w, h - 4, edge);
+    px(x + 1, y + 1, 1, 1, edge); px(x + w - 2, y + 1, 1, 1, edge);
+    px(x + 1, y + h - 2, 1, 1, edge); px(x + w - 2, y + h - 2, 1, 1, edge);
+    rr(x + 1, y + 1, w - 2, h - 2, band);
+    px(x + 2, y + 1, w - 4, 1, U.shade(band, 0.10));            // north edge catches light
+    px(x + 1, y + 2, 1, h - 4, U.shade(band, 0.05));            // west lit
+    px(x + w - 2, y + 2, 1, h - 4, U.shade(band, -0.10));       // east shade
+    px(x + 2, y + h - 2, w - 4, 1, U.shade(band, -0.16));       // south shade
+    // border dashes in the lounge accent
+    for (let i = 0; i < (w - 16) / 6; i++) { px(x + 8 + i * 6, y + 2, 3, 1, acc); px(x + 8 + i * 6, y + h - 3, 3, 1, acc); }
+    for (let j = 0; j < (h - 16) / 6; j++) { px(x + 2, y + 8 + j * 6, 1, 3, acc); px(x + w - 3, y + 8 + j * 6, 1, 3, acc); }
+    // inner field + herringbone weave
+    rr(x + 4, y + 4, w - 8, h - 8, field);
+    for (let j = 0; j < h - 12; j += 2)
+      for (let i = ((j >> 1) & 1) * 2; i < w - 12; i += 4)
+        px(x + 6 + i, y + 6 + j, 2, 1, ((i + j) & 4) ? '#37434c' : '#2b353e');
+    // bold diamond medallion with a teal core
+    const cx = x + w / 2, cy = y + h / 2;
+    for (let d = 0; d < 5; d++) {
+      px(cx - 8 + d * 2, cy - d, 2, 1, motif); px(cx + 6 - d * 2, cy - d, 2, 1, motif);
+      px(cx - 8 + d * 2, cy + d, 2, 1, motif); px(cx + 6 - d * 2, cy + d, 2, 1, motif);
+    }
+    px(cx - 4, cy - 1, 8, 3, '#39454e'); px(cx - 2, cy - 2, 4, 5, '#39454e');
+    px(cx - 2, cy - 1, 4, 3, acc); px(cx - 1, cy - 1, 2, 1, '#4a8a82');
+    px(cx - 12, cy, 2, 1, motif); px(cx + 10, cy, 2, 1, motif); // side dots
+    px(cx - 1, cy - 7, 2, 1, motif); px(cx - 1, cy + 6, 2, 1, motif);
+    // worn patches: sun-faded + threadbare speckle
+    ctx.globalAlpha = 0.15; px(x + 9, y + 7, 8, 4, '#8a98a8'); px(x + w - 16, y + h - 12, 7, 4, '#8a98a8'); ctx.globalAlpha = 1;
+    wear(x + 5, y + 5, w - 10, h - 10, 10, '#232c33');
+    // frayed edge ticks west/east
+    for (let j = 4; j < h - 4; j += 6) { px(x - 1, y + j, 1, 3, edge); px(x + w, y + j, 1, 3, edge); }
   };
 
   F.chair = (x, y, w, h, f) => {
@@ -1953,72 +2342,92 @@ const PropSprites = (() => {
       px(x + 5, y + 2, 2, 1, '#8a6a2a'); // gold trim
       px(x + 5, y + 2, 1, 1, '#b8924a'); // trim glint
       px(x + 5, y + 10, 2, 1, '#1c0a0a'); // pedestal shadow
-    } else {
-      ctx.globalAlpha = 0.2; px(x + 3, y + 9, 6, 2, '#000'); ctx.globalAlpha = 1;
-      px(x + 3, y + 1, 6, 2, '#3a4a40'); // backrest
-      px(x + 3, y + 1, 6, 1, '#46584c');
-      px(x + 3, y + 1, 1, 2, '#41544a'); px(x + 8, y + 1, 1, 2, '#2e3c34'); // backrest facets
-      px(x + 4, y + 2, 4, 1, '#33413a'); // lumbar seam
-      px(x + 3, y + 3, 6, 6, '#2e3a34');
-      px(x + 4, y + 4, 4, 2, '#39463f'); // cushion
-      px(x + 4, y + 4, 4, 1, '#41504a'); // cushion catch
-      px(x + 4, y + 6, 1, 1, '#27322c'); px(x + 7, y + 6, 1, 1, '#27322c'); // seat stitches
-      px(x + 3, y + 8, 6, 1, '#242e29'); // seat edge shade
-      px(x + 5, y + 9, 2, 1, '#39434b'); // gas lift
-      px(x + 5, y + 9, 1, 1, '#46535c'); // lift shine
-      px(x + 4, y + 10, 1, 1, '#222'); px(x + 7, y + 10, 1, 1, '#222'); // star base
-      px(x + 5, y + 10, 2, 1, '#2a2a2a'); px(x + 4, y + 11, 1, 1, '#1a1a1a'); px(x + 7, y + 11, 1, 1, '#1a1a1a'); // casters
+    } else {   // v2 task chair — pairs with the F.desk workstation (steel frame, rounded, star base)
+      const r = RAMP.steel;
+      shadow2(x + 3, y + 10, 7);                                 // floor contact
+      // star base: arm bar + caster dots (south caster visible in front)
+      px(x + 2, y + 10, 8, 1, '#10161a');
+      px(x + 3, y + 10, 6, 1, '#2a343c');
+      px(x + 2, y + 9, 1, 1, '#242e35'); px(x + 9, y + 9, 1, 1, '#242e35'); // NW/NE arm tips
+      px(x + 2, y + 11, 2, 1, '#1a1e22'); px(x + 8, y + 11, 2, 1, '#1a1e22'); // casters
+      px(x + 5, y + 11, 2, 1, '#1a1e22');
+      // gas-lift column (seat overlaps its top)
+      px(x + 4, y + 7, 4, 3, LINE);
+      px(x + 5, y + 7, 1, 3, '#46535c'); px(x + 6, y + 7, 1, 3, '#39434b');
+      // rounded backrest, north side (kept orientation — agent renders over the seat)
+      rr(x + 2, y - 2, 8, 5, LINE);
+      px(x + 3, y - 1, 6, 3, r.face);
+      px(x + 3, y - 1, 6, 1, r.lit);                             // cap catches the light
+      px(x + 3, y - 1, 3, 1, U.shade(r.lit, 0.10));
+      px(x + 3, y, 1, 2, U.shade(r.face, 0.08)); px(x + 8, y, 1, 2, r.dk);
+      px(x + 4, y + 1, 4, 1, U.shade(r.face, -0.18));            // lumbar seam (kept)
+      // BIG rounded seat pad, middle-south (stays visible under a seated agent)
+      px(x + 3, y + 3, 6, 1, LINE);
+      px(x + 2, y + 4, 8, 5, LINE);
+      px(x + 3, y + 4, 6, 1, '#4a8a82');                         // pad top, brightest
+      px(x + 3, y + 4, 2, 1, '#5aa89c');                         // west sheen
+      px(x + 3, y + 5, 6, 2, '#2f6a62');
+      px(x + 3, y + 5, 1, 2, '#4a8a82'); px(x + 8, y + 5, 1, 2, '#26554e');
+      px(x + 4, y + 6, 1, 1, '#26554e'); px(x + 7, y + 6, 1, 1, '#26554e'); // seat stitches (kept)
+      px(x + 3, y + 7, 6, 1, r.face);                            // front lip
+      px(x + 3, y + 7, 2, 1, r.lit);
+      px(x + 4, y + 8, 4, 1, r.dk);                              // rounded skirt
     }
   };
 
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
-  F.bridge_tacscreen = (x, y, w, h, f) => {
-  // 2px contact shadow at base (wall unit slotted between console banks)
-  px(x + 1, y + h, w - 2, 2, '#0d0f11');
-  // recessed two-tone grey gunmetal casing (edge bevel #565d63 over body #3a3f44)
-  box(x, y, w, h, '#565d63');
-  px(x + 1, y + 1, w - 2, h - 2, '#3a3f44');
-  px(x + 1, y + 1, w - 2, 1, '#6b727a');           // 1px top highlight
-  px(x + 1, y + h - 2, w - 2, 1, '#23272a');        // bottom inner shade
-  // recessed near-black screen well
-  const sx = x + 3, sy = y + 3, sw = w - 6, sh2 = h - 6;
-  inset(sx, sy, sw, sh2, '#080a0c');
-  px(sx, sy, sw, 1, '#040506');
-  // active = brighter wireframe / readouts when an agent uses it
-  const on = f && f.work;
-  // wireframe brightness pulse every ~2s
-  const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(now / 1000));
-  const lineA = (on ? 0.85 : 0.45) * pulse;
-  const red = '#ff4a3d';
-  // station deck-plan wireframe (faint accent-red rectangles + a cross corridor)
-  ctx.save();
-  ctx.globalAlpha = lineA;
-  ctx.strokeStyle = red;
-  ctx.beginPath();
-  ctx.rect(sx + 1.5, sy + 1.5, sw - 4, sh2 - 5);                    // outer hull
-  ctx.rect(sx + 3.5, sy + 3.5, Math.max(2, (sw - 8) / 2 - 1), Math.max(2, sh2 - 9)); // left deck
-  ctx.moveTo(sx + sw / 2, sy + 2);                                  // central spine
-  ctx.lineTo(sx + sw / 2, sy + sh2 - 4);
-  ctx.moveTo(sx + 2, sy + sh2 / 2);                                 // cross corridor
-  ctx.lineTo(sx + sw - 3, sy + sh2 / 2);
-  ctx.stroke();
-  ctx.restore();
-  // three tiny scrolling tactical readout bars along the bottom of the screen
-  for (let r = 0; r < 3; r++) {
-    const by = sy + sh2 - 4 + r;
-    if (by > sy + sh2 - 2) break;
-    const scroll = Math.floor(now / (90 + r * 40)) % sw;
-    const bw = 2 + (U.hash('tac' + r) % 4);
-    let bx = sx + ((scroll + r * 5) % (sw - bw - 1));
-    glow(bx, by, bw, 1, red, (on ? 0.7 : 0.35) * pulse);
-  }
-  // slow-blinking accent-red status dot, lower-right corner
-  const dotOn = blink(1400);
-  px(sx + sw - 3, sy + sh2 - 3, 2, 2, dotOn ? red : '#3a1714');
-  if (dotOn) glow(sx + sw - 4, sy + sh2 - 4, 4, 4, red, on ? 0.5 : 0.3);
-  // faint emissive spill of the screen onto the bezel
-  glow(sx, sy, sw, sh2, red, (on ? 0.10 : 0.05) * pulse);
-};
+  F.bridge_tacscreen = (x, y, w, h, f) => {   // v2 freestanding: tactical display riding rolling posts
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, w - 4);
+    for (const pxx of [x + 4, x + w - 6]) {
+      px(pxx - 1, y + 5, 4, h - 7, LINE);
+      px(pxx, y + 6, 1, h - 8, r.lit); px(pxx + 1, y + 6, 1, h - 8, r.dk);
+      rr(pxx - 3, y + h - 3, 8, 2, LINE);
+      px(pxx - 2, y + h - 3, 6, 1, r.face);
+      px(pxx - 2, y + h - 1, 2, 1, '#1a1e22'); px(pxx + 2, y + h - 1, 2, 1, '#1a1e22');
+      ctx.globalAlpha = 0.30; px(pxx - 3, y + h, 8, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    rr(x, y - 5, w, 12, LINE);
+    px(x + 1, y - 4, w - 2, 10, r.face);
+    px(x + 1, y - 4, w - 2, 1, r.lit);
+    px(x + 2, y - 4, 1, 1, '#56645c'); px(x + w - 3, y - 4, 1, 1, '#56645c');
+    px(x + 1, y + 5, w - 2, 1, r.ao);
+    // recessed near-black screen well
+    const sx = x + 2, sy = y - 3, sw = w - 4, sh2 = 8;
+    inset(sx, sy, sw, sh2, '#080a0c');
+    px(sx, sy, sw, 1, '#040506');
+    const on = f && f.work;
+    const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(now / 1000)); // wireframe pulse (kept)
+    const lineA = (on ? 0.85 : 0.45) * pulse;
+    const red = '#ff4a3d';
+    // station deck-plan wireframe (kept 1:1)
+    ctx.save();
+    ctx.globalAlpha = lineA;
+    ctx.strokeStyle = red;
+    ctx.beginPath();
+    ctx.rect(sx + 1.5, sy + 1.5, sw - 4, sh2 - 5);              // outer hull
+    ctx.rect(sx + 3.5, sy + 3.5, Math.max(2, (sw - 8) / 2 - 1), Math.max(2, sh2 - 9)); // left deck
+    ctx.moveTo(sx + sw / 2, sy + 2);                            // central spine
+    ctx.lineTo(sx + sw / 2, sy + sh2 - 4);
+    ctx.moveTo(sx + 2, sy + sh2 / 2);                           // cross corridor
+    ctx.lineTo(sx + sw - 3, sy + sh2 / 2);
+    ctx.stroke();
+    ctx.restore();
+    // three tiny scrolling tactical readout bars (kept 1:1)
+    for (let r2 = 0; r2 < 3; r2++) {
+      const by = sy + sh2 - 4 + r2;
+      if (by > sy + sh2 - 2) break;
+      const scroll = Math.floor(now / (90 + r2 * 40)) % sw;
+      const bw = 2 + (U.hash('tac' + r2) % 4);
+      const bx = sx + ((scroll + r2 * 5) % (sw - bw - 1));
+      glow(bx, by, bw, 1, red, (on ? 0.7 : 0.35) * pulse);
+    }
+    // slow-blinking status dot, lower-right (kept)
+    const dotOn = blink(1400);
+    px(sx + sw - 3, sy + sh2 - 3, 2, 2, dotOn ? red : '#3a1714');
+    if (dotOn) glow(sx + sw - 4, sy + sh2 - 4, 4, 4, red, on ? 0.5 : 0.3);
+    glow(sx, sy, sw, sh2, red, (on ? 0.10 : 0.05) * pulse);     // emissive spill (kept)
+  };
   F.bridge_relaystack = (x, y, w, h, f) => {   // TALL 3/4 comms relay tower (1x2), bolted; climbing data LEDs; ACC.mem
     const r = RAMP.steel, cx = x + Math.round(w / 2);
     shadow2(x + 1, y + h - 1, w - 2);                                 // contact shadow at base
@@ -2057,419 +2466,302 @@ const PropSprites = (() => {
     px(x + 2, y, 1, 1, r.sheen); px(x + w - 3, y, 1, 1, r.sheen);     // corner bolts
     px(x + 1, y + h - 2, w - 2, 1, r.ao);                             // floor-line AO
   };
-  F.bridge_dispatch_pylon = (x, y, w, h, f) => {
-  // contact shadow at base
-  sh(x + 1, y + h - 1, w - 2);
-
-  const cx = x + w / 2;
-  const active = f && f.work;
-
-  // --- hexagonal column body (tapers slightly toward top) ---
-  // base is full width, top inset by 2px on each side for taper
-  const topInset = 2;
-  // back/dark silhouette
-  box(x, y + 2, w, h - 2, '#33383d');
-  // left bevel facet (catches top-light)
-  px(x + 1, y + 3, 2, h - 5, U.shade('#33383d', 14));
-  px(x + 1, y + 3 + topInset, 1, h - 5 - topInset, U.shade('#33383d', 22));
-  // right facet (shaded)
-  px(x + w - 3, y + 3, 2, h - 5, U.shade('#33383d', -16));
-  px(x + w - 2, y + 3, 1, h - 5, U.shade('#33383d', -26));
-  // taper shave at the very top corners to read as hex narrowing
-  px(x, y + 2, topInset, 2, '#1c2024');
-  px(x + w - topInset, y + 2, topInset, 2, '#1c2024');
-  px(x + topInset, y + 2, w - topInset * 2, 1, U.shade('#33383d', 20));
-
-  // --- two beveled grey bands ---
-  const bandY = [y + 6, y + h - 9];
-  for (const by of bandY) {
-    px(x + 1, by, w - 2, 3, '#5a626a');
-    px(x + 1, by, w - 2, 1, U.shade('#5a626a', 16));      // top highlight
-    px(x + 1, by + 2, w - 2, 1, U.shade('#5a626a', -22));  // bottom shade
-    // rivets
-    px(x + 2, by + 1, 1, 1, U.shade('#5a626a', -30));
-    px(x + w - 3, by + 1, 1, 1, U.shade('#5a626a', -30));
-  }
-
-  // --- central vertical light-slot (recessed well) ---
-  const slotY = y + 10;
-  const slotH = h - 21;
-  const slotX = Math.floor(cx) - 1;
-  inset(slotX - 1, slotY - 1, 4, slotH + 2, '#201210');
-  // pulse: brighter each time it 'sends an order'
-  const pulse = active ? 0.55 + 0.45 * Math.abs(Math.sin(now / 480)) : 0.18 + 0.06 * Math.sin(now / 1400);
-  px(slotX, slotY, 2, slotH, U.shade('#ff4a3d', active ? -4 : -28));
-  glow(slotX - 1, slotY - 1, 4, slotH + 2, '#ff4a3d', pulse);
-  // hot core line when sending
-  if (active && blink(480)) {
-    px(slotX, slotY, 2, slotH, '#ff8a78');
-    glow(slotX - 3, slotY + slotH / 2 - 2, 8, 4, '#ff4a3d', 0.3);
-  }
-
-  // --- cap dish (small, rotating) with sweeping scan-beam ---
-  const capY = y + 1;
-  box(x + 3, capY, w - 6, 3, U.shade('#33383d', -8));
-  px(x + 4, capY, w - 8, 1, '#5a626a');
-  // dish bowl
-  const dx = Math.floor(cx);
-  px(dx - 2, capY - 2, 5, 2, '#454b52');
-  px(dx - 1, capY - 3, 3, 1, U.shade('#5a626a', 8));
-  px(dx, capY - 2, 1, 2, '#2a2e33');
-  // slow sweeping scan-beam: emitter tip swings left<->right
-  const sweep = Math.sin(now / 1300);
-  const bx = dx + Math.round(sweep * 3);
-  px(bx, capY - 4, 1, 1, active ? '#ff8a78' : '#ff4a3d');
-  glow(bx - 1, capY - 5, 3, 2, '#ff4a3d', active ? 0.5 : 0.28);
-  // thin beam trace
-  glow(dx, capY - 4, (bx - dx) || 1, 1, '#ff4a3d', 0.18);
-};
-  F.bridge_orderqueue = (x, y, w, h, f) => {
-  // soft oval contact shadow under the wide base
-  sh(x + 1, y + h - 1, w - 2);
-
-  // --- flat wide pedestal base (dark gunmetal) ---
-  const baseH = Math.max(6, Math.floor(h * 0.55));
-  const baseY = y + h - baseH;
-  box(x, baseY, w, baseH, '#34393e');
-  px(x + 1, baseY + 1, w - 2, baseH - 2, '#2c3034');
-  // 2px grey top edge of the base
-  px(x + 1, baseY, w - 2, 1, '#5b636b');
-  px(x + 1, baseY + 1, w - 2, 1, '#454c52');
-  // a couple of bottom-shaded seams / vents on the front face
-  px(x + 3, baseY + baseH - 3, w - 6, 1, '#23272b');
-  for (let i = 0; i < (w - 8) / 6; i++) px(x + 4 + i * 6, baseY + 3, 1, baseH - 6, '#262a2e');
-
-  // --- shallow projector tray recessed into the top of the base ---
-  const trayY = baseY - 2;
-  inset(x + 2, trayY, w - 4, 4, '#23272b');
-  px(x + 3, trayY + 1, w - 6, 1, '#3c424a');
-  // emitter slit glow at center of the tray
-  const cx = x + Math.floor(w / 2);
-  const pulse = 0.55 + 0.35 * Math.abs(flick(1300));
-  glow(x + 4, trayY, w - 8, 3, '#ff4a3d', 0.10 + 0.06 * Math.abs(flick(1300)));
-  px(cx - 3, trayY + 1, 6, 1, '#ff6a5a');
-
-  // --- faint red projector cone rising from the tray ---
-  const coneTop = baseY - baseH - 3;
-  ctx.save();
-  ctx.globalAlpha = 0.10 + 0.05 * Math.abs(flick(1300));
-  ctx.fillStyle = '#ff4a3d';
-  ctx.beginPath();
-  ctx.moveTo(cx, trayY + 1);
-  ctx.lineTo(x + 3, coneTop);
-  ctx.lineTo(x + w - 3, coneTop);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  // --- floating stack of three translucent order-cards ---
-  // topmost card ticks upward and dissolves every ~2.6s; the cycle index
-  // makes the whole stack feel like it advances as new orders arrive.
-  const PERIOD = 2600;
-  const phase = (now % PERIOD) / PERIOD;          // 0..1 within current cycle
-  const rise = Math.floor(phase * 3);             // topmost card creeps up
-  const cardW = w - 8;
-  const cardX = x + 4;
-  const bob = Math.round(Math.sin(now / 800));     // gentle hologram bob
-
-  for (let c = 0; c < 3; c++) {
-    // c=0 is bottom (newest), c=2 is top (about to dissolve)
-    const cy = coneTop + 1 + (2 - c) * 5 + bob - (c === 2 ? rise : 0);
-    // top card fades out near the end of the cycle as it dissolves upward
-    let a = 0.85 - c * 0.12;
-    if (c === 2) a *= (1 - phase * 0.7);
-    if (cy < y - 4) continue;
-
+  F.bridge_dispatch_pylon = (x, y, w, h, f) => {   // v2 TALL 3/4 pylon: rounded column, dish crown, red dispatch slot
+    const r = RAMP.steel;
+    const active = f && f.work;
+    const cx = x + w / 2;
+    shadow2(x + 1, y + h - 1, w - 2);
+    // splayed base shoe on the floor
+    rr(x - 1, y + h - 4, w + 2, 4, LINE);
+    px(x, y + h - 3, w, 2, r.face);
+    px(x, y + h - 3, w, 1, r.lit);
+    px(x, y + h - 1, w, 1, r.ao);
+    // rounded full-height column
+    rr(x, y - 2, w, h - 2, LINE);
+    px(x + 1, y - 1, w - 2, h - 4, r.face);
+    px(x + 1, y - 1, 1, h - 4, U.shade(r.face, 0.10));          // west lit
+    px(x + w - 2, y - 1, 1, h - 4, r.dk);                       // east dark
+    px(x + 1, y - 1, 2, 2, r.lit);                              // top-west chamfer glint
+    // cap: visible top surface (3/4)
+    rr(x + 1, y - 4, w - 2, 3, LINE);
+    px(x + 2, y - 3, w - 4, 2, r.top);
+    px(x + 2, y - 3, w - 4, 1, r.sheen);
+    // rotating cap dish with sweeping scan-beam (kept 1:1)
+    px(cx - 2, y - 6, 5, 2, '#454b52');
+    px(cx - 1, y - 7, 3, 1, U.shade('#5a626a', 0.08));
+    px(cx, y - 6, 1, 2, '#2a2e33');
+    const sweep = Math.sin(now / 1300);
+    const bx2 = Math.floor(cx) + Math.round(sweep * 3);
+    px(bx2, y - 8, 1, 1, active ? '#ff8a78' : '#ff4a3d');
+    glow(bx2 - 1, y - 9, 3, 2, '#ff4a3d', active ? 0.5 : 0.28);
+    glow(Math.floor(cx), y - 8, (bx2 - Math.floor(cx)) || 1, 1, '#ff4a3d', 0.18); // beam trace
+    // two beveled bands (kept)
+    for (const by of [y + 1, y + h - 9]) {
+      px(x, by, w, 3, '#5a626a');
+      px(x, by, w, 1, U.shade('#5a626a', 0.16));
+      px(x, by + 2, w, 1, U.shade('#5a626a', -0.22));
+      px(x + 1, by + 1, 1, 1, U.shade('#5a626a', -0.30));       // rivets
+      px(x + w - 2, by + 1, 1, 1, U.shade('#5a626a', -0.30));
+    }
+    // central vertical dispatch light-slot (kept 1:1)
+    const slotX = Math.floor(cx) - 1, slotY = y + 5, slotH = h - 16;
+    inset(slotX - 1, slotY - 1, 4, slotH + 2, '#201210');
+    const pulse = active ? 0.55 + 0.45 * Math.abs(Math.sin(now / 480)) : 0.18 + 0.06 * Math.sin(now / 1400);
+    px(slotX, slotY, 2, slotH, U.shade('#ff4a3d', active ? -0.04 : -0.28));
+    glow(slotX - 1, slotY - 1, 4, slotH + 2, '#ff4a3d', pulse);
+    if (active && blink(480)) {                                 // hot core when sending (kept)
+      px(slotX, slotY, 2, slotH, '#ff8a78');
+      glow(slotX - 3, slotY + slotH / 2 - 2, 8, 4, '#ff4a3d', 0.3);
+    }
+  };
+  F.bridge_orderqueue = (x, y, w, h, f) => {   // v2 low oblique projector unit: visible top tray, holo cards float above
+    const r = RAMP.steel;
+    const cx = x + Math.floor(w / 2);
+    shadow2(x + 1, y + h - 1, w - 2);
+    // feet under the cabinet
+    px(x + 2, y + h - 2, 2, 2, r.dk); px(x + w - 4, y + h - 2, 2, 2, r.dk);
+    px(x + 2, y + h - 2, 1, 1, r.lit); px(x + w - 4, y + h - 2, 1, 1, r.lit);
+    underAO(x + 4, y + h - 2, w - 8, 1);
+    // short front face with vents
+    rr(x - 1, y + 5, w + 2, 6, LINE);
+    px(x, y + 6, w, 4, r.face);
+    px(x, y + 6, w, 1, r.lit);
+    for (let i = 0; i < (w - 8) / 6; i++) px(x + 4 + i * 6, y + 7, 1, 2, r.ao); // vents (kept)
+    px(x, y + 9, w, 1, r.ao);
+    px(x + 2, y + 7, 1, 1, (f && f.work ? blink(420) : blink(1600)) ? '#ff6a5a' : '#3a1c1a'); // status LED (kept)
+    // top surface with the recessed projector tray
+    rr(x - 1, y, w + 2, 6, LINE);
+    px(x, y + 1, w, 4, r.top);
+    px(x + 1, y + 1, w - 2, 1, r.sheen);
+    px(x, y + 2, 1, 3, r.lit); px(x + w - 1, y + 2, 1, 3, r.dk);
+    inset(x + 4, y + 1, w - 8, 3, '#23272b');
+    px(x + 5, y + 2, w - 10, 1, '#3c424a');
+    glow(x + 5, y + 1, w - 10, 3, '#ff4a3d', 0.10 + 0.06 * Math.abs(flick(1300))); // emitter glow (kept)
+    px(cx - 3, y + 2, 6, 1, '#ff6a5a');                         // emitter slit (kept)
+    // faint red projector cone rising from the tray (kept)
+    const coneTop = y - 13;
     ctx.save();
-    ctx.globalAlpha = a;
-    // card body (thin translucent accent-red rectangle)
-    px(cardX, cy, cardW, 4, '#ff4a3d');
-    px(cardX, cy, cardW, 1, '#ff7a6c');            // bright top edge
-    px(cardX, cy + 3, cardW, 1, '#c2241a');        // darker base edge
-    // tiny scrolling text glyphs (two rows of ticking pixels)
-    const scroll = Math.floor(now / 110);
-    for (let g = 0; g < cardW - 2; g += 2) {
-      if (((g + scroll + c * 3) >> 1) % 3 !== 0) {
-        px(cardX + 1 + g, cy + 1, 1, 1, '#ffd9d2');
-      }
-    }
-    ctx.restore();
-  }
-
-  // a small fresh card glinting up from the emitter slit as one cycles in
-  if (phase > 0.6) {
-    const fy = trayY - 1 - Math.floor((phase - 0.6) * 8);
-    glow(cx - 3, fy, 6, 2, '#ff7a6c', 0.5 * (phase - 0.6) / 0.4);
-  }
-
-  // status LED on the base â€” ticks when an agent is queuing orders
-  px(x + 3, baseY + 2, 1, 1, (f && f.work ? blink(420) : blink(1600)) ? '#ff6a5a' : '#3a1c1a');
-};
-  F.research_corelens = (x, y, w, h, f) => {
-  // --- contact shadow + cyan floor light-bleed under the column ---
-  sh(x + 1, y + h - 1, w - 2);
-  glow(x - 1, y + h - 4, w + 2, 5, '#4ad9ff', (f && f.work ? 0.22 : 0.12) + 0.05 * Math.sin(now / 600));
-  px(x + 1, y + h - 1, w - 2, 1, '#1a201d'); // pooled near-black contact shadow at foot
-
-  // --- main cylindrical metal column body (grey-green) ---
-  const cx = x + w / 2;
-  box(x + 1, y + 2, w - 2, h - 2, '#3a463f');
-  px(x + 1, y + 2, w - 2, 1, '#525e54');            // top-lit rim
-  px(x + 1, y + 2, 2, h - 3, '#525e54');            // left-edge highlight (cylinder curve)
-  px(x + w - 3, y + 2, 2, h - 3, '#262e29');        // right-edge core shade
-  px(x + 1, y + h - 2, w - 2, 1, '#1a201d');        // base shade
-
-  // --- recessed lens housing: upper two-thirds of the column ---
-  const lensTop = y + 3;
-  const lensH = Math.round((h - 4) * 0.62);
-  inset(x + 2, lensTop, w - 4, lensH, '#1a201d');
-  const lcx = cx;                                   // lens center x
-  const lcy = lensTop + lensH / 2;                  // lens center y
-  const R = Math.min((w - 6) / 2, lensH / 2 - 1);   // outer lens radius
-
-  // concentric cyan arcs (outer to inner) around darker pupil
-  ctx.save();
-  ctx.beginPath(); ctx.rect(x + 2, lensTop, w - 4, lensH); ctx.clip();
-  for (let r = R; r >= 2; r -= 1.6) {
-    const t = r / R;                                // 1 at rim, 0 at center
+    ctx.globalAlpha = 0.10 + 0.05 * Math.abs(flick(1300));
+    ctx.fillStyle = '#ff4a3d';
     ctx.beginPath();
-    ctx.strokeStyle = U.shade('#4ad9ff', -18 + t * 4 * (1 - t) * 60 - 30);
-    ctx.globalAlpha = 0.35 + 0.4 * (1 - t);
-    ctx.arc(lcx, lcy, r, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  // dark pupil core
-  ctx.beginPath(); ctx.fillStyle = '#1f6b80';
-  ctx.arc(lcx, lcy, Math.max(1.5, R * 0.32), 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.fillStyle = '#0e3540';
-  ctx.arc(lcx, lcy, Math.max(1, R * 0.16), 0, Math.PI * 2); ctx.fill();
-
-  // --- sweeping scanline (top->bottom every ~2s) with trailing glow ---
-  const sweep = (now % 2000) / 2000;               // 0..1
-  const sy = lensTop + 1 + sweep * (lensH - 2);
-  glow(x + 2, sy - 3, w - 4, 4, '#4ad9ff', 0.22);  // faint trailing glow above line
-  px(x + 3, Math.round(sy), w - 6, 1, '#bff0ff');  // bright scanline
-  glow(x + 2, sy, w - 4, 2, '#4ad9ff', 0.45);
-  ctx.restore();
-
-  // --- pupil spec highlight + idle emissive pulse ---
-  px(Math.round(lcx) - 1, Math.round(lcy) - 1, 1, 1, '#cdeeff');
-
-  // --- metal collar beneath the lens with two alternating amber LEDs ---
-  const cyc = lensTop + lensH + 1;
-  px(x + 2, cyc, w - 4, 2, '#2f3a34');
-  px(x + 2, cyc, w - 4, 1, '#4a564e');
-  const ledY = cyc + (h - (cyc - y) > 4 ? 2 : 1);
-  px(x + 3, ledY, 2, 2, blink(520, 0) ? '#ffb347' : '#5a3f1a');
-  px(x + w - 5, ledY, 2, 2, blink(520, 1) ? '#ffb347' : '#5a3f1a');
-  if (blink(520, 0)) glow(x + 2, ledY - 1, 4, 4, '#ffb347', 0.3);
-  if (blink(520, 1)) glow(x + w - 6, ledY - 1, 4, 4, '#ffb347', 0.3);
-
-  // --- lower column seam detail ---
-  px(x + 3, y + h - 4, w - 6, 1, '#262e29');
-  px(x + 3, y + h - 3, w - 6, 1, '#48544c');
-};
-  F.research_trendpillar = (x, y, w, h, f) => {
-  // ground contact shadow (hard, near-black)
-  sh(x + 1, y + h, w - 2);
-  px(x + 2, y + h - 1, w - 4, 1, '#080b0a');
-
-  // --- pedestal (lower tile): square dark-metal base ---
-  const pedH = 11;
-  const pedY = y + h - pedH;
-  box(x + 1, pedY, w - 2, pedH, '#333d37');
-  px(x + 2, pedY, w - 4, 1, '#4a564e');            // top bevel highlight
-  px(x + 2, pedY + 1, 1, pedH - 2, '#414c45');     // left edge sheen
-  px(x + w - 3, pedY + 1, 1, pedH - 2, '#252d28'); // right edge shade
-  px(x + 2, pedY + pedH - 1, w - 4, 1, '#1c2420'); // base shade line
-  inset(x + 3, pedY + 3, w - 6, 4, '#222b26');     // recessed vent panel
-  px(x + 4, pedY + 4, 1, 1, blink(2200) ? '#41ff8a' : '#1c2a22'); // status LED
-
-  // --- vertical strip display (upper tile) ---
-  const scX = x + 2, scW = w - 4;
-  const scY = y + 1, scH = h - pedH - 2;
-  const on = f.work;
-  // bezel casing with emissive halo
-  glow(scX - 1, scY - 1, scW + 2, scH + 2, '#4ad9ff', on ? 0.20 : 0.10);
-  box(scX - 1, scY - 1, scW + 2, scH + 2, '#2a332f');
-  inset(scX, scY, scW, scH, '#0a1416'); // dark screen well
-
-  // clip drawing to the screen face
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(scX + 1, scY + 1, scW - 2, scH - 2);
-  ctx.clip();
-
-  const gX = scX + 1, gW = scW - 2, gTop = scY + 2, gH = scH - 4;
-  const dim = on ? 1 : 0.45;
-
-  // scrolling cyan line-chart climbing left-to-right + purple comparison beneath
-  const t = Math.floor(now / 110);
-  for (let i = 0; i < gW; i++) {
-    const s = U.hash('trend' + ((i + t) % 64));
-    // cyan: rises overall, jitter
-    const climb = (i / gW) * (gH - 4);
-    const jit = (s % 5);
-    const cy = gTop + gH - 2 - climb - jit + 2;
-    ctx.globalAlpha = dim;
-    px(gX + i, cy, 1, 1, '#4ad9ff');
-    if (i > 0) px(gX + i, cy, 1, 2, U.shade('#4ad9ff', -25));
-    ctx.globalAlpha = 1;
-    // purple comparison line, lower/flatter
-    const pclimb = (i / gW) * (gH - 8);
-    const pjit = (U.hash('curie' + ((i + t) % 64)) % 3);
-    const py = gTop + gH - 1 - pclimb * 0.6 - pjit;
-    ctx.globalAlpha = dim * 0.85;
-    px(gX + i, py, 1, 1, '#8f7bff');
-    ctx.globalAlpha = 1;
-  }
-
-  // 2px ticker of fake percentage figures crawling upward (bottom band)
-  const tick = Math.floor(now / 240) % 9;
-  for (let r = 0; r < gH; r += 3) {
-    const yy = gTop + ((r + tick) % gH);
-    const v = U.hash('pct' + r + (Math.floor(now / 700) % 7)) % 99;
-    ctx.globalAlpha = dim * 0.5;
-    // tiny 2px figure: sign tick + two digit dots
-    px(gX + 1, yy, 1, 1, v % 2 ? '#41ff8a' : '#ff6a6a');
-    px(gX + 3 + (v % 3), yy, 1, 1, '#3a5c50');
-    px(gX + gW - 3 - (v % 2), yy, 1, 1, '#3a5c50');
-    ctx.globalAlpha = 1;
-  }
-
-  // drifting scan line
-  const scanY = gTop + Math.floor((Math.sin(now / 600) * 0.5 + 0.5) * (gH - 1));
-  glow(gX, scanY, gW, 1, '#9af0ff', on ? 0.22 : 0.10);
-
-  ctx.restore();
-
-  // bezel inner highlight ring + corner glints
-  px(scX, scY, scW, 1, U.shade('#2a332f', 18));
-  px(scX, scY, 1, scH, U.shade('#2a332f', 10));
-  px(scX + scW - 1, scY, 1, scH, '#1a221e');
-};
-  F.research_samplecart = (x, y, w, h, f) => {
-  // soft contact shadow under the casters
-  sh(x + 1, y + h - 1, w - 2);
-
-  // ---- caster wheels (four tiny dark casters) ----
-  px(x + 2, y + h - 2, 2, 2, '#15191a');
-  px(x + w - 4, y + h - 2, 2, 2, '#15191a');
-  px(x + 3, y + h - 1, 1, 1, '#0c0f10');
-  px(x + w - 3, y + h - 1, 1, 1, '#0c0f10');
-
-  // ---- cart frame (scuffed grey-green metal) ----
-  const fr = '#404a43';
-  box(x + 1, y + 2, w - 2, h - 3, fr);
-  // vertical posts catching a touch more light
-  px(x + 2, y + 3, 1, h - 5, U.shade(fr, 18));
-  px(x + w - 3, y + 3, 1, h - 5, U.shade(fr, -14));
-
-  // ---- lower shelf (data-drive caddy) ----
-  const sy = y + h - 5;
-  inset(x + 2, sy, w - 4, 3, '#2c332e');
-  // stacked grey caddy
-  px(x + 3, sy, 5, 3, '#5a665c');
-  px(x + 3, sy, 5, 1, U.shade('#5a665c', 16));
-  px(x + 3, sy + 1, 5, 1, '#3a443d');
-  // drive slots
-  px(x + 4, sy + 1, 3, 1, '#222a26');
-  // blinking green read LED
-  px(x + 9, sy + 1, 1, 1, blink(520) ? '#7dffb0' : '#1d3a2c');
-  if (blink(520)) glow(x + 8, sy, 3, 2, '#7dffb0', 0.22);
-
-  // ---- top tray ----
-  const ty = y + 2;
-  box(x + 1, ty, w - 2, 4, fr);
-  // tray rim (grey-green) + specular highlight along the front rail
-  px(x + 2, ty + 1, w - 4, 2, '#5a665c');
-  px(x + 2, ty + 1, w - 4, 1, U.shade('#5a665c', 14));
-  px(x + 2, ty + 3, w - 4, 1, '#2f3833');
-  // thin specular highlight on the front rail
-  px(x + 3, ty + 4, w - 6, 1, '#7e8c82');
-
-  // ---- folded printout on the tray (right side) ----
-  px(x + w - 6, ty - 1, 4, 3, '#cfd2c8');
-  px(x + w - 6, ty - 1, 4, 1, '#e6e8df');
-  px(x + w - 5, ty, 2, 1, '#9aa094');
-  px(x + w - 4, ty + 1, 1, 1, '#8c9286'); // fold crease
-
-  // ---- three capped sample vials glowing faint cyan ----
-  const cyan = '#4ad9ff';
-  for (let i = 0; i < 3; i++) {
-    const vx = x + 3 + i * 3;
-    // cap
-    px(vx, ty - 3, 2, 1, '#7a8a86');
-    // glass body
-    px(vx, ty - 2, 2, 3, '#2a3a40');
-    // glowing fluid (subtle staggered pulse per vial)
-    const lit = 0.55 + 0.35 * Math.sin(now / 760 + i * 1.7);
-    px(vx, ty - 1, 2, 2, U.shade(cyan, -18));
-    px(vx, ty - 1, 1, 1, cyan);
-    glow(vx - 1, ty - 2, 4, 4, cyan, 0.10 + 0.10 * lit);
-  }
-};
-  F.research_papers = (x, y, w, h, f) => {
-  // flat non-blocking floor deco: scattered printout sheets + one manila folder
-  const paper = '#e8e6dd', paperHi = U.shade(paper, 0.18), paperSh = U.shade(paper, -0.22);
-  // soft contact shadow grounding the loose pile
-  sh(x + 2, y + h - 2, w - 4);
-  // --- manila folder lying underneath, peeking out lower-left ---
-  const fold = '#c9b27a';
-  px(x + 1, y + h - 7, 11, 6, U.shade(fold, -0.4));      // folder drop shadow / edge
-  px(x + 1, y + h - 8, 11, 6, fold);
-  px(x + 1, y + h - 8, 11, 1, U.shade(fold, 0.22));       // top-lit fold crease
-  px(x + 1, y + h - 4, 1, 1, U.shade(fold, 0.22));        // tab corner highlight
-  px(x + 8, y + h - 8, 4, 1, U.shade(fold, 0.3));         // raised tab
-  // --- 4 plain scatter sheets at deterministic angles (drawn back-to-front) ---
-  const sheets = [
-    [x + 6, y + 2, 8, 9, 0],
-    [x + 1, y + 5, 8, 8, 1],
-    [x + 9, y + 6, 7, 8, -1],
-    [x + 3, y + 1, 7, 8, 0]
-  ];
-  for (let i = 0; i < sheets.length; i++) {
-    const s = sheets[i], sx = s[0], sy = s[1], sw = s[2], sh2 = s[3], skew = s[4];
-    px(sx - 1 + skew, sy + 1, sw, sh2, paperSh);          // each sheet's own shadow
-    px(sx + skew, sy, sw, sh2, paper);
-    px(sx + skew, sy, sw, 1, paperHi);                    // top sheen
-    px(sx + skew, sy, 1, sh2, paperHi);
-    px(sx + skew, sy + sh2 - 1, sw, 1, paperSh);          // bottom edge
-    // faint grey text lines on the lower sheets
-    for (let j = 0; j < 2; j++) {
-      const lw = 2 + (U.hash('rp' + i + j) % (sw - 3));
-      px(sx + 1 + skew, sy + 2 + j * 2, lw, 1, '#9aa0a0');
+    ctx.moveTo(cx, y + 2);
+    ctx.lineTo(x + 3, coneTop);
+    ctx.lineTo(x + w - 3, coneTop);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // floating stack of three translucent order-cards (kept 1:1)
+    const PERIOD = 2600;
+    const phase = (now % PERIOD) / PERIOD;
+    const rise = Math.floor(phase * 3);
+    const cardW = w - 8, cardX = x + 4;
+    const bob = Math.round(Math.sin(now / 800));
+    for (let c = 0; c < 3; c++) {
+      const cy = coneTop + 1 + (2 - c) * 5 + bob - (c === 2 ? rise : 0);
+      let a2 = 0.85 - c * 0.12;
+      if (c === 2) a2 *= (1 - phase * 0.7);
+      if (cy < y - 18) continue;
+      ctx.save();
+      ctx.globalAlpha = a2;
+      px(cardX, cy, cardW, 4, '#ff4a3d');
+      px(cardX, cy, cardW, 1, '#ff7a6c');                       // bright top edge
+      px(cardX, cy + 3, cardW, 1, '#c2241a');                   // darker base edge
+      const scroll = Math.floor(now / 110);
+      for (let g = 0; g < cardW - 2; g += 2) {
+        if (((g + scroll + c * 3) >> 1) % 3 !== 0) px(cardX + 1 + g, cy + 1, 1, 1, '#ffd9d2');
+      }
+      ctx.restore();
     }
-  }
-  // --- topmost sheet: the readable printout with chart + text ---
-  const tx = x + 4, ty = y + 3, tw = 9, th = 10;
-  px(tx - 1, ty + 1, tw + 1, th, U.shade(paper, -0.32));  // deeper drop shadow (slightly raised)
-  px(tx, ty, tw, th, paper);
-  px(tx, ty, tw, 1, paperHi);
-  px(tx, ty, 1, th, paperHi);
-  px(tx + tw - 1, ty + 1, 1, th - 1, paperSh);
-  px(tx, ty + th - 1, tw, 1, paperSh);
-  // curled corner (top-right lifts) with soft cast shadow beneath it
-  px(tx + tw - 3, ty - 1, 3, 1, U.shade(paper, -0.28));   // shadow cast by curl
-  px(tx + tw - 3, ty, 3, 2, paperHi);                     // curled-up paper, catching light
-  px(tx + tw - 1, ty, 1, 1, '#fffdf6');
-  // grey printed text rows
-  px(tx + 1, ty + 2, 6, 1, '#7e8484');
-  px(tx + 1, ty + 4, 5, 1, '#969c9c');
-  px(tx + 1, ty + 9, 4, 1, '#969c9c');
-  // tiny cyan bar-chart block
-  const bars = [2, 4, 3, 5];
-  for (let b = 0; b < bars.length; b++) {
-    px(tx + 1 + b * 2, ty + 8 - bars[b], 1, bars[b], '#4ad9ff');
-    px(tx + 1 + b * 2, ty + 8 - bars[b], 1, 1, '#bff0ff'); // lit cap
-  }
-  // ONE subtle animated emissive accent: a single bar's data tick pulses faintly,
-  // brighter when an agent is reading it (f.work)
-  const k = Math.floor(now / 600) % bars.length;
-  const a = f.work ? 0.55 : 0.18 + 0.12 * Math.sin(now / 700);
-  glow(tx + 1 + k * 2, ty + 8 - bars[k], 1, 1, '#9aeaff', a);
-};
+    // fresh card glinting up from the emitter slit (kept)
+    if (phase > 0.6) {
+      const fy2 = y + 1 - Math.floor((phase - 0.6) * 8);
+      glow(cx - 3, fy2, 6, 2, '#ff7a6c', 0.5 * (phase - 0.6) / 0.4);
+    }
+  };
+  F.research_corelens = (x, y, w, h, f) => { // TALL 3/4 lens column (kept: arcs, sweep, LEDs, floor bleed)
+    const r = RAMP.steel;
+    shadow2(x, y + h - 1, w);
+    glow(x - 1, y + h - 4, w + 2, 5, '#4ad9ff', ((f && f.work) ? 0.22 : 0.12) + 0.05 * Math.sin(now / 600));
+    // flared base foot
+    rr(x - 1, y + h - 4, w + 2, 4, LINE);
+    px(x, y + h - 3, w, 2, r.face); px(x, y + h - 3, w, 1, r.lit);
+    px(x, y + h - 1, w, 1, r.ao);
+    // full-height cylindrical column
+    rr(x, y - 6, w, h + 2, LINE);
+    px(x + 1, y - 5, w - 2, h, r.face);
+    px(x + 1, y - 5, 2, h, r.lit);                             // west curve light
+    px(x + w - 3, y - 5, 2, h, r.dk);                          // east curve shade
+    // domed cap
+    rr(x, y - 8, w, 3, LINE);
+    px(x + 1, y - 7, w - 2, 1, r.sheen);
+    px(x + 1, y - 6, w - 2, 1, r.top);
+    // recessed lens housing
+    const lensTop = y - 4, lensH = 14;
+    inset(x + 1, lensTop, w - 2, lensH, '#10161a');
+    const lcx = x + w / 2, lcy = lensTop + lensH / 2, R = (w - 5) / 2;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x + 2, lensTop + 1, w - 4, lensH - 2); ctx.clip();
+    for (let cr = R; cr >= 1.2; cr -= 1.2) {                   // concentric cyan arcs (kept)
+      const t = cr / R;
+      ctx.beginPath();
+      ctx.strokeStyle = U.shade('#4ad9ff', (-18 + t * 4 * (1 - t) * 60 - 30) / 100);
+      ctx.globalAlpha = 0.35 + 0.4 * (1 - t);
+      ctx.arc(lcx, lcy, cr, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.fillStyle = '#1f6b80'; ctx.arc(lcx, lcy, Math.max(1.5, R * 0.4), 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.fillStyle = '#0e3540'; ctx.arc(lcx, lcy, 1, 0, Math.PI * 2); ctx.fill();
+    const sweep = (now % 2000) / 2000;                         // scan sweep (kept)
+    const sy2 = lensTop + 1 + sweep * (lensH - 2);
+    glow(x + 2, sy2 - 3, w - 4, 4, '#4ad9ff', 0.22);
+    px(x + 2, Math.round(sy2), w - 4, 1, '#bff0ff');
+    glow(x + 2, sy2, w - 4, 2, '#4ad9ff', 0.45);
+    ctx.restore();
+    px(Math.round(lcx) - 1, Math.round(lcy) - 1, 1, 1, '#cdeeff'); // pupil spec (kept)
+    // collar + alternating amber LEDs (kept 520)
+    px(x + 1, y + 11, w - 2, 2, '#2f3a34'); px(x + 1, y + 11, w - 2, 1, '#4a564e');
+    px(x + 2, y + 14, 2, 2, blink(520, 0) ? '#ffb347' : '#5a3f1a');
+    px(x + w - 4, y + 14, 2, 2, blink(520, 1) ? '#ffb347' : '#5a3f1a');
+    if (blink(520, 0)) glow(x + 1, y + 13, 4, 4, '#ffb347', 0.3);
+    if (blink(520, 1)) glow(x + w - 5, y + 13, 4, 4, '#ffb347', 0.3);
+    px(x + 2, y + 17, w - 4, 1, r.dk);                         // lower column seam (kept)
+    px(x + 2, y + 18, w - 4, 1, U.shade(r.face, 0.14));
+  };
+  F.research_trendpillar = (x, y, w, h, f) => { // TALL 3/4 data totem (kept: charts, ticker, scan, LED)
+    const r = RAMP.steel;
+    shadow2(x, y + h - 1, w);
+    // pedestal foot
+    rr(x - 1, y + h - 6, w + 2, 6, LINE);
+    px(x, y + h - 5, w, 4, r.face); px(x, y + h - 5, w, 1, r.lit);
+    px(x, y + h - 2, w, 1, r.ao);
+    inset(x + 2, y + h - 4, w - 4, 2, '#10161a');              // vent
+    px(x + 3, y + h - 4, 1, 1, blink(2200) ? '#41ff8a' : '#1c2a22'); // status LED (kept)
+    // slab body, full height, rounded cap
+    rr(x - 1, y - 7, w + 2, 3, LINE);
+    px(x, y - 6, w, 1, r.sheen);
+    rr(x - 1, y - 5, w + 2, h + 3, LINE);
+    px(x, y - 4, w, h + 1, r.face);
+    px(x, y - 4, 1, h + 1, r.lit); px(x + w - 1, y - 4, 1, h + 1, r.dk);
+    // vertical strip display
+    const scX = x + 1, scW = w - 2, scY = y - 3, scH = h - 11;
+    const on = f.work;
+    glow(scX - 1, scY - 1, scW + 2, scH + 2, '#4ad9ff', on ? 0.20 : 0.10); // bezel halo (kept)
+    inset(scX, scY, scW, scH, '#0a1416');
+    ctx.save();
+    ctx.beginPath(); ctx.rect(scX + 1, scY + 1, scW - 2, scH - 2); ctx.clip();
+    const gX = scX + 1, gW = scW - 2, gTop = scY + 2, gH = scH - 4;
+    const dim = on ? 1 : 0.45;
+    const t = Math.floor(now / 110);                           // scrolling charts (kept)
+    for (let i = 0; i < gW; i++) {
+      const s = U.hash('trend' + ((i + t) % 64));
+      const climb = (i / gW) * (gH - 4), jit = (s % 5);
+      const cy = gTop + gH - 2 - climb - jit + 2;
+      ctx.globalAlpha = dim;
+      px(gX + i, cy, 1, 1, '#4ad9ff');
+      if (i > 0) px(gX + i, cy, 1, 2, U.shade('#4ad9ff', -0.25));
+      ctx.globalAlpha = 1;
+      const pclimb = (i / gW) * (gH - 8);
+      const pjit = (U.hash('curie' + ((i + t) % 64)) % 3);
+      const py = gTop + gH - 1 - pclimb * 0.6 - pjit;
+      ctx.globalAlpha = dim * 0.85;
+      px(gX + i, py, 1, 1, '#8f7bff');
+      ctx.globalAlpha = 1;
+    }
+    const tick = Math.floor(now / 240) % 9;                    // crawling ticker (kept)
+    for (let rw = 0; rw < gH; rw += 3) {
+      const yy = gTop + ((rw + tick) % gH);
+      const v = U.hash('pct' + rw + (Math.floor(now / 700) % 7)) % 99;
+      ctx.globalAlpha = dim * 0.5;
+      px(gX + 1, yy, 1, 1, v % 2 ? '#41ff8a' : '#ff6a6a');
+      px(gX + 3 + (v % 3), yy, 1, 1, '#3a5c50');
+      px(gX + gW - 3 - (v % 2), yy, 1, 1, '#3a5c50');
+      ctx.globalAlpha = 1;
+    }
+    const scanY = gTop + Math.floor((Math.sin(now / 600) * 0.5 + 0.5) * (gH - 1)); // drifting scan (kept)
+    glow(gX, scanY, gW, 1, '#9af0ff', on ? 0.22 : 0.10);
+    ctx.restore();
+    px(scX, scY, scW, 1, U.shade('#2a332f', 0.18));            // bezel highlights (kept)
+    px(scX, scY, 1, scH, U.shade('#2a332f', 0.10));
+    px(scX + scW - 1, scY, 1, scH, '#1a221e');
+  };
+  F.research_samplecart = (x, y, w, h, f) => { // wheeled sample cart — freestanding oblique
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    // caster wheels (kept idea, now proud of the frame)
+    for (const wx of [x + 3, x + w - 6]) {
+      px(wx - 1, y + h - 3, 4, 3, LINE);
+      px(wx, y + h - 3, 2, 2, '#15191a'); px(wx, y + h - 3, 2, 1, '#2c3438');
+    }
+    // open mid shelf: void + posts + drive caddy (kept green read LED)
+    px(x + 2, y + 5, w - 4, 4, '#0d1318');
+    px(x + 1, y + 4, 2, 5, LINE); px(x + w - 3, y + 4, 2, 5, LINE);
+    px(x + 1, y + 4, 1, 5, r.lit); px(x + w - 2, y + 4, 1, 5, r.dk);
+    px(x + 2, y + 8, w - 4, 1, '#2c3630');                     // shelf plank
+    px(x + 4, y + 5, 6, 3, '#5a665c'); px(x + 4, y + 5, 6, 1, '#6e7a70'); // caddy
+    px(x + 5, y + 6, 4, 1, '#222a26');                         // drive slot
+    px(x + 11, y + 6, 1, 1, blink(520) ? '#7dffb0' : '#1d3a2c');
+    if (blink(520)) glow(x + 10, y + 5, 3, 2, '#7dffb0', 0.22);
+    // big top tray dominates
+    rr(x - 1, y - 2, w + 2, 8, LINE);
+    rr(x, y - 1, w, 6, r.top);
+    px(x + 1, y - 1, w - 2, 1, r.sheen);
+    px(x, y, 1, 4, r.lit); px(x + w - 1, y, 1, 4, r.dk);
+    px(x + 1, y + 4, w - 2, 1, U.shade(r.top, -0.16));
+    // vial rack: three capped vials glowing cyan (kept stagger pulse)
+    px(x + 3, y - 1, 11, 3, '#2c3630'); px(x + 3, y - 1, 11, 1, '#3c4840');
+    for (let i = 0; i < 3; i++) {
+      const vx = x + 4 + i * 4;
+      px(vx, y - 5, 2, 1, '#7a8a86');                          // cap
+      px(vx, y - 4, 2, 4, '#2a3a40');                          // glass
+      const lit = 0.55 + 0.35 * Math.sin(now / 760 + i * 1.7);
+      px(vx, y - 3, 2, 2, U.shade('#4ad9ff', -0.18));
+      px(vx, y - 3, 1, 1, '#4ad9ff');
+      glow(vx - 1, y - 4, 4, 4, '#4ad9ff', 0.10 + 0.10 * lit);
+    }
+    // folded printout on the tray (kept)
+    px(x + 16, y, 5, 3, '#cfd2c8'); px(x + 16, y, 5, 1, '#e6e8df');
+    px(x + 17, y + 1, 3, 1, '#9aa094'); px(x + 18, y + 2, 1, 1, '#8c9286');
+    // push handle jutting east (+2px)
+    px(x + w, y - 3, 2, 8, LINE); px(x + w, y - 2, 1, 6, r.lit);
+    px(x + w - 1, y - 4, 3, 2, LINE); px(x + w, y - 4, 2, 1, '#5f6f7a'); // grip
+  };
+  F.research_papers = (x, y, w, h, f) => { // low printout stacks — flat floor deco, tiny rise
+    const paper = '#e8e6dd', hi = U.shade(paper, 0.18), shd = U.shade(paper, -0.22);
+    sh(x + 2, y + h - 2, w - 4);
+    const fold = '#c9b27a';                                    // manila folder underneath (kept)
+    px(x + 1, y + 3, 11, 8, U.shade(fold, -0.4));
+    px(x + 1, y + 2, 11, 8, fold);
+    px(x + 1, y + 2, 11, 1, U.shade(fold, 0.22));
+    px(x + 8, y + 2, 4, 1, U.shade(fold, 0.3));                // raised tab
+    // two low stacks: paper top + stacked side edge (oblique read)
+    const stack = (sx, sy, sw, sh2) => {
+      px(sx, sy + sh2, sw, 2, shd);                            // stacked sheet edges
+      px(sx, sy + sh2 + 1, sw, 1, U.shade(paper, -0.34));
+      px(sx, sy, sw, sh2, paper);
+      px(sx, sy, sw, 1, hi); px(sx, sy, 1, sh2, hi);
+      px(sx + sw - 1, sy + 1, 1, sh2 - 1, shd);
+    };
+    stack(x + 2, y + 1, 8, 6);
+    stack(x + 13, y + 3, 8, 6);
+    px(x + 3, y + 3, 5, 1, '#9aa0a0'); px(x + 3, y + 5, 4, 1, '#9aa0a0'); // text lines
+    px(x + 14, y + 5, 5, 1, '#9aa0a0'); px(x + 14, y + 7, 4, 1, '#969c9c');
+    // topmost readable sheet with chart (kept: curl, bars, pulsing tick)
+    const tx = x + 7, ty = y + 2, tw = 9, th = 9;
+    px(tx - 1, ty + 1, tw + 1, th, U.shade(paper, -0.32));
+    px(tx, ty, tw, th, paper);
+    px(tx, ty, tw, 1, hi); px(tx, ty, 1, th, hi);
+    px(tx + tw - 1, ty + 1, 1, th - 1, shd); px(tx, ty + th - 1, tw, 1, shd);
+    px(tx + tw - 3, ty - 1, 3, 1, U.shade(paper, -0.28));      // curl shadow
+    px(tx + tw - 3, ty, 3, 2, hi); px(tx + tw - 1, ty, 1, 1, '#fffdf6'); // curled corner
+    px(tx + 1, ty + 2, 6, 1, '#7e8484');
+    const bars = [2, 4, 3, 5];
+    for (let b = 0; b < bars.length; b++) {
+      px(tx + 1 + b * 2, ty + 8 - bars[b], 1, bars[b], '#4ad9ff');
+      px(tx + 1 + b * 2, ty + 8 - bars[b], 1, 1, '#bff0ff');
+    }
+    const k = Math.floor(now / 600) % bars.length;             // pulsing data tick (kept)
+    glow(tx + 1 + k * 2, ty + 8 - bars[k], 1, 1, '#9aeaff', f.work ? 0.55 : 0.18 + 0.12 * Math.sin(now / 700));
+  };
   F.comms_dish = (x, y, w, h, f) => {   // bolted deck base + BOLD oval dish on a mast (2x2); ACC.data cyan reach
     const r = RAMP.steel, active = f && f.work;
     shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
@@ -2816,220 +3108,194 @@ const PropSprites = (() => {
     if (f && f.work) for (let i = 0; i < 3; i++)
       px(mx + i, my + 3, 1, 1, (Math.floor(now / 180) % 3 === i) ? acc : U.shade(acc, -0.5));
   };
-  F.etsy_threadrack = (x, y, w, h, f) => {
-  // wall-mounted thread/filament spool rack â€” sits flush under north wall
-  sh(x + 1, y + h, w - 2);
-  // dark gunmetal grey-green back plate
-  box(x, y + 1, w, h - 1, '#3a4540');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#3a4540', 16));
-  px(x + 1, y + h - 1, w - 2, 1, U.shade('#3a4540', -22));
-  // two thin horizontal mounting rails
-  const railA = y + 4, railB = y + h - 4;
-  px(x + 1, railA, w - 2, 1, '#262e2a');
-  px(x + 1, railA - 1, w - 2, 1, U.shade('#3a4540', 8));
-  px(x + 1, railB, w - 2, 1, '#262e2a');
-  px(x + 1, railB - 1, w - 2, 1, U.shade('#3a4540', 8));
-  // row of upright spools across the rails (2px discs)
-  const cols = ['#ff9d2e', '#ffbf6a', '#ff9d2e', '#e8ddc8', '#ffbf6a', '#ff9d2e', '#ffbf6a'];
-  const n = 6 + (U.hash('threadrack') % 2); // 6-7 spools
-  const span = w - 6;
-  const step = span / n;
-  const cy = y + Math.floor(h / 2);
-  for (let i = 0; i < n; i++) {
-    const cx = x + 3 + Math.round(i * step + step / 2 - 1);
-    const c = cols[i % cols.length];
-    // spool body
-    px(cx - 1, cy - 2, 3, 4, U.shade(c, -28));
-    px(cx - 1, cy - 1, 3, 2, c);
-    // upper-left highlight pixel
-    px(cx - 1, cy - 2, 1, 1, U.shade(c, 34));
-    // dangling thread tail (a couple of them)
-    if (i === 1 || i === n - 2) px(cx, cy + 2, 1, 2, U.shade(c, -6));
-  }
-  // active print-feed: tiny amber LED at one spool base, slow 2-frame pulse
-  const ledx = x + 3 + Math.round(1 * step + step / 2 - 1);
-  const lit = (f && f.work) ? blink(900) : blink(1800);
-  px(ledx, cy + 4, 1, 1, lit ? '#ffd34a' : '#28323a');
-  if (lit) glow(ledx - 1, cy + 3, 3, 2, '#ff9d2e', 0.22);
-  // hard 1px contact shadow along bottom edge
-  px(x + 1, y + h, w - 2, 1, '#1a201d');
-};
-  F.etsy_dyevat = (x, y, w, h, f) => {
-  // contact shadow on floor
-  sh(x + 1, y + h - 1, w - 2);
-  // round-cornered dark steel basin
-  box(x, y + 1, w, h - 1, '#33403b');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#33403b', 18));
-  px(x + 1, y + h - 2, w - 2, 1, U.shade('#33403b', -16));
-  // soften the corners by darkening outer corner pixels
-  px(x, y + 1, 1, 1, U.shade('#33403b', -22)); px(x + w - 1, y + 1, 1, 1, U.shade('#33403b', -22));
-  px(x, y + h - 2, 1, 1, U.shade('#33403b', -26)); px(x + w - 1, y + h - 2, 1, 1, U.shade('#33403b', -26));
-  // riveted rim â€” lighter grey dabs at corners
-  px(x + 2, y + 2, 2, 1, '#5a665e'); px(x + w - 4, y + 2, 2, 1, '#5a665e');
-  px(x + 2, y + h - 4, 2, 1, U.shade('#5a665e', -12)); px(x + w - 4, y + h - 4, 2, 1, U.shade('#5a665e', -12));
-  px(x + 2, y + 2, 1, 1, U.shade('#5a665e', 22)); px(x + w - 3, y + 2, 1, 1, U.shade('#5a665e', 22));
-  // recessed dye well
-  inset(x + 2, y + 3, w - 4, h - 7, '#241712');
-  // circular pool of amber dye â€” concentric rings core->rim
-  const cx = x + w / 2, cy = y + 3 + (h - 7) / 2;
-  ctx.save();
-  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 - 3, (h - 7) / 2 - 1, 0, 0, Math.PI * 2); ctx.clip();
-  px(x + 2, y + 3, w - 4, h - 7, '#c9701a');
-  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 - 4.5, (h - 7) / 2 - 2, 0, 0, Math.PI * 2);
-  ctx.fillStyle = U.shade('#c9701a', 16); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 - 6, (h - 7) / 2 - 3, 0, 0, Math.PI * 2);
-  ctx.fillStyle = '#ff9d2e'; ctx.fill();
-  // ripple arcs â€” 2-3 lighter highlight crescents, slow drift
-  const rp = now / 1400;
-  ctx.globalAlpha = 0.5; ctx.strokeStyle = U.shade('#ff9d2e', 30); ctx.lineWidth = 1;
-  for (let i = 0; i < 3; i++) {
-    const rr = (w / 2 - 5) * (0.35 + i * 0.22) + Math.sin(rp + i) * 0.6;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rr, rr * 0.62, 0, Math.PI * (0.9 + i * 0.15), Math.PI * (1.7 + i * 0.15));
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  // animated bubble â€” surfaces then pops on slow cycle
-  const bt = (now / 2600) % 1;
-  if (bt < 0.6) {
-    const by = cy - 1 - bt * 3;
-    px(Math.round(cx - 2), Math.round(by), 1, 1, U.shade('#ff9d2e', 40));
-    if (bt > 0.4) px(Math.round(cx - 2), Math.round(by), 1, 1, '#ffeccc');
-  }
-  ctx.restore();
-  glow(cx - (w / 2 - 4), cy - (h - 7) / 2, w - 6, h - 7, '#ff9d2e', 0.1 + 0.05 * Math.sin(now / 800));
-  // bent steel dip-arm crossing the top-right corner
-  px(x + w - 5, y, 3, 2, '#5a665e'); px(x + w - 5, y, 3, 1, U.shade('#5a665e', 22));
-  px(x + w - 6, y + 2, 2, 3, '#4a544d'); px(x + w - 7, y + 4, 2, 2, '#4a544d');
-  // half-submerged white fabric swatch, staining orange at lower edge
-  px(x + w - 9, y + 5, 5, 3, '#e8ece6'); px(x + w - 9, y + 5, 5, 1, '#ffffff');
-  px(x + w - 9, y + 7, 5, 1, '#e0a45c'); px(x + w - 9, y + 8, 5, 1, '#c9701a');
-  px(x + w - 8, y + 9, 3, 1, U.shade('#c9701a', -10));
-  // small green-LED control nub on the front face
-  px(x + 3, y + h - 3, 3, 2, '#1b2422');
-  px(x + 4, y + h - 3, 1, 1, blink(900) ? '#41ff8a' : '#16302a');
-  if (f.work) glow(x + 3, y + h - 4, 4, 3, '#41ff8a', 0.18);
-};
-  F.etsy_kiln = (x, y, w, h, f) => {
-  // contact shadow
-  sh(x + 1, y + h - 1, w - 2);
-  // squat dark-metal cube housing
-  box(x, y + 1, w, h - 1, '#2f3a36');
-  // heavy beveled lid: top-lit rim + recessed inner plate
-  px(x + 1, y + 2, w - 2, 1, '#46544e');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#2f3a36', 22));
-  inset(x + 2, y + 3, w - 4, h - 8, '#222b28');
-  // bevel chamfer lines (3-tone)
-  px(x + 2, y + 3, w - 4, 1, '#374440');
-  px(x + 2, y + h - 5, w - 4, 1, '#1a211e');
-  // two corner bolt highlights (top-left, top-right)
-  px(x + 2, y + 3, 2, 2, '#1b211e'); px(x + 2, y + 3, 1, 1, '#5e6c64');
-  px(x + w - 4, y + 3, 2, 2, '#1b211e'); px(x + w - 4, y + 3, 1, 1, '#5e6c64');
-
-  // centered circular viewport with hot wax core
-  const cx = x + w / 2, cy = y + 3 + (h - 8) / 2;
-  const r = Math.min(w, h - 8) / 2 - 2;
-  // breathing 3-frame loop -> 0,1,2 then back via sine for smoothness
-  const breath = 0.5 + 0.5 * Math.sin(now / 1000);
-  // dark viewport bezel ring
-  ctx.save();
-  ctx.beginPath(); ctx.arc(cx, cy, r + 1.5, 0, Math.PI * 2); ctx.fillStyle = '#15191780'; ctx.fill();
-  ctx.beginPath(); ctx.arc(cx, cy, r + 1, 0, Math.PI * 2); ctx.fillStyle = '#0d1210'; ctx.fill();
-  // ember orange outer molten ring
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = '#ff7a1a'; ctx.fill();
-  // deep amber hot core
-  ctx.beginPath(); ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2); ctx.fillStyle = '#ffd34a'; ctx.fill();
-  // brightest centre spec when active / breathing peak
-  ctx.beginPath(); ctx.arc(cx - r * 0.18, cy - r * 0.18, Math.max(1, r * 0.22), 0, Math.PI * 2);
-  ctx.fillStyle = '#fff0b0'; ctx.fill();
-  ctx.restore();
-  // soft 3px emissive bloom that breathes (the ONE animated accent)
-  const bloomA = (f && f.work ? 0.30 : 0.16) + 0.14 * breath;
-  glow(cx - r - 2, cy - r - 2, r * 2 + 4, r * 2 + 4, '#ff9d2e', bloomA);
-  glow(cx - r, cy - r, r * 2, r * 2, '#ffd34a', 0.10 + 0.10 * breath);
-
-  // short vent stack on top-left corner
-  box(x, y, 4, 4, '#262f2b'); px(x + 1, y, 2, 1, '#3a463f');
-  inset(x + 1, y + 1, 2, 2, '#11161300');
-  px(x + 1, y + 1, 2, 2, '#0e1311');
-  // faint 1px heat-shimmer pixel rising from the vent
-  if (blink(420)) px(x + 2, y - 2, 1, 1, '#6a7882');
-  else if (blink(420, 0.5)) px(x + 1, y - 3, 1, 1, '#46525a');
-
-  // tiny yellow 3-segment readout bar on the front face
-  inset(x + w / 2 - 5, y + h - 4, 11, 2, '#191e1b');
-  for (let s = 0; s < 3; s++) {
-    const lit = breath > s / 3.2;
-    px(x + w / 2 - 4 + s * 4, y + h - 3, 3, 1, lit ? '#ffd34a' : '#28323a');
-  }
-
-  // front lower bevel shade for grounding
-  px(x + 1, y + h - 2, w - 2, 1, '#1a211e');
-};
-  F.etsy_packbot = (x, y, w, h, f) => {
-  // contact shadow grounds it on the factory floor
-  sh(x + 1, y + h - 1, w - 2);
-
-  // --- base plate: square grey-green casing with recessed center ---
-  box(x, y + 1, w, h - 2, '#3d4842');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#3d4842', 18)); // top-lit lip
-  inset(x + 4, y + 5, w - 8, h - 11, '#2c352f');      // darker recessed center well
-  px(x + 5, y + 6, w - 10, 1, '#222a25');
-
-  // four corner footpads
-  px(x + 1, y + 2, 3, 3, '#313a35'); px(x + 1, y + 2, 3, 1, '#4a564f');
-  px(x + w - 4, y + 2, 3, 3, '#313a35'); px(x + w - 4, y + 2, 3, 1, '#4a564f');
-  px(x + 1, y + h - 5, 3, 3, '#2b332e');
-  px(x + w - 4, y + h - 5, 3, 3, '#2b332e');
-
-  // --- half-sealed metal shipping case sitting on the plate ---
-  const bx = x + 6, by = y + 8, bw = w - 12, bh = h - 13;
-  px(bx, by, bw, bh, '#36424c');
-  px(bx, by, bw, 1, U.shade('#36424c', 22));         // top-lit lid edge
-  px(bx, by + bh - 1, bw, 1, U.shade('#36424c', -28)); // shaded base
-  px(bx, by, 1, bh, U.shade('#36424c', 10));
-  // half-open flap seam (sealed left, open right)
-  px(bx + Math.floor(bw / 2), by + 1, 1, bh - 2, '#28323a');
-  px(bx + 1, by + 2, Math.floor(bw / 2) - 1, 1, '#46525a'); // sealed-side seam highlight
-
-  // --- orange Etsy-style shipping label on the lid ---
-  const lx = bx + 1, ly = by + 1, ls = 5;
-  px(lx, ly, ls, ls, '#ff9d2e');
-  px(lx, ly, ls, 1, U.shade('#ff9d2e', 22));
-  px(lx + 1, ly + ls - 2, 3, 1, '#1a2228'); // barcode line 1
-  px(lx + 1, ly + ls - 1, 3, 1, '#1a2228'); // barcode line 2
-
-  // --- stubby two-segment articulated steel arm reaching over the box ---
-  // shoulder mount on back-right of plate
-  const sx = x + w - 6, sy = y + 4;
-  px(sx, sy, 4, 4, '#5a645c'); px(sx, sy, 4, 1, U.shade('#6b766e', 14)); // mount
-  px(sx + 1, sy + 1, 2, 2, '#2a322d');                                    // joint
-  // segment 1 (upper arm) angling in toward box
-  px(sx - 4, sy + 2, 5, 2, '#6b766e'); px(sx - 4, sy + 2, 5, 1, U.shade('#6b766e', 16));
-  // elbow joint
-  px(sx - 5, sy + 2, 2, 2, '#3a423c');
-  // segment 2 (forearm) reaching down over the label
-  px(sx - 5, sy + 3, 2, 4, '#7a857c'); px(sx - 5, sy + 3, 1, 4, U.shade('#7a857c', 14));
-
-  // --- scanner head on the arm tip ---
-  const hx = sx - 6, hy = sy + 6;
-  px(hx, hy, 4, 3, '#4a544d'); px(hx, hy, 4, 1, U.shade('#6b766e', 10));
-  inset(hx + 1, hy + 1, 2, 1, '#11201c');
-
-  // --- ONE animated emissive accent: cyan-white scan sweep across the box ---
-  if (f && f.work) {
-    const sweep = bx + Math.floor(((now / 900) % 1) * bw);
-    px(sweep, by, 1, bh, '#cffcff');
-    glow(sweep - 1, by, 3, bh, '#5fe0ff', 0.30);
-    glow(hx, hy, 4, 3, '#5fe0ff', 0.22);              // emitter spill at scanner head
-    // amber status LED blinks when active
-    px(x + 3, y + h - 4, 2, 2, blink(420) ? '#ffb43a' : '#28323a');
-    if (blink(420)) glow(x + 2, y + h - 5, 4, 4, '#ff9d2e', 0.25);
-  } else {
-    px(x + 3, y + h - 4, 2, 2, '#28323a'); // dim LED when idle
-    px(x + 3, y + h - 4, 1, 1, '#36424c');
-  }
-};
+  F.etsy_threadrack = (x, y, w, h, f) => { // freestanding spool rack — round spool tops on an oblique tray
+    const r = RAMP.gun;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 2, x + w - 4]) {                     // stub legs
+      px(lx - 1, y + 8, 4, 3, LINE);
+      px(lx, y + 8, 1, 2, r.lit); px(lx + 1, y + 8, 1, 2, r.dk);
+      px(lx, y + h - 2, 2, 1, r.ao);
+    }
+    underAO(x + 4, y + 8, w - 8, 2);
+    // short face rail: spool end discs
+    rr(x, y + 4, w, 5, LINE);
+    px(x + 1, y + 5, w - 2, 3, r.face);
+    px(x + 1, y + 5, w - 2, 1, r.lit);
+    px(x + 1, y + 7, w - 2, 1, r.ao);
+    for (let i = 0; i < 3; i++) {
+      const fx = x + 4 + i * 6, c = i === 1 ? '#e8ddc8' : '#ffbf6a';
+      rr(fx, y + 5, 3, 3, U.shade(c, -0.25));
+      px(fx + 1, y + 5, 1, 1, U.shade(c, 0.1)); px(fx + 1, y + 6, 1, 1, '#141a1e'); // hub
+    }
+    px(x + w - 3, y + 6, 1, 1, (f && f.work) ? (blink(900) ? '#ffd34a' : '#28323a') : (blink(1800) ? '#ffd34a' : '#28323a')); // feed LED (kept)
+    if ((f && f.work) ? blink(900) : blink(1800)) glow(x + w - 4, y + 5, 3, 2, '#ff9d2e', 0.22);
+    // top tray with upright spools: bold round tops
+    rr(x - 1, y - 3, w + 2, 8, LINE);
+    rr(x, y - 2, w, 6, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x, y - 1, 1, 4, r.lit); px(x + w - 1, y - 1, 1, 4, r.dk);
+    px(x + 1, y + 3, w - 2, 1, U.shade(r.top, -0.16));
+    const cols2 = ['#ff9d2e', '#ffbf6a', '#e8ddc8', '#ff9d2e'];
+    for (let i = 0; i < 4; i++) {
+      const sx2 = x + 2 + i * 5, c = cols2[(i + (U.hash('threadrack') % 2)) % cols2.length]; // kept hash seed
+      px(sx2, y, 4, 1, U.shade(c, -0.35));                     // spool side under the disc
+      rr(sx2, y - 4, 4, 4, c);                                 // wound top disc
+      px(sx2 + 1, y - 4, 2, 1, U.shade(c, 0.3));               // lit rim
+      px(sx2 + 1, y - 2, 2, 1, U.shade(c, -0.2));              // winding shade
+      px(sx2 + 1, y - 3, 1, 1, '#141a1e');                     // hub hole
+      if (i === 1 || i === 3) px(sx2 + 1, y + 1, 1, 4, U.shade(c, -0.06)); // dangling thread tails (kept)
+    }
+  };
+  F.etsy_dyevat = (x, y, w, h, f) => { // round dye basin — oval rim, bolted machine
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x, y + 16, w, h - 16);
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    // rounded drum body: the curved front band
+    rr(x, y + 4, w, 13, LINE);
+    px(x + 1, y + 5, w - 2, 11, r.face);
+    px(x + 1, y + 5, 2, 11, r.lit); px(x + w - 3, y + 5, 2, 11, r.dk);
+    px(x + 2, y + 15, w - 4, 1, r.ao);
+    px(x + 1, y + 12, w - 2, 1, U.shade(r.face, -0.25));       // drum hoop
+    px(x + 1, y + 13, w - 2, 1, U.shade(r.face, 0.10));
+    px(x + 3, y + 14, 3, 2, '#1b2422');                        // control nub (kept)
+    px(x + 4, y + 14, 1, 1, blink(900) ? '#41ff8a' : '#16302a');
+    if (f && f.work) glow(x + 3, y + 13, 4, 3, '#41ff8a', 0.18);
+    // oval rim + amber dye pool dominate the top
+    const cx2 = x + w / 2, cy2 = y + 4;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, w / 2, 7.5, 0, 0, Math.PI * 2); ctx.fillStyle = LINE; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, w / 2 - 1, 6.5, 0, 0, Math.PI * 2); ctx.fillStyle = r.top; ctx.fill();
+    ctx.globalAlpha = 0.8; ctx.strokeStyle = r.sheen; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(cx2, cy2 - 0.5, w / 2 - 2.5, 5.5, 0, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, w / 2 - 3, 4.6, 0, 0, Math.PI * 2); ctx.fillStyle = '#241712'; ctx.fill();
+    // concentric dye rings core->rim (kept hues)
+    ctx.beginPath(); ctx.ellipse(cx2, cy2 + 0.4, w / 2 - 4, 3.8, 0, 0, Math.PI * 2); ctx.fillStyle = '#c9701a'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2 + 0.4, w / 2 - 5.5, 3, 0, 0, Math.PI * 2); ctx.fillStyle = U.shade('#c9701a', 0.16); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2 + 0.4, w / 2 - 7, 2.2, 0, 0, Math.PI * 2); ctx.fillStyle = '#ff9d2e'; ctx.fill();
+    const rp = now / 1400;                                     // drifting ripples (kept)
+    ctx.globalAlpha = 0.5; ctx.strokeStyle = U.shade('#ff9d2e', 0.3); ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const cr = (w / 2 - 6) * (0.35 + i * 0.22) + Math.sin(rp + i) * 0.6;
+      ctx.beginPath();
+      ctx.ellipse(cx2, cy2 + 0.4, cr, cr * 0.4, 0, Math.PI * (0.9 + i * 0.15), Math.PI * (1.7 + i * 0.15));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const bt = (now / 2600) % 1;                               // surfacing bubble (kept)
+    if (bt < 0.6) {
+      const by2 = cy2 - bt * 2;
+      px(Math.round(cx2 - 3), Math.round(by2), 1, 1, U.shade('#ff9d2e', 0.4));
+      if (bt > 0.4) px(Math.round(cx2 - 3), Math.round(by2), 1, 1, '#ffeccc');
+    }
+    ctx.restore();
+    glow(x + 3, y - 1, w - 6, 9, '#ff9d2e', 0.1 + 0.05 * Math.sin(now / 800)); // pool glow (kept)
+    // dip-arm over the east rim + half-submerged staining swatch (kept)
+    px(x + w - 6, y - 4, 4, 2, '#5a665e'); px(x + w - 6, y - 4, 4, 1, U.shade('#5a665e', 0.22));
+    px(x + w - 7, y - 2, 2, 3, '#4a544d'); px(x + w - 8, y + 1, 2, 2, '#4a544d');
+    px(x + w - 12, y + 2, 5, 2, '#e8ece6'); px(x + w - 12, y + 2, 5, 1, '#ffffff');
+    px(x + w - 12, y + 4, 5, 1, '#e0a45c'); px(x + w - 11, y + 5, 3, 1, '#c9701a');
+  };
+  F.etsy_kiln = (x, y, w, h, f) => { // wax kiln — domed top with hot crucible eye, bolted machine
+    const r = RAMP.gun;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x, y + 16, w, h - 16);
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    const breath = 0.5 + 0.5 * Math.sin(now / 1000);           // breathing heat (kept)
+    // short front face: heat-leak vents + readout
+    rr(x - 1, y + 10, w + 2, 7, LINE);
+    px(x, y + 11, w, 5, r.face);
+    px(x, y + 11, w, 1, r.lit);
+    px(x, y + 15, w, 1, r.ao);
+    for (let i = 0; i < 3; i++) {
+      px(x + 3 + i * 3, y + 13, 2, 1, '#141a17');              // vent slits
+      glow(x + 3 + i * 3, y + 13, 2, 1, '#ff7a1a', 0.15 + 0.2 * breath);
+    }
+    inset(x + w - 10, y + 12, 8, 3, '#191e1b');                // 3-seg readout (kept, breath-tied)
+    for (let s = 0; s < 3; s++) px(x + w - 9 + s * 2, y + 13, 1, 1, breath > s / 3.2 ? '#ffd34a' : '#28323a');
+    // big domed top
+    rr(x - 1, y - 3, w + 2, 14, LINE);
+    rr(x, y - 2, w, 12, r.top);
+    px(x + 1, y - 2, w - 2, 1, r.sheen);
+    px(x, y - 1, 1, 10, r.lit); px(x + w - 1, y - 1, 1, 10, r.dk);
+    px(x + 1, y + 9, w - 2, 1, U.shade(r.top, -0.16));
+    rr(x + 2, y, w - 4, 8, U.shade(r.top, 0.08));              // dome step
+    px(x + 3, y, w - 6, 1, U.shade(r.top, 0.2));
+    px(x + 2, y - 1, 1, 1, '#5e6c64'); px(x + w - 3, y - 1, 1, 1, '#5e6c64'); // dome bolts (kept)
+    // round crucible eye: hot rings + spec (kept palette)
+    const cx2 = x + w / 2, cy2 = y + 4, R2 = 5;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, R2 + 1.6, R2 * 0.8 + 1.4, 0, 0, Math.PI * 2); ctx.fillStyle = '#0d1210'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, R2, R2 * 0.8, 0, 0, Math.PI * 2); ctx.fillStyle = '#ff7a1a'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx2, cy2, R2 * 0.55, R2 * 0.45, 0, 0, Math.PI * 2); ctx.fillStyle = '#ffd34a'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx2 - 1, cy2 - 1, 1.1, 0, Math.PI * 2); ctx.fillStyle = '#fff0b0'; ctx.fill();
+    ctx.restore();
+    const bloomA = ((f && f.work) ? 0.30 : 0.16) + 0.14 * breath; // breathing bloom (kept)
+    glow(cx2 - R2 - 2, cy2 - R2, R2 * 2 + 4, R2 * 1.7 + 3, '#ff9d2e', bloomA);
+    glow(cx2 - R2, cy2 - R2 * 0.8, R2 * 2, R2 * 1.6, '#ffd34a', 0.10 + 0.10 * breath);
+    // vent stack on the west shoulder (kept shimmer)
+    rr(x + 1, y - 6, 5, 5, LINE);
+    px(x + 2, y - 5, 3, 3, '#262f2b'); px(x + 2, y - 5, 3, 1, '#3a463f');
+    px(x + 3, y - 4, 1, 1, '#0e1311');
+    if (blink(420)) px(x + 3, y - 8, 1, 1, '#6a7882');
+    else if (blink(420, 0.5)) px(x + 2, y - 9, 1, 1, '#46525a');
+  };
+  F.etsy_packbot = (x, y, w, h, f) => { // packing robot station — bolted machine, arm over the case
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, w - 2);
+    deckPlate(x, y + 15, w, h - 15);
+    deckSocket(x + w + 1, y + h - 3, f && f.work);
+    px(x + w, y + h - 3, 1, 1, '#0e1418');
+    // short front face: vents + status LED (kept 420 blink + dim idle)
+    rr(x - 1, y + 9, w + 2, 7, LINE);
+    px(x, y + 10, w, 5, r.face);
+    px(x, y + 10, w, 1, r.lit);
+    px(x, y + 14, w, 1, r.ao);
+    for (let i = 0; i < 4; i++) px(x + w - 11 + i * 2, y + 12, 1, 2, '#1e262c');
+    if (f && f.work) {
+      px(x + 3, y + 11, 2, 2, blink(420) ? '#ffb43a' : '#28323a');
+      if (blink(420)) glow(x + 2, y + 10, 4, 4, '#ff9d2e', 0.25);
+    } else {
+      px(x + 3, y + 11, 2, 2, '#28323a'); px(x + 3, y + 11, 1, 1, '#36424c');
+    }
+    // big top work deck
+    rr(x - 1, y - 2, w + 2, 13, LINE);
+    rr(x, y - 1, w, 11, r.top);
+    px(x + 1, y - 1, w - 2, 1, r.sheen);
+    px(x, y, 1, 9, r.lit); px(x + w - 1, y, 1, 9, r.dk);
+    px(x + 1, y + 9, w - 2, 1, U.shade(r.top, -0.16));
+    for (let i = 0; i < 4; i++) px(x + 2, y + 1 + i * 2, 2, 1, U.shade(r.top, -0.3)); // feed rollers
+    // shipping case on the deck (kept: flap seam, label + barcode)
+    const bx = x + 6, by2 = y, bw = 12, bh = 8;
+    rr(bx - 1, by2 - 1, bw + 2, bh + 2, LINE);
+    px(bx, by2, bw, bh, '#36424c');
+    px(bx, by2, bw, 1, U.shade('#36424c', 0.22));
+    px(bx, by2 + bh - 1, bw, 1, U.shade('#36424c', -0.28));
+    px(bx, by2, 1, bh, U.shade('#36424c', 0.10));
+    px(bx + Math.floor(bw / 2), by2 + 1, 1, bh - 2, '#28323a'); // half-open flap seam
+    px(bx + 1, by2 + 2, Math.floor(bw / 2) - 1, 1, '#46525a');  // sealed-side highlight
+    px(bx + 1, by2 + 1, 5, 5, '#ff9d2e');                       // orange label
+    px(bx + 1, by2 + 1, 5, 1, U.shade('#ff9d2e', 0.22));
+    px(bx + 2, by2 + 4, 3, 1, '#1a2228'); px(bx + 2, by2 + 5, 3, 1, '#1a2228'); // barcode
+    // arm: mast on the east deck + boom reaching over the case
+    px(x + w - 5, y - 7, 3, 10, LINE);
+    px(x + w - 4, y - 6, 1, 8, '#5a645c'); px(x + w - 3, y - 6, 1, 8, '#3a423c');
+    px(x + w - 5, y - 8, 4, 2, LINE); px(x + w - 4, y - 8, 2, 1, '#6e7a70'); // shoulder cap
+    px(x + 9, y - 6, 11, 3, LINE);
+    px(x + 10, y - 5, 9, 1, '#6b766e');
+    // scanner head hanging over the case (kept emitter)
+    px(x + 9, y - 4, 4, 3, '#4a544d'); px(x + 9, y - 4, 4, 1, U.shade('#6b766e', 0.10));
+    inset(x + 10, y - 3, 2, 1, '#11201c');
+    if (f && f.work) {                                          // cyan scan sweep (kept)
+      const sweep = bx + Math.floor(((now / 900) % 1) * bw);
+      px(sweep, by2, 1, bh, '#cffcff');
+      glow(sweep - 1, by2, 3, bh, '#5fe0ff', 0.30);
+      glow(x + 9, y - 4, 4, 3, '#5fe0ff', 0.22);               // emitter spill
+    }
+  };
   F.gigs_thumbwall = (x, y, w, h, f) => {
   // contact shadow along bottom edge (wall unit sits flush under north wall)
   sh(x + 1, y + h, w - 2);
@@ -3329,125 +3595,127 @@ const PropSprites = (() => {
     px(x + 1, botY - 1, 1, 1, r.lit); px(x + cw - 5, botY - 1, 1, 1, r.lit);
     underAO(x + 3, botY, cw - 8, 1);
   };
-  F.treasury_pnl_holo = (x, y, w, h, f) => {
-  // ---- floor puck base (matte black, thin green rim light) ----
-  sh(x + 2, y + h - 1, w - 4);
-  const cx = x + w / 2;
-  // puck body
-  box(x + 2, y + h - 4, w - 4, 4, '#1a1f1d');
-  px(x + 3, y + h - 3, w - 6, 2, '#111614');
-  // thin rim light around top edge of puck
-  px(x + 2, y + h - 4, w - 4, 1, '#3a5a2e');
-  px(x + 3, y + h - 4, w - 6, 1, '#9bff4a');
-  // tiny emitter notch + status dot
-  px(cx - 1, y + h - 5, 2, 1, '#2a3a22');
-  px(x + 3, y + h - 3, 1, 1, blink(900) ? '#9bff4a' : '#1c2a1a');
+  F.treasury_pnl_holo = (x, y, w, h, f) => {   // v2: ROUND emitter puck on the deck + the floating P&L hologram (kept)
+    const cx = x + w / 2;
+    // ---- round floor puck (oval, top-bias) ----
+    ctx.globalAlpha = 0.20; px(x + 3, y + h - 1, 6, 1, '#000'); ctx.globalAlpha = 1;
+    px(x + 3, y + h - 5, 6, 1, LINE);                           // oval silhouette
+    px(x + 2, y + h - 4, 8, 2, LINE);
+    px(x + 3, y + h - 2, 6, 1, LINE);
+    px(x + 3, y + h - 4, 6, 1, '#1a1f1d');                      // puck top surface
+    px(x + 3, y + h - 4, 1, 1, '#242b28');                      // west lit
+    px(x + 8, y + h - 4, 1, 1, '#0e1210');                      // east dark
+    px(x + 4, y + h - 4, 4, 1, '#3a5a2e');                      // lens ring (kept rim)
+    px(x + 5, y + h - 4, 2, 1, '#9bff4a');                      // hot lens core
+    px(x + 5, y + h - 4, 1, 1, '#d6ffb0');                      // west glint
+    px(x + 3, y + h - 3, 6, 1, '#111614');                      // puck face
+    px(x + 4, y + h - 3, 1, 1, blink(900) ? '#9bff4a' : '#1c2a1a'); // status dot (kept)
+    px(cx - 1, y + h - 5, 2, 1, '#2a3a22');                     // emitter notch (kept)
 
-  // ---- holographic projection (translucent toxic-green stack) ----
-  const G = '#9bff4a', GT = '#d6ffb0';
-  const base = y + h - 5;          // hologram sits just above emitter
-  const top = y;                   // rises to top of tile
-  const span = base - top;         // vertical room for chart
-  // subtle edge flicker of the whole holo
-  const fl = 0.55 + 0.18 * flick(220) + 0.12 * flick(90, 1);
+    // ---- holographic projection (translucent toxic-green stack, kept) ----
+    const G = '#9bff4a', GT = '#d6ffb0';
+    const base = y + h - 5;          // hologram sits just above the lens
+    const top = y;                   // rises to top of tile
+    const span = base - top;         // vertical room for chart
+    const fl = 0.55 + 0.18 * flick(220) + 0.12 * flick(90, 1);
 
-  // upward emitter cone / light spill
-  glow(cx - 3, top, 6, span, G, 0.07 * fl);
-  px(cx, base - 1, 1, 1, GT);
+    glow(cx - 3, top, 6, span, G, 0.07 * fl);                   // emitter cone
+    px(cx, base - 1, 1, 1, GT);
 
-  // four ascending bar columns; one animates (grows a px then resets)
-  const grow = Math.floor((now / 520) % 4);        // which bar is "alive"
-  const heights = [2, 4, 6, 8];                     // ascending base heights
-  const bw = 2, gap = 1;
-  const startX = cx - (4 * bw + 3 * gap) / 2;
-  ctx.save();
-  ctx.globalAlpha = 0.42 * fl;
-  for (let b = 0; b < 4; b++) {
-    let hgt = heights[b] + (b === grow ? 1 + Math.floor((now / 130) % 2) : 0);
-    if (hgt > span - 1) hgt = span - 1;
-    const bx = Math.round(startX + b * (bw + gap));
-    const by = base - 1 - hgt;
-    px(bx, by, bw, hgt, G);            // translucent column body
-    px(bx, by, bw, 1, GT);             // brighter top cap
-  }
-  ctx.restore();
+    const grow = Math.floor((now / 520) % 4);                   // which bar is "alive"
+    const heights = [2, 4, 6, 8];
+    const bw = 2, gap = 1;
+    const startX = cx - (4 * bw + 3 * gap) / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.42 * fl;
+    for (let b = 0; b < 4; b++) {
+      let hgt = heights[b] + (b === grow ? 1 + Math.floor((now / 130) % 2) : 0);
+      if (hgt > span - 1) hgt = span - 1;
+      const bx = Math.round(startX + b * (bw + gap));
+      const by = base - 1 - hgt;
+      px(bx, by, bw, hgt, G);
+      px(bx, by, bw, 1, GT);
+    }
+    ctx.restore();
 
-  // faint scanline banding across the holo field
-  ctx.save();
-  ctx.globalAlpha = 0.12 * fl;
-  const scan = top + 1 + Math.floor((now / 240) % span);
-  for (let sy = top + 1; sy < base; sy += 2) px(cx - 4, sy, 8, 1, G);
-  ctx.restore();
-  // one travelling brighter scan line
-  ctx.save(); ctx.globalAlpha = 0.22 * fl; px(cx - 4, scan, 8, 1, GT); ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.12 * fl;
+    const scan = top + 1 + Math.floor((now / 240) % span);
+    for (let sy = top + 1; sy < base; sy += 2) px(cx - 4, sy, 8, 1, G);
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = 0.22 * fl; px(cx - 4, scan, 8, 1, GT); ctx.restore();
 
-  // ---- rising trend line over the bars ----
-  ctx.save();
-  ctx.globalAlpha = 0.7 * fl;
-  px(startX, base - 3, 1, 1, GT);
-  px(startX + 2, base - 4, 1, 1, GT);
-  px(startX + 4, base - 6, 1, 1, GT);
-  px(startX + 6, base - 8, 1, 1, GT);
-  ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.7 * fl;                                 // rising trend line
+    px(startX, base - 3, 1, 1, GT);
+    px(startX + 2, base - 4, 1, 1, GT);
+    px(startX + 4, base - 6, 1, 1, GT);
+    px(startX + 6, base - 8, 1, 1, GT);
+    ctx.restore();
 
-  // ---- green up-arrow glint at the peak ----
-  const peakX = Math.round(startX + 6), peakY = base - 9;
-  const glint = blink(640) ? GT : G;
-  ctx.save();
-  ctx.globalAlpha = 0.9 * fl;
-  px(peakX, peakY, 1, 1, glint);              // tip
-  px(peakX - 1, peakY + 1, 3, 1, glint);      // arrow head row
-  px(peakX, peakY + 1, 1, 2, glint);          // shaft
-  ctx.restore();
-  if (f && f.work && blink(300)) glow(cx - 4, top, 8, span, G, 0.10);
-};
-  F.war_pivotpanel = (x, y, w, h, f) => {
-  // two tone-stepped contact shadow at the base (wall unit kissing the floor)
-  ctx.globalAlpha = 0.20; px(x + 2, y + h + 1, w - 4, 1, '#000'); ctx.globalAlpha = 1;
-  px(x + 1, y + h, w - 2, 1, '#14161a');
-  // dark gunmetal casing + brushed bezel
-  box(x, y + 1, w, h, '#2a2d33');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#2a2d33', 0.30));            // bezel top sheen
-  px(x + 1, y + 2, w - 2, 1, '#3a3e46'); px(x + 3, y + 2, 5, 1, '#464b54'); // brushed streak
-  for (let i = 0; i < w; i += 3) px(x + 1 + i, y + 3, 2, 1, '#23262b'); // brushed grain
-  px(x + 2, y + 2, 1, 1, '#565c66'); px(x + w - 3, y + 2, 1, 1, '#565c66'); // bezel bolts
-  // split face well
-  const fy = y + 4, fh = h - 5, half = (w - 6) / 2;
-  inset(x + 2, fy, w - 4, fh, '#101216');
-  // --- left: rose 'PIVOT' panel ---
-  const lx = x + 3;
-  px(lx, fy + 1, half - 1, fh - 2, '#ff5c7a');
-  px(lx, fy + 1, half - 1, 1, '#ffd0d9');                          // top hi
-  px(lx, fy + 2, 1, fh - 3, U.shade('#ff5c7a', 0.22));            // left hi edge
-  px(lx, fy + fh - 2, half - 1, 1, U.shade('#ff5c7a', -0.4));     // bottom shade
-  // baked 'PIVOT' glyph row (tiny 1px ticks reading as letters)
-  for (let i = 0; i < 5; i++) px(lx + 1 + i * 2, fy + 3, 1, 2, '#ffd0d9');
-  px(lx + 2, fy + 4, 1, 1, '#a8324a'); px(lx + 6, fy + 4, 1, 1, '#a8324a');
-  // --- amber seam down the middle ---
-  const sx = lx + half;
-  px(sx, fy, 1, fh, '#ffb84d'); px(sx, fy, 1, 1, '#ffe1a0');
-  px(sx, fy + 1, 1, fh - 2, U.shade('#ffb84d', -0.15));
-  // --- right: periwinkle 'PERSEVERE' panel ---
-  const rx = sx + 1;
-  px(rx, fy + 1, half - 1, fh - 2, '#a0a8ff');
-  px(rx, fy + 1, half - 1, 1, '#d4d8ff');                          // top hi
-  px(rx + half - 2, fy + 2, 1, fh - 3, U.shade('#a0a8ff', -0.28)); // right shade
-  px(rx, fy + fh - 2, half - 1, 1, U.shade('#a0a8ff', -0.35));
-  for (let i = 0; i < 5; i++) px(rx + 1 + i * 2, fy + 3, 1, 2, '#d4d8ff'); // 'PERSEVERE' ticks
-  px(rx + 3, fy + 4, 1, 1, '#5a64b8'); px(rx + 7, fy + 4, 1, 1, '#5a64b8');
-  // faint 2px scanline drifting down the lit halves
-  const sc = fy + 1 + Math.floor((now / 240) % (fh - 2));
-  glow(lx, sc, half - 1, 2, '#fff', 0.10); glow(rx, sc, half - 1, 2, '#fff', 0.10);
-  // magnetic chrome puck resting on the PERSEVERE side
-  const pcx = rx + half - 4, pcy = fy + fh - 4;
-  ctx.globalAlpha = 0.30; px(pcx - 1, pcy + 2, 4, 1, '#000'); ctx.globalAlpha = 1;
-  px(pcx, pcy, 3, 2, '#c8ccd6'); px(pcx, pcy, 3, 1, '#eef0f6'); px(pcx, pcy + 1, 3, 1, '#8a8e98');
-  px(pcx, pcy, 1, 1, '#ffffff');
-  // single seam LED: pulses rose then fades every few frames
-  const pulse = Math.max(0, Math.sin(now / 700));
-  glow(sx, fy + 2 + Math.floor(fh / 2), 1, 2, '#ff5c7a', 0.25 + 0.65 * pulse);
-  if (pulse > 0.6) px(sx, fy + 2 + Math.floor(fh / 2), 1, 1, '#ffd0d9');
-};
+    const peakX = Math.round(startX + 6), peakY = base - 9;     // up-arrow glint (kept)
+    const glint = blink(640) ? GT : G;
+    ctx.save();
+    ctx.globalAlpha = 0.9 * fl;
+    px(peakX, peakY, 1, 1, glint);
+    px(peakX - 1, peakY + 1, 3, 1, glint);
+    px(peakX, peakY + 1, 1, 2, glint);
+    ctx.restore();
+    if (f && f.work && blink(300)) glow(cx - 4, top, 8, span, G, 0.10);
+  };
+  F.war_pivotpanel = (x, y, w, h, f) => {   // v2 freestanding: split decision board riding rolling posts
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, w - 4);
+    for (const pxx of [x + 4, x + w - 6]) {
+      px(pxx - 1, y + 5, 4, h - 7, LINE);
+      px(pxx, y + 6, 1, h - 8, r.lit); px(pxx + 1, y + 6, 1, h - 8, r.dk);
+      rr(pxx - 3, y + h - 3, 8, 2, LINE);
+      px(pxx - 2, y + h - 3, 6, 1, r.face);
+      px(pxx - 2, y + h - 1, 2, 1, '#1a1e22'); px(pxx + 2, y + h - 1, 2, 1, '#1a1e22');
+      ctx.globalAlpha = 0.30; px(pxx - 3, y + h, 8, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    rr(x, y - 5, w, 12, LINE);
+    px(x + 1, y - 4, w - 2, 10, r.face);
+    px(x + 1, y - 4, w - 2, 1, r.lit);
+    px(x + 2, y - 4, 5, 1, U.shade(r.lit, 0.14));               // brushed streak
+    px(x + 2, y - 4, 1, 1, '#56645c'); px(x + w - 3, y - 4, 1, 1, '#56645c');
+    px(x + 1, y + 5, w - 2, 1, r.ao);
+    // split face well
+    const fy = y - 3, fh = 8, half = (w - 6) / 2;
+    inset(x + 2, fy, w - 4, fh, '#101216');
+    // left: rose PIVOT panel (kept 1:1)
+    const lx = x + 3;
+    px(lx, fy + 1, half - 1, fh - 2, '#ff5c7a');
+    px(lx, fy + 1, half - 1, 1, '#ffd0d9');
+    px(lx, fy + 2, 1, fh - 3, U.shade('#ff5c7a', 0.22));
+    px(lx, fy + fh - 2, half - 1, 1, U.shade('#ff5c7a', -0.4));
+    for (let i = 0; i < 5; i++) px(lx + 1 + i * 2, fy + 3, 1, 2, '#ffd0d9'); // PIVOT ticks
+    px(lx + 2, fy + 4, 1, 1, '#a8324a'); px(lx + 6, fy + 4, 1, 1, '#a8324a');
+    // amber seam (kept)
+    const sx2 = lx + half;
+    px(sx2, fy, 1, fh, '#ffb84d'); px(sx2, fy, 1, 1, '#ffe1a0');
+    px(sx2, fy + 1, 1, fh - 2, U.shade('#ffb84d', -0.15));
+    // right: periwinkle PERSEVERE panel (kept 1:1)
+    const rx = sx2 + 1;
+    px(rx, fy + 1, half - 1, fh - 2, '#a0a8ff');
+    px(rx, fy + 1, half - 1, 1, '#d4d8ff');
+    px(rx + half - 2, fy + 2, 1, fh - 3, U.shade('#a0a8ff', -0.28));
+    px(rx, fy + fh - 2, half - 1, 1, U.shade('#a0a8ff', -0.35));
+    for (let i = 0; i < 5; i++) px(rx + 1 + i * 2, fy + 3, 1, 2, '#d4d8ff'); // PERSEVERE ticks
+    px(rx + 3, fy + 4, 1, 1, '#5a64b8'); px(rx + 7, fy + 4, 1, 1, '#5a64b8');
+    // drifting scanline over the lit halves (kept)
+    const sc = fy + 1 + Math.floor((now / 240) % (fh - 2));
+    glow(lx, sc, half - 1, 2, '#fff', 0.10); glow(rx, sc, half - 1, 2, '#fff', 0.10);
+    // magnetic chrome puck on the PERSEVERE side (kept)
+    const pcx = rx + half - 4, pcy = fy + fh - 4;
+    ctx.globalAlpha = 0.30; px(pcx - 1, pcy + 2, 4, 1, '#000'); ctx.globalAlpha = 1;
+    px(pcx, pcy, 3, 2, '#c8ccd6'); px(pcx, pcy, 3, 1, '#eef0f6'); px(pcx, pcy + 1, 3, 1, '#8a8e98');
+    px(pcx, pcy, 1, 1, '#ffffff');
+    // pulsing seam LED (kept)
+    const pulse = Math.max(0, Math.sin(now / 700));
+    glow(sx2, fy + 2 + Math.floor(fh / 2), 1, 2, '#ff5c7a', 0.25 + 0.65 * pulse);
+    if (pulse > 0.6) px(sx2, fy + 2 + Math.floor(fh / 2), 1, 1, '#ffd0d9');
+  };
   F.war_intelcab = (x, y, w, h, f) => {   // TALL 3/4 file cabinet (1x2), bolted; sealed drawers; ACC.work green (files)
     const r = RAMP.steel;
     shadow2(x + 1, y + h - 1, w - 2);                                 // floor contact
@@ -3488,65 +3756,59 @@ const PropSprites = (() => {
     glow(sx - 1, y + 1, 5, h - 4, ACC.work, 0.12);
     px(x + 1, y + h - 2, w - 2, 1, r.ao);                             // floor-line AO
   };
-  F.war_threatcore = (x, y, w, h, f) => {
-  // floor prop: contact shadow + rose emissive halo bleeding onto floor
-  sh(x + 1, y + h - 1, w - 2);
-  const hot = f.work ? 1 : 0.55;
-  glow(x - 1, y + h - 3, w + 2, 3, '#ff5c7a', (0.10 + 0.05 * hot) + 0.04 * Math.sin(now / 900));
-
-  // slim vertical column â€” black anodized housing, inset 2px each side
-  const cx = x + 2, cw = w - 4;
-  box(cx, y + 3, cw, h - 4, '#1c1e22');
-  px(cx, y + 3, cw, 1, U.shade('#1c1e22', 18)); // top-lit edge
-  px(cx, y + h - 2, cw, 1, '#0d0e10');           // bottom shade
-  px(cx, y + 3, 1, h - 5, '#0d0e10');            // left shade rail
-  px(cx + cw - 1, y + 3, 1, h - 5, U.shade('#1c1e22', 10));
-
-  // rounded cap â€” trim the top corners with shade
-  px(cx, y + 3, 1, 1, '#0d0e10');
-  px(cx + cw - 1, y + 3, 1, 1, '#0d0e10');
-  px(cx + 1, y + 2, cw - 2, 1, '#1c1e22');
-  px(cx + 1, y + 2, cw - 2, 1, U.shade('#1c1e22', 22));
-
-  // smoked-glass front well with stacked 5-segment readout (fills bottom-up)
-  const gx = cx + 1, gy = y + 6, gw = cw - 2, gh = 11;
-  inset(gx, gy, gw, gh, '#0d0e10');
-  const segs = 5, seglvl = f.work ? 5 : 3;
-  const topAmber = blink(1400); // slow warning loop on the top segment
-  for (let s = 0; s < segs; s++) {
-    const sy = gy + gh - 2 - s * 2; // bottom-up
-    if (s < seglvl) {
-      const isTop = s === seglvl - 1;
-      const col = (isTop && topAmber) ? '#ffb84d' : '#ff5c7a';
-      px(gx + 1, sy, gw - 2, 1, col);
-      px(gx + 1, sy, gw - 2, 1, U.shade(col, 14)); // segment hi-edge
-    } else {
-      px(gx + 1, sy, gw - 2, 1, '#16171a'); // unlit segment, behind smoked glass
+  F.war_threatcore = (x, y, w, h, f) => {   // v2 TALL 3/4 column: anodized threat totem, splayed foot, crown sweep
+    const hot = f.work ? 1 : 0.55;
+    shadow2(x + 1, y + h - 1, w - 2);
+    glow(x - 1, y + h - 3, w + 2, 3, '#ff5c7a', (0.10 + 0.05 * hot) + 0.04 * Math.sin(now / 900)); // floor halo (kept)
+    // splayed base foot
+    rr(x - 1, y + h - 4, w + 2, 4, LINE);
+    px(x, y + h - 3, w, 2, '#22262c');
+    px(x, y + h - 3, w, 1, '#343a42');
+    px(x, y + h - 1, w, 1, '#0d0e10');
+    // slim full-height column, rises above the footprint
+    rr(x + 1, y - 4, w - 2, h, LINE);
+    px(x + 2, y - 3, w - 4, h - 2, '#1c1e22');
+    px(x + 2, y - 3, 1, h - 2, '#2c313a');                      // west lit rail
+    px(x + w - 3, y - 3, 1, h - 2, '#0d0e10');                  // east shade rail
+    // rounded cap with visible top
+    rr(x + 2, y - 6, w - 4, 3, LINE);
+    px(x + 3, y - 5, w - 6, 2, '#262b32');
+    px(x + 3, y - 5, w - 6, 1, '#3c434e');
+    // smoked-glass well with stacked 5-segment readout, fills bottom-up (kept 1:1)
+    const gx2 = x + 3, gy2 = y, gw2 = w - 6, gh2 = 11;
+    inset(gx2, gy2, gw2, gh2, '#0d0e10');
+    const segs = 5, seglvl = f.work ? 5 : 3;
+    const topAmber = blink(1400);                               // slow warning loop (kept)
+    for (let s = 0; s < segs; s++) {
+      const sy3 = gy2 + gh2 - 2 - s * 2;
+      if (s < seglvl) {
+        const isTop = s === seglvl - 1;
+        const col = (isTop && topAmber) ? '#ffb84d' : '#ff5c7a';
+        px(gx2 + 1, sy3, gw2 - 2, 1, col);
+        px(gx2 + 1, sy3, 2, 1, U.shade(col, 0.14));             // west-lit segment edge
+      } else {
+        px(gx2 + 1, sy3, gw2 - 2, 1, '#16171a');                // unlit segment behind smoked glass
+      }
     }
-  }
-  // smoked-glass sheen
-  px(gx, gy, 1, gh, U.shade('#1c1e22', 6));
-  glow(gx, gy, gw, gh, (topAmber ? '#ffb84d' : '#ff5c7a'), 0.06 + 0.05 * hot);
-
-  // three horizontal vent slits below the glass, with lit top edge
-  for (let v = 0; v < 3; v++) {
-    const vy = gy + gh + 1 + v * 2;
-    px(cx + 1, vy, cw - 2, 1, '#0d0e10');
-    px(cx + 1, vy, cw - 2, 1, '#4a4e55');
-  }
-
-  // rose glow bleeding from the seams onto the housing
-  glow(cx - 1, gy, 1, gh, '#ff5c7a', 0.08 + 0.05 * hot);
-  glow(cx + cw, gy, 1, gh, '#ff5c7a', 0.08 + 0.05 * hot);
-
-  // crown: single rotating radar sweep dot orbiting a tiny hub
-  const hubx = x + w / 2, huby = y + 1;
-  px(hubx - 1, huby, 2, 1, '#4a4e55');
-  const a = (now / 600);
-  const dx = Math.round(Math.cos(a) * 2), dy = Math.round(Math.sin(a) * 1);
-  px(hubx - 1 + dx, huby + dy, 1, 1, f.work ? '#ffd9e2' : '#ff5c7a');
-  if (f.work) glow(hubx - 2, huby - 1, 4, 2, '#ff5c7a', 0.16);
-};
+    px(gx2, gy2, 1, gh2, '#262b32');                            // smoked-glass sheen
+    glow(gx2, gy2, gw2, gh2, (topAmber ? '#ffb84d' : '#ff5c7a'), 0.06 + 0.05 * hot);
+    // vent slits below the glass (kept)
+    for (let v = 0; v < 3; v++) {
+      const vy = gy2 + gh2 + 2 + v * 2;
+      px(x + 3, vy, w - 6, 1, '#0d0e10');
+      px(x + 3, vy + 1, w - 6, 1, '#3a3f47');
+    }
+    // rose glow bleeding from the seams (kept)
+    glow(x + 1, gy2, 1, gh2, '#ff5c7a', 0.08 + 0.05 * hot);
+    glow(x + w - 2, gy2, 1, gh2, '#ff5c7a', 0.08 + 0.05 * hot);
+    // crown: rotating radar sweep dot orbiting a tiny hub (kept 1:1)
+    const hubx = x + w / 2, huby = y - 8;
+    px(hubx - 1, huby + 1, 2, 1, '#4a4e55');
+    const a = (now / 600);
+    const dx2 = Math.round(Math.cos(a) * 2), dy2 = Math.round(Math.sin(a) * 1);
+    px(hubx - 1 + dx2, huby + dy2, 1, 1, f.work ? '#ffd9e2' : '#ff5c7a');
+    if (f.work) glow(hubx - 2, huby - 1, 4, 2, '#ff5c7a', 0.16);
+  };
   F.pub_publishpress = (x, y, w, h, f) => {
   // ---- pulse / fire timing ----
   const PER = 1500;
@@ -3857,323 +4119,243 @@ const PropSprites = (() => {
   px(x + w - 4, y + 2, 1, 1, on ? '#41ff8a' : '#16302a');
   if (on) glow(x + w - 5, y + 1, 3, 3, '#41ff8a', 0.4);
 };
-  F.arc_floorlight = (x, y, w, h, f) => {
-  // Flush in-floor guidance light â€” completely flat, no contact shadow (agents walk over it).
-  // Recessed dark slot down the centre holding a thin silver-white pulsing light bar.
-  const cx = x + w / 2;
-  const slotW = Math.max(4, (w >> 1) + 1);     // recessed slot width
-  const sx = Math.round(cx - slotW / 2);
-  const slotY = y + 1;
-  const slotH = h - 2;
-
-  // 1) Recessed dark slot well, beveled into the floor (top-dark / bottom faint catch-light).
-  inset(sx, slotY, slotW, slotH, '#1f2422');
-  px(sx, slotY, slotW, 1, '#171b19');                 // deep top lip shadow
-  px(sx, slotY + slotH - 1, slotW, 1, U.shade('#1f2422', 6)); // faint bottom bevel catch
-
-  // 2) The thin silver-white light bar, vertical down the aisle, gently pulsing.
-  const pulse = 0.62 + 0.38 * (0.5 + 0.5 * Math.sin(now / 1300)); // 0.62..1.0 slow breath
-  const barX = Math.round(cx) - (slotW >= 6 ? 1 : 0);
-  const barW = slotW >= 6 ? 2 : 1;
-  const barTop = slotY + 2;
-  const barH = slotH - 4;
-  const bar = U.shade('#dfe2e0', -12 + Math.round(pulse * 12)); // dimmer at trough
-  px(barX, barTop, barW, barH, bar);
-  // hot core highlight at peak brightness
-  ctx.save();
-  ctx.globalAlpha = pulse;
-  px(barX, barTop, barW, barH, '#dfe2e0');
-  px(barX, barTop + 1, 1, Math.max(2, barH - 2), U.shade('#dfe2e0', 18)); // sharp inner glint
-  ctx.restore();
-
-  // 3) Faint silver glow bleeding ~1px onto surrounding floor (the depth-lighting).
-  glow(sx - 1, slotY, slotW + 2, slotH, '#cfe0e2', 0.05 + 0.06 * pulse);
-  glow(barX - 1, barTop, barW + 2, barH, '#eef2f2', 0.07 + 0.1 * pulse);
-
-  // 4) Tiny etched arrow in dim cyan-grey pointing down the aisle (toward +y).
-  const ay = y + h - 4;
-  const acx = Math.round(cx);
-  const arr = '#56706e';
-  px(acx, ay, 1, 1, arr);                 // tip
-  px(acx - 1, ay - 1, 3, 1, arr);         // mid row
-  px(acx - 2, ay - 2, 5, 1, U.shade(arr, -10)); // upper, dimmest
-};
-  F.arc_ladder = (x, y, w, h, f) => {
-  // soft contact shadow â€” low parked object on the floor
-  sh(x + 1, y + h - 1, w - 2);
-
-  // ladder runs vertically within the tile; leave margin so it reads as a slim object
-  const railW = 2;                       // rail thickness
-  const lx = x + 3;                      // left rail x
-  const rx = x + w - 3 - railW;          // right rail x
-  const top = y + 2;                     // ladder top
-  const bot = y + h - 3;                 // ladder bottom (above caster)
-  const len = bot - top;                 // rail run length
-
-  // ---- caster wheel hint at the base (dark rubber) ----
-  inset(x + 3, y + h - 4, w - 6, 3, '#171b19');
-  px(lx, y + h - 3, railW, 2, '#1f2422');
-  px(rx, y + h - 3, railW, 2, '#1f2422');
-  px(lx, y + h - 3, railW, 1, '#2a302d');   // faint top edge on rubber
-
-  // ---- two thin chrome-grey rails (2-tone) ----
-  px(lx, top, railW, len, '#9aa0a0');
-  px(rx, top, railW, len, '#9aa0a0');
-  px(lx, top, 1, len, U.shade('#9aa0a0', 22));      // lit left edge
-  px(rx + railW - 1, top, 1, len, U.shade('#9aa0a0', -28)); // shaded right edge
-  px(lx + railW - 1, top, 1, len, U.shade('#9aa0a0', -22));
-
-  // ---- short rungs between the rails ----
-  const rungs = 4;
-  const gap = Math.floor(len / (rungs + 1));
-  for (let i = 1; i <= rungs; i++) {
-    const ry = top + gap * i;
-    px(lx + railW, ry, rx - (lx + railW), 2, '#878d8d');
-    px(lx + railW, ry, rx - (lx + railW), 1, U.shade('#878d8d', 18)); // top-lit
-    px(lx + railW, ry + 1, rx - (lx + railW), 1, '#5a605e');          // under-shade
-  }
-
-  // ---- slim silver hook bracket at the top, accent-tinted ----
-  px(lx, top - 1, railW, 1, '#c0c0c0');
-  px(rx, top - 1, railW, 1, '#c0c0c0');
-  px(lx, top - 2, rx + railW - lx, 1, U.shade('#c0c0c0', -20)); // bracket span
-  px(rx - 1, top - 2, 1, 2, '#c0c0c0');                          // hook lip
-  px(lx + 1, top - 2, 1, 2, U.shade('#c0c0c0', 12));
-
-  // ---- ONE subtle animated emissive accent: slow chrome glint drifting on top rail ----
-  const g = 0.18 + 0.16 * Math.sin(now / 1400);
-  const glintY = top + 1 + ((Math.floor(now / 700) % Math.max(1, (len - 2))));
-  glow(lx, glintY, 1, 1, '#eaf2f2', g);
-  px(lx, top + 1, 1, 1, '#dfe6e6'); // fixed faint highlight glint on top rail
-};
-  F.quarters_pooltable = (x, y, w, h, f) => {
-  // soft drop shadow under whole table
-  sh(x + 1, y + h - 1, w - 2);
-
-  // ---- outer metal rail casing (rounded-corner rect) ----
-  box(x, y + 1, w, h - 1, '#3a3f3c');
-  // top-lit rail highlight
-  px(x + 1, y + 2, w - 2, 1, '#555b56');
-  // chip the four corners to fake rounding
-  px(x, y + 1, 1, 1, '#2a2e2c'); px(x + w - 1, y + 1, 1, 1, '#2a2e2c');
-  px(x, y + h - 1, 1, 1, '#2a2e2c'); px(x + w - 1, y + h - 1, 1, 1, '#2a2e2c');
-
-  // ---- felt bed (recessed) ----
-  const bx = x + 4, by = y + 4, bw = w - 8, bh = h - 8;
-  inset(bx - 1, by - 1, bw + 2, bh + 2, '#23402c');
-  // two-tone felt with diagonal light gradient (lighter toward top-left)
-  px(bx, by, bw, bh, '#2f5d3a');
-  for (let i = 0; i < bh; i++) {
-    const lit = bw - Math.round((i / bh) * bw);
-    if (lit > 0) px(bx, by + i, Math.min(lit, bw), 1, '#3c7048');
-  }
-  // subtle felt sheen line top
-  px(bx, by, bw, 1, U.shade('#3c7048', 18));
-
-  // ---- six pockets: near-black holes ringed dark ----
-  const pk = [
-    [bx - 2, by - 2], [bx + (bw >> 1) - 1, by - 3], [bx + bw, by - 2],
-    [bx - 2, by + bh - 1], [bx + (bw >> 1) - 1, by + bh], [bx + bw, by + bh - 1]
-  ];
-  for (const [pxn, pyn] of pk) {
-    px(pxn, pyn, 4, 4, '#1a1c1b');
-    px(pxn + 1, pyn + 1, 2, 2, '#0c0d0c');
-  }
-
-  // ---- warm amber edge-light along top rail + pocket liners (pulsing) ----
-  const pulse = 0.28 + 0.16 * (0.5 + 0.5 * Math.sin(now / 760));
-  glow(x + 1, y + 1, w - 2, 2, '#ffb84d', pulse);
-  px(x + 2, y + 1, w - 4, 1, U.shade('#ffb84d', -8));
-  for (const [pxn, pyn] of pk) glow(pxn, pyn, 4, 4, '#ffb84d', pulse * 0.5);
-
-  // ---- balls: cue-spot, 8-ball, muted red/blue ----
-  const drift = Math.round(Math.sin(now / 1400)); // one ball slowly drifts a px
-  const balls = [
-    [bx + 3, by + 2, '#ffb84d'],                 // amber cue-spot
-    [bx + (bw >> 1) + 1 + drift, by + (bh >> 1), '#15161a'], // 8-ball
-    [bx + bw - 4, by + 2, '#a83a32'],            // muted red
-    [bx + 2, by + bh - 4, '#3a5aa8'],            // muted blue
-    [bx + bw - 3, by + bh - 3, '#2e3840'],       // dark steel
-    [bx + (bw >> 1) - 3, by + bh - 2, '#3a6a8a'] // dark blue
-  ];
-  for (const [bxn, byn, col] of balls) {
-    px(bxn + 1, byn + 2, 3, 1, '#1c3326');            // contact shadow on felt
-    px(bxn, byn, 3, 3, col);
-    px(bxn, byn, 2, 1, U.shade(col, 26));             // upper body shade
-    px(bxn, byn, 1, 1, U.shade(col, 60));             // 1px specular highlight
-    px(bxn + 2, byn + 2, 1, 1, U.shade(col, -34));    // far-side shade
-  }
-};
-  F.quarters_vending = (x, y, w, h, f) => {
-  // contact shadow â€” slightly wider base on the floor
-  sh(x, y + h - 1, w);
-  // main upright cabinet, dark grey-green metal
-  box(x, y + 1, w, h - 1, '#2c3330');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#404a44', 12));            // top-lit lip
-  px(x + 1, y + 2, w - 2, h - 4, '#404a44');                     // body face
-  px(x, y + h - 4, w, 3, '#222824');                             // wider darker base plinth
-  px(x, y + h - 4, w, 1, U.shade('#404a44', 8));                 // base highlight edge
-  px(x + 1, y + 2, 1, h - 5, U.shade('#404a44', 18));            // left vertical sheen
-  px(x + w - 2, y + 2, 1, h - 5, '#222824');                     // right shaded edge
-
-  // tall glass window well, upper ~60%
-  const gw = w - 7, gx = x + 2, gy = y + 4, gh = Math.round(h * 0.56);
-  inset(gx, gy, gw, gh, '#161c1a');
-  px(gx + 1, gy + 1, gw - 2, gh - 2, '#0e1614');                 // dark interior
-
-  // two rows of tiny stocked cans/bottles behind the glass
-  const cols = Math.max(2, Math.floor((gw - 2) / 4));
-  for (let row = 0; row < 2; row++) {
-    const ry = gy + 2 + row * Math.floor((gh - 3) / 2);
-    for (let c = 0; c < cols; c++) {
-      const cx = gx + 2 + c * 4;
-      if (cx + 2 > gx + gw - 1) break;
-      const seed = U.hash('vend' + row + c);
-      const warm = seed % 2 === 0;
-      const base = warm ? '#7a2e2e' : '#1f5a63';                 // muted red / cyan
-      px(cx, ry, 2, 3, base);
-      px(cx, ry, 1, 3, U.shade(base, 22));                       // can left highlight
-      px(cx, ry, 2, 1, U.shade(base, 30));                       // can cap glint
+  F.arc_floorlight = (x, y, w, h, f) => {   // v2: flush ROUND deck light — recessed ring + pulsing lens, flat (walk-over)
+    const cx = x + w / 2;
+    // stepped circular recess cut into the deck (no shadow — it IS the floor)
+    const well = [[3, 6], [2, 8], [1, 10], [1, 10], [1, 10], [1, 10], [2, 8], [3, 6]];
+    well.forEach((s, j) => px(x + s[0], y + 2 + j, s[1], 1, '#171b19'));
+    px(x + 3, y + 2, 6, 1, '#121614');                          // deep top lip
+    px(x + 3, y + 9, 6, 1, U.shade('#1f2422', 0.10));           // bottom bevel catch (kept)
+    // round metal housing ring
+    const ring = [[3, 6], [2, 8], [2, 8], [2, 8], [2, 8], [3, 6]];
+    ring.forEach((s, j) => px(x + s[0], y + 3 + j, s[1], 1, '#2a302d'));
+    px(x + 3, y + 3, 6, 1, '#39453f');                          // ring top lit
+    px(x + 2, y + 4, 1, 4, '#333e38');                          // west arc lit
+    px(x + 9, y + 4, 1, 4, '#1c2220');                          // east arc dark
+    px(x + 3, y + 4, 1, 1, '#48544c'); px(x + 8, y + 4, 1, 1, '#48544c'); // bezel bolts
+    px(x + 3, y + 7, 1, 1, '#1f2622'); px(x + 8, y + 7, 1, 1, '#1f2622');
+    // round pulsing lens (kept slow breath + glow bleed)
+    const pulse = 0.62 + 0.38 * (0.5 + 0.5 * Math.sin(now / 1300));
+    const lens = [[4, 4], [3, 6], [3, 6], [4, 4]];
+    lens.forEach((s, j) => px(x + s[0], y + 4 + j, s[1], 1, U.shade('#dfe2e0', -0.38 + 0.20 * pulse)));
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    lens.forEach((s, j) => px(x + s[0], y + 4 + j, s[1], 1, '#dfe2e0'));
+    px(x + 4, y + 5, 2, 1, U.shade('#dfe2e0', 0.18));           // hot inner glint, west-biased
+    ctx.restore();
+    glow(x + 1, y + 2, 10, 8, '#cfe0e2', 0.05 + 0.06 * pulse);  // kept floor bleed
+    glow(x + 3, y + 4, 6, 4, '#eef2f2', 0.07 + 0.10 * pulse);
+    // etched chevron pointing down the aisle (+y, kept)
+    px(cx - 2, y + 10, 1, 1, '#56706e'); px(cx + 1, y + 10, 1, 1, '#56706e');
+    px(cx - 1, y + 11, 2, 1, '#56706e');
+  };
+  F.arc_ladder = (x, y, w, h, f) => {   // v2: LEANING maintenance ladder — bold diagonal, rails + rungs, parked gear
+    const r = RAMP.steel;
+    shadow2(x + 1, y + h - 1, 9);                               // floor contact
+    const foot = y + h - 2;                                     // feet on the floor line
+    const rows = 18;                                            // rises ~7px above the tile
+    const xoAt = (i) => Math.round(i * 4 / (rows - 1));         // eastward lean drift
+    // pass 1: rail silhouettes (diagonal)
+    for (let i = 0; i < rows; i++) {
+      const xo = xoAt(i), yy = foot - i;
+      px(x + xo, yy, 4, 1, LINE); px(x + 6 + xo, yy, 4, 1, LINE);
     }
-  }
-  // faint diagonal reflection sheen across the glass
-  ctx.save();
-  ctx.globalAlpha = 0.10;
-  ctx.fillStyle = '#bfe6dc';
-  ctx.beginPath();
-  ctx.moveTo(gx + 1, gy + 1);
-  ctx.lineTo(gx + Math.floor(gw * 0.45), gy + 1);
-  ctx.lineTo(gx + 1, gy + Math.floor(gh * 0.55));
-  ctx.fill();
-  ctx.restore();
-  px(gx, gy, 1, gh, U.shade('#404a44', 24));                     // glass frame highlight
-
-  // keypad of pale dots on the right strip
-  const kx = gx + gw + 2;
-  for (let i = 0; i < 6; i++) {
-    px(kx + (i % 2) * 2, gy + 1 + Math.floor(i / 2) * 3, 1, 1, '#9aa49c');
-  }
-  // one product LED blinks ready (green), brighter when in use
-  const ready = blink(620);
-  px(kx + 1, gy + 10, 1, 1, ready ? (f.work ? '#7dffb0' : '#41ff8a') : '#16302a');
-  if (ready) glow(kx, gy + 9, 3, 3, '#41ff8a', f.work ? 0.30 : 0.16);
-
-  // lower control area
-  const by = gy + gh + 1;
-  inset(gx, by, gw, h - (by - y) - 4, '#1b211e');
-
-  // warm amber status strip â€” scrolling flicker
-  const sy = by + 2, sw = gw;
-  px(gx, sy, sw, 2, '#241c10');                                  // strip well
-  const segs = Math.max(4, Math.floor(sw / 2));
-  const offset = Math.floor(now / 140) % segs;
-  for (let s = 0; s < segs; s++) {
-    const on = ((s + offset) % 3) !== 0;
-    const lit = '#ffb84d';
-    px(gx + s * 2, sy, 2, 1, on ? lit : U.shade(lit, -45));
-    px(gx + s * 2, sy + 1, 2, 1, on ? U.shade(lit, -18) : U.shade(lit, -55));
-  }
-  ctx.save();
-  ctx.globalAlpha = 0.18 + 0.10 * (0.5 + 0.5 * flick(900));
-  glow(gx, sy - 1, sw, 4, '#ffb84d', 1);
-  ctx.restore();
-
-  // lit dispense slot glow at the bottom
-  const dy = sy + 4;
-  inset(gx + 1, dy, gw - 2, h - (dy - y) - 4, '#0d1110');
-  px(gx + 2, dy + 1, gw - 4, 1, '#1a221e');                      // slot lip
-  glow(gx + 1, dy, gw - 2, 3, '#ffb84d', 0.12 + 0.05 * flick(1300, 1));
-  px(gx + 3, dy + 2, 2, 1, U.shade('#ffb84d', -10));             // inner slot warm dot
-};
-  F.quarters_lockerbank = (x, y, w, h, f) => {
-  // contact shadow along the base â€” squat floor/wall-line cabinet
-  sh(x + 1, y + h - 1, w - 2);
-  // outlined brushed metal casing
-  box(x, y + 1, w, h - 1, '#3a423d');
-  // top edge highlight
-  px(x + 1, y + 1, w - 2, 1, '#545d56');
-  px(x + 1, y + 2, w - 2, 1, U.shade('#3a423d', 8));
-  // three equal doors across the 3-tile span
-  const dw = (w - 2) / 3;
-  for (let d = 0; d < 3; d++) {
-    const dx = x + 1 + Math.round(d * dw);
-    const nx = x + 1 + Math.round((d + 1) * dw);
-    const iw = nx - dx;
-    // door face: slight 2-tone â€” top lit, lower body
-    px(dx, y + 3, iw, h - 4, '#3a423d');
-    px(dx, y + 3, iw, 1, '#545d56');
-    px(dx, y + h - 2, iw, 1, U.shade('#3a423d', -12));
-    // dark shadow seam between doors
-    if (d > 0) px(dx - 1, y + 3, 1, h - 4, U.shade('#3a423d', -22));
-    // thin vent grille (upper third of door)
-    for (let g = 0; g < 3; g++) px(dx + 2, y + 5 + g * 2, iw - 4, 1, U.shade('#3a423d', -16));
-    px(dx + 2, y + 5, iw - 4, 1, U.shade('#3a423d', 6));
-    // recessed handle (lower-right of each door)
-    inset(dx + iw - 5, y + h - 6, 3, 3, '#23282a');
-    px(dx + iw - 4, y + h - 5, 1, 1, U.shade('#545d56', -4));
-  }
-  // door 0: small worn sticker decal in faded pink
-  const sx = x + 1 + Math.round(0 * dw) + 2;
-  px(sx, y + h - 5, 3, 2, '#b56a78');
-  px(sx, y + h - 5, 3, 1, '#c98592');
-  px(sx + 1, y + h - 4, 1, 1, U.shade('#b56a78', -14));
-  // door 1: amber name-tag light that slowly pulses
-  const tx = x + 1 + Math.round(1 * dw) + 3;
-  const ty = y + h - 6;
-  const pulse = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(now / 1100));
-  inset(tx - 1, ty - 1, 5, 3, '#23282a');
-  ctx.save();
-  ctx.globalAlpha = pulse;
-  px(tx, ty, 3, 1, '#ffb84d');
-  ctx.restore();
-  px(tx, ty, 1, 1, U.shade('#ffb84d', 10));
-  glow(tx - 1, ty - 1, 5, 3, '#ffb84d', 0.10 + 0.10 * pulse);
-};
-  F.quarters_minifridge = (x, y, w, h, f) => {
-  // ---- compact under-counter mini-fridge, top-down ----
-  sh(x + 1, y + h - 1, w - 2);
-
-  // off-white enamel body, outlined/top-lit metal casing
-  box(x + 1, y + 1, w - 2, h - 2, '#cfd2cc');
-  // rounded-cube corner knockouts (chamfer the silhouette)
-  px(x + 1, y + 1, 1, 1, '#9aa0a0');
-  px(x + w - 2, y + 1, 1, 1, '#9aa0a0');
-  px(x + 1, y + h - 2, 1, 1, '#8a9090');
-  px(x + w - 2, y + h - 2, 1, 1, '#8a9090');
-
-  // top highlight band + faint condensation sheen
-  px(x + 2, y + 2, w - 4, 2, '#e7e9e4');
-  px(x + 2, y + 2, w - 4, 1, U.shade('#e7e9e4', 12));
-  ctx.save();
-  ctx.globalAlpha = 0.10;
-  px(x + 3, y + 4, Math.max(1, (w - 6) >> 1), 2, '#ffffff');
-  ctx.restore();
-  // bottom shade for a little rounded volume
-  px(x + 2, y + h - 3, w - 4, 1, U.shade('#cfd2cc', -16));
-
-  // door seam (vertical, dark grey) splitting body
-  const seam = x + Math.round(w * 0.62);
-  px(seam, y + 3, 1, h - 6, '#6b7270');
-  px(seam, y + 3, 1, 1, '#444b49');
-  // door panel slightly insetted on the larger left face
-  inset(x + 3, y + 5, seam - (x + 3) - 1, h - 9, '#c4c7c1');
-  px(x + 4, y + 6, seam - (x + 4) - 1, 1, '#dadcd6');
-
-  // stubby chrome handle on the door, near the seam
-  box(seam - 4, y + Math.round(h * 0.45), 3, 4, '#9aa0a0');
-  px(seam - 4, y + Math.round(h * 0.45), 3, 1, '#c6cccb');
-  px(seam - 4, y + Math.round(h * 0.45) + 3, 3, 1, '#6e7472');
-
-  // magnet dots on the door face (one amber, one teal)
-  px(x + 4, y + 5, 1, 1, '#ffb84d');
-  px(x + 5, y + h - 6, 1, 1, '#5fb6a8');
-
-  // ---- single animated emissive accent: amber running LED, blinks every ~2.5s ----
-  const lit = blink(2500);
-  const ledX = x + 4, ledY = y + Math.round(h * 0.5);
-  px(ledX, ledY, 1, 1, lit ? '#ffb84d' : '#36424c');
-  if (lit) glow(ledX - 1, ledY - 1, 3, 3, '#ffb84d', 0.30);
-};
+    px(x + xoAt(rows - 1), foot - rows, 4, 1, LINE);            // rounded head caps
+    px(x + 6 + xoAt(rows - 1), foot - rows, 4, 1, LINE);
+    // pass 2: rungs between the rails
+    for (const i of [3, 7, 11, 15]) {
+      const xo = xoAt(i), yy = foot - i;
+      px(x + 2 + xo, yy - 1, 8, 3, LINE);
+      px(x + 3 + xo, yy, 4, 1, r.sheen);
+      px(x + 3 + xo, yy, 1, 1, U.shade(r.sheen, 0.15));         // west rung glint
+    }
+    // pass 3: rail colors (in front of the rungs)
+    for (let i = 0; i < rows; i++) {
+      const xo = xoAt(i), yy = foot - i;
+      px(x + 1 + xo, yy, 1, 1, r.lit); px(x + 2 + xo, yy, 1, 1, r.face);
+      px(x + 7 + xo, yy, 1, 1, r.face); px(x + 8 + xo, yy, 1, 1, r.dk);
+    }
+    px(x + 1 + xoAt(rows - 1), foot - rows + 1, 2, 1, r.sheen); // head caps catch the light
+    px(x + 7 + xoAt(rows - 1), foot - rows + 1, 2, 1, r.sheen);
+    // rubber feet on the deck
+    px(x + 1, foot, 2, 1, '#1a1e22'); px(x + 7, foot, 2, 1, '#1a1e22');
+    // hazard tag hanging off a mid rung
+    px(x + 7, y + 4, 1, 1, '#39434b');                          // string
+    px(x + 6, y + 5, 3, 3, '#caa84a');
+    px(x + 6, y + 5, 3, 1, '#ffd34a');
+    px(x + 7, y + 6, 1, 1, '#3a3020');                          // tag glyph
+    // kept: slow chrome glint drifting up the west rail
+    const g = 0.18 + 0.16 * Math.sin(now / 1400);
+    const gi = 2 + (Math.floor(now / 700) % (rows - 3));
+    glow(x + 1 + xoAt(gi), foot - gi, 1, 1, '#eaf2f2', g);
+    px(x + 1 + xoAt(rows - 4), foot - rows + 4, 1, 1, '#dfe6e6'); // fixed highlight near the head
+  };
+  F.quarters_pooltable = (x, y, w, h, f) => {   // TOP-BIAS OBLIQUE billiards: rounded rail, felt, 6 pockets
+    const wood = '#5c4030', felt = '#2f5d3a', feltLit = '#3c7048';
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 2, x + w - 5]) {                      // chunky corner legs
+      px(lx, y + 20, 3, 4, LINE); px(lx, y + 20, 1, 4, U.shade(wood, 0.18)); px(lx + 1, y + 20, 1, 4, U.shade(wood, -0.3));
+    }
+    underAO(x + 5, y + 20, w - 10, 3);
+    // short apron face
+    rr(x - 1, y + 14, w + 2, 6, LINE);
+    px(x, y + 15, w, 4, U.shade(wood, -0.12));
+    px(x, y + 15, w, 1, U.shade(wood, 0.10));
+    px(x, y + 18, w, 1, U.shade(wood, -0.35));
+    // rounded wood rail ring (the top)
+    rr(x - 1, y - 3, w + 2, 19, LINE);
+    rr(x, y - 2, w, 17, wood);
+    px(x + 1, y - 2, w - 2, 1, U.shade(wood, 0.30));            // rail sheen
+    px(x, y - 1, 1, 14, U.shade(wood, 0.14)); px(x + w - 1, y - 1, 1, 14, U.shade(wood, -0.28));
+    px(x + 1, y + 13, w - 2, 1, U.shade(wood, -0.2));           // rail front lip
+    // felt bed
+    inset(x + 4, y + 1, w - 8, 11, U.shade(felt, -0.35));
+    px(x + 5, y + 2, w - 10, 9, felt);
+    for (let i = 0; i < 9; i++) {                               // west-lit diagonal gradient
+      const lit = Math.max(0, Math.floor((w - 10) * (1 - i / 9)) - i * 2);
+      if (lit > 0) px(x + 5, y + 2 + i, Math.min(lit, w - 10), 1, feltLit);
+    }
+    px(x + 5, y + 2, w - 10, 1, U.shade(feltLit, 0.12));        // felt sheen line
+    // six pockets
+    const pk = [[x + 4, y + 1], [x + w / 2 - 2, y], [x + w - 8, y + 1], [x + 4, y + 9], [x + w / 2 - 2, y + 10], [x + w - 8, y + 9]];
+    for (const p of pk) { px(p[0], p[1], 4, 4, '#141a16'); px(p[0] + 1, p[1] + 1, 2, 2, '#06090c'); }
+    // balls (the 8-ball slowly drifts)
+    const drift = Math.round(Math.sin(now / 1400));
+    const balls = [[x + 12, y + 4, '#e8e2d2'], [x + w / 2 + 1 + drift, y + 6, '#15161a'], [x + w - 14, y + 4, '#a83a32'], [x + 11, y + 8, '#3a5aa8'], [x + w - 12, y + 8, '#caa84a'], [x + w / 2 - 5, y + 8, '#3a6a8a']];
+    for (const b of balls) {
+      px(b[0], b[1] + 2, 3, 1, U.shade(felt, -0.3));            // contact shadow on the felt
+      px(b[0], b[1], 3, 3, b[2]);
+      px(b[0], b[1], 2, 1, U.shade(b[2], 0.25));
+      px(b[0], b[1], 1, 1, U.shade(b[2], 0.5));                 // specular
+      px(b[0] + 2, b[1] + 2, 1, 1, U.shade(b[2], -0.3));
+    }
+    // warm rail edge-light + pocket liners (pulsing)
+    const pulse = 0.28 + 0.16 * (0.5 + 0.5 * Math.sin(now / 760));
+    glow(x + 1, y - 2, w - 2, 2, '#ffb84d', pulse);
+    for (const p of pk) glow(p[0], p[1], 4, 4, '#ffb84d', pulse * 0.5);
+  };
+  F.quarters_vending = (x, y, w, h, f) => {   // TALL 3/4 vending machine: lit shelves, chase strip, drop slot
+    const cw = 13, bh = h, r = RAMP.steel;
+    shadow2(x + 1, y + bh - 1, cw - 2);
+    // body slab + cap (same construction family as the arcade cabinets)
+    rr(x - 1, y - 5, cw + 2, bh + 4, LINE);
+    px(x + 1, y - 3, cw - 2, bh + 1, r.face);
+    px(x + 1, y - 3, 1, bh, U.shade(r.face, 0.10)); px(x + cw - 2, y - 3, 1, bh, r.dk);
+    rr(x, y - 7, cw, 3, LINE);
+    px(x + 1, y - 6, cw - 2, 2, r.top);
+    px(x + 1, y - 6, cw - 2, 1, r.sheen);
+    // lit brand header juts slightly
+    rr(x - 2, y - 5, cw + 4, 4, LINE);
+    px(x - 1, y - 4, cw + 2, 2, blink(1600) ? '#ffb84d' : '#8a5f28');
+    px(x + 2, y - 4, 3, 1, '#ffe2b0');                          // header glint
+    glow(x - 1, y - 4, cw + 2, 2, '#ffb84d', blink(1600) ? 0.35 : 0.12);
+    px(x - 1, y - 2, cw + 2, 1, U.shade('#8a5f28', -0.4));      // header underside
+    // glass window: three lit shelves of stock
+    inset(x + 2, y - 1, cw - 5, 13, '#0e1614');
+    for (let row = 0; row < 3; row++) {
+      const ry = y + row * 4;
+      px(x + 3, ry + 2, cw - 7, 1, '#233029');                  // shelf lip
+      glow(x + 3, ry + 2, cw - 7, 1, '#ffb84d', 0.18);          // shelf edge-light
+      for (let c = 0; c < 3; c++) {
+        const seed = U.hash('vend' + row + c);
+        const base = seed % 2 === 0 ? '#7a2e2e' : '#1f5a63';    // muted red / cyan
+        px(x + 3 + c * 2, ry, 2, 2, base);
+        px(x + 3 + c * 2, ry, 1, 2, U.shade(base, 0.22));       // can highlight
+        px(x + 3 + c * 2, ry, 2, 1, U.shade(base, 0.3));        // cap glint
+      }
+    }
+    ctx.globalAlpha = 0.10; px(x + 3, y, 2, 8, '#bfe6dc'); px(x + 5, y, 1, 4, '#bfe6dc'); ctx.globalAlpha = 1; // glass sheen
+    // keypad + ready LED on the east pillar
+    for (let i = 0; i < 3; i++) px(x + cw - 3, y + 1 + i * 2, 1, 1, '#9aa49c');
+    const ready = blink(620);
+    px(x + cw - 3, y + 8, 1, 1, ready ? (f.work ? '#7dffb0' : '#41ff8a') : '#16302a');
+    if (ready) glow(x + cw - 4, y + 7, 3, 3, '#41ff8a', f.work ? 0.30 : 0.16);
+    // scrolling amber chase strip
+    const sy = y + 13, segs = 5, off = Math.floor(now / 140) % segs;
+    px(x + 2, sy, cw - 4, 2, '#241c10');
+    for (let s = 0; s < segs; s++) {
+      const on = ((s + off) % 3) !== 0;
+      px(x + 2 + s * 2, sy, 2, 1, on ? '#ffb84d' : '#4a3a1c');
+      px(x + 2 + s * 2, sy + 1, 2, 1, on ? '#b8862f' : '#33290f');
+    }
+    glow(x + 2, sy - 1, cw - 4, 4, '#ffb84d', 0.18 + 0.10 * (0.5 + 0.5 * flick(900)));
+    // dispense slot: dark mouth with a warm glow
+    inset(x + 2, y + bh - 8, cw - 4, 4, '#0d1110');
+    px(x + 3, y + bh - 7, cw - 6, 1, '#1a221e');                // slot lip
+    glow(x + 2, y + bh - 8, cw - 4, 3, '#ffb84d', 0.12 + 0.05 * flick(1300, 1));
+    px(x + 4, y + bh - 6, 2, 1, U.shade('#ffb84d', -0.1));      // warm dot in the slot
+    // kick + feet with a floor gap
+    px(x + 1, y + bh - 3, cw - 2, 1, r.ao);
+    underAO(x + 2, y + bh - 2, cw - 4, 1);
+    px(x + 1, y + bh - 2, 2, 2, r.dk); px(x + cw - 3, y + bh - 2, 2, 2, r.dk);
+    px(x + 1, y + bh - 2, 1, 1, r.lit); px(x + cw - 3, y + bh - 2, 1, 1, r.lit);
+    wear(x + 1, y + bh - 5, cw - 2, 2, 2, U.shade(r.face, -0.12));
+  };
+  F.quarters_lockerbank = (x, y, w, h, f) => {   // locker fronts + thin lit top, freestanding on feet
+    const r = RAMP.gun;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 2, x + w / 2 - 1, x + w - 5]) {       // feet
+      px(lx, y + 8, 3, 4, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
+    }
+    underAO(x + 5, y + 9, w - 10, 2);
+    // thin top surface
+    rr(x - 1, y - 5, w + 2, 4, LINE);
+    px(x, y - 4, w, 2, r.top);
+    px(x, y - 4, w, 1, r.sheen);
+    px(x, y - 4, 5, 1, U.shade(r.sheen, 0.12));
+    // locker fronts: three rounded doors
+    rr(x - 1, y - 2, w + 2, 11, LINE);
+    px(x, y - 1, w, 9, r.face);
+    px(x, y - 1, w, 1, r.lit);                                  // catch under the top
+    for (let d = 0; d < 3; d++) {
+      const dx = x + 1 + d * 12;
+      if (d) px(dx - 2, y, 1, 8, r.ao);                         // dark seam between doors
+      rr(dx, y, 10, 8, U.shade(r.face, 0.14));                  // door plate
+      px(dx + 1, y, 8, 1, U.shade(r.face, 0.28));               // door top catch
+      px(dx, y + 7, 10, 1, U.shade(r.face, -0.2));              // door base shade
+      px(dx + 3, y + 2, 4, 1, r.ao); px(dx + 3, y + 4, 4, 1, r.ao); // vent slots
+      px(dx + 3, y + 1, 4, 1, U.shade(r.face, 0.3));            // vent catch
+      px(dx + 8, y + 5, 1, 2, '#0c1210');                       // handle slot
+      px(dx + 8, y + 5, 1, 1, U.shade(r.lit, 0.3));             // handle glint
+    }
+    px(x, y + 7, w, 1, r.ao);                                   // floor-line AO
+    // door 0: worn pink sticker
+    px(x + 3, y + 5, 3, 2, '#b56a78'); px(x + 3, y + 5, 3, 1, '#c98592');
+    // door 1: amber name-tag light, slow pulse
+    const tp = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(now / 1100));
+    inset(x + 15, y + 4, 5, 3, '#10161a');
+    glow(x + 16, y + 5, 3, 1, '#ffb84d', tp);
+    px(x + 16, y + 5, 1, 1, U.shade('#ffb84d', 0.1));
+    glow(x + 15, y + 4, 5, 3, '#ffb84d', 0.10 + 0.10 * tp);
+    wear(x + 1, y + 4, w - 2, 4, 4, U.shade(r.face, -0.1));
+  };
+  F.quarters_minifridge = (x, y, w, h, f) => {   // rounded mini-fridge: lit top, chrome handle, magnets
+    const r = RAMP.steel;
+    shadow2(x + 2, y + h - 1, 8);
+    for (const lx of [x + 2, x + 7]) {                          // stub feet
+      px(lx, y + 10, 3, 2, LINE); px(lx, y + 10, 1, 2, r.lit); px(lx + 1, y + 10, 1, 2, r.dk);
+    }
+    underAO(x + 4, y + 10, 4, 1);
+    // rounded body
+    rr(x + 1, y - 3, 10, 13, LINE);
+    px(x + 2, y - 2, 8, 11, U.shade(r.face, 0.12));
+    px(x + 2, y, 1, 8, U.shade(r.face, 0.22)); px(x + 9, y, 1, 8, r.dk); // side facets
+    px(x + 2, y + 8, 8, 1, r.ao);
+    // lit rounded top with a soda can resting on it
+    px(x + 2, y - 2, 8, 2, U.shade(r.top, 0.10));
+    px(x + 2, y - 2, 8, 1, U.shade(r.sheen, 0.10));
+    px(x + 6, y - 4, 2, 2, '#a83a32'); px(x + 6, y - 4, 1, 2, '#c86a5a'); px(x + 6, y - 4, 2, 1, '#8a98a8'); // can
+    // door: freezer seam + rounded panel + chrome handle
+    px(x + 2, y, 8, 1, U.shade(r.face, -0.25));                 // freezer seam
+    rr(x + 3, y + 2, 6, 6, U.shade(r.face, 0.20));              // door panel
+    px(x + 3, y + 2, 6, 1, U.shade(r.face, 0.32));
+    px(x + 9, y + 1, 1, 6, '#9aa8b4'); px(x + 9, y + 1, 1, 1, '#c6cccb'); // chrome handle
+    // magnets + running LED
+    px(x + 4, y + 3, 1, 1, '#ffb84d'); px(x + 6, y + 5, 1, 1, '#5fb6a8');
+    const lit = blink(2500);
+    px(x + 4, y + 6, 1, 1, lit ? '#ffb84d' : '#36424c');
+    if (lit) glow(x + 3, y + 5, 3, 3, '#ffb84d', 0.30);
+  };
 
   F.airlock = (x, y, w, h, f) => {
     // AIRLOCK — the room-seal hatch (spatial floor containment, not capability isolation). A FLOOR-FLAT
