@@ -817,10 +817,14 @@ async function runReflection(o) {
    study never touches the run. NB: the final dedup vs the LIVE dossier + the declined/ignore denylists happens in
    the browser StudyStore (which holds the structured beliefs); the server does a light block-text dedup + floor. */
 const STUDY_CAP = 32;
+const STUDY_DECLINED_CAP = 200;        // per-agent studyDeclined mirror (browser-owned; pushed on every /api/study/resolve)
 const studyByRun = new Map();          // runId -> { agentId, runId, createdAt, proposals:[{id,dim,kind,text,evidence,source,sourceRunId}] }
 const latestStudyRun = new Map();      // agentId -> newest pending study runId (fetch fallback when the runId is unknown)
 const lastStudyAt = new Map();         // agentId -> ts of the last study we fired (the cooldown gate)
 const studyingNow = new Set();         // agentIds with a study in flight — closes the gap before lastStudyAt is armed
+const studyDeclinedByAgent = new Map();   // agentId -> [text] — the browser's PERMANENT studyDeclined denylist, mirrored
+                                          // here (via /api/study/resolve) so runStudy() dedups at the source. In-memory
+                                          // like the proposal stash: a restart just re-learns it on the next resolve.
 function stashStudy(agentId, runId, proposals) {
   studyByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
   latestStudyRun.set(agentId, runId);
@@ -863,7 +867,9 @@ async function runStudy(o) {
     const block = (typeof commanderDossier !== 'undefined' && commanderDossier.get) ? commanderDossier.get() : '';
     const out = await Study.study({ agentId, runId, directive, messages }, {
       propose, redact, clock: { now: () => Date.now() },
-      dossierBlock: block, beliefs: beliefsFromBlock(block), declined: [], max: Study.DEFAULT_MAX
+      // declined = the browser's permanent studyDeclined denylist, mirrored here on every /api/study/resolve —
+      // so a belief the Commander discarded is deduped AT THE SOURCE and never even stashed again.
+      dossierBlock: block, beliefs: beliefsFromBlock(block), declined: studyDeclinedByAgent.get(agentId) || [], max: Study.DEFAULT_MAX
     });
     const proposals = (out && out.proposals) || [];
     if (proposals.length) {
@@ -1704,6 +1710,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/study/proposals') === 0) return serveStudyProposals(req, res);   // GROWTH Tier 1: dossier belief-update proposals for a run
+  if (req.method === 'POST' && req.url === '/api/study/resolve') return handleStudyResolve(req, res);   // GROWTH Tier 1: consume one decided study proposal + mirror the denylist
   if (req.method === 'POST' && req.url === '/api/memory/reset') return handleMemoryReset(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/declined/restore') return handleDeclinedRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/declined') === 0) return serveDeclined(req, res);
@@ -4257,8 +4264,8 @@ function serveProposals(req, res) {
 
 // GET /api/study/proposals?agent=<id>&run=<id> — GROWTH Tier 1: the pending dossier belief-update proposals a
 // STUDY pass raised for a run (with text). Read-only; falls back to the agent's newest pending study batch when
-// the runId is unknown. Consent (Keep/Edit/Discard) is applied CLIENT-SIDE to the dossier (the dossier lives in
-// the browser), so there is no server turn-in endpoint — the browser just drops the batch after it decides.
+// the runId is unknown. The DOSSIER write itself happens client-side (the dossier lives in the browser); the
+// browser then CONSUMES the decided proposal via POST /api/study/resolve below.
 function serveStudyProposals(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
@@ -4271,6 +4278,31 @@ function serveStudyProposals(req, res) {
     if (!batch || batch.agentId !== agent) return json(200, { runId: runId || null, agentId: agent, proposals: [] });
     json(200, { runId: batch.runId, agentId: agent, proposals: batch.proposals });
   } catch (e) { json(200, { proposals: [] }); }
+}
+
+// POST /api/study/resolve { agentId, runId, id, declined:[] } — GROWTH Tier 1: CONSUME one decided study proposal
+// (mirrors the memory turn-in dropping its batch entry at handleMemoryTurnin): remove it from the pending stash so
+// the latestStudyRun fallback can never re-serve it, delete the batch when it empties, and mirror the browser's
+// PERMANENT studyDeclined denylist so the next runStudy() dedups at the source. The dossier write already happened
+// client-side — this endpoint only reconciles server state, so a stale/unknown id is a harmless ok:true no-op.
+async function handleStudyResolve(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const runId = String(body.runId || '');
+  const id = String(body.id || '');
+  // mirror the browser's studyDeclined denylist (capped, strings only) — runStudy() feeds it into the engine dedup.
+  if (Array.isArray(body.declined)) {
+    const list = body.declined.filter(x => typeof x === 'string' && x.trim()).slice(-STUDY_DECLINED_CAP);
+    studyDeclinedByAgent.set(agentId, list);
+  }
+  const batch = runId && studyByRun.get(runId);
+  if (batch && batch.agentId === agentId && id) {
+    batch.proposals = batch.proposals.filter(p => p && p.id !== id);
+    if (!batch.proposals.length) { studyByRun.delete(runId); if (latestStudyRun.get(agentId) === runId) latestStudyRun.delete(agentId); }
+  }
+  json(200, { ok: true });
 }
 
 // POST /api/memory/turnin { agentId, runId, id, verdict:'keep'|'edit'|'discard', content? } — resolve ONE proposal.
@@ -4361,7 +4393,7 @@ async function handleMemoryReset(req, res) {
   latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
   // GROWTH Tier 1: also drop any pending STUDY proposals so a fresh Commander never inherits a stranger's belief-update queue.
   for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
-  latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId);
+  latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
   return json(200, { ok: true, agent: agentId });
 }
 

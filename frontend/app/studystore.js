@@ -7,10 +7,15 @@
    a PERMANENT studyDeclined denylist; ignore 2× → stop proposing that belief). It also owns the RATINGS→TASTE
    path (§4): consecutive 👍/👎 on one archetype mints ONE style-dim proposal, once per archetype ever.
 
+   Every DECIDED proposal is consumed on BOTH sides: a persisted resolved-fingerprint set here (so the same
+   belief can never re-offer from a stale batch) AND a fire-and-forget POST /api/study/resolve that drops it from
+   the sidecar stash (mirroring the memory turn-in's batch consumption) and carries the current studyDeclined
+   denylist so the NEXT sidecar study pass dedups against it at the source.
+
    Discipline mirrors curiositystore.js / suggeststore.js:
    - READ-ONLY citizen of U.bus — it NEVER emits (the frozen shared/events.js contract is owned elsewhere).
-   - Self-persists its OWN key (declined denylist, per-belief ignore tallies, per-archetype rating tallies +
-     minted flags) — no save.js change. The per-session shown counter is in-memory (resets each app run).
+   - Self-persists its OWN key (declined denylist, resolved set, per-belief ignore tallies, per-archetype rating
+     tallies + minted flags) — no save.js change. The per-session shown counter is in-memory (resets each run).
    - node-exportable for its test; all DECISION logic lives in the pure Study engine, this is the edge.
 
    The DOM half — rendering the study turn-in card and sharing chat.js's ONE post-run beat slot at TURN-IN
@@ -22,10 +27,11 @@ const StudyStore = (() => {
   const SESSION_CAP = 3;        // at most this many study proposals SHOWN per session (anti-nag, mission constraint)
   const IGNORE_LIMIT = 2;       // ignore a proposed belief this many times → stop proposing it (stop-forever)
   const DECLINED_CAP = 200;     // permanent studyDeclined denylist (FIFO) fed into the engine's dedup
+  const RESOLVED_CAP = 300;     // decided-proposal fingerprints (FIFO) — a kept/edited belief never re-offers
 
-  let state = null;             // persisted: { v, declined:[text], ignores:{fp:int}, ratings:{arch:{up,down,upMinted,downMinted}} }
+  let state = null;             // persisted: { v, declined:[text], resolved:{fp:1}, resolvedOrder:[fp], ignores:{fp:int}, ratings:{arch:{up,down,upMinted,downMinted}} }
   let sessionShown = 0;         // proposals shown THIS session (in-memory; resets each app run)
-  let deps = {};                // { now, getDossierBlock?, getBeliefs? } — injected by app.js (all optional; fail-open)
+  let deps = {};                // { now } — injected by app.js (all optional; fail-open)
 
   const ready = () => typeof Study !== 'undefined' && state;
   const now = () => { try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {} return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0; };
@@ -33,9 +39,10 @@ const StudyStore = (() => {
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   function hydrate(raw) {
-    const s = { v: 1, declined: [], ignores: {}, ratings: {} };
+    const s = { v: 1, declined: [], resolved: {}, resolvedOrder: [], ignores: {}, ratings: {} };
     if (raw && typeof raw === 'object') {
       if (Array.isArray(raw.declined)) s.declined = raw.declined.filter(x => typeof x === 'string' && x.trim()).slice(-DECLINED_CAP);
+      if (Array.isArray(raw.resolvedOrder)) for (const fp of raw.resolvedOrder.slice(-RESOLVED_CAP)) { if (typeof fp === 'string' && fp) { s.resolved[fp] = 1; s.resolvedOrder.push(fp); } }
       if (raw.ignores && typeof raw.ignores === 'object') for (const k in raw.ignores) { const n = Math.floor(Number(raw.ignores[k])); if (Number.isFinite(n) && n > 0) s.ignores[k] = n; }
       if (raw.ratings && typeof raw.ratings === 'object') for (const k in raw.ratings) {
         const e = raw.ratings[k] || {};
@@ -45,11 +52,35 @@ const StudyStore = (() => {
     return s;
   }
 
-  // a stable fingerprint of a proposed belief (dim + significant tokens) so an ignore/deny recognises the same
-  // belief across runs even when the model rewords it slightly (mirrors suggeststore.fingerprint).
+  // a stable fingerprint of a proposed belief (dim + significant tokens) so an ignore/deny/resolve recognises the
+  // same belief across runs even when the model rewords it slightly (mirrors suggeststore.fingerprint).
   function fingerprint(dim, text) {
     const toks = String(text == null ? '' : text).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
     return String(dim || '') + '|' + Array.from(new Set(toks)).sort().join(' ');
+  }
+  // mark a proposal DECIDED (kept/edited/discarded) so no stale server batch can ever re-offer it. FIFO-capped.
+  function markResolved(prop) {
+    if (!state || !prop || !prop.text) return;
+    const fp = fingerprint(prop.dim, prop.text);
+    if (!state.resolved[fp]) {
+      state.resolved[fp] = 1; state.resolvedOrder.push(fp);
+      while (state.resolvedOrder.length > RESOLVED_CAP) { const old = state.resolvedOrder.shift(); delete state.resolved[old]; }
+    }
+    save();
+  }
+
+  // CONSUME the decided proposal on the sidecar too (mirrors the memory turn-in dropping its batch): drop it from
+  // the server stash so the latestStudyRun fallback can never re-serve it, and carry the CURRENT studyDeclined
+  // denylist so the next runStudy() pass dedups at the source. Fire-and-forget; a failure just means the client-
+  // side resolved/declined filters (nextLive) carry the guarantee alone.
+  function resolveOnServer(prop, agentId) {
+    if (!prop || typeof fetch !== 'function') return;
+    try {
+      fetch('/api/study/resolve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: agentId || 'agent', runId: prop.sourceRunId || '', id: prop.id || '', declined: declinedList() })
+      }).catch(() => {});
+    } catch (_) {}
   }
 
   function init(opts) {
@@ -64,17 +95,37 @@ const StudyStore = (() => {
   // room left in the per-session budget (anti-nag). The per-RUN "≤1 shown" cap is enforced by the caller
   // showing at most one proposal per beat.
   function canShow() { return !!state && sessionShown < SESSION_CAP; }
-  // has this exact belief been ignored to the stop-forever limit (or explicitly declined)?
+  // has this exact belief already been decided, ignored to the stop-forever limit, or explicitly declined?
   function isExhausted(dim, text) {
     if (!state) return true;
     const fp = fingerprint(dim, text);
+    if (state.resolved[fp]) return true;                      // already kept/edited/discarded — never re-offer
     if ((state.ignores[fp] || 0) >= IGNORE_LIMIT) return true;
     return Study.isDeclined(text, state.declined);
   }
-  // pick the first still-live proposal from a fetched batch (drops exhausted/declined ones). Returns it or null.
+  // the existing dossier belief a RETIRE proposal would delete — NEVER a pinned one (a pin is the Commander's
+  // explicit "this stays"; auto-retire must not be able to reach it). Returns { id, text } or null. Exposed so
+  // the chat card can show the Commander the ACTUAL belief that will be removed, and accept() deletes that same one.
+  function retireTarget(prop) {
+    if (!prop || prop.kind !== 'retire' || typeof DossierStore === 'undefined' || !DossierStore.beliefs) return null;
+    try {
+      const beliefs = DossierStore.beliefs(prop.dim) || [];
+      for (const b of beliefs) {
+        if (!b || !b.text || b.pinned) continue;   // skip pinned — if the only match is pinned, the proposal drops
+        if (Study.jaccard(b.text, prop.text) >= Study.SIM_THRESHOLD) return { id: b.id, text: b.text };
+      }
+    } catch (_) {}
+    return null;
+  }
+  // pick the first still-live proposal from a fetched batch (drops resolved/exhausted/declined ones, and RETIRE
+  // proposals whose only match is pinned or already gone). Returns it or null.
   function nextLive(proposals) {
     if (!ready() || !Array.isArray(proposals)) return null;
-    for (const p of proposals) { if (p && p.text && !isExhausted(p.dim, p.text)) return p; }
+    for (const p of proposals) {
+      if (!p || !p.text || isExhausted(p.dim, p.text)) continue;
+      if (p.kind === 'retire' && !retireTarget(p)) continue;   // nothing (unpinned) to retire — not offerable
+      return p;
+    }
     return null;
   }
   // count one shown proposal against the session budget (the caller calls this when it actually renders a card).
@@ -89,38 +140,50 @@ const StudyStore = (() => {
     } catch (_) { return []; }
   }
 
-  // the studyDeclined denylist (fed to the sidecar study call so it never re-proposes a rejected belief).
+  // the studyDeclined denylist. Enforced client-side in nextLive/isExhausted, AND pushed to the sidecar on every
+  // /api/study/resolve call (resolveOnServer) so runStudy() dedups against it at the source.
   function declinedList() { return (state && Array.isArray(state.declined)) ? state.declined.slice() : []; }
 
   // ---- consent verdicts (called by the chat study card) ----
   // KEEP / EDIT: commit the belief to the DOSSIER with source:'study' + observedAt provenance. A 'retire'
-  // proposal is applied by FORGETTING the matched existing belief instead of adding one. `text` is the (possibly
-  // edited) belief. Returns true on a successful write.
-  function accept(prop, text) {
+  // proposal is applied by FORGETTING the matched (never-pinned) existing belief instead of adding one. `text` is
+  // the (possibly edited) belief. Returns true on a successful write; EVERY outcome (incl. a failed retire whose
+  // target vanished) marks the proposal resolved + consumes it server-side, so it can never loop back.
+  function accept(prop, text, agentId) {
     if (!prop || typeof DossierStore === 'undefined') return false;
     const dim = prop.dim; const body = String(text != null ? text : prop.text).trim();
     if (!dim || !body) return false;
+    let ok = false;
     try {
       if (prop.kind === 'retire') {
-        // retire = drift/obsoletion: drop the existing belief this proposal matched (best-effort Jaccard match).
-        const beliefs = (typeof DossierStore.beliefs === 'function') ? (DossierStore.beliefs(dim) || []) : [];
-        let target = null;
-        for (const b of beliefs) { if (b && b.text && Study.jaccard(b.text, body) >= Study.SIM_THRESHOLD) { target = b; break; } }
-        if (target && DossierStore.forget) { DossierStore.forget(dim, target.id); return true; }
-        return false;   // nothing matched — the belief was already gone; treat as a no-op (not an error card)
+        const target = retireTarget(prop);   // pinned-safe match (re-checked at commit time — the dossier may have changed)
+        if (target && DossierStore.forget) { DossierStore.forget(dim, target.id); ok = true; }
+      } else if (DossierStore.upsert) {
+        // double-Keep guard: if the dossier ALREADY holds this belief (exact or paraphrase — e.g. a stale batch
+        // re-offered before the resolved set existed, or the Commander added it by hand), do not write a duplicate.
+        const existing = (typeof DossierStore.beliefs === 'function') ? (DossierStore.beliefs(dim) || []) : [];
+        let dup = false;
+        for (const b of existing) { const t = b && b.text; if (t && (t.toLowerCase() === body.toLowerCase() || Study.jaccard(t, body) >= Study.SIM_THRESHOLD)) { dup = true; break; } }
+        if (!dup) DossierStore.upsert(dim, { text: body, source: 'study', observedAt: now(), sourceRunId: prop.sourceRunId || null });
+        ok = true;   // a dup-skip is still a successful Keep (the belief IS in the dossier)
       }
-      if (DossierStore.upsert) { DossierStore.upsert(dim, { text: body, source: 'study', observedAt: now(), sourceRunId: prop.sourceRunId || null }); return true; }
-    } catch (_) {}
-    return false;
+    } catch (_) { ok = false; }
+    markResolved(prop);
+    resolveOnServer(prop, agentId);
+    return ok;
   }
   // DISCARD: add the belief to the PERMANENT studyDeclined denylist so it's never re-proposed (mirrors the
   // memory turn-in's declined list; §5.6 "discard = never again", applied to the dossier).
-  function discard(prop) {
+  function discard(prop, agentId) {
     if (!state || !prop) return;
     const t = String(prop.text || '').trim();
-    if (t && state.declined.indexOf(t) < 0) { state.declined.push(t); while (state.declined.length > DECLINED_CAP) state.declined.shift(); save(); }
+    if (t && state.declined.indexOf(t) < 0) { state.declined.push(t); while (state.declined.length > DECLINED_CAP) state.declined.shift(); }
+    markResolved(prop);            // saves
+    resolveOnServer(prop, agentId);   // carries the updated denylist to the sidecar
   }
-  // IGNORE (the Commander left the card without deciding): tally it; IGNORE_LIMIT ignores stops the belief for good.
+  // IGNORE (the Commander left the card without deciding — it expired at the next run end / was replaced):
+  // tally it; IGNORE_LIMIT ignores stops the belief for good. NOT resolved server-side — an ignored-once belief
+  // may legitimately re-offer at a later task end (that is the second chance the 2× limit exists to give).
   function ignore(prop) {
     if (!state || !prop || !prop.text) return;
     const fp = fingerprint(prop.dim, prop.text);
@@ -140,7 +203,7 @@ const StudyStore = (() => {
     const t = Study.tasteProposal(key, entry, { now: now });
     save();
     if (!t) return null;
-    // suppress a taste belief the Commander already declined, and honour the ignore stop-forever tally.
+    // suppress a taste belief the Commander already declined/decided, and honour the ignore stop-forever tally.
     if (Study.isDeclined(t.proposal.text, state.declined) || isExhausted('style', t.proposal.text)) { entry[t.mintedKey] = true; save(); return null; }
     entry[t.mintedKey] = true;   // mint ONCE — never re-raise this archetype/direction
     save();
@@ -148,7 +211,7 @@ const StudyStore = (() => {
   }
 
   return {
-    init, reset, canShow, isExhausted, nextLive, markShown, fetchProposals,
+    init, reset, canShow, isExhausted, nextLive, markShown, fetchProposals, retireTarget,
     declinedList, accept, discard, ignore, noteRating, fingerprint,
     SESSION_CAP, IGNORE_LIMIT,
     _state: () => state
