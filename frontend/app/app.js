@@ -363,6 +363,7 @@ const App = (() => {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, provider: a.provider || null, reasoningEffort: a.reasoningEffort || null, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
              approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
+             skills: Array.isArray(a.skills) ? a.skills.slice() : [],   // Class Loadouts S1: per-agent skill package persists
              stats: a.stats || null, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
@@ -375,6 +376,7 @@ const App = (() => {
                   provider: s.provider || (agent && agent.provider) || null, reasoningEffort: s.reasoningEffort || (agent && agent.reasoningEffort) || null,   // #4: per-agent provider+effort (fall back to the hero's)
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
                   approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  skills: Array.isArray(s.skills) ? s.skills.slice() : [],   // Class Loadouts S1: restore the per-agent skill package
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
       a.systemPrompt = composeSystemPrompt(a);
@@ -430,6 +432,61 @@ const App = (() => {
     a.purpose = (patch.purpose || '').trim();
     a.specialtyId = spec.id;
   }
+
+  /* ---------- LOADOUT (Class Loadouts S1): a class is model tier + effort + skill package + kit ----------
+     Defaults, never locks (sandbox law): summon APPLIES these to the agent record; the Commander overrides
+     any of them per-agent afterward. */
+  // Resolve a specialty's model TIER ('reasoning'|'balanced'|'fast') to a CONCRETE model id. There is no
+  // user-configured tier->model mapping in the app yet (the tier pips are advisory), so for S1 this resolves
+  // to the base model summon already inherits (the woken hero's model) — i.e. the class does not (yet) change
+  // the model, only records its effort/skills/kit. THIS IS THE SEAM: when a tier->model settings store lands,
+  // fill it in here and everything downstream (roster/pushRoster/runOnce) already honors a per-agent model.
+  function resolveTierModel(tier, baseModel) {
+    // Future: return (Settings.tierModels && Settings.tierModels[tier]) || baseModel;
+    return baseModel || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : null) || null;
+  }
+  // fold the class loadout (model tier + effort + skills) onto an agent record. Kit placement is separate
+  // (requisitionKit) because it mutates the world model, not just the record.
+  function applyLoadout(a, spec) {
+    if (!a || !spec) return;
+    const m = resolveTierModel(spec.model, a.model);
+    if (m) a.model = m;
+    if (spec.reasoningEffort) a.reasoningEffort = spec.reasoningEffort;   // applied default; user can re-tune per agent
+    // per-agent skills: the class package. Recorded on the agent + pushed in the roster (sidecar unions them
+    // ADD-only over the global prefs). Deduped copy so the frozen catalog array is never shared/mutated.
+    if (Array.isArray(spec.skills) && spec.skills.length) {
+      const seen = {}, out = [];
+      for (const s of spec.skills) { const v = String(s || '').trim(); if (v && !seen[v]) { seen[v] = true; out.push(v); } }
+      a.skills = out;
+    }
+  }
+  // KIT REQUISITION at summon: place each of the class's kit objectTypes at the agent's workstation through the
+  // SAME validated placement path a hand placement uses (Build.requisitionForAgent -> findPlaceableTile ->
+  // station.addProp — object=capability stays honest, never a flag). Degrades gracefully: places what fits into
+  // the agent's room, skips what doesn't (a fresh summon usually has NO room until the Commander gives it a PC in
+  // REFIT — then nothing is placed and every kit item is reported as "needs a workstation"). Never throws.
+  function requisitionKit(a, spec) {
+    const kit = (spec && Array.isArray(spec.kit)) ? spec.kit : [];
+    if (!a || !kit.length) return { placed: [], skipped: [] };
+    const placed = [], skipped = [];
+    const canPlace = (typeof Build !== 'undefined' && Build.requisitionForAgent);
+    for (const objType of kit) {
+      const t = String(objType || '').trim();
+      if (!t) continue;
+      let res = null;
+      try { res = canPlace ? Build.requisitionForAgent(a.id, t) : { ok: false, reason: 'no-build' }; }
+      catch (e) { res = { ok: false, reason: (e && e.message) || 'error' }; }
+      if (res && res.ok) placed.push(t); else skipped.push({ type: t, reason: (res && res.reason) || 'skipped' });
+    }
+    if (skipped.length) {
+      const names = skipped.map(s => s.type).join(', ');
+      try { console.log('[summon] kit not fully placed for ' + a.id + ' — needs a workstation for: ' + names, skipped); } catch (_) {}
+      const _n = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : null;
+      if (_n) _n(a.name + ': give it a workstation in REFIT to receive its kit (' + names + ').', 'info');
+    }
+    return { placed, skipped };
+  }
+
   // a backend-valid, collision-free agentId for a summon (never the hero's reserved 'agent').
   function allocAgentId(spec) {
     const seed = (spec && (spec.id || spec.name)) || 'agent';
@@ -455,12 +512,14 @@ const App = (() => {
     };
     agentDocs(a);
     applySpecialty(a, spec);
+    applyLoadout(a, spec);   // Class Loadouts S1: class model tier + effort + skill package onto the record (before compose/roster)
     a.systemPrompt = composeSystemPrompt(a);
     agents.set(id, a);
     registerAgent(id, a.color);                                // sprite tint shim
     const _spawned = (typeof World !== 'undefined' && !!World.spawnAgent);
     if (_spawned) World.spawnAgent(a);                          // Phase C: a real floor body
     else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
+    if (_spawned) requisitionKit(a, spec);   // Class Loadouts S1: place the class kit at the agent's workstation (real placement; degrades if no room yet)
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     else console.warn('[summon] StationUI.setRoster missing — crew manifest not refreshed');
     try { console.log('[summon]', JSON.stringify({ id, name: a.name, skin: a.skin, hadHero: !!agent, worldSpawn: _spawned, crew: (typeof World !== 'undefined' && World.crewCount) ? World.crewCount() : '?', roster: agents.size })); } catch (e) {}
@@ -553,7 +612,8 @@ const App = (() => {
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
-      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask') }));   // #4: each agent's OWN provider, not one global
+      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+        skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
       lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
       return lastRosterPush;
     } catch (_) { return Promise.resolve(); }
