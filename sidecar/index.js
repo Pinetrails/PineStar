@@ -618,6 +618,37 @@ const commanderDossier = {
 };
 commanderDossier.load();
 
+// GROWTH Tier 2 — the ACTIVE goal-arc summary, pushed by the browser (POST /api/goals) and folded into server-
+// composed autonomous personas (cron) so an unattended run knows the current direction (goal + progress + next
+// step). A sibling of the dossier block (outside every agent's fs jail); survives a restart. A null goal clears it
+// (no active arc). Contract-free: plain HTTP, no bus event — mirrors commanderDossier exactly.
+const GOALS_FILE = path.join(WORKSPACES, '_commander.goals.json');
+const commanderGoals = {
+  _goal: null,
+  get() { return this._goal; },
+  set(goal) {
+    this._goal = (goal && typeof goal === 'object') ? {
+      text: String(goal.text || '').slice(0, 280),
+      done: Number(goal.done) | 0, total: Number(goal.total) | 0, pct: Number(goal.pct) | 0,
+      next: goal.next == null ? null : String(goal.next).slice(0, 200)
+    } : null;
+    try {
+      fs.mkdirSync(WORKSPACES, { recursive: true });
+      saveResilient(GOALS_FILE, { goal: this._goal });
+    } catch (e) { console.warn('[goals] persist failed:', (e && e.message) || e); }
+  },
+  load() { const o = loadResilient(GOALS_FILE, 'goals'); if (o && o.goal && typeof o.goal === 'object') this._goal = o.goal; },
+  // the one-line note folded into a cron persona: "Current goal: X (2/5 milestones done). Next: Y." '' when none.
+  note() {
+    const g = this._goal;
+    if (!g || !g.text) return '';
+    let s = 'Current goal: ' + g.text + ' (' + g.done + '/' + g.total + ' milestones done).';
+    if (g.next) s += ' Next step: ' + g.next + '.';
+    return s;
+  }
+};
+commanderGoals.load();
+
 function cronIdentityFor(agentId) {
   const id = String(agentId || 'agent');
   const ident = agentRoster.get(id);
@@ -626,13 +657,21 @@ function cronIdentityFor(agentId) {
   return {
     model: ident.model || null,
     provider: ident.provider || null,
-    system: system ? withDossier(system + CRON_ROUTINE_NOTE, commanderDossier.get()) : null,
+    system: system ? withDossier(system + CRON_ROUTINE_NOTE, dossierWithGoals()) : null,
     name: ident.name || id
   };
 }
+// GROWTH Tier 2: the dossier block a cron persona folds in, with the active goal-arc note appended (direction the
+// unattended run should work toward). Empty when both are empty → withDossier stays a no-op (the cron test invariant).
+function dossierWithGoals() {
+  const block = commanderDossier.get();
+  const note = commanderGoals.note();
+  if (!note) return block;
+  return block ? (block + '\n\n' + note) : note;
+}
 function cronSystemFor(agentId) {
   const ident = cronIdentityFor(agentId);
-  return (ident && ident.system) || withDossier(CRON_PERSONA, commanderDossier.get());
+  return (ident && ident.system) || withDossier(CRON_PERSONA, dossierWithGoals());
 }
 function cronModelFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
@@ -1640,6 +1679,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
   if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
+  if (req.method === 'POST' && req.url === '/api/goals') return handleGoals(req, res);   // GROWTH Tier 2: the active goal-arc summary for cron personas
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/discord/connect') return handleDiscordConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/discord/sync') return handleDiscordSync(req, res);
@@ -2605,6 +2645,18 @@ async function handleDossier(req, res) {
   commanderDossier.set(body && body.block);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, chars: commanderDossier.get().length }));
+}
+
+// POST /api/goals { goal } — GROWTH Tier 2: the browser pushes the ACTIVE goal-arc summary whenever it changes
+// (or null to clear it), so server-composed autonomous runs (cron) can fold in the current direction. Contract-
+// free: plain HTTP, no bus event. Mirrors handleDossier.
+async function handleGoals(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16)); }
+  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  commanderGoals.set(body && body.goal);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true, goal: commanderGoals.get() }));
 }
 
 function placedTypesFrom(v) {
