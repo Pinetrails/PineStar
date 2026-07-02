@@ -123,14 +123,14 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'goal',
     category: 'Session',
-    desc: 'show the current standing-goal status',
-    argsHint: '[text|status|clear]',
+    desc: 'set an autonomous standing goal (status/pause/resume/clear)',
+    argsHint: '[text|status|pause|resume|clear]',
     action: 'goal'
   }),
   Object.freeze({
     name: 'subgoal',
     category: 'Session',
-    desc: 'show subgoal support status',
+    desc: 'add a criterion the goal loop must also satisfy',
     argsHint: '[text|remove N|clear]',
     action: 'subgoal'
   }),
