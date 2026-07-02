@@ -277,6 +277,10 @@ const Chat = (() => {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
     proposalRunsSeen.clear(); studyRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
+    // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
+    // never flush into a new session (same law as turninQueue above). A fresh beat-slot arbiter matches the DOM.
+    studyPending.length = 0; tastePending.length = 0; activeStudy = null;
+    beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
@@ -335,6 +339,8 @@ const Chat = (() => {
   function load(ws) {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
     activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
+    activeStudy = null;   // the study card is the same kind of visible review layer — it belongs to the outgoing DOM
+    if (beatSlot && beatSlot.visibleBeat()) beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;   // the visible beat left with its DOM; a fresh arbiter matches the new stream
     endToolRail(); presenceCurTool = null;   // COMMS-PREMIUM: the tool rail + live-tool state belong to the OUTGOING stream's DOM
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
     if (activeWs && typeof Channels !== 'undefined') Channels.setComposeTarget(activeWs.id);
@@ -987,7 +993,10 @@ const Chat = (() => {
     if (!batch || !batch.proposals || !batch.proposals.length) return;
     clearNudge();   // ONE post-run beat at a time: the turn-in owns the moment, so retire any curiosity nudge that beat it here
     if (activeTurnin && (!activeTurnin.node || !activeTurnin.node.isConnected)) activeTurnin = null;
-    if (activeTurnin) {
+    // one visible consent beat, EVER: a deck arriving over another deck OR over a live STUDY card queues (the
+    // beat-slot arbiter is consulted so a memory deck can never stack on a study card — it renders the moment
+    // the card resolves; memory keeps priority via the queue-first drain in the study card's done()).
+    if (activeTurnin || slotMemoryDeck() === 'queue') {
       turninQueue.push(batch);
       updateTurninQueueNote();
       autoscroll();
@@ -1010,6 +1019,7 @@ const Chat = (() => {
   }
 
   function renderTurninBatch(batch) {
+    if (beatSlot) beatSlot.memoryShown();   // hard-claim the beat slot on EVERY deck-render path (idempotent)
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin');
     const n = batch.proposals.length;
     const title = document.createElement('span'); title.className = 'turnin-title';
@@ -1031,6 +1041,7 @@ const Chat = (() => {
 
     function finishBatch() {
       activeTurnin = null;
+      slotMemoryDone(batch.runId, turninQueue.length > 0);   // release (or hand on) the beat slot + clear this run's pending claim
       vanish(head.d, () => {
         showNextTurnin();
         // G2.4 starve hole 2: the deck (and its embedded control) just vanished — if the Commander
@@ -1107,11 +1118,14 @@ const Chat = (() => {
       const runId = p && p.runId; const agentId = (p && p.agentId) || 'agent';
       if (!runId || proposalRunsSeen.has(runId)) return;
       proposalRunsSeen.add(runId);
+      // reserve MEMORY's claim on the moment IMMEDIATELY (before the fetch settles) — the beat-slot arbiter
+      // makes the study beat cede across the whole proposed→fetch→deck window, closing the fetch-gap race.
+      slotMemoryProposed(runId);
       setTimeout(async () => {
         const proposals = await Harness.memoryProposals(runId, agentId);
         // G2.4 starve hole 1: memory.proposed fired (so the post-run slot stood down for the turn-in)
         // but the batch fetch came back empty — no card would ever carry the rate control. Rate now.
-        if (!proposals.length) { maybeStandaloneRate(agentId, runId); return; }
+        if (!proposals.length) { slotMemoryEmpty(runId); maybeStandaloneRate(agentId, runId); return; }   // release the claim — no deck will render
         const batch = { runId, agentId, proposals };
         // route to the ORIGIN stream (the one whose run proposed these) — many streams share agentId 'agent',
         // so gating on agentId can drop the card into the wrong COMMS after a mid-window switch.
@@ -1120,6 +1134,7 @@ const Chat = (() => {
         const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
         if (onActive) proposalCard(batch, activeWs);
         else {
+          slotMemoryEmpty(runId);   // notify-only — the claim is released, no deck will render here
           if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
           // G2.4 starve hole 3: the batch landed on a NON-displayed stream — a soft notify carries no
           // rate control. The hero's work still deserves its rating in the visible COMMS.
@@ -1132,51 +1147,114 @@ const Chat = (() => {
   /* GROWTH Tier 1 — THE STUDY BEAT (dossier Phase B: work → understanding). After a salient run the sidecar
      studies the transcript and stashes DOSSIER belief-update proposals; here we fetch them and — at TURN-IN
      PRIORITY but NEVER stacking a second beat — offer ONE for Keep / Edit / Discard. Keep folds the belief into
-     the dossier (source:'study'); Discard denylists it forever; leaving it unanswered tallies an ignore (2× =
-     stop). It rides the SAME one-post-run-beat discipline as the memory turn-in: a memory turn-in for the run
-     WINS (study cedes and re-offers on the next task end), and a live study card stands curiosity down. */
-  let activeStudy = null;            // the single visible study card { node } — one at a time, like activeTurnin
-  const studyPending = [];           // {runId, agentId} study batches deferred behind a memory turn-in — retried next run end
-  const tastePending = [];           // ready-made taste proposals (from a ratings streak) waiting for a free beat
+     the dossier (source:'study'); Discard denylists it forever; leaving it undecided tallies an ignore (2× =
+     stop). ONE-BEAT DISCIPLINE: the memory turn-in and the study card arrive on different clocks (memory.proposed
+     lands only after reflection's LLM round-trip), so both sides route every render/queue decision through the
+     PURE beat-slot arbiter (Study.makeBeatSlot — behaviorally tested in study.test.js). MEMORY WINS: while any
+     reflection is proposed-but-unresolved study cedes; a memory deck arriving over a visible study card QUEUES
+     and renders the moment the card resolves; a deferred study re-offers at the next task end. */
+  const STUDY_ARM_MS = 12000;        // arm the study offer WELL after run end so reflection's memory.proposed (an LLM
+                                     // round-trip away) claims the moment first; the beat-slot closes the residual race.
+  let beatSlot = null;               // the pure one-beat arbiter (created per session in init; null-safe wrappers below)
+  let activeStudy = null;            // the single visible study card { node, prop, decided } — one at a time
+  const studyPending = [];           // {runId, agentId} study offers deferred behind a busy moment — FIFO, retried next run end
+  const tastePending = [];           // ready-made taste proposals (from a ratings streak) waiting for a free beat — FIFO
   function studyBusy() { return !!(activeStudy && activeStudy.node && activeStudy.node.isConnected); }
-  // a MEMORY turn-in owns this run's moment? (it fetched proposals, or a deck is live/queued). Study must cede.
-  function memoryOwnsRun(runId) {
-    if (activeTurnin) return true;                       // a memory deck is live — study waits
-    if (runId && proposalRunsSeen.has(runId) && turninQueue.length) return true;
+  // null-safe slot wrappers (Study may be absent under old bundles — memory then behaves exactly as before).
+  function slotMemoryProposed(runId) { if (beatSlot) beatSlot.memoryProposed(runId); }
+  function slotMemoryDeck() { return beatSlot ? beatSlot.memoryDeck() : 'render'; }
+  function slotMemoryDone(runId, more) { if (beatSlot) beatSlot.memoryDone(runId, more); }
+  function slotMemoryEmpty(runId) { if (beatSlot) beatSlot.memoryEmpty(runId); }
+  function slotCanStudy() { return beatSlot ? beatSlot.canStudy() : 'busy'; }   // no arbiter -> study stands down
+  function slotStudyShown() { if (beatSlot) beatSlot.studyShown(); }
+  function slotStudyDone(more) { if (beatSlot) beatSlot.studyDone(more); }
+  // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
+  // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
+  function studyBlocked() {
+    if (isBusy() || interview) return true;
+    if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return true;
+    if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return true;
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
     return false;
   }
+  // defer a study offer for a later moment — SINGLE queue path, FIFO, deduped by runId (no double-queue).
+  function queueStudy(runId, agentId) {
+    if (!runId) return;
+    for (const q of studyPending) if (q.runId === runId) return;
+    studyPending.push({ runId: runId, agentId: agentId });
+  }
+  // FINDING-4 lifecycle: an undecided study card from a PRIOR task end EXPIRES when a new task ends — that is the
+  // "ignored" verdict (2× = stop proposing that belief) — and releases the slot so queued beats can't starve.
+  function expireActiveStudy() {
+    if (!activeStudy) return;
+    const a = activeStudy;
+    if (!a.node || !a.node.isConnected) { activeStudy = null; slotStudyDone(turninQueue.length > 0); return; }   // COMMS re-rendered under it
+    if (a.decided) return;   // mid-settle — its own 600ms timer is about to close it
+    activeStudy = null;
+    try { if (a.prop && typeof StudyStore !== 'undefined' && StudyStore.ignore) StudyStore.ignore(a.prop); } catch (_) {}
+    slotStudyDone(turninQueue.length > 0);
+    vanish(a.node, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
+  }
   // render ONE study proposal as a gold-inset turn-in card (Keep / Edit / Discard). Mirrors renderTurninBatch's
-  // family but routes consent to StudyStore (the dossier lives in the browser — no server verdict call).
+  // family but routes consent to StudyStore (the dossier write is client-side; the server batch is consumed via
+  // /api/study/resolve inside StudyStore). Returns true iff the card actually rendered.
   function studyCard(prop, agentId, runId) {
     if (!log || !prop || typeof StudyStore === 'undefined') return false;
+    // a RETIRE card must show the Commander the ACTUAL belief it will delete — re-resolve the (never-pinned)
+    // target at render time; if the dossier changed and nothing (unpinned) matches anymore, there is no card.
+    let target = null;
+    if (prop.kind === 'retire') {
+      target = (typeof StudyStore.retireTarget === 'function') ? StudyStore.retireTarget(prop) : null;
+      if (!target) return false;
+    }
     clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
     if (typeof StudyStore.markShown === 'function') StudyStore.markShown();   // spend one session-cap slot
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('study');
     const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === prop.dim) || {}).label || prop.dim) : prop.dim;
-    const verb = prop.kind === 'retire' ? 'thinks this no longer holds' : 'learned something about your ' + String(dimName).toLowerCase();
+    const verb = prop.kind === 'retire' ? 'thinks one of your beliefs no longer holds' : 'learned something about your ' + String(dimName).toLowerCase();
     const title = document.createElement('span'); title.className = 'turnin-title';
     title.textContent = '◈ ' + name + ' ' + verb + ' — keep it?';
-    const slot = document.createElement('span'); slot.className = 'turnin-slot';
-    r.body.appendChild(title); r.body.appendChild(slot);
+    const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
+    r.body.appendChild(title); r.body.appendChild(slotEl);
     const item = document.createElement('div'); item.className = 'turnin-item';
     const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = prop.kind === 'retire' ? 'RETIRE' : String(dimName).toUpperCase();
-    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = prop.text;
+    // the card's main text is what will actually happen: the belief to be ADDED, or (retire) the EXACT stored
+    // belief that would be deleted — never just the model's paraphrase of it.
+    const text = document.createElement('span'); text.className = 'turnin-text';
+    text.textContent = prop.kind === 'retire' ? target.text : prop.text;
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
-    slot.appendChild(item);
-    activeStudy = { node: r.d };
-    let decided = false;
-    function done() { activeStudy = null; vanish(r.d, () => flushStudyPending()); }
+    // provenance line: the model's reasoning (for a retire) + the directive this was observed from.
+    const why = [];
+    if (prop.kind === 'retire') why.push(prop.text);
+    if (prop.evidence) why.push('from “' + prop.evidence + '”');
+    if (why.length) { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ ' + why.join(' · '); item.appendChild(ev); }
+    slotEl.appendChild(item);
+    const card = { node: r.d, prop: prop, decided: false };
+    activeStudy = card;
+    slotStudyShown();
+    function done() {
+      if (activeStudy === card) activeStudy = null;
+      slotStudyDone(turninQueue.length > 0);
+      // hand the moment to a memory deck that queued behind this card (memory wins; no study chains here —
+      // at most ONE study proposal per task end, the next deferred one waits for the next run end).
+      vanish(r.d, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
+    }
     function settle(label, isDeny) {
-      decided = true; btns.remove();
+      card.decided = true; btns.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
       item.appendChild(tag);
       setTimeout(done, 600);
     }
     function commit(verdict, editedText) {
-      if (decided) return;
-      if (verdict === 'keep') { const ok = StudyStore.accept(prop, editedText); settle(prop.kind === 'retire' ? '✓ retired' : (editedText != null ? 'saved (edited)' : 'kept'), false); return ok; }
-      StudyStore.discard(prop); settle('✕ discarded', true);
+      if (card.decided) return;
+      if (verdict === 'keep') {
+        const ok = StudyStore.accept(prop, editedText, agentId);
+        if (!ok) { settle('✕ couldn’t apply — it changed', true); return; }   // honest: never flash "✓ retired" on a failed write
+        settle(prop.kind === 'retire' ? '✓ retired' : (editedText != null ? 'saved (edited)' : 'kept'), false);
+        return;
+      }
+      StudyStore.discard(prop, agentId); settle('✕ discarded', true);
     }
     function renderChoices() {
       btns.innerHTML = '';
@@ -1186,7 +1264,7 @@ const Chat = (() => {
       mk('Discard', 'deny', () => commit('discard'));
     }
     function enterEdit() {
-      if (decided) return;
+      if (card.decided) return;
       const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'turnin-edit'; inp.value = prop.text;
       item.replaceChild(inp, text); inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
       const commitEdit = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } text.textContent = v; item.replaceChild(text, inp); commit('keep', v); };
@@ -1200,28 +1278,25 @@ const Chat = (() => {
     autoscroll();
     return true;
   }
-  // try to place a deferred beat (a ready taste proposal first, else a deferred study batch) now that the moment
-  // may be free. One at a time — the vanish() of each card calls this again, draining the queues without stacking.
+  // try to place ONE deferred beat (a ready taste proposal first, else the OLDEST deferred study — FIFO) now
+  // that a new task end may have freed the moment. Never chains: one card per flush.
   function flushStudyPending() {
-    if (studyBusy()) return;
-    if (tastePending.length && StudyStore && StudyStore.canShow && StudyStore.canShow()) {
-      const t = tastePending.shift();
-      if (t) { studyCard(t, 'agent', null); return; }
-    }
-    if (studyPending.length) { const next = studyPending.pop(); if (next) offerStudy(next.runId, next.agentId, true); }
+    if (typeof StudyStore === 'undefined' || studyBusy() || slotCanStudy() !== 'free' || studyBlocked()) return;
+    if (!StudyStore.canShow || !StudyStore.canShow()) return;
+    if (tastePending.length) { const t = tastePending.shift(); if (t && studyCard(t, 'agent', null)) return; }
+    if (studyPending.length) { const next = studyPending.shift(); if (next) offerStudy(next.runId, next.agentId); }
   }
-  // fetch (unless retrying) + offer ONE live study proposal for a run, obeying the one-beat + session-cap gates.
-  async function offerStudy(runId, agentId, isRetry) {
+  // fetch + offer ONE live study proposal for a run, obeying the one-beat arbiter + stand-down guards + session
+  // cap. Any blocked moment QUEUES (single path, FIFO, deduped) — deferred, never starved, never stacked.
+  async function offerStudy(runId, agentId) {
     if (typeof StudyStore === 'undefined') return;
-    if (studyBusy()) { if (!isRetry) studyPending.push({ runId, agentId }); return; }        // a study card is already up
-    if (memoryOwnsRun(runId)) { if (!isRetry) studyPending.push({ runId, agentId }); return; } // memory turn-in wins this run
-    if (!StudyStore.canShow || !StudyStore.canShow()) return;                                 // session cap spent
+    if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked()) { queueStudy(runId, agentId); return; }
+    if (!StudyStore.canShow || !StudyStore.canShow()) return;                    // session cap spent (per-session, not deferrable)
     const proposals = await StudyStore.fetchProposals(runId, agentId);
-    if (!proposals.length) return;
-    const prop = StudyStore.nextLive(proposals);   // drops declined/ignored/exhausted beliefs
+    const prop = StudyStore.nextLive(proposals);   // drops resolved/declined/ignored + unmatchable retires
     if (!prop) return;
-    // re-check the moment after the async fetch — a memory turn-in may have claimed it meanwhile.
-    if (studyBusy() || memoryOwnsRun(runId)) { studyPending.push({ runId, agentId }); return; }
+    // re-check the moment after the async fetch — reflection's memory.proposed may have claimed it meanwhile.
+    if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked()) { queueStudy(runId, agentId); return; }
     studyCard(prop, agentId, runId);
   }
   function wireStudy() {
@@ -1231,14 +1306,17 @@ const Chat = (() => {
       if (!p || p.reason !== 'done') return;                       // only after a clean run
       if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never study-nudges)
       const runId = p.runId || p.id;
-      // each run-end is also a chance to retry a study deferred behind an earlier memory turn-in (anti-starve).
+      // a new task ended: the PREVIOUS task's undecided study card expires as an "ignore" (finding-4 lifecycle),
+      // then one deferred beat may take the freed moment (anti-starve). Short delay = after the reply renders.
+      setTimeout(() => { expireActiveStudy(); flushStudyPending(); }, 900);
+      // THIS run's own study offer arms much later (STUDY_ARM_MS): reflection's memory.proposed is a whole LLM
+      // round-trip away, and MEMORY WINS the moment — by then the beat-slot knows whether reflection claimed it.
       setTimeout(() => {
-        flushStudyPending();
         if (!runId || studyRunsSeen.has(runId)) return;            // fetch a run's study proposals at most once
         studyRunsSeen.add(runId);
         if (studyRunsSeen.size > 200) studyRunsSeen.delete(studyRunsSeen.values().next().value);
-        offerStudy(runId, p.agentId || 'agent', false);
-      }, 900);   // AFTER wireProposals' 350ms fetch + wireCuriosity's 650ms slot, so a memory turn-in claims the moment first
+        offerStudy(runId, p.agentId || 'agent');
+      }, STUDY_ARM_MS);
     });
   }
   // GROWTH Tier 1 §4 — RATINGS → TASTE: after a work verdict folds, a 3-streak on one archetype may mint a
@@ -1249,10 +1327,9 @@ const Chat = (() => {
     const arch = Study.classifyArchetype(directive || '');
     const prop = StudyStore.noteRating(arch, verdict);   // persists the streak; returns a proposal only on a fresh 3-streak
     if (!prop) return;
-    // ride the one-beat discipline: if the moment is taken, queue it (studyPending carries runId only, so stash the
-    // ready-made taste proposal on a tiny side channel keyed by a synthetic runId).
+    // ride the one-beat discipline: if the moment is taken/blocked, queue it (FIFO; drained at the next task end).
     setTimeout(() => {
-      if (studyBusy() || memoryOwnsRun(runId) || !StudyStore.canShow()) { tastePending.push(prop); return; }
+      if (studyBusy() || slotCanStudy() !== 'free' || studyBlocked() || !StudyStore.canShow()) { tastePending.push(prop); return; }
       studyCard(prop, agentId || 'agent', runId);
     }, 300);
   }

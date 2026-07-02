@@ -288,9 +288,48 @@
     return false;
   }
 
+  /* ---- THE BEAT SLOT (pure, node-testable): the one-post-run-beat arbiter chat.js drives. ----
+     Exists because the memory turn-in and the study card arrive on DIFFERENT clocks — memory.proposed lands only
+     after reflection's LLM round-trip (seconds after agent.run.end) — so "check the DOM at offer time" produces
+     false negatives and can put TWO consent beats on screen. This state machine is the single source of truth
+     for who holds the visible post-run beat; BOTH sides route their render/queue decisions through it, so the
+     "never two beats" invariant is enforced in ONE tested place instead of scattered DOM checks. MEMORY WINS:
+     while any reflection is proposed-but-unresolved, study cedes; a memory deck arriving over a visible study
+     card QUEUES (never stacks) and renders the moment the study card resolves.
+
+     visible ∈ { null, 'memory', 'study' }; pendingMemory = runIds whose memory.proposed arrived but whose deck
+     hasn't resolved yet (covers the whole LLM→fetch→deck window, incl. the 350ms fetch gap). Contract:
+       memoryProposed(runId)     — reflection announced proposals: reserve memory's claim (call BEFORE the fetch).
+       memoryDeck()              — a fetched deck wants to render: 'render' (slot was free) | 'queue' (a beat is up).
+       memoryDone(runId, more)   — the visible deck resolved; more=true keeps the slot held for the queued next deck.
+       memoryEmpty(runId)        — the fetch came back empty / notify-only: release the claim (deck never rendered).
+       canStudy()                — 'free' | 'busy' (a beat is visible) | 'memory' (reflection in flight — memory wins).
+       studyShown()/studyDone(more) — the study card opened / resolved; more=true hands the slot to a queued memory deck.
+       visibleBeat()             — 'memory' | 'study' | null. THE tested invariant: never both. */
+  function makeBeatSlot() {
+    const pendingMemory = new Set();
+    let visible = null;
+    return {
+      memoryProposed(runId) { if (runId) pendingMemory.add(runId); },
+      memoryDeck() { if (visible !== null) return 'queue'; visible = 'memory'; return 'render'; },
+      memoryShown() { visible = 'memory'; },   // idempotent hard-claim for the actual deck render (already arbitrated)
+      memoryDone(runId, more) { if (runId) pendingMemory.delete(runId); visible = more ? 'memory' : null; },
+      memoryEmpty(runId) { if (runId) pendingMemory.delete(runId); },
+      canStudy() {
+        if (visible !== null) return 'busy';
+        if (pendingMemory.size) return 'memory';   // reflection in flight ANYWHERE — memory wins the moment
+        return 'free';
+      },
+      studyShown() { visible = 'study'; },
+      studyDone(more) { visible = more ? 'memory' : null; },
+      visibleBeat() { return visible; },
+      _pending() { return pendingMemory.size; }
+    };
+  }
+
   return {
     study, buildPrompt, parse, studySalient, usedTools, lowValue, canonDim, jaccard,
-    foldRating, tasteProposal, isDeclined, existingTexts, classifyArchetype,
+    foldRating, tasteProposal, isDeclined, existingTexts, classifyArchetype, makeBeatSlot,
     DIMS, STREAK_N, SIM_THRESHOLD, DEFAULT_MAX
   };
 });
