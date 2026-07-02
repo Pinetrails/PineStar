@@ -1576,11 +1576,11 @@ const StationUI = (() => {
       // the sidecar and never displayed; a blank token on reconnect reuses the saved one.
       '<h4 class="ms-h" style="margin-top:14px">DISCORD</h4>' +
       '<div id="dc-status" class="set-row">checking…</div>' +
-      '<p class="set-about">DM your agent from Discord. ' +
+      '<p class="set-about">Let your agent message you on Discord — pings and reports when it works on its own. ' +
+        '<b>Send-only for now:</b> replies you type in Discord don\'t reach the agent yet (two-way chat is on the roadmap; use Telegram for that today). ' +
         '<b>1.</b> Open the <b>Discord Developer Portal</b> → <b>New Application</b> → <b>Bot</b> → <b>Reset Token</b> → copy the token. ' +
         '<b>2.</b> Enable <b>MESSAGE CONTENT INTENT</b> on the Bot page, then invite the bot to a server (OAuth2 → URL Generator → <code>bot</code> scope). ' +
-        '<b>3.</b> Paste the token below and connect. Your agent answers using this app\'s current provider + model, ' +
-        'with its own memory + workspace per chat. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span></p>' +
+        '<b>3.</b> Paste the token below and connect. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span></p>' +
       '<label class="ms-h" for="dc-token">BOT TOKEN <span class="dim">— from the Discord Developer Portal</span></label>' +
       '<input id="dc-token" type="password" class="key-input" placeholder="MTE...Bot token" autocomplete="off" spellcheck="false">' +
       '<div class="set-save"><button class="bb sm" id="dc-connect">⏼ CONNECT</button> ' +
