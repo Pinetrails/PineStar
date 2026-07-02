@@ -2644,14 +2644,28 @@ const World = (() => {
     // USES the Commander's placed props (couch/TV/arcade) via planProp below — that stays.
     const n = self.needs, p = self.pers, ph = phaseOf(now), idleAge = now - (self.lastTaskAt || now);
     if (ph.tag === 'drift' && idleAge > 45000 && n.rest > 50 && U.chance(0.22) && sleep(now)) return;   // deep downtime in the wind-down mood -> power down where it stands
+    /* TIER D SELECTION (hoisted 2026-07-02 — live-soak fix): these three used to sit INSIDE the `top < 28`
+       CONTENT branch below, but contentment is correct-but-rare in practice (stim/social decay while idle —
+       the Pass-7 note), so chase/social/mimic were almost never even CONSULTED and the observed live rate was
+       ~zero despite correctly-tuned lanes. They now run at EVERY idle re-decide (matching the rate model the
+       D3/D4 constants were calibrated against). Safe to hoist: each maybe* is fully self-gated (the 8-15min
+       chase gate + cursor fresh/moving, the 5-8min social lane + slot + pair cooldowns, the mimic per-body
+       cooldown + cursor gate + D2 station budget, and all the eligibility/goal==null checks) — consulting more
+       often changes WHEN they're considered, never their budgets; the lanes remain the rate governors. Position
+       preserves every existing precedence: chat-stare > hero reflexes > quirk > sleep > chase > social > mimic
+       > the want-engine — identical RNG draw ORDER on the old (content) reachable passes, and on quiet paths
+       (stale cursor / no pair / lanes closed) all three no-op BEFORE any roll, so N=1 unattended stays
+       byte-identical. */
+    if (maybeChase(now)) return;         // TIER D · D4 THE CHASE: ultra-rare (8-15 min station cooldown, one chaser ever, mutually exclusive with a live social beat, cursor fresh+MOVING) — breaks toward the cursor, pursues, stops+stares, walks off. Rolled FIRST but hardest-gated: most idle decisions never even reach the roll.
+    if (maybeSocial(now)) return;        // TIER D · D3: a rare SILENT social encounter (huddle/watch/border/half-follow) between idle neighbors — bounded movement, one live station-wide, zone-clamped, per-pair cooldown (G3/G4/G5); selected here at the idle cadence off neighborsOf (K4 — never off observing another encounter)
+    if (maybeMimic(now)) return;         // TIER D · D4 CURSOR-MIMIC: a rare quirk-band head-only follow of the moving cursor (3-6s, per-body 45-90s cooldown, station-gated); reduceMotion → a single glance
     const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody) * ph.rest;
     const wStim = ((100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless) * ph.stim;   // boredom climbs with downtime
     const wSoc = (100 - n.social) * ph.soc;
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
-      if (maybeChase(now)) return;         // TIER D · D4 THE CHASE: ultra-rare (8-15 min station cooldown, one chaser ever, mutually exclusive with a live social beat, cursor fresh+MOVING) — breaks toward the cursor, pursues, stops+stares, walks off. Rolled FIRST but hardest-gated: most idle decisions never even reach the roll.
-      if (maybeSocial(now)) return;        // TIER D · D3: a rare SILENT social encounter (huddle/watch/border/half-follow) between idle neighbors — bounded movement, one live station-wide, zone-clamped, per-pair cooldown (G3/G4/G5); selected here at the idle cadence off neighborsOf (K4 — never off observing another encounter)
-      if (maybeMimic(now)) return;         // TIER D · D4 CURSOR-MIMIC: a rare quirk-band head-only follow of the moving cursor (3-6s, per-body 45-90s cooldown, station-gated); reduceMotion → a single glance
+      // (chase/social/mimic selection HOISTED above — see the TIER D SELECTION block — so it runs on every
+      // idle re-decide, not only the rare content pass. This branch keeps its CONTENT=STILL character.)
       if (maybeMutualGlance(now)) return;  // C-Beat2: a quiet noticing between two idle neighbors — gaze-only; maybeMutualGlance holds self.idleUntil past its own glance so the beat stays two-sided, then ends by timeout
       if (U.chance(0.10) && maybeRevisit(now)) return;                                 //   occasionally drift back to its favorite spot
       const r = U.irnd(0, 99);

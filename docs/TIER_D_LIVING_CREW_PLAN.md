@@ -388,7 +388,8 @@ encounters …` (557dccb2) + the fall-through / one-sided-break fixes.
   loops (hero `tick()` and `crewEngineStep`) after the D1 chat-stare hook, BELOW the summon/`b.working` seize; a
   dedicated `goal==='social'` branch in each idle ladder stops the fall-through to `decideIdle` (which would stomp
   the hold with a wandering beat). `arrive()` gained a `goal==='social'` case so a reached waypoint stays on-goal.
-- **Selection — `maybeSocial(now)`** is called from `decideIdle` at the existing idle cadence (K4 — off
+- **Selection — `maybeSocial(now)`** is called from `decideIdle` at the existing idle cadence, on EVERY pass
+  (hoisted out of the `top < 28` content branch 2026-07-02 — see SELECTION HOIST below) (K4 — off
   `neighborsOf`, never off observing another encounter). Order of gates: reduceMotion → no walking beats (degrade to
   Tier C glances); slot free; self eligible (`socialEligible`: idle + placed + not chat-focused + not already in a
   beat); **social LANE open** (`now >= socialGateUntil` — the dedicated 5-8min station cooldown, NOT the shared
@@ -461,6 +462,38 @@ hold `U.irnd(3000, 7000)` ms; whole-encounter hard timeout `SOCIAL_HARD_MS = 250
 - **Honest rate:** a 3-6 body idle floor now sees roughly **one encounter every ~6 minutes** (~9.5/hr) — the D3
   "one every few minutes" intent, met. Still RARE (the lane + one-slot G4 + per-pair 3-6min cooldown all hold); an
   unattended / read-only / solo-hero floor sees ZERO (no pairs). Total station calm is unchanged (G5).
+
+### SELECTION HOIST (2026-07-02, live-soak fix) — the retune was gated behind a branch that almost never runs
+- **The bug (live differential probes + code):** ALL THREE Tier D selection hooks — `maybeChase`, `maybeSocial`,
+  `maybeMimic` — were only reachable inside `decideIdle`'s `top < 28` CONTENT branch. Per the sentience roadmap's
+  own Pass-7 note, contentment is *correct-but-rare in practice* (stim/social decay while idle), so the hooks were
+  almost never CONSULTED: a 9-min 4-body post-retune watch saw 0 encounters; 150s+150s of continuous mousing saw 0
+  chases (the hero cycled gaze/tend/quirk — need-driven passes, never content); the one chase ever observed fired
+  7s after a fresh boot (the brief boot-time content window). The MC model assumed selection at every idle
+  re-decide — what the code SHOULD do; the hoist makes the code match the model, so the tuned constants stand
+  un-retuned.
+- **The fix:** the three-line selection block (chase → social → mimic, order and comments kept) is HOISTED out of
+  the content branch to run at **every** `decideIdle` pass. **Position: immediately after the sleep check, before
+  the need-weights computation.** Why there: it preserves EVERY existing precedence relationship — chat-stare hold
+  > hero reflexes (mourn / novelty-inspect / D5 board-post) > quirk > sleep > **chase > social > mimic** > the
+  want-engine — which is exactly the relative order a content pass already had; the block merely becomes reachable
+  on need-driven passes too. The `top < 28` branch keeps its CONTENT=STILL character (mutual-glance, revisit,
+  stand/look/wander) minus those three lines (single consult site — grep-verified no duplicate remains).
+- **Why all laws hold:** each `maybe*` is fully SELF-gated — the 8-15min chase station gate + cursor fresh+moving
+  + one-chaser lock, the 5-8min social lane + single slot + per-pair cooldowns + candidate-existence, the mimic
+  per-body 45-90s cooldown + cursor freshness + D2 station budget, and `goal==null` eligibility via `bodyIsIdle`
+  (so a body holding ANY goal — including a cold `stare-chat` not yet re-decided — can never be grabbed). Hoisting
+  only increases how often the hooks are *consulted*, never their *budgets*: the lanes/gates remain the rate
+  governors, so the MC numbers (~9.5 enc/hr lane-bound; chase ceiling ~5.2/hr cooldown-bound; mimic quirk-band)
+  are now the accurate live model. Total station calm is untouched (every fire still arms the shared gate).
+- **RNG draw-order trace:** all three hooks are strictly gates-before-rolls (`maybeChase` has NO roll at all —
+  RNG only on fire; `maybeSocial` returns before `U.chance` unless lane open + eligible + candidate; `maybeMimic`
+  returns before its roll unless eligible + off-cooldown + cursor-fresh). On the previously-reachable CONTENT
+  passes the draw order is unchanged (the need-weights computed between the old and new positions are RNG-free
+  arithmetic). On need-driven passes the hooks are newly consulted, but on every quiet path (stale cursor, no
+  pair, lanes closed, goal held) they no-op with ZERO draws — so an unattended / solo-hero (N=1) session stays
+  byte-identical to pre-hoist. (`U.*` are independent `Math.random` wrappers, not a seeded stream, so the new
+  draws on active paths cannot shift any other roll's semantics — the same argument as D2/D3.)
 
 ### The 7 self-review hunts — how each was cleared
 1. **Social target outside the mover's zone** — every plan builder clamps via `tileInZone(zoneFor(mover))`
@@ -558,6 +591,10 @@ the single glance).
   N=1 (hero only) = same. **Realistic** (cursor fresh ~20 % of a session): ~5/hour. N=6: the hero is undamped; the
   CREW's collective mimic rate is bounded by the shared 45-90 s station beat gate (`armBeat`), NOT 6×, and shares
   that budget with quirks/social — so a 6-body floor stays calm (crew-count-invariant, same G5 property D2 measured).
+- **Selection cadence note (2026-07-02):** these rates were computed assuming the hooks are consulted at every
+  idle re-decide — which only became TRUE with the SELECTION HOIST (see the D3 section): pre-hoist, chase/mimic
+  selection sat inside the rare `top < 28` content branch and the observed live rate was ~zero. Post-hoist the
+  hooks run on every `decideIdle` pass, so the ceilings/realistic figures above are the accurate live model.
 
 ### The 6 self-review hunts — how each was cleared
 1. **Chase target outside zone at ANY repath tick.** `stepChase` re-derives `zoneFor(self)` and re-tests
