@@ -80,10 +80,14 @@ const PropSprites = (() => {
      touch the floor, under one light (high + slightly west, like the walls). Bodies use
      the shared ramps below; color identity lives in ACCENTS + emissives, not casings. */
   const LINE = '#06090c';                        // universal silhouette outline
+  /* casings are toned DOWN ~15% (sheen rows 20%) from the authoring values so props sit inside the
+     station's dim CRT lighting instead of popping against it — Andrew's pre-merge call. Emissives
+     and ACC accents keep full brightness; only the body ramps dim. */
+  const dim = (c, k) => U.shade(c, k || -0.15);
   const RAMP = {
-    steel: { top: '#4a5862', face: '#39454d', lit: '#5f6f7a', sheen: '#7a8b95', dk: '#242e35', ao: '#12181d' },
-    gun:   { top: '#3c4a44', face: '#2e3a36', lit: '#4e5e56', sheen: '#68796f', dk: '#1d2723', ao: '#0f1512' },
-    fabric:{ top: '#46565f', face: '#39464e', lit: '#5a6b75', sheen: '#70828c', dk: '#28323a', ao: '#141b20' },
+    steel: { top: dim('#4a5862'), face: dim('#39454d'), lit: dim('#5f6f7a'), sheen: dim('#7a8b95', -0.2), dk: dim('#242e35'), ao: dim('#12181d') },
+    gun:   { top: dim('#3c4a44'), face: dim('#2e3a36'), lit: dim('#4e5e56'), sheen: dim('#68796f', -0.2), dk: dim('#1d2723'), ao: dim('#0f1512') },
+    fabric:{ top: dim('#46565f'), face: dim('#39464e'), lit: dim('#5a6b75'), sheen: dim('#70828c', -0.2), dk: dim('#28323a'), ao: dim('#141b20') },
   };
   const ACC = { work: '#41ff8a', data: '#4ad9ff', flow: '#ffd34a', lounge: '#ff6ad5', mem: '#b44aff', alert: '#ff4a3d' };
   const shadow2 = (x, y, w) => {                 // soft 2-step contact shadow ON the floor line y
