@@ -51,6 +51,13 @@ const many = Array.from({ length: 12 }, (_, n) => ({ id: 'r' + (n + 1), name: 'R
 const capped = P.buildDirective({ recipes: many, maxRecipes: 8 });
 A.ok(capped.indexOf('recipe:r8') >= 0 && capped.indexOf('recipe:r9') < 0, 'buildDirective caps the listed recipes');
 
+// G1c QUEST CHAINING: an unlockedCapability reframes the directive around the fresh capability ("what's next"),
+// while keeping the SAME strict reply format so parsePitch reads it unchanged.
+const chained = P.buildDirective({ recipes: [{ id: 'x', name: 'X' }], unlockedCapability: 'WEB' });
+A.ok(/new capability: WEB/.test(chained), 'unlockedCapability grounds the pitch in the just-unlocked capability (the chaining follow-up)');
+A.ok(/PITCH:/.test(chained) && /BUILD:/.test(chained) && /GAP:/.test(chained), 'the chained directive keeps the strict reply format (parsePitch reads it unchanged)');
+A.ok(P.buildDirective({}).indexOf('new capability') < 0, 'no unlock line when nothing was chained (older callers untouched)');
+
 /* ---------- parsePitch(): tolerant read-back ---------- */
 const good = 'PITCH: a daily crypto-price watcher\nWHY: you said you check prices every morning\nBUILD: recipe:morning-brief\nGAP: which coins you actually care about';
 A.eq(P.parsePitch(good), {

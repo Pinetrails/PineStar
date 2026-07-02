@@ -157,7 +157,17 @@ const StationQuestStore = (() => {
       }
       return gapGranted(entry);
     }, nowMs());
-    if (closed.length) save();   // completedAt is durable the instant the gap closes (the celebration rides QuestState's fold over quests())
+    if (closed.length) {
+      save();   // completedAt is durable the instant the gap closes (the celebration rides QuestState's fold over quests())
+      // G1c QUEST CHAINING: a station gap just closed (a prop was placed → a real capability is live). Offer the
+      // natural follow-up ONCE, through SuggestStore's EXISTING idea cadence — it rides the suggest slot and
+      // respects its cooldown/session cap. If the suggest gate is blocked, it drops silently (anti-nag; never
+      // queued). Prefer a genuine tool-gap capability over the synthetic OUTBOX standing quest.
+      const chainable = closed.find(e => e && e.cap && e.cap !== 'outbox') || null;
+      if (chainable && typeof SuggestStore !== 'undefined' && SuggestStore.armChain) {
+        try { SuggestStore.armChain(chainable.capLabel || chainable.cap); } catch (_) {}
+      }
+    }
   }
 
   /* ---------- the projection consumed by QuestStore.view (so these ride the shared render + fold) ---------- */

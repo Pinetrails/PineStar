@@ -23,6 +23,7 @@ const SuggestStore = (() => {
   let deps = {};           // accessors/actions injected by app.js
   let sessionShown = 0;    // ideas shown THIS session (in-memory; resets each app run)
   let firing = false;      // re-entrancy guard while an idea is mid-flight
+  let pendingChain = null; // G1c: a just-unlocked capability label to chain a follow-up idea off (one-shot, in-memory)
 
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
@@ -56,8 +57,18 @@ const SuggestStore = (() => {
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    sessionShown = 0; firing = false;
+    sessionShown = 0; firing = false; pendingChain = null;
     if (typeof U !== 'undefined' && U.bus && U.bus.on) U.bus.on('agent.run.end', onRunEnd);
+  }
+
+  // G1c QUEST CHAINING: a station quest just closed a capability gap (a prop landed → a real capability is live).
+  // Arm a ONE-SHOT follow-up so the NEXT natural suggestion (which already rides the cooldown + session cap) is
+  // grounded in that fresh capability — "the dish is live, want NOVA to build the price-watcher?". This never
+  // FORCES a beat: it only flavors the next due suggestion. If the gate never opens, it drops silently on the
+  // next fire (anti-nag; never a queued nag). The latest unlock wins (a stale chain is superseded, not stacked).
+  function armChain(capLabel) {
+    const c = String(capLabel == null ? '' : capLabel).trim();
+    if (c) pendingChain = c.slice(0, 24);
   }
 
   const pitchDone = () => (typeof PitchStore !== 'undefined' && PitchStore.done) ? PitchStore.done() : false;
@@ -110,11 +121,13 @@ const SuggestStore = (() => {
     if (typeof Harness === 'undefined' || !Harness.chat) return;
     if (typeof Chat === 'undefined' || !Chat.nudge) return;
     firing = true;
+    // G1c: consume any armed chain ONCE — this fire either uses it or it's dropped (never carried to a later beat).
+    const chain = pendingChain; pendingChain = null;
     try {
       const recipes = (typeof Recipes !== 'undefined' && Recipes.list)
         ? Recipes.list().map(r => ({ id: r.id, name: r.name, tagline: r.tagline })) : [];
       const caps = deps.getCaps ? deps.getCaps() : [];
-      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '' });
+      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '', unlockedCapability: chain || '' });
       const system = deps.getSystem ? deps.getSystem() : '';
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
@@ -158,6 +171,9 @@ const SuggestStore = (() => {
   // template. (Kept local rather than shared so pitchstore.js stays untouched.)
   function doBuild(parsed) {
     try {
+      // G1c: the accepted idea becomes a trackable WORK quest (multi-step, rides the QuestState celebration).
+      // Minted BEFORE the launch so the store can claim the run the launch kicks off. Additive, best-effort.
+      try { if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.accept) WorkQuestStore.accept(parsed); } catch (_) {}
       const b = parsed.build || {};
       if (b.kind === 'recipe' && b.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {
         const r = Recipes.get(b.recipeId);
@@ -172,10 +188,10 @@ const SuggestStore = (() => {
   }
 
   // S2: a brand-new hero starts fresh (no baseline, no cooldown carryover). Own key, like curiositystore.
-  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] }; sessionShown = 0; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = { v: 1, lastFamiliarity: null, tasksSinceLast: 0, recent: [] }; sessionShown = 0; firing = false; pendingChain = null; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, willSuggest, fire, _state: () => state, _session: () => sessionShown };
+  return { init, reset, onRunEnd, willSuggest, fire, armChain, _state: () => state, _session: () => sessionShown, _chain: () => pendingChain };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { SuggestStore };

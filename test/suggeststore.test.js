@@ -211,6 +211,27 @@ global.DossierStore.summary = _summ;
     await SuggestStore.fire();
     A.eq(chat.nudges.length, 2, 'a genuinely different idea still surfaces');
 
+    /* ---------- G1c QUEST CHAINING: an armed chain flavors the NEXT natural suggestion (rides the slot) ---------- */
+    clearFakes(); SuggestStore.reset();
+    SuggestStore._state().lastFamiliarity = 0.4; SuggestStore._state().tasksSinceLast = 5; dsFam = 0.6; pitchDoneFlag = true;
+    SuggestStore.armChain('WEB');
+    A.eq(SuggestStore._chain(), 'WEB', 'armChain records the just-unlocked capability (one-shot)');
+    A.eq(SuggestStore.willSuggest(), true, 'chaining rides the EXISTING cadence — the suggest gate still decides (it never forces a beat)');
+    hn.next = { text: 'PITCH: a price-watcher on the web\nWHY: you just gained web\nBUILD: workflow' };
+    await SuggestStore.fire();
+    A.ok(hn.calls.length === 1 && /new capability: WEB/.test(hn.calls[0].messages[0].content), 'the fired directive is grounded in the unlocked capability (the "what\'s next" pull)');
+    A.eq(SuggestStore._chain(), null, 'the chain is consumed ONCE — never carried to a later beat');
+    A.eq(chat.nudges.length, 1, 'the chained follow-up rides the normal suggest nudge (no new beat family)');
+
+    // if the suggest gate is BLOCKED, an armed chain drops silently on the next fire — never a queued nag
+    clearFakes(); SuggestStore.reset();
+    SuggestStore.armChain('FILES');
+    A.eq(SuggestStore._chain(), 'FILES', 'a chain can be armed while the gate is closed');
+    // a fresh reset makes willSuggest() false (no baseline / cooldown); a stray fire() consumes + drops the chain
+    hn.next = { text: 'PITCH: x\nBUILD: workflow' };
+    await SuggestStore.fire();
+    A.eq(SuggestStore._chain(), null, 'a fire consumes the chain even if it produces nothing — it is never queued (anti-nag)');
+
     A.report('suggeststore.test');
   } catch (e) {
     A.ok(false, 'unexpected throw: ' + (e && e.stack || e));

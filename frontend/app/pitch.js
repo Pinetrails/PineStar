@@ -102,10 +102,15 @@
     const recipes = (Array.isArray(ctx.recipes) ? ctx.recipes : []).slice(0, Number.isFinite(ctx.maxRecipes) ? ctx.maxRecipes : MAX_RECIPES);
     const caps = Array.isArray(ctx.capabilities) ? ctx.capabilities : [];
     const recent = String(ctx.recentTask == null ? '' : ctx.recentTask).trim();
+    // G1c QUEST CHAINING: when set, a station-quest just closed a capability gap (a prop was placed) — the
+    // pitch is the natural "what's next" follow-up grounded in that fresh capability ("the dish is live —
+    // want NOVA to build the price-watcher?"). Same strict reply format, so parsePitch reads it unchanged.
+    const unlocked = String(ctx.unlockedCapability == null ? '' : ctx.unlockedCapability).trim();
 
     const lines = [];
     lines.push('INTERNAL — THE FIRST PITCH. Do not run any tools. Reason only, then reply in the exact format below.');
-    lines.push('You now know your Commander (see what you know about them, above). Propose the SINGLE most valuable thing to build for THEM next — a real use case they would actually want, not a generic suggestion.');
+    if (unlocked) lines.push('Your bay just gained a new capability: ' + unlocked + '. Propose the SINGLE most valuable thing to build for your Commander that USES this new capability — the natural next step now that it is live.');
+    else lines.push('You now know your Commander (see what you know about them, above). Propose the SINGLE most valuable thing to build for THEM next — a real use case they would actually want, not a generic suggestion.');
     lines.push('Hard rules:');
     lines.push('- Exactly ONE proposal. Never a list, never options. Pick the best and commit to it.');
     lines.push('- It MUST be buildable here: either it maps to one of the recipes below, or it is achievable with the capabilities you actually have. Never propose something you cannot deliver.');
