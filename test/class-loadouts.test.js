@@ -137,4 +137,73 @@ A.ok(/deps\.classes[\s\S]{0,120}\.map\(c => c && c\.id\)/.test(orch), 'team.summ
 A.ok(/SPECIALIST_CLASSES\s*=\s*\(sharedSpecialties\.BUILTINS/.test(idx), 'the sidecar composes the class list from the shared catalog');
 A.ok(/classes:\s*SPECIALIST_CLASSES/.test(idx), 'the shared class list is injected into the orchestration tools');
 
+/* ---------- 4. KIT-ARRIVAL GAP: deferred kit delivery on room-assign (adversarial review fix) ---------- */
+// 4a. FUNCTIONAL (real WorldModel): the room-arrival seam + the idempotence PREMISE requisitionForAgent relies on.
+// A fresh agent has NO room until a bay bound to it is placed; once placed, agentRoomId resolves and bayObjects
+// dedups a capability — so re-requisitioning a cap already in the room is a no-op (the {already:true} guard holds).
+const WorldModel = require('../frontend/app/worldmodel.js');
+{
+  const m = WorldModel.create ? WorldModel.create() : null;
+  A.ok(m, 'WorldModel.create() loads headless');
+  // a fresh agent with no bay has NO room -> requisitionForAgent would return no-room -> kit goes pending
+  A.eq(m.agentRoomId('kituser'), null, 'a fresh agent (no bay) has no room — kit cannot arrive at summon');
+  const roomId = m.spawnRoomId();   // the default station ships one hab room; use it (a real room the bay can land in)
+  A.ok(roomId, 'the default station has a room the agent can be seated in');
+  const bay = m.addProp({ t: 'bay', x: 3, y: 3, w: 2, h: 2, agentId: 'kituser' });
+  A.ok(bay.ok, 'a bay bound to the agent places');
+  A.eq(m.agentRoomId('kituser'), roomId, 'binding a bay gives the agent a room — the deferred-delivery trigger');
+  // place the canonical cabinet prop (war_intelcab -> cabinet) IN the room; bayObjects should surface 'cabinet'
+  const cab = m.addProp({ t: 'war_intelcab', x: 6, y: 6, w: 1, h: 1 });
+  A.ok(cab.ok, 'a cabinet prop places in the room');
+  const caps1 = m.bayObjects('kituser');
+  A.ok(caps1.indexOf('cabinet') >= 0, 'bayObjects surfaces the placed cabinet capability');
+  // idempotence premise: a SECOND cabinet in the same room does not double the capability -> requisitionForAgent's
+  // `already` short-circuit (which reads bayObjects) correctly prevents a duplicate placement.
+  m.addProp({ t: 'safe', x: 8, y: 8, w: 1, h: 1 });   // also maps to 'cabinet'
+  const caps2 = m.bayObjects('kituser').filter(c => c === 'cabinet');
+  A.eq(caps2.length, 1, 'a capability is deduped in a room — the idempotent `already` guard never stacks duplicates');
+}
+
+// 4b. SOURCE: summon records the undelivered kit as pendingKit; it persists + rehydrates + is exported for delivery.
+A.ok(/setPendingKit\(a, pending\)/.test(app), 'requisitionKit records the still-missing (retryable) kit as pendingKit');
+A.ok(/KIT_RETRYABLE\s*=\s*\{[^}]*'no-room'/.test(app), 'only retryable misses (no-room/no-valid-tile/…) go pending — permanent ones never nag');
+A.ok(/function deliverPendingKit\(agentId\)/.test(app), 'App.deliverPendingKit drains an agent\'s pending kit once it has a room');
+const dpk = app.slice(app.indexOf('function deliverPendingKit('), app.indexOf('function deliverPendingKit(') + 1200);
+A.ok(/Build\.requisitionForAgent/.test(dpk), 'deliverPendingKit goes through the SAME validated placement path');
+A.ok(/res\.ok\)\s*delivered\.push/.test(dpk), 'deliverPendingKit treats ok (placed OR already-present) as delivered — idempotent');
+A.ok(/KIT_RETRYABLE\[res\.reason\]\)\s*stillPending\.push/.test(dpk), 'deliverPendingKit re-queues only still-retryable misses; drops permanent ones');
+A.ok(/pendingKit:\s*Array\.isArray\(a\.pendingKit\)/.test(app), 'serializeAgentLite persists pendingKit (survives reload)');
+A.ok(/pendingKit:\s*Array\.isArray\(s\.pendingKit\)/.test(app), 'rehydrateRoster restores pendingKit');
+A.ok(/deliverPendingKit,/.test(app), 'App exports deliverPendingKit');
+A.ok(/onAgentRoomAssigned:\s*deliverPendingKit/.test(app), 'Build.init wires deliverPendingKit as the room-assign hook');
+A.ok(/for \(const a of liveAgents\(\)\) if \(Array\.isArray\(a\.pendingKit\)[\s\S]{0,60}deliverPendingKit\(a\.id\)/.test(app),
+  'on load, any resumed agent with a room drains its pending kit');
+// build.js fires the room-assign hook after BOTH pickers bind an agent (bay + workstation)
+const bayOk = build.slice(build.indexOf("#bay-ok"), build.indexOf("#bay-ok") + 700);
+A.ok(/onAgentRoomAssigned\(res\.agentId\)/.test(bayOk), 'the BAY picker fires onAgentRoomAssigned after a successful bind');
+const wsOk = build.slice(build.indexOf("#ws-ok"), build.indexOf("#ws-ok") + 700);
+A.ok(/onAgentRoomAssigned\(res\.agentId\)/.test(wsOk), 'the WORKSTATION picker fires onAgentRoomAssigned after a successful bind');
+
+/* ---------- 5. EFFORT PRECEDENCE: a dispatched worker runs at its OWN class effort, not the lead's ---------- */
+// runOnce precedence: explicit run-option > roster (class) > provider default (source).
+A.ok(/o\.reasoningEffort[\s\S]{0,120}rosterIdent && rosterIdent\.reasoningEffort/.test(idx),
+  'runOnce effort precedence: explicit run-option, then the roster (class) record, then provider default');
+// the dispatch worker MUST resolve effort from the WORKER's roster identity — else the class effort is dead
+// (the lead always passes a truthy effort, which would shadow the roster fallback). Both dispatch paths fixed.
+A.ok(/reasoningEffort:\s*\(job\.ident && job\.ident\.reasoningEffort\)\s*\|\|\s*reasoningEffort/.test(orch),
+  'team.dispatch (immediate) runs each worker at its OWN class reasoning effort, not the lead\'s');
+A.ok(/reasoningEffort:\s*\(ident && ident\.reasoningEffort\)\s*\|\|\s*reasoningEffort/.test(orch),
+  'team.dispatch (queued/recap) runs each worker at its OWN class reasoning effort, not the lead\'s');
+
+/* ---------- 6. OLD-SAVE COMPAT: rosters/records without the new fields load unchanged ---------- */
+A.ok(/skills:\s*Array\.isArray\(a && a\.skills\)\s*\?[\s\S]{0,120}:\s*\[\]/.test(repl), 'replaceAgentRoster coerces a missing skills -> [] (old rosters load)');
+A.ok(/reasoningEffort:\s*\(a && a\.reasoningEffort\)\s*\?\s*String\(a\.reasoningEffort\)\s*:\s*null/.test(repl), 'replaceAgentRoster coerces a missing reasoningEffort -> null (no undefined leaks into a run)');
+// the frontend catalog wrapper defaults customs/old specs to empty loadouts (no crash on a pre-loadout custom)
+for (const c of [{ name: 'Legacy', purpose: 'x' }]) {
+  const norm = S.saveCustom(c);
+  A.ok(Array.isArray(norm.kit) && norm.kit.length === 0, 'a pre-loadout custom spec loads with an empty kit (no crash)');
+  A.eq(norm.reasoningEffort, null, 'a pre-loadout custom spec has a null effort');
+  S.removeCustom(norm.id);
+}
+
 A.report('class-loadouts');
