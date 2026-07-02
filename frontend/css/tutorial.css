@@ -86,6 +86,21 @@
 }
 .tut-ring.no-anim { animation: none; }
 
+/* ---- G1c deferred BUILD-dock glow (dockglow.js): a SOFT standing hint on the BUILD dock while a station quest
+   is open — the fix (place a prop) is one click away. Gentler than the tutorial's imperative .tut-ring: a slow
+   breathing halo on the button itself, no scrim, fully clickable. Stands down while the tutorial coaches. ---- */
+.bb-grp.dock-glow, #bb-build.dock-glow {
+  position: relative;
+  border-color: var(--ph, #ffaa33) !important;
+  box-shadow: 0 0 10px var(--ph-glow, rgba(255, 170, 51, 0.45)), inset 0 0 6px var(--ph-glow, rgba(255, 170, 51, 0.25));
+  animation: dockGlowPulse 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .bb-grp.dock-glow, #bb-build.dock-glow { animation: none; } }
+@keyframes dockGlowPulse {
+  0%, 100% { box-shadow: 0 0 6px var(--ph-glow, rgba(255, 170, 51, 0.30)), inset 0 0 4px var(--ph-glow, rgba(255, 170, 51, 0.18)); }
+  50% { box-shadow: 0 0 14px var(--ph-glow, rgba(255, 170, 51, 0.65)), inset 0 0 8px var(--ph-glow, rgba(255, 170, 51, 0.32)); }
+}
+
 /* ---- kit-out spotlight: the coach bubble is PINNED to a safe zone so it never covers the dock controls it
    points at (the old bug: the bubble flipping onto the MODE row). The pulsing .tut-ring does the pointing.
    A fixed width + margin centering avoids the entrance animation's transform fighting the horizontal centre. ---- */

@@ -877,9 +877,14 @@ const Tutorial = (() => {
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
   }
 
+  // G1c coordination — is the tutorial ACTIVELY coaching right now (a live coach bubble / the kit-out loop /
+  // the awakening tour)? The deferred BUILD-dock glow (dockglow.js) checks this and stands down while true —
+  // the tutorial's own targeting always wins, so the two never glow different controls at once.
+  function isCoaching() { return !!(active || kitMode || coach); }
+
   return {
     firstCommand, spotlight, seen, markSeen, _state: () => state,
     onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach,
-    onEnterGame, fillFieldManual, showBrief, tickBrief, teardown
+    onEnterGame, fillFieldManual, showBrief, tickBrief, teardown, isCoaching
   };
 })();

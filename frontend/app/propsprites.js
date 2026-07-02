@@ -793,6 +793,19 @@ const PropSprites = (() => {
       glow(x - 1, y - 2, w + 2, h + 5, '#e8c860', b);
       px(x + 2, y + 2, 1, 1, blink(840, 0.5) ? '#ffd75e' : '#3a3020');           // standing-order lamp
     }
+    // G1c JAM STATE: a routine is backed up (repeatedly skipped) — an amber pinned JAM stub over the top-right
+    // corner + a faster amber wash. Distinct from the gold standing-order beacon: amber = "the line is jammed",
+    // pure Factorio. A state, not an event (it clears when the routine drains).
+    if (f && f.jam) {
+      const jb = 0.14 + 0.10 * (0.5 + 0.5 * Math.sin(now / 260));
+      glow(x - 1, y - 2, w + 2, h + 5, '#ffae3a', jb);                            // amber jam wash
+      const sx = x + w - 6, sy = y + 7;                                           // the jam card, pinned top-right
+      px(sx, sy + 1, 5, 5, '#0a0e0c');                                            // shadow
+      px(sx, sy, 5, 5, '#f0a83a');                                               // amber card
+      px(sx, sy, 5, 1, '#ffd07a');                                               // top sheen
+      px(sx + 2, sy + 1, 1, 3, '#3a2410'); px(sx + 2, sy + 4, 1, 1, blink(200) ? '#3a2410' : '#f0a83a');   // "!" warning glyph (blinking dot)
+      px(sx + 2, sy - 1, 1, 1, '#ff5a4a');                                        // red jam pin
+    }
   };
 
   F.trophycase = (x, y, w, h, f) => {
@@ -4157,8 +4170,8 @@ const PropSprites = (() => {
   // G1b — the MISSION BOARD's live readout: `pins` = how many quests are OPEN in the (visible) quest log,
   // `hot` = a station-gap fix-it quest is currently open (the board breathes gold). The world layer feeds
   // both from the real quest projection (throttled ~1s) — the sprite stays a pure function of its inputs.
-  let missionPins = 0, missionHot = false;
-  function setMissionPins(open, hot) { missionPins = Math.max(0, open | 0); missionHot = !!hot; }
+  let missionPins = 0, missionHot = false, missionJam = false;
+  function setMissionPins(open, hot, jam) { missionPins = Math.max(0, open | 0); missionHot = !!hot; missionJam = !!jam; }
   // G3b — the TROPHY CASE's live readout: how many trophies are EARNED (real completed quests + milestones).
   // The world layer feeds it from the trophy projection (throttled ~1s); the sprite stays a pure function.
   let trophyCount = 0;
@@ -4182,7 +4195,7 @@ const PropSprites = (() => {
     }
     if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
     if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
-    if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; }   // G1b: open quests pinned + the station-gap beacon
+    if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; o.jam = missionJam; }   // G1b/G1c: open quests pinned + the station-gap beacon + the routine-JAM amber stub
     if (f.t === 'trophycase') o.trophies = trophyCount;   // G3b: earned trophies stand behind glass (real completions only)
     fn(X, Y, W, H, o);
     // G0.3 ACTIVITY-HEAT WASH: real token/tool flow burns the working screens brighter + shimmers faster
