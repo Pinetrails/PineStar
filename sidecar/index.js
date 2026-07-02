@@ -17,6 +17,7 @@ const { runAgentLoop } = require('./loop.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
+const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) + validate patch — SETTINGS→Budget (P0-2)
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
@@ -313,6 +314,40 @@ const ledgerIo = {
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
 const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
+
+/* ---- P0-2 budget-caps persistence (SETTINGS → Budget). The four USD caps were env-only; now they persist in a
+   PROTECTED sibling file (durable + .bak, like connectors/permissions) and apply LIVE to the running governor
+   without a restart. PRECEDENCE (additive, never breaks an env deploy): a persisted key wins, else the env
+   default (BUDGET_CAPS). A persisted key may be 0 = "no cap" (ungoverned) — that is a REAL saved choice and
+   overrides a non-zero env default, so a Commander can dial a cap OFF from the UI. `effectiveCaps` is the single
+   mutable source the status endpoint + loop read; BUDGET_CAPS stays the frozen env-default fallback. */
+const BUDGET_FILE = path.join(WORKSPACES, 'budget.json');
+const BUDGET_CAP_KEYS = budgetCaps.KEYS;
+// the caps actually in force this process = persisted-or-env, recomputed by applyBudgetCaps(). Starts = env defaults.
+let effectiveCaps = Object.assign({}, BUDGET_CAPS);
+let budgetOverrides = {};   // only the keys the user has explicitly saved (each a finite >=0 number); absent = use env
+function loadBudgetOverrides() {
+  try {
+    const raw = loadResilient(BUDGET_FILE, 'budget');
+    const caps = (raw && typeof raw.caps === 'object' && raw.caps) ? raw.caps : {};
+    return budgetCaps.cleanOverrides(caps);   // drops any junk/negative value -> that key silently falls back to env
+  } catch (e) { return {}; }   // unrecoverable -> fall back entirely to env defaults
+}
+function saveBudgetOverrides() {
+  try { saveResilient(BUDGET_FILE, { version: 1, caps: budgetOverrides }); }   // fsync-durable + .bak last-known-good
+  catch (e) { console.warn('[budget] persist failed:', (e && e.message) || e); }
+}
+// recompute effectiveCaps from (persisted override ?? env default) and push the cross-run pools into the live
+// governor. Called at boot and after every saved cap change — no restart needed.
+function applyBudgetCaps() {
+  effectiveCaps = budgetCaps.resolveCaps(BUDGET_CAPS, budgetOverrides);
+  // perDay/perAgent/global are the SOFT cross-run pools the governor owns; perRun is the loop's per-run hard ceiling
+  // (read from effectiveCaps at run time — see runAgentLoop limits), so it needs no setCaps push.
+  budget.setCaps({ agent: effectiveCaps.perAgent, day: effectiveCaps.perDay, global: effectiveCaps.global });
+}
+budgetOverrides = loadBudgetOverrides();
+applyBudgetCaps();
+
 // admission gate: bounds how many distinct agents run paid loops concurrently (multi-agent fan-out guard).
 const concurrencyGate = makeConcurrencyGate({ max: MAX_CONCURRENT_AGENTS });
 
@@ -1238,6 +1273,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
   if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
+  if (req.method === 'POST' && req.url === '/api/budget/caps') return handleBudgetCaps(req, res);
   if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/start') return handleCodexStart(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
@@ -1381,7 +1417,36 @@ function handleRouting(req, res) {
    Read-only; safe to poll for the budget HUD. The ledger + in-flight tallies back it, so it survives restarts. ---- */
 function handleBudgetStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(Object.assign({ perRun: BUDGET_CAPS.perRun, totalUsd: ledger.totalUsd(), runs: ledger.count() }, budget.status(Date.now()))));
+  const now = Date.now();
+  // caps: the EFFECTIVE (persisted-or-env) values the UI edits; `overrides` marks which were saved (vs env default),
+  // so the Budget panel can show "env default" honestly. spentToday/lifetime are the real ledger reads the floor HUD
+  // + cost tests already consume — never re-parsed in the frontend.
+  res.end(JSON.stringify(Object.assign({
+    caps: {
+      perRun: effectiveCaps.perRun, perAgent: effectiveCaps.perAgent,
+      perDay: effectiveCaps.perDay, global: effectiveCaps.global
+    },
+    saved: Object.assign({}, budgetOverrides),        // only the keys the user explicitly saved
+    envDefaults: { perRun: BUDGET_CAPS.perRun, perAgent: BUDGET_CAPS.perAgent, perDay: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global },
+    perRun: effectiveCaps.perRun,                     // back-compat: pre-existing flat field kept
+    spentToday: ledger.usdForDay(now),
+    lifetime: ledger.totalUsd(),
+    totalUsd: ledger.totalUsd(), runs: ledger.count()
+  }, budget.status(now))));
+}
+/* ---- POST /api/budget/caps { perRun?, perAgent?, perDay?, global? } — set one or more USD caps. Each value:
+   a positive number = a real cap; 0 (or "0") = NO CAP (ungoverned) — an explicit saved choice; null / "" = CLEAR
+   the override so that key falls back to its env default. Strictly validated (finite, >= 0, sane ceiling), persisted
+   durably, and applied LIVE to the governor (no restart). Additive: leaves env-only setups untouched until saved. ---- */
+async function handleBudgetCaps(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const v = budgetCaps.validateOverridesPatch(body, budgetOverrides);   // pure: strict parse + merge onto current
+  if (!v.ok) return json(400, { error: v.error });
+  budgetOverrides = v.overrides;
+  saveBudgetOverrides();
+  applyBudgetCaps();   // live, no restart
+  return handleBudgetStatus(req, res);   // echo the fresh status so the UI repaints from one round-trip
 }
 function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -2517,7 +2582,7 @@ async function runOnce(o) {
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((BUDGET_CAPS.perRun > 0 && isFinite(BUDGET_CAPS.perRun)) ? BUDGET_CAPS.perRun : Infinity) },
+      limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity) },
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.

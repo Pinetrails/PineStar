@@ -1220,6 +1220,77 @@ const StationUI = (() => {
     });
   }
 
+  // display a USD amount for the spend readout / cap echo. Whole-cent granularity for readability (the ledger
+  // itself keeps micro-dollar precision; this is presentation only). No app-wide formatter exists to reuse.
+  function fmtUsd(v) { const n = Number(v); return '$' + (isFinite(n) ? n : 0).toFixed(2); }
+  // BUDGET panel — read the live caps + real spend from the sidecar, fill the four inputs, wire SAVE / RESET.
+  // Caps persist server-side and apply live; this is the ONLY UI for money limits (previously env-var-only).
+  const BG_KEYS = ['perRun', 'perAgent', 'perDay', 'global'];
+  function wireBudget(body) {
+    const form = body.querySelector('#budget-form');
+    if (!form) return;
+    const spendEl = body.querySelector('#budget-spend');
+    const msgEl = body.querySelector('#budget-msg');
+    const saveBtn = body.querySelector('#bg-save');
+    const resetBtn = body.querySelector('#bg-reset');
+    const inputOf = k => body.querySelector('#bg-' + k);
+    // .msg is red by default; the `ok` modifier turns it gold. So a success passes ok=true, an error passes nothing.
+    const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
+    // paint the inputs + spend readout + reset visibility from a /api/budget/status payload.
+    const paint = (st) => {
+      const caps = (st && st.caps) || {};
+      const saved = (st && st.saved) || {};
+      const envd = (st && st.envDefaults) || {};
+      BG_KEYS.forEach(k => {
+        const el = inputOf(k); if (!el) return;
+        // show the EFFECTIVE cap (persisted-or-env). An empty string can't represent "0 = no cap", so always fill.
+        const v = (typeof caps[k] === 'number') ? caps[k] : (typeof envd[k] === 'number' ? envd[k] : 0);
+        el.value = String(v);
+        // annotate whether this value is a saved override or the env default (honest, non-blocking).
+        const savedHere = Object.prototype.hasOwnProperty.call(saved, k);
+        el.title = savedHere ? 'saved on this machine' : 'environment default (not yet saved here)';
+      });
+      const anySaved = BG_KEYS.some(k => Object.prototype.hasOwnProperty.call(saved, k));
+      if (resetBtn) resetBtn.style.display = anySaved ? '' : 'none';
+      if (spendEl) {
+        const today = fmtUsd(st && st.spentToday), life = fmtUsd(st && st.lifetime);
+        const runs = (st && typeof st.runs === 'number') ? st.runs : 0;
+        spendEl.innerHTML = 'SPENT TODAY <b>' + today + '</b> &nbsp;·&nbsp; LIFETIME <b>' + life + '</b> <span class="dim">(' + runs + ' run' + (runs === 1 ? '' : 's') + ')</span>';
+      }
+    };
+    const refresh = () => fetch('/api/budget/status', { cache: 'no-store' }).then(r => r.json()).then(paint)
+      .catch(() => { if (spendEl) spendEl.textContent = 'spend unavailable'; });
+    refresh();
+    if (saveBtn) saveBtn.addEventListener('click', () => {
+      const payload = {};
+      for (const k of BG_KEYS) {
+        const el = inputOf(k); if (!el) continue;
+        const raw = String(el.value).trim();
+        if (raw === '') { payload[k] = 0; continue; }   // blank -> "no cap" (0), matching the placeholder semantics
+        const n = Number(raw);
+        if (!isFinite(n) || n < 0) { setMsg(k + ': enter a number ≥ 0 (0 = no cap)'); sfx('bad'); el.focus(); return; }
+        payload[k] = n;
+      }
+      setMsg('saving…');
+      fetch('/api/budget/caps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => {
+          if (!ok) { setMsg((j && j.error) || 'could not save limits'); sfx('bad'); return; }
+          paint(j); setMsg('✓ limits saved & applied', true); sfx('click');
+        })
+        .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
+    });
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      // clear every saved override -> each cap falls back to its env default, live.
+      const payload = {}; BG_KEYS.forEach(k => { payload[k] = null; });
+      setMsg('resetting…');
+      fetch('/api/budget/caps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => { if (!ok) { setMsg((j && j.error) || 'reset failed'); sfx('bad'); return; } paint(j); setMsg('✓ reset to environment defaults', true); sfx('click'); })
+        .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
+    });
+  }
+
   function buildSettings(body) {
     refreshCodexConnectionStatus();
     const s = store.settings;
@@ -1262,6 +1333,26 @@ const StationUI = (() => {
       '</div>' +
       '<div class="set-row"><span class="dim">STANDING GRANTS — capabilities it may use unattended (revocable any time)</span></div>' +
       '<div class="key-list" id="perm-grants"></div>' +
+      // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
+      // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
+      '<h4 class="ms-h">BUDGET <span class="dim">— real USD spend limits</span></h4>' +
+      '<p class="set-about">Hard money limits your agents cannot exceed. Enforced by the sidecar against the real spend ledger. <b>0 or blank = no cap.</b> Saved here on this machine; live defaults come from the environment.</p>' +
+      '<div id="budget-spend" class="set-row dim">reading spend…</div>' +
+      '<div class="mc-form" id="budget-form">' +
+        '<div class="set-row"><label for="bg-perRun">PER RUN</label><input id="bg-perRun" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="mc-hint">Hard ceiling for a single agent run. The run stops the moment it would exceed this.</div>' +
+        '<div class="set-row"><label for="bg-perAgent">PER AGENT</label><input id="bg-perAgent" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="mc-hint">Lifetime cap on any one agent’s total spend across all its runs.</div>' +
+        '<div class="set-row"><label for="bg-perDay">PER DAY</label><input id="bg-perDay" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="mc-hint">Total spend across every agent in a rolling 24-hour window.</div>' +
+        '<div class="set-row"><label for="bg-global">GLOBAL</label><input id="bg-global" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="mc-hint">All-time ceiling across everything. The last line of defence.</div>' +
+        '<div class="mc-acts">' +
+          '<button class="bb sm" id="bg-save">SAVE LIMITS</button>' +
+          '<button class="bb xs" id="bg-reset" title="clear the saved value so this cap follows the environment default again" style="display:none">RESET TO DEFAULTS</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="budget-msg" class="msg"></div>' +
       '<h4 class="ms-h">SCHEDULED TASKS</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">- ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
@@ -1278,6 +1369,7 @@ const StationUI = (() => {
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
     wireProviderActions(body);
     wireKeyActions(body);
+    wireBudget(body);
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
     body.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t; applySettings(); save(); sfx('click');
