@@ -2546,14 +2546,46 @@ const StationUI = (() => {
     const meterHtml = m
       ? '<div class="gx-sec"><span class="gx-title">STATION</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
       : '';
+    // G4 feature 2 — PROPOSALS: pending autojob proposals the agent pinned to the MISSION BOARD. A distinct
+    // amber card with APPROVE (→ the real POST /api/cron) / DECLINE (→ dropped forever). Rendered above OPEN so
+    // the "the agent wants to run this for you" ask reads first. Only shown when the ledger has cards.
+    const AJS = (typeof AutoJobStore !== 'undefined' && AutoJobStore.pendingList) ? AutoJobStore : null;
+    const proposals = AJS ? AJS.pendingList() : [];
+    const propRow = p => '<div class="gx-tro off gx-proposal" style="border-left:2px solid #ffae3a;">'
+      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl" style="color:#ffae3a;">&#9873;</span><span class="nm">' + esc(p.title) + '</span></div>'
+      + '<div class="sub">' + esc(p.why || 'a standing job the agent proposes running for you on a schedule.') + '</div>'
+      + '<div class="consent-btns" style="margin-top:5px;">'
+      + '<button class="consent-btn q-prop-yes" data-pid="' + esc(p.id) + '">Approve</button>'
+      + '<button class="consent-btn deny q-prop-no" data-pid="' + esc(p.id) + '">Decline</button>'
+      + '</div></div>';
+    const proposalsHtml = proposals.length
+      ? '<div class="gx-sec"><span class="gx-title">PROPOSALS</span> <span class="gx-tag">' + proposals.length + '</span></div>'
+        + '<div class="gx-tros">' + proposals.map(propRow).join('') + '</div>'
+      : '';
     body.innerHTML = '<div class="gx">'
       + meterHtml
       + '<div class="dim" style="margin:4px 0 10px;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
+      + proposalsHtml
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
       + '<div class="gx-tros">' + (open.map(tro).join('') || '<p class="dim">all caught up.</p>') + '</div>'
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
       + '<div class="gx-tros">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
       + '</div>';
+    // G4 feature 2: approve → the real cron POST (AutoJobStore routes it), then re-render (the card clears);
+    // decline → drop the card forever. Both route through AutoJobStore's own paths — no new scheduling logic here.
+    body.querySelectorAll('.q-prop-yes').forEach(b => b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (!AJS || !AJS.acceptPending) return;
+      b.disabled = true;
+      const r = await AJS.acceptPending(b.dataset.pid);
+      if (r && r.ok) { sfx('click'); }
+      rerender('quests');
+    }));
+    body.querySelectorAll('.q-prop-no').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (!AJS || !AJS.declinePending) return;
+      if (AJS.declinePending(b.dataset.pid)) { sfx('click'); rerender('quests'); }
+    }));
     // dismissed = stop forever: the row vanishes now and never comes back (and the curiosity nudge for a
     // waved-off dimension stops with it — QuestStateStore.dismiss carries the one anti-nag law end to end).
     body.querySelectorAll('.q-dismiss').forEach(b => b.addEventListener('click', ev => {

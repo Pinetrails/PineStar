@@ -25,11 +25,23 @@ const AutoJobStore = (() => {
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   const ready = () => typeof AutoJobs !== 'undefined' && state;
 
+  // G4 feature 2 — PIN-TO-BOARD. When a MISSION BOARD is placed, a parsed proposal gets a BODY: instead of the
+  // inline Dialogue approval, the agent walks to the board and pins an amber PROPOSAL card. The pending ledger
+  // below is the source of truth the board pin-feed projects and the quest log renders (approve → the real POST
+  // /api/cron via deps.scheduleJob; decline → drop it, dismissed-forever). Self-persisted under the same KEY so a
+  // pending proposal survives a reload (a real "waiting for you" state, honest across sessions). No board placed →
+  // this ledger stays empty and the existing Dialogue flow runs untouched (the pin is a projection, never a gate).
+  let pinSeq = 0;
   function hydrate(raw) {
-    const s = { v: 1, proposed: false };
-    if (raw && typeof raw === 'object' && raw.proposed) s.proposed = true;
+    const s = { v: 1, proposed: false, pending: [] };
+    if (raw && typeof raw === 'object') {
+      if (raw.proposed) s.proposed = true;
+      if (Array.isArray(raw.pending)) s.pending = raw.pending.filter(p => p && p.id && p.title);
+    }
     return s;
   }
+  // is a MISSION BOARD placed on the live floor? (injected so the store stays node-testable). Default: no board.
+  const boardPlaced = () => { try { return !!(deps.boardPlaced && deps.boardPlaced()); } catch (_) { return false; } };
 
   // opts: { getSystem(), getName(), getBeliefs(), getExistingJobs(), scheduleJob(body) }
   function init(opts) {
@@ -90,6 +102,18 @@ const AutoJobStore = (() => {
         return { scheduled: 0 };
       }
 
+      // G4 feature 2: a MISSION BOARD is placed → the proposals get a BODY. Park them in the pending ledger (the
+      // board pin-feed + quest log project them), close the panel, and let the agent walk-and-pin. No inline
+      // Dialogue approval — the Commander decides at the board / quest log (approve → the real cron POST). The
+      // fire-once flag is still spent (the offer was delivered — it now lives on the board, not in a settings toggle).
+      if (boardPlaced()) {
+        if (Dialogue.isOpen()) Dialogue.close();
+        const added = pinProposals(proposals);
+        if (opts.proactive) { state.proposed = true; }
+        save();
+        return { scheduled: 0, pinned: added };
+      }
+
       await Dialogue.say(AutoJobs.introLine(proposals.length));
       for (const pr of proposals) {
         if (!Dialogue.isOpen()) break;
@@ -108,14 +132,55 @@ const AutoJobStore = (() => {
     return { scheduled };
   }
 
+  // ── G4 feature 2 — THE PENDING-PROPOSAL LEDGER (the board body) ─────────────────────────────────────────
+  // park parsed proposals as amber PROPOSAL cards on the board. De-duped by title (a re-propose of the same job
+  // doesn't stack), so the walk-and-pin plays once per distinct proposal (anti-nag). Returns how many were added.
+  function pinProposals(proposals) {
+    if (!state) return 0;
+    if (!Array.isArray(state.pending)) state.pending = [];
+    let added = 0;
+    for (const pr of (proposals || [])) {
+      if (!pr || !pr.title) continue;
+      if (state.pending.some(x => x && x.title === pr.title)) continue;   // already pinned — don't re-pin (once per proposal)
+      state.pending.push({
+        id: 'ajp_' + (Date.now().toString(36)) + '_' + (++pinSeq),
+        title: pr.title, why: pr.why || '', grounds: pr.grounds || '', cadenceId: pr.cadenceId, prompt: pr.prompt || '', at: Date.now()
+      });
+      added++;
+    }
+    return added;
+  }
+  // the live pending proposals (read by the board pin-feed + the quest log). A fresh copy — callers never mutate ours.
+  function pendingList() { return (state && Array.isArray(state.pending)) ? state.pending.map(p => Object.assign({}, p)) : []; }
+  function pendingCount() { return (state && Array.isArray(state.pending)) ? state.pending.length : 0; }
+  function findPending(id) { return (state && Array.isArray(state.pending)) ? state.pending.find(p => p && p.id === id) : null; }
+  // APPROVE: schedule the real cron routine (the SAME POST /api/cron path the Dialogue flow uses), then drop the
+  // card. Returns { ok }. A failed POST leaves the card pinned so the Commander can retry — never a silent loss.
+  async function acceptPending(id) {
+    const pr = findPending(id);
+    if (!pr || !ready()) return { ok: false };
+    let ok = false;
+    if (deps.scheduleJob) { try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); ok = !!(r && r.ok !== false); } catch (_) { ok = false; } }
+    if (ok) { state.pending = state.pending.filter(p => p && p.id !== id); save(); }
+    return { ok };
+  }
+  // DECLINE: drop the card (dismissed → gone; the walk-and-pin already played once, it never re-nags for this one).
+  function declinePending(id) {
+    if (!state || !Array.isArray(state.pending)) return false;
+    const before = state.pending.length;
+    state.pending = state.pending.filter(p => p && p.id !== id);
+    if (state.pending.length !== before) { save(); return true; }
+    return false;
+  }
+
   // S2: a brand-new hero re-earns the proactive offer (own key, like the other proactive stores).
-  function reset() { state = { v: 1, proposed: false }; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = { v: 1, proposed: false, pending: [] }; firing = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   // has the one-time proactive offer already happened? (read by the ROUTINES button to label itself).
   function proposed() { return !!(state && state.proposed); }
 
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, propose, proposed, _decide: decide, _state: () => state };
+  return { init, reset, onRunEnd, propose, proposed, pinProposals, pendingList, pendingCount, acceptPending, declinePending, _decide: decide, _state: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { AutoJobStore };

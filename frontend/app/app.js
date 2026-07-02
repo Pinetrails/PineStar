@@ -1359,7 +1359,10 @@ const App = (() => {
         return out;
       },
       getExistingJobs: () => fetch('/api/cron', { cache: 'no-store' }).then(r => r.ok ? r.json() : { jobs: [] }).then(j => (j.jobs || []).map(x => x && x.name).filter(Boolean)).catch(() => []),
-      scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false }))
+      scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false })),
+      // G4 feature 2: is a MISSION BOARD placed? When it is, a proposal gets a BODY (agent walks + pins an amber
+      // card on the board) instead of the inline Dialogue approval. No board → the Dialogue flow is untouched.
+      boardPlaced: () => { try { const d = World.stationDoc && World.stationDoc(); return !!(d && d.props && d.props.some(p => p && p.t === 'missionboard')); } catch (_) { return false; } }
     });
     // PERMISSIONS (autonomy Stage B / B1): the Permissions Panel store. It reads/sets the standing capability
     // grants over the token-gated /api/permissions routes (harness.js hardens window.fetch to attach the token, so

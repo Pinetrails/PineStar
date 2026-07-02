@@ -46,13 +46,15 @@ const hn = { calls: [], next: { text: '' }, chat(args) { this.calls.push(args); 
 global.Harness = hn;
 
 let scheduled = [];
+let boardHere = false;   // G4 feature 2: is a MISSION BOARD placed? toggled per-case below
 const SYSTEM = 'SYSTEM PROMPT\nWHAT YOU KNOW ABOUT YOUR COMMANDER: goals — ship StarNet.';
 const deps = {
   getSystem: () => SYSTEM,
   getName: () => 'NOVA',
   getBeliefs: () => ({ goals: ['ship StarNet'], pain: ['manual standups'] }),
   getExistingJobs: () => Promise.resolve(['Morning brief']),
-  scheduleJob: (body) => { scheduled.push(body); return Promise.resolve({ ok: true }); }
+  scheduleJob: (body) => { scheduled.push(body); return Promise.resolve({ ok: true }); },
+  boardPlaced: () => boardHere
 };
 
 const { AutoJobStore } = require('../frontend/app/autojobstore.js');
@@ -162,6 +164,68 @@ global.Onboarding = undefined;
     AutoJobStore.init(deps);
     A.eq(AutoJobStore._state().proposed, false, 'after reset the new hero re-earns the proactive offer');
     // (the read-only "never emits on U.bus" discipline is enforced across all frontend files by the lint-emits gate)
+
+    /* ========== G4 feature 2 — PIN-TO-BOARD: proposals get a body on the MISSION BOARD ========== */
+
+    /* with a board placed, propose() PARKS the proposals as pending cards (no Dialogue approval loop) ---- */
+    clearFakes(); AutoJobStore.reset(); boardHere = true;
+    hn.next = { text: TWO };
+    const rp = await AutoJobStore.propose({ proactive: true });
+    A.eq(dlg.noded, 0, 'board mode does NOT run the inline Dialogue approval loop');
+    A.eq(scheduled.length, 0, 'board mode schedules nothing up front — the Commander decides at the board');
+    A.eq(rp.pinned, 2, 'both parsed proposals are pinned to the board');
+    A.eq(AutoJobStore.pendingCount(), 2, 'the pending ledger holds the two pinned proposals');
+    A.eq(AutoJobStore._state().proposed, true, 'a board-delivered proactive offer still spends the fire-once flag');
+    const list = AutoJobStore.pendingList();
+    A.eq(list.length, 2, 'pendingList surfaces the cards');
+    A.ok(list[0].id && list[0].title === 'Standup draft', 'a pending card carries an id + the proposal title');
+
+    /* pending survives a reload (a real "waiting for you" state) ---- */
+    AutoJobStore.init(deps);
+    A.eq(AutoJobStore.pendingCount(), 2, 'pending proposals persist through localStorage across a reload');
+
+    /* APPROVE routes the real cron POST (the same scheduleJob path) then clears the card ---- */
+    const firstId = AutoJobStore.pendingList()[0].id;
+    const ar = await AutoJobStore.acceptPending(firstId);
+    A.eq(ar.ok, true, 'acceptPending reports success when the POST succeeds');
+    A.eq(scheduled.length, 1, 'approve fires the real POST /api/cron (scheduleJob)');
+    A.eq(scheduled[0].name, 'Standup draft', 'the scheduled job carries the approved proposal title');
+    A.eq(AutoJobStore.pendingCount(), 1, 'an approved card leaves the ledger');
+
+    /* DECLINE drops the card without scheduling ---- */
+    const secondId = AutoJobStore.pendingList()[0].id;
+    A.eq(AutoJobStore.declinePending(secondId), true, 'declinePending drops the card');
+    A.eq(scheduled.length, 1, 'decline never schedules');
+    A.eq(AutoJobStore.pendingCount(), 0, 'the ledger is empty after both cards are resolved');
+
+    /* the walk-and-pin plays ONCE per proposal: a re-propose of the SAME job does not re-pin ---- */
+    clearFakes(); AutoJobStore.reset(); boardHere = true;
+    hn.next = { text: TWO };
+    await AutoJobStore.propose({ proactive: true });
+    A.eq(AutoJobStore.pendingCount(), 2, 'first proposal run pins two');
+    const again = AutoJobStore.pinProposals(AutoJobs.parseProposals(TWO));
+    A.eq(again, 0, 're-pinning the same proposals adds nothing (dedup by title — once per proposal)');
+    A.eq(AutoJobStore.pendingCount(), 2, 'the ledger did not grow on a duplicate re-propose');
+
+    /* a failed cron POST leaves the card pinned (never a silent loss) ---- */
+    const stickyId = AutoJobStore.pendingList()[0].id;
+    const realSched = deps.scheduleJob;
+    deps.scheduleJob = () => Promise.resolve({ ok: false });
+    AutoJobStore.init(deps);
+    const fr = await AutoJobStore.acceptPending(stickyId);
+    A.eq(fr.ok, false, 'a failed POST reports failure');
+    A.ok(AutoJobStore.pendingCount() === 2, 'a failed approve leaves the card pinned so the Commander can retry');
+    deps.scheduleJob = realSched;
+
+    /* no board → the Dialogue flow is untouched (the pin is a projection, never a gate) ---- */
+    clearFakes(); AutoJobStore.reset(); boardHere = false;
+    hn.next = { text: TWO };
+    dlg.choices = [{ value: 'yes' }, { value: 'no', skip: true }];
+    const rn = await AutoJobStore.propose({ proactive: true });
+    A.eq(dlg.noded, 2, 'no board → the inline Dialogue approval runs (the original flow)');
+    A.eq(scheduled.length, 1, 'no board → the Dialogue approval schedules directly');
+    A.eq(AutoJobStore.pendingCount(), 0, 'no board → nothing is parked on a (non-existent) board');
+    A.eq(rn.scheduled, 1, 'no-board propose reports scheduled count as before');
 
     A.report('autojobstore.test');
   } catch (e) {

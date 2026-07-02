@@ -1282,6 +1282,28 @@ const PropSprites = (() => {
       glow(x - 1, y - 2, w + 2, h + 5, '#e8c860', b);
       px(x + 2, y + 2, 1, 1, blink(840, 0.5) ? '#ffd75e' : '#3a3020');           // standing-order lamp
     }
+    // G4 feature 2 PROPOSAL STATE: the agent pinned pending autojob PROPOSAL cards — a distinct amber card
+    // (folded-corner "requisition" look) stacked at the board's TOP-LEFT, with a soft amber halo so a fresh
+    // proposal draws the eye. Distinct from the grey quest pins and the top-right red-pinned JAM stub. Cap 3 + '+N'.
+    if (f && f.proposals > 0) {
+      const np = f.proposals | 0, showP = Math.min(np, 3);
+      const hb = 0.09 + 0.07 * (0.5 + 0.5 * Math.sin(now / 500));
+      glow(x - 1, y - 2, w + 2, h + 5, '#ffc24a', hb);                            // gentle amber "you have proposals" halo
+      for (let i = 0; i < showP; i++) {
+        const px0 = x + 4 + i * 3, py0 = y - 2 + i;                               // a slight fan of stacked cards
+        px(px0, py0 + 1, 6, 5, '#0a0e0c');                                        // shadow
+        px(px0, py0, 6, 5, '#f0b84a');                                            // amber proposal card
+        px(px0, py0, 6, 1, '#ffdc8a');                                            // top sheen
+        px(px0 + 4, py0, 2, 2, '#c98f2e');                                        // folded corner (requisition read)
+        px(px0 + 1, py0 + 2, 3, 1, '#7a5a20'); px(px0 + 1, py0 + 3, 2, 1, '#7a5a20');   // scrawl
+        px(px0 + 2, py0 - 1, 1, 1, '#ff7a3a');                                    // orange pin head
+      }
+      if (np > 3) {
+        ctx.fillStyle = '#ffd9a3'; ctx.font = "6px 'VT323','Courier New',monospace";
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText('+' + (np - 3), x + 4 + showP * 3 + 6, y + 3);
+      }
+    }
     // G1c JAM STATE: a routine is backed up (repeatedly skipped) — an amber pinned JAM stub over the top-right
     // corner + a faster amber wash. Distinct from the gold standing-order beacon: amber = "the line is jammed",
     // pure Factorio. A state, not an event (it clears when the routine drains).
@@ -4736,8 +4758,10 @@ const PropSprites = (() => {
   // G1b — the MISSION BOARD's live readout: `pins` = how many quests are OPEN in the (visible) quest log,
   // `hot` = a station-gap fix-it quest is currently open (the board breathes gold). The world layer feeds
   // both from the real quest projection (throttled ~1s) — the sprite stays a pure function of its inputs.
-  let missionPins = 0, missionHot = false, missionJam = false;
-  function setMissionPins(open, hot, jam) { missionPins = Math.max(0, open | 0); missionHot = !!hot; missionJam = !!jam; }
+  let missionPins = 0, missionHot = false, missionJam = false, missionProposals = 0;
+  // G4 feature 2: `proposals` (4th arg) = pending autojob PROPOSAL cards the agent pinned to the board (a distinct
+  // amber stub vs the quest pins + the jam stub). Optional so existing 3-arg callers are unaffected.
+  function setMissionPins(open, hot, jam, proposals) { missionPins = Math.max(0, open | 0); missionHot = !!hot; missionJam = !!jam; missionProposals = Math.max(0, proposals | 0); }
   // G3b — the TROPHY CASE's live readout: how many trophies are EARNED (real completed quests + milestones).
   // The world layer feeds it from the trophy projection (throttled ~1s); the sprite stays a pure function.
   let trophyCount = 0;
@@ -4761,7 +4785,7 @@ const PropSprites = (() => {
     }
     if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
     if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
-    if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; o.jam = missionJam; }   // G1b/G1c: open quests pinned + the station-gap beacon + the routine-JAM amber stub
+    if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; o.jam = missionJam; o.proposals = missionProposals; }   // G1b/G1c: open quests pinned + the station-gap beacon + the routine-JAM amber stub; G4: pending autojob PROPOSAL cards
     if (f.t === 'trophycase') o.trophies = trophyCount;   // G3b: earned trophies stand behind glass (real completions only)
     fn(X, Y, W, H, o);
     // G0.3 ACTIVITY-HEAT WASH: real token/tool flow burns the working screens brighter + shimmers faster
