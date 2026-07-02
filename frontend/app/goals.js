@@ -225,6 +225,27 @@
     return true;
   }
 
+  /* resolve the confirm-panel choice (the Dialogue node result) into ONE decision — the tested home for the
+     Confirm / ✎-Edit / Not-now routing so chat.js stays thin glue. Rules:
+       • an explicit Confirm keeps the proposed path as-is.
+       • a CUSTOM (edited) reply re-parses the typed text (steps split on ';' or newline, ordinals stripped);
+         a valid edit (≥ MIN_MILESTONES steps) confirms the EDITED path (capped at MAX).
+       • an edit that parses UNDER the floor is a REJECTION of the model's tree — decline (treat as not-now),
+         NEVER silently persist the unedited model path the Commander just tried to replace.
+       • anything else (not-now / skip / no choice) declines.
+     Returns { action:'confirm'|'decline', path } — path is only meaningful on 'confirm'. */
+  function resolveConfirmChoice(choice, path) {
+    const orig = Array.isArray(path) ? path.slice() : [];
+    if (!choice) return { action: 'decline', path: orig };
+    if (choice.custom && typeof choice.value === 'string') {
+      const revised = String(choice.value).split(/[;\n]+/).map(l => l.replace(/^\s*\d{1,2}[.)\]:-]?\s+/, '').trim()).filter(Boolean);
+      if (revised.length >= MIN_MILESTONES) return { action: 'confirm', path: revised.slice(0, MAX_MILESTONES) };
+      return { action: 'decline', path: orig };   // a too-short edit = the Commander rejected the tree — never persist it
+    }
+    if (choice.value === 'confirm') return { action: 'confirm', path: orig };
+    return { action: 'decline', path: orig };
+  }
+
   // the single ACTIVE goal (the quest log surfaces one arc at a time — the most recent active goal). null when
   // none is active. Deterministic: the last active goal by createdAt (a fresh decomposition supersedes an older arc).
   function activeGoal(goals) {
@@ -242,7 +263,12 @@
      surfaces nothing here (a completed arc lives in the trophy case, a retired one is history). Deterministic +
      absent-input safe: no active goal → []. The header id 'arc:goal:<id>' and step ids 'arc:step:<mId>' are
      stable so QuestState's open→done fold + dismiss never confuse them. */
-  function project(goals) {
+  //   opts.questLive(questRef) -> bool (optional): is the milestone's bound work quest still IN FLIGHT (open, not
+  //   stalled, not dismissed)? A live-bound front milestone renders IN PROGRESS (no Accept — re-clicking would mint
+  //   a duplicate build + a duplicate paid run); a dead/stalled/absent binding re-offers Accept (the recovery path).
+  function project(goals, opts) {
+    opts = opts || {};
+    const questLive = typeof opts.questLive === 'function' ? opts.questLive : (() => false);
     const goal = activeGoal(goals);
     if (!goal) return [];
     const pr = progress(goal);
@@ -260,14 +286,19 @@
       if (!m) continue;
       const isDone = m.status === 'done';
       const isNext = next && m.id === next.id;
+      // an ACCEPTED front milestone whose bound work quest is still in flight is IN PROGRESS — visible, honest,
+      // but NOT re-acceptable (a second Accept would double-mint the build and double-spend a paid run).
+      const inFlight = !isDone && isNext && !!m.questRef && !!questLive(m.questRef);
       // ONLY the next open milestone is an actionable open quest; later open milestones read as locked-order
       // (visible but not the current front — honest chaining, never gating: they're not hidden, just not yet).
       const status = isDone ? 'done' : (isNext ? 'open' : 'open');
       out.push({
         id: 'arc:step:' + m.id, kind: 'arc-step', title: (isDone ? 'done — ' : (isNext ? '▸ ' : '· ')) + clip(m.text, 120),
-        desc: isDone ? ('done.' + (m.evidence ? ' ' + m.evidence : '')) : (isNext ? 'the next step — accept it to make it a real build.' : 'coming up after the step above.'),
+        desc: isDone ? ('done.' + (m.evidence ? ' ' + m.evidence : ''))
+          : inFlight ? 'in progress — the build is running; finishing it completes this step.'
+          : (isNext ? 'the next step — accept it to make it a real build.' : 'coming up after the step above.'),
         reward: 'progress on “' + clip(goal.text, 60) + '”', status,
-        arcGoalId: goal.id, milestoneId: m.id, isNext: !!isNext
+        arcGoalId: goal.id, milestoneId: m.id, isNext: !!isNext, inFlight: inFlight
       });
     }
     return out;
@@ -275,7 +306,7 @@
 
   return {
     buildDirective, parseDecomposition, makeGoal, progress, nextMilestone, allDone,
-    bindMilestoneQuest, foldMilestoneDone, milestoneForQuest, retireBySource, activeGoal, project, lowValue, scrubSecrets,
+    bindMilestoneQuest, foldMilestoneDone, milestoneForQuest, retireBySource, activeGoal, project, lowValue, scrubSecrets, resolveConfirmChoice,
     MIN_MILESTONES, MAX_MILESTONES, TEXT_CHARS
   };
 });

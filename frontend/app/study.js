@@ -337,7 +337,10 @@
         return 'free';
       },
       arcShown() { visible = 'arc'; },
-      arcDone() { visible = null; },   // an arc confirm never chains a queued deck (memory decks arbitrate their own train)
+      // more=true hands the slot straight to a memory deck that QUEUED behind the visible arc panel (a late
+      // memory.proposed during a minutes-long confirm) — mirrors studyDone(more): the deck renders with no gap
+      // where another beat could steal the moment, and pendingMemory can't strand canStudy/canArc on 'memory'.
+      arcDone(more) { visible = more ? 'memory' : null; },
       visibleBeat() { return visible; },
       _pending() { return pendingMemory.size; }
     };

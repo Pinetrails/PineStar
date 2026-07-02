@@ -31,12 +31,12 @@
 const GoalStore = (() => {
   const KEY = 'starnet.goals.v1';
   const GOAL_CAP = 24;          // keep at most this many goal trees (FIFO by createdAt) — history, never unbounded
-  let state = null;             // { v, goals:[goalNode], offered:{ beliefFp: 1 } } — offered = decompositions declined/pending, keyed by the belief fingerprint (re-offer only on change)
+  const OFFERED_CAP = 100;      // offered-fingerprint memory (FIFO) — bounded like studystore's resolved set, never unbounded localStorage growth
+  let state = null;             // { v, goals:[goalNode], offered:{ beliefFp: 1 }, offeredOrder:[fp] } — offered = decompositions declined/pending, keyed by the belief fingerprint (re-offer only on change)
   let deps = {};                // { getSystem, getName, getCaps } injected by app.js (all optional; fail-open)
   let bound = false;
   let firing = false;           // re-entrancy guard while a decomposition confirm is mid-flight
-  const boundQuests = {};       // work-quest id -> { goalId, milestoneId } claimed the arm window (in-memory; the tree persists the questRef)
-  let arming = null;            // { goalId, milestoneId } awaiting the launched work-quest id after a milestone accept
+  let cachedProposal = null;    // { fp, texts } — the last USABLE decomposition the model produced, keyed by the belief fingerprint. If the beat moment was lost after the (paid) aux call, the next offer for the SAME belief state reuses it instead of re-spending. In-memory only; cleared on confirm/decline/init/reset.
 
   const now = () => { try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {} return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0; };
   const ready = () => typeof Goals !== 'undefined' && state;
@@ -47,7 +47,7 @@ const GoalStore = (() => {
 
   // defensively rebuild the persisted slice — every goal + milestone re-validated, junk dropped (never a crash).
   function hydrate(raw) {
-    const s = { v: 1, goals: [], offered: {} };
+    const s = { v: 1, goals: [], offered: {}, offeredOrder: [] };
     if (raw && typeof raw === 'object') {
       if (Array.isArray(raw.goals)) {
         for (const g of raw.goals) {
@@ -72,7 +72,13 @@ const GoalStore = (() => {
           });
         }
       }
-      if (raw.offered && typeof raw.offered === 'object') for (const k in raw.offered) if (raw.offered[k]) s.offered[String(k)] = 1;
+      // rebuild the offered set from its FIFO order (capped) — pre-order saves fall back to key iteration once.
+      const order = Array.isArray(raw.offeredOrder) ? raw.offeredOrder
+        : (raw.offered && typeof raw.offered === 'object') ? Object.keys(raw.offered) : [];
+      for (const k of order.slice(-OFFERED_CAP)) {
+        const fp = String(k);
+        if (fp && !s.offered[fp] && raw.offered && raw.offered[k]) { s.offered[fp] = 1; s.offeredOrder.push(fp); }
+      }
     }
     s.goals.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     while (s.goals.length > GOAL_CAP) s.goals.shift();
@@ -143,11 +149,16 @@ const GoalStore = (() => {
   // the test can drive it. Fail-open: a model hiccup / unparseable / under-3-milestone reply yields null and marks
   // NOTHING offered (so a later, better reply can still land) — EXCEPT we DO mark offered when the model gave a
   // usable-but-declined path (handled in the confirm side). Redaction rides via the injected redact dep.
+  // SPEND-ONCE: a usable path is CACHED by the belief fingerprint — if the caller lost the beat moment after this
+  // (paid) aux call (memory/study claimed it mid-round-trip), the next offer for the SAME belief state reuses the
+  // cached path instead of re-calling the model. The cache clears the moment the belief is decided (markOffered).
   async function proposeDecomposition() {
     if (!ready() || firing) return null;
     if (typeof Harness === 'undefined' || !Harness.chat) return null;
     const belief = pendingDecomposition();
     if (!belief) return null;
+    const fp = beliefFingerprint(belief);
+    if (cachedProposal && cachedProposal.fp === fp) return { belief, texts: cachedProposal.texts.slice() };   // reuse the already-paid-for path
     try {
       const directive = Goals.buildDirective(belief.text);
       const system = deps.getSystem ? deps.getSystem() : '';
@@ -155,6 +166,7 @@ const GoalStore = (() => {
       if (!res || res.error) return null;
       const texts = Goals.parseDecomposition(res.text, { redact: deps.redact });
       if (!texts.length) return null;   // under-decomposed / unusable — leave un-offered so a later belief change retries
+      cachedProposal = { fp, texts: texts.slice() };
       return { belief, texts };
     } catch (_) { return null; }
   }
@@ -175,12 +187,40 @@ const GoalStore = (() => {
   // NOT-NOW: mark this belief state offered so it re-surfaces only after the belief changes (never nags). The
   // Commander can still return to the arc anytime; this just stops the proactive confirm beat for this belief.
   function declineDecomposition(belief) { if (ready() && belief) { markOffered(belief); save(); } }
-  function markOffered(belief) { const fp = beliefFingerprint(belief); if (fp) state.offered[fp] = 1; }
+  // record the belief state as decided (FIFO-capped, mirrors studystore's resolved set) + drop the spend-once cache
+  // for it — a decided belief's cached path can never leak into a later, different offer.
+  function markOffered(belief) {
+    const fp = beliefFingerprint(belief);
+    if (!fp) return;
+    if (cachedProposal && cachedProposal.fp === fp) cachedProposal = null;
+    if (!state.offered[fp]) {
+      state.offered[fp] = 1;
+      state.offeredOrder.push(fp);
+      while (state.offeredOrder.length > OFFERED_CAP) { const old = state.offeredOrder.shift(); delete state.offered[old]; }
+    }
+  }
 
   /* ---------- THE MILESTONE → WORK-QUEST BINDING ---------- */
+  // the bound work quest's projected entry (or null when it no longer projects — dismissed/dead).
+  function questEntry(ref) {
+    if (ref == null) return null;
+    try {
+      if (typeof WorkQuestStore === 'undefined' || !WorkQuestStore.quests) return null;
+      for (const q of (WorkQuestStore.quests() || [])) if (q && String(q.id) === String(ref)) return q;
+    } catch (_) {}
+    return null;
+  }
+  // is a bound work quest still IN FLIGHT (open, not stalled)? A dismissed/absent binding reads false — that is the
+  // recovery path: a dead questRef re-offers Accept. Feeds Goals.project (the "in progress" render state).
+  function questLive(ref) {
+    const e = questEntry(ref);
+    return !!(e && e.status === 'open' && !e.stalled);
+  }
   // accept the next milestone of the active goal as a real build: route it through the EXISTING work-quest path so
-  // completing the real work completes the milestone. Returns the milestone accepted (or null). The store arms a
-  // short window to claim the work-quest id WorkQuestStore mints (mirrors WorkQuestStore's own run-arm idiom).
+  // completing the real work completes the milestone. Returns the milestone accepted (or null).
+  // DOUBLE-SPEND GUARD: a milestone whose bound work quest is still live (or done-awaiting-reconcile) REFUSES a
+  // re-accept — a stale UI click can never mint a duplicate build + a duplicate paid run. A stalled/dismissed/dead
+  // binding re-accepts cleanly (the recovery path): the fresh work quest re-binds the milestone.
   function acceptMilestone(goalId, milestoneId) {
     if (!ready()) return null;
     const goal = state.goals.find(g => g.id === goalId && g.status === 'active');
@@ -189,6 +229,10 @@ const GoalStore = (() => {
     if (!m) return null;
     const next = Goals.nextMilestone(goal);
     if (!next || next.id !== m.id) return null;   // only the CURRENT front milestone is acceptable (honest chaining)
+    if (m.questRef) {
+      const e = questEntry(m.questRef);
+      if (e && (e.status === 'done' || (e.status === 'open' && !e.stalled))) return null;   // live build (or done, one reconcile away) — never double-spend
+    }
     // route through the work-quest path as a workflow build (the milestone text IS the directive). WorkQuestStore
     // mints a trackable build + returns its id; bind that id to the milestone so its completion folds the milestone.
     let wqId = null;
@@ -197,8 +241,7 @@ const GoalStore = (() => {
         wqId = WorkQuestStore.accept({ title: m.text, build: { kind: 'workflow', recipeId: null } });
       }
     } catch (_) {}
-    if (wqId) { Goals.bindMilestoneQuest(goal, m.id, wqId); arming = null; boundQuests[String(wqId)] = { goalId: goal.id, milestoneId: m.id }; }
-    else { arming = { goalId: goal.id, milestoneId: m.id }; }   // no id yet → claim the next launched work quest
+    if (wqId) Goals.bindMilestoneQuest(goal, m.id, wqId);   // no id (store absent/failed) → the milestone stays unbound and Accept re-offers (fail-open)
     save();
     // fire the real run for this milestone (the no-dead-gap promise) — the same launch path the pitch build uses.
     try { if (deps.launchDirective) deps.launchDirective("Let's work toward: " + m.text); } catch (_) {}
@@ -280,14 +323,6 @@ const GoalStore = (() => {
   }
 
   /* ---------- lifecycle + bus ---------- */
-  const ARM_MS = 8000;
-  function onRunStart(p) {
-    // claim the launched work-quest id for a just-accepted milestone (WorkQuestStore.accept returned no id
-    // synchronously in the launch-first path). We can't read the wq id from the run start, so we let
-    // WorkQuestStore own the run binding; the milestone's questRef is set at accept time when the id was returned.
-    // This hook exists only to expire a stale arm window.
-    if (arming && (now() - (arming.at || 0)) > ARM_MS) arming = null;
-  }
   function onRunEnd(p) {
     if (!ready() || !p) return;
     if (p.reason !== 'done') { return; }             // only a clean run advances the bar / retires on drift
@@ -301,28 +336,28 @@ const GoalStore = (() => {
   function bind() {
     if (bound) return;
     if (typeof U !== 'undefined' && U.bus && U.bus.on) {
-      U.bus.on('agent.run.start', onRunStart);   // subscription only — NEVER an emit
-      U.bus.on('agent.run.end', onRunEnd);
+      U.bus.on('agent.run.end', onRunEnd);   // subscription only — NEVER an emit
       bound = true;
     }
   }
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    firing = false; arming = null;
-    for (const k in boundQuests) delete boundQuests[k];
+    firing = false; cachedProposal = null;
     bind();
     pushToSidecar();
   }
   // a brand-new hero starts with no goals (own key; Save.clear only wipes the main envelope — mirrors the siblings).
-  function reset() { state = hydrate(null); firing = false; arming = null; for (const k in boundQuests) delete boundQuests[k]; try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
+  function reset() { state = hydrate(null); firing = false; cachedProposal = null; try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
 
   // re-read on the quest-log heartbeat: retire drift + reconcile completed work before the fold (like the sibling
   // sync()s buildQuests calls). Cheap + idempotent.
   function sync() { if (!ready()) return; syncDrift(); reconcile(''); }
 
   /* ---------- the projection consumed by QuestStore.view ---------- */
-  function quests() { return ready() ? Goals.project(state.goals) : []; }
+  // questLive rides in so an in-flight bound milestone renders IN PROGRESS (no Accept) while a stalled/dismissed/
+  // dead binding re-offers Accept (the recovery path) — the render state can never disagree with the accept guard.
+  function quests() { return ready() ? Goals.project(state.goals, { questLive }) : []; }
   function activeGoal() { return ready() ? Goals.activeGoal(state.goals) : null; }
 
   // re-entrancy handle for the confirm flow (chat.js latches it around the focused Dialogue panel).
@@ -332,7 +367,7 @@ const GoalStore = (() => {
   return {
     init, reset, sync, quests, activeGoal, pushToSidecar,
     willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition,
-    acceptMilestone, reconcile, syncDrift, setFiring, isFiring, beliefFingerprint,
+    acceptMilestone, reconcile, syncDrift, setFiring, isFiring, beliefFingerprint, questLive,
     _state: () => state, _onRunEnd: onRunEnd
   };
 })();

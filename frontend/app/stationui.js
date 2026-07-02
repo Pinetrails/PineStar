@@ -3757,10 +3757,12 @@ const StationUI = (() => {
           + '</div>';
       }
       // Tier 2 — A MILESTONE STEP: the next OPEN one carries an Accept button (routes through the work-quest path
-      // so completing the real work completes the milestone). Done steps show their evidence. Later open steps are
-      // shown but not actionable (honest chaining, never gating).
+      // so completing the real work completes the milestone) — UNLESS its bound build is still IN FLIGHT
+      // (q.inFlight, fed by GoalStore.questLive): then it reads "in progress" with NO button, so a re-click can
+      // never double-mint the build / double-spend a paid run. A stalled/dismissed/dead binding re-offers Accept
+      // (the recovery path). Done steps show their evidence; later open steps are shown but not actionable.
       if (q.kind === 'arc-step') {
-        const accept = (q.status !== 'done' && q.isNext)
+        const accept = (q.status !== 'done' && q.isNext && !q.inFlight)
           ? '<button class="consent-btn q-arc-accept" data-gid="' + esc(q.arcGoalId) + '" data-mid="' + esc(q.milestoneId) + '" style="margin-top:5px;">Accept this step</button>'
           : '';
         return '<div class="gx-tro arc-step ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + ';margin-left:10px;">'

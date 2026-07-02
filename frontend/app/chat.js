@@ -1176,7 +1176,7 @@ const Chat = (() => {
   // first). null arbiter OR an older bundle without canArc -> arc stands down (byte-identical pre-Tier-2 behavior).
   function slotCanArc() { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc() : 'busy'; }
   function slotArcShown() { if (beatSlot && beatSlot.arcShown) beatSlot.arcShown(); }
-  function slotArcDone() { if (beatSlot && beatSlot.arcDone) beatSlot.arcDone(); }
+  function slotArcDone(more) { if (beatSlot && beatSlot.arcDone) beatSlot.arcDone(more); }
   // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
   // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
   function studyBlocked() {
@@ -1369,26 +1369,29 @@ const Chat = (() => {
           options: [ { label: 'confirm the path', value: 'confirm' }, { label: 'not now', value: 'other', skip: true } ],
           allowCustom: true, customLabel: '✎ edit the milestones', customPlaceholder: 'your milestones, separated by ; …'
         });
-        if (choice && choice.custom && typeof choice.value === 'string') {
-          const revised = choice.value.split(/[;\n]+/).map(l => l.replace(/^\s*\d{1,2}[.)\]:-]?\s+/, '').trim()).filter(Boolean);
-          if (revised.length >= 3) path = revised.slice(0, 5);
-        }
         if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
-        // a custom (edited) reply OR an explicit confirm both persist the tree; only "not now" declines. The pure
-        // GoalStore.confirm re-applies the 3-5 floor/cap/redact — a too-short edit falls back to declined (marked
-        // offered, no loop). Not-now re-offers only when the belief changes (never nag).
-        if (choice && (choice.value === 'confirm' || choice.custom)) {
-          const g = GoalStore.confirm(res.belief, path);
+        // route the choice through the PURE resolver (Goals.resolveConfirmChoice, behaviorally tested): an explicit
+        // Confirm or a VALID edit (≥3 steps) persists; a too-short edit is a REJECTION of the model tree and
+        // declines — the unedited path is never silently persisted. Not-now declines (re-offer only on belief change).
+        const decision = (typeof Goals !== 'undefined' && Goals.resolveConfirmChoice)
+          ? Goals.resolveConfirmChoice(choice, path)
+          : { action: (choice && choice.value === 'confirm') ? 'confirm' : 'decline', path: path };
+        if (decision.action === 'confirm') {
+          const g = GoalStore.confirm(res.belief, decision.path);
           if (g) {
             if (typeof SFX !== 'undefined' && SFX.quest) { try { SFX.quest(); } catch (_) {} }
             if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◇ goal path set — track it under ⚑ QUESTS', 'gold');
           }
         } else {
-          GoalStore.declineDecomposition(res.belief);   // not-now: re-offer only when the belief changes (never nag)
+          GoalStore.declineDecomposition(res.belief);   // not-now / rejected edit: re-offer only when the belief changes (never nag)
         }
       } finally {
-        slotArcDone();
+        // release the moment — and if a memory deck QUEUED behind this panel (a late memory.proposed during a
+        // minutes-long confirm), HAND it the slot and render it now (mirrors studyCard's done()): the consent deck
+        // must never sit invisible while its pendingMemory claim freezes the study/arc lanes.
+        slotArcDone(turninQueue.length > 0);
         try { if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close(); } catch (_) {}
+        if (turninQueue.length && !activeTurnin) showNextTurnin();
       }
     } catch (_) {
     } finally {
