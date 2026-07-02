@@ -1984,10 +1984,10 @@ const StationUI = (() => {
       // the sidecar and never displayed; a blank token on reconnect reuses the saved one.
       '<h4 class="ms-h" style="margin-top:14px">DISCORD</h4>' +
       '<div id="dc-status" class="set-row">checking…</div>' +
-      '<p class="set-about">Let your agent message you on Discord — pings and reports when it works on its own. ' +
-        '<b>Send-only for now:</b> replies you type in Discord don\'t reach the agent yet (two-way chat is on the roadmap; use Telegram for that today). ' +
+      '<p class="set-about">Two-way chat on Discord — DM your bot (or @-mention it in a server) and it replies, ' +
+        'plus pings and reports when it works on its own. ' +
         '<b>1.</b> Open the <b>Discord Developer Portal</b> → <b>New Application</b> → <b>Bot</b> → <b>Reset Token</b> → copy the token. ' +
-        '<b>2.</b> Enable <b>MESSAGE CONTENT INTENT</b> on the Bot page, then invite the bot to a server (OAuth2 → URL Generator → <code>bot</code> scope). ' +
+        '<b>2.</b> Enable <b>MESSAGE CONTENT INTENT</b> on the Bot page (required to read your messages), then invite the bot to a server (OAuth2 → URL Generator → <code>bot</code> scope). ' +
         '<b>3.</b> Paste the token below and connect. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span></p>' +
       '<label class="ms-h" for="dc-token">BOT TOKEN <span class="dim">— from the Discord Developer Portal</span></label>' +
       '<input id="dc-token" type="password" class="key-input" placeholder="MTE...Bot token" autocomplete="off" spellcheck="false">' +
@@ -2070,9 +2070,14 @@ const StationUI = (() => {
     let dcConfigured = false;   // a token is already saved -> Connect can reconnect without re-pasting
     function dcPaint(st) {
       const conn = st && st.connected;
+      const state = st && st.state;
+      // the gateway is mid-handshake or recovering — configured but not yet live (amber, not green/grey).
+      const inFlight = !conn && (state === 'connecting' || state === 'reconnecting');
       dcConfigured = !!(st && st.configured);
-      dcStatusEl.style.color = conn ? 'var(--ok)' : (dcConfigured ? 'var(--gold)' : 'var(--ph-dim)');
-      dcStatusEl.textContent = conn ? ('● CONNECTED' + (st.state && st.state !== 'up' ? ' (' + st.state + ')' : ''))
+      dcStatusEl.style.color = conn ? 'var(--ok)' : (inFlight || dcConfigured ? 'var(--gold)' : 'var(--ph-dim)');
+      dcStatusEl.textContent = conn ? ('● CONNECTED — receiving' + (state && state !== 'up' ? ' (' + state + ')' : ''))
+        : inFlight ? ('◐ ' + (state === 'reconnecting' ? 'reconnecting' : 'connecting') + '…' + (st.detail ? ' — ' + st.detail : ''))
+        : state === 'error' ? ('✕ error' + (st.detail ? ' — ' + st.detail : '') + ' — check the bot token / MESSAGE CONTENT intent')
         : dcConfigured ? ('○ saved but offline — click CONNECT to reconnect' + (st.detail ? ' — ' + st.detail : ''))
         : '○ not connected';
       const nb = body.querySelector('#dc-notify'); if (nb) nb.checked = !!(st && st.notifyAutonomous);   // shared global opt-in

@@ -51,6 +51,13 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
   A.ok(/function stopDiscord/.test(idx), 'stopDiscord present (disconnect lifecycle)');
   A.ok(/stopDiscord\(\)/.test(idx), 'disconnect handler stops the adapter');
 
+  // P2-E: the host injects the REAL gateway WS client (full-duplex), not an inert no-WS default. Guard that
+  // startDiscord actually wires connectGateway from discord.gateway.js — else ingress silently regresses to inert.
+  A.ok(/require\('\.\/channels\/discord\.gateway\.js'\)/.test(idx), 'index requires the real Discord gateway client');
+  const startBody = (idx.split('function startDiscord')[1] || '').split('function stopDiscord')[0];
+  A.ok(/connectGateway:\s*makeConnectGateway\(/.test(startBody), 'startDiscord injects a real connectGateway (full-duplex ingress)');
+  A.ok(/onState:/.test(startBody), 'the gateway reports transport health into discordStatus (truthful status line)');
+
   // SECRET-SAFETY: the status handler reports only booleans/state — never the token/key. Guard the shape.
   const dcStatusBody = (idx.split('function handleDiscordStatus')[1] || '').split('function ')[0];
   A.ok(/configured:\s*!!d\.token/.test(dcStatusBody), 'status reports a boolean "configured" from the token, not the token itself');
@@ -80,6 +87,13 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
   // beginner help: a one-line pointer to where the bot token comes from
   A.ok(/Developer Portal/.test(station), 'inline help points at the Discord Developer Portal for the bot token');
   A.ok(/MESSAGE CONTENT INTENT/.test(station), 'inline help flags the message-content intent gotcha');
+
+  // P2-E: the "send-only" disclosure is GONE — Discord is now full-duplex, and the card must claim two-way honestly.
+  A.ok(!/Send-only for now/.test(station), 'the "Send-only for now" disclaimer was removed (Discord now receives)');
+  A.ok(!/don\\?'t reach the agent yet/.test(station), 'the "replies don\'t reach the agent yet" line was removed');
+  A.ok(/Two-way chat on Discord/.test(station), 'the Discord card now advertises two-way chat (truthful full-duplex)');
+  // the status line reflects that receive works when connected.
+  A.ok(/CONNECTED — receiving/.test(station), 'the connected status says it is receiving (not just sending)');
 
   // keep-saved-when-blank contract (reconnect without re-pasting), same as Telegram
   A.ok(/paste your Discord bot token first/.test(station), 'first-time setup requires a token; a saved token allows blank reconnect');
