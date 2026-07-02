@@ -45,6 +45,11 @@ const ReturnStore = (() => {
     try {
       if (typeof SeedCredit !== 'undefined' && typeof Recipes !== 'undefined' && Recipes.customs) SeedCredit.annotate(rows, Recipes.customs());
     } catch (_) {}
+    // G3b seed-reuse aggregate: each row now carrying a proven `.seed` is one genuine while-away reuse of a
+    // Commander-saved seed. Feed the aggregate (lifetime + 7-day per-seed counts → the TROPHY CASE living-tools
+    // shelf; a window crest fires the once-per-week "ran 5× this week" callout). Digested rows are listed once
+    // (returns.js never re-lists), so each reuse is counted exactly once. Provenance-only — unmatched rows skip.
+    try { if (typeof SeedReuseStore !== 'undefined' && SeedReuseStore.recordAnnotatedRows) SeedReuseStore.recordAnnotatedRows(rows); } catch (_) {}
     return rows;
   }
 
