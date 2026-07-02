@@ -481,8 +481,15 @@ const StationUI = (() => {
     let activeId = consoleSection[key];
     if (!sections.some(s => s.id === activeId)) activeId = sections[0] && sections[0].id;
 
-    // ---- left: optional search + the section rail (role=tablist) ----
+    // ---- left: optional rail-top slot (e.g. the dossier roster) + optional search + the section rail (role=tablist) ----
     const left = el('div', 'con-rail');
+    // railTop: a caller-owned block above the search + section list (the AGENT DOSSIER mounts its roster here).
+    // Settings/Skills pass nothing → the slot is never created, so they are entirely unaffected.
+    if (typeof opts.railTop === 'function') {
+      const top = el('div', 'con-rail-top');
+      try { opts.railTop(top); } catch (_) {}
+      left.appendChild(top);
+    }
     let searchInput = null;
     if (opts.search) {
       const sw = el('div', 'con-search');
