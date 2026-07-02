@@ -71,6 +71,7 @@ const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
+const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
@@ -1279,6 +1280,21 @@ function startDiscord(token, key, model, agentCfg) {
     },
     adapter: {
       fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
+      // P2-E: the REAL default injection — a live Discord gateway v10 WS client turning the bot token into a push
+      // of raw MESSAGE_CREATE payloads. Its transport-health states flow into discordStatus so the UI can tell the
+      // truth (connecting / up / reconnecting / down / error). Tests keep injecting a fake connectGateway instead.
+      connectGateway: makeConnectGateway({
+        fetch: globalThis.fetch,
+        WebSocketImpl: (typeof WebSocket !== 'undefined' ? WebSocket : undefined),
+        now: () => Date.now(), random: Math.random,   // composition root injects real time/rng (heartbeat+backoff jitter)
+        log: (m) => { try { console.log('  · [discord gw] ' + m); } catch (_) {} },
+        onState: (s) => {
+          const state = (s && s.state) || 'down';
+          const connected = state === 'up';
+          discordStatus = { connected, state, detail: (s && s.detail) || '' };
+          try { chanEmit('channel.connect', { channel: 'discord', ok: connected, state, detail: (s && s.detail) || '' }); } catch (_) {}
+        }
+      }),
       ownerUserId: (channelSecrets.discord && channelSecrets.discord.ownerId) || '',
       onOwnerClaim: (uid) => {
         try {
@@ -1289,16 +1305,19 @@ function startDiscord(token, key, model, agentCfg) {
         } catch (_) {}
       },
       onStatus: (s) => {
-        const state = (s && s.state) || 'down';
-        discordStatus = { connected: state === 'error' ? false : !!discord, state: state, detail: (s && s.detail) || '' };
+        // The gateway's onState (above) is authoritative for CONNECTION truth (connecting/up/reconnecting/down/error),
+        // since the transport's getUpdates just drains a buffer and never surfaces the real WS health. Here we only
+        // forward the adapter's poll telemetry to the hub for its SSE broadcast; we don't clobber discordStatus.
         if (wired && wired.hub) wired.hub.onStatus(s);
       }
     }
   });
   discord = { adapter: wired.adapter, hub: wired.hub };
-  discordStatus = { connected: true, state: 'up', detail: '' };
+  // start in "connecting" — the injected gateway's onState will flip this to up/reconnecting/down/error as the real
+  // WebSocket connects and lives. (No gateway injected in a degraded build => stays connecting, honestly.)
+  discordStatus = { connected: false, state: 'connecting', detail: '' };
   wired.adapter.connect();
-  console.log('  · discord channel connected');
+  console.log('  · discord channel connecting (gateway)');
 }
 function stopDiscord() {
   if (discord && discord.adapter) { try { discord.adapter.disconnect(); } catch (_) {} }
