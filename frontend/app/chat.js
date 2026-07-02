@@ -359,6 +359,9 @@ const Chat = (() => {
     syncStatus();      // also paints the Stop control + this stream's queued pills (updateControls)
     maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
     if (activeWs) flushQueued(activeWs.id);   // returned to an idle stream that has a queued follow-up → send it now
+    // GOAL LOOP: returned to an idle stream with an ACTIVE standing goal (its moment was blocked / it was
+    // backgrounded mid-loop) → continue it. kickGoal no-ops when busy/blocked/paused, so this is always safe.
+    if (activeWs && typeof GoalLoop !== 'undefined' && goalOf(activeWs)) { const w = activeWs; setTimeout(() => { if (isActiveWs(w)) kickGoal(w); }, 0); }
     // TIER D · D1 ATTENTIVE AUDIENCE: announce which agent the Commander now has COMMS focus on. load(ws) is the
     // sole conversation-rebind boundary (open + every switch), and the persistent COMMS panel has no separate
     // close — so this one hook covers focus on/switch, and null when there's no active stream. world.js owns all
@@ -1729,6 +1732,9 @@ const Chat = (() => {
     const id = activeWs.id;
     interrupted.add(id);
     queued.delete(id);
+    // GOAL LOOP: a deliberate Stop means "I'm taking over" — pause any active loop so the teardown's judge doesn't
+    // fire the next continuation. (The user resumes it explicitly with /goal resume.)
+    if (typeof GoalLoop !== 'undefined') { const g = goalOf(activeWs); if (g && GoalLoop.isActive(g)) { GoalLoop.pause(g, 'you stopped the run'); persistGoal(); } }
     if (typeof Channels !== 'undefined' && Channels.clearPending) Channels.clearPending(id);   // a pending approval is moot once stopped
     const ac = aborters.get(id); if (ac) { try { ac.abort(); } catch (_) {} }   // aborts the fetch → reader throws → send()'s catch
     const rid = (typeof Channels !== 'undefined') ? Channels.runIdOf(id) : null;
@@ -1822,7 +1828,20 @@ const Chat = (() => {
      runs immediately. ↑/↓ move, Enter/Tab run, Esc closes. */
   let slashItems = [], slashSel = 0;
   let slashServerCommands = null, slashCatalogLoading = null, slashCatalogLoaded = null;
-  let slashGoal = '', slashSubgoals = [];
+  /* ---------- /goal AUTONOMOUS LOOP (StarNet's "Ralph loop") ----------
+     The loop STATE (goal / status / turnsUsed / subgoals / …) rides on the workstream record as ws.goalLoop, so a
+     standing goal survives a reload/switch exactly like the thread history (workstreams.js carries the field through
+     serialize()). GoalLoop (goalloop.js) owns the PURE parse + state machine; here we own the aux JUDGE model call
+     (the same internal:true Harness.chat path goalstore/pitchstore use), queueing the continuation into the existing
+     type-ahead queue, and honoring the one-beat discipline. `goalJudging` guards against a second judge round-trip
+     racing the first for one stream. */
+  const goalJudging = new Set();       // wsIds with a judge round-trip in flight (one at a time per stream)
+  function goalOf(ws) {                 // the live loop state for a stream (re-normalized from its persisted row)
+    if (!ws) return null;
+    if (ws.goalLoop && typeof GoalLoop !== 'undefined') { const n = GoalLoop.normalize(ws.goalLoop); ws.goalLoop = n || undefined; return ws.goalLoop || null; }
+    return null;
+  }
+  function persistGoal() { if (onTurn) onTurn(); }   // the loop state is part of the ws record → App.persist writes it
   const FALLBACK_SLASH_COMMANDS = Object.freeze([
     Object.freeze({ name: 'retry', desc: 're-run the last turn', action: 'retry' }),
     Object.freeze({ name: 'stop', desc: 'interrupt the running turn', action: 'stop' }),
@@ -1841,8 +1860,8 @@ const Chat = (() => {
     Object.freeze({ name: 'save', desc: 'save the current station state', action: 'save' }),
     Object.freeze({ name: 'agents', aliases: ['tasks'], desc: 'show active agents and running streams', action: 'agents' }),
     Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', action: 'background' }),
-    Object.freeze({ name: 'goal', desc: 'show the current standing-goal status', action: 'goal' }),
-    Object.freeze({ name: 'subgoal', desc: 'show subgoal support status', action: 'subgoal' }),
+    Object.freeze({ name: 'goal', desc: 'set an autonomous standing goal (status/pause/resume/clear)', action: 'goal' }),
+    Object.freeze({ name: 'subgoal', desc: 'add a criterion the goal loop must also satisfy', action: 'subgoal' }),
     Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
     Object.freeze({ name: 'personality', desc: 'show or set the active personality', action: 'personality' }),
     Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', action: 'yolo' }),
@@ -1958,30 +1977,136 @@ const Chat = (() => {
     refreshWorkflowViews();
     localLine('Started background workstream: ' + streamLabel(ws) + '.');
   }
+  // /goal <text>            — set + kick off an autonomous loop toward <text> on this stream
+  // /goal (or /goal status)  — show the loop status
+  // /goal pause|resume|clear — control it
   function goalCommand(args) {
     const raw = String(args || '').trim();
     const low = raw.toLowerCase();
-    if (!raw || low === 'status') {
-      return localLine(slashGoal ? ('Goal note: ' + slashGoal + (slashSubgoals.length ? ' Subgoals: ' + slashSubgoals.join(' | ') + '.' : '.'))
-        : 'No standing goal note is set. StarNet does not have an autonomous goal loop in this chat yet; /goal stores a local reminder only.');
+    if (typeof GoalLoop === 'undefined') return localLine('The goal loop is not available in this build.');
+    if (!activeWs) return localLine('Open a workstream first.');
+    const cur = goalOf(activeWs);
+    if (!raw || low === 'status') return localLine(GoalLoop.statusLine(cur));
+    if (low === 'pause') {
+      if (!cur || cur.status === 'cleared') return localLine('No goal loop to pause.');
+      GoalLoop.pause(cur, 'you paused it'); persistGoal();
+      return localLine('⏸ goal loop paused. /goal resume to continue.');
     }
-    if (low === 'clear') { slashGoal = ''; slashSubgoals = []; return localLine('Cleared the local goal note.'); }
-    slashGoal = raw;
-    localLine('Goal note set for this chat. It will not auto-run; use /queue or a workstream to act on it.');
+    if (low === 'resume') {
+      if (!cur || cur.status !== 'paused') return localLine('No paused goal loop to resume.');
+      GoalLoop.resume(cur); persistGoal();
+      localLine('▶ goal loop resumed (' + cur.turnsUsed + '/' + cur.maxTurns + '). Kicking off the next step…');
+      return kickGoal(activeWs);   // resume immediately fires the next continuation if the stream is free
+    }
+    if (low === 'clear') {
+      if (!cur || cur.status === 'cleared') return localLine('No goal loop to clear.');
+      GoalLoop.clear(cur); activeWs.goalLoop = undefined; persistGoal();
+      return localLine('Cleared the goal loop.');
+    }
+    // /goal <text> — set (or replace) the standing goal and start working toward it
+    const s = GoalLoop.create(raw, { now: Date.now() });
+    if (!s) return localLine('Usage: /goal <what you want done>');
+    activeWs.goalLoop = s; persistGoal();
+    localLine('⊙ goal loop set: ' + s.goal + '  (budget ' + s.maxTurns + ' turns). Working toward it…');
+    kickGoal(activeWs);
   }
+  // /subgoal <text>          — append a criterion the loop must ALSO satisfy before it's done
+  // /subgoal (bare)          — list the criteria; /subgoal clear wipes them
   function subgoalCommand(args) {
     const raw = String(args || '').trim();
     const low = raw.toLowerCase();
-    if (!raw) return localLine(slashSubgoals.length ? ('Subgoals: ' + slashSubgoals.map((s, i) => (i + 1) + '. ' + s).join(' | ')) : 'No subgoals are set.');
-    if (low === 'clear') { slashSubgoals = []; return localLine('Cleared subgoals.'); }
+    if (typeof GoalLoop === 'undefined') return localLine('The goal loop is not available in this build.');
+    const cur = activeWs && goalOf(activeWs);
+    if (!raw) {
+      const subs = (cur && cur.subgoals) || [];
+      return localLine(subs.length ? ('Subgoals: ' + subs.map((t, i) => (i + 1) + '. ' + t).join(' | ')) : 'No subgoals set. Use /subgoal <text> once a goal loop is running.');
+    }
+    if (!cur || !GoalLoop.hasGoal(cur)) return localLine('Set a goal first with /goal <text>, then add criteria with /subgoal.');
+    if (low === 'clear') { cur.subgoals = []; persistGoal(); return localLine('Cleared subgoals.'); }
     const rm = /^remove\s+(\d+)$/i.exec(raw);
     if (rm) {
       const i = Number(rm[1]) - 1;
-      if (i >= 0 && i < slashSubgoals.length) { const old = slashSubgoals.splice(i, 1)[0]; return localLine('Removed subgoal: ' + old); }
+      if (i >= 0 && i < cur.subgoals.length) { const old = cur.subgoals.splice(i, 1)[0]; persistGoal(); return localLine('Removed subgoal: ' + old); }
       return localLine('No subgoal #' + rm[1] + '.');
     }
-    slashSubgoals.push(raw);
-    localLine('Added subgoal #' + slashSubgoals.length + '.');
+    const added = GoalLoop.addSubgoal(cur, raw); persistGoal();
+    localLine(added ? ('Added subgoal #' + cur.subgoals.length + '. The loop will now require: ' + added) : 'Could not add that subgoal.');
+  }
+
+  /* THE GOAL LOOP ENGINE.
+     goalBlocked() — never drive a continuation while a beat / consent card is pending approval (the one-beat
+     discipline) or while an interview owns the input; the continuation waits for a free moment (it re-fires from
+     the next send() teardown, or from /goal resume). A pending permission approval on THIS stream also blocks —
+     the human must decide the tool call before we pile on the next turn. */
+  function goalBlocked(ws) {
+    if (interview) return true;
+    if (activeTurnin || activeNudge || studyBusy()) return true;   // a visible review/beat is up
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
+    if (ws && typeof Channels !== 'undefined' && Channels.pendingOf && Channels.pendingOf(ws.id)) return true;   // a tool approval is pending
+    return false;
+  }
+  // kick the loop forward on `ws`: if the stream is free + unblocked and the loop is active, send the next
+  // continuation as a real turn (routed through send(), so it walks the desk / bills / streams like any turn).
+  // Called after a set/resume and after each judged turn. Idempotent + safe when there's no active loop.
+  const goalRetry = new Set();   // wsIds with a blocked-moment retry armed (one pending re-check per stream, never stacked)
+  function kickGoal(ws) {
+    const s = goalOf(ws);
+    if (!s || !GoalLoop.isActive(s)) return;
+    if (!isActiveWs(ws)) return;                 // the continuation drives the DISPLAYED stream (send()'s DOM writes)
+    if (isBusy()) return;                        // a run is already in flight — the teardown judge re-drives the loop
+    if (goalBlocked(ws)) {
+      // a beat/consent card owns the moment — "deferred" must not become "stalled": re-check on a slow cadence
+      // (one armed retry per stream; gives up silently when the loop is paused/cleared meanwhile).
+      if (!goalRetry.has(ws.id)) { goalRetry.add(ws.id); setTimeout(() => { goalRetry.delete(ws.id); kickGoal(ws); }, 7000); }
+      return;
+    }
+    const prompt = GoalLoop.continuationPrompt(s);
+    if (!prompt) return;
+    send(prompt, { goalContinuation: true });    // flag it so send() knows this turn IS the loop (not a user preempt)
+  }
+  // after a turn on `ws` completes, judge it against the standing goal and decide whether to fire another turn.
+  // `wasContinuation` = this turn WAS a loop-driven continuation (vs a real user message). A real user message
+  // PREEMPTS: it pauses the loop for this turn (their message wins) — we don't judge, we don't queue. reply is the
+  // agent's last assistant text (what the judge evaluates).
+  async function judgeGoalTurn(ws, reply, wasContinuation) {
+    const s = goalOf(ws);
+    if (!s || !GoalLoop.isActive(s)) return;
+    // a REAL user message mid-loop preempts: pause, judge nothing, queue nothing (they took over). Checked BEFORE
+    // the goalJudging guard: even while a judge round-trip is in flight the pause must land — the in-flight judge
+    // re-reads the state after its await and sees the loop inactive, so it can never fire over the human's head.
+    if (!wasContinuation) {
+      const d = GoalLoop.evaluate(s, null, { preempt: true }); persistGoal();
+      if (d.message && isActiveWs(ws)) localLine(d.message);
+      return;
+    }
+    if (goalJudging.has(ws.id)) return;          // a judge is already deciding this stream — don't double-fire
+    // a continuation turn that produced NO clean reply (errored / stopped mid-thought) is not judgeable — leave the
+    // loop as-is (it advances no turn); a later free moment or /goal resume continues it. Don't claim done on nothing.
+    if (!reply || !String(reply).trim()) return;
+    goalJudging.add(ws.id);
+    let judged;
+    try {
+      // the aux JUDGE call — reason-only, internal (no floor/telemetry/tool reach), same path pitchstore/goalstore
+      // use. Fail-open: any error → a CONTINUE parse-failure verdict (the state machine's budget + parse-fail guard
+      // are the backstops; a broken judge must never wedge or falsely claim done).
+      let raw = '';
+      try {
+        const sys = GoalLoop.judgeSystem();
+        const usr = GoalLoop.judgeUser(s, reply, { now: new Date().toISOString() });
+        const res = await Harness.chat({ system: sys, messages: [{ role: 'user', content: usr }], agentId: ws.agentId || 'agent', isTask: false, placed: [], internal: true });
+        raw = (res && !res.error) ? (res.text || '') : '';
+      } catch (_) { raw = ''; }
+      judged = GoalLoop.parseVerdict(raw);
+    } finally {
+      goalJudging.delete(ws.id);
+    }
+    // re-read state: a /goal pause|clear or a user message may have landed during the async judge round-trip.
+    const s2 = goalOf(ws);
+    if (!s2 || !GoalLoop.isActive(s2)) return;
+    const d = GoalLoop.evaluate(s2, judged, { now: Date.now() });
+    persistGoal();
+    if (d.message && isActiveWs(ws)) localLine(d.message);
+    if (d.shouldContinue) kickGoal(ws);          // fire the next continuation (guards for busy/blocked inside)
   }
   function newWorkstreamCommand(args) {
     if (typeof Workstreams === 'undefined' || !Workstreams.create) return localLine('Workstreams are not available yet.');
@@ -2006,8 +2131,10 @@ const Chat = (() => {
     const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : '';
     const state = isBusy() ? 'working' : 'idle';
     const turns = activeWs && activeWs.history ? activeWs.history.length : 0;
+    const g = (typeof GoalLoop !== 'undefined') ? goalOf(activeWs) : null;
     localLine('Status: ' + state + ' on ' + streamLabel(activeWs) + ' (' + turns + ' turn' + (turns === 1 ? '' : 's') + ', ' + q.length + ' queued)'
-      + (model ? '; model ' + model + (provider ? ' via ' + provider : '') : '') + '.');
+      + (model ? '; model ' + model + (provider ? ' via ' + provider : '') : '') + '.'
+      + (g && g.status !== 'cleared' ? (' ' + GoalLoop.statusLine(g)) : ''));
   }
   function usageCommand() {
     const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
@@ -2484,6 +2611,14 @@ const Chat = (() => {
 
   async function send(text, opts) {
     const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
+    // GOAL LOOP: is THIS turn a loop-driven continuation (kickGoal) rather than a real user message? A real user
+    // message mid-loop PREEMPTS the loop; a continuation is judged and may fire the next one. Captured here so the
+    // teardown routes correctly even if the active loop is paused/cleared mid-run.
+    const goalContinuation = !!(opts && opts.goalContinuation);
+    // capture whether an active loop already existed WHEN this turn began: only THEN does a real (non-continuation)
+    // user message count as a mid-loop preemption. A /goal set DURING this turn must not be preempt-paused by its
+    // own triggering turn — that loop simply wasn't running yet when the turn started.
+    const goalActiveAtStart = !goalContinuation && typeof GoalLoop !== 'undefined' && (() => { const g = goalOf(activeWs); return !!(g && GoalLoop.isActive(g)); })();
     if (interview) { clearChoices(); interview(text); return; }   // THE AWAKENING owns the input: typed answers retire any stale chip row
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
@@ -2572,6 +2707,7 @@ const Chat = (() => {
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
     // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
     let spokenIdx = 0, finalReply = '', titleOk = false;
+    let goalJudgeReply = null;   // GOAL LOOP: set to the clean assistant reply when a turn should be judged; fired in finally
     const pushSpeech = (finalize, finalText) => {
       if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
       const src = finalize ? (finalText || acc) : acc;
@@ -2655,6 +2791,10 @@ const Chat = (() => {
         finalReply = replyText;
         titleOk = !!replyText.trim();   // a real, non-empty reply landed → this stream is eligible for a summary title
         if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText });   // never persist an empty turn
+        // GOAL LOOP: a clean turn (done / no endReason) with a real reply is judgeable. A max_iters/budget/refusal
+        // stop is NOT — the agent didn't get to finish its thought, so re-judging would be premature. The judge runs
+        // in the finally (after teardown) so it never delays this turn's unwind.
+        if ((!endReason || endReason === 'done') && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done') {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
@@ -2745,6 +2885,22 @@ const Chat = (() => {
       if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
       // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).
       setTimeout(() => flushQueued(ws.id), 0);
+      // GOAL LOOP: after the teardown, judge this turn against the standing goal and maybe fire the next continuation.
+      // A QUEUED user follow-up wins first — it's the human steering, so let it drain (it will preempt/pause the loop
+      // when IT is judged as a non-continuation). Only judge when nothing is queued. Deferred (setTimeout) so it runs
+      // after this call fully unwinds and after flushQueued, and re-checks busy/blocked inside judgeGoalTurn/kickGoal.
+      const hasQueued = (queued.get(ws.id) || []).length > 0;
+      if (typeof GoalLoop !== 'undefined' && goalOf(ws) && !hasQueued) {
+        const reply = goalJudgeReply, wasCont = goalContinuation;
+        if (wasCont || goalActiveAtStart) {
+          // a continuation turn → judge it; a REAL user turn that ran while the loop was already active → preempt.
+          setTimeout(() => { judgeGoalTurn(ws, reply, wasCont); }, 0);
+        } else {
+          // the loop was SET during this very turn (/goal <text> while the stream was busy): this turn isn't a
+          // preemption — it's the turn that triggered the loop. Kick the first continuation now the stream freed.
+          setTimeout(() => { kickGoal(ws); }, 0);
+        }
+      }
     }
   }
 
