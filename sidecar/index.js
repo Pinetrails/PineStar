@@ -1478,6 +1478,23 @@ async function handleConnectorUpsert(req, res) {
     env = {};
     for (const k of Object.keys(body.env)) env[k] = String(body.env[k] == null ? '' : body.env[k]);
   }
+  // ADDITIVE: optional custom HTTP headers (object of strings) + an optional per-connector timeout (ms).
+  let headers = (prev.headers && typeof prev.headers === 'object') ? Object.assign({}, prev.headers) : {};
+  if ('headers' in body) {
+    if (!body.headers || typeof body.headers !== 'object' || Array.isArray(body.headers)) return json(400, { error: 'http headers must be an object' });
+    headers = {};
+    for (const k of Object.keys(body.headers)) headers[String(k)] = String(body.headers[k] == null ? '' : body.headers[k]);
+  }
+  let timeoutMs = (typeof prev.timeoutMs === 'number' && prev.timeoutMs > 0) ? prev.timeoutMs : undefined;
+  if ('timeout' in body || 'timeoutMs' in body) {
+    const raw = ('timeoutMs' in body) ? body.timeoutMs : body.timeout;
+    if (raw === '' || raw == null) { timeoutMs = undefined; }
+    else {
+      const n = Number(raw);
+      if (!isFinite(n) || n <= 0) return json(400, { error: 'timeout must be a positive number of milliseconds' });
+      timeoutMs = Math.max(1000, Math.min(600000, Math.round(n)));
+    }
+  }
   const cfg = {
     id: id,
     transport: transport,
@@ -1487,9 +1504,11 @@ async function handleConnectorUpsert(req, res) {
     args: transport === 'stdio' ? args : [],
     cwd: transport === 'stdio' ? String(body.cwd || prev.cwd || '') : '',
     env: transport === 'stdio' ? env : {},
+    headers: transport === 'http' ? headers : {},
     label: String(body.label || prev.label || id),
     enabled: body.enabled !== false
   };
+  if (timeoutMs) cfg.timeoutMs = timeoutMs;
   connectorConfigs = connectorConfigs.filter(c => c.id !== id).concat([cfg]);
   saveConnectorConfigs();
   let result; try { result = await connectors.configure(id, cfg); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'configure failed' }; }

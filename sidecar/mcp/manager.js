@@ -62,6 +62,23 @@
       for (const k of Object.keys(cfg.env)) out[k] = String(cfg.env[k] == null ? '' : cfg.env[k]);
       return out;
     }
+    // ADDITIVE: extra HTTP request headers (e.g. a custom auth scheme the bearer token can't express).
+    // Same object-of-strings shape + carry-forward-when-absent contract as env.
+    function normalizeHeaders(cfg, prev) {
+      if (!('headers' in (cfg || {}))) return prev && prev.headers && typeof prev.headers === 'object' ? Object.assign({}, prev.headers) : {};
+      if (!cfg.headers || typeof cfg.headers !== 'object' || Array.isArray(cfg.headers)) throw new Error('connector http headers must be an object');
+      const out = {};
+      for (const k of Object.keys(cfg.headers)) out[String(k)] = String(cfg.headers[k] == null ? '' : cfg.headers[k]);
+      return out;
+    }
+    // ADDITIVE: an optional per-connector handshake/call timeout. Absent -> carry prev -> fall back to the
+    // manager-global default; clamped to a sane range so a typo can't wedge a run forever or hang instantly.
+    function normalizeTimeout(cfg, prev) {
+      if (!cfg || cfg.timeoutMs == null) return (prev && prev.timeoutMs) || timeoutMs;
+      const n = Number(cfg.timeoutMs);
+      if (!isFinite(n) || n <= 0) return (prev && prev.timeoutMs) || timeoutMs;
+      return Math.max(1000, Math.min(600000, Math.round(n)));
+    }
     function redactEnv(env) {
       const out = {};
       const keys = Object.keys(env || {}).sort();
@@ -81,17 +98,19 @@
     async function connect(c) {
       setState(c, 'connecting');
       try {
+        const connTimeout = c.timeoutMs || timeoutMs;
         c.transport = makeTransport({
           transport: c.transportKind,
           url: c.url,
           token: c.token,
+          headers: c.headers,
           command: c.command,
           args: c.args,
           cwd: c.cwd,
           env: c.env,
-          timeoutMs: timeoutMs
+          timeoutMs: connTimeout
         });
-        c.client = makeClient({ transport: c.transport, timeoutMs: timeoutMs });
+        c.client = makeClient({ transport: c.transport, timeoutMs: connTimeout });
         await c.client.initialize();
         c.tools = await c.client.listTools() || [];
         setState(c, 'up');
@@ -120,6 +139,8 @@
         args: normalizeArgs(cfg, prev),
         cwd: String(cfg.cwd || (prev && prev.cwd) || ''),
         env: normalizeEnv(cfg, prev),
+        headers: normalizeHeaders(cfg, prev),
+        timeoutMs: normalizeTimeout(cfg, prev),
         label: String(cfg.label || (prev && prev.label) || id),
         enabled: cfg.enabled !== false,
         state: 'down', detail: '', tools: [], client: null, transport: null, ts: clock.now()
@@ -154,6 +175,7 @@
         state: c.state,
         detail: c.detail,
         hasToken: !!c.token,
+        timeoutMs: c.timeoutMs || timeoutMs,
         toolCount: (c.tools || []).length,
         tools: (c.tools || []).map(t => t.name)
       };
@@ -165,6 +187,8 @@
         out.hasEnv = Object.keys(c.env || {}).length > 0;
       } else {
         out.url = c.url;
+        out.headers = redactEnv(c.headers);            // header VALUES are never echoed — key + set/redacted only
+        out.hasHeaders = Object.keys(c.headers || {}).length > 0;
       }
       return out;
     }
