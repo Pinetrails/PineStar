@@ -459,11 +459,15 @@ const App = (() => {
   }
   // fold the class loadout (model tier + effort + skills) onto an agent record. Kit placement is separate
   // (requisitionKit) because it mutates the world model, not just the record.
-  function applyLoadout(a, spec) {
+  function applyLoadout(a, spec, pin) {
     if (!a || !spec) return;
-    const m = resolveTierModel(spec.model, a.model);
-    if (m) a.model = m;
-    if (spec.reasoningEffort) a.reasoningEffort = spec.reasoningEffort;   // applied default; user can re-tune per agent
+    // an EXPLICIT creation-time pick (bay modelPin) beats the class-tier default — the class supplies
+    // defaults, never locks; it must not clobber a model/effort the Commander chose by hand at summon.
+    if (!(pin && pin.model)) {
+      const m = resolveTierModel(spec.model, a.model);
+      if (m) a.model = m;
+    }
+    if (spec.reasoningEffort && !(pin && pin.effort)) a.reasoningEffort = spec.reasoningEffort;   // applied default; user can re-tune per agent
     // per-agent skills: the class package. Recorded on the agent + pushed in the roster (sidecar unions them
     // ADD-only over the global prefs). Deduped copy so the frozen catalog array is never shared/mutated.
     if (Array.isArray(spec.skills) && spec.skills.length) {
@@ -568,7 +572,7 @@ const App = (() => {
     };
     agentDocs(a);
     applySpecialty(a, spec);
-    applyLoadout(a, spec);   // Class Loadouts S1: class model tier + effort + skill package onto the record (before compose/roster)
+    applyLoadout(a, spec, pin);   // Class Loadouts S1: class model tier + effort + skill package onto the record (before compose/roster); explicit bay pin wins
     a.systemPrompt = composeSystemPrompt(a);
     agents.set(id, a);
     registerAgent(id, a.color);                                // sprite tint shim

@@ -242,12 +242,16 @@ const app = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf
 const build = fs.readFileSync(path.join(__dirname, '../frontend/app/build.js'), 'utf8');
 
 // summonAgent applies the loadout onto the record + requisitions the kit
-A.ok(/applyLoadout\(a, spec\)/.test(app), 'summon applies the class loadout (applyLoadout)');
+A.ok(/applyLoadout\(a, spec, pin\)/.test(app), 'summon applies the class loadout (applyLoadout) with the explicit bay pin');
 A.ok(/requisitionKit\(a, spec\)/.test(app), 'summon requisitions the class kit');
 // applyLoadout resolves the tier via the seam, sets effort + per-agent skills
 const loadoutSeg = app.slice(app.indexOf('function applyLoadout('), app.indexOf('function requisitionKit('));
 A.ok(/resolveTierModel\(/.test(loadoutSeg), 'applyLoadout resolves the model tier through the seam');
 A.ok(/a\.reasoningEffort\s*=\s*spec\.reasoningEffort/.test(loadoutSeg), 'applyLoadout sets the applied reasoning effort');
+// DEFAULTS-NEVER-LOCKS at the creation seam: an EXPLICIT bay model/effort pick (agent-model-select's
+// spec.modelPin) must beat the class-tier default — the class must not clobber a hand-chosen model/effort.
+A.ok(/if\s*\(!\(pin\s*&&\s*pin\.model\)\)/.test(loadoutSeg), 'applyLoadout: explicit bay model pin beats the class tier default');
+A.ok(/spec\.reasoningEffort\s*&&\s*!\(pin\s*&&\s*pin\.effort\)/.test(loadoutSeg), 'applyLoadout: explicit bay effort pin beats the class effort default');
 A.ok(/a\.skills\s*=\s*out/.test(loadoutSeg), 'applyLoadout records the per-agent skill package');
 
 // requisitionKit degrades gracefully (collects skipped, never throws) and goes through Build.requisitionForAgent
