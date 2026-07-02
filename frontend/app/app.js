@@ -215,8 +215,15 @@ const App = (() => {
     if (!a) return false;
     const nm = String(name || '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 18);
     if (!nm) return false;
+    const oldName = a.name;
     a.name = nm;
-    a.systemPrompt = composeSystemPrompt(a);              // the default identity embeds the name — keep the prompt honest
+    // agentDocs back-fills docs.identity = baseIdentity(name,role) at creation, and composeSystemPrompt prefers a
+    // non-empty docs.identity over baseIdentity(a.name,...) — so recomposing alone would keep the OLD name in the
+    // PROMPT (the agent would still introduce itself as its old name in every run). If the identity is still the
+    // untouched machine default, regenerate it for the new name; a Commander-authored identity.md is left as-is.
+    const d = agentDocs(a);
+    if (d && d.identity && d.identity === baseIdentity(oldName, a.role)) d.identity = baseIdentity(nm, a.role);
+    a.systemPrompt = composeSystemPrompt(a);              // now the recomposed prompt carries the new name
     if (agent && a.id === agent.id) {                     // focused: retarget the live COMMS identity + label at once
       const gtA = el('gt-agent'); if (gtA) gtA.textContent = a.name;
       if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);

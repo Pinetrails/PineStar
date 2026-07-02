@@ -56,12 +56,20 @@ A.ok(/access\.config\.setName/.test(ui), 'rename persists through config.setName
 A.ok(/function setAgentName\(/.test(appjs), 'App implements setAgentName');
 A.ok(/setName:\s*setAgentName/.test(appjs), 'setName is exposed on the config access surface');
 A.ok(/function setAgentName[\s\S]{0,600}toUpperCase\(\)\.slice\(0, 18\)/.test(appjs), 'the name is normalized (UPPER, capped 18) like a summoned name');
-A.ok(/function setAgentName[\s\S]{0,900}composeSystemPrompt\(a\)/.test(appjs), 'rename recomposes the system prompt (the default identity embeds the name)');
-A.ok(/function setAgentName[\s\S]{0,1200}pushRoster\(\)[\s\S]{0,120}persist\(\)/.test(appjs), 'rename reaches the sidecar roster + persists');
+A.ok(/function setAgentName[\s\S]{0,1200}composeSystemPrompt\(a\)/.test(appjs), 'rename recomposes the system prompt (the default identity embeds the name)');
+A.ok(/function setAgentName[\s\S]{0,1800}pushRoster\(\)[\s\S]{0,120}persist\(\)/.test(appjs), 'rename reaches the sidecar roster + persists');
 
 // ---- World.relabel: the floor nameplate follows a rename ----
 A.ok(/function relabel\(id, name\)/.test(world), 'World implements relabel');
 A.ok(/spawnAgent, relabel,/.test(world), 'relabel is exported on the World public API');
 A.ok(/World\.relabel/.test(appjs), 'setAgentName relabels the floor body');
+
+// ---- review fix: rename must re-sync the DEFAULT identity so the PROMPT (not just the label) takes the new name ----
+A.ok(/function setAgentName[\s\S]{0,900}baseIdentity\(nm, a\.role\)/.test(appjs), 'rename regenerates the default identity for the new name (prompt is not left saying the old name)');
+A.ok(/function setAgentName[\s\S]{0,900}baseIdentity\(oldName, a\.role\)/.test(appjs), 'rename only rewrites the identity when it is still the untouched default (hand-edited identity.md is preserved)');
+
+// ---- review fix: the dossier picker re-fits the effort select on model change + effort is tied to the picked model ----
+A.ok(/ModelPicker\.onChange\(pickWrap/.test(ui), 'the dossier wires onChange so the effort select re-fits when the model changes');
+A.ok(/pick\.model \? \(pick\.effort/.test(ui), 'effort is only persisted for the PICKED model (never leaks onto a typed advanced model or a cleared pin)');
 
 A.report('agent-model-select.test');

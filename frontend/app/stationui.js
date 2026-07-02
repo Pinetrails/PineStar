@@ -1150,6 +1150,9 @@ const StationUI = (() => {
     const pickWrap = body.querySelector('#ag-model-pick');
     if (pickWrap && typeof ModelPicker !== 'undefined') {
       ModelPicker.populate(pickWrap, { current: { model: (a && a.model) || '', provider: (a && a.provider) || '', effort: (a && a.reasoningEffort) || '' } }).catch(() => {});
+      // re-fit the effort <select> to the newly-chosen model on every model change (clamps/clears an effort the
+      // new model can't do) — without this the effort could stay 'high' on a non-reasoning model and be persisted.
+      ModelPicker.onChange(pickWrap, () => {});
     }
     const applyModel = (model, provider, effort) => {
       if (!(access.config && access.config.setModel)) { setMMsg('per-agent model unavailable'); return; }
@@ -1164,7 +1167,9 @@ const StationUI = (() => {
       const advProv = ((body.querySelector('#ag-prov-in') || {}).value || '').trim();
       const model = pick.model || advModel;
       const provider = pick.model ? pick.provider : (advModel ? advProv : '');
-      applyModel(model, provider, pick.effort || '');
+      // effort belongs to the PICKED model only — never let an effort left in the select leak onto a typed
+      // advanced model (or onto a cleared pin). onChange above already keeps pick.effort valid for pick.model.
+      applyModel(model, provider, pick.model ? (pick.effort || '') : '');
     });
     const mClear = body.querySelector('#ag-model-clear');
     if (mClear) mClear.addEventListener('click', () => applyModel('', '', ''));
