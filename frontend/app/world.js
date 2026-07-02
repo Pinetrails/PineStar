@@ -3348,6 +3348,9 @@ const World = (() => {
         connectors: d.props ? d.props.filter(p => p && p.t === 'connector_portal').length : 0
       };
     },
+    // the live station document (read-only) — the station-quest generator reads props[] to detect the
+    // OUTBOX / MISSION-BOARD standing gaps and to resolve a placement. Null when no station is loaded (headless).
+    stationDoc: () => (station && station.doc ? station.doc() : null),
     heroCaps: (agentId) => {
       if (!station) return [];
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];

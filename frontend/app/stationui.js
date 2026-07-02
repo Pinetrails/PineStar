@@ -1441,6 +1441,10 @@ const StationUI = (() => {
   function tick() {
     crewTick();
     ctxTick();
+    // G1b: resolve station-gap quests against the live floor + re-evaluate the standing OUTBOX candidate
+    // FIRST, so a gap that just closed (a prop placed) is already flipped done in the projection when the
+    // durable quest memory folds it below — the open→done edge then rides G1a's celebration for free.
+    if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
     // G1a: fold the live quest projection into the durable quest memory once a second — completion
     // detection must not depend on the QUEST LOG being open (the celebration toast/sting fire regardless).
     if (typeof QuestStateStore !== 'undefined' && QuestStateStore.sync) { try { QuestStateStore.sync(); } catch (_) {} }
@@ -2242,15 +2246,21 @@ const StationUI = (() => {
   // honest-loot law: every quest pays out in real capability/work, and nothing here is gated behind a level.
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
+    const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
+    if (SQS && SQS.sync) { try { SQS.sync(); } catch (_) {} }   // G1b: resolve station gaps before folding, so a just-closed gap renders done + celebrates
     if (QSS && QSS.sync) { try { QSS.sync(); } catch (_) {} }   // never render a stale diff — the log always reflects the memory it just folded
     const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
     if (!v) { body.innerHTML = '<p class="dim">Quest log unavailable.</p>'; return; }
     const m = v.meter, all = Array.isArray(v.quests) ? v.quests : [];
     const qs = (QSS && QSS.visible) ? QSS.visible(all) : all;   // dismissed = gone forever (degrades to the raw list if the store is absent)
     const open = qs.filter(q => q.status !== 'done'), done = qs.filter(q => q.status === 'done');
+    // a station-gap quest is a fix-it SUGGESTION — always dismissible while open (the sandbox law); it routes
+    // through its own store's denylist, not QuestState (whose dismiss is dossier-only).
+    const dismissibleQ = q => q && q.status !== 'done' && (
+      (q.kind === 'station-gap') || (QSS && QSS.dismissible && QSS.dismissible(q)));
     const tro = q => {
       const glow = QSS && QSS.isCelebrating && QSS.isCelebrating(q.id);
-      const dis = QSS && QSS.dismissible && QSS.dismissible(q) && q.status !== 'done';
+      const dis = dismissibleQ(q);
       return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '">'
         + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
@@ -2273,7 +2283,13 @@ const StationUI = (() => {
     body.querySelectorAll('.q-dismiss').forEach(b => b.addEventListener('click', ev => {
       ev.stopPropagation();
       const q = qs.find(x => x && x.id === b.dataset.qid);
-      if (q && QSS && QSS.dismiss && QSS.dismiss(q)) { sfx('click'); rerender('quests'); }
+      if (!q) return;
+      // a station-gap fix-it routes to its own permanent denylist (StationQuestStore); every other kind
+      // (dossier) goes through QuestState. Either way: dismissed = stop forever (the one anti-nag law).
+      const took = (q.kind === 'station-gap')
+        ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
+        : (QSS && QSS.dismiss && QSS.dismiss(q));
+      if (took) { sfx('click'); rerender('quests'); }
     }));
   }
 

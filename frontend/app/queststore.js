@@ -25,13 +25,17 @@ const QuestStore = (() => {
     const counts = (typeof World !== 'undefined' && World.stationCounts) ? World.stationCounts() : null;
     const crew = (typeof App !== 'undefined' && App.crewCount) ? App.crewCount() : 0;
     const station = counts ? { crew, belts: counts.belts || 0, connectors: counts.connectors || 0 } : null;
-    return { meter, milestones, dossierDims, pendingIdea, station };
+    // G1b — the station-quest generator's fix-it quests (capdenied/capability-gap → "place a DISH in its bay").
+    // Already fully shaped by the pure StationQuests engine (the store owns the live reads); a missing store
+    // just means no station-gap quests (fewer quests, never a crash — the read-surface degradation idiom).
+    const stationGaps = (typeof StationQuestStore !== 'undefined' && StationQuestStore.quests) ? StationQuestStore.quests() : [];
+    return { meter, milestones, dossierDims, pendingIdea, station, stationGaps };
   }
 
   // the whole panel read: the station meter + the ordered quest list + open/done counts.
   function view() {
     const g = gather();
-    const quests = (typeof Quests !== 'undefined') ? Quests.build({ milestones: g.milestones, dossierDims: g.dossierDims, pendingIdea: g.pendingIdea, station: g.station }) : [];
+    const quests = (typeof Quests !== 'undefined') ? Quests.build({ milestones: g.milestones, dossierDims: g.dossierDims, pendingIdea: g.pendingIdea, station: g.station, stationGaps: g.stationGaps }) : [];
     const summary = (typeof Quests !== 'undefined') ? Quests.summary(quests) : { open: 0, done: 0, total: 0 };
     return { meter: g.meter, quests: quests, summary: summary };
   }
