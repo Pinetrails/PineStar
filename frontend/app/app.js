@@ -1335,6 +1335,7 @@ const App = (() => {
     if (typeof PrideStore !== 'undefined') PrideStore.reset();   // …and a brand-new station record — a fresh Commander founds their OWN colony, inheriting no prior hero's lifetime tasks/deliverables/routines/founding-date (own key)
     if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
     if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
+    if (typeof TrustStore !== 'undefined') TrustStore.reset();   // GROWTH Tier 3: …and a fresh EARNED-AUTONOMY track record — a new Commander never inherits the prior hero's earned rungs / declined-offer state / streak (own key); the earned dial rung must be re-earned from scratch
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
@@ -1555,6 +1556,24 @@ const App = (() => {
         grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false })),
         revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false }))
       }
+    });
+    // GROWTH Tier 3 — EARNED AUTONOMY (track record → trust): folds the SAME run outcomes xpstore folds into a
+    // track record that, once earned, mints a CONSENT-gated offer to raise the autonomy dial one rung (or pre-bless
+    // a GRANTABLE capability). Accept applies THROUGH the existing plumbing (AutonomyStore.setInitiative /
+    // PermissionsStore.grant) with provenance; a sustained bad streak DEMOTES the earned rung back (never below the
+    // Commander's own manual floor) with an explicit notice. Level is its gate (offers fire at L≥3 / L≥5); XP purity
+    // is untouched. Self-persists its own key; read-only bus citizen. Init AFTER XpStore/AutonomyStore/PermissionsStore
+    // (it reads their live state + applies through their writers). grantable = the sidecar's curated GRANTABLE list.
+    if (typeof TrustStore !== 'undefined') TrustStore.init({
+      now: () => Date.now(),
+      getStats: () => { const a = agents.get('agent'); return (a && a.stats && typeof Xp !== 'undefined' && Xp.compute) ? Xp.compute(a.stats) : (a ? a.stats : null); },
+      getPosture: () => (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) ? AutonomyStore.summary() : null,
+      setInitiative: (level) => { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.setInitiative) AutonomyStore.setInitiative(level); persist(); },
+      // the ONLY capabilities a grant offer may pre-bless — the sidecar's curated GRANTABLE (cabinet:write today).
+      grantable: (typeof SK !== 'undefined' && SK.permgrants && Array.isArray(SK.permgrants.GRANTABLE)) ? SK.permgrants.GRANTABLE.slice() : (typeof Permissions !== 'undefined' && Permissions.grantableKeys ? Permissions.grantableKeys() : ['cabinet:write']),
+      getGrants: () => { try { return (typeof PermissionsStore !== 'undefined' && PermissionsStore.snapshot) ? (PermissionsStore.snapshot().grants || []) : []; } catch (_) { return []; } },
+      grant: (key) => (typeof PermissionsStore !== 'undefined' && PermissionsStore.grant) ? PermissionsStore.grant(key) : false,
+      notify: (text, kind) => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(text, kind || 'warn'); }
     });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
     // G2 RETURN RITUAL: arm the durable lastSeenAt heartbeat and (once per session, never during the

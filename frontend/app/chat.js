@@ -57,6 +57,9 @@ const Chat = (() => {
   let skillAsideWired = false;  // the deliverable(kind:skill) background-review aside listener is registered exactly once
   let skillDelivSeen = new Set();   // deliverable ids already asided → the background review re-firing never double-asides
   let recentInRunSkill = 0;     // ts of the last IN-RUN skill.* tool call — suppresses the aside for a save the A1 chip already showed
+  let trustWired = false;       // GROWTH Tier 3: the agent.run.end earned-autonomy offer-beat listener (registers once)
+  let trustRunsSeen = new Set();// GROWTH Tier 3: runIds already trust-offered (agent.run.end can re-fire; offer once per run)
+  let activeTrust = null;       // GROWTH Tier 3: the single visible trust offer card { node, offer, decided }
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
@@ -286,6 +289,7 @@ const Chat = (() => {
     // never flush into a new session (same law as turninQueue above). A fresh beat-slot arbiter matches the DOM.
     studyPending.length = 0; tastePending.length = 0; activeStudy = null;
     arcRunsSeen.clear();   // GROWTH Tier 2: the arc side starts clean per session (a prior hero's arc offers never carry over)
+    trustRunsSeen.clear(); activeTrust = null;   // GROWTH Tier 3: the trust side starts clean per session (a prior hero's earned-autonomy offers never carry over)
     beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
@@ -314,6 +318,7 @@ const Chat = (() => {
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
     wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
+    wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     wireSkillAside();  // A2: after a background review distills a skill, ONE quiet "distilled this run…" aside (registers once)
     load(opts.ws);
@@ -348,6 +353,7 @@ const Chat = (() => {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
     activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
     activeStudy = null;   // the study card is the same kind of visible review layer — it belongs to the outgoing DOM
+    activeTrust = null;   // GROWTH Tier 3: the trust offer card is likewise a visible review layer bound to the outgoing DOM
     if (beatSlot && beatSlot.visibleBeat()) beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;   // the visible beat left with its DOM; a fresh arbiter matches the new stream
     endToolRail(); presenceCurTool = null;   // COMMS-PREMIUM: the tool rail + live-tool state belong to the OUTGOING stream's DOM
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
@@ -1214,6 +1220,11 @@ const Chat = (() => {
   function slotCanArc() { return (beatSlot && beatSlot.canArc) ? beatSlot.canArc() : 'busy'; }
   function slotArcShown() { if (beatSlot && beatSlot.arcShown) beatSlot.arcShown(); }
   function slotArcDone(more) { if (beatSlot && beatSlot.arcDone) beatSlot.arcDone(more); }
+  // GROWTH Tier 3 — the earned-autonomy offer beat: the LOWEST-priority participant (memory + study + arc all win
+  // first). null arbiter OR an older bundle without canTrust -> trust stands down (byte-identical pre-Tier-3 behavior).
+  function slotCanTrust() { return (beatSlot && beatSlot.canTrust) ? beatSlot.canTrust() : 'busy'; }
+  function slotTrustShown() { if (beatSlot && beatSlot.trustShown) beatSlot.trustShown(); }
+  function slotTrustDone(more) { if (beatSlot && beatSlot.trustDone) beatSlot.trustDone(more); }
   // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
   // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
   function studyBlocked() {
@@ -1449,6 +1460,119 @@ const Chat = (() => {
         if (runId) { arcRunsSeen.add(runId); if (arcRunsSeen.size > 200) arcRunsSeen.delete(arcRunsSeen.values().next().value); }
         offerArc();
       }, ARC_ARM_MS);
+    });
+  }
+
+  /* GROWTH Tier 3 — THE EARNED-AUTONOMY OFFER BEAT (track record → trust). After a clean run, if the demonstrated
+     track record has crossed the thresholds (TrustStore/trust.js), the station offers to raise the autonomy dial
+     ONE rung (or pre-bless a GRANTABLE capability) — a one-tap consent card, NEVER a silent escalation. It is the
+     LOWEST post-run priority: it arms AFTER the arc (TRUST_ARM_MS > ARC_ARM_MS) and only takes a WHOLLY FREE beat
+     slot (slotCanTrust() === 'free' — memory turn-in, study, AND the arc all win first), obeying the SAME stand-down
+     guards as the other beats (studyBlocked). Accept applies the earned rung with provenance (TrustStore.accept →
+     the existing AutonomyStore/permgrants plumbing); Not-yet declines (stop offering that rung this level band);
+     leaving it undecided tallies an ignore (2× in a band = stop). One trust offer per session (TrustStore cap). */
+  const TRUST_ARM_MS = 16000;   // later than ARC_ARM_MS (14000): the trust offer yields the moment to memory, study AND the arc
+  function trustBusy() { return !!(activeTrust && activeTrust.node && activeTrust.node.isConnected); }
+  // an undecided trust card from a PRIOR task end EXPIRES when a new task ends — that's the "ignored" verdict
+  // (2× in a band = stop) — and releases the slot so queued beats can't starve (mirrors expireActiveStudy).
+  function expireActiveTrust() {
+    if (!activeTrust) return;
+    const a = activeTrust;
+    if (!a.node || !a.node.isConnected) { activeTrust = null; slotTrustDone(turninQueue.length > 0); return; }   // COMMS re-rendered under it
+    if (a.decided) return;   // mid-settle — its own timer is about to close it
+    activeTrust = null;
+    try { if (a.offer && typeof TrustStore !== 'undefined' && TrustStore.ignore) TrustStore.ignore(a.offer); } catch (_) {}
+    slotTrustDone(turninQueue.length > 0);
+    vanish(a.node, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
+  }
+  // render ONE trust offer as a gold-inset beat card (Accept / Not yet). Mirrors studyCard's family + lifecycle
+  // discipline exactly (the finally-hands-off-to-queued-memory pattern both prior review rounds hit). textContent
+  // only for the dynamic copy. Returns true iff the card actually rendered.
+  function trustCard(offer) {
+    if (!log || !offer || typeof TrustStore === 'undefined') return false;
+    clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
+    if (typeof TrustStore.markShown === 'function') TrustStore.markShown();   // spend the one session-cap slot
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('trust');
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ ' + name + ' has earned your trust';
+    const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
+    r.body.appendChild(title); r.body.appendChild(slotEl);
+    const item = document.createElement('div'); item.className = 'turnin-item';
+    const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = offer.kind === 'grant' ? 'GRANT' : 'AUTONOMY';
+    // the ask, composed from the REAL track record (task count + satisfaction %) — never fabricated.
+    const pv = offer.provenance || {};
+    const ask = offer.kind === 'grant'
+      ? (pv.runs || 0) + ' tasks, ' + (pv.confidence || 0) + '% satisfaction — trust me to write files on my own?'
+      : (pv.runs || 0) + ' tasks, ' + (pv.confidence || 0) + '% satisfaction — grant me free rein on small jobs?';
+    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = ask;
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
+    // provenance line: the honest track record behind the offer (streak + what it raises to).
+    const why = [];
+    if (pv.streak) why.push(pv.streak + ' good runs in a row');
+    why.push(offer.kind === 'grant' ? 'writes stay jailed + reversible' : 'raises the dial to ' + String(offer.to).toUpperCase());
+    { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ ' + why.join(' · '); item.appendChild(ev); }
+    slotEl.appendChild(item);
+    const card = { node: r.d, offer: offer, decided: false };
+    activeTrust = card;
+    slotTrustShown();
+    function done() {
+      if (activeTrust === card) activeTrust = null;
+      slotTrustDone(turninQueue.length > 0);
+      // hand the moment to a memory deck that queued behind this card (mirrors studyCard's done()).
+      vanish(r.d, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
+    }
+    function settle(label, isDeny) {
+      card.decided = true; btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
+      item.appendChild(tag);
+      setTimeout(done, 600);
+    }
+    function commit(verdict) {
+      if (card.decided) return;
+      if (verdict === 'accept') {
+        const ok = TrustStore.accept(offer);
+        if (!ok) { settle('✕ couldn’t apply', true); return; }   // honest: never flash "✓ granted" on a failed apply
+        settle(offer.kind === 'grant' ? '✓ granted' : '✓ ' + String(offer.to).toLowerCase(), false);
+        if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(offer.kind === 'grant' ? '◈ earned — it may write files on its own now (revoke any time in Settings)' : '◈ earned — autonomy raised to ' + String(offer.to).toUpperCase() + ' (adjust any time in Settings)', 'gold');
+        return;
+      }
+      TrustStore.decline(offer); settle('✕ not yet', true);
+    }
+    const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
+    mk('Accept', '', () => commit('accept'));
+    mk('Not yet', 'deny', () => commit('decline'));
+    autoscroll();
+    return true;
+  }
+  // fetch + offer ONE live trust offer for a run, obeying the one-beat arbiter + stand-down guards + session cap.
+  // The LOWEST priority: a taken/blocked moment just DROPS (it re-offers at the next task end — a rung offer is
+  // rare by construction, so it need not queue like study/taste; anti-nag).
+  function offerTrust() {
+    if (typeof TrustStore === 'undefined') return;
+    if (trustBusy() || slotCanTrust() !== 'free' || studyBlocked()) return;
+    if (!TrustStore.canShow || !TrustStore.canShow()) return;        // session cap spent
+    const offer = TrustStore.currentOffer ? TrustStore.currentOffer() : null;
+    if (!offer) return;
+    trustCard(offer);
+  }
+  function wireTrust() {
+    if (trustWired || typeof U === 'undefined' || !U.bus) return;
+    trustWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p || p.reason !== 'done') return;                       // only after a clean run
+      if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never trust-offers)
+      const runId = p.runId || p.id;
+      // a new task ended: the PREVIOUS task's undecided trust card expires as an "ignore", freeing the slot.
+      setTimeout(() => { expireActiveTrust(); }, 900);
+      // THIS run's own offer arms LAST (TRUST_ARM_MS): memory turn-in + study + the arc all claim the moment first;
+      // only a wholly free slot at this point lets the offer open (slotCanTrust gate inside offerTrust).
+      setTimeout(() => {
+        if (runId && trustRunsSeen.has(runId)) return;
+        if (runId) { trustRunsSeen.add(runId); if (trustRunsSeen.size > 200) trustRunsSeen.delete(trustRunsSeen.values().next().value); }
+        offerTrust();
+      }, TRUST_ARM_MS);
     });
   }
   // GROWTH Tier 1 §4 — RATINGS → TASTE: after a work verdict folds, a 3-streak on one archetype may mint a

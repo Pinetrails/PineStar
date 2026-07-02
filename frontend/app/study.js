@@ -312,7 +312,15 @@
      (canArc() === 'free'). It cannot preempt anything and nothing preempts a VISIBLE arc panel (a focused Dialogue
      confirm, like the First Pitch, owns the screen until the Commander answers). The pre-Tier-2 surface is
      untouched: memory/study behavior is byte-identical (canStudy still sees only visible + pendingMemory), so the
-     128 study.test assertions hold unchanged. canArc()/arcShown()/arcDone() are the only additions. */
+     128 study.test assertions hold unchanged. canArc()/arcShown()/arcDone() are the only additions.
+
+     GROWTH Tier 3 (ADDITIVE): the EARNED-AUTONOMY offer beat is a FOURTH, EVEN-LOWER-priority participant — memory
+     turn-in, study proposals, AND the arc confirm all win the moment before it (priority: memory > study > arc >
+     trust). A trust offer may only take a WHOLLY FREE slot (canTrust() === 'free'); it cannot preempt anything, and
+     nothing preempts a VISIBLE trust card until the Commander answers Accept / Not-yet. The Tier-1/Tier-2 surface is
+     byte-identical: canStudy()/canArc() still see only visible + pendingMemory, and 'trust' is just another visible
+     value they read as 'busy' — so the 128 study.test + the goalstore §8 arc assertions hold unchanged.
+     canTrust()/trustShown()/trustDone() are the only additions. */
   function makeBeatSlot() {
     const pendingMemory = new Set();
     let visible = null;
@@ -330,7 +338,7 @@
       studyShown() { visible = 'study'; },
       studyDone(more) { visible = more ? 'memory' : null; },
       // GROWTH Tier 2 — the arc confirm beat cedes to BOTH memory and study: it may only take a wholly free slot.
-      // 'busy' = a beat (memory/study/arc) is visible; 'memory' = reflection in flight (memory wins the moment).
+      // 'busy' = a beat (memory/study/arc/trust) is visible; 'memory' = reflection in flight (memory wins the moment).
       canArc() {
         if (visible !== null) return 'busy';
         if (pendingMemory.size) return 'memory';
@@ -341,6 +349,17 @@
       // memory.proposed during a minutes-long confirm) — mirrors studyDone(more): the deck renders with no gap
       // where another beat could steal the moment, and pendingMemory can't strand canStudy/canArc on 'memory'.
       arcDone(more) { visible = more ? 'memory' : null; },
+      // GROWTH Tier 3 — the earned-autonomy offer beat: the LOWEST priority. It cedes to memory, study AND the arc;
+      // like canArc it may only take a wholly free slot. 'busy' = ANY beat (memory/study/arc/trust) is visible.
+      canTrust() {
+        if (visible !== null) return 'busy';
+        if (pendingMemory.size) return 'memory';
+        return 'free';
+      },
+      trustShown() { visible = 'trust'; },
+      // more=true hands the slot to a memory deck that QUEUED behind the visible trust card (mirrors arcDone/studyDone):
+      // the deck renders with no gap where another beat could steal the moment, and pendingMemory can't strand the lanes.
+      trustDone(more) { visible = more ? 'memory' : null; },
       visibleBeat() { return visible; },
       _pending() { return pendingMemory.size; }
     };

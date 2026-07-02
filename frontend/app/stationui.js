@@ -2499,15 +2499,45 @@ const StationUI = (() => {
     // open key editor). The describe() line repaints live so the posture is always honestly spelled out.
     if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {
       const initWrap = host.querySelector('#auto-init'), reachWrap = host.querySelector('#auto-reach'), paceWrap = host.querySelector('#auto-pace'), autoDesc = host.querySelector('#auto-desc');
+      // GROWTH Tier 3 — the EARNED badge: when the live initiative rung was RAISED by an accepted trust offer (not a
+      // manual set), mark it "EARNED" and expose the honest provenance behind it. A manual set above/below the earned
+      // rung is just a user grant/override (no badge) — TrustStore.earnedInitiative() only returns a record when the
+      // live rung MATCHES the earned one. Pure read; fail-open (no TrustStore → the pre-Tier-3 dial, unchanged).
+      const trustProvText = (pv) => {
+        if (!pv) return '';
+        const parts = [];
+        if (pv.runs) parts.push(pv.runs + ' tasks');
+        if (pv.confidence) parts.push(pv.confidence + '% satisfaction');
+        if (pv.streak) parts.push(pv.streak + ' good runs in a row');
+        let when = '';
+        try { if (pv.earnedAt && typeof Permissions !== 'undefined' && Permissions.grantAgeText) when = Permissions.grantAgeText(pv.earnedAt, Date.now()).replace(/^granted /, 'earned '); } catch (_) {}
+        return 'EARNED — ' + (parts.length ? parts.join(', ') : 'a demonstrated track record') + (when ? ' · ' + when : '');
+      };
+      const paintEarned = (a) => {
+        if (!initWrap) return;
+        let badge = initWrap.parentNode ? initWrap.parentNode.querySelector('.auto-earned') : null;
+        const earned = (typeof TrustStore !== 'undefined' && TrustStore.earnedInitiative) ? TrustStore.earnedInitiative() : null;
+        // clear any prior EARNED marks on the rung buttons
+        initWrap.querySelectorAll('[data-init]').forEach(x => x.classList.remove('earned'));
+        if (earned && earned.to === a.initiative) {
+          const btn = initWrap.querySelector('[data-init="' + earned.to + '"]');
+          if (btn) btn.classList.add('earned');
+          if (!badge && initWrap.parentNode) { badge = document.createElement('p'); badge.className = 'set-about auto-earned'; initWrap.parentNode.insertBefore(badge, initWrap.nextSibling); }
+          if (badge) { badge.textContent = '◈ ' + trustProvText(earned.provenance); badge.hidden = false; }
+        } else if (badge) { badge.hidden = true; badge.textContent = ''; }
+      };
       const paintAuto = () => {
         const a = AutonomyStore.summary() || {};
         if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
         if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
         if (paceWrap) paceWrap.querySelectorAll('[data-pace]').forEach(x => x.classList.toggle('sel', Number(x.dataset.pace) === a.leashPerDay));
         if (autoDesc) autoDesc.textContent = AutonomyStore.describe();
+        try { paintEarned(a); } catch (_) {}   // GROWTH Tier 3: the EARNED badge on an earned rung
         try { syncPerm(); } catch (_) {}   // keep the permissions level highlight + blurb in step with the dial
       };
-      if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setInitiative(b.dataset.init); paintAuto(); sfx('click'); }));
+      // a MANUAL set retires the earned record (the user override wins, recorded as such) BEFORE the dial writes —
+      // so a set above an earned rung reads as a plain user grant, a set below as a user override (no badge either way).
+      if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => { try { if (typeof TrustStore !== 'undefined' && TrustStore.onManualInitiative) TrustStore.onManualInitiative(b.dataset.init); } catch (_) {} AutonomyStore.setInitiative(b.dataset.init); paintAuto(); sfx('click'); }));
       if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setReach(b.dataset.reach); paintAuto(); sfx('click'); }));
       if (paceWrap) paceWrap.querySelectorAll('[data-pace]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setLeash(Number(b.dataset.pace)); paintAuto(); sfx('click'); }));
       paintAuto();
