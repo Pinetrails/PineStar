@@ -514,6 +514,33 @@ const Chat = (() => {
   const CHIP_CAP = 600;                // cap on stored expand text length — a long run must not bloat the DOM
   const cap = s => { s = String(s == null ? '' : s); return s.length > CHIP_CAP ? s.slice(0, CHIP_CAP) + '…' : s; };
   const shortName = n => String(n || 'tool').replace(/^mcp__/, '').replace(/_/g, '.');   // mcp__x__y → x.y, readable
+  // A1: skill-flavored tool beats. The skill.* tools ride the ordinary agent.tool_call chip, but a raw
+  // "skill.view {name:…}" reads as noise. Re-label them in the agent's own voice so the Commander SEES the
+  // agent consulting/writing its skillbase — pure rendering over the existing event (no new bus traffic).
+  //   skill.view  → consulting skill: <name>      skill.list   → scanning skill index
+  //   skill.manage(create/edit/patch) → wrote skill <name> → SKILLS menu   (write actions only)
+  // Returns { label, glyph } to override the chip head, or null for a non-skill / read-shaped call.
+  function skillFlavor(ev) {
+    const canon = shortName(ev && ev.name);   // skill_view / skill.view → skill.view
+    if (canon.indexOf('skill.') !== 0) return null;
+    const kind = canon.slice('skill.'.length);
+    let args = {}; try { args = JSON.parse(ev.argsSummary || '{}') || {}; } catch (_) { args = {}; }
+    const nm = String(args.name || args.target || '').trim();
+    const nmTail = nm ? (': ' + brief(nm)) : '';
+    if (kind === 'view' || kind === 'write' && !nm) return { label: 'consulting skill' + nmTail, glyph: '▤' };
+    if (kind === 'list') return { label: 'scanning skill index', glyph: '▤' };
+    if (kind === 'write') return { label: 'wrote skill' + (nm ? ' ' + brief(nm) : '') + ' → SKILLS menu', glyph: '✎' };
+    if (kind === 'manage') {
+      const action = String(args.action || '').toLowerCase();
+      const WRITE = { create: 1, edit: 1, patch: 1, archive: 1, restore: 1, pin: 1, unpin: 1, write_file: 1, remove_file: 1 };
+      if (WRITE[action]) {
+        const verb = action === 'create' || action === 'edit' || action === 'patch' ? 'wrote skill' : action.replace(/_/g, ' ') + ' skill';
+        return { label: verb + (nm ? ' ' + brief(nm) : '') + ' → SKILLS menu', glyph: '✎' };
+      }
+      return { label: 'tending the skillbase' + nmTail, glyph: '▤' };   // delete has no returned name; still legible
+    }
+    return null;
+  }
   function ensureToolRail() {
     if (toolRail && toolRail.isConnected) return toolRail;
     clearEmptyState();
@@ -532,14 +559,17 @@ const Chat = (() => {
   // render a tool CALL as a chip; returns the chip element. ev: { callId, name, argsSummary }
   function toolChip(ev) {
     const rail = ensureToolRail();
-    const chip = document.createElement('div'); chip.className = 'tool-chip pending';
+    const flav = skillFlavor(ev);   // A1: skill.* tools re-labelled in the agent's voice
+    const chip = document.createElement('div'); chip.className = 'tool-chip pending' + (flav ? ' skill' : '');
     chip.setAttribute('aria-expanded', 'false');
     const head = document.createElement('button'); head.type = 'button'; head.className = 'tc-head';
-    const glyph = document.createElement('span'); glyph.className = 'tc-glyph'; glyph.textContent = '▸';
-    const nm = document.createElement('span'); nm.className = 'tc-name'; nm.textContent = shortName(ev.name);
-    const args = document.createElement('span'); args.className = 'tc-args'; args.textContent = ev.argsSummary ? brief(ev.argsSummary) : '';
+    const glyph = document.createElement('span'); glyph.className = 'tc-glyph'; glyph.textContent = flav ? flav.glyph : '▸';
+    const nm = document.createElement('span'); nm.className = 'tc-name'; nm.textContent = flav ? flav.label : shortName(ev.name);
+    // for a flavored skill chip the human phrase already carries the skill name, so the raw args stay in the
+    // expand detail only (kept below) — the chip head is clean.
+    const args = document.createElement('span'); args.className = 'tc-args'; args.textContent = (!flav && ev.argsSummary) ? brief(ev.argsSummary) : '';
     const stat = document.createElement('span'); stat.className = 'tc-stat'; stat.textContent = '';   // filled by resolveChip
-    head.appendChild(glyph); head.appendChild(nm); if (ev.argsSummary) head.appendChild(args); head.appendChild(stat);
+    head.appendChild(glyph); head.appendChild(nm); if (args.textContent) head.appendChild(args); head.appendChild(stat);
     const detail = document.createElement('div'); detail.className = 'tc-detail';
     const dArgs = document.createElement('div'); dArgs.className = 'tc-d-args';
     dArgs.textContent = ev.argsSummary ? cap(ev.argsSummary) : '(no arguments)';
