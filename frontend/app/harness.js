@@ -421,6 +421,18 @@ const Harness = (() => {
       return Array.isArray(j.proposals) ? j.proposals : [];
     } catch (e) { return []; }
   }
+  // GROWTH Tier 1: after a salient run a STUDY pass may propose DOSSIER belief updates (goals/pain/style/… ADD or
+  // RETIRE). Fetch the pending candidates WITH text for the study turn-in card. Consent is applied locally to the
+  // dossier (Keep→DossierStore.upsert / Discard→StudyStore denylist), so there is no server verdict call. [] on failure.
+  async function studyProposals(runId, agentId) {
+    try {
+      const q = '?agent=' + encodeURIComponent(agentId || 'agent') + (runId ? '&run=' + encodeURIComponent(runId) : '');
+      const r = await fetch('/api/study/proposals' + q, { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.proposals) ? j.proposals : [];
+    } catch (e) { return []; }
+  }
   // submit one turn-in verdict. Keep/Edit commit a real memory (→ memory.write); every verdict → memory.feedback.
   // The sidecar re-broadcasts those over the SSE bus, so XP + the dossier update live without a local emit here.
   async function memoryTurnin(o) {
@@ -488,6 +500,7 @@ const Harness = (() => {
     getKey, setKey, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
+    studyProposals,
     agentSkills, agentSkillManage,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

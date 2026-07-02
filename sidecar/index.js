@@ -65,6 +65,10 @@ const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor } = require('./reflect.js');
+// GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
+// node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
+// load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
+let Study = null; try { Study = require('../frontend/app/study.js'); } catch (_) { Study = null; }
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
@@ -720,6 +724,8 @@ const REFLECT_TIMEOUT_MS = 30000;
 const PROPOSALS_CAP = 64;
 const DECLINED_CAP = 200;   // permanent per-agent reject-list of Discarded proposals (FIFO) fed into reflection dedup
 const REFLECT_COOLDOWN_MS = 180000;    // batch rapid-fire runs: at most one turn-in beat per agent per few minutes (default)
+const STUDY_COOLDOWN_MS = 600000;      // GROWTH Tier 1: the STUDY (dossier Phase B) gate — RARER than reflection (default 10m)
+const STUDY_TIMEOUT_MS = 30000;
 /* ---- P1-10 MEMORY controls: user-facing knobs on the reflection ("turn-in") loop, persisted + HONORED live at
    the reflect gate below (not decorative). `reflectEnabled` (default on) master-switches whether a completed run
    proposes memories at all; `reflectCooldownMs` (default 180s) is the min gap between turn-in beats per agent.
@@ -730,14 +736,19 @@ let memoryConfig = (function loadMemoryConfig() {
     const raw = loadResilient(MEMORY_CONFIG_FILE, 'memory-config');
     const c = (raw && typeof raw === 'object') ? raw : {};
     const cd = Number(c.reflectCooldownMs);
+    const sd = Number(c.studyCooldownMs);
     return {
       reflectEnabled: c.reflectEnabled !== false,   // default ON
-      reflectCooldownMs: (isFinite(cd) && cd >= 0) ? Math.floor(cd) : REFLECT_COOLDOWN_MS
+      reflectCooldownMs: (isFinite(cd) && cd >= 0) ? Math.floor(cd) : REFLECT_COOLDOWN_MS,
+      // GROWTH Tier 1: study (dossier Phase B) is RARER than memory reflection by construction — its own longer
+      // cooldown so the station doesn't propose belief updates every few minutes (default 10m). Master-switch too.
+      studyEnabled: c.studyEnabled !== false,       // default ON
+      studyCooldownMs: (isFinite(sd) && sd >= 0) ? Math.floor(sd) : STUDY_COOLDOWN_MS
     };
-  } catch (_) { return { reflectEnabled: true, reflectCooldownMs: REFLECT_COOLDOWN_MS }; }
+  } catch (_) { return { reflectEnabled: true, reflectCooldownMs: REFLECT_COOLDOWN_MS, studyEnabled: true, studyCooldownMs: STUDY_COOLDOWN_MS }; }
 })();
 function saveMemoryConfig() {
-  try { saveResilient(MEMORY_CONFIG_FILE, { version: 1, reflectEnabled: memoryConfig.reflectEnabled, reflectCooldownMs: memoryConfig.reflectCooldownMs }); }
+  try { saveResilient(MEMORY_CONFIG_FILE, { version: 1, reflectEnabled: memoryConfig.reflectEnabled, reflectCooldownMs: memoryConfig.reflectCooldownMs, studyEnabled: memoryConfig.studyEnabled, studyCooldownMs: memoryConfig.studyCooldownMs }); }
   catch (e) { console.warn('[memory-config] persist failed:', (e && e.message) || e); }
 }
 const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, proposals:[{id,kind,content,scope}] }
@@ -793,6 +804,78 @@ async function runReflection(o) {
     clearTimeout(timer);
     // book the reflection's own spend into the append-only ledger so the day/global pools stay honest (the run
     // already booked the loop's spend before this fired). A second entry for the same runId just sums.
+    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
+  }
+}
+
+/* ---- GROWTH Tier 1: the STUDY loop (dossier Phase B — work → understanding) ----
+   Alongside reflection, a salient completed run also earns a STUDY pass: a SEPARATE aux call (same model
+   plumbing) reads the run's directive + transcript + the Commander-dossier block and proposes DOSSIER belief
+   updates (goals/pain/stack/style/… ADD or RETIRE). Proposals are stashed server-side and served to the browser,
+   which surfaces them at the SAME turn-in beat (chat.js) — Keep → DossierStore.upsert, Discard → a permanent
+   studyDeclined denylist. Its OWN, longer cooldown makes study rarer than memory reflection. Fail-open: a failed
+   study never touches the run. NB: the final dedup vs the LIVE dossier + the declined/ignore denylists happens in
+   the browser StudyStore (which holds the structured beliefs); the server does a light block-text dedup + floor. */
+const STUDY_CAP = 32;
+const studyByRun = new Map();          // runId -> { agentId, runId, createdAt, proposals:[{id,dim,kind,text,evidence,source,sourceRunId}] }
+const latestStudyRun = new Map();      // agentId -> newest pending study runId (fetch fallback when the runId is unknown)
+const lastStudyAt = new Map();         // agentId -> ts of the last study we fired (the cooldown gate)
+const studyingNow = new Set();         // agentIds with a study in flight — closes the gap before lastStudyAt is armed
+function stashStudy(agentId, runId, proposals) {
+  studyByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
+  latestStudyRun.set(agentId, runId);
+  while (studyByRun.size > STUDY_CAP) { const k = studyByRun.keys().next().value; studyByRun.delete(k); }
+}
+// pull the existing-belief texts out of the composed dossier block ("- Goals: a; b" → ['a','b']) so the pure
+// study() can dedup an ADD vs what's already known WITHOUT the sidecar mirroring the structured beliefs.
+function beliefsFromBlock(block) {
+  const beliefs = {};
+  for (const ln of String(block == null ? '' : block).split('\n')) {
+    const m = /^-\s*[^:]+:\s*(.+)$/.exec(ln.trim());
+    if (!m) continue;
+    for (const seg of m[1].split(';')) { const t = seg.trim(); if (t) (beliefs.goals = beliefs.goals || []).push({ text: t }); }
+  }
+  return beliefs;   // dim-agnostic bucket is fine: existingTexts() flattens ALL dims for the ADD/RETIRE match
+}
+// fire-and-forget; never throws. Own abort signal + timeout, exactly like runReflection.
+async function runStudy(o) {
+  if (!Study || typeof Study.study !== 'function') return;
+  const { agentId, runId, messages, directive, provider, model, cost } = o;
+  const unmetered = !!(o && o.unmetered);
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, STUDY_TIMEOUT_MS);
+  let usd = 0, tokens = 0;
+  const propose = async (prompt) => {
+    const req = { model, stream: true, signal: ac.signal, messages: [
+      { role: 'system', content: 'You update a durable profile of your Commander from finished work. Propose ONLY evidenced, durable belief changes, one per line, each tagged with a dimension and ADD or RETIRE. Skip anything transient, guessed, or already known. If nothing changed, reply NONE.' },
+      { role: 'user', content: prompt }
+    ] };
+    let out = '', usage = null;
+    for await (const ev of provider.stream(req)) {
+      if (ev && ev.type === 'text') out += ev.delta;
+      else if (ev && ev.type === 'usage') usage = ev.usage;
+    }
+    const c = cost.reconcile(usage, model);
+    usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+    return out;
+  };
+  try {
+    const block = (typeof commanderDossier !== 'undefined' && commanderDossier.get) ? commanderDossier.get() : '';
+    const out = await Study.study({ agentId, runId, directive, messages }, {
+      propose, redact, clock: { now: () => Date.now() },
+      dossierBlock: block, beliefs: beliefsFromBlock(block), declined: [], max: Study.DEFAULT_MAX
+    });
+    const proposals = (out && out.proposals) || [];
+    if (proposals.length) {
+      // arm the cooldown ONLY when proposals actually survive — a floored/all-dedup run never blocks the next study.
+      lastStudyAt.set(agentId, Date.now());
+      stashStudy(agentId, runId, proposals.map(p => ({ id: p.id, dim: p.dim, kind: p.kind, text: p.text, evidence: p.evidence || '', source: 'study', sourceRunId: p.sourceRunId || runId })));
+      // NB: NO chanEmit — study needs no bus event. The browser fetches /api/study/proposals on agent.run.end
+      // (a frozen event it already listens to), so the shared/events.js contract stays untouched.
+    }
+  } catch (e) { console.warn('[study] pass failed:', (e && e.message) || e); }
+  finally {
+    clearTimeout(timer);
     if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
   }
 }
@@ -1620,6 +1703,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/transcript') === 0) return serveTranscript(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/study/proposals') === 0) return serveStudyProposals(req, res);   // GROWTH Tier 1: dossier belief-update proposals for a run
   if (req.method === 'POST' && req.url === '/api/memory/reset') return handleMemoryReset(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/declined/restore') return handleDeclinedRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/declined') === 0) return serveDeclined(req, res);
@@ -3366,6 +3450,16 @@ async function runOnce(o) {
     reflectingNow.add(agentId);
     runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
   }
+  // GROWTH Tier 1: the STUDY pass (dossier Phase B) rides the SAME salience gate as reflection but on its OWN,
+  // longer cooldown (studyCooldownMs) — so the station proposes belief updates RARELY, never every few minutes.
+  // Same fire-and-forget / in-flight-guard discipline as reflection. Fail-open: if Study didn't load, this no-ops.
+  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && !signal.aborted && Study.studySalient(result.messages, o.recurring)
+      && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs)) {
+    studyingNow.add(agentId);
+    let studyDirective = '';
+    for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
+    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
+  }
   if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && !signal.aborted && skillReview.shouldReviewRun(result)) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills }).catch(() => {});
   }
@@ -4161,6 +4255,24 @@ function serveProposals(req, res) {
   } catch (e) { json(200, { proposals: [] }); }
 }
 
+// GET /api/study/proposals?agent=<id>&run=<id> — GROWTH Tier 1: the pending dossier belief-update proposals a
+// STUDY pass raised for a run (with text). Read-only; falls back to the agent's newest pending study batch when
+// the runId is unknown. Consent (Keep/Edit/Discard) is applied CLIENT-SIDE to the dossier (the dossier lives in
+// the browser), so there is no server turn-in endpoint — the browser just drops the batch after it decides.
+function serveStudyProposals(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const runId = u.searchParams.get('run') || '';
+    let batch = runId && studyByRun.get(runId);
+    if (!batch) { const lr = latestStudyRun.get(agent); batch = lr && studyByRun.get(lr); }
+    if (!batch || batch.agentId !== agent) return json(200, { runId: runId || null, agentId: agent, proposals: [] });
+    json(200, { runId: batch.runId, agentId: agent, proposals: batch.proposals });
+  } catch (e) { json(200, { proposals: [] }); }
+}
+
 // POST /api/memory/turnin { agentId, runId, id, verdict:'keep'|'edit'|'discard', content? } — resolve ONE proposal.
 // Keep/Edit COMMIT a real §5.2 record (the user's click IS the consent §5.6) -> memory.write; EVERY verdict ->
 // memory.feedback (Keep/Edit positive, Discard negative) so the agent's confidence tracks proposal acceptance.
@@ -4247,6 +4359,9 @@ async function handleMemoryReset(req, res) {
   // also drop any in-memory pending proposals for this agent so a stale turn-in can't land on the new hero
   for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
   latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
+  // GROWTH Tier 1: also drop any pending STUDY proposals so a fresh Commander never inherits a stranger's belief-update queue.
+  for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
+  latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId);
   return json(200, { ok: true, agent: agentId });
 }
 
