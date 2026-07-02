@@ -1094,7 +1094,7 @@ const World = (() => {
     // TIER D · D3: this crew body is in a live social encounter → the guard (hard timeout + partner-broken, G4/K3)
     // then stepSocial ((re)path or hold). Runs BELOW the b.working seize (stepCrew skips this whole fn while working),
     // so a summon always wins (G2). stepSocial (re)establishes self.target; the walk block below then advances it.
-    if (self.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }
+    if (self.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }   // may (re)set self.target (walk) or clear goal (ended)
     if (self.target) {
       if (now < (self.pauseUntil || 0)) {
         self.state = 'idle';                                // a deliberate hold mid-walk (maybeStrollBeat's considered pause / double-take)
@@ -1111,6 +1111,11 @@ const World = (() => {
           self.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
         }
       }
+    } else if (self.goal === 'social') {
+      // TIER D · D3: in a social encounter with no active target = the HOLD phase (or a between-steps beat). stepSocial
+      // above already set the facing/until; this branch just STOPS the ladder from falling through to decideIdle, which
+      // would clear stilling + pick a wandering beat and stomp the encounter. The guard/stepSocial own the lifecycle.
+      self.state = 'idle';
     } else if (self.goal === 'use') {
       if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
     } else if (self.goal === 'lounge') {
@@ -1563,17 +1568,26 @@ const World = (() => {
     if (armCd !== false && s.aId != null && s.bId != null) armPairCd(s.aId, s.bId, now);   // arm the per-pair cooldown on any end (so a loop can't restart it)
   }
 
-  // has a participant been pulled out from under the encounter (seized by work / despawned / chat-focused)? Any of
-  // these ⇒ the beat can no longer be two-sided → tear down (the survivor releases; K3). READ-ONLY on the bodies.
+  // has the encounter been pulled apart (a participant seized by work / despawned / chat-focused)? ⇒ tear down so
+  // the survivor releases (K3). READ-ONLY on the bodies. TWO-SIDED beats (huddle/border) give BOTH bodies a plan —
+  // either losing its plan or being seized breaks it. ONE-SIDED beats (watch/follow) give only the OBSERVER (aId) a
+  // plan; the passive subject (bId) just needs to still EXIST — a WATCH subject working / a FOLLOW subject walking is
+  // the whole point, not a break. Chat-focus on either body breaks it (the Commander now owns that body's attention).
   function encounterBroken(now) {
     const s = socialBeat; if (!s) return true;
     const a = bodyForAgent(s.aId), b = bodyForAgent(s.bId);
     if (!a || !b || a.unplaced || b.unplaced) return true;                 // a participant despawned
-    for (const body of [a, b]) {
-      if (body.social == null) return true;                               // its plan got cleared out from under us
-      if (body.working) return true;                                      // a crew run seized it
-      if (body === agent && activity === 'task') return true;             // the hero got summoned
-      if (chatFocusId && body === chatFocusBody()) return true;           // pulled into a chat-stare
+    const oneSided = (s.kind === 'watch' || s.kind === 'follow');
+    // the OBSERVER (aId) always carries the plan — its loss/seizure always breaks the beat.
+    if (a.social == null) return true;                                     // observer's plan cleared out from under us
+    if (a.working) return true;                                            // observer's crew run seized it
+    if (a === agent && activity === 'task') return true;                   // observer (hero) got summoned
+    if (chatFocusId && (a === chatFocusBody() || b === chatFocusBody())) return true;   // either pulled into a chat-stare
+    if (!oneSided) {
+      // TWO-SIDED: the partner (bId) must also still be holding its own plan and not seized.
+      if (b.social == null) return true;
+      if (b.working) return true;
+      if (b === agent && activity === 'task') return true;
     }
     return false;
   }
@@ -2550,6 +2564,11 @@ const World = (() => {
       }
     } else if (agent.goal === 'firstwake') {
       stepFirstWake(now);   // FIRST LIGHT ritual sequencer (sits BELOW the summon-seize block, so a summon always wins)
+    } else if (agent.goal === 'social') {
+      // TIER D · D3: hero in a social encounter with no active target = the HOLD phase. The guard/stepSocial (run
+      // above, before `if (agent.target)`) own the facing + lifecycle; this branch only STOPS the ladder from
+      // reaching decideIdle, which would stomp the encounter with a wandering beat.
+      agent.state = 'idle';
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
       decideIdle(now);
     }

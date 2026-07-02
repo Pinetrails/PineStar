@@ -316,3 +316,87 @@ gain in D2 therefore comes entirely from Half 2 (the retune that lets the alread
 - **Verification:** `node --check` clean; full `npm run test:fast` green incl. `lint-determinism` + `lint-emits`.
   Behavioral rates are not headless-testable (rAF pauses; plan's honest-limits section) — verified by code review
   against the G-hunts (N=1 drift, non-summoned-body fire, deadlock, cross-body mutation, determinism) all clear.
+
+## D3 — implementation notes (as built)
+
+**All FOUR beats shipped** (huddle, watch-a-peer-work, half-follow, border meeting) — none skipped. Single
+writer: `frontend/app/world.js` (+ this doc). All SILENT (no speech/bubbles). Commit: `tier-d D3: social
+encounters …` (557dccb2) + the fall-through / one-sided-break fixes.
+
+### The coordinator (assignment / stepping / release)
+- **The slot (G4):** ONE module-local `socialBeat = null | { kind, aId, bId, until }`. `until` = `now +
+  SOCIAL_HARD_MS` (25 s) is the whole-encounter HARD timeout. A **station-level sweep at the top of `tick()`**
+  (`if (socialBeat && (now >= until || encounterBroken)) endEncounter`) frees the slot EVERY frame independent of
+  any body's stepper — so even if BOTH participants get seized in the same tick (neither runs its own guard) the
+  slot is never leaked. `socialPairCd` (Map, sorted `"idA|idB"` key) is the per-pair cooldown.
+- **Assignment — `startEncounter(a,b,kind,now,planA,planB)`** is the SINGLE sanctioned cross-body write (K2): it
+  assigns each body its OWN self-contained plan on `body.social` (`{ phase, tx, ty, faceTile, partnerId, kind, … }`),
+  sets `goal='social'` on both, arms the slot + `armBeat(now)` (G5). Two-sided beats (huddle/border) go through it;
+  the ONE-SIDED beats (watch/follow) inline-assign only the OBSERVER's plan (the passive subject keeps working /
+  walking — that's the beat) and set the slot directly, still `if (socialBeat) return false` guarded.
+- **Stepping — `stepSocial(now)`** runs per-tick for the current body (`self`) and mutates ONLY `self` (its plan +
+  position/facing via the existing `setPathTo`/walk machinery) and reads the partner READ-ONLY (position only, via
+  `bodyForAgent`). Phases: `walk` (path to the fixed target — `pl.started` distinguishes "not yet en route" from
+  "arrived"; follow re-steps 2-4 tiles toward the moving partner, zone-clamped, then STOPS — never completes) →
+  `hold` (stand, face partner/faceTile, until `pl.until` = `now + U.irnd(3-7 s)`) → `endEncounter`. Wired into BOTH
+  loops (hero `tick()` and `crewEngineStep`) after the D1 chat-stare hook, BELOW the summon/`b.working` seize; a
+  dedicated `goal==='social'` branch in each idle ladder stops the fall-through to `decideIdle` (which would stomp
+  the hold with a wandering beat). `arrive()` gained a `goal==='social'` case so a reached waypoint stays on-goal.
+- **Selection — `maybeSocial(now)`** is called from `decideIdle` at the existing idle cadence (K4 — off
+  `neighborsOf`, never off observing another encounter). Order of gates: reduceMotion → no walking beats (degrade to
+  Tier C glances); slot free; self eligible (`socialEligible`: idle + placed + not chat-focused + not already in a
+  beat); station gate open (`crewBeatDamp`); **candidate exists** (a same-zone neighbor OR any other placed body)
+  BEFORE the `U.chance(0.02)` roll — so a solo-hero floor never even rolls (N=1 parity, hunt 6); then try
+  watch→huddle→follow→border, first legal plan wins.
+- **Release — `endEncounter(now)`** frees the slot, clears each body's own plan (`goal==='social'` → idle), and arms
+  the per-pair cooldown. Idempotent. `encounterBroken(now)` (READ-ONLY) is the tear-down trigger: despawn, the
+  observer losing its plan / being seized (working / hero `activity==='task'`), or EITHER body pulled into a
+  chat-stare. Two-sided beats additionally require the partner to still hold its plan; one-sided beats tolerate the
+  subject working/walking (that IS the beat).
+
+### Border meeting (the shared-edge geometry)
+Computed **directly from the two zone rects** — no `zones.js` API change. `zoneRect(zone)` yields the single rect
+of a `'room'` zone (`'leash'`/`'multi'` zones can't express a clean shared edge → those pairs are simply NOT
+border candidates, a documented skip, not a `zones.js` edit). `sharedEdge(ra,rb)` returns a vertical/horizontal
+shared line iff the rects abut with an overlapping span; `borderTileFor(rect,edge,cur)` returns the nearest walkable
+tile of that line INSIDE the given rect. Each body walks to its OWN rect's edge tile — they meet ACROSS the line,
+never crossing (containment staged, not hidden). 16/16 pure-geometry smoke assertions pass (each body's target is
+inside its own rect only; gaps yield no edge; partial overlaps span correctly; blocked edge tiles are skipped).
+
+### Final tuning constants
+`SOCIAL_SEL_ROLL = 0.02` (per idle re-decide, only when a candidate pair exists + gate open); hold `U.irnd(3000,
+7000)` ms; whole-encounter hard timeout `SOCIAL_HARD_MS = 25000` ms; per-pair cooldown `U.irnd(180000, 360000)` ms
+(3-6 min); candidate radius 5 tiles; half-follow `U.irnd(2,4)` tiles. These start from the brief's suggested values
+unchanged — RARE by design (a 6-agent floor sees an encounter every few minutes at most; the station beat gate
+(G5/`armBeat`) further keeps social beats inside the same calm budget as quirks).
+
+### The 7 self-review hunts — how each was cleared
+1. **Social target outside the mover's zone** — every plan builder clamps via `tileInZone(zoneFor(mover))`
+   (huddle via `nearestWalkableInZone`, watch/follow per-candidate, border double-checked belt-and-suspenders); the
+   follow re-clamps each incremental step. Border bodies each target their OWN rect's edge tile (geometry test proves
+   containment). CLEAR.
+2. **Rendezvous deadlock (partner summoned/despawned/chat-focused mid-beat)** — the survivor frees within one tick
+   via `encounterBroken` (checked both by the per-body guard AND the station-level sweep) → `endEncounter` frees the
+   slot AND clears the survivor's plan. The hard `until` is the final backstop. CLEAR.
+3. **Slot leaking / double-occupied** — the station sweep makes it un-leakable (frees even if both seize same tick);
+   `startEncounter` + both one-sided builders early-return on `socialBeat`, and bodies are stepped sequentially in a
+   frame (crew then hero), so no two encounters arm in one tick. CLEAR.
+4. **An encounter starting during another** — every entry path guards `if (socialBeat) return false`; `maybeSocial`
+   guards it first. Selection is off `neighborsOf` at idle cadence, never off observing an encounter (K4). CLEAR.
+5. **Cross-body mid-tick mutation** — `startEncounter`/`endEncounter` are the ONLY functions that write a partner,
+   and they are the explicit initiation/teardown coordinators (not per-tick stepping). `stepSocial` writes only
+   `self` and reads the partner's position READ-ONLY. CLEAR.
+6. **N=1 floor (no partner ever exists)** — `maybeSocial` returns BEFORE the `U.chance` roll when no other placed
+   body exists, so a solo-hero floor consumes zero extra RNG (U.* are independent `Math.random` wrappers → a skipped
+   draw shifts nothing); byte-identical to pre-D3. CLEAR.
+7. **Summon latency** — the hero summon-seize block (sets `goal='summon'`) and the crew `b.working` seize both sit
+   ABOVE the social step; the social branch is gated on `activity==='idle'` / `!b.working`. A summoned participant's
+   task walk starts THIS tick (the seize block runs the same frame the sweep frees the slot). CLEAR.
+
+### Residual risks / unverifiable
+- **Live feel** (does an encounter read as eerie-and-alive vs busy?) is not headless-testable (rAF pauses; the
+  plan's honest-limits section). Rates/timings are code-review + geometry-test verified; a foreground `?dev`
+  multi-crew soak (2+ summoned crew sharing a floor) is the only way to SEE the beats — expected, deferred to an
+  attended check.
+- **Border meeting requires two `'room'`-zone bodies with abutting rects.** A solo hero (`'multi'` zone) or a
+  leashed deskless crew body never border-meets — by design (documented skip), not a bug.
