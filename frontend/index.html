@@ -15,6 +15,8 @@
 <link rel="stylesheet" href="css/tutorial.css">
 <!-- motion.css last: the Phase-1 premium motion + feedback layer builds ON TOP of every screen's styles -->
 <link rel="stylesheet" href="css/motion.css">
+<link rel="stylesheet" href="css/topbar.css"><!-- topbar instrument cluster: builds on motion.css's premium component vocabulary -->
+
 </head>
 <body class="theme-amber">
 
@@ -181,7 +183,25 @@
            name+model here misrepresents the crew. Kept hidden as the focused-agent data source that
            app.js writes and tutorial coachmarks / warroom approvals read in-voice. -->
       <div hidden><b id="gt-agent">—</b><b id="gt-model">—</b></div>
-      <div class="tb-stat station" id="tb-station" title="The whole station's cumulative level — every agent's honest track record rolled up. Raise it.">STATION <b id="gt-station">Lv 1</b></div>
+      <!-- INSTRUMENT CLUSTER (topbar.js) — one cockpit gauge group: STATION (level + XP sliver) ·
+           SPEND TODAY · the session-status instruments (UPLINK / ONLINE / save) moved up from
+           #bottombar .bb-right with their ids intact so their existing writers keep working. -->
+      <div class="tb-stat station tb-inst" id="tb-station" title="The whole station's cumulative level — every agent's honest track record rolled up. Raise it.">
+        <span class="tb-lbl">STATION</span>
+        <b class="tb-val" id="gt-station">Lv 1</b>
+        <span class="tb-xp" aria-hidden="true"><i class="tb-xp-fill"></i></span>
+      </div>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <div class="tb-inst" id="tb-spend" data-zero="1" title="SPEND TODAY — real reconciled dollar spend across all agents today (from the live ledger). Ticks up as runs bill.">
+        <span class="tb-lbl">SPEND TODAY</span>
+        <b class="tb-val">$0.00</b>
+      </div>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <div class="tb-status">
+        <span id="sig" title="local sidecar uplink">UPLINK <b>▂▄▆█</b></span>
+        <span id="status-pill">ONLINE</span>
+        <span id="save-dot" title="autosave">●</span>
+      </div>
       <button id="btn-disconnect" class="btn-sm" title="disconnect agent">⏏ DISCONNECT</button>
     </div>
   </header>
@@ -294,9 +314,9 @@
         <b class="ctx-num">—</b>
         <span class="ctx-cap"></span>
       </span>
-      <span id="sig" title="local sidecar uplink">UPLINK <b>▂▄▆█</b></span>
-      <span id="save-dot" title="autosave">●</span>
-      <span id="status-pill">ONLINE</span>
+      <!-- UPLINK / ONLINE / save-dot moved UP into the #topbar instrument cluster (topbar.js);
+           ids preserved there so their writers (main.js, stationui.js) are untouched. Context stays
+           here — it's session-local and belongs near the model dock; the term-strip gains this room. -->
     </div>
   </footer>
 
@@ -409,6 +429,7 @@
 <script src="app/seedreusestore.js"></script><!-- seed-reuse aggregate wiring (G3b): tallies provenance-matched digest rows; the living-tools shelf + the 5×-this-week callout (own key, never emits) -->
 <script src="app/confbeats.js"></script><!-- confidence narrative beats (G3a): fire-once calibration-complete + TRUSTED spoken moments (own key) -->
 <script src="app/app.js"></script>
+<script src="app/topbar.js"></script><!-- topbar instrument cluster: read-only STATION-XP + live SPEND-TODAY wiring (after app.js so Harness/Xp/XpStore/U exist) -->
 <script src="app/safety.js"></script>
 <script src="app/warroom.js"></script>
 </body>
