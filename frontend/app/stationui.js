@@ -1243,8 +1243,10 @@ const StationUI = (() => {
     const agentId = (a && a.id) || 'agent';
     const skills = skillsFor(agentId);
     const on = skills.filter(s => s.on).length;
-    body.innerHTML =
-      '<div class="sec"><span class="sec-l">CAPABILITIES</span><span class="sec-r"></span><span class="sec-tag">' + on + ' LIVE</span></div>' +
+    // CONSOLE MODE: CAPABILITIES · SKILL LIBRARY · AGENT SKILLS as three sections instead of one long scroll.
+    // The library categories stay as sub-headers inside the LIBRARY section (renderSkillLibrary emits them);
+    // its async loaders target #sk-lib / #sk-agent which live inside the panes below.
+    const secCaps =
       '<div class="perk-grid">' +
       skills.map((s, i) => '<div class="perk ' + (s.on ? 'on' : '') + '" style="--ci:' + i + '">' +
         '<div class="perk-icon">' + s.icon + '</div>' +
@@ -1255,16 +1257,22 @@ const StationUI = (() => {
       '</div>' +
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
       'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
-      '<b>notebook</b> saves freely.</p>' +
-      '<div class="sec"><span class="sec-l">SKILL LIBRARY</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<b>notebook</b> saves freely.</p>';
+    const secLibrary =
       '<p class="sk-note sk-lib-intro">Pre-installed <b>recipes</b> your agents follow when a task matches. Each one ' +
       'rides on the capabilities above — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
       'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
       '<div id="sk-lib" class="sk-lib"><div class="sk-loading"><span class="loading pulse">loading the skill library…</span></div></div>';
-    loadSkillLibrary(agentId);
-    body.innerHTML += '<h4 class="ms-h">AGENT SKILLS</h4>' +
+    const secAgent =
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">Loading agent skills...</div></div>';
+    const frag = html => (el => { el.innerHTML = html; });
+    mountConsole(body, 'skills', [
+      { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' live right now — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
+      { id: 'library', label: 'SKILL LIBRARY', glyph: '▤', desc: 'Pre-installed recipes your agents follow when a task matches, grouped by kind.', build: frag(secLibrary) },
+      { id: 'agent', label: 'AGENT SKILLS', glyph: '✎', desc: 'Procedures this agent created or learned itself.', build: frag(secAgent) }
+    ], { search: true, searchPlaceholder: 'search skills…' });
+    loadSkillLibrary(agentId);
     loadAgentSkills(agentId);
   }
 
