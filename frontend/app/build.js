@@ -186,6 +186,7 @@ const Build = (() => {
   const TIER_LABEL = { functional: '⚙ SYSTEMS', cosmetic: '✦ DECOR' };   // display names; the internal tier keys stay functional/cosmetic
   const CAT_LABEL = {
     workstation: 'WORKSTATIONS', workflow: 'WORKFLOW', capability: 'CAPABILITY', isolation: 'ISOLATION',
+    command: 'COMMAND',   // G1b: mission surfaces — functional-but-not-capability (MISSION BOARD)
     screens: 'SCREENS', lab: 'LAB', storage: 'STORAGE', comms: 'COMMS', lounge: 'LOUNGE', decor: 'DECOR',
   };
   // the agent-assignable workstation types — the 'computer' props the agent walks to + sits at (matches

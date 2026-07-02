@@ -37,7 +37,7 @@ const World = (() => {
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = false, onClick = null, onArcade = null, onOutbox = null, wakeAt = 0;
+  let drag = null, hoverAgent = false, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -477,7 +477,7 @@ const World = (() => {
       // rising edge: it notices the Commander's cursor land on it and turns to meet you
       if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
       if (hit !== hoverAgent) hoverAgent = hit;
-      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX are clickable too
+      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -492,7 +492,10 @@ const World = (() => {
       if (arc && onArcade) { onArcade(arc); return; }
       // G2.3: a stacked OUTBOX is the collect tap — clicking it opens the oldest pending run's review
       const ob = outboxAt(wp);
-      if (ob && onOutbox) onOutbox(ob);
+      if (ob && onOutbox) { onOutbox(ob); return; }
+      // G1b: the MISSION BOARD is the quest log's body — clicking it opens the log (never gated, never dead)
+      const mb = missionBoardAt(wp);
+      if (mb && onMissionBoard) onMissionBoard(mb);
     });
     cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
     // you just came back to the tab → for a few seconds the agent is likelier to look up and notice you
@@ -2024,6 +2027,7 @@ const World = (() => {
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
       if (PropSprites.setOutboxCrates) PropSprites.setOutboxCrates(returnCrates());   // G2.3: uncollected while-away work stacks on the chute
+      if (PropSprites.setMissionPins) { const mp = missionPinCounts(now); PropSprites.setMissionPins(mp[0], mp[1]); }   // G1b: open quests pin to the MISSION BOARD; a station-gap keeps it breathing
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
         const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || workstationLit(p) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
@@ -2582,6 +2586,7 @@ const World = (() => {
   function setOnClick(fn) { onClick = fn; }
   function setOnArcade(fn) { onArcade = fn; }
   function setOnOutbox(fn) { onOutbox = fn; }
+  function setOnMissionBoard(fn) { onMissionBoard = fn; }   // G1b: click a placed MISSION BOARD → open the quest log
   // G2.3 — the live uncollected-crate count (ReturnStore's pending ledger). Read per-frame for the
   // OUTBOX sprite stack and by the hit-test below; 0 when the store isn't loaded (headless tests).
   function returnCrates() {
@@ -2595,6 +2600,37 @@ const World = (() => {
     for (const p of geo.props) {
       if (p.t !== 'outbox') continue;
       const x0 = p.x * T, y0 = p.y * T - 34;
+      const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 4;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
+  }
+  /* ---------- G1b MISSION BOARD: the quest log's body ----------
+     missionPinCounts — the board's truthful readout, recomputed at most once a second (the projection walk
+     is too heavy for every frame): [how many quests are OPEN in the visible log, whether a station-gap
+     fix-it is among them]. Zeroes when the quest stores aren't loaded (headless tests / title screen). */
+  let mpAt = -1e9, mpOpen = 0, mpHot = false;
+  function missionPinCounts(t) {
+    if (t - mpAt > 1000) {
+      mpAt = t;
+      try {
+        const v = (typeof QuestStore !== 'undefined' && QuestStore.view) ? QuestStore.view() : null;
+        const all = (v && Array.isArray(v.quests)) ? v.quests : [];
+        const vis = (typeof QuestStateStore !== 'undefined' && QuestStateStore.visible) ? QuestStateStore.visible(all) : all;
+        mpOpen = vis.filter(q => q && q.status !== 'done').length;
+        mpHot = (typeof StationQuestStore !== 'undefined' && StationQuestStore.openCount) ? StationQuestStore.openCount() > 0 : false;
+      } catch (_) { mpOpen = 0; mpHot = false; }
+    }
+    return [mpOpen, mpHot];
+  }
+  // hit-test: a placed MISSION BOARD under a world-space point. Always clickable while placed — the click
+  // opens the QUEST LOG, which always has content, so the affordance is never dead (unlike the OUTBOX,
+  // whose click needs crates). The wall lugs + casing spill above the footprint; extend the box up.
+  function missionBoardAt(wp) {
+    if (!geo || !geo.props) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'missionboard') continue;
+      const x0 = p.x * T, y0 = p.y * T - 6;
       const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 4;
       if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
     }
@@ -3281,7 +3317,7 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, refit, pauseBridge, resumeBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
