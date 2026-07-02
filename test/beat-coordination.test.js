@@ -118,8 +118,9 @@ const iRunEnd = chatSrc.indexOf('armRateFallback(p.agentId');
 const iBusyGuard = chatSrc.indexOf('if (isBusy() || interview) return;', iWire);
 A.ok(iRunEnd > iWire && iBusyGuard > 0 && iRunEnd < iBusyGuard,
   'the fallback is armed BEFORE the post-run slot\'s stand-down guards (a blocked moment cannot skip arming)');
-// hole 1: proposed-but-empty batch — the early return must rate first
-A.ok(/if \(!proposals\.length\) \{ maybeStandaloneRate\(agentId, runId\); return; \}/.test(chatSrc),
+// hole 1: proposed-but-empty batch — the early return must rate first (the beat-slot release that now precedes
+// it on the same line — slotMemoryEmpty, GROWTH Tier 1 — is tolerated: this lock is about the RATE guarantee)
+A.ok(/if \(!proposals\.length\) \{[^}]*maybeStandaloneRate\(agentId, runId\); return; \}/.test(chatSrc),
   'an EMPTY proposal batch (turn-in stood the slot down, then never rendered) still fires the standalone rate beat');
 // hole 3: a batch on a non-displayed stream is notify-only — the rating must not vanish with it
 const iNotify = chatSrc.indexOf('memories to review');

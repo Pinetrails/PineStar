@@ -130,6 +130,9 @@ const S = require('../frontend/app/study.js');
     upsert: (dim, b) => { upserts.push({ dim, b }); (dossierBeliefs[dim] = dossierBeliefs[dim] || []).push({ id: 'cd_new', text: b.text, source: b.source, observedAt: b.observedAt }); },
     forget: (dim, id) => { forgets.push({ dim, id }); dossierBeliefs[dim] = (dossierBeliefs[dim] || []).filter(x => x.id !== id); }
   };
+  // capture the server-consume calls (POST /api/study/resolve) StudyStore fires on every verdict.
+  const resolveCalls = [];
+  global.fetch = (url, opts) => { resolveCalls.push({ url, body: JSON.parse((opts && opts.body) || '{}') }); return Promise.resolve({ ok: true }); };
   const { StudyStore } = require('../frontend/app/studystore.js');
   StudyStore.init({ now: () => 1000 });
 
@@ -153,6 +156,36 @@ const S = require('../frontend/app/study.js');
   A.eq(StudyStore.accept(retProp, null), true, 'accept(retire) matched an existing belief and returns true');
   A.eq(forgets.length, 1, 'accept(retire) forgets the matched belief');
   A.eq(forgets[0].id, 'cd_1', 'the correct existing belief was retired');
+
+  // ---- CONSUMPTION (finding 2): a DECIDED proposal can never re-offer, and never duplicates on double-Keep ----
+  A.eq(StudyStore.nextLive([addProp]), null, 'a KEPT proposal is resolved — a stale server batch can never re-offer it');
+  A.eq(StudyStore.isExhausted(addProp.dim, addProp.text), true, 'a kept belief is exhausted (resolved set)');
+  A.eq(StudyStore.nextLive([retProp]), null, 'a decided RETIRE is resolved too — it never re-offers');
+  // double-Keep guard: even if a stale card somehow re-commits, accept() sees the dossier ALREADY holds the
+  // belief (exact/paraphrase) and skips the duplicate write — still reporting success (the belief IS there).
+  const upsertsBefore = upserts.length;
+  A.eq(StudyStore.accept({ id: 'study_1b', dim: 'style', kind: 'add', text: 'prefers terse answers' }, null), true, 'a second Keep of the same belief still reports success');
+  A.eq(upserts.length, upsertsBefore, 'but it writes NO duplicate belief (dedup vs the live dossier)');
+  // the resolved set persists (own key): a reload cannot resurrect a decided proposal
+  StudyStore.init({ now: () => 1000 });
+  A.eq(StudyStore.nextLive([addProp]), null, 'the resolved set survives a re-init (persisted) — no post-reload re-offer');
+  // every verdict CONSUMES the proposal server-side too, carrying the current denylist
+  A.ok(resolveCalls.length >= 2 && resolveCalls.every(c => c.url === '/api/study/resolve'), 'each verdict POSTs /api/study/resolve (server batch consumption)');
+  A.eq(resolveCalls[0].body.id, 'study_1', 'the resolve call names the decided proposal id');
+  A.eq(resolveCalls[0].body.runId, 'run_9', 'the resolve call names the batch runId (sourceRunId)');
+  A.ok(Array.isArray(resolveCalls[0].body.declined), 'the resolve call mirrors the studyDeclined denylist to the sidecar');
+
+  // ---- RETIRE SAFETY (finding 5): a pinned belief is untouchable; the card shows the REAL target ----
+  dossierBeliefs.goals = [{ id: 'cd_7', text: 'keep improving the harness pipeline', pinned: true }];
+  const retPinned = { id: 'study_7', dim: 'goals', kind: 'retire', text: 'improving the harness pipeline' };
+  A.eq(StudyStore.retireTarget(retPinned), null, 'retireTarget NEVER matches a pinned belief (a pin is "this stays")');
+  A.eq(StudyStore.nextLive([retPinned]), null, 'a retire whose only match is pinned is not offerable at all');
+  const forgetsBefore = forgets.length;
+  A.eq(StudyStore.accept(retPinned, null), false, 'accept(retire) refuses when the only match is pinned');
+  A.eq(forgets.length, forgetsBefore, 'the pinned belief was NOT deleted');
+  dossierBeliefs.goals.push({ id: 'cd_8', text: 'rebuild the harness pipeline end to end', pinned: false });
+  const tgt = StudyStore.retireTarget({ id: 'study_8', dim: 'goals', kind: 'retire', text: 'the harness pipeline rebuild' });
+  A.ok(tgt && tgt.id === 'cd_8', 'retireTarget returns the unpinned match — the card can show the ACTUAL belief to be deleted');
 
   // DISCARD -> the belief joins the permanent denylist (and nextLive drops it thereafter)
   const badProp = { id: 'study_4', dim: 'pain', kind: 'add', text: 'this belief is wrong and unwanted' };
@@ -183,27 +216,108 @@ const S = require('../frontend/app/study.js');
   StudyStore.init({ now: () => 1000 });
   A.eq(StudyStore.noteRating('coding', 'great'), null, 'the minted flag survives a re-init (persisted) — never re-mints');
 
-  /* ============================ 3. CHAINED ONE-BEAT GUARANTEE (source-locked) ============================ */
+  /* ============== 3. THE ONE-BEAT GUARANTEE — BEHAVIORAL (the pure beat-slot arbiter chat.js drives) ==============
+     The memory turn-in and the study card arrive on different clocks: memory.proposed lands only after
+     reflection's LLM round-trip, seconds after agent.run.end. Both sides of chat.js route every render/queue
+     decision through Study.makeBeatSlot(); here we drive the arbiter through the EXACT race scenarios and assert
+     visibleBeat() never shows two beats and memory always wins the contested moment. */
 
+  // --- scenario A (the review's finding-1 race): study shows FIRST, memory.proposed lands LATE ---
+  let slot = S.makeBeatSlot();
+  A.eq(slot.canStudy(), 'free', 'run ended, nothing pending: the study offer may take the moment');
+  slot.studyShown();
+  A.eq(slot.visibleBeat(), 'study', 'the study card is the one visible beat');
+  slot.memoryProposed('run_1');                        // reflection's LLM round-trip finally lands
+  A.eq(slot.memoryDeck(), 'queue', 'a memory deck arriving over a visible study card QUEUES — it never stacks');
+  A.eq(slot.visibleBeat(), 'study', 'still exactly ONE visible beat (the study card) after the late memory.proposed');
+  slot.studyDone(true);                                // the Commander decides the study card; a deck is queued behind it
+  A.eq(slot.visibleBeat(), 'memory', 'the queued memory deck takes the moment as the study card resolves');
+  slot.memoryShown();                                  // renderTurninBatch's idempotent hard-claim
+  A.eq(slot.visibleBeat(), 'memory', 'one visible beat: the memory deck');
+  slot.memoryDone('run_1', false);
+  A.eq(slot.visibleBeat(), null, 'the moment is free again after the deck resolves');
+  A.eq(slot.canStudy(), 'free', 'and the next study offer may take it');
+
+  // --- scenario B (the common case): memory.proposed arrives BEFORE the study arm — memory wins outright ---
+  slot = S.makeBeatSlot();
+  slot.memoryProposed('run_2');
+  A.eq(slot.canStudy(), 'memory', 'reflection in flight (proposed, fetch pending): study cedes BEFORE any deck renders');
+  A.eq(slot.memoryDeck(), 'render', 'the fetched deck renders (the slot was free of visible beats)');
+  A.eq(slot.canStudy(), 'busy', 'study still cedes while the deck is visible');
+  slot.memoryDone('run_2', false);
+  A.eq(slot.canStudy(), 'free', 'the deck resolved with nothing queued: study may take the NEXT moment');
+
+  // --- scenario C (the fetch-gap hole): proposed but the 350ms fetch comes back EMPTY / notify-only ---
+  slot = S.makeBeatSlot();
+  slot.memoryProposed('run_3');
+  A.eq(slot.canStudy(), 'memory', 'the claim holds across the whole proposed→fetch window (the 350ms gap is covered)');
+  slot.memoryEmpty('run_3');                           // empty batch / off-stream notify — no deck will render
+  A.eq(slot.canStudy(), 'free', 'an empty fetch releases the claim — study is not starved by a deck that never comes');
+
+  // --- scenario D: two decks chain, study stays out for the whole train ---
+  slot = S.makeBeatSlot();
+  slot.memoryProposed('run_4'); slot.memoryProposed('run_5');
+  A.eq(slot.memoryDeck(), 'render', 'first deck renders');
+  A.eq(slot.memoryDeck(), 'queue', 'second deck queues behind it (never two visible)');
+  A.eq(slot.canStudy(), 'busy', 'study cedes to the visible deck');
+  slot.memoryDone('run_4', true);
+  A.eq(slot.visibleBeat(), 'memory', 'the queued deck holds the moment');
+  A.eq(slot.canStudy(), 'busy', 'study still cedes to the queued deck');
+  slot.memoryDone('run_5', false);
+  A.eq(slot.canStudy(), 'free', 'study may take the moment only after the WHOLE deck train resolves');
+
+  /* ---- source-locks: chat.js actually drives the arbiter at the right seams (idiom of beat-coordination.test) ---- */
   const chatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
-  // the study beat is registered alongside the memory turn-in + curiosity, and shares proposalRunsSeen's slot.
   A.ok(chatSrc.indexOf('function wireStudy') > 0, 'chat.js defines wireStudy (the study turn-in beat)');
-  A.ok(/wireProposals\(\);[\s\S]{0,120}wireStudy\(\);/.test(chatSrc), 'wireStudy is wired in init next to wireProposals');
-  // a MEMORY turn-in WINS the run's moment: study cedes (memoryOwnsRun) and queues for the next task end.
-  const iOwns = chatSrc.indexOf('function memoryOwnsRun');
-  A.ok(iOwns > 0, 'chat.js defines memoryOwnsRun (study cedes to a memory turn-in)');
-  A.ok(/activeTurnin\)\s*return true/.test(chatSrc.slice(iOwns, iOwns + 400)), 'a live memory turn-in makes memoryOwnsRun true (study cedes)');
+  A.ok(/wireProposals\(\);[\s\S]{0,220}wireStudy\(\);/.test(chatSrc), 'wireStudy is wired in init next to wireProposals');
+  // memory reserves its claim the moment memory.proposed arrives (BEFORE the 350ms fetch), and releases on empty/notify-only
+  const iWireProps = chatSrc.indexOf('function wireProposals');
+  const iPropsEnd = chatSrc.indexOf('function proposalCard');
+  A.ok(/slotMemoryProposed\(runId\);/.test(chatSrc.slice(iWireProps)), 'memory.proposed reserves the beat-slot claim immediately (covers the fetch gap)');
+  const wpBody = chatSrc.slice(iWireProps, iWireProps + 2600);
+  A.ok((wpBody.match(/slotMemoryEmpty\(runId\)/g) || []).length >= 2, 'an empty fetch AND the notify-only path both release the claim');
+  // the deck render path consults the arbiter and queues over a live study card
+  const iCard = chatSrc.indexOf('function proposalCard');
+  A.ok(/slotMemoryDeck\(\) === 'queue'\)\s*\{[\s\S]{0,120}turninQueue\.push\(batch\)/.test(chatSrc.slice(iCard, iCard + 1200)),
+    'proposalCard queues the deck when the arbiter says the moment is taken (a study card can never be stacked on)');
+  A.ok(/beatSlot\.memoryShown\(\)/.test(chatSrc), 'renderTurninBatch hard-claims the slot on every deck-render path');
+  A.ok(/slotMemoryDone\(batch\.runId, turninQueue\.length > 0\)/.test(chatSrc), 'finishBatch releases (or hands on) the slot');
+  // the study side: guards + queue-not-drop + session cap + the generous arm delay (memory wins the moment)
   const iOffer = chatSrc.indexOf('async function offerStudy');
   A.ok(iOffer > 0, 'chat.js defines offerStudy');
-  A.ok(/memoryOwnsRun\(runId\)\)\s*\{[^}]*studyPending\.push/.test(chatSrc.slice(iOffer, iOffer + 900)),
-    'when a memory turn-in owns the run, offerStudy QUEUES the study (studyPending) instead of beating');
-  A.ok(/if \(studyBusy\(\)\)/.test(chatSrc.slice(iOffer, iOffer + 900)), 'offerStudy never stacks a second study card (studyBusy guard)');
-  A.ok(/StudyStore\.canShow\(\)\)\s*return;/.test(chatSrc.slice(iOffer, iOffer + 900)), 'offerStudy respects the session cap');
-  // the study beat is armed AFTER the memory (350ms) + curiosity (650ms) slots so a memory turn-in claims first.
+  A.ok(/slotCanStudy\(\) !== 'free' \|\| studyBlocked\(\)\)\s*\{\s*queueStudy\(runId, agentId\); return; \}/.test(chatSrc.slice(iOffer, iOffer + 700)),
+    'a taken/blocked moment QUEUES the study offer (deferred, never dropped, never stacked)');
+  A.ok(/StudyStore\.canShow\(\)\)\s*return;/.test(chatSrc.slice(iOffer, iOffer + 700)), 'offerStudy respects the session cap');
+  const iBlocked = chatSrc.indexOf('function studyBlocked');
+  A.ok(iBlocked > 0 && /isBusy\(\) \|\| interview/.test(chatSrc.slice(iBlocked, iBlocked + 700))
+    && /Onboarding\.isRunning/.test(chatSrc.slice(iBlocked, iBlocked + 700))
+    && /Intake\.isRunning/.test(chatSrc.slice(iBlocked, iBlocked + 700))
+    && /Dialogue\.isOpen/.test(chatSrc.slice(iBlocked, iBlocked + 700)),
+    'the study beat honors the SAME stand-down guards as curiosity (busy/interview/onboarding/intake/Dialogue)');
   const iWireStudy = chatSrc.indexOf('function wireStudy');
-  A.ok(/\},\s*900\);/.test(chatSrc.slice(iWireStudy, iWireStudy + 1200)), 'wireStudy fires at 900ms — AFTER the memory turn-in + curiosity slots (memory wins the moment)');
-  // deferred studies are drained on the NEXT run end (anti-starve), one at a time.
-  A.ok(/flushStudyPending\(\);/.test(chatSrc.slice(iWireStudy, iWireStudy + 1200)), 'wireStudy retries a deferred study on the next run end (anti-starve)');
+  A.ok(/STUDY_ARM_MS\);/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)), 'the study offer arms at STUDY_ARM_MS — well after run end, so reflection claims the moment first');
+  A.ok(/expireActiveStudy\(\); flushStudyPending\(\);/.test(chatSrc.slice(iWireStudy, iWireStudy + 1600)),
+    'each run end expires an undecided study card (the ignore verdict) THEN drains one deferred beat (anti-starve)');
+  // finding-4 lifecycle: the expiry tallies StudyStore.ignore for the shown proposal and frees the slot
+  const iExpire = chatSrc.indexOf('function expireActiveStudy');
+  A.ok(iExpire > 0 && /StudyStore\.ignore\(a\.prop\)/.test(chatSrc.slice(iExpire, iExpire + 800)),
+    'an undecided card expiring at the next run end tallies an IGNORE (2x = stop proposing that belief)');
+  A.ok(/slotStudyDone\(turninQueue\.length > 0\)/.test(chatSrc.slice(iExpire, iExpire + 800)), 'the expiry releases the beat slot (queued memory decks cannot starve)');
+  // FIFO drains, single queue path
+  const iFlush = chatSrc.indexOf('function flushStudyPending');
+  A.ok(iFlush > 0 && /studyPending\.shift\(\)/.test(chatSrc.slice(iFlush, iFlush + 700)) && /tastePending\.shift\(\)/.test(chatSrc.slice(iFlush, iFlush + 700)),
+    'deferred beats drain FIFO (shift, not pop — the oldest never starves)');
+  A.ok(!/studyPending\.pop\(\)/.test(chatSrc), 'no LIFO pop path remains on the study queue');
+  const iQueue = chatSrc.indexOf('function queueStudy');
+  A.ok(iQueue > 0 && /q\.runId === runId\)\s*return/.test(chatSrc.slice(iQueue, iQueue + 400)), 'queueStudy dedupes by runId (a run can never double-queue)');
+  // per-session hygiene: a new session/hero clears the study queues + card + arbiter (no cross-hero flush)
+  A.ok(/studyPending\.length = 0; tastePending\.length = 0; activeStudy = null;/.test(chatSrc), 'Chat.init clears the deferred study/taste queues + the live card');
+  A.ok(/beatSlot = \(typeof Study !== 'undefined' && Study\.makeBeatSlot\) \? Study\.makeBeatSlot\(\) : null;/.test(chatSrc), 'Chat.init rebuilds a fresh beat-slot arbiter per session');
+  // the retire card shows the REAL matched belief (never just the model paraphrase) and Keep reflects accept()'s truth
+  const iStudyCard = chatSrc.indexOf('function studyCard');
+  A.ok(iStudyCard > 0 && /StudyStore\.retireTarget\(prop\)/.test(chatSrc.slice(iStudyCard, iStudyCard + 900)), 'the retire card resolves its ACTUAL target at render time');
+  A.ok(/prop\.kind === 'retire' \? target\.text : prop\.text/.test(chatSrc.slice(iStudyCard, iStudyCard + 2600)), 'the retire card displays the stored belief that will be deleted');
+  A.ok(/if \(!ok\) \{ settle\(/.test(chatSrc.slice(iStudyCard, iStudyCard + 5200)), 'a failed accept never flashes a success verdict (honest telemetry)');
   // rateWork mints taste through the SAME one beat.
   const iRate = chatSrc.indexOf('function rateWork');
   A.ok(iRate > 0 && /maybeTasteBeat\(/.test(chatSrc.slice(iRate, iRate + 2200)), 'rateWork routes a ratings streak into the shared study beat (maybeTasteBeat)');
