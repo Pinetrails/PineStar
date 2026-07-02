@@ -159,8 +159,8 @@
     },
     /* ---------- S2 new classes — each kit-grounded, distinct from the 11 above ---------- */
     {
-      id: 'broker', name: 'Broker', emoji: '⛃', tagline: 'Deal & price scout',
-      blurb: 'Hunts the best price and the right deal — compares options, tracks what moves, tells you when to buy.',
+      id: 'broker', name: 'Broker', emoji: '⛃', tagline: 'Compare deals & call the buy',
+      blurb: 'Prices the options side by side and gives one call — buy, wait, or which. Pick the broker to DECIDE on a purchase now; pick the scout to just watch and ping you when a price moves.',
       persona: 'direct', model: 'balanced', accent: '#8ac07a',
       tags: { research: 0.6, general: 0.4 },
       kit: ['dish', 'notebook', 'cabinet'], skills: ['price-watch', 'web-research'], reasoningEffort: 'medium',

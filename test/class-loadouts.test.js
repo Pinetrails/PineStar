@@ -83,17 +83,44 @@ const iconIds = Object.keys(classicons.ICONS);
 const catIds = new Set(ids);
 for (const iid of iconIds) A.ok(catIds.has(iid), 'seal icon maps to a real catalog class (no orphan seal): ' + iid);
 A.eq(iconIds.length, builtins.length, 'exactly one seal per class (' + iconIds.length + ' seals, ' + builtins.length + ' classes)');
-// every seal is currentColor-themed SVG (rides the class accent, matches the engraved-coin style)
+// every seal is currentColor-themed SVG (rides the class accent, matches the engraved-coin style) — and no
+// seal hardcodes a themed colour (only currentColor / none / the deboss floor #0c0704), so it themes to the accent.
 for (const iid of iconIds) {
   const svg = classicons.ICONS[iid];
   A.ok(/^<svg/.test(svg) && /currentColor/.test(svg), 'seal ' + iid + ' is a currentColor SVG');
+  // crude well-formedness: every opened element is closed (paired close OR self-close). Guards a truncated seal.
+  const opens = (svg.match(/<[a-zA-Z]/g) || []).length;
+  const closes = (svg.match(/<\/[a-zA-Z]/g) || []).length + (svg.match(/\/>/g) || []).length;
+  A.eq(opens, closes, 'seal ' + iid + ' is well-formed (every element closed)');
+  const colours = [...svg.matchAll(/(?:fill|stroke)="([^"]+)"/g)].map(m => m[1]);
+  for (const c of colours) A.ok(c === 'currentColor' || c === 'none' || c === '#0c0704',
+    'seal ' + iid + ' uses only currentColor/none/deboss (no theme-breaking hardcoded colour): ' + c);
 }
+
+/* ---------- 1b'. DISTINCTNESS: a beginner must be able to tell the classes apart at pick-time ---------- */
+// taglines + blurbs are unique (no two classes present as the same thing in the bay).
+const taglines = builtins.map(b => b.tagline.trim().toLowerCase());
+A.eq(new Set(taglines).size, taglines.length, 'every class tagline is unique');
+const blurbs = builtins.map(b => b.blurb.trim().toLowerCase());
+A.eq(new Set(blurbs).size, blurbs.length, 'every class blurb is unique');
+// the confusable pair broker/scout both touch prices — the broker blurb must DRAW the boundary (decide vs watch)
+// so a beginner can predict which to pick. (Adversarial-review fix: broker retuned off the word "scout".)
+const brokerBlurb = byId.get('broker').blurb.toLowerCase();
+A.ok(/scout/.test(brokerBlurb) && /(decide|call|buy|which)/.test(brokerBlurb),
+  'the broker blurb explicitly contrasts itself with the scout (decide-now vs watch-and-alert)');
+A.ok(!/scout/.test(byId.get('broker').tagline.toLowerCase()),
+  'the broker tagline no longer overloads the word "scout" (collided with the scout class)');
 
 /* ---------- 1c. PROMPT-SIZE SANITY: manuals/purposes are injected every run — keep them tight ---------- */
 for (const b of builtins) {
   A.ok(b.manual.length <= 1000, b.id + ' manual is prompt-tight (<=1000 chars): ' + b.manual.length);
   A.ok(b.purpose.length <= 450, b.id + ' purpose is prompt-tight (<=450 chars): ' + b.purpose.length);
   A.ok(b.manual.length > 200, b.id + ' manual is a real playbook, not a stub: ' + b.manual.length);
+  // the SKILL PACKAGE bodies also ride the prompt every run (composed into INSTALLED SKILLS). Keep the worst-case
+  // class package well under the 12k compose cap so a class can never crowd out the mission/manual. (Budget reality.)
+  let pkgBody = 0;
+  for (const slug of b.skills) { const sk = SLUGS.get(slug); if (sk) pkgBody += ('### ' + sk.name + ' -- ' + sk.description + '\n' + sk.body).length; }
+  A.ok(pkgBody <= 8000, b.id + ' skill-package body fits the prompt budget (<=8000 chars): ' + pkgBody);
 }
 
 /* ---------- 1d. TOOL-REFERENTIAL HONESTY: a manual may only name tools its kit grants ---------- */
@@ -120,6 +147,25 @@ for (const b of builtins) {
     const re = new RegExp('(^|[^\\w.])' + tool.replace(/[.]/g, '\\.') + '(?![\\w])');
     if (re.test(text)) A.ok(kit.has(owner), b.id + ' manual names "' + tool + '" and its kit grants "' + owner + '"');
   }
+}
+
+/* ---------- 1d'. COMMS HONESTY: no class can claim to programmatically SEND to a channel ---------- */
+// There is NO agent-callable channel-send tool in CAP_REGISTRY — Discord/Telegram are host-relayed transports,
+// not tools an agent invokes. So no manual/purpose may name a send-tool, and the comms classes (which imply
+// outward reach) MUST frame it as draft-for-the-Commander, never auto-send. (Capability-honesty rewrite lock.)
+const SEND_TOOL_RE = /\b(channel[._]send|discord[._]send|telegram[._]send|message[._]send|send[._]message|broadcast[._]send)\b/i;
+for (const b of builtins) {
+  const text = (b.manual + ' ' + b.purpose).toLowerCase();
+  A.ok(!SEND_TOOL_RE.test(text), b.id + ' names no phantom channel-send tool (none exists in the registry)');
+}
+// the three outward-comms classes must carry explicit DRAFT-not-send framing (they have no send tool)
+for (const id of ['liaison', 'publicist', 'herald']) {
+  const b = byId.get(id);
+  const text = (b.manual + ' ' + b.purpose + ' ' + b.blurb).toLowerCase();
+  A.ok(/draft|go-ahead|do not auto|don't auto|not auto-broadcast|theirs to (publish|send)|without the commander/.test(text),
+    id + ' frames outward comms as draft-for-the-Commander (it holds no channel-send tool)');
+  A.ok(!/\b(auto-send|send it automatically|post it to (discord|telegram|the channel) yourself)\b/.test(text),
+    id + ' never claims to auto-send outward');
 }
 
 /* ---------- 1e. every skill a class ships exists + its frontmatter parses ---------- */
