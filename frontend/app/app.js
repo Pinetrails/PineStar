@@ -1550,7 +1550,13 @@ const App = (() => {
     // AutonomyStore. The level chooser ties grant + posture so the Commander dials never→fully-autonomous.
     if (typeof PermissionsStore !== 'undefined') PermissionsStore.init({
       getPosture: () => (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) ? AutonomyStore.summary() : null,
-      applyPreset: (id) => { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.applyPreset) AutonomyStore.applyPreset(id); },
+      applyPreset: (id) => {
+        if (typeof AutonomyStore !== 'undefined' && AutonomyStore.applyPreset) AutonomyStore.applyPreset(id);
+        // GROWTH Tier 3: a permissions-LEVEL change is a NON-DIAL posture writer — reconcile the earned-rung record
+        // against the rung the preset just set (a diverged record retires; user override wins), so a stale record
+        // can never later demote FROM a rung the dial isn't at (the silent-escalation blocker).
+        try { if (typeof TrustStore !== 'undefined' && TrustStore.onManualInitiative && typeof AutonomyStore !== 'undefined' && AutonomyStore.get) TrustStore.onManualInitiative((AutonomyStore.get() || {}).initiative); } catch (_) {}
+      },
       api: {
         load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { grants: [], grantable: [] }).catch(() => ({ grants: [], grantable: [] })),
         grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false })),

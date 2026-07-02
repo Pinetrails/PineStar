@@ -1509,7 +1509,7 @@ const Chat = (() => {
     item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
     // provenance line: the honest track record behind the offer (streak + what it raises to).
     const why = [];
-    if (pv.streak) why.push(pv.streak + ' good runs in a row');
+    if (pv.streak) why.push(pv.streak + ' approvals in a row');
     why.push(offer.kind === 'grant' ? 'writes stay jailed + reversible' : 'raises the dial to ' + String(offer.to).toUpperCase());
     { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ ' + why.join(' · '); item.appendChild(ev); }
     slotEl.appendChild(item);
@@ -1531,11 +1531,19 @@ const Chat = (() => {
     function commit(verdict) {
       if (card.decided) return;
       if (verdict === 'accept') {
-        const ok = TrustStore.accept(offer);
-        if (!ok) { settle('✕ couldn’t apply', true); return; }   // honest: never flash "✓ granted" on a failed apply
-        settle(offer.kind === 'grant' ? '✓ granted' : '✓ ' + String(offer.to).toLowerCase(), false);
-        if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(offer.kind === 'grant' ? '◈ earned — it may write files on its own now (revoke any time in Settings)' : '◈ earned — autonomy raised to ' + String(offer.to).toUpperCase() + ' (adjust any time in Settings)', 'gold');
+        // ASYNC-SAFE ACCEPT (review fix 2): a grant accept resolves against the server — disable the buttons while
+        // pending (no double-tap, no decline-during-apply) and mark the card decided NOW (the user answered; an
+        // expiry sweep must not tally an "ignore" under an in-flight accept). Settle only on the VERIFIED result.
+        card.decided = true;
+        btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
+        Promise.resolve(TrustStore.accept(offer)).then(ok => {
+          if (!ok) { settle('✕ couldn’t apply', true); return; }   // honest: never flash "✓ granted" on a failed/unverified apply
+          settle(offer.kind === 'grant' ? '✓ granted' : '✓ ' + String(offer.to).toLowerCase(), false);
+          if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
+          if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(offer.kind === 'grant' ? '◈ earned — it may write files on its own now (revoke any time in Settings)' : '◈ earned — autonomy raised to ' + String(offer.to).toUpperCase() + ' (adjust any time in Settings)', 'gold');
+          // if the Settings AUTONOMY panel is open, repaint its EARNED badge live (fail-open no-op otherwise).
+          if (typeof StationUI !== 'undefined' && StationUI.repaintAutonomy) { try { StationUI.repaintAutonomy(); } catch (_) {} }
+        }).catch(() => { settle('✕ couldn’t apply', true); });
         return;
       }
       TrustStore.decline(offer); settle('✕ not yet', true);
