@@ -124,6 +124,11 @@ const World = (() => {
   let lastCursor = { wx: 0, wy: 0, t: -1e9 };
   let userReturnUntil = 0;
   let deepLocks = 0;
+  /* TIER D · D1 ATTENTIVE AUDIENCE — which agent the Commander currently has COMMS focus on (chat.js
+     announces it via setChatFocus on every load(ws) rebind; null = no conversation / awakening interview).
+     The focused body, while idle, drops its wander/quirk/social life and holds its attention on the Commander
+     (see the chat-stare beat in decideIdle + the per-tick hold in tick/crewEngineStep). D0 plumbing only. */
+  let chatFocusId = null;
   /* First-person self-talk — ONE conscious mind narrating its OWN state to itself. Never crew/colony
      banter (a lie for a solo agent). Every line is gated by curiositySay (no live bubble + global
      cooldown + the chatty trait), so they read as rare honest thoughts tied to the true inner state. */
@@ -715,6 +720,15 @@ const World = (() => {
     }
   }
   /* kind: 'task' (walk to the workstation + work) | 'talk' (face the Commander) | 'idle' (wander the station) */
+  /* TIER D · D1 — the Commander's COMMS focus. chat.js calls this with the active stream's agent id on every
+     conversation rebind (load(ws)), and null when there's no live conversation. Stores the id ONLY; all the
+     stare behavior reads chatFocusId from the idle path. Airtight cleanup: when focus moves off a body (null
+     or another id) its next idle decision restores normal wander (decideIdle clears stilling on entry), so no
+     stuck stillness / suppressed-forever wander can leak. Unknown / not-yet-spawned id → the resolver no-ops. */
+  function setChatFocus(agentId) { chatFocusId = agentId || null; }
+  // the body (hero or crew) the Commander is chatting with, or null. bodyForAgent maps 'agent'→hero + crew by id.
+  function chatFocusBody() { return chatFocusId ? bodyForAgent(chatFocusId) : null; }
+
   function setActivity(kind) {
     activity = kind;
     if (!agent) return;
@@ -3835,7 +3849,7 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, setChatFocus, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
