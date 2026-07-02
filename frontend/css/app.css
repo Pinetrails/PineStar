@@ -1836,3 +1836,106 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: 0 0 12px var(--ph-gl
 .nf.sev-good .nf-sev { color: var(--ok); }
 .nf.sev-gold .nf-sev { color: var(--gold); }
 .nf.sev-info .nf-sev { color: var(--ph-dim); }
+
+/* ============================================================
+   CONSOLE MODE — the large two-pane window (agent/console-windows)
+   A dense panel (SETTINGS, SKILLS) opens as a big centred window: a left
+   section rail + a right content pane showing ONE section at a time, with a
+   cross-section search. Kills the small-window scroll tunnel. Phosphor vars
+   only; motion (the .swap-in crossfade) rides motion.css.
+   ============================================================ */
+.term.console {
+  width: min(1060px, 88vw);
+  height: min(78vh, 720px);
+  max-width: 88vw; max-height: min(78vh, 720px);
+}
+.term.console .term-body.term-console-body {
+  display: flex; flex-direction: row; gap: 0;
+  padding: 0; overflow: hidden;              /* the content pane owns the scroll, not the body */
+  flex: 1 1 auto; min-height: 0;
+}
+
+/* ---- left: search + section rail ---- */
+.con-rail {
+  flex: 0 0 190px; display: flex; flex-direction: column; min-height: 0;
+  border-right: 1px solid var(--ph-dim);
+  background: linear-gradient(180deg, var(--ph-glow2), transparent 40%), rgba(0,0,0,0.28);
+}
+.con-search {
+  position: relative; flex: 0 0 auto;
+  padding: 10px 10px 8px; border-bottom: 1px solid var(--ph-faint);
+}
+.con-search-i {
+  position: absolute; left: 18px; top: 50%; transform: translateY(-50%);
+  color: var(--ph-dim); font-size: var(--fs-2); pointer-events: none; text-shadow: 0 0 6px var(--ph-glow2);
+}
+.con-search-in {
+  width: 100%; font-family: inherit; font-size: var(--fs-1); color: var(--ph-bright);
+  background: #000; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  padding: 6px 8px 6px 26px; outline: none; letter-spacing: var(--ls-1);
+  text-shadow: 0 0 5px var(--ph-glow2); box-shadow: inset 0 2px 5px rgba(0,0,0,.6);
+}
+.con-search-in:focus { border-color: var(--ph); box-shadow: inset 0 0 12px rgba(0,0,0,.7), 0 0 10px var(--ph-glow2); }
+.con-rail-list {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 8px 12px;
+  display: flex; flex-direction: column; gap: 3px;
+  scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent;
+}
+.con-rail-list::-webkit-scrollbar { width: 6px; }
+.con-rail-list::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 4px; }
+.con-rail-list::-webkit-scrollbar-track { background: transparent; }
+.con-rail-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  font-family: inherit; font-size: var(--fs-1); letter-spacing: var(--ls-2); color: var(--ph-dim);
+  background: transparent; border: 1px solid transparent; border-radius: var(--r-sm);
+  padding: 7px 9px; cursor: pointer; text-shadow: 0 0 6px var(--ph-glow2);
+  transition: color .12s ease, background .12s ease, border-color .12s ease;
+}
+.con-rail-glyph { flex: 0 0 auto; width: 15px; text-align: center; opacity: .85; }
+.con-rail-label { flex: 1 1 auto; }
+.con-rail-item:hover { color: var(--ph-bright); border-color: var(--ph-dim); background: var(--ph-faint); }
+/* active = the inverted title-chip idiom + a phosphor edge on the left (ties into the window title chip) */
+.con-rail-item.active {
+  color: var(--ink); background: var(--ph); border-color: var(--ph);
+  text-shadow: none; box-shadow: 0 0 12px var(--ph-glow2), inset 3px 0 0 var(--ph-bright);
+}
+.con-rail-item.active .con-rail-glyph { opacity: 1; }
+.con-rail-item:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+/* search dimming of rail items with zero matches */
+.con-rail-item.con-rail-dim { opacity: .32; }
+.con-rail-item.con-rail-hit:not(.active) { color: var(--ph-bright); }
+
+/* ---- right: content pane, one section shown ---- */
+.con-pane {
+  flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto;
+  padding: var(--s-3) var(--s-4) var(--s-5);
+  scrollbar-width: thin; scrollbar-color: var(--ph) transparent;
+}
+.con-pane::-webkit-scrollbar { width: 8px; }
+.con-pane::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 4px; }
+.con-pane::-webkit-scrollbar-thumb:hover { background: var(--ph); }
+.con-pane::-webkit-scrollbar-track { background: transparent; }
+.con-sec-hidden { display: none; }
+.con-sec-head { margin-top: 2px; }
+/* the section's one-line self-explanatory description under its header */
+.con-sec-desc {
+  color: var(--ph-dim); font-size: var(--fs-1); letter-spacing: var(--ls-1);
+  margin: -4px 0 12px; line-height: 1.4; max-width: 62ch;
+}
+/* the section head is a click target only while searching (jump-to-section) */
+.con-searching .con-sec-head { cursor: pointer; }
+.con-searching .con-sec-head:hover .sec-l { color: var(--ph-bright); }
+/* while searching: every section is shown, non-matching rows fade, empty sections collapse their body */
+.con-searching .con-miss { opacity: .18; }
+.con-searching .con-sec.con-sec-nomatch { opacity: .4; }
+.con-searching .con-sec.con-sec-nomatch .con-sec-body { display: none; }
+.con-searching .con-sec + .con-sec { margin-top: 18px; }
+
+/* responsive: on a narrow viewport the rail sits on top as a horizontal strip */
+@media (max-width: 720px) {
+  .term.console { width: 94vw; height: 84vh; }
+  .term.console .term-body.term-console-body { flex-direction: column; }
+  .con-rail { flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--ph-dim); }
+  .con-rail-list { flex-direction: row; flex-wrap: wrap; overflow-x: auto; }
+  .con-rail-item.active { box-shadow: 0 0 12px var(--ph-glow2), inset 0 3px 0 var(--ph-bright); }
+}

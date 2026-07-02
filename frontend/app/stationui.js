@@ -103,6 +103,7 @@ const StationUI = (() => {
       .filter(e => e.offsetWidth > 0 || e.offsetHeight > 0 || e === document.activeElement);
   }
   const termPos = {};   // key -> {left,top} remembered drag position — kills the dead-center pile-up
+  const consoleSection = {};   // console key -> last-active section id, so reopening lands where the user was
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
       termDrag.moved = true;   // real drag movement — a dblclick-to-minimize must not fire after a drag
@@ -152,6 +153,8 @@ const StationUI = (() => {
   }
   function fitTermInViewport(w) {
     if (!w) return;
+    // a console window is CSS-centered + fixed-size; pinning it here would knock it off its centering transform.
+    if (w.classList.contains('console') && !w.classList.contains('term-moved')) return;
     const pad = 8;
     const maxLeft = Math.max(pad, window.innerWidth - w.offsetWidth - pad);
     const maxTop = Math.max(pad, window.innerHeight - w.offsetHeight - pad);
@@ -338,7 +341,10 @@ const StationUI = (() => {
     const opener = (typeof document !== 'undefined' && document.activeElement) || null;
     const w = el('div', 'term');
     w.style.zIndex = U.zTop();
-    if (opts && opts.w) w.style.width = opts.w;
+    // CONSOLE MODE: a large two-pane window (section rail + content pane). Its size is owned by CSS
+    // (.term.console), so a per-panel opts.w must NOT be applied — an inline 500px would starve the rail.
+    if (opts && opts.console) w.classList.add('console');
+    else if (opts && opts.w) w.style.width = opts.w;
     if (opts && opts.className) w.classList.add(opts.className);
     w._onClose = opts && opts.onClose;
     w._opener = opener;
@@ -453,6 +459,166 @@ const StationUI = (() => {
   function rerender(key) { if (open[key]) open[key]._render(true); }
   function syncBB() {
     document.querySelectorAll('.bb[data-term]').forEach(b => b.classList.toggle('active', !!open[b.dataset.term]));
+  }
+
+  /* ============== CONSOLE MODE — the large two-pane window framework ==============
+     A dense panel (SETTINGS, SKILLS) opts into this via opts.console. Instead of one long scroll,
+     the builder declares SECTIONS ([{id,label,glyph,desc,build(paneEl)}]); mountConsole lays out a
+     left section rail + a right content pane that shows ONE section at a time (with the .swap-in
+     crossfade), plus an optional cross-section search.
+
+     KEY DESIGN: every section's pane is built up-front and lives in the DOM at once (inactive panes
+     hidden, not removed). That lets the caller run its existing wiring (wireBudget/wireFallbackChain/…)
+     ONCE against the returned content root and reach every control — no per-section rewire, and no
+     regression of the settings behaviour/ids the tests source-lock. The builder returns nothing; it
+     calls mountConsole(body, key, sections, opts) and then wires the returned host. */
+  function mountConsole(body, key, sections, opts) {
+    opts = opts || {};
+    body.classList.add('term-console-body');
+    body.innerHTML = '';
+    // pick the section to land on: remembered > first. A stale remembered id (section removed) falls back.
+    let activeId = consoleSection[key];
+    if (!sections.some(s => s.id === activeId)) activeId = sections[0] && sections[0].id;
+
+    // ---- left: optional search + the section rail (role=tablist) ----
+    const left = el('div', 'con-rail');
+    let searchInput = null;
+    if (opts.search) {
+      const sw = el('div', 'con-search');
+      sw.innerHTML = '<span class="con-search-i" aria-hidden="true">⌕</span>' +
+        '<input type="text" class="con-search-in" placeholder="' + esc(opts.searchPlaceholder || 'search settings…') +
+        '" autocomplete="off" spellcheck="false" aria-label="Search ' + esc(key) + '">';
+      left.appendChild(sw);
+      searchInput = sw.querySelector('.con-search-in');
+    }
+    const rail = el('div', 'con-rail-list');
+    rail.setAttribute('role', 'tablist');
+    rail.setAttribute('aria-label', String(key).toUpperCase() + ' sections');
+    left.appendChild(rail);
+
+    // ---- right: the content host (all panes mounted; one visible) ----
+    const host = el('div', 'con-pane');
+
+    const railItems = {};    // id -> rail button
+    const panes = {};        // id -> pane wrapper element
+    sections.forEach((sec, i) => {
+      const item = el('button', 'con-rail-item');
+      item.type = 'button';
+      item.dataset.section = sec.id;
+      item.setAttribute('role', 'tab');
+      item.id = 'con-tab-' + key + '-' + sec.id;
+      item.innerHTML = '<span class="con-rail-glyph" aria-hidden="true">' + (sec.glyph || '▪') + '</span>' +
+        '<span class="con-rail-label">' + esc(sec.label) + '</span>';
+      item.addEventListener('click', () => selectSection(sec.id, true));
+      rail.appendChild(item);
+      railItems[sec.id] = item;
+
+      // build the pane content once, into its own section wrapper (header + description + body slot)
+      const pane = el('section', 'con-sec');
+      pane.dataset.section = sec.id;
+      pane.setAttribute('role', 'tabpanel');
+      pane.setAttribute('aria-labelledby', item.id);
+      pane.innerHTML =
+        '<div class="sec con-sec-head"><span class="sec-l">' + esc(sec.label) + '</span>' +
+          '<span class="sec-r"></span><span class="sec-nd"></span></div>' +
+        (sec.desc ? '<p class="con-sec-desc">' + esc(sec.desc) + '</p>' : '');
+      const slot = el('div', 'con-sec-body');
+      pane.appendChild(slot);
+      try { sec.build(slot); } catch (e) { slot.innerHTML = '<p class="con-sec-desc">This section failed to render.</p>'; }
+      host.appendChild(pane);
+      panes[sec.id] = pane;
+    });
+
+    body.appendChild(left);
+    body.appendChild(host);
+
+    function selectSection(id, viaClick) {
+      if (!panes[id]) return;
+      consoleSection[key] = id;
+      activeId = id;
+      Object.keys(panes).forEach(k => {
+        const on = k === id;
+        railItems[k].classList.toggle('active', on);
+        railItems[k].setAttribute('aria-selected', on ? 'true' : 'false');
+        railItems[k].tabIndex = on ? 0 : -1;
+        panes[k].classList.toggle('con-sec-hidden', !on);
+      });
+      // crossfade the newly shown pane (never on the very first mount, which rides the CRT power-on)
+      if (viaClick) {
+        host.classList.remove('swap-in'); void host.offsetWidth; host.classList.add('swap-in');
+        host.scrollTop = 0;
+      }
+      if (viaClick) { try { railItems[id].focus(); } catch (_) {} }
+    }
+
+    // keyboard nav on the rail: Up/Down move + activate; Home/End jump ends.
+    rail.addEventListener('keydown', ev => {
+      const ids = sections.map(s => s.id);
+      const cur = ids.indexOf(activeId);
+      let next = -1;
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowRight') next = (cur + 1) % ids.length;
+      else if (ev.key === 'ArrowUp' || ev.key === 'ArrowLeft') next = (cur - 1 + ids.length) % ids.length;
+      else if (ev.key === 'Home') next = 0;
+      else if (ev.key === 'End') next = ids.length - 1;
+      else return;
+      ev.preventDefault(); selectSection(ids[next], true);
+    });
+
+    // ---- search: filter rows across every section, dim empty sections, group matches ----
+    if (searchInput) {
+      const doFilter = () => {
+        const q = (searchInput.value || '').trim().toLowerCase();
+        body.classList.toggle('con-searching', !!q);
+        if (!q) {
+          // restore: show the active section only, clear all row dimming + section flags
+          Object.keys(panes).forEach(k => {
+            panes[k].classList.remove('con-sec-nomatch', 'con-sec-searchshow');
+            panes[k].querySelectorAll('.con-hit, .con-miss').forEach(r => r.classList.remove('con-hit', 'con-miss'));
+            railItems[k].classList.remove('con-rail-dim', 'con-rail-hit');
+          });
+          selectSection(activeId, false);
+          return;
+        }
+        // in search mode every section pane is shown; rows are marked hit/miss; a zero-hit section dims its rail item
+        sections.forEach(sec => {
+          const pane = panes[sec.id];
+          pane.classList.remove('con-sec-hidden');
+          pane.classList.add('con-sec-searchshow');
+          // a "row" = a labelled control block. We match on visible text of these granular blocks.
+          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint');
+          let hits = 0;
+          rows.forEach(r => {
+            const hit = (r.textContent || '').toLowerCase().indexOf(q) >= 0;
+            r.classList.toggle('con-hit', hit);
+            r.classList.toggle('con-miss', !hit);
+            if (hit) hits++;
+          });
+          // also let a section match by its own label/desc even if no granular row matched
+          const secMatch = hits > 0 || sec.label.toLowerCase().indexOf(q) >= 0 || (sec.desc || '').toLowerCase().indexOf(q) >= 0;
+          pane.classList.toggle('con-sec-nomatch', !secMatch);
+          railItems[sec.id].classList.toggle('con-rail-dim', !secMatch);
+          railItems[sec.id].classList.toggle('con-rail-hit', secMatch);
+        });
+      };
+      searchInput.addEventListener('input', doFilter);
+      // Esc: first clears a non-empty search (and refocuses), only then lets the window's Esc close it.
+      searchInput.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape' && (searchInput.value || '').trim()) {
+          ev.preventDefault(); ev.stopPropagation();
+          searchInput.value = ''; doFilter(); searchInput.focus();
+        }
+      });
+      // clicking a section's mini-header while searching jumps to it (clears search, lands there)
+      host.addEventListener('click', ev => {
+        if (!body.classList.contains('con-searching')) return;
+        const head = ev.target.closest('.con-sec-head'); if (!head) return;
+        const pane = head.closest('.con-sec'); if (!pane) return;
+        searchInput.value = ''; doFilter(); selectSection(pane.dataset.section, true);
+      });
+    }
+
+    selectSection(activeId, false);
+    return host;   // caller wires its controls against this (spans every section pane)
   }
 
   /* ============== CREW MANIFEST (left panel) ============== */

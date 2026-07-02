@@ -636,3 +636,14 @@ textarea, select {
 .toast.sev-gold .toast-sev { color: var(--gold); }
 .toast.sev-info { border-left-color: var(--ph-dim); }
 .toast.sev-info .toast-sev { color: var(--ph-dim); }
+
+/* ============================================================
+   console-windows lane — appended (owned by agent/console-windows)
+   The console section-swap reuses the shared .swap-in crossfade (already
+   collapsed under reduced-motion above). The rail items animate colour/
+   background/border on hover+select; retire those transitions too under
+   reduced-motion so a motion-averse user gets an instant, static rail.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .con-rail-item { transition-duration: 0.01ms !important; }
+}
