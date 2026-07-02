@@ -938,7 +938,11 @@ async function runBackgroundSkillReview(o) {
   let result = null;
   try {
     const registry = makeRegistry();
-    makeSkillTools({ store: skillStore }).register(registry);
+    // A2: un-silence the review. The quiet loop's own emit stays a no-op (no run.start/tool chatter on the bus),
+    // but every skillbase MUTATION fires the EXISTING `deliverable` event + one auditable log line via this
+    // observer — that is what surfaces the new skill in the SKILLS panel and the one COMMS aside.
+    const reviewObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), source: 'skill-review' });
+    makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => reviewObserver.onManage(skill, action) }).register(registry);
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = {
       agentId, room: 'skill-review', hasCompute: true, tools: allowed.slice(),
@@ -953,7 +957,9 @@ async function runBackgroundSkillReview(o) {
       d.function.name = w;
     }
     const capCtx = makeCapCtx(resolved, {
-      emit: chanEmit,
+      // the tool's own emitSkill stays silent here (no-op emit); the SINGLE, deduped, testable deliverable +
+      // audit line comes from reviewObserver.onManage below — so a create-then-edit in one pass emits once.
+      emit: () => {},
       timeoutMs: CAPS.toolTimeoutMs,
       runId: reviewRunId,
       signal: ac.signal,
@@ -1007,13 +1013,15 @@ async function runSkillCurator(o) {
   let result = null;
   try {
     const registry = makeRegistry();
-    makeSkillTools({ store: skillStore }).register(registry);
+    // A2: same un-silencing for the curator — merges/archives now surface a deliverable + audit line once each.
+    const curatorObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), source: 'skill-curator' });
+    makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => curatorObserver.onManage(skill, action) }).register(registry);
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = { agentId, room: 'skill-curator', hasCompute: true, tools: allowed.slice(), approvalRules: {}, networkCaps: {} };
     const toolDefs = registry.wireFormat(registry.list(new Set(allowed)));
     const fromWire = new Map();
     for (const d of toolDefs) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
-    const capCtx = makeCapCtx(resolved, { emit: chanEmit, timeoutMs: CAPS.toolTimeoutMs, runId: curatorRunId, signal: ac.signal, createdBy: 'curator' });
+    const capCtx = makeCapCtx(resolved, { emit: () => {}, timeoutMs: CAPS.toolTimeoutMs, runId: curatorRunId, signal: ac.signal, createdBy: 'curator' });
     const dispatch = async (c, ctx) => { if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) }); return registry.dispatch(c, ctx); };
     result = await runAgentLoop({
       messages: [

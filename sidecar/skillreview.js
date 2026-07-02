@@ -92,5 +92,38 @@
     ].join('\n');
   }
 
-  return { stats, shouldReviewRun, buildPrompt };
+  // Actions that CHANGE the skillbase (worth a deliverable + a COMMS aside). A pure read/list must stay silent.
+  const WRITE_ACTIONS = { create: 1, edit: 1, patch: 1, archive: 1, restore: 1, write_file: 1, remove_file: 1, saved: 1, edited: 1, manage: 1 };
+  function isWriteAction(action) { return !!WRITE_ACTIONS[String(action || '').toLowerCase()]; }
+
+  /* makeReviewObserver({ emit, log, now, source }) -> { onManage(skill, action) }
+     The ONE testable seam that un-silences a background pass. When the quiet review/curator loop mutates a
+     skill, onManage fires:
+       1. the EXISTING `deliverable` event (kind:'skill') through the injected emit — the SKILLS panel + the
+          COMMS aside both hang off this; no new schema.
+       2. a single auditable log line per changed skill (C1) so a review pass is greppable.
+     Deduped by skill id+action so a create-then-edit within one pass emits once per distinct change, and a
+     read that slips through (view) is dropped. Pure given injected emit/log/clock — no globals. */
+  function makeReviewObserver(deps) {
+    deps = deps || {};
+    const emit = typeof deps.emit === 'function' ? deps.emit : function () {};
+    const log = typeof deps.log === 'function' ? deps.log : function () {};
+    const now = typeof deps.now === 'function' ? deps.now : function () { return Date.now(); };
+    const source = str(deps.source || 'background-review');
+    const seen = new Set();
+    return {
+      onManage(skill, action) {
+        if (!skill || !isWriteAction(action)) return false;
+        const key = str(skill.id || skill.name) + ':' + str(action).toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        const act = str(action).toLowerCase();
+        try { emit('deliverable', { id: skill.id, agentId: skill.agentId || 'agent', kind: 'skill', title: skill.name }); } catch (_) {}
+        try { log('[skills] ' + source + ' ' + act + ' "' + str(skill.name) + '" (agent=' + str(skill.agentId || 'agent') + ') at ' + now()); } catch (_) {}
+        return true;
+      }
+    };
+  }
+
+  return { stats, shouldReviewRun, buildPrompt, isWriteAction, makeReviewObserver };
 });
