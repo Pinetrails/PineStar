@@ -285,7 +285,11 @@ function boot(port, workspaces, attemptsLeft) {
     const dcStatus = await j('GET', '/api/channels/discord/status');
     A.eq(dcStatus.status, 200, 'GET /api/channels/discord/status -> 200');
     A.eq(dcStatus.body.configured, true, 'Discord status sees saved config');
-    A.eq(dcStatus.body.connected, true, 'Discord status reports the auto-started adapter');
+    // `connected` is now the LIVE gateway truth (real WS to Discord), which a sandboxed test can
+    // never reach — auto-start itself is proven by the boot log line above. Assert the gateway
+    // reported a real state instead of the old adapter-started=connected fiction.
+    A.eq(typeof dcStatus.body.connected, 'boolean', 'Discord status reports a truthful gateway connected flag');
+    A.ok(typeof dcStatus.body.state === 'string' && dcStatus.body.state.length > 0, 'Discord status reports a gateway state');
     A.eq(dcStatus.body.ownerLocked, true, 'Discord owner lock survived restart');
     A.ok(JSON.stringify(dcStatus.body).indexOf('discord-owner-42') < 0, 'Discord status does not expose ownerId');
     A.ok(JSON.stringify(dcStatus.body).indexOf('discord-token') < 0, 'Discord status does not expose token');
