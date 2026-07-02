@@ -1383,7 +1383,9 @@ const StationUI = (() => {
     let html = '<div class="sk-lib-sum">' + skills.length + ' recipe' + (skills.length === 1 ? '' : 's') +
       ' · <b>' + active + '</b> active for ' + esc((present[sel] && present[sel].name) || agentId) + '</div>';
     for (const cat of cats) {
-      html += '<div class="sec sk-cat-sec"><span class="sec-l">' + esc(cat) + '</span><span class="sec-r"></span><span class="sec-nd"></span></div>';
+      const catActive = byCat[cat].filter(s => s.enabled && s.available).length;
+      html += '<div class="sec sk-cat-sec"><span class="sec-l">' + esc(cat) + '</span>' +
+        '<span class="sec-r sk-cat-count">' + (catActive ? catActive + '/' : '') + byCat[cat].length + '</span><span class="sec-nd"></span></div>';
       let ci = 0;
       for (const s of byCat[cat]) {
         const missing = (s.requires || []).filter(r => !placedSet[r]);
