@@ -4481,6 +4481,15 @@ const World = (() => {
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
       hudNote('📡 message received — ' + String((p && p.channel) || 'channel').toUpperCase(), 'good');
     });
+    // G0.6 CHANNEL REPLY MADE VISIBLE: the outbound side of the same on-ramp. hub.js emits channel.delivery
+    // { channel, chatId, runId, ok, chunks, reason } on every reply-send. Mirror the inbound copy (pulse the
+    // DISH, name the channel), only on a genuine successful send — a failed delivery isn't a reply out.
+    U.bus.on('channel.delivery', p => {
+      if (!p || !p.ok) return;   // honesty: only confirm a reply that actually left (no agentId on this event — fall back to any DISH)
+      const dish = capPropFor('dish', p.agentId);
+      if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
+      hudNote('📤 reply sent · ' + String(p.channel || 'channel').toLowerCase(), 'good');
+    });
     // G0.5 BUDGET MADE VISIBLE: budget.threshold was alarm-audio only. The payload is the frozen
     // { scope: run|day|global, usd, cap } triple (sidecar/budget.js, one emit per scope+band crossing
     // per run) — the band isn't carried, so derive it from the numbers: at/over cap = stopped.
@@ -4513,6 +4522,16 @@ const World = (() => {
     });
     // MEMORY: a recall fence was injected into this run's prompt — surface the count so recall feels ALIVE, not silent.
     U.bus.on('memory.recall', p => { const c = p && (p.count | 0); if (c > 0) hudNote('◈ recalled ' + c + ' memor' + (c === 1 ? 'y' : 'ies'), 'good'); });
+    // MEMORY WRITE: a durable memory was just committed (notebook tool or a Keep/Edit turn-in). Light the acting
+    // agent's NOTEBOOK — the prop that grants the memory rung, same room-lookup the tool-family pulses use — and
+    // say it plainly. { agentId, runId, id, kind, scope } (shared/events.js) — guard the agentId like neighbours.
+    U.bus.on('memory.write', p => {
+      const nb = capPropFor('notebook', p && p.agentId);
+      if (nb && PropSprites.pulseProp) PropSprites.pulseProp(nb.id, 'notebook');
+      hudNote('✎ memory saved', 'good');
+    });
+    // MEMORY FORGET: a memory was dropped (user discard / decay). A quiet HUD line, no pulse — nothing lit up.
+    U.bus.on('memory.forget', () => hudNote('✕ memory forgotten', 'warn'));
     // G4 feature 1 — APPROVAL WALK-AND-WAIT. The run PAUSED on the sidecar awaiting a human yes/no (permission.prompt,
     // {promptId, agentId}). For the HERO, walk the body off its desk to the wait anchor and hold the waiting pose;
     // permission.response ({promptId, decision}) resumes (approve) or ends (deny) the run server-side, so we clear
