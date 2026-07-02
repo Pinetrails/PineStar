@@ -24,8 +24,17 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function boot(port, workspaces, attemptsLeft) {
   return new Promise((resolve, reject) => {
+    // Sandbox the ambient credential roots too: the codex-token migration (codex-token-store.js
+    // candidateCodexTokenFiles) deliberately searches LOCALAPPDATA/APPDATA/XDG_DATA_HOME for a live
+    // ChatGPT login and migrates it INTO the workspace — on a dev machine with ChatGPT connected that
+    // makes "no provider credentials" false and run-now legitimately answers 200. Point those roots
+    // into the scratch dir so this test's premise holds on every machine.
+    const appSandbox = path.join(workspaces, '_appdata');
     const child = spawn(process.execPath, [INDEX], {
-      env: Object.assign({}, process.env, { SKYNET_PORT: String(port), SKYNET_WORKSPACES: workspaces }),
+      env: Object.assign({}, process.env, {
+        SKYNET_PORT: String(port), SKYNET_WORKSPACES: workspaces,
+        LOCALAPPDATA: appSandbox, APPDATA: appSandbox, XDG_DATA_HOME: appSandbox
+      }),
       stdio: ['ignore', 'pipe', 'pipe']
     });
     let out = '', settled = false;
