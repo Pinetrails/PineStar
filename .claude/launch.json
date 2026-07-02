@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "skynet",
+      "name": "starnet",
       "runtimeExecutable": "node",
       "runtimeArgs": ["sidecar/index.js"],
       "port": 8787,
@@ -33,7 +33,7 @@
       "env": { "SKYNET_PORT": "8790" }
     },
     {
-      "name": "skynet-frontend",
+      "name": "starnet-frontend",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["-y", "http-server", "frontend", "-c-1", "-p", "8087"],
       "port": 8087
