@@ -14,6 +14,7 @@
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -64,6 +65,9 @@ struct AppState {
     startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
     keep_awake: Mutex<KeepAwakeState>,
+    // Flipped true the instant the app starts exiting, so the guardian thread stops
+    // respawning the sidecar during an intentional quit.
+    shutting_down: AtomicBool,
 }
 
 impl AppState {
@@ -611,6 +615,50 @@ fn spawn_sidecar(state: &AppState) -> bool {
     false
 }
 
+// ---- watchdog: respawn a crashed sidecar so the open window keeps working ----
+//
+// If the sidecar node process exits unexpectedly (crash, OOM), the open page silently loses its
+// backend and every /api/* fetch starts failing. One long-lived guardian thread polls the child
+// every ~3s and, on an unexpected exit, respawns it on the same loopback port so the page can
+// reconnect. `shutting_down` gates the respawn: it is flipped true at intentional quit BEFORE
+// `kill_sidecar` runs, so killing the child during exit never races into a respawn.
+//
+// NOTE: system sleep is held off separately via the keep_awake command path (PowerCreateRequest);
+// the watchdog does not touch power state.
+fn spawn_guardian(app: AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(3));
+            let Some(state) = app.try_state::<AppState>() else {
+                continue;
+            };
+            let st: &AppState = state.inner();
+            if st.shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // Detect an unexpected exit while holding the lock, but release it BEFORE respawning —
+            // spawn_sidecar takes the same lock itself, so respawning under it would deadlock.
+            let mut needs_respawn = false;
+            if let Ok(mut guard) = st.sidecar.lock() {
+                if let Some(child) = guard.as_mut() {
+                    if let Ok(Some(_status)) = child.try_wait() {
+                        needs_respawn = true;
+                    }
+                }
+            }
+            if needs_respawn {
+                // Re-check the flag: an intentional quit may have landed between the poll and now.
+                if st.shutting_down.load(Ordering::SeqCst) {
+                    break;
+                }
+                log_startup(&st.startup_log, "watchdog: sidecar exited unexpectedly — respawning");
+                let _ = spawn_sidecar(st);
+            }
+        }
+    });
+}
+
 /// Push the live provider config to the already-running sidecar (no restart). The JSON body is
 /// authenticated by the per-launch IPC token. Blocks until the sidecar acks, so the config is live
 /// before the caller proceeds to a run.
@@ -961,10 +1009,14 @@ fn main() {
                 startup_log,
                 sidecar: Mutex::new(None),
                 keep_awake: Mutex::new(KeepAwakeState::new()),
+                shutting_down: AtomicBool::new(false),
             };
             let _ = spawn_sidecar(&state);
             app.manage(state);
             app.manage(PendingUpdate(Mutex::new(None)));
+
+            // Respawn the sidecar if it crashes while the window is open (see spawn_guardian).
+            spawn_guardian(app.handle().clone());
 
             // The frontend is served LOCALLY (bundled via frontendDist), NOT from the sidecar's
             // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
@@ -993,6 +1045,8 @@ fn main() {
         .run(|app, event| {
             if let RunEvent::ExitRequested { .. } = event {
                 if let Some(state) = app.try_state::<AppState>() {
+                    // Stop the guardian from respawning before we kill the child.
+                    state.shutting_down.store(true, Ordering::SeqCst);
                     state.kill_sidecar();
                 }
             }
