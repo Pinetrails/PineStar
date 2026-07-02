@@ -458,9 +458,7 @@ const Build = (() => {
     g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
     g.querySelector('#bay-ok').onclick = () => {
       const res = station.assignPropAgent(bayId, input.value.trim());
-      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP();
-        // KIT-ARRIVAL GAP: binding an agent gives it a room — deliver any class kit that couldn't place at summon.
-        if (res.agentId && opts && typeof opts.onAgentRoomAssigned === 'function') { try { opts.onAgentRoomAssigned(res.agentId); } catch (_) {} } }
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP(); }
       else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
     };
     g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, noun + ' unbound', true); closeP(); };
@@ -503,9 +501,7 @@ const Build = (() => {
     g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
     g.querySelector('#ws-ok').onclick = () => {
       const res = station.assignPropAgent(propId, input.value.trim());
-      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('workstation → ' + res.agentId) : 'workstation cleared', true); closeP();
-        // KIT-ARRIVAL GAP: harmless if the agent still has no bay-room (delivery no-ops); delivers if a bay exists.
-        if (res.agentId && opts && typeof opts.onAgentRoomAssigned === 'function') { try { opts.onAgentRoomAssigned(res.agentId); } catch (_) {} } }
+      if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('workstation → ' + res.agentId) : 'workstation cleared', true); closeP(); }
       else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
     };
     g.querySelector('#ws-clear').onclick = () => { station.assignPropAgent(propId, ''); sfx('click'); flashTip(ev, 'workstation cleared', true); closeP(); };
@@ -1362,60 +1358,7 @@ const Build = (() => {
     return { ok: true, tile };
   }
 
-  /* ---------- REQUISITION FOR A GIVEN AGENT (Class Loadouts S1) ----------
-     Place ONE capability objectType (CAP_REGISTRY: dish/cabinet/notebook/workbench/studio/computer/...) at a
-     SPECIFIC agent's workstation room, through the SAME validated path as a hand placement (findPlaceableTile
-     -> station.addProp), so a class kit stays honest (object=capability — never a flag). Unlike requisition(),
-     this does NOT need REFIT open (it runs at summon): it pulls a fresh station via opts.getStation and scopes
-     the tile search to the agent's OWN room. Degrades gracefully:
-       - no room for the agent yet (fresh summon before a PC is assigned) -> { ok:false, reason:'no-room' }
-       - the cap already present in that room                            -> { ok:true,  already:true }
-       - no free tile in the room                                        -> { ok:false, reason:'no-valid-tile' }
-     Returns { ok, propType?, already?, reason? }. Never throws (caller wraps too). */
-  // reverse CAP_PROP_MAP: pick ONE canonical, non-editable prop id per capability objectType to requisition.
-  function canonicalPropForCap(cap) {
-    const map = (typeof WorldModel !== 'undefined' && WorldModel.CAP_PROP_MAP) ? WorldModel.CAP_PROP_MAP : {};
-    // prefer the first prop id that maps to this cap AND isn't an editable/config prop (those pop an editor).
-    for (const propId of Object.keys(map)) {
-      if (map[propId] === cap && !isEditableProp(propId)) return propId;
-    }
-    // last resort: an object type IS a placeable prop id itself (workbench/studio map 1:1).
-    return (!isEditableProp(cap) && map[cap]) ? cap : null;
-  }
-  function findPlaceableTileInRoom(st, room, type, w, h) {
-    if (!st || !room || !st.canPlaceProp || typeof st.roomAt !== 'function') return null;
-    for (const r of (room.rects || [])) {
-      for (let ty = r.y1; ty <= r.y2; ty++)
-        for (let tx = r.x1; tx <= r.x2; tx++)
-          if (st.roomAt(tx, ty) === room.id && (st.canPlaceProp(type, tx, ty, w, h) || {}).ok) return { tx, ty };
-    }
-    return null;
-  }
-  function requisitionForAgent(agentId, cap) {
-    const st = (opts && opts.getStation) ? opts.getStation() : station;
-    if (!st) return { ok: false, reason: 'no-station' };
-    const c = String(cap || '').trim();
-    if (!c) return { ok: false, reason: 'no-cap' };
-    // computer/connector are PER-AGENT bound props with their own UX (PC picker / connector bind) — never
-    // auto-requisition those from a class kit; the Commander assigns a PC deliberately in REFIT.
-    if (c === 'computer' || c === 'connector') return { ok: false, reason: 'manual-bind' };
-    const roomId = (typeof st.agentRoomId === 'function') ? st.agentRoomId(agentId) : null;
-    const room = roomId && typeof st.roomById === 'function' ? st.roomById(roomId) : null;
-    if (!room) return { ok: false, reason: 'no-room' };   // fresh summon: no workstation yet -> surfaced to the Commander
-    // already present in the room? (object=capability is idempotent — don't stack duplicates)
-    const already = (typeof st.bayObjects === 'function' ? st.bayObjects(agentId) : []).some(o => (typeof o === 'string' ? o : o && o.objectType) === c);
-    if (already) return { ok: true, already: true, propType: null };
-    const t = canonicalPropForCap(c);
-    if (!t) return { ok: false, reason: 'no-prop' };
-    const s = propSpec(t);
-    const tile = findPlaceableTileInRoom(st, room, t, s.w, s.h);
-    if (!tile) return { ok: false, reason: 'no-valid-tile' };
-    const res = st.addProp({ t, x: tile.tx, y: tile.ty, w: s.w, h: s.h, block: s.blocks !== false });
-    if (!res || !res.ok) return { ok: false, reason: (res && res.reason) || 'rejected' };
-    return { ok: true, propType: t, tile };
-  }
-
-  const api = { init, open, close, toggle, isOpen, requisition, requisitionForAgent };
+  const api = { init, open, close, toggle, isOpen, requisition };
   if (typeof window !== 'undefined' && window.__STARNET_DEV__) api.__test__ = __test__;
   return api;
 })();

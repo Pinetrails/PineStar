@@ -364,7 +364,6 @@ const App = (() => {
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
              approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
              skills: Array.isArray(a.skills) ? a.skills.slice() : [],   // Class Loadouts S1: per-agent skill package persists
-             pendingKit: Array.isArray(a.pendingKit) && a.pendingKit.length ? a.pendingKit.slice() : undefined,   // Class Loadouts S1: kit not yet delivered (agent had no room) — survives reload, delivered on room-assign
              stats: a.stats || null, createdAt: a.createdAt };
   }
   // restore summoned crew from a save (older saves have no `agents[]` → just the hero, exactly as before).
@@ -378,7 +377,6 @@ const App = (() => {
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
                   approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   skills: Array.isArray(s.skills) ? s.skills.slice() : [],   // Class Loadouts S1: restore the per-agent skill package
-                  pendingKit: Array.isArray(s.pendingKit) && s.pendingKit.length ? s.pendingKit.slice() : undefined,   // Class Loadouts S1: restore undelivered kit (drained by deliverPendingKit once the agent has a room)
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
       a.systemPrompt = composeSystemPrompt(a);
@@ -457,8 +455,9 @@ const App = (() => {
     if (pinned && String(pinned).trim()) return String(pinned).trim();
     return baseModel || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : null) || null;
   }
-  // fold the class loadout (model tier + effort + skills) onto an agent record. Kit placement is separate
-  // (requisitionKit) because it mutates the world model, not just the record.
+  // fold the class loadout (model tier + effort + skills) onto an agent record. A class's `kit` is NOT placed
+  // per-agent — it names the shared STATION gear the class draws on under the overseer (informational, shown in
+  // the dossier). The only per-agent object is the agent's own desk; capabilities are station-level shared gear.
   function applyLoadout(a, spec, pin) {
     if (!a || !spec) return;
     // an EXPLICIT creation-time pick (bay modelPin) beats the class-tier default — the class supplies
@@ -476,77 +475,6 @@ const App = (() => {
       a.skills = out;
     }
   }
-  // KIT REQUISITION at summon: place each of the class's kit objectTypes at the agent's workstation through the
-  // SAME validated placement path a hand placement uses (Build.requisitionForAgent -> findPlaceableTile ->
-  // station.addProp — object=capability stays honest, never a flag). Degrades gracefully: places what fits into
-  // the agent's room, skips what doesn't (a fresh summon usually has NO room until the Commander gives it a PC in
-  // REFIT — then nothing is placed and every kit item is reported as "needs a workstation"). Never throws.
-  // a skip reason that a LATER room assignment can heal: the agent had no room ('no-room'), or the room was
-  // full at the time ('no-valid-tile' — space may free up). Reasons like 'manual-bind' (computer/connector are
-  // never auto-placed), 'no-prop', 'no-build' are permanent for THIS kit item, so they never go pending (they'd
-  // never resolve and would nag forever). Placement rejections keep retrying — they're usually transient.
-  const KIT_RETRYABLE = { 'no-room': 1, 'no-valid-tile': 1, 'no-station': 1, 'rejected': 1 };
-  function requisitionKit(a, spec) {
-    const kit = (spec && Array.isArray(spec.kit)) ? spec.kit : [];
-    if (!a || !kit.length) return { placed: [], skipped: [] };
-    const placed = [], skipped = [];
-    const canPlace = (typeof Build !== 'undefined' && Build.requisitionForAgent);
-    for (const objType of kit) {
-      const t = String(objType || '').trim();
-      if (!t) continue;
-      let res = null;
-      try { res = canPlace ? Build.requisitionForAgent(a.id, t) : { ok: false, reason: 'no-build' }; }
-      catch (e) { res = { ok: false, reason: (e && e.message) || 'error' }; }
-      if (res && res.ok) placed.push(t); else skipped.push({ type: t, reason: (res && res.reason) || 'skipped' });
-    }
-    // KIT-ARRIVAL GAP fix: a fresh summon has NO room, so the class kit places nothing. Persist the retryable
-    // misses on the agent record (survives reload via serializeAgentLite/rehydrate). deliverPendingKit() drains
-    // this list — idempotently — the moment the agent is bound to a bay/workstation (build.js -> onAgentRoomAssigned).
-    const pending = skipped.filter(s => KIT_RETRYABLE[s.reason]).map(s => s.type);
-    setPendingKit(a, pending);
-    if (skipped.length) {
-      const names = skipped.map(s => s.type).join(', ');
-      try { console.log('[summon] kit not fully placed for ' + a.id + ' — needs a workstation for: ' + names, skipped); } catch (_) {}
-      const _n = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : null;
-      if (_n && pending.length) _n(a.name + ': give it a workstation in REFIT to receive its kit (' + pending.join(', ') + ').', 'info');
-    }
-    return { placed, skipped, pending };
-  }
-  // merge new pending kit objectTypes onto the agent record (deduped; ADD-only — an item already delivered
-  // once is never re-queued because deliverPendingKit removes it). Empty list clears the field so saves stay clean.
-  function setPendingKit(a, types) {
-    if (!a) return;
-    const seen = {}, out = [];
-    for (const v of (a.pendingKit || []).concat(types || [])) { const t = String(v || '').trim(); if (t && !seen[t]) { seen[t] = true; out.push(t); } }
-    if (out.length) a.pendingKit = out; else delete a.pendingKit;
-  }
-  // KIT-ARRIVAL GAP: an agent that just received a room (bay/workstation bound) drains its pending kit through the
-  // SAME validated path summon uses. Idempotent — requisitionForAgent returns {ok:true, already:true} for a cap
-  // already in the room (skipped, dropped from pending), and only genuinely retryable misses stay queued. Called
-  // from build.js after assignPropAgent binds an agent, and on load for any saved agent that already has a room.
-  function deliverPendingKit(agentId) {
-    const a = agents.get(agentId);
-    if (!a || !Array.isArray(a.pendingKit) || !a.pendingKit.length) return { delivered: [], stillPending: [] };
-    const canPlace = (typeof Build !== 'undefined' && Build.requisitionForAgent);
-    if (!canPlace) return { delivered: [], stillPending: a.pendingKit.slice() };
-    const delivered = [], stillPending = [];
-    for (const t of a.pendingKit) {
-      let res = null;
-      try { res = Build.requisitionForAgent(a.id, t); }
-      catch (e) { res = { ok: false, reason: (e && e.message) || 'error' }; }
-      if (res && res.ok) delivered.push(t);                       // placed now, OR already present -> done either way
-      else if (res && KIT_RETRYABLE[res.reason]) stillPending.push(t);   // still no room/space -> keep waiting
-      // any other reason (manual-bind/no-prop) is permanent -> drop it so it never nags
-    }
-    if (stillPending.length) a.pendingKit = stillPending; else delete a.pendingKit;
-    if (delivered.length) {
-      try { persist(); } catch (_) {}
-      const _n = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : null;
-      if (_n) _n((a.name || a.id) + ': kit delivered (' + delivered.join(', ') + ').', 'good');
-    }
-    return { delivered, stillPending };
-  }
-
   // a backend-valid, collision-free agentId for a summon (never the hero's reserved 'agent').
   function allocAgentId(spec) {
     const seed = (spec && (spec.id || spec.name)) || 'agent';
@@ -579,7 +507,6 @@ const App = (() => {
     const _spawned = (typeof World !== 'undefined' && !!World.spawnAgent);
     if (_spawned) World.spawnAgent(a);                          // Phase C: a real floor body
     else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
-    const kitRes = _spawned ? requisitionKit(a, spec) : null;   // Class Loadouts S1: place the class kit at the agent's workstation (real placement; degrades if no room yet)
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     else console.warn('[summon] StationUI.setRoster missing — crew manifest not refreshed');
     try { console.log('[summon]', JSON.stringify({ id, name: a.name, skin: a.skin, hadHero: !!agent, worldSpawn: _spawned, crew: (typeof World !== 'undefined' && World.crewCount) ? World.crewCount() : '?', roster: agents.size })); } catch (e) {}
@@ -599,24 +526,38 @@ const App = (() => {
       : a.name + ' summoned - overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate.',
       'good');
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
-    // applied, and the kit (placed now vs deferred until it gets a workstation). Skipped for a plain persona-only
-    // class (no kit/skills/effort) so it never adds noise. This mirrors the dossier copy so the two never drift.
-    const lo = loadoutSummary(a, spec, kitRes);
+    // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent
+    // props). Skipped for a plain persona-only class (no gear/skills/effort) so it never adds noise. Mirrors the
+    // dossier so the two never drift.
+    const lo = loadoutSummary(a, spec);
     if (lo) _notify(a.name + ' loadout - ' + lo, 'info');
     return a;
   }
-  // Compose the one-line summon loadout beat from what was ACTUALLY applied. Kit is split into placed-now vs
-  // pending (deferred until the agent gets a workstation), matching the real requisition outcome; skills + effort
-  // read off the agent record applyLoadout just wrote. Returns '' when there is nothing to say.
-  function loadoutSummary(a, spec, kitRes) {
+  // The capability objectTypes the STATION currently has placed anywhere (station-wide shared gear), deduped.
+  // Under Andrew's model a specialist owns only its desk and uses these shared caps under the overseer — so a
+  // class's declared gear is checked against the whole station, never the agent's own room. Reads the same live
+  // station-wide source the run's skill availability uses (World.stationCaps); [] on any hiccup (never throws).
+  function stationGearTypes() {
+    try {
+      const caps = (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [];
+      return caps.map(c => (typeof c === 'string' ? c : c && c.objectType)).filter(Boolean);
+    } catch (_) { return []; }
+  }
+  // Compose the one-line summon loadout beat from what was ACTUALLY applied: the skills enabled, the effort, and
+  // — honestly — the STATION GEAR the class draws on that the station is MISSING (add it in REFIT for the class to
+  // work its best). Present gear needs no callout (it just works). Reads skills/effort off the record applyLoadout
+  // wrote. Returns '' when there is nothing to say.
+  function loadoutSummary(a, spec) {
     const parts = [];
-    const placed = (kitRes && kitRes.placed) || [];
-    const pending = (a && Array.isArray(a.pendingKit)) ? a.pendingKit : [];
-    if (placed.length) parts.push('kit at its station: ' + placed.join(', '));
-    if (pending.length) parts.push('kit ' + pending.join(', ') + ' arrives when it gets a workstation');
     const skills = (a && Array.isArray(a.skills)) ? a.skills : [];
     if (skills.length) parts.push(skills.length + ' skill' + (skills.length === 1 ? '' : 's') + ' enabled');
     if (a && a.reasoningEffort) parts.push(a.reasoningEffort + ' reasoning effort applied');
+    const gear = (spec && Array.isArray(spec.kit)) ? spec.kit : [];
+    if (gear.length) {
+      const have = new Set(stationGearTypes());
+      const missing = gear.filter(g => !have.has(g));
+      if (missing.length) parts.push('station lacks ' + missing.join(', ') + ' — add ' + (missing.length === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit');
+    }
     return parts.join(' · ');
   }
   // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
@@ -1460,13 +1401,8 @@ const App = (() => {
     if (typeof Build !== 'undefined') {
       // agents: the live multi-agent roster the BAY agent-picker / builder offer. The bay->agent binding
       // persists via station.serialize (prop.agentId round-trips), so the routing floor is saved per agent.
-      // onAgentRoomAssigned: the KIT-ARRIVAL GAP seam — when REFIT binds an agent to a bay/workstation it now
-      // has a room, so drain any kit that couldn't be placed at summon (idempotent; see deliverPendingKit).
-      Build.init({ getStation: () => station, persist: persist, world: World, onAgentRoomAssigned: deliverPendingKit,
+      Build.init({ getStation: () => station, persist: persist, world: World,
         agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })) });
-      // a resumed save may already have agents with a room (bay bound before this feature, or kit queued last
-      // session) — flush their pending kit now that the station geometry is loaded and Build is wired.
-      for (const a of liveAgents()) if (Array.isArray(a.pendingKit) && a.pendingKit.length) deliverPendingKit(a.id);
       const bbBuild = el('bb-build');
       if (bbBuild) {
         let seenBuild = false; try { seenBuild = !!localStorage.getItem('starnet.refit.seen'); } catch (e) {}
@@ -1941,6 +1877,5 @@ const App = (() => {
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
-    deliverPendingKit,   // Class Loadouts S1: drain an agent's undelivered class kit once it has a room (also called via Build onAgentRoomAssigned)
     applyConfig: applyAgentConfig };
 })();
