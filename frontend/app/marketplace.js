@@ -388,18 +388,40 @@ const Marketplace = (() => {
   function dossierHTML() {
     return (tab === 'recipes' && hasRecipes()) ? recipeDossierHTML() : agentDossierHTML();
   }
-  // STANDARD ISSUE KIT — one row per kit objectType: the prop it requisitions + what it grants, in plain words,
-  // resolved from the LIVE catalog (never a hardcoded prop label). Empty kit => the block is omitted (a plain
-  // persona-only class). The deferred-delivery reality is stated so the copy matches what actually happens.
+  // the capability objectTypes the STATION currently has placed anywhere (station-wide shared gear). Under the
+  // shared-gear model a specialist owns only its desk and draws on these caps UNDER THE OVERSEER — so a class's
+  // gear is checked against the whole station, never a per-agent room. Reads World.stationCaps (the same live
+  // source the run's skill availability uses); [] on any hiccup (renders every row as "not on station", honest).
+  function stationGearSet() {
+    try {
+      const caps = (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [];
+      return new Set(caps.map(c => (typeof c === 'string' ? c : c && c.objectType)).filter(Boolean));
+    } catch (_) { return new Set(); }
+  }
+  // DRAWS ON STATION GEAR — one row per objectType the class uses: the prop + what it grants, resolved from the
+  // LIVE catalog (never a hardcoded prop label), PLUS an honest present/missing check against the ACTUAL station
+  // props. Present gear reads as available; missing gear reads dim ("not on station — add in REFIT"). Capabilities
+  // are STATION-level shared gear used under the overseer — the class is NOT issued its own copy (only its desk).
+  // Empty kit => the block is omitted (a plain persona-only class).
   function kitBlockHTML(s) {
     const kit = (s && Array.isArray(s.kit)) ? s.kit : [];
     if (!kit.length) return '';
-    const rows = kit.map(t => '<div class="mkt-kit-row">' +
-      '<span class="mkt-kit-obj">' + esc(kitPropLabel(t)) + '</span>' +
-      '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span></div>').join('');
-    return '<div class="mkt-block"><div class="bh">STANDARD ISSUE KIT</div>' +
+    const have = stationGearSet();
+    let missing = 0;
+    const rows = kit.map(t => {
+      const present = have.has(t);
+      if (!present) missing++;
+      return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
+        '<span class="mkt-kit-obj">' + esc(kitPropLabel(t)) + '</span>' +
+        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span>' +
+        '<span class="mkt-kit-state">' + (present ? 'on station' : 'not on station — add in REFIT') + '</span></div>';
+    }).join('');
+    const note = missing
+      ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on the station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
+      : 'shared station gear this class draws on under the overseer — all present on the station.';
+    return '<div class="mkt-block"><div class="bh">DRAWS ON STATION GEAR</div>' +
       '<div class="mkt-kit">' + rows + '</div>' +
-      '<div class="mkt-kit-note">requisitioned at its workstation on summon — arrives once you give it a PC in REFIT.</div></div>';
+      '<div class="mkt-kit-note">' + note + '</div></div>';
   }
   // SKILL PACKAGE — one row per bundled skill slug: name + one-line description, resolved from the /api/skills
   // catalog the SKILLS window uses. Renders slug-only immediately (so it works offline), then hydrateSkillRows
@@ -907,8 +929,9 @@ const Marketplace = (() => {
       // EFFORT — the reasoning effort applied at summon (independent of the clearance tier/model).
       '<label class="mkt-lbl">REASONING EFFORT <span class="mkt-lbl-hint">— applied at summon</span></label><div class="mkt-segs" id="mkt-b-effort">' +
         effSeg(null, 'DEFAULT') + effSeg('high', 'HIGH') + effSeg('medium', 'MEDIUM') + effSeg('low', 'LOW') + '</div>' +
-      // STANDARD ISSUE KIT — capability objectTypes to requisition at summon (labels from the LIVE catalog).
-      '<label class="mkt-lbl">STANDARD ISSUE KIT <span class="mkt-lbl-hint">— gear placed at its workstation</span></label>' +
+      // STATION GEAR — capability objectTypes this class draws on under the overseer (informational; labels from
+      // the LIVE catalog). Not per-agent props — shared station gear; the picks round-trip into the saved spec.
+      '<label class="mkt-lbl">STATION GEAR IT DRAWS ON <span class="mkt-lbl-hint">— shared gear it uses under the overseer</span></label>' +
       '<div class="mkt-chips" id="mkt-b-kit">' + buildKitChipsHTML() + '</div>' +
       // SKILL PACKAGE — bundled recipes enabled for this class (from the live /api/skills catalog, filled async).
       '<label class="mkt-lbl">SKILL PACKAGE <span class="mkt-lbl-hint">— recipes it follows when a task matches</span></label>' +
@@ -918,7 +941,7 @@ const Marketplace = (() => {
       '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-build">✓ CREATE CLASS</button></div></div>';
   }
   // the pickable kit objectTypes — the auto-requisitionable capabilities (computer/connector are per-agent
-  // manual-bind, never in a class kit — matches Build.requisitionForAgent). Labels come from the live source.
+  // manual-bind, per-agent bound props, never shared station gear a class draws on). Labels from the live source.
   const KIT_PICKABLE = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
   function buildKitChipsHTML() {
     return KIT_PICKABLE.map(t => {

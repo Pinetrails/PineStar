@@ -7,11 +7,15 @@
    it (freezeSpec / ranking-tags / the save-your-own custom store / compose) — this file stays DOM-free
    and node-loadable so both sides + the tests can read it without a browser.
 
-   LOADOUT fields (Class Loadouts S1) added to every specialty:
-     kit:    [objectType,...]   real CAP_REGISTRY object types auto-requisitioned at the agent's
-                                workstation on summon (object = capability stays honest — never a flag).
+   LOADOUT fields (Class Loadouts) added to every specialty:
+     kit:    [objectType,...]   real CAP_REGISTRY object types = the SHARED STATION GEAR this class draws on under
+                                the overseer (informational — shown in the dossier with a live present/missing
+                                check, and used to gate the class's skill availability). NOT per-agent props: the
+                                only object an agent owns is its own desk; capabilities are station-level shared
+                                gear used under the overseer (Andrew's rule, 2026-07-02). Never a flag, never issued.
      skills: [slug,...]         bundled skill-library recipes enabled for THIS agent (per-agent, ADD-only
-                                over the global prefs); each slug's `requires` must be a SUBSET of `kit`.
+                                over the global prefs); each slug's `requires` must be a SUBSET of `kit` (the class
+                                may only ship a recipe whose gear it declares it draws on — grounded-classes law).
      reasoningEffort: 'high'|'medium'|'low'|null   applied default at summon (roster record); the
                                 advisory model-tier pip stays cosmetic.
 
@@ -42,7 +46,8 @@
   const TAGS = ['code', 'research', 'general'];
 
   /* ---------- the curated catalog (raw data — the frontend module freezes + wraps it) ----------
-     kit objectTypes are REAL CAP_REGISTRY keys (sidecar/capability/registry.js):
+     kit objectTypes are REAL CAP_REGISTRY keys (sidecar/capability/registry.js) naming the SHARED STATION GEAR
+     each class draws on under the overseer (NOT props issued to the agent):
        computer, notebook, cabinet, dish, connector, workbench, orchestrator, studio, jukebox.
      skills slugs are REAL bundled recipes (sidecar/skills/library/*.md) and every slug's `requires`
      is satisfied by this class's kit (grounded-classes law). S2 refines the values + playbooks. */
