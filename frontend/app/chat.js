@@ -54,6 +54,9 @@ const Chat = (() => {
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   let arcWired = false;         // GROWTH Tier 2: the agent.run.end goal-arc confirm-beat listener (registers once)
   let arcRunsSeen = new Set();  // GROWTH Tier 2: runIds already arc-offered (agent.run.end can re-fire; offer once per run)
+  let skillAsideWired = false;  // the deliverable(kind:skill) background-review aside listener is registered exactly once
+  let skillDelivSeen = new Set();   // deliverable ids already asided → the background review re-firing never double-asides
+  let recentInRunSkill = 0;     // ts of the last IN-RUN skill.* tool call — suppresses the aside for a save the A1 chip already showed
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
@@ -312,6 +315,7 @@ const Chat = (() => {
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
     wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
+    wireSkillAside();  // A2: after a background review distills a skill, ONE quiet "distilled this run…" aside (registers once)
     load(opts.ws);
     input.onkeydown = e => {
       // SLASH PALETTE owns the nav keys while open (a "/command" menu over the input)
@@ -1509,6 +1513,58 @@ const Chat = (() => {
     activeNudge = { row: r.d, choiceRow: choiceRow, dim: null };   // share the curiosity-nudge lifecycle so a turn-in's clearNudge() retires a suggestion beat too (keeps "one beat at a time")
     return { row: r.d, choiceRow: choiceRow };
   }
+
+  /* A2 — THE SKILL ASIDE. When the quiet background review distills a completed run into a saved skill it fires
+     the EXISTING `deliverable` (kind:'skill') event (see skillreview.makeReviewObserver). Here we surface ONE
+     gentle, NON-interactive gold-inset aside — "◈ <agent> distilled this run into skill: <name>" — so the
+     Commander SEES the agent grow its own skillbase. HARD anti-nag / one-beat discipline:
+       • it is INFORMATIONAL (no choice row), so it never claims the post-run ask slot; if a real beat
+         (memory turn-in / study card / suggestion / curiosity nudge) is live or in flight, the aside is DROPPED
+         — never queued, never stacked over another beat (COMMS beat rules).
+       • deduped by deliverable id (the review can re-fire), and suppressed when an IN-RUN skill.* tool call just
+         rendered its own A1 chip for the same save — no double surface.
+     The aside auto-vanishes so it leaves no residue in the feed. */
+  function skillBeatBusy() {
+    // any live/in-flight ask beat owns the moment — the aside must stand down (drop).
+    if (isBusy() || interview) return true;
+    if (activeNudge) return true;                                   // a gentle suggestion/curiosity beat is up
+    if (activeTurnin || turninQueue.length) return true;            // a memory-review deck is live/queued
+    if (typeof studyBusy === 'function' && studyBusy()) return true;// a study card is visible
+    if (beatSlot && beatSlot.visibleBeat()) return true;            // the arbiter says a beat holds the slot
+    if (beatSlot && beatSlot.canStudy && beatSlot.canStudy() !== 'free') return true;   // reflection in flight → memory wins
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
+    if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return true;
+    if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return true;
+    return false;
+  }
+  function skillAside(skillName, agentId) {
+    if (!log) return false;
+    const who = name || 'the agent';   // the module's live agent name — the aside only renders on this agent's own stream
+    const r = row('agent'); r.d.classList.add('nudge'); r.d.classList.add('skill-aside');
+    r.body.textContent = '◈ ' + who + ' distilled this run into skill: ' + brief(String(skillName || 'a new skill'));
+    autoscroll();
+    // fleeting: fade it out after a beat so it never lingers as a fake unresolved card.
+    setTimeout(() => { try { vanish(r.d); } catch (_) {} }, 9000);
+    return true;
+  }
+  function wireSkillAside() {
+    if (skillAsideWired || typeof U === 'undefined' || !U.bus) return;
+    skillAsideWired = true;
+    U.bus.on('deliverable', p => {
+      if (!p || p.kind !== 'skill') return;                         // only skill deliverables get the aside
+      const id = String(p.id || p.title || '');
+      if (!id || skillDelivSeen.has(id)) return;                    // dedup: the review can re-fire the same skill
+      skillDelivSeen.add(id);
+      if (skillDelivSeen.size > 200) skillDelivSeen = new Set(Array.from(skillDelivSeen).slice(-100));
+      // an in-run save already showed its A1 chip a moment ago → the flavored chip IS the surface; no aside.
+      if (Date.now() - recentInRunSkill < 8000) return;
+      // only aside into the agent's OWN visible stream, and only when the moment is free (else drop — anti-nag).
+      const agentId = p.agentId || 'agent';
+      const onAgent = activeWs && (activeWs.agentId || 'agent') === agentId;
+      if (!onAgent || skillBeatBusy()) return;
+      skillAside(p.title, agentId);
+    });
+  }
   function wireCuriosity() {
     if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
     curiosityWired = true;
@@ -2552,7 +2608,7 @@ const Chat = (() => {
         // unchanged — replayChannel renders those via toolLine), but the LIVE surface renders a structured CHIP.
         // breakLive() closes the prose paragraph AND the prior chip rail only when it's a *call after prose*; a
         // run of consecutive calls shares one rail because onToolResult below never breaks it.
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
         onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits

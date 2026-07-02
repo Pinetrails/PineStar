@@ -706,6 +706,7 @@ const StationUI = (() => {
   let agTab = 'brief';      // 'brief' | 'growth' | 'memory' | 'skills' | 'config'
   const agEdit = {};        // config fileKey -> true while its editor is open
   let memLiveWired = false, memRefreshTimer = 0;   // M-mem.6: the once-wired, debounced Memory Core live-refresh
+  let skillsLiveWired = false, skillsRefreshTimer = 0;   // A3: the once-wired, debounced AGENT SKILLS live-refresh
 
   const CONFIG_FILES = [
     { key: 'identity', file: 'identity.md', badge: 'YOU WRITE THIS',
@@ -1083,6 +1084,23 @@ const StationUI = (() => {
     U.bus.on('memory.feedback', bump); U.bus.on('memory.forget', bump);
   }
 
+  // A3: register ONCE — a deliverable(kind:'skill') (a background review / curator distilled a skill, OR the
+  // agent or user saved one) refreshes the AGENT SKILLS list live, so a new skill appears in the open SKILLS
+  // panel WITHOUT reopening it. Debounced (a pass can create several), and only when the standalone SKILLS
+  // window is open AND the deliverable is for the agent it's showing. #sk-agent is the standalone panel's host.
+  function wireSkillsLive() {
+    if (skillsLiveWired || typeof U === 'undefined' || !U.bus) return;
+    skillsLiveWired = true;
+    U.bus.on('deliverable', p => {
+      if (!p || p.kind !== 'skill') return;
+      if (!open['skills'] || !$('#sk-agent')) return;                 // the AGENT SKILLS host lives in the standalone SKILLS panel
+      const a = present[sel]; const shownId = (a && a.id) || 'agent';
+      if ((p.agentId || 'agent') !== shownId) return;                 // only refresh the agent the panel is actually showing
+      clearTimeout(skillsRefreshTimer);
+      skillsRefreshTimer = setTimeout(() => { if (open['skills'] && $('#sk-agent')) loadAgentSkills(shownId); }, 400);
+    });
+  }
+
   function agConfig(a) {
     return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
@@ -1345,6 +1363,7 @@ const StationUI = (() => {
     ], { search: true, searchPlaceholder: 'search skills…' });
     loadSkillLibrary(agentId);
     loadAgentSkills(agentId);
+    wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
   }
 
   // async: fetch the bundled recipe catalog (with THIS agent's placed objects, so the active/locked readout is
@@ -1456,7 +1475,9 @@ const StationUI = (() => {
           '<div class="sk-card-head">' +
             '<button class="sk-toggle" data-ag-act="pin" title="' + (s.pinned ? 'Unpin' : 'Pin') + ' this skill">' + (s.pinned ? '*' : '+') + '</button>' +
             '<div class="sk-card-main">' +
-              '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span><span class="sk-badge free">' + esc((s.state || 'active').toUpperCase()) + '</span></div>' +
+              '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span>' +
+                (s.category ? '<span class="sk-badge cat">' + esc(String(s.category).toUpperCase()) + '</span>' : '') +
+                '<span class="sk-badge free">' + esc((s.state || 'active').toUpperCase()) + '</span></div>' +
               '<div class="sk-desc">' + esc(s.summary || '') + '</div>' +
               '<div class="sk-stat ' + state + '">used ' + (s.useCount || 0) + 'x - viewed ' + (s.viewCount || 0) + 'x - patched ' + (s.patchCount || 0) + 'x - updated ' + esc(when) + '</div>' +
             '</div>' +

@@ -1200,6 +1200,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .sk-badge.have { color: var(--ok); border-color: var(--ok); }
 .sk-badge.miss { color: var(--warn); border-color: var(--warn); }
 .sk-badge.free { opacity: 0.5; }
+.sk-badge.cat { color: var(--ph); border-color: var(--ph-dim); opacity: 0.85; }   /* A4: category tag (also makes category searchable) */
 .sk-desc { font-size: 11.5px; opacity: 0.78; margin-top: 3px; line-height: 1.4; }
 .sk-stat { font-size: 9.5px; letter-spacing: 1px; margin-top: 5px; color: var(--ph-dim); }
 .sk-stat.on { color: var(--ok); }
