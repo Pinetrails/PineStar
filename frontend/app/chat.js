@@ -914,8 +914,15 @@ const Chat = (() => {
       || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
       || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
       || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
-    if (blocked) {   // defer, bounded — if the moment never frees, the OUTBOX crates still carry the flow
-      if ((_try || 0) < 25) setTimeout(() => awayDigest(rows, opts, (_try || 0) + 1), 7000);
+    if (blocked) {   // defer — a gate is up (interview / focused panel / live turn-in / welcome-back nudge).
+      // "deferred" must NEVER become "lost": the crates are already pending in the OUTBOX (ReturnStore
+      // folded them before this beat), but the digest beat itself keeps waiting for a free moment.
+      // Fast cadence (7s) while the moment is likely to free soon, then a low-frequency retry (60s) that
+      // never gives up — same DELAY-but-never-STARVE law as armRateFallback. Fires exactly once (anti-nag:
+      // once it renders below, it returns and there is no re-fire path).
+      const t = (_try || 0);
+      const delay = t < 25 ? 7000 : 60000;
+      setTimeout(() => awayDigest(rows, opts, t + 1), delay);
       return;
     }
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('away-digest');
