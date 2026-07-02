@@ -54,6 +54,18 @@ r = QS.fold(s, [q('dim:goals', 'done'), q('ms:first_light', 'done')], 3000);
 A.eq(r.completions, [], 'the same projection folded again is silent — one celebration per completion');
 A.eq(QS.stateOf(s, 'dim:goals').completedAt, 2000, 'completedAt is not re-stamped by a repeat fold');
 
+/* ---------- FIX 3: several gaps closing in ONE fold each celebrate individually (fast placement burst) ----
+   two station gaps first seen open, then both done in the same fold — the fold must return BOTH as separate
+   completions (never coalesced into one), so each rides its own celebrate() call. This is why a placement can
+   drive pokeQuests() the instant a prop lands even when a burst closes several quests together. */
+(() => {
+  const s2 = QS.hydrate(null);
+  QS.fold(s2, [q('sq:a:dish', 'open'), q('sq:b:cabinet', 'open')], 1000);   // baseline: both open
+  const burst = QS.fold(s2, [q('sq:a:dish', 'done'), q('sq:b:cabinet', 'done')], 1100);
+  A.eq(burst.completions.length, 2, 'two gaps closing in the same fold → TWO completions, each celebrated on its own');
+  A.ok(burst.completions.some(c => c.id === 'sq:a:dish') && burst.completions.some(c => c.id === 'sq:b:cabinet'), 'both transitioned quests are returned individually (never coalesced)');
+})();
+
 /* ---------- a real regression then a real re-completion celebrates again ---------- */
 r = QS.fold(s, [q('dim:goals', 'open')], 4000);
 A.eq(r.completions, [], 'done→open (e.g. a forgotten belief) never celebrates');

@@ -2537,6 +2537,17 @@ const StationUI = (() => {
       setTimeout(() => g.classList.remove('compact'), 1200);
     });
   }
+  // resolve every quest generator against the live floor, then fold the projection into the durable memory —
+  // the exact resolve→fold sequence the 1s tick runs, factored out so a placement can drive it IMMEDIATELY.
+  // Without this an open→done transition (a prop placed) waits for the next tick, where a burst of fast
+  // placements can coalesce/miss the per-quest celebration; QuestState.fold celebrates each edge individually,
+  // so running it the instant a prop lands makes each close flourish on its own. The 1s tick stays the fallback.
+  function pokeQuests() {
+    if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
+    if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.sync) { try { WorkQuestStore.sync(); } catch (_) {} }
+    if (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.sync) { try { MaintQuestStore.sync(); } catch (_) {} }
+    if (typeof QuestStateStore !== 'undefined' && QuestStateStore.sync) { try { QuestStateStore.sync(); } catch (_) {} }
+  }
   function tick() {
     crewTick();
     ctxTick();
@@ -3813,5 +3824,5 @@ const StationUI = (() => {
   }
   function getTheme() { return store.settings.theme; }
 
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => runningAgents.has(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), setTheme, getTheme };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => runningAgents.has(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme };
 })();

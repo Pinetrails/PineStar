@@ -148,4 +148,13 @@ A.ok(/StationQuestStore\.reset\(\)/.test(appSrc), 'app.js resets it on new-hero 
 const html = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 'utf8');
 A.ok(/app\/stationquests\.js/.test(html) && /app\/stationqueststore\.js/.test(html), 'index.html loads the engine and the store');
 
+/* ---------- FIX 3 source-locks: a prop placement drives the resolve→fold IMMEDIATELY (not just the 1s tick) ---------- */
+A.ok(/function pokeQuests\s*\(/.test(stSrc), 'stationui exposes a pokeQuests() that runs the resolve→fold sequence');
+const pokeBody = stSrc.slice(stSrc.indexOf('function pokeQuests'), stSrc.indexOf('function tick'));
+A.ok(pokeBody.indexOf('StationQuestStore.sync') >= 0 && pokeBody.indexOf('StationQuestStore.sync') < pokeBody.indexOf('QuestStateStore.sync'), 'pokeQuests resolves station gaps BEFORE folding — a just-closed gap celebrates on its own edge');
+A.ok(/pokeQuests\b/.test(stSrc.slice(stSrc.lastIndexOf('return {'))), 'pokeQuests is on the StationUI public surface');
+const buildSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/build.js'), 'utf8');
+A.ok(/StationUI\.pokeQuests/.test(buildSrc), 'the placement path (build.js) pokes the quest generators the instant a prop lands');
+A.ok((buildSrc.match(/StationUI\.pokeQuests/g) || []).length >= 2, 'both hand-placement (commitPropStamp) and requisition drive the immediate poke');
+
 A.report('stationqueststore.test');

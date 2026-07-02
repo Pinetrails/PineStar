@@ -841,6 +841,9 @@ const Build = (() => {
     const res = station.addProp(placement);
     if (res && res.ok) {
       pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
+      // a prop just landed → resolve the quest generators + fold NOW, so a station gap this placement closes
+      // celebrates on its own edge (fast back-to-back placements can't coalesce it away on the 1s tick).
+      if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }
       if (grant) sfx('chime');   // a capability just came online — a brighter note than the plain placement click
       // first-touch coachmark (tutorial.js): a portal teaches "live tools", any other gear teaches "props are permissions"
       if (typeof Tutorial !== 'undefined') {
@@ -1350,6 +1353,7 @@ const Build = (() => {
     pushFlash([{ x1: tile.tx, y1: tile.ty, x2: tile.tx + s.w - 1, y2: tile.ty + s.h - 1 }], false);
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(t) : null;
     if (grant) sfx('chime');   // a capability just came online — same brighter note as a hand placement
+    if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }   // resolve+fold now: a gap this requisition closes celebrates on its own edge
     if (typeof Tutorial !== 'undefined' && Tutorial.onPropPlaced) Tutorial.onPropPlaced(t);
     return { ok: true, tile };
   }
