@@ -2,6 +2,31 @@
 
 **Branch:** `agent/class-loadouts` · **Date:** 2026-07-02 · **Status:** building
 
+## ⚑ CORRECTION — 2026-07-02: the shared-gear model (overrides the "kit" design below)
+
+Andrew (commander): **"The only prop a specialized or secondary agent needs is its own desk; it's allowed to
+use other props with the overseer."**
+
+Capabilities are **STATION-level shared gear used under the overseer**; the **desk is the only per-agent
+object**. Per-agent prop issuance was wrong — it duplicated props and misread the model. So a class's `kit` is
+**NOT** requisitioned to the agent's workstation. It now names the **shared station gear the class draws on**:
+
+- **`kit` = informational + a gate, never a placement.** It is shown in the dossier as "DRAWS ON STATION GEAR"
+  with a live present/missing check against the ACTUAL station props (`World.stationCaps`), and it gates the
+  class's **skill availability** (skills are recipes; the gear they need is the station's shared gear).
+- **Removed entirely:** `requisitionKit` / `setPendingKit` / `deliverPendingKit` / the `pendingKit` field /
+  `Build.requisitionForAgent` / the `onAgentRoomAssigned` room-assign hook + summon-time placement + its toasts.
+  No dead code (janitor law).
+- **Skill availability is now STATION-WIDE.** The interactive run gates a specialist's class skills on the
+  station's shared gear (`stationPlaced` = `World.stationCaps()`), not the agent's desk-only room — so a
+  specialist with just a desk still gets its class skills when the station has the required gear. **Tool** reach
+  stays room-scoped (`resolveTools` untouched); the overseer/dispatch path grants the worker its office.
+- **Summon copy:** no "kit arrives when it gets a workstation." If the station lacks gear the class draws on, one
+  honest line ("station lacks … — add … in REFIT for its full toolkit"); otherwise nothing.
+
+The "kit / STANDARD ISSUE KIT / requisition" design in the sections below is **superseded** by this note; it is
+kept for history. Read `kit` everywhere below as "shared station gear the class draws on."
+
 ## Why
 
 Today a "class" (specialty) is ~a paragraph: `purpose` + `manual` text injected into the
@@ -18,10 +43,12 @@ Recruitment Bay and the backend, so lead-summoned specialists are kitted too.
 
 ## Laws (do not violate)
 
-1. **Object = capability stays honest.** Class kit is REAL prop placement at the new
-   agent's workstation via the validated path (`Build.requisition` pattern —
-   `frontend/app/build.js:1342` → `findPlaceableTile` → `station.addProp`, same hooks
-   as hand placement). Never a flag.
+1. **Object = capability stays honest — SHARED at station level (corrected 2026-07-02).**
+   A class's `kit` is the **shared station gear it draws on under the overseer**, not per-agent
+   props. It is informational (dossier "DRAWS ON STATION GEAR" with a live present/missing
+   check) and gates the class's **skill availability** against the station's real gear
+   (`World.stationCaps`). The only per-agent object is the desk. Never a per-agent placement,
+   never a flag. (Superseded the original "REAL prop placement at the new agent's workstation".)
 2. **Defaults, never locks** (sandbox law). Summon *applies* class model/effort/skills
    to the agent record; the user can override everything afterward, per agent.
 3. **Additive only** in `shared/events.js` / `shared/schema.js` (owned contract —

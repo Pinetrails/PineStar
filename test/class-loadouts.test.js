@@ -1,14 +1,18 @@
-/* node test/class-loadouts.test.js — Class Loadouts S1 (the spine).
+/* node test/class-loadouts.test.js — Class Loadouts (the shared-gear model).
 
-   A class = model tier + reasoning effort + skill package + standard-issue KIT, applied at summon and honored
-   backend-side. Two halves, matching kitout.test.js's discipline:
+   A class = model tier + reasoning effort + skill package + the SHARED STATION GEAR it draws on. Andrew's rule
+   (2026-07-02): "the only prop a specialized or secondary agent needs is its own desk; it's allowed to use other
+   props with the overseer." So a class's `kit` is NOT issued per-agent — it names shared station gear used under
+   the overseer (informational in the dossier, and the gate for the class's skill availability). Two halves,
+   matching kitout.test.js's discipline:
      1. GROUNDED-CATALOG unit tests (real assertions on pure modules): the shared catalog is well-formed and
         HONEST — every kit objectType is a real CAP_REGISTRY key, every skill slug is a real bundled recipe, and
-        every skill's `requires` is satisfied by its class's kit (Law 4: grounded classes only).
+        every skill's `requires` is satisfied by its class's declared gear (Law 4: grounded classes only).
      2. UNIT tests for the wiring the backend depends on: catalog.compose(agentSkills) is an ADD-only union that
-        respects the budget with the package first; the sidecar roster passes skills/effort through.
+        respects the budget with the package first; the sidecar roster passes skills/effort through; and a
+        specialist's skills gate on STATION-WIDE gear (not its desk-room) so a desk-only specialist still gets them.
      3. SOURCE-LEVEL invariants for the browser-only summon path (app.js / build.js are IIFEs over live DOM, so —
-        like kitout.test.js — we lock the honesty-critical wiring by reading the source). */
+        like kitout.test.js — we lock the honesty-critical wiring by reading the source): NO per-agent placement. */
 'use strict';
 const A = require('./_assert.js');
 const fs = require('fs');
@@ -241,11 +245,11 @@ A.ok(/rosterIdent && rosterIdent\.reasoningEffort/.test(idx), 'reasoning-effort 
 const app = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
 const build = fs.readFileSync(path.join(__dirname, '../frontend/app/build.js'), 'utf8');
 
-// summonAgent applies the loadout onto the record + requisitions the kit
+// summonAgent applies the loadout onto the record (model/effort/skills). Under the shared-gear model it does NOT
+// place any per-agent props — the class's `kit` is shared station gear it draws on under the overseer.
 A.ok(/applyLoadout\(a, spec, pin\)/.test(app), 'summon applies the class loadout (applyLoadout) with the explicit bay pin');
-A.ok(/requisitionKit\(a, spec\)/.test(app), 'summon requisitions the class kit');
 // applyLoadout resolves the tier via the seam, sets effort + per-agent skills
-const loadoutSeg = app.slice(app.indexOf('function applyLoadout('), app.indexOf('function requisitionKit('));
+const loadoutSeg = app.slice(app.indexOf('function applyLoadout('), app.indexOf('function allocAgentId('));
 A.ok(/resolveTierModel\(/.test(loadoutSeg), 'applyLoadout resolves the model tier through the seam');
 A.ok(/a\.reasoningEffort\s*=\s*spec\.reasoningEffort/.test(loadoutSeg), 'applyLoadout sets the applied reasoning effort');
 // DEFAULTS-NEVER-LOCKS at the creation seam: an EXPLICIT bay model/effort pick (agent-model-select's
@@ -254,27 +258,26 @@ A.ok(/if\s*\(!\(pin\s*&&\s*pin\.model\)\)/.test(loadoutSeg), 'applyLoadout: expl
 A.ok(/spec\.reasoningEffort\s*&&\s*!\(pin\s*&&\s*pin\.effort\)/.test(loadoutSeg), 'applyLoadout: explicit bay effort pin beats the class effort default');
 A.ok(/a\.skills\s*=\s*out/.test(loadoutSeg), 'applyLoadout records the per-agent skill package');
 
-// requisitionKit degrades gracefully (collects skipped, never throws) and goes through Build.requisitionForAgent
-const kitSeg = app.slice(app.indexOf('function requisitionKit('), app.indexOf('function requisitionKit(') + 1400);
-A.ok(/Build\.requisitionForAgent/.test(kitSeg), 'the kit is placed via Build.requisitionForAgent (the real path)');
-A.ok(/skipped\.push/.test(kitSeg), 'requisitionKit collects what did not fit (graceful degrade, no crash)');
-A.ok(/try\s*\{[\s\S]*?catch/.test(kitSeg), 'requisitionKit wraps each placement so one failure never breaks summon');
+// SHARED-GEAR MODEL (Andrew's rule): the per-agent placement machinery is GONE — no kit is issued to an agent.
+// The only per-agent object is its desk; capabilities are station-level shared gear used under the overseer.
+A.ok(!/requisitionKit/.test(app), 'app.js no longer requisitions a per-agent kit (shared-gear model)');
+A.ok(!/deliverPendingKit/.test(app), 'app.js no longer defers/delivers a per-agent kit (shared-gear model)');
+A.ok(!/pendingKit/.test(app), 'the pendingKit field is gone from serialize/rehydrate/exports (no per-agent kit state)');
+A.ok(!/requisitionForAgent/.test(build), 'build.js no longer exposes per-agent prop placement (Build.requisitionForAgent removed)');
+A.ok(!/onAgentRoomAssigned/.test(build), 'build.js no longer fires a room-assign kit-delivery hook (dead code removed)');
 
-// pushRoster + serialize carry the additive fields to the backend + to disk
+// the summon loadout beat is honest about shared gear: it names the STATION GEAR the class draws on that is
+// MISSING (add it in REFIT), and never claims a kit "arrives" at a per-agent workstation.
+const summarySeg = app.slice(app.indexOf('function loadoutSummary('), app.indexOf('function loadoutSummary(') + 900);
+A.ok(/stationGearTypes\(\)/.test(summarySeg), 'loadoutSummary checks the class gear against the STATION (station-wide), not the agent room');
+A.ok(/add .* in REFIT/.test(summarySeg), 'loadoutSummary tells the Commander to add missing station gear in REFIT');
+A.ok(!/arrives when it gets a workstation/.test(app), 'the summon copy no longer promises a kit arrives at a workstation');
+// stationGearTypes reads the station-wide caps (the shared source the run\'s skill availability uses)
+A.ok(/function stationGearTypes\(\)[\s\S]{0,200}World\.stationCaps/.test(app), 'stationGearTypes reads World.stationCaps (station-wide shared gear)');
+
+// pushRoster + serialize carry the additive fields to the backend + to disk (skills + effort survive the rework)
 A.ok(/skills:\s*Array\.isArray\(a\.skills\)\s*\?\s*a\.skills\s*:\s*\[\][\s\S]{0,80}reasoningEffort:\s*a\.reasoningEffort/.test(app),
   'pushRoster sends per-agent skills + reasoningEffort to /api/roster');
-
-// build.requisitionForAgent is the REAL validated placement path, room-scoped, idempotent, non-throwing
-A.ok(/function requisitionForAgent\(/.test(build), 'Build.requisitionForAgent exists');
-const rfa = build.slice(build.indexOf('function requisitionForAgent('), build.indexOf('const api = {', build.indexOf('function requisitionForAgent(')));
-A.ok(/findPlaceableTileInRoom\(/.test(rfa), 'requisitionForAgent places at a VALIDATED tile scoped to the agent room');
-A.ok(/st\.addProp\(/.test(rfa), 'requisitionForAgent goes through the real station.addProp (object=capability stays honest)');
-A.ok(/no-room/.test(rfa), 'requisitionForAgent degrades honestly when the agent has no workstation yet');
-A.ok(/already/.test(rfa), 'requisitionForAgent is idempotent — it never stacks a cap already in the room');
-A.ok(/requisitionForAgent\s*[},]/.test(build.slice(build.indexOf('const api = {'))), 'requisitionForAgent is exported on the Build api');
-
-// the room-scoped tile finder respects the room boundary (roomAt match)
-A.ok(/function findPlaceableTileInRoom\([\s\S]*?roomAt\(tx, ty\) === room\.id/.test(build), 'findPlaceableTileInRoom stays inside the agent room');
 
 /* ---------- team.summon class list is composed from the shared catalog (no hardcoded prose) ---------- */
 const orch = fs.readFileSync(path.join(__dirname, '../sidecar/tools/builtin/orchestration.js'), 'utf8');
@@ -282,52 +285,39 @@ A.ok(/deps\.classes[\s\S]{0,120}\.map\(c => c && c\.id\)/.test(orch), 'team.summ
 A.ok(/SPECIALIST_CLASSES\s*=\s*\(sharedSpecialties\.BUILTINS/.test(idx), 'the sidecar composes the class list from the shared catalog');
 A.ok(/classes:\s*SPECIALIST_CLASSES/.test(idx), 'the shared class list is injected into the orchestration tools');
 
-/* ---------- 4. KIT-ARRIVAL GAP: deferred kit delivery on room-assign (adversarial review fix) ---------- */
-// 4a. FUNCTIONAL (real WorldModel): the room-arrival seam + the idempotence PREMISE requisitionForAgent relies on.
-// A fresh agent has NO room until a bay bound to it is placed; once placed, agentRoomId resolves and bayObjects
-// dedups a capability — so re-requisitioning a cap already in the room is a no-op (the {already:true} guard holds).
-const WorldModel = require('../frontend/app/worldmodel.js');
+/* ---------- 4. SHARED-GEAR SKILL AVAILABILITY: a desk-only specialist still gets its class skills ---------- */
+// THE POINT of the rework: a specialist owns only a desk, but its SKILL PACKAGE (recipes) must reach its runs when
+// the STATION has the required shared gear. So the interactive run gates skills on STATION-WIDE gear, not the
+// agent's own (desk-only) room — while TOOL reach stays room-scoped (resolveTools untouched).
+// 4a. the browser sends a station-wide gear list (World.stationCaps) alongside the room-scoped `placed`.
+A.ok(/stationCaps:/.test(fs.readFileSync(path.join(__dirname, '../frontend/app/world.js'), 'utf8')),
+  'World exposes stationCaps() — every capability placed anywhere on the station (station-wide shared gear)');
+const chat = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
+A.ok(/stationPlaced:\s*\(typeof World[\s\S]{0,80}World\.stationCaps\(\)/.test(chat),
+  'the run sends stationPlaced = World.stationCaps() for SKILL availability (tools stay `placed`/room-scoped)');
+const harness = fs.readFileSync(path.join(__dirname, '../frontend/app/harness.js'), 'utf8');
+A.ok(/reqBody\.stationPlaced = stationPlaced/.test(harness), 'harness.chat forwards stationPlaced to /api/run');
+// 4b. the sidecar parses stationPlaced, threads it as stationObjects, and unions it into the skill placedTypes ONLY.
+A.ok(/const stationObjects = \(body && Array\.isArray\(body\.stationPlaced\)\)/.test(idx), 'the sidecar parses body.stationPlaced into stationObjects');
+A.ok(/stationObjects,\s*\/\/ Class Loadouts/.test(idx), 'stationObjects is threaded into runOnce');
+const composeSeg = idx.slice(idx.indexOf('const sRoom = station.rooms'), idx.indexOf('const sRoom = station.rooms') + 2000);
+A.ok(/o\.stationObjects[\s\S]{0,120}roomTypes\.concat\(o\.stationObjects\)/.test(composeSeg),
+  'skill availability unions the room objects with the STATION-WIDE gear (a desk-only specialist still gets its class skills)');
+A.ok(/placedTypes: skillPlacedTypes/.test(composeSeg), 'skillsCatalog.compose gates on the shared-gear placedTypes');
+// and TOOL reach is still resolved from the room only (NOT widened by stationObjects) — the guard the task requires.
+A.ok(/const resolved = resolveTools\(agentId, station\)/.test(idx), 'resolveTools still projects TOOLS from the agent room only (tool reach unchanged)');
+A.ok(!/resolveTools\([^)]*stationObjects/.test(idx), 'stationObjects is NOT fed into the tool projection (only skills widen to shared gear)');
+// 4c. FUNCTIONAL: catalog.compose availability with the shared-gear union — a package skill that requires cabinet
+// composes when the STATION has a cabinet even though the agent's own room is desk (compute) only.
 {
-  const m = WorldModel.create ? WorldModel.create() : null;
-  A.ok(m, 'WorldModel.create() loads headless');
-  // a fresh agent with no bay has NO room -> requisitionForAgent would return no-room -> kit goes pending
-  A.eq(m.agentRoomId('kituser'), null, 'a fresh agent (no bay) has no room — kit cannot arrive at summon');
-  const roomId = m.spawnRoomId();   // the default station ships one hab room; use it (a real room the bay can land in)
-  A.ok(roomId, 'the default station has a room the agent can be seated in');
-  const bay = m.addProp({ t: 'bay', x: 3, y: 3, w: 2, h: 2, agentId: 'kituser' });
-  A.ok(bay.ok, 'a bay bound to the agent places');
-  A.eq(m.agentRoomId('kituser'), roomId, 'binding a bay gives the agent a room — the deferred-delivery trigger');
-  // place the canonical cabinet prop (war_intelcab -> cabinet) IN the room; bayObjects should surface 'cabinet'
-  const cab = m.addProp({ t: 'war_intelcab', x: 6, y: 6, w: 1, h: 1 });
-  A.ok(cab.ok, 'a cabinet prop places in the room');
-  const caps1 = m.bayObjects('kituser');
-  A.ok(caps1.indexOf('cabinet') >= 0, 'bayObjects surfaces the placed cabinet capability');
-  // idempotence premise: a SECOND cabinet in the same room does not double the capability -> requisitionForAgent's
-  // `already` short-circuit (which reads bayObjects) correctly prevents a duplicate placement.
-  m.addProp({ t: 'safe', x: 8, y: 8, w: 1, h: 1 });   // also maps to 'cabinet'
-  const caps2 = m.bayObjects('kituser').filter(c => c === 'cabinet');
-  A.eq(caps2.length, 1, 'a capability is deduped in a room — the idempotent `already` guard never stacks duplicates');
+  const SKlib = [{ slug: 'deskskill', name: 'DeskSkill', description: '', category: 'A', requires: ['cabinet'], default: false, body: 'D' }];
+  // agent room desk-only (no cabinet) -> the class package alone can't force the skill in (still availability-gated)
+  A.eq(catalog.compose(SKlib, { placedTypes: [], agentSkills: ['deskskill'] }).indexOf('DeskSkill'), -1,
+    'a class skill stays gated: no cabinet anywhere -> the recipe is not offered');
+  // union the STATION\'s cabinet in (what the sidecar does) -> the desk-only specialist now gets its class skill
+  A.ok(catalog.compose(SKlib, { placedTypes: ['cabinet'], agentSkills: ['deskskill'] }).indexOf('DeskSkill') >= 0,
+    'once the STATION has the gear, the desk-only specialist\'s class skill composes (the whole point)');
 }
-
-// 4b. SOURCE: summon records the undelivered kit as pendingKit; it persists + rehydrates + is exported for delivery.
-A.ok(/setPendingKit\(a, pending\)/.test(app), 'requisitionKit records the still-missing (retryable) kit as pendingKit');
-A.ok(/KIT_RETRYABLE\s*=\s*\{[^}]*'no-room'/.test(app), 'only retryable misses (no-room/no-valid-tile/…) go pending — permanent ones never nag');
-A.ok(/function deliverPendingKit\(agentId\)/.test(app), 'App.deliverPendingKit drains an agent\'s pending kit once it has a room');
-const dpk = app.slice(app.indexOf('function deliverPendingKit('), app.indexOf('function deliverPendingKit(') + 1200);
-A.ok(/Build\.requisitionForAgent/.test(dpk), 'deliverPendingKit goes through the SAME validated placement path');
-A.ok(/res\.ok\)\s*delivered\.push/.test(dpk), 'deliverPendingKit treats ok (placed OR already-present) as delivered — idempotent');
-A.ok(/KIT_RETRYABLE\[res\.reason\]\)\s*stillPending\.push/.test(dpk), 'deliverPendingKit re-queues only still-retryable misses; drops permanent ones');
-A.ok(/pendingKit:\s*Array\.isArray\(a\.pendingKit\)/.test(app), 'serializeAgentLite persists pendingKit (survives reload)');
-A.ok(/pendingKit:\s*Array\.isArray\(s\.pendingKit\)/.test(app), 'rehydrateRoster restores pendingKit');
-A.ok(/deliverPendingKit,/.test(app), 'App exports deliverPendingKit');
-A.ok(/onAgentRoomAssigned:\s*deliverPendingKit/.test(app), 'Build.init wires deliverPendingKit as the room-assign hook');
-A.ok(/for \(const a of liveAgents\(\)\) if \(Array\.isArray\(a\.pendingKit\)[\s\S]{0,60}deliverPendingKit\(a\.id\)/.test(app),
-  'on load, any resumed agent with a room drains its pending kit');
-// build.js fires the room-assign hook after BOTH pickers bind an agent (bay + workstation)
-const bayOk = build.slice(build.indexOf("#bay-ok"), build.indexOf("#bay-ok") + 700);
-A.ok(/onAgentRoomAssigned\(res\.agentId\)/.test(bayOk), 'the BAY picker fires onAgentRoomAssigned after a successful bind');
-const wsOk = build.slice(build.indexOf("#ws-ok"), build.indexOf("#ws-ok") + 700);
-A.ok(/onAgentRoomAssigned\(res\.agentId\)/.test(wsOk), 'the WORKSTATION picker fires onAgentRoomAssigned after a successful bind');
 
 /* ---------- 5. EFFORT PRECEDENCE: a dispatched worker runs at its OWN class effort, not the lead's ---------- */
 // runOnce precedence: explicit run-option > roster (class) > provider default (source).
@@ -363,13 +353,22 @@ const sui = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js')
 /* ---------- S3a. DOSSIER: kit + skill package render from LIVE sources (no hardcoded prop labels) ---------- */
 // the kit block resolves each objectType's prop label from the LIVE catalog (PropSprites.CATALOG via
 // WorldModel.CAP_PROP_MAP) and its grant from WorldModel's owned CAP_LABEL — never a hardcoded prop name.
-A.ok(/function kitBlockHTML\(s\)/.test(mkt), 'the dossier has a STANDARD ISSUE KIT block');
-A.ok(/STANDARD ISSUE KIT/.test(mkt), 'the dossier labels the kit section "STANDARD ISSUE KIT"');
+A.ok(/function kitBlockHTML\(s\)/.test(mkt), 'the dossier has a DRAWS ON STATION GEAR block');
+A.ok(/DRAWS ON STATION GEAR/.test(mkt), 'the dossier labels the gear section "DRAWS ON STATION GEAR" (shared-gear model)');
+A.ok(!/STANDARD ISSUE KIT/.test(mkt), 'the dossier no longer calls the gear a per-agent "STANDARD ISSUE KIT"');
+A.ok(!/requisitioned at its workstation/.test(mkt), 'the dossier no longer claims the gear is requisitioned at a per-agent workstation');
 A.ok(/function kitPropLabel\(objType\)/.test(mkt), 'kit labels resolve through kitPropLabel (from the live catalog)');
 const kpl = mkt.slice(mkt.indexOf('function kitPropLabel('), mkt.indexOf('function kitPropLabel(') + 900);
 A.ok(/PropSprites\.CATALOG/.test(kpl), 'kitPropLabel reads the LIVE PropSprites catalog for the prop label (never hardcoded)');
 A.ok(/CAP_PROP_MAP/.test(kpl), 'kitPropLabel maps the objectType through WorldModel.CAP_PROP_MAP (the owned source)');
 A.ok(/WorldModel/.test(mkt) && /CAP_LABEL/.test(mkt), 'the dossier resolves capability grants from WorldModel.CAP_LABEL (the owned power-word source)');
+// PRESENT/MISSING: the gear block checks each objectType against the ACTUAL station props (World.stationCaps),
+// rendering present gear as available and missing gear as an honest dim "not on station — add in REFIT".
+const kbh = mkt.slice(mkt.indexOf('function kitBlockHTML('), mkt.indexOf('function kitBlockHTML(') + 1200);
+A.ok(/stationGearSet\(\)/.test(kbh), 'the gear block checks present/missing against the live station');
+A.ok(/function stationGearSet\(\)[\s\S]{0,200}World\.stationCaps/.test(mkt), 'stationGearSet reads World.stationCaps (the ACTUAL station props)');
+A.ok(/not on station/.test(kbh), 'missing gear renders an honest "not on station" state');
+A.ok(/mkt-kit-missing/.test(kbh), 'missing gear is dimmed via the mkt-kit-missing state');
 // the SKILL PACKAGE block resolves names/descriptions from the /api/skills catalog the SKILLS window uses.
 A.ok(/function skillPackageHTML\(s\)/.test(mkt), 'the dossier has a SKILL PACKAGE block');
 A.ok(/SKILL PACKAGE/.test(mkt), 'the dossier labels the skills section "SKILL PACKAGE"');
@@ -386,7 +385,8 @@ A.ok(/applied at summon/.test(mkt), 'the EFFORT row is honest — the reasoning 
 A.ok(/let buildKit = \[\], buildSkills = \[\], buildEffort = null/.test(mkt), 'the custom builder tracks picked kit/skills/effort');
 A.ok(/function buildKitChipsHTML\(\)/.test(mkt), 'the builder renders kit picker chips');
 A.ok(/KIT_PICKABLE = \['dish', 'cabinet', 'notebook', 'workbench', 'studio'\]/.test(mkt),
-  'the kit picker offers the auto-requisitionable caps only (computer/connector are manual-bind, excluded)');
+  'the gear picker offers the shareable station caps only (computer/connector are per-agent manual-bind, excluded)');
+A.ok(/STATION GEAR IT DRAWS ON/.test(mkt), 'the custom builder labels the gear picker "STATION GEAR IT DRAWS ON" (shared-gear, informational)');
 A.ok(/data-skill=/.test(mkt) && /loadSkillCatalog\(\)\.then/.test(mkt.slice(mkt.indexOf('function wireBuildForm'))),
   'the skill picker is populated from the live skill catalog');
 A.ok(/data-effort=/.test(mkt), 'the builder has a reasoning-effort selector');
