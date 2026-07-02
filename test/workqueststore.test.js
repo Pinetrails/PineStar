@@ -43,7 +43,9 @@ global.U = {
   }
 };
 const rerenders = [];
-global.StationUI = { rerender: k => rerenders.push(k) };
+const notifs = [];   // capture the honest stalled-build beat (StationUI.notify) — must be the neutral WARN family, never gold
+global.StationUI = { rerender: k => rerenders.push(k), notify: (txt, cls) => notifs.push({ txt, cls }) };
+global.SlagLog = require('../frontend/app/slaglog.js');   // the REAL post-mortem copy the stalled beat reuses
 
 const { WorkQuestStore } = require('../frontend/app/workqueststore.js');
 const start = (agentId, runId) => (listeners['agent.run.start'] || []).forEach(fn => fn({ agentId, runId, trigger: 'directive' }));
@@ -75,13 +77,55 @@ qs = WorkQuestStore.quests();
 A.eq(qs.find(q => q.id === gapId).status, 'done', 'the run finishing completes the build (no claim button)');
 A.ok(/^built —/.test(qs.find(q => q.id === gapId).title), 'a completed build reads as built');
 
-/* ---------- a runnable/workflow build → a single run step; a non-done end never completes ---------- */
+/* ---------- a runnable/workflow build → a single run step; a non-done end STALLS (never falsely completes) ---------- */
 const runId = WorkQuestStore.accept({ title: 'the price watcher', build: { kind: 'workflow', recipeId: null } });
 start('agent', 'run-b');
+notifs.length = 0;
 end('agent', 'run-b', 'max_iters');   // the run stopped, didn't finish clean
-A.eq(WorkQuestStore.quests().find(q => q.id === runId).status, 'open', 'a run that did NOT finish clean does not complete the build');
-end('agent', 'run-b', 'done');
-A.eq(WorkQuestStore.quests().find(q => q.id === runId).status, 'done', 'a clean finish completes it');
+let bq = WorkQuestStore.quests().find(q => q.id === runId);
+A.eq(bq.status, 'open', 'a run that did NOT finish clean does not complete the build (no false done)');
+A.ok(/^⚑ stalled:/.test(bq.title), 'a non-done run end marks the build STALLED, never built');
+A.ok(/looped out/.test(bq.desc), 'the stalled card names the reason honestly (max_iters → looped out)');
+A.eq(notifs.length, 1, 'a stalled build surfaces exactly ONE honest player-facing beat');
+A.eq(notifs[0].cls, 'warn', 'the stalled beat uses the neutral WARN family — NEVER the gold celebration');
+A.ok(/price watcher/.test(notifs[0].txt), 'the beat names the build and reuses SlagLog post-mortem copy');
+
+/* ---------- honesty law: a stall must NEVER mark an unfinished step complete ---------- */
+const gapId2 = WorkQuestStore.accept({ title: 'the second brief', build: { kind: 'recipe', recipeId: 'brief' } });
+start('agent', 'run-g');   // ticks the gap step (1 of 2) + binds
+A.ok(/1 of 2/.test(WorkQuestStore.quests().find(q => q.id === gapId2).desc), 'the launch ticked only the gap step');
+end('agent', 'run-g', 'error');   // the run errored before completing the launch step
+const eq2 = WorkQuestStore.quests().find(q => q.id === gapId2);
+A.ok(/^⚑ stalled:/.test(eq2.title) && eq2.status === 'open', 'an errored run stalls the build without completing it');
+A.ok(/errored out/.test(eq2.desc), 'the stalled card names the error reason');
+
+/* ---------- a stalled build is RE-RUNNABLE: a fresh launch re-binds + un-stalls it (engine-level) ---------- */
+(() => {
+  const st = require('../frontend/app/workquests.js');
+  const s2 = st.hydrate(null);
+  const rid = st.mint(s2, { title: 're-run me', recipeId: null }, 1);
+  st.bindRun(s2, rid, 'r1');
+  A.eq(st.stall(s2, rid, 'budget', 2), true, 'stall takes on a bound, open build');
+  A.eq(s2.quests[rid].runId, null, 'stall releases the run binding (a reused runId can never complete it)');
+  st.bindRun(s2, rid, 'r2');   // a fresh launch re-binds
+  A.eq(s2.quests[rid].stalledAt, null, 're-binding a fresh run un-stalls the build');
+  A.eq(st.tickStep(s2, rid, 'run', 3), true, 'the re-run can complete the build');
+  A.eq(s2.quests[rid].completedAt, 3, 'the re-run completes it honestly');
+})();
+
+/* ---------- a clean finish still completes exactly as before ---------- */
+const okId = WorkQuestStore.accept({ title: 'the clean build', build: { kind: 'workflow', recipeId: null } });
+start('agent', 'run-ok');
+end('agent', 'run-ok', 'done');
+A.eq(WorkQuestStore.quests().find(q => q.id === okId).status, 'done', 'a clean finish completes it (celebration path unchanged)');
+
+/* ---------- a human 'cancelled' resolves the build WITHOUT a nagging beat ---------- */
+const canId = WorkQuestStore.accept({ title: 'the cancelled build', build: { kind: 'workflow', recipeId: null } });
+start('agent', 'run-x');
+notifs.length = 0;
+end('agent', 'run-x', 'cancelled');
+A.eq(WorkQuestStore.quests().find(q => q.id === canId).status, 'open', 'a cancelled build never falsely completes');
+A.eq(notifs.length, 0, 'a deliberate human cancel resolves quietly — no nag beat (anti-nag law)');
 
 /* ---------- a summoned worker's run never claims a build ---------- */
 const wId = WorkQuestStore.accept({ title: 'another build', build: { kind: 'workflow', recipeId: null } });

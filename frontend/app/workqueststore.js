@@ -79,16 +79,44 @@ const WorkQuestStore = (() => {
     WorkQuests.bindRun(state, id, p.runId);
     save(); poke();
   }
+  // a terminal reason other than 'done' means the bound run ended without finishing. The honest reasons the
+  // sidecar emits (slaglog.js / runstore REASONS): error | budget | max_iters | refusal are FAILURES; the
+  // build stalled. 'cancelled' is a deliberate human stop — resolve it too, but quietly (never nag).
+  const STALL_REASONS = { error: 1, budget: 1, max_iters: 1, refusal: 1 };
   function onRunEnd(p) {
     if (!ready() || !p) return;
-    if (p.reason !== 'done') return;                              // only a clean finish completes the build
     const id = WorkQuests.questForRun(state, p.runId);
-    if (!id) return;
-    // complete every remaining open step ('launch' + 'run') → the quest flips DONE (QuestState celebrates).
+    if (!id) return;                                              // no bound build for this run — nothing to do
+    if (p.reason === 'done') {
+      // complete every remaining open step ('launch' + 'run') → the quest flips DONE (QuestState celebrates).
+      const q = state.quests[id];
+      let changed = false;
+      if (q && Array.isArray(q.steps)) for (const st of q.steps) { if (!st.done && WorkQuests.tickStep(state, id, st.key, nowMs())) changed = true; }
+      if (changed) { save(); poke(); }
+      return;
+    }
+    // NON-done terminal end → resolve the bound quest so it never orphans open with zero feedback. Mark it
+    // STALLED (never mark steps complete — the honesty law) and release the run binding so a fresh "build it"
+    // re-runs it clean. A failure surfaces ONE honest, neutral beat naming the reason (the warn family — never
+    // the gold celebration). A human 'cancelled' resolves silently (a deliberate stop must not nag).
     const q = state.quests[id];
-    let changed = false;
-    if (q && Array.isArray(q.steps)) for (const st of q.steps) { if (!st.done && WorkQuests.tickStep(state, id, st.key, nowMs())) changed = true; }
-    if (changed) { save(); poke(); }
+    if (!q || q.completedAt != null || q.dismissedAt != null || q.stalledAt != null) return;
+    if (!WorkQuests.stall(state, id, p.reason, nowMs())) return;
+    save(); poke();
+    if (STALL_REASONS[p.reason]) stallBeat(p.reason, q.title);
+  }
+
+  // the one honest, player-facing beat for a stalled build — reuses SlagLog's real post-mortem copy (title +
+  // fix), routed through the SHARED StationUI.notify toast in the neutral WARN family (no gold, no new toast
+  // system). Falls back to a plain reason line if SlagLog isn't loaded.
+  function stallBeat(reason, title) {
+    let msg;
+    try {
+      const d = (typeof SlagLog !== 'undefined' && SlagLog.diagnose) ? SlagLog.diagnose(reason, {}) : null;
+      if (d) msg = 'build “' + (title || 'a build') + '” ' + d.title + ' — ' + d.fix;
+    } catch (_) {}
+    if (!msg) msg = 'build “' + (title || 'a build') + '” stopped (' + reason + ') — adjust and re-run.';
+    try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(msg, 'warn'); } catch (_) {}
   }
 
   // sync() is a no-op resolver (work quests advance on the run bus events, not a re-read) — kept for the shared
