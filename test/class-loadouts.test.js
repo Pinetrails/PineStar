@@ -52,6 +52,101 @@ for (const b of builtins) {
   }
 }
 
+/* ---------- 1b. S2 CONTENT: the full 18-class roster, seals/codes, prompt-size sanity ---------- */
+const classicons = require('../frontend/app/classicons.js');
+// the roster grew from 11 to 18 in S2 (7 new: broker/publicist/tutor/auditor/bookkeeper/translator/herald)
+A.eq(builtins.length, 18, 'the S2 catalog ships all 18 classes');
+const NEW_CLASSES = ['broker', 'publicist', 'tutor', 'auditor', 'bookkeeper', 'translator', 'herald'];
+const byId = new Map(builtins.map(b => [b.id, b]));
+for (const id of NEW_CLASSES) {
+  const b = byId.get(id);
+  A.ok(!!b, 'new class present in catalog: ' + id);
+  if (!b) continue;
+  // every new class carries the full loadout + presentation fields (nothing half-authored)
+  for (const f of ['name', 'emoji', 'tagline', 'blurb', 'purpose', 'manual', 'persona', 'model', 'accent']) {
+    A.ok(b[f] && String(b[f]).length > 0, id + ' has a non-empty ' + f);
+  }
+  A.ok(['reasoning', 'balanced', 'fast'].indexOf(b.model) >= 0, id + ' has a real model tier: ' + b.model);
+  A.ok(Array.isArray(b.starters) && b.starters.length === 3, id + ' ships exactly 3 starters');
+  A.ok(Array.isArray(b.kit) && b.kit.length > 0, id + ' has a non-empty kit (grounded class)');
+  A.ok(Array.isArray(b.skills) && b.skills.length > 0, id + ' ships at least one skill');
+}
+// unique ids + unique 3-letter class codes (a code collision would mis-stamp a coin)
+const ids = builtins.map(b => b.id);
+A.eq(new Set(ids).size, ids.length, 'every class id is unique');
+const codes = builtins.map(b => classicons.code(b.id));
+for (const c of codes) A.ok(/^[A-Z0-9]{3}$/.test(c), 'class code is a real 3-letter stamp: ' + c);
+A.eq(new Set(codes).size, codes.length, 'every class code is unique (no coin collision): ' + codes.join(','));
+// EVERY catalog id has a bespoke seal, and EVERY seal maps to a catalog id (no orphans either way)
+for (const b of builtins) A.ok(!!classicons.svg(b.id), 'class has a bespoke seal icon: ' + b.id);
+const iconIds = Object.keys(classicons.ICONS);
+const catIds = new Set(ids);
+for (const iid of iconIds) A.ok(catIds.has(iid), 'seal icon maps to a real catalog class (no orphan seal): ' + iid);
+A.eq(iconIds.length, builtins.length, 'exactly one seal per class (' + iconIds.length + ' seals, ' + builtins.length + ' classes)');
+// every seal is currentColor-themed SVG (rides the class accent, matches the engraved-coin style)
+for (const iid of iconIds) {
+  const svg = classicons.ICONS[iid];
+  A.ok(/^<svg/.test(svg) && /currentColor/.test(svg), 'seal ' + iid + ' is a currentColor SVG');
+}
+
+/* ---------- 1c. PROMPT-SIZE SANITY: manuals/purposes are injected every run — keep them tight ---------- */
+for (const b of builtins) {
+  A.ok(b.manual.length <= 1000, b.id + ' manual is prompt-tight (<=1000 chars): ' + b.manual.length);
+  A.ok(b.purpose.length <= 450, b.id + ' purpose is prompt-tight (<=450 chars): ' + b.purpose.length);
+  A.ok(b.manual.length > 200, b.id + ' manual is a real playbook, not a stub: ' + b.manual.length);
+}
+
+/* ---------- 1d. TOOL-REFERENTIAL HONESTY: a manual may only name tools its kit grants ---------- */
+// the real wire names a manual might reference, each owned by exactly one kit objectType (registry.js).
+// If a manual names one of these, the class MUST carry the granting object — else the playbook is lying.
+const TOOL_OWNER = {
+  'web_search': 'dish', 'web_fetch': 'dish',
+  'fs.read': 'cabinet', 'fs.write': 'cabinet', 'fs.append': 'cabinet', 'fs.edit': 'cabinet', 'fs.search': 'cabinet',
+  'shell.exec': 'workbench', 'verify.run': 'workbench',
+  'image_generate': 'studio', 'image_analyze': 'studio',
+  'notebook.write': 'notebook', 'notebook.read': 'notebook', 'notebook.feedback': 'notebook', 'recall_conversation': 'notebook',
+  'spotify_search': 'jukebox', 'spotify_play': 'jukebox',
+  'team.dispatch': 'orchestrator', 'team.summon': 'orchestrator', 'routine.create': 'orchestrator'
+};
+// confirm every owner claim is actually true in the registry (guards the test's own map)
+const TOOL_TO_TYPE = {};
+for (const [type, grants] of Object.entries(CAP_REGISTRY)) for (const g of grants) TOOL_TO_TYPE[g.tool] = type;
+for (const [tool, owner] of Object.entries(TOOL_OWNER)) A.eq(TOOL_TO_TYPE[tool], owner, 'test map matches registry: ' + tool + ' -> ' + owner);
+for (const b of builtins) {
+  const kit = new Set(b.kit);
+  const text = b.manual + ' ' + b.purpose;
+  for (const [tool, owner] of Object.entries(TOOL_OWNER)) {
+    // word-ish boundary so notebook.read doesn't match notebook.readx etc.
+    const re = new RegExp('(^|[^\\w.])' + tool.replace(/[.]/g, '\\.') + '(?![\\w])');
+    if (re.test(text)) A.ok(kit.has(owner), b.id + ' manual names "' + tool + '" and its kit grants "' + owner + '"');
+  }
+}
+
+/* ---------- 1e. every skill a class ships exists + its frontmatter parses ---------- */
+const referenced = new Set();
+for (const b of builtins) for (const s of b.skills) referenced.add(s);
+for (const slug of referenced) {
+  const sk = SLUGS.get(slug);
+  A.ok(!!sk, 'class-referenced skill exists in the library: ' + slug);
+  if (sk) {
+    A.ok(sk.name && sk.name.length > 0, slug + ' frontmatter parsed a name');
+    A.ok(sk.default === false || sk.default === true, slug + ' frontmatter parsed a boolean default');
+    A.ok(Array.isArray(sk.requires), slug + ' frontmatter parsed a requires[] array');
+    A.ok(sk.body && sk.body.length > 100, slug + ' has a real procedural body');
+  }
+}
+// the S2 signature skills are all present + honestly grounded (requires are real CAP types)
+const NEW_SKILLS = ['source-triangulation', 'feed-watch', 'adversarial-review-pass', 'price-watch',
+  'announcement-kit', 'study-plan', 'security-sweep', 'ledger-upkeep', 'translation-pass', 'digest-composer'];
+for (const slug of NEW_SKILLS) {
+  const sk = SLUGS.get(slug);
+  A.ok(!!sk, 'S2 new skill authored: ' + slug);
+  if (sk) {
+    A.eq(sk.default, false, slug + ' is default:false (arrives via a class package, not globally on)');
+    for (const r of (sk.requires || [])) A.ok(CAP_TYPES.has(r), slug + ' requires a real CAP_REGISTRY type: ' + r);
+  }
+}
+
 /* ---------- 2a. compose(agentSkills): ADD-only union, budget-ordered ---------- */
 // a tiny synthetic library so the assertions don't depend on the real recipes' bodies/requires.
 const SK = [
