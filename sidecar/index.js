@@ -2798,6 +2798,11 @@ async function handleRun(req, res) {
   } else if (body && body.workbench) {
     extraObjects = [{ instanceId: 'wb_placed', objectType: 'workbench' }];
   }
+  // Class Loadouts (shared-gear model): the STATION-WIDE gear the agent draws on under the overseer. Used ONLY for
+  // SKILL availability (a class's recipes need the station to have the gear, not the agent's desk-room) — the TOOL
+  // projection stays gated by extraObjects/`placed` (room-scoped). Absent (older client / headless) -> undefined,
+  // and the compose site falls back to the room's placedTypes exactly as before.
+  const stationObjects = (body && Array.isArray(body.stationPlaced)) ? placedTypesFrom(body.stationPlaced) : null;
   const usingCodex = providerUsesCodex(runProvider);   // Codex authenticates by OAuth token, not an API key
   // Desktop build: the key lives in runtimeKey (from the keychain, seeded via env at spawn and updatable
   // via /api/key). The browser build still sends body.key, which wins.
@@ -2890,6 +2895,7 @@ async function handleRun(req, res) {
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
+      stationObjects,  // Class Loadouts (shared-gear): station-wide gear for SKILL availability (tools stay room-scoped)
       reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
       recurring,      // salience signal: did the mint detector see this task shape before? (decision 3)
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
@@ -3372,11 +3378,20 @@ async function runOnce(o) {
   let preloadedSkillBlock = '';
   try {
     const sRoom = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
-    const placedTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
+    const roomTypes = ((sRoom && sRoom.objects) || []).map(x => x.objectType);
+    // Class Loadouts (shared-gear model): skills are RECIPES, and the gear they need is SHARED STATION gear used
+    // under the overseer — so a class's SKILL PACKAGE is available when the STATION has the required gear, even for
+    // a specialist that owns only its desk (its room objects would be compute-only). o.stationObjects (the browser's
+    // station-wide caps) drives availability when present; absent (headless worker / older client) we fall back to
+    // the room objects — which for an autonomous worker is already the full default office, so its skills still gate
+    // correctly. This does NOT widen tool reach (resolveTools stays room-scoped) — only which recipes are offered.
+    const skillPlacedTypes = (Array.isArray(o.stationObjects) && o.stationObjects.length)
+      ? Array.from(new Set(roomTypes.concat(o.stationObjects)))   // union: the agent's own room + the shared station gear
+      : roomTypes;
     // Class Loadouts S1: union the running agent's per-agent class SKILL PACKAGE (roster record) with the global
-    // prefs — ADD-only (see catalog.compose). Still gated by placedTypes + the budget; package composes first.
+    // prefs — ADD-only (see catalog.compose). Still gated by the station gear + the budget; package composes first.
     const agentSkills = (rosterIdent && Array.isArray(rosterIdent.skills)) ? rosterIdent.skills : [];
-    skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes, agentSkills: agentSkills });
+    skillBlock = skillsCatalog.compose(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: skillPlacedTypes, agentSkills: agentSkills });
   } catch (_) { /* a skill-injection hiccup must never break a run */ }
   // STARNET OPERATOR MANUAL: how the station works, so the agent can guide a stuck Commander. Interactive
   // only (same gate as capsummary — a Commander is present to help and the build UI exists). Sits right

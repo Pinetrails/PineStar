@@ -294,7 +294,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, workbench, placed, internal }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, workbench, placed, stationPlaced, internal }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -311,6 +311,11 @@ const Harness = (() => {
       // boolean; an old caller passing only `workbench` still grants the terminal.
       if (Array.isArray(placed) && placed.length) reqBody.placed = placed;
       else if (workbench) reqBody.workbench = true;
+      // Class Loadouts (shared-gear model): the STATION-WIDE gear the agent draws on under the overseer. Tools stay
+      // gated by `placed` (the agent's own desk-room), but a class's SKILL PACKAGE — recipes, not tools — becomes
+      // available when the STATION has the required shared gear (a specialist owns only a desk yet still gets its
+      // class skills). Sent separately so the tool projection is untouched; the sidecar uses it for skills only.
+      if (Array.isArray(stationPlaced) && stationPlaced.length) reqBody.stationPlaced = stationPlaced;
       if (!DESKTOP && !DEVMODE && provider !== 'codex') reqBody.key = key;   // dev/desktop/Codex keep secrets server-side
       res = await fetch('/api/run', {
         method: 'POST', signal,

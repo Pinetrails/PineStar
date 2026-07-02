@@ -2600,7 +2600,8 @@ const Chat = (() => {
     try {
       const { text: reply, error, endReason } = await Harness.chat({
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
-        placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
+        placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
+        stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
         onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),

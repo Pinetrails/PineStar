@@ -4813,6 +4813,22 @@ const World = (() => {
         out.push({ objectType: cap });
       }
       return out;
+    },
+    // STATION-WIDE gear (Class Loadouts shared-gear model): every capability objectType placed ANYWHERE on the
+    // station, deduped — the shared gear any agent draws on under the overseer, regardless of whose desk it is in.
+    // Used for SKILL availability only (a class's recipes need the station to have the gear, not the agent's own
+    // room). Tool reach stays room-scoped via heroCaps. Returns [{objectType}] like heroCaps; [] on any hiccup.
+    stationCaps: () => {
+      if (!station) return [];
+      const props = (station.doc && station.doc().props) || [];
+      const out = [], seen = {};
+      for (const p of props) {
+        const cap = station.capForProp ? station.capForProp(p.t) : null;
+        if (!cap || cap === 'computer' || cap === 'connector') continue;   // compute = freebie; connectors = server-side
+        if (seen[cap]) continue; seen[cap] = true;
+        out.push({ objectType: cap });
+      }
+      return out;
     }
   };
 })();
