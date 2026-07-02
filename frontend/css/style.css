@@ -711,10 +711,22 @@ body.no-scan .crt-scan { display: none; }
 .ms-lvl-num { font-size: 25px; color: var(--ph); letter-spacing: 4px; text-shadow: 0 0 10px var(--ph-glow); }
 .ms-xp { font-size: 12px; color: var(--ph-dim); }
 .ms-h {
-  display: flex; align-items: center; gap: 8px;
-  color: var(--ph); letter-spacing: 2px; font-weight: normal; font-size: 15px; margin: 10px 0 6px;
+  display: flex; align-items: center; gap: 9px;
+  color: var(--ph); letter-spacing: 2px; font-weight: normal; font-size: 15px; margin: 16px 0 10px;
+  text-shadow: 0 1px 0 #000, 0 0 8px var(--ph-glow2);
 }
-.ms-h::after { content: ''; flex: 1; height: 2px; background: var(--ph-dim); }
+/* Phase-2 section-divider language on the shared header: a fading gradient rule
+   (was a flat 2px bar) + a diamond node cap, matching the .sec divider. Pure CSS,
+   so every ms-h header across the panels upgrades with no markup churn. */
+.ms-h::after {
+  content: ''; flex: 1; height: 4px; background:
+    linear-gradient(90deg, var(--ph-dim), transparent 92%) top / 100% 1px no-repeat,
+    linear-gradient(90deg, var(--ph-faint), transparent 70%) bottom / 100% 1px no-repeat;
+}
+.ms-h::before {
+  content: ''; order: 3; width: 6px; height: 6px; flex: 0 0 auto;
+  transform: rotate(45deg); background: var(--ph); box-shadow: 0 0 6px var(--ph-glow);
+}
 .perk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .perk { border: 1px solid var(--ph-faint); padding: 5px 4px; text-align: center; opacity: 0.34; border-radius: var(--r-sm); box-shadow: var(--raise); }
 .perk.on { opacity: 1; border: 1px solid var(--ph-dim); box-shadow: var(--raise), inset 0 0 12px var(--ph-glow2); }

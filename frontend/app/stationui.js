@@ -213,7 +213,11 @@ const StationUI = (() => {
     w.setAttribute('aria-modal', 'true');
     w.setAttribute('aria-labelledby', titleId);
     w.tabIndex = -1;
-    const head = el('div', 'term-head', '<span class="term-title" id="' + titleId + '">▮ ' + title + '</span>');
+    // Phase-2 chrome: a subtle status LED at the head's left + the inverted title chip. The LED reads as
+    // "this window is live" — pure decoration (static ok-green), pointer-events off so it never eats the drag.
+    const head = el('div', 'term-head',
+      '<span class="term-led" aria-hidden="true"></span>' +
+      '<span class="term-title" id="' + titleId + '">' + title + '</span>');
     const x = el('button', 'term-x', '✕');
     x.setAttribute('aria-label', 'Close ' + title);
     x.addEventListener('click', () => closeTerm(key));
@@ -229,6 +233,22 @@ const StationUI = (() => {
         '<span>STARNET DYNAMICS</span><span class="term-knobs"><i class="knob"></i><i class="knob"></i></span>'));
     } else {
       w.appendChild(head); w.appendChild(body);
+      // Phase-2 chrome (generic, plain windows only — feature windows carry their own casing):
+      //   · four corner L-brackets + a faint top light-grade overlay for glass depth (both pointer-events:none)
+      //   · a thin footer plate (status text left, grip dots right). All purely cosmetic — appended AFTER the
+      //     body so they never disturb the focus-trap order (term-x remains the last focusable control).
+      const chrome = el('div', 'term-chrome');
+      chrome.setAttribute('aria-hidden', 'true');
+      chrome.innerHTML =
+        '<span class="term-brk tl"></span><span class="term-brk tr"></span>' +
+        '<span class="term-brk bl"></span><span class="term-brk br"></span>' +
+        '<span class="term-grade"></span>';
+      w.appendChild(chrome);
+      w.appendChild(el('div', 'term-foot',
+        '<span class="term-foot-d" aria-hidden="true"></span>' +
+        '<span class="term-foot-k">' + esc(String(key).toUpperCase()) + '</span>' +
+        '<span class="term-foot-sp"></span>' +
+        '<span class="term-foot-grip" aria-hidden="true">···</span>'));
     }
     $('#terms').appendChild(w);
     open[key] = w;
@@ -297,7 +317,7 @@ const StationUI = (() => {
       return;
     }
     ul.innerHTML = present.map((a, i) =>
-      '<li class="crew-row" data-i="' + i + '" data-agent-id="' + a.id + '">' +
+      '<li class="crew-row" data-i="' + i + '" data-agent-id="' + a.id + '" style="--ci:' + i + '">' +
       '<span class="dot on"></span>' +
       '<div class="crew-main">' +
       '<div class="crew-name" style="color:' + a.color + '">' + esc(a.name) +
@@ -499,7 +519,7 @@ const StationUI = (() => {
     const on = skills.filter(s => s.on).length;
     return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
       '<div class="perk-grid">' +
-      skills.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
+      skills.map((s, i) => '<div class="perk ' + (s.on ? 'on' : '') + '" style="--ci:' + i + '">' +
         '<div class="perk-icon">' + s.icon + '</div>' +
         '<div class="perk-name">' + s.name + '</div>' +
         '<div class="perk-desc">' + s.tools + '</div>' +
@@ -717,7 +737,7 @@ const StationUI = (() => {
     const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills(a && a.id) : agTab === 'growth' ? agGrowth(a) : agTab === 'memory' ? agMemory(a) : agBrief(a);
     body.innerHTML =
       '<div class="ag-wrap"><div class="ag-list">' +
-      present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '">' +
+      present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '" style="--ci:' + i + '">' +
         '<span style="color:' + x.color + '">●</span> ' + esc(x.name) + '</div>').join('') +
       '</div><div class="ag-detail">' +
       agHead(a, act) +
@@ -812,9 +832,9 @@ const StationUI = (() => {
     const skills = skillsFor(agentId);
     const on = skills.filter(s => s.on).length;
     body.innerHTML =
-      '<h4 class="ms-h">CAPABILITIES — ' + on + ' LIVE</h4>' +
+      '<div class="sec"><span class="sec-l">CAPABILITIES</span><span class="sec-r"></span><span class="sec-tag">' + on + ' LIVE</span></div>' +
       '<div class="perk-grid">' +
-      skills.map(s => '<div class="perk ' + (s.on ? 'on' : '') + '">' +
+      skills.map((s, i) => '<div class="perk ' + (s.on ? 'on' : '') + '" style="--ci:' + i + '">' +
         '<div class="perk-icon">' + s.icon + '</div>' +
         '<div class="perk-name">' + s.name + '</div>' +
         '<div class="perk-desc">' + s.tools + '</div>' +
@@ -824,7 +844,7 @@ const StationUI = (() => {
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
       'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
       '<b>notebook</b> saves freely.</p>' +
-      '<h4 class="ms-h">SKILL LIBRARY</h4>' +
+      '<div class="sec"><span class="sec-l">SKILL LIBRARY</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<p class="sk-note sk-lib-intro">Pre-installed <b>recipes</b> your agents follow when a task matches. Each one ' +
       'rides on the capabilities above — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
       'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
@@ -868,7 +888,8 @@ const StationUI = (() => {
     let html = '<div class="sk-lib-sum">' + skills.length + ' recipe' + (skills.length === 1 ? '' : 's') +
       ' · <b>' + active + '</b> active for ' + esc((present[sel] && present[sel].name) || agentId) + '</div>';
     for (const cat of cats) {
-      html += '<div class="sk-cat">' + esc(cat) + '</div>';
+      html += '<div class="sec sk-cat-sec"><span class="sec-l">' + esc(cat) + '</span><span class="sec-r"></span><span class="sec-nd"></span></div>';
+      let ci = 0;
       for (const s of byCat[cat]) {
         const missing = (s.requires || []).filter(r => !placedSet[r]);
         const state = s.enabled ? (s.available ? 'on' : 'want') : 'off';
@@ -877,7 +898,7 @@ const StationUI = (() => {
           ? s.requires.map(r => '<span class="sk-badge ' + (placedSet[r] ? 'have' : 'miss') + '">' + objLabel(r) + '</span>').join('')
           : '<span class="sk-badge free">no gear needed</span>';
         html +=
-          '<div class="sk-card ' + state + '">' +
+          '<div class="sk-card ' + state + '" style="--ci:' + (ci++) + '">' +
             '<div class="sk-card-head">' +
               '<button class="sk-toggle" data-toggle="' + esc(s.slug) + '" data-enabled="' + (s.enabled ? 'true' : 'false') + '" title="' + (s.enabled ? 'Disable' : 'Enable') + ' this skill">' + (s.enabled ? '◉' : '○') + '</button>' +
               '<div class="sk-card-main">' +
@@ -961,14 +982,28 @@ const StationUI = (() => {
     sfx('notify');
   }
 
-  function card(s) {
+  // purposeful empty-state per kanban lane (Phase 2 · E). The TO DO column gets a CTA that focuses the
+  // add-a-workstream input (focus only — no new functionality); ACTIVE/SHIPPED just explain what lands here.
+  function kbEmpty(lane) {
+    if (lane === 'todo') return '<div class="kb-empty-col"><div class="empty-state">' +
+      '<span class="es-glyph">▧</span><b>NO WORKSTREAMS</b>' +
+      '<span>Queue the first thing you want your agent to build.</span>' +
+      '<button class="es-cta" type="button">+ ADD ONE</button></div></div>';
+    if (lane === 'active') return '<div class="kb-empty-col"><div class="empty-state">' +
+      '<span class="es-glyph">▶</span><b>NOTHING IN FLIGHT</b>' +
+      '<span>Assign a TO DO card and it moves here while the agent works.</span></div></div>';
+    return '<div class="kb-empty-col"><div class="empty-state">' +
+      '<span class="es-glyph">✓</span><b>NOTHING SHIPPED YET</b>' +
+      '<span>Finished workstreams land here as proof of work.</span></div></div>';
+  }
+  function card(s, i) {
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
     const acts = s.lane === 'todo'
       ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
       : s.lane === 'active'
         ? '<button data-act="ship">✓ SHIP</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
         : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>';
-    return '<div class="kb-card" data-id="' + s.id + '">' +
+    return '<div class="kb-card" data-id="' + s.id + '" style="--ci:' + (i || 0) + '">' +
       '<div class="kb-title">' + esc(s.title || 'untitled') + '</div>' +
       '<div class="kb-meta"><span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
       (runs ? '<span>' + runs + '</span>' : '') + '</div>' +
@@ -983,13 +1018,16 @@ const StationUI = (() => {
       COLS.map(([lane, label]) => {
         const items = streams.filter(s => s.lane === lane);
         return '<div class="kb-col"><h4>' + label + ' <i>' + items.length + '</i></h4>' +
-          (items.length ? items.map(card).join('') : '<div class="kb-empty-col">— empty —</div>') + '</div>';
+          (items.length ? items.map(card).join('') : kbEmpty(lane)) + '</div>';
       }).join('') +
       '</div>';
     const inp = body.querySelector('#kb-in');
     const submit = () => { addTask(inp.value); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
+    // empty-state CTA (TO DO column): focus the add-a-workstream input — no new behaviour, just focus.
+    body.querySelectorAll('.kb-empty-col .es-cta').forEach(b =>
+      b.addEventListener('click', () => { sfx('click'); inp.focus(); }));
     inp.focus();
     body.querySelectorAll('.kb-card').forEach(c => {
       const id = c.dataset.id;
@@ -1099,7 +1137,7 @@ const StationUI = (() => {
 
   function providersHtml() {
     const active = activeProv();
-    return PROVIDERS.map(p => {
+    return PROVIDERS.map((p, pi) => {
       const ks = keysFor(p.id);
       const connected = p.live && ks.length > 0;
       // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
@@ -1107,7 +1145,7 @@ const StationUI = (() => {
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
       const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
-      return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0">' +
+      return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
@@ -1673,8 +1711,8 @@ const StationUI = (() => {
     }
     body.innerHTML =
       '<button class="bb sm" id="nf-clear">MARK ALL READ</button>' +
-      '<div class="nf-list">' + store.notifs.slice().reverse().map(n =>
-        '<div class="nf ' + n.cls + (n.read ? ' read' : '') + '">' + ts(n.t) + ' ' + esc(n.txt) + '</div>').join('') + '</div>';
+      '<div class="nf-list">' + store.notifs.slice().reverse().map((n, i) =>
+        '<div class="nf ' + n.cls + (n.read ? ' read' : '') + '" style="--ci:' + i + '">' + ts(n.t) + ' ' + esc(n.txt) + '</div>').join('') + '</div>';
     body.querySelector('#nf-clear').addEventListener('click', () => {
       store.notifs.forEach(n => n.read = true); save(); rerender('notifs'); badges(); sfx('click');
     });
@@ -2040,7 +2078,7 @@ const StationUI = (() => {
       return ({ up: ['var(--ok)', '● connected'], connecting: ['var(--gold)', '◌ connecting…'],
                 down: ['var(--ph-dim)', '○ disabled'], error: ['var(--bad)', '✕ error'] })[state] || ['var(--ph-dim)', '○ ' + esc(state || 'unknown')];
     }
-    function row(c) {
+    function row(c, ri) {
       const b = badge(c.state);
       const tools = (c.tools && c.tools.length) ? '<div class="mc-tools">' + c.tools.map(t => '<code>' + esc(t) + '</code>').join('') + '</div>' : '';
       const detail = (c.state === 'error' && c.detail) ? '<div class="mc-detail">' + esc(c.detail) + '</div>' : '';
@@ -2048,7 +2086,7 @@ const StationUI = (() => {
         ? ('<span class="mc-tag">stdio</span> <code>' + esc([c.command].concat(c.args || []).join(' ')) + '</code>' + (c.hasEnv ? ' · env set' : ''))
         : ('<span class="mc-tag">http</span> ' + esc(c.url) + (c.hasToken ? ' · token saved' : '') + (c.hasHeaders ? ' · headers set' : ''));
       const timeout = (c.timeoutMs && c.timeoutMs !== 30000) ? '<span class="dim"> · ' + Math.round(c.timeoutMs / 1000) + 's</span>' : '';
-      return '<div class="mc-row" data-id="' + esc(c.id) + '" data-enabled="' + (c.enabled ? '1' : '0') + '">' +
+      return '<div class="mc-row" data-id="' + esc(c.id) + '" data-enabled="' + (c.enabled ? '1' : '0') + '" style="--ci:' + (ri || 0) + '">' +
         '<div class="mc-top"><b>' + esc(c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
           '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
         '<div class="mc-url dim">' + where + timeout + '</div>' + detail + tools +
@@ -2064,8 +2102,14 @@ const StationUI = (() => {
       try {
         const j = await (await fetch('/api/connectors')).json();
         const list = (j && j.connectors) || []; lastList = list;
-        listEl.innerHTML = list.length ? list.map(row).join('')
-          : '<div class="fb-empty">NO CONNECTORS YET.<br><span>Add an MCP server below to give your agents new tools.</span></div>';
+        if (list.length) { listEl.innerHTML = list.map(row).join(''); }
+        else {
+          listEl.innerHTML = '<div class="empty-state"><span class="es-glyph">⧉</span>' +
+            '<b>NO CONNECTORS YET</b><span>Attach an MCP server to give your agents external tools — GitHub, Slack, a database.</span>' +
+            '<button class="es-cta" id="mc-empty-cta" type="button">+ ADD A CONNECTOR</button></div>';
+          const cta = listEl.querySelector('#mc-empty-cta');
+          if (cta) cta.addEventListener('click', () => { sfx('click'); const idf = body.querySelector('#mc-id'); if (idf) idf.focus(); });
+        }
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage connectors.</div>'; }
     }
     const postJSON = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -2214,15 +2258,16 @@ const StationUI = (() => {
         '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(nm) + '</span><span class="rt-agent-id">' + esc(id) + '</span></button>';
     }
     body.innerHTML =
-      '<h4 class="ms-h">SCHEDULED ROUTINES</h4>' +
-      '<p class="set-about">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
+      '<div class="sec"><span class="sec-l">SCHEDULED ROUTINES</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div class="brief-block"><div class="brief-k">HOW IT WORKS</div>' +
+        '<div class="brief-v">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
         'With no one watching, ungranted file writes are denied silently unless you have pre-approved them. ' +
-        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></p>' +
+        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></div></div>' +
       '<div id="rt-gate" class="set-about"></div>' +
       // SELF-INITIATION (autonomy Slice 2): let the agent propose standing jobs grounded in what it knows about you.
       '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ SUGGEST ROUTINES</button>' +
       '<div id="rt-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
-      '<h4 class="ms-h">ADD A ROUTINE</h4>' +
+      '<div class="sec"><span class="sec-l">ADD A ROUTINE</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form">' +
         '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
         '<textarea id="rt-prompt" class="key-input" rows="2" placeholder="what should it do each run? e.g. search for new AI-policy news and summarize the top 3" style="resize:vertical"></textarea>' +
@@ -2283,8 +2328,14 @@ const StationUI = (() => {
           } catch (_) { notify('could not reach the sidecar', 'warn'); sfx('bad'); }
           refresh();   // re-render the badge from the authoritative GET /api/cron enabled
         });
-        listEl.innerHTML = jobs.length ? jobs.map(row).join('')
-          : '<div class="fb-empty">NO ROUTINES YET.<br><span>Add one below to put your agent to work on a schedule.</span></div>';
+        if (jobs.length) { listEl.innerHTML = jobs.map((j, i) => row(j).replace('<div class="mc-row"', '<div class="mc-row" style="--ci:' + i + '"')).join(''); }
+        else {
+          listEl.innerHTML = '<div class="empty-state"><span class="es-glyph">◷</span>' +
+            '<b>NO ROUTINES YET</b><span>Put your agent to work on a schedule — a morning brief, a nightly summary, a recurring check.</span>' +
+            '<button class="es-cta" id="rt-empty-cta" type="button">+ ADD A ROUTINE</button></div>';
+          const cta = listEl.querySelector('#rt-empty-cta');
+          if (cta) cta.addEventListener('click', () => { sfx('click'); const nm = body.querySelector('#rt-name'); if (nm) nm.focus(); });
+        }
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage routines.</div>'; }
     }
 
@@ -2799,10 +2850,10 @@ const StationUI = (() => {
     const dismissibleQ = q => q && q.status !== 'done' && (
       (q.kind === 'station-gap') || (q.kind === 'work') || (q.kind === 'maintenance')
       || (QSS && QSS.dismissible && QSS.dismissible(q)));
-    const tro = q => {
+    const tro = (q, i) => {
       const glow = QSS && QSS.isCelebrating && QSS.isCelebrating(q.id);
       const dis = dismissibleQ(q);
-      return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '">'
+      return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
         + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
         + '</div>'
@@ -2827,14 +2878,14 @@ const StationUI = (() => {
       ? '<div class="gx-sec"><span class="gx-title">PROPOSALS</span> <span class="gx-tag">' + proposals.length + '</span></div>'
         + '<div class="gx-tros">' + proposals.map(propRow).join('') + '</div>'
       : '';
-    body.innerHTML = '<div class="gx">'
+    body.innerHTML = '<div class="gx gx-quests">'
       + meterHtml
       + '<div class="dim" style="margin:4px 0 10px;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
       + proposalsHtml
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
-      + '<div class="gx-tros">' + (open.map(tro).join('') || '<p class="dim">all caught up.</p>') + '</div>'
+      + '<div class="gx-tros q-grid q-open">' + (open.map(tro).join('') || '<p class="dim">all caught up.</p>') + '</div>'
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
-      + '<div class="gx-tros">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
+      + '<div class="gx-tros q-grid q-done">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
       + '</div>';
     // G4 feature 2: approve → the real cron POST (AutoJobStore routes it), then re-render (the card clears);
     // decline → drop the card forever. Both route through AutoJobStore's own paths — no new scheduling logic here.

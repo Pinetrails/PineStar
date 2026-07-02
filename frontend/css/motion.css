@@ -266,6 +266,184 @@ textarea, select {
 }
 
 /* ============================================================
+   12 · PREMIUM WINDOW CHROME (Phase 2) — corner brackets, header LED,
+   header hairline + top light-grade, footer plate. Generic on the
+   shared .term shell so every plain floating window gets it for free.
+   Feature windows (.term.feature) keep their molded casing and are
+   excluded. Everything here is static / transform-or-opacity only and
+   pointer-events:none where it overlays content, so dragging, resize,
+   the focus trap and the .term-closing power-off are untouched. Colours
+   are phosphor/role vars only, so theme swaps re-tint correctly.
+   ============================================================ */
+/* status LED at the header's left — "this window is live". Static ok-green
+   (a role var, stays green across theme swaps); a slow subtle pulse. */
+.term-led {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--ok); box-shadow: 0 0 8px var(--ok);
+  animation: term-led-pulse 2.4s ease-in-out infinite;
+}
+@keyframes term-led-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+/* keep the LED + title grouped at the left; the close button stays hard-right.
+   (The head is justify-content:space-between with gap — pushing the title's right
+   margin to auto collapses the extra gap so led+title read as one unit.) */
+.term-head .term-title { margin-right: auto; }
+/* hairline gradient rule under the header (layers over the existing 1px border) */
+.term:not(.feature):not(.pw) .term-head::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, var(--ph-dim), transparent 92%);
+  pointer-events: none;
+}
+/* corner L-brackets + top light-grade, grouped in one static overlay layer.
+   z above the glass (.term::before is z6) so the brackets read on the glass. */
+.term-chrome { position: absolute; inset: 0; pointer-events: none; z-index: 7; border-radius: inherit; overflow: hidden; }
+.term-brk {
+  position: absolute; width: 13px; height: 13px; border: 2px solid var(--ph);
+  opacity: 0.5; box-shadow: 0 0 6px var(--ph-glow2);
+}
+.term-brk.tl { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+.term-brk.tr { top: 6px; right: 6px; border-left: 0; border-bottom: 0; }
+.term-brk.bl { bottom: 6px; left: 6px; border-right: 0; border-top: 0; }
+.term-brk.br { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+/* faint top light-grade for glass depth — a static gradient, no repaint cost */
+.term-grade {
+  position: absolute; left: 0; right: 0; top: 0; height: 40%;
+  background: linear-gradient(180deg, rgba(255, 205, 130, 0.05), transparent 88%);
+}
+/* footer plate — thin bottom strip: status dot + term key left, grip dots right.
+   A real flex child after the body, so it never overlaps scroll content. */
+.term-foot {
+  flex: 0 0 auto; position: relative; z-index: 7;
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: 4px 12px 5px; border-top: 1px solid var(--ph-dim);
+  background: linear-gradient(0deg, var(--ph-glow2), transparent);
+  font-size: var(--fs-0); letter-spacing: var(--ls-3); color: var(--ph-dim);
+}
+.term-foot-d {
+  width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--ok); box-shadow: 0 0 6px var(--ok);
+}
+.term-foot-sp { flex: 1; }
+.term-foot-grip { color: var(--ph-dim); letter-spacing: 2px; opacity: 0.7; }
+/* tiny windows: the plate can crowd — hidden below a small height via :has (Chromium). */
+.term:not(.feature) { }
+
+/* ============================================================
+   13 · CARD LANGUAGE (Phase 2) — recruitment-bay entrance + hover lift.
+   A shared .cardIn entrance (opacity+translateY, ease-out, backwards) with
+   a capped per-index stagger set inline via --ci (index) on the row, and a
+   hover lift + border brighten + phosphor glow. Transform/opacity only.
+   Applied to the existing row/card classes across the panels — additive,
+   no markup rename. The stagger var falls back to 0 when unset.
+   ============================================================ */
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.crew-row, .ag-item,
+.kb-card, .gx-tro, .perk, .mc-row, .sk-card,
+.key-row, .prov-card, .notif-row, .cn-row {
+  animation: cardIn 0.34s var(--ease-out) backwards;
+  animation-delay: calc(min(var(--ci, 0), 8) * 25ms);
+  transition:
+    border-color var(--t-fast) var(--ease-soft),
+    box-shadow var(--t-fast) var(--ease-soft),
+    background-color var(--t-fast) var(--ease-soft),
+    transform var(--t-fast) var(--ease-out);
+}
+/* hover lift — transform + border brighten + glow. Scoped to the interactive
+   cards (crew/agent/kanban/quest/perk rows); .mc-row etc. inherit the entrance
+   but a lift is applied only where the whole row is clickable. */
+.crew-row:hover, .ag-item:hover,
+.kb-card:hover, .gx-tro:hover, .perk:hover, .prov-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 12px var(--ph-glow2);
+}
+
+/* ============================================================
+   14 · SECTION DIVIDER (Phase 2) — label + diamond node + fading rule.
+   Generic .sec swapped in for ad-hoc headers where markup allows. Matches
+   the v2 mockup: amber label, a rotated-square node, a gradient hairline
+   that fades to the right. Uses phosphor vars only.
+   ============================================================ */
+.sec {
+  display: flex; align-items: center; gap: 9px; margin: 16px 0 10px;
+}
+.sec:first-child { margin-top: 4px; }
+.sec .sec-l {
+  color: var(--ph); letter-spacing: var(--ls-3); font-size: var(--fs-1);
+  text-shadow: 0 1px 0 #000, 0 0 8px var(--ph-glow2); flex: 0 0 auto;
+}
+.sec .sec-r {
+  flex: 1; height: 4px;
+  background:
+    linear-gradient(90deg, var(--ph-dim), transparent 92%) top / 100% 1px no-repeat,
+    linear-gradient(90deg, var(--ph-faint), transparent 70%) bottom / 100% 1px no-repeat;
+}
+.sec .sec-nd {
+  width: 6px; height: 6px; transform: rotate(45deg); flex: 0 0 auto;
+  background: var(--ph); box-shadow: 0 0 6px var(--ph-glow);
+}
+.sec .sec-tag {
+  flex: 0 0 auto; color: var(--ph-dim); font-size: var(--fs-0);
+  letter-spacing: var(--ls-2); border: 1px solid var(--ph-dim);
+  border-radius: var(--r-sm); padding: 0 6px;
+}
+
+/* ============================================================
+   14b · BRIEF BLOCK (Phase 2) — a left-border framed note (v2 mockup
+   .brief pattern). Used for the ROUTINES intro. Phosphor left rail,
+   dim key label, readable body. Vars only.
+   ============================================================ */
+.brief-block {
+  border-left: 2px solid var(--ph); padding: 9px 13px; margin: 4px 0 12px;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 12px var(--ph-glow2), inset 0 1px 0 rgba(255, 228, 180, 0.04);
+}
+.brief-block .brief-k {
+  font-size: var(--fs-0); color: var(--ph-dim); letter-spacing: var(--ls-3); margin-bottom: 5px;
+}
+.brief-block .brief-v { font-size: var(--fs-1); color: var(--text); line-height: 1.55; }
+
+/* ============================================================
+   15 · EMPTY-STATE CTA (Phase 2) — a small action button inside an
+   .empty-state that focuses the relevant existing input. Inherits the
+   .btn hover bloom from section 2; just sizing + spacing here.
+   ============================================================ */
+.empty-state .es-cta {
+  margin-top: 10px; display: inline-block;
+  background: transparent; color: var(--ph);
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  font-family: inherit; font-size: var(--fs-1); letter-spacing: var(--ls-2);
+  padding: 3px 12px; cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-soft),
+              background-color var(--t-fast) var(--ease-soft),
+              box-shadow var(--t-fast) var(--ease-soft),
+              color var(--t-fast) var(--ease-soft);
+}
+.empty-state .es-cta:hover {
+  border-color: var(--ph); color: var(--ph-bright);
+  background: var(--ph-faint); box-shadow: 0 0 12px var(--ph-glow2);
+}
+
+/* ============================================================
+   16 · HIERARCHY & DENSITY (Phase 2) — targeted breathing room.
+   Quest-log only (scoped by .gx-quests / .q-grid so the GROWTH and
+   TROPHY grids that share .gx-tros are untouched). OPEN cards get more
+   padding + a 2-up grid so they read clearly; DONE cards dim so the eye
+   goes to what's still open. All colour/opacity/spacing — no logic.
+   ============================================================ */
+.gx-quests .q-grid { grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.gx-quests .q-grid .gx-tro { padding: 11px 12px; }
+.gx-quests .q-grid .gx-tro .nm { font-size: 12px; margin-top: 6px; }
+.gx-quests .q-grid .gx-tro .sub { font-size: 11px; margin-top: 5px; line-height: 1.4; }
+/* DONE column reads as settled history — dimmer, so OPEN stays the focus.
+   (Keeps the gold "earned" accent; just drops overall emphasis.) */
+.gx-quests .q-done .gx-tro { opacity: 0.72; }
+.gx-quests .q-done .gx-tro:hover { opacity: 1; }
+/* give the OPEN/DONE dividers a touch more air in the log */
+.gx-quests .gx-sec { margin-top: 15px; }
+
+/* ============================================================
    11 · REDUCED MOTION — collapse everything added above to near-0.
    Respects the user's OS setting. (The idle looping animations here
    — toast/loading/shimmer — are transform/opacity only and cheap, but
@@ -277,14 +455,20 @@ textarea, select {
   .swap-in,
   .toast, .toast.leaving,
   .bar-active::after,
+  .term-led,
+  .crew-row, .ag-item, .kb-card, .gx-tro, .perk, .mc-row, .sk-card,
+  .key-row, .prov-card, .notif-row, .cn-row,
   .loading, .loading.pulse, .loading::before {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
   .btn, .btn-xl, .btn-sm, .prov, .bb, .bb-grp, .ag-tab, .lb-tab,
   .mc-seg-btn, .set-theme, .phosphor-swatches .swatch, .term-x,
+  .empty-state .es-cta,
   input, textarea, select,
   .set-row input[type=checkbox], .set-row input[type=checkbox]::after,
+  .crew-row:hover, .ag-item:hover, .kb-card:hover, .gx-tro:hover, .perk:hover, .prov-card:hover,
+  .gx-quests .q-done .gx-tro:hover,
   .crew-prog > div, .stat-bar > div, #xpfill,
   ::-webkit-scrollbar-thumb {
     transition-duration: 0.01ms !important;
