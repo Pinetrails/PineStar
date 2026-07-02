@@ -37,6 +37,7 @@ const spotifyPkce = require('./spotify/pkce.js');                          // pu
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
+const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeTranscriptStore } = require('./transcriptstore.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
@@ -2561,6 +2562,10 @@ async function runOnce(o) {
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
   let cpTurn = 0;      // per-run checkpoint sequence (a pseudo-turn for the snapshot index/lineage)
+  // WORK VISIBILITY (slice 1): fold every successful tool call into this run's artifacts ledger — what the
+  // run PRODUCED (files/images/channel sends) — recorded onto the runStore row at run end and served over
+  // GET /api/runs. Pure + capped (sidecar/artifacts.js); a collector hiccup must never break a run.
+  const artifactLedger = makeArtifactCollector();
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
     const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
@@ -2578,6 +2583,8 @@ async function runOnce(o) {
     }
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
     let r = await registry.dispatch(c, dctx);
+    // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
+    try { artifactLedger.observe({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
     // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
     if (r && typeof r.content === 'string' && r.content.length) {
       if (toolBytes >= CAPS.maxToolBytes) {
@@ -2760,7 +2767,7 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered });   // H3.2/H3.3/G6: transcript join + honest model/spend insights
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list() });   // H3.2/H3.3/G6 + work-visibility: transcript join + honest model/spend/deliverables
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
@@ -3505,16 +3512,20 @@ async function handleSaveWrite(req, res) {
     json(200, result);
   } catch (e) { json(400, { error: (e && e.message) || 'save failed' }); }
 }
-// GET /api/runs?agent=<id>&limit=<n>&since=<ms> — the agent's run history (M-save P4), newest-first. Read-only;
-// the store is append-only and a sibling of the fs jail, so the agent can neither read nor rewrite its own history.
-// G2.2 (additive): agent=* returns EVERY agent's runs (the while-away digest covers crew routines too), and a
-// since=<ms> filter keeps the answer to runs that finished after the caller's last-attended stamp.
+// GET /api/runs?agent=<id>&limit=<n>&since=<ms>[&runId=<id>] — the agent's run history (M-save P4), newest-first.
+// Rows carry the run's `artifacts` ledger (work-visibility); an explicit runId narrows to that single run's
+// entry (the end-of-run recap's fetch). Read-only; the store is append-only and a sibling of the fs jail, so the
+// agent can neither read nor rewrite its own history. G2.2 (additive): agent=* returns EVERY agent's runs (the
+// while-away digest covers crew routines too), and a since=<ms> filter keeps the answer to runs that finished
+// after the caller's last-attended stamp.
 function serveRuns(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
     if (agent !== '*' && !/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const runId = u.searchParams.get('runId') || '';
+    if (runId) return json(200, { runs: runStore.list(agent, { limit: 1000 }).filter(r => r.runId === runId) });
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
     let rows = runStore.list(agent === '*' ? null : agent, { limit });
