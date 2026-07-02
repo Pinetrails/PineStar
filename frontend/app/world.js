@@ -2030,7 +2030,7 @@ const World = (() => {
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
       if (PropSprites.setOutboxCrates) PropSprites.setOutboxCrates(returnCrates());   // G2.3: uncollected while-away work stacks on the chute
-      if (PropSprites.setMissionPins) { const mp = missionPinCounts(now); PropSprites.setMissionPins(mp[0], mp[1]); }   // G1b: open quests pin to the MISSION BOARD; a station-gap keeps it breathing
+      if (PropSprites.setMissionPins) { const mp = missionPinCounts(now); PropSprites.setMissionPins(mp[0], mp[1], mp[2]); }   // G1b/G1c: open quests pin to the MISSION BOARD; a station-gap keeps it breathing; a jammed routine flags an amber JAM stub
       if (PropSprites.setTrophyCount) PropSprites.setTrophyCount(trophyCount(now));   // G3b: earned trophies stand behind glass in the TROPHY CASE
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
@@ -2614,7 +2614,7 @@ const World = (() => {
      missionPinCounts — the board's truthful readout, recomputed at most once a second (the projection walk
      is too heavy for every frame): [how many quests are OPEN in the visible log, whether a station-gap
      fix-it is among them]. Zeroes when the quest stores aren't loaded (headless tests / title screen). */
-  let mpAt = -1e9, mpOpen = 0, mpHot = false;
+  let mpAt = -1e9, mpOpen = 0, mpHot = false, mpJam = false;
   function missionPinCounts(t) {
     if (t - mpAt > 1000) {
       mpAt = t;
@@ -2624,9 +2624,11 @@ const World = (() => {
         const vis = (typeof QuestStateStore !== 'undefined' && QuestStateStore.visible) ? QuestStateStore.visible(all) : all;
         mpOpen = vis.filter(q => q && q.status !== 'done').length;
         mpHot = (typeof StationQuestStore !== 'undefined' && StationQuestStore.openCount) ? StationQuestStore.openCount() > 0 : false;
-      } catch (_) { mpOpen = 0; mpHot = false; }
+        // G1c: a repeatedly-skipped routine reads as a JAM — an amber stub pins on the board (pure Factorio).
+        mpJam = (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.jammedJobs) ? (MaintQuestStore.jammedJobs().length > 0) : false;
+      } catch (_) { mpOpen = 0; mpHot = false; mpJam = false; }
     }
-    return [mpOpen, mpHot];
+    return [mpOpen, mpHot, mpJam];
   }
   // hit-test: a placed MISSION BOARD under a world-space point. Always clickable while placed — the click
   // opens the QUEST LOG, which always has content, so the affordance is never dead (unlike the OUTBOX,
@@ -3423,6 +3425,10 @@ const World = (() => {
     // the live station document (read-only) — the station-quest generator reads props[] to detect the
     // OUTBOX / MISSION-BOARD standing gaps and to resolve a placement. Null when no station is loaded (headless).
     stationDoc: () => (station && station.doc ? station.doc() : null),
+    // G1c — the live SlagLog ring (read-only): the most-recent wasted-spend post-mortems the floor has diagnosed.
+    // The maintenance-quest generator (maintqueststore.js) tallies these by cause; a recurring cause mints a
+    // fix-it quest. Returns a fresh copy (slaglog owns the ring); [] when the log isn't loaded (headless/title).
+    slagPostmortems: () => { try { return (slaglog && slaglog.recent) ? slaglog.recent() : []; } catch (_) { return []; } },
     // DEV/proof read surface (pure, no side effects — the testapi idiom): where a placed prop of type `t`
     // sits ON SCREEN (CSS px), derived from the live camera + the local-frame geometry. Lets a headless
     // driver dispatch a REAL mouse click at the MISSION BOARD instead of faking the seam. Null when absent.
