@@ -918,6 +918,9 @@ const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET s
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
   + 'report what you actually found; never claim you cannot act.';
+// Optional Bot API base override. Production defaults to Telegram; tests point this at a local fake server so the
+// real sidecar polling/send path can be validated without network or a live bot token.
+const TELEGRAM_API_BASE = String(ENV('TELEGRAM_API_BASE') || '').trim() || undefined;
 const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
 try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
 let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
@@ -1299,7 +1302,7 @@ function startTelegram(token, key, model, agentCfg) {
     resolveStation: (agentId) => router.stationFor(agentId)                     // B5: a bay's room objects = that agent's caps
   });
   const adapter = makeTelegramAdapter({
-    fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
+    fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission: the first DM claims the bot; persist that userId so it survives restarts.
     ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
     onOwnerClaim: (uid) => {
