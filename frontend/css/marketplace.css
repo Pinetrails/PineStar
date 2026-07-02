@@ -129,6 +129,15 @@
   color: var(--text); background: var(--ph-faint); border: 1px solid var(--ph-dim); border-radius: 3px; padding: 2px 8px; }
 .mkt-chip.lane { color: var(--ink); background: var(--accent, var(--ph)); border-color: var(--accent, var(--ph));
   text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+/* ---- toggleable picker chips (Class Loadouts S3 custom-class builder: kit + skill package) ---- */
+.mkt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.mkt-chip.pick { cursor: pointer; font-family: inherit; padding: 5px 10px; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--ph-dim); background: var(--panel2); border: 1px solid var(--ph-faint); }
+.mkt-chip.pick:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-chip.pick.sel { color: var(--ink); background: var(--accent, var(--ph)); border-color: var(--accent, var(--ph)); text-shadow: none; }
+.mkt-chip.pick:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+.mkt-chips-loading { opacity: .7; }
+.mkt-lbl-hint { color: var(--ph-dim); font-size: 10px; letter-spacing: .5px; opacity: .8; text-transform: none; }
 
 /* ---- the DOSSIER (right pane: the focused class detail + the action) ---- */
 .mkt-dossier { position: relative; border-left: 1px solid var(--ph-dim); overflow-y: auto;
@@ -159,6 +168,16 @@
 .mkt-starters li { color: var(--ph-bright); font-size: 12.5px; padding: 6px 10px; border-radius: 5px;
   background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--raise); }
 .mkt-starters li::before { content: "▸ "; color: var(--accent, var(--ph)); }
+
+/* ---- LOADOUT (Class Loadouts S3): STANDARD ISSUE KIT + SKILL PACKAGE dossier rows ---- */
+.mkt-clr-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .5px; opacity: .85; }
+.mkt-kit, .mkt-skills { display: flex; flex-direction: column; gap: 4px; }
+.mkt-kit-row, .mkt-skill-row { display: flex; align-items: baseline; gap: 9px; padding: 6px 10px; border-radius: 5px;
+  background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--raise); }
+.mkt-kit-obj, .mkt-skill-name { flex: 0 0 auto; color: var(--ph-bright); font-size: 11px; letter-spacing: 1px;
+  min-width: 92px; text-transform: uppercase; }
+.mkt-kit-grant, .mkt-skill-desc { flex: 1 1 auto; color: var(--text); font-size: 12px; line-height: 1.4; opacity: .85; }
+.mkt-kit-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .4px; margin-top: 5px; opacity: .8; }
 .mkt-dos-cta { display: flex; flex-direction: column; gap: 8px; position: sticky; bottom: -20px;
   padding-top: 12px; margin-top: 4px; background: linear-gradient(180deg, transparent, #070402 26%); }
 .mkt-cta-row { display: flex; align-items: center; gap: 7px; }

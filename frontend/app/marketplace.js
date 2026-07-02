@@ -29,6 +29,7 @@ const Marketplace = (() => {
   let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'
   let query = '';
   let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
+  let buildKit = [], buildSkills = [], buildEffort = null;   // the custom-class builder's picked loadout (Class Loadouts S3)
 
   const hasRecipes = () => typeof Recipes !== 'undefined';
   const hasIcons = () => typeof ClassIcons !== 'undefined';
@@ -63,6 +64,54 @@ const Marketplace = (() => {
   function sealHTML(item, withCode) {
     return '<div class="mkt-seal"><div class="mkt-coin">' + coinInner(item) + '</div>' +
       (withCode ? '<span class="mkt-seal-code">' + esc(codeOf(item)) + '</span>' : '') + '</div>';
+  }
+
+  /* ---------- LOADOUT resolvers (Class Loadouts S3) — labels/grants from LIVE sources, never hardcoded ----------
+     Prop labels + plain-English grants for a kit objectType come from WorldModel's OWNED source of truth
+     (CAP_LABEL: the power word every UI already shows; CAP_PROP_MAP: the canonical prop) and the live PropSprites
+     catalog (the prop's display label). Skill names/descriptions come from the /api/skills catalog the SKILLS
+     window already reads. This keeps the dossier honest — it says exactly what the summon will grant. */
+  const WM = () => (typeof WorldModel !== 'undefined') ? WorldModel : null;
+  // one plain sentence describing what an objectType grants (the CAP_LABEL power word, humanized).
+  const CAP_GRANTS = {
+    dish: 'the WEB — live search & fetch', cabinet: 'FILES — read, write & search the workspace',
+    notebook: 'MEMORY — a durable notebook it can save to & recall', workbench: 'a TERMINAL — run & test real code (approval-gated)',
+    studio: 'IMAGES — generate & analyse visuals', computer: 'COMPUTE — its own workstation', connector: 'LIVE TOOLS — a bound MCP server'
+  };
+  function capGrant(objType) {
+    const t = String(objType || '').trim();
+    return CAP_GRANTS[t] || (WM() && WM().CAP_LABEL && WM().CAP_LABEL[t] ? String(WM().CAP_LABEL[t]).toLowerCase() : t);
+  }
+  // the display label for the prop a kit objectType requisitions (from the live PropSprites catalog via the
+  // canonical prop for the cap) — never a hardcoded prop name (onboarding-tour law: resolve from the live catalog).
+  function kitPropLabel(objType) {
+    const t = String(objType || '').trim();
+    const wm = WM(), map = (wm && wm.CAP_PROP_MAP) || {};
+    // pick the first prop id that maps to this cap, then look up its catalog label.
+    let propId = null;
+    for (const pid of Object.keys(map)) { if (map[pid] === t) { propId = pid; break; } }
+    if (!propId && map[t]) propId = t;   // workbench/studio map 1:1
+    if (propId && typeof PropSprites !== 'undefined' && Array.isArray(PropSprites.CATALOG)) {
+      const spec = PropSprites.CATALOG.find(c => c && c.id === propId);
+      if (spec && spec.label) return spec.label;
+    }
+    // last resort: the power word (still a live source, never a made-up prop name)
+    return (wm && wm.CAP_LABEL && wm.CAP_LABEL[t]) || t.toUpperCase();
+  }
+
+  // skill catalog cache: { slug -> { name, description } } from /api/skills. Fetched once, then dossiers hydrate
+  // async (the section renders a placeholder, then fills in). Best-effort — a missing catalog degrades to the slug.
+  let skillCatalog = null, skillCatalogPending = null;
+  function loadSkillCatalog() {
+    if (skillCatalog) return Promise.resolve(skillCatalog);
+    if (skillCatalogPending) return skillCatalogPending;
+    skillCatalogPending = fetch('/api/skills').then(r => r.ok ? r.json() : { skills: [] })
+      .then(d => {
+        const map = {};
+        for (const s of ((d && d.skills) || [])) if (s && s.slug) map[s.slug] = { name: s.name || s.slug, description: s.description || '' };
+        skillCatalog = map; return map;
+      }).catch(() => { skillCatalog = {}; return skillCatalog; });
+    return skillCatalogPending;
   }
 
   /* ---------- open / close ---------- */
@@ -200,6 +249,7 @@ const Marketplace = (() => {
     wireRoster(stage);
     wireDossier(stage);
     paintDossierAccent();
+    if (tab !== 'recipes') hydrateSkillRows();   // fill real skill names/descriptions once the catalog loads
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
   }
   function renderDossier() {
@@ -207,6 +257,7 @@ const Marketplace = (() => {
     d.innerHTML = dossierHTML();
     wireDossier(root);
     paintDossierAccent();
+    if (tab !== 'recipes') hydrateSkillRows();   // fill real skill names/descriptions once the catalog loads
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
     root.querySelectorAll('.mkt-card').forEach(c => c.classList.toggle('sel', c.dataset.id === fid));
   }
@@ -337,6 +388,49 @@ const Marketplace = (() => {
   function dossierHTML() {
     return (tab === 'recipes' && hasRecipes()) ? recipeDossierHTML() : agentDossierHTML();
   }
+  // STANDARD ISSUE KIT — one row per kit objectType: the prop it requisitions + what it grants, in plain words,
+  // resolved from the LIVE catalog (never a hardcoded prop label). Empty kit => the block is omitted (a plain
+  // persona-only class). The deferred-delivery reality is stated so the copy matches what actually happens.
+  function kitBlockHTML(s) {
+    const kit = (s && Array.isArray(s.kit)) ? s.kit : [];
+    if (!kit.length) return '';
+    const rows = kit.map(t => '<div class="mkt-kit-row">' +
+      '<span class="mkt-kit-obj">' + esc(kitPropLabel(t)) + '</span>' +
+      '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span></div>').join('');
+    return '<div class="mkt-block"><div class="bh">STANDARD ISSUE KIT</div>' +
+      '<div class="mkt-kit">' + rows + '</div>' +
+      '<div class="mkt-kit-note">requisitioned at its workstation on summon — arrives once you give it a PC in REFIT.</div></div>';
+  }
+  // SKILL PACKAGE — one row per bundled skill slug: name + one-line description, resolved from the /api/skills
+  // catalog the SKILLS window uses. Renders slug-only immediately (so it works offline), then hydrateSkillRows
+  // fills real names/descriptions once the catalog resolves. Empty package => the block is omitted.
+  function skillPackageHTML(s) {
+    const skills = (s && Array.isArray(s.skills)) ? s.skills : [];
+    if (!skills.length) return '';
+    const cached = skillCatalog || {};
+    const rows = skills.map(slug => {
+      const meta = cached[slug];
+      return '<div class="mkt-skill-row" data-slug="' + esc(slug) + '">' +
+        '<span class="mkt-skill-name">' + esc(meta ? meta.name : slug) + '</span>' +
+        '<span class="mkt-skill-desc">' + esc(meta ? meta.description : '') + '</span></div>';
+    }).join('');
+    return '<div class="mkt-block"><div class="bh">SKILL PACKAGE</div>' +
+      '<div class="mkt-skills">' + rows + '</div>' +
+      '<div class="mkt-kit-note">enabled for this agent on summon (adds to your global skills; still gated by its gear).</div></div>';
+  }
+  // async: fill real skill names/descriptions into a rendered dossier once the catalog loads. Re-queries the DOM
+  // after the await so a dossier swapped mid-fetch is a safe no-op.
+  function hydrateSkillRows() {
+    loadSkillCatalog().then(map => {
+      const d = root && root.querySelector('#mkt-dossier'); if (!d) return;
+      d.querySelectorAll('.mkt-skill-row[data-slug]').forEach(row => {
+        const meta = map[row.dataset.slug]; if (!meta) return;
+        const n = row.querySelector('.mkt-skill-name'); if (n) n.textContent = meta.name;
+        const de = row.querySelector('.mkt-skill-desc'); if (de) de.textContent = meta.description;
+      });
+    });
+  }
+
   function agentDossierHTML() {
     const s = (focusAgent && Specialties.get(focusAgent)) || Specialties.builtins()[0];
     if (!s) return '<div class="mkt-dos-empty">no class selected.</div>';
@@ -353,17 +447,28 @@ const Marketplace = (() => {
     const custActs = s.custom
       ? '<div class="mkt-cta-row"><button class="bb sm mkt-edit" data-id="' + esc(s.id) + '">✎ EDIT</button>' +
         '<button class="bb sm danger mkt-del" data-id="' + esc(s.id) + '">⌫ DELETE</button></div>' : '';
+    // CLEARANCE is honest about what summon APPLIES vs INHERITS: the reasoning effort is applied to the agent
+    // record at summon; the model is a tier that resolves to the pinned/station-default model (advisory pip).
+    const effort = s.reasoningEffort ? esc(String(s.reasoningEffort).toUpperCase()) : null;
+    const clearRow =
+      '<span class="k">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) +
+        ' <span class="mkt-clr-note">model: station default</span></span>' +
+      '<span class="k">EFFORT</span><span class="v">' +
+        (effort ? '<span class="mkt-chip">' + effort + '</span> <span class="mkt-clr-note">applied at summon</span>'
+                : '<span class="mkt-clr-note">station default</span>') + '</span>';
     return '<div class="mkt-dos-label">▮ CLASS DOSSIER</div>' +
       '<div class="mkt-dos-hero">' + sealHTML(s, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(s.name) + badges + '</div>' +
           '<div class="mkt-dos-tag">' + esc(s.tagline) + '</div>' +
           '<div class="mkt-dos-class">CLASS · ' + esc(codeOf(s)) + '</div></div></div>' +
       '<div class="mkt-spec">' +
-        '<span class="k">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) + '</span>' +
+        clearRow +
         '<span class="k">VOICE</span><span class="v">◈ ' + esc(voiceName(s.persona)) + '</span>' +
         '<span class="k">FOCUS</span><span class="v"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span></span>' +
       '</div>' +
       '<div class="mkt-block"><div class="bh">FOCUS LANES</div><div class="mkt-bars">' + bar('code', 'CODE') + bar('research', 'RESEARCH') + bar('general', 'OPS') + '</div></div>' +
+      kitBlockHTML(s) +
+      skillPackageHTML(s) +
       '<div class="mkt-block"><div class="bh">PURPOSE</div><p class="bp">' + esc(s.purpose) + '</p></div>' +
       (s.manual ? '<div class="mkt-block"><div class="bh">STANDING ORDERS</div><pre>' + esc(s.manual) + '</pre></div>' : '') +
       (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
@@ -511,7 +616,7 @@ const Marketplace = (() => {
     const saveas = stage.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; renderStage(); });
     const build = stage.querySelector('.mkt-build');
-    if (build) build.addEventListener('click', () => { sfx('click'); buildAccent = '#ffaa33'; buildModel = 'balanced'; view = 'build'; renderStage(); });
+    if (build) build.addEventListener('click', () => { sfx('click'); buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
 
@@ -799,10 +904,30 @@ const Marketplace = (() => {
       '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-b-tag" maxlength="48" placeholder="one line — what it’s for"></label>' +
       '<label class="mkt-lbl">CLEARANCE</label><div class="mkt-segs" id="mkt-b-model">' +
         seg('reasoning', '◆◆◆ DEEP') + seg('balanced', '◆◆ BALANCED') + seg('fast', '◆ FAST') + '</div>' +
+      // EFFORT — the reasoning effort applied at summon (independent of the clearance tier/model).
+      '<label class="mkt-lbl">REASONING EFFORT <span class="mkt-lbl-hint">— applied at summon</span></label><div class="mkt-segs" id="mkt-b-effort">' +
+        effSeg(null, 'DEFAULT') + effSeg('high', 'HIGH') + effSeg('medium', 'MEDIUM') + effSeg('low', 'LOW') + '</div>' +
+      // STANDARD ISSUE KIT — capability objectTypes to requisition at summon (labels from the LIVE catalog).
+      '<label class="mkt-lbl">STANDARD ISSUE KIT <span class="mkt-lbl-hint">— gear placed at its workstation</span></label>' +
+      '<div class="mkt-chips" id="mkt-b-kit">' + buildKitChipsHTML() + '</div>' +
+      // SKILL PACKAGE — bundled recipes enabled for this class (from the live /api/skills catalog, filled async).
+      '<label class="mkt-lbl">SKILL PACKAGE <span class="mkt-lbl-hint">— recipes it follows when a task matches</span></label>' +
+      '<div class="mkt-chips" id="mkt-b-skills"><span class="mkt-hint mkt-chips-loading">loading the skill library…</span></div>' +
       '<label class="mkt-lbl">PURPOSE<textarea class="mkt-in mkt-b-area" id="mkt-b-purpose" rows="3" placeholder="what this class is FOR — its job, in its own words."></textarea></label>' +
       '<label class="mkt-lbl">STANDING ORDERS<textarea class="mkt-in mkt-b-area" id="mkt-b-manual" rows="4" placeholder="- the rules it always follows\n- one per line"></textarea></label>' +
       '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-build">✓ CREATE CLASS</button></div></div>';
   }
+  // the pickable kit objectTypes — the auto-requisitionable capabilities (computer/connector are per-agent
+  // manual-bind, never in a class kit — matches Build.requisitionForAgent). Labels come from the live source.
+  const KIT_PICKABLE = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
+  function buildKitChipsHTML() {
+    return KIT_PICKABLE.map(t => {
+      const on = buildKit.indexOf(t) >= 0;
+      return '<button type="button" class="mkt-chip pick' + (on ? ' sel' : '') + '" data-kit="' + esc(t) + '" ' +
+        'title="' + esc(capGrant(t)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(kitPropLabel(t)) + '</button>';
+    }).join('');
+  }
+  const effSeg = (e, l) => '<button type="button" class="mkt-seg' + ((buildEffort === e || (e === null && !buildEffort)) ? ' sel' : '') + '" data-effort="' + (e == null ? '' : e) + '">' + l + '</button>';
   function wireBuildForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
     if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; renderStage(); });
@@ -818,6 +943,37 @@ const Marketplace = (() => {
       buildModel = b.dataset.model;
       stage.querySelectorAll('#mkt-b-model .mkt-seg').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); sfx('click');
     }));
+    // EFFORT selector — '' data-effort => default (null).
+    stage.querySelectorAll('#mkt-b-effort .mkt-seg').forEach(b => b.addEventListener('click', () => {
+      buildEffort = b.dataset.effort || null;
+      stage.querySelectorAll('#mkt-b-effort .mkt-seg').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); sfx('click');
+    }));
+    // KIT chips — toggle a capability objectType in/out of the picked kit.
+    const wireKitChips = () => stage.querySelectorAll('#mkt-b-kit .mkt-chip.pick').forEach(b => b.addEventListener('click', () => {
+      const t = b.dataset.kit, i = buildKit.indexOf(t);
+      if (i >= 0) buildKit.splice(i, 1); else buildKit.push(t);
+      const on = buildKit.indexOf(t) >= 0;
+      b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); sfx('click');
+    }));
+    wireKitChips();
+    // SKILL chips — fetched from the live catalog, then toggle a slug in/out of the package. Best-effort: an
+    // unreachable catalog leaves a hint (the class still saves with whatever kit/effort was picked).
+    const skHost = stage.querySelector('#mkt-b-skills');
+    if (skHost) loadSkillCatalog().then(map => {
+      const slugs = Object.keys(map).sort((a, b) => map[a].name.localeCompare(map[b].name));
+      if (!slugs.length) { skHost.innerHTML = '<span class="mkt-hint">no skill library found (is the sidecar running?)</span>'; return; }
+      skHost.innerHTML = slugs.map(slug => {
+        const on = buildSkills.indexOf(slug) >= 0;
+        return '<button type="button" class="mkt-chip pick' + (on ? ' sel' : '') + '" data-skill="' + esc(slug) + '" ' +
+          'title="' + esc(map[slug].description) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(map[slug].name) + '</button>';
+      }).join('');
+      skHost.querySelectorAll('.mkt-chip.pick').forEach(b => b.addEventListener('click', () => {
+        const slug = b.dataset.skill, i = buildSkills.indexOf(slug);
+        if (i >= 0) buildSkills.splice(i, 1); else buildSkills.push(slug);
+        const on = buildSkills.indexOf(slug) >= 0;
+        b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); sfx('click');
+      }));
+    });
     const create = stage.querySelector('.mkt-do-build');
     if (create) create.addEventListener('click', () => {
       const name = (stage.querySelector('#mkt-b-name').value || '').trim();
@@ -828,7 +984,10 @@ const Marketplace = (() => {
         accent: buildAccent, model: buildModel,
         tagline: (stage.querySelector('#mkt-b-tag').value || '').trim(),
         purpose: (stage.querySelector('#mkt-b-purpose').value || '').trim(),
-        manual: (stage.querySelector('#mkt-b-manual').value || '').trim()
+        manual: (stage.querySelector('#mkt-b-manual').value || '').trim(),
+        // LOADOUT (Class Loadouts S3): the picked kit/skills/effort round-trip into the saved custom spec
+        // (Specialties.normCustom normalizes + freezes them) so a user class is a full loadout, applied at summon.
+        kit: buildKit.slice(), skills: buildSkills.slice(), reasoningEffort: buildEffort
       };
       try {
         const saved = Specialties.saveCustom(spec);
