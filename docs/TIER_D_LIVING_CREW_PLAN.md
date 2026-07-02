@@ -254,12 +254,14 @@ and (by intent) THE LONG STARE hold.
   (usually hero) body was therefore in `stare-chat` for the entire session: it endlessly tracked the cursor and
   its whole idle life (quirks/social/chase/wander) was permanently suppressed. Andrew: "it will just endlessly
   follow the users mouse."
-- **The fix — hold the stare only while the conversation is WARM.** A module-local `chatWarmT` timestamp + a
-  `CHAT_WARM_MS = 120000` (~2 min) constant, unified behind **ONE shared predicate**:
-  `chatHot(now) = chatFocusId != null && (now - chatWarmT) < CHAT_WARM_MS` (RNG-free; reads module state + `now`
-  only). Warmth is stamped on genuine engagement: `setChatFocus(id)` stamps it (a switch/open = engagement — and
-  only stamps for a non-null id, so `setChatFocus(null)` never warms), and a new tiny public
-  `World.chatFocusPing()` re-stamps it (no-op when no focus is set).
+- **The fix — hold the stare only while the conversation is WARM.** A module-local `chatWarmUntil` deadline,
+  unified behind **ONE shared predicate**: `chatHot(now) = chatFocusId != null && now < chatWarmUntil`.
+  On each genuine engagement `warmChatFocus()` draws a **FRESH random window** into the deadline:
+  `chatWarmUntil = fnow + U.irnd(CHAT_WARM_MIN, CHAT_WARM_MAX)`, `CHAT_WARM_MIN/MAX = 30000/90000` (30-90s).
+  (RETUNED 2026-07-02 from a fixed 120s at Andrew's direction — "30 seconds to a minute and a half… Less
+  predictable": a per-engagement random draw means the lose-interest moment can't be learned.) Engagement =
+  `setChatFocus(id)` (a switch/open — non-null id only, so `setChatFocus(null)` never warms) and the tiny public
+  `World.chatFocusPing()` (no-op when no focus is set).
 - **Eligibility is keyed on HOT-focus, not focus (adversarial-review fix on the first cut):** COMMS focus never
   clears in practice, so any exclusion keyed on focus ALONE would permanently bar the focused body from a beat
   family even after warmth lapsed — the first cut fixed only `chatStareHold` and left the body half-restored
@@ -288,11 +290,22 @@ and (by intent) THE LONG STARE hold.
   (a picked beat, e.g. `standStill`, sets `goal = null`, overwriting `'stare-chat'`). No stuck stilling / suppressed
   wander. A focus SWITCH while warm: `setChatFocus(newId)` warms the NEW body; the OLD body lapses via the same
   self-heal on its next decision. `activity==='talk'` (voice) stays excluded as before.
-- **Determinism:** warmth reads/writes `fnow` (the frame clock) only — zero RNG. N=1: adds no `U.*` draw, so the
-  RNG stream is unchanged; the only behavior change (the hero stops staring forever) IS the intended fix.
-- **Acceptance:** boot COMMS open + don't interact → the agent stares for at most ~`CHAT_WARM_MS` then returns to
-  its idle life (quirks/social/chase resume). Type or converse → the stare holds indefinitely while you keep
-  engaging. Switch conversations → the focused agent warms.
+- **Determinism:** warmth draws one `U.irnd` per ENGAGEMENT (a user-input boundary — the same class as the cursor
+  itself), never per-frame; `chatHot` stays a pure RNG-free read. Determinism lint green.
+- **Acceptance:** boot COMMS open + don't interact → the agent stares for 30-90s (a fresh draw each engagement, so
+  the exact moment varies) then returns to its idle life (quirks/social/chase resume). Type or converse → the
+  stare holds indefinitely while you keep engaging. Switch conversations → the focused agent warms.
+
+### CURSOR-GLANCE BALANCE RETUNE (2026-07-02, same commit) — "not constantly following the mouse"
+Andrew's second live observation: outside the stare, agents still flicked toward the mouse too often. Cause:
+`ambientGazeDir`'s drift shares (hero 0.32 / crew 0.15) rolled on EVERY ambient glance (re-fired every ~4-11s via
+the idle swivel / stilling shift / lookAround), and an actively-moving cursor is continuously fresh — so ~1/3 of
+all hero glances pointed at the mouse. Fix, both levers: shares dropped to **0.12 / 0.06**, AND a per-body
+`cursorGazeCd = U.irnd(20000, 45000)` armed on every cursor-directed ambient glance — at most one mouse-glance
+per ~20-45s per body no matter how much the cursor moves. The deliberate follow moments are untouched and remain
+the ONLY sustained tracking: the rare D4 cursor-mimic (45-90s cd + D2 budget) and the HOT chat-stare (now 30-90s
+warmth-bounded). RNG note: the drift `U.chance` now rolls only when fresh AND off-cooldown (draw-order change is
+benign — unseeded `U.*`, the standing D2 argument).
 
 ## D2 — implementation notes (as built)
 

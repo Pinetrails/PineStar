@@ -146,13 +146,14 @@ const World = (() => {
   /* TIER D · D1 WARMTH (tune fix 2026-07-02) — COMMS is a PERSISTENT panel: it always has an active
      stream, so setChatFocus fires at boot and never clears. Without a decay the focused (usually hero)
      body would stare FOREVER — "it will just endlessly follow the users mouse." The stare is therefore
-     held only while the conversation is WARM: `chatWarmT` is stamped on every genuine engagement
-     (a focus switch/open = setChatFocus; typing / sending / a reply-run boundary = chatFocusPing), and
-     chatStareHold additionally requires `fnow - chatWarmT < CHAT_WARM_MS`. When warmth lapses the hold
+     held only while the conversation is WARM: on every genuine engagement (a focus switch/open = setChatFocus;
+     typing / sending / a reply-run boundary = chatFocusPing) a FRESH random warmth window (`CHAT_WARM_MIN..MAX`,
+     30–90s) is drawn into `chatWarmUntil`, and chatStareHold requires `fnow < chatWarmUntil`. When warmth lapses the hold
      simply stops engaging — the existing self-heal (decideIdle clears stilling on entry) returns the body
      to its normal idle life (quirks/social/chase/wander resume). Re-engaging re-warms it indefinitely. */
-  const CHAT_WARM_MS = 120000;              // ~2 min: how long after the last real engagement the chat-stare keeps holding
-  let chatWarmT = -1e9;                      // last engagement stamp (frame clock, fnow); -1e9 = never warm
+  const CHAT_WARM_MIN = 30000, CHAT_WARM_MAX = 90000;  // 30s–90s: a FRESH random window is drawn on each engagement, so the
+                                                        // moment the stare loses interest is never predictable (Andrew: "Less predictable")
+  let chatWarmUntil = -1e9;                  // absolute deadline (frame clock, fnow) past which the stare goes cold; -1e9 = never warm
   /* TIER D · D3 SOCIAL ENCOUNTERS — Tier C (gaze-only) grows bounded MOVEMENT beats. ONE live encounter
      station-wide (G4): `socialBeat` is the single slot — null, or {kind, aId, bId, until}. `until` is a HARD
      whole-encounter timeout so the slot ALWAYS frees, even if pathing fails / a body gets stuck / a participant
@@ -836,12 +837,14 @@ const World = (() => {
     chatFocusId = next;
     // A switch/open IS engagement — warm the (new) focus so the stare holds for a fresh window. When focus
     // moves to another id the old body just lapses (next decideIdle restores its idle life). null → no warmth.
-    if (next) chatWarmT = fnow;
+    if (next) warmChatFocus();
   }
-  /* D1 WARMTH ping — re-stamp the focus as WARM so an ACTIVE conversation never goes cold mid-use. Called from
-     chat.js at the genuine engagement points (typing at / sending to / a reply-run boundary of the focused
-     stream). O(1) timestamp write, RNG-free; no-ops when there's no live focus (so pinging a closed panel is inert). */
-  function chatFocusPing() { if (chatFocusId) chatWarmT = fnow; }
+  /* D1 WARMTH ping — re-warm the focus so an ACTIVE conversation never goes cold mid-use. Called from chat.js at the
+     genuine engagement points (typing at / sending to / a reply-run boundary of the focused stream). Draws a FRESH
+     30–90s window (U.irnd — deterministic-lint-safe) so the lose-interest moment stays unpredictable; no-ops when
+     there's no live focus (so pinging a closed panel is inert). */
+  function warmChatFocus() { chatWarmUntil = fnow + U.irnd(CHAT_WARM_MIN, CHAT_WARM_MAX); }
+  function chatFocusPing() { if (chatFocusId) warmChatFocus(); }
   // the body (hero or crew) the Commander is chatting with, or null. bodyForAgent maps 'agent'→hero + crew by id.
   function chatFocusBody() { return chatFocusId ? bodyForAgent(chatFocusId) : null; }
   /* chatHot — THE single predicate for "the chat-stare is actually engaged": a focus is set AND the conversation
@@ -850,7 +853,7 @@ const World = (() => {
      the definition can never drift apart. COMMS focus never clears in practice (persistent panel), so keying any
      of those on focus ALONE would permanently bar the focused body from social/mimic/chase after warmth lapses —
      hot-focus is the real "held" condition. RNG-free: reads module state + `now` only. */
-  function chatHot(now) { return chatFocusId != null && (now - chatWarmT) < CHAT_WARM_MS; }
+  function chatHot(now) { return chatFocusId != null && now < chatWarmUntil; }
 
   function setActivity(kind) {
     activity = kind;
@@ -2163,17 +2166,23 @@ const World = (() => {
   }
 
   // CURSOR GAZE-DRIFT: a slice of the ambient idle glances drift toward the Commander's cursor — the quiet
-  // Petz "it knows where you are" (continuous tracking, NOT the rare dramatic look-up). Falls back to a
-  // random cardinal when the cursor's gone quiet, so it never reads as locked-on.
+  // Petz "it knows where you are". RETUNED 2026-07-02 (Andrew: "not constantly following the mouse, only so
+  // often"): at the old shares (hero 0.32 / crew 0.15) an actively-moving cursor stayed fresh continuously, so
+  // roughly a third of ALL ambient glances (which re-fire every ~4-11s) pointed at the mouse — it read as
+  // tracking, not noticing. Now a cursor-directed ambient glance is (a) rarer per roll (0.12 / 0.06) and
+  // (b) throttled by a per-body cooldown (one cursor glance per ~20-45s at most), so even under constant mousing
+  // it's an occasional flick of attention. The deliberate follow moments stay where they belong: the rare D4
+  // cursor-mimic beat and the HOT chat-stare (both separately gated).
   function ambientGazeDir(now) {
-    // D4 Beat 1 — CREW cursor-drift: the hero keeps the larger Commander-attuned share (0.32); CREW bodies get
-    // a smaller slice (0.15) of their ambient facing drifting toward the cursor when it's fresh, so an idle
-    // crew member is occasionally just... watching you — but the hero stays the most attuned. This is the ONLY
+    // Crew keep a smaller share than the hero (the hero stays the most Commander-attuned). This is the ONLY
     // spot crew ambient facing is randomized (via lookAround/standStill), so it never fights a held goal, a
-    // glance, a chat-stare, or work facing (those don't route through here). N=1 parity: self===agent → 0.32,
-    // byte-identical to pre-D4. Ambient TEXTURE, not a noticeable beat → NOT gated by the D2 station budget (G5).
-    const drift = self === agent ? 0.32 : 0.15;
-    if ((now - lastCursor.t) < 8000 && U.chance(drift)) return dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
+    // glance, a chat-stare, or work facing (those don't route through here). Ambient TEXTURE, not a noticeable
+    // beat → NOT gated by the D2 station budget (G5). cursorGazeCd is undefined on fresh bodies → `|| 0` = ready.
+    const drift = self === agent ? 0.12 : 0.06;
+    if ((now - lastCursor.t) < 8000 && now >= (self.cursorGazeCd || 0) && U.chance(drift)) {
+      self.cursorGazeCd = now + U.irnd(20000, 45000);
+      return dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
+    }
     return U.pick(['east', 'west', 'south', 'north']);
   }
 

@@ -30,10 +30,10 @@ const Chat = (() => {
   let log, input, statusEl;
   let system = '', name = 'AGENT', activeWs = null;
   // TIER D · D1 WARMTH (2026-07-02): COMMS is a persistent panel, so setChatFocus never clears — the focused
-  // body would otherwise chat-stare (track your cursor) forever. world.js decays the stare after CHAT_WARM_MS
-  // of no engagement; this re-stamps "warm" on the genuine engagement moments (typing / sending / run-end
-  // return-to-stare of the focused stream) so an ACTIVE conversation holds the stare, an idle one lets go.
-  // O(1) timestamp write, RNG-free; no-ops when no focus is set. Only engagement points call it (not per-frame).
+  // body would otherwise chat-stare (track your cursor) forever. world.js decays the stare after a random
+  // 30-90s warmth window (drawn fresh per engagement — unpredictable by design); this re-warms it on the genuine
+  // engagement moments (typing / sending / run-end return-to-stare of the focused stream) so an ACTIVE
+  // conversation holds the stare, an idle one lets go. O(1); no-ops when no focus is set. Engagement points only.
   function warmChat() { if (typeof World !== 'undefined' && World.chatFocusPing) World.chatFocusPing(); }
   let onTurn = null, interview = null;   // interview: the AWAKENING answer handler — while set, COMMS input feeds onboarding, not the model
   // THE GATE: per-workstream run-state (busy / runId / in-flight text / tool lines / pending approval) lives in
