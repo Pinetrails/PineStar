@@ -159,7 +159,31 @@
       "runtimeArgs": ["C:/Users/andro/gen-trees/first-ten/sidecar/index.js"],
       "port": 8802,
       "autoPort": false,
-      "env": { "SKYNET_PORT": "8802" }
+      "env": { "SKYNET_PORT": "8802", "SKYNET_WORKSPACES": "C:/Users/andro/gen-trees/first-ten/.dev-workspaces" }
+    },
+    {
+      "name": "first-ten-fresh",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/first-ten/sidecar/index.js"],
+      "port": 8812,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8812", "SKYNET_WORKSPACES": "C:/Users/andro/gen-trees/first-ten/.dev-workspaces-r3" }
+    },
+    {
+      "name": "uiux-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dev/seed.js", "--keep"],
+      "port": 8816,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8816", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+    },
+    {
+      "name": "prop-upgrade-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/prop-upgrade/dev/seed.js", "--keep"],
+      "port": 8813,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8813", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
     }
   ]
 }
