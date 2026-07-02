@@ -2232,6 +2232,7 @@ const World = (() => {
     if (dawnAt && now - dawnAt < 1300) drawDawnBloom(now);   // the room takes its first breath of light
     // (the context-window gauge now lives engraved in the bottom bar — StationUI.ctxTick, not the desk)
     drawRunClocks(now);   // G0.2: the honest elapsed-time tag at every desk with a live run (world-space, over the lightmap)
+    drawWorkGlyphs(now);  // stage-ticker STRETCH: the "▸ TOOL" tag at a desk with a real tool in flight (one line below the run clock)
     drawAwaitTag(now);    // G4.1: the amber AWAITING APPROVAL tag over a permission-blocked hero
     drawPinFlourish(now); // G4.2: the amber pin-burst at the board the instant a proposal is pinned
     if (agent && !agent.unplaced) drawBubble(now);
@@ -2701,6 +2702,34 @@ const World = (() => {
       ctx.font = RUN_FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.shadowBlur = 3; ctx.shadowColor = '#62ff9e';
       ctx.fillStyle = '#9adcb0';
+      ctx.fillText(label, ax, ay);
+      ctx.restore();
+    }
+  }
+
+  /* ---------- the DESK WORK-GLYPH (stage ticker STRETCH): a tiny "▸ TOOL" tag at a desk while that agent has
+     a tool in flight (agent.tool_call → its tool_result, tracked in glyphByAgent). Complements the RUN clock
+     (which sits at the crown, y+3) by sitting one line BELOW it (y+13) so the two never collide. World-space,
+     VT323 amber phosphor like drawRunClocks; event-driven state, zero cost when nothing is in flight. */
+  const GLYPH_FONT = "8px 'VT323','Courier New',monospace";
+  function drawWorkGlyphs(now) {
+    if (!glyphByAgent.size) return;
+    for (const [aid, g] of glyphByAgent) {
+      const b = bodyForAgent(aid);
+      if (!b || b.unplaced) continue;
+      const working = (b === agent) ? !!agent.working : !!(b.working || (b.workUntil && now < b.workUntil));
+      if (!working) continue;
+      const label = '▸ ' + tickerTool(g && g.name);
+      // anchor beside the same desk the run clock uses, but one line lower (RUN clock is at dp.y*T+3).
+      let ax, ay;
+      const dp = deskPropFor(aid);
+      if (dp) { ax = (dp.x + (dp.w || 1)) * T + 1; ay = dp.y * T + 13; }
+      else if (b === agent && desk) { ax = (desk.tx + desk.w) * T + 1; ay = desk.ty * T + 13; }
+      else { ax = b.px + 7; ay = b.py - 6; }
+      ctx.save();
+      ctx.font = GLYPH_FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.shadowBlur = 4; ctx.shadowColor = '#ffae3a';
+      ctx.fillStyle = '#ffc978';
       ctx.fillText(label, ax, ay);
       ctx.restore();
     }
@@ -3345,10 +3374,158 @@ const World = (() => {
     if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; if (!(body.workUntil > fnow + 5000)) body.workUntil = fnow + 4000; }
     else { say('received: ' + (p.preview || 'message')); wakeIn(); }   // the hero (or an unrouted box) — today's behaviour
   }
+  /* ---------- the CAM-HUD ACTIVITY TICKER (stage narration) ----------
+     A single diegetic security-camera line at the bottom of the .cam-hud overlay that names WHAT the station
+     is doing RIGHT NOW, driven purely by real harness events (agent.run.* / agent.tool_call|result /
+     provider.fallback). Truthful telemetry law: nothing shows unless the harness actually emitted it.
+     Event-driven only — no rAF loop. Rapid bursts coalesce to ~2 updates/sec, always ending on the latest
+     event; after IDLE_MS with no events the line fades to a clean frame. Page reload starts empty. */
+  let tickerEl = null;              // the <span class="cam-ticker"> in .cam-hud (created lazily, once)
+  let tickerReady = false;          // DOM was set up (or setup was attempted + the overlay was missing)
+  let tickerPending = null;         // coalescing buffer: the latest {text, cls} not yet painted
+  let tickerLastPaint = 0;          // performance.now() of the last DOM write (throttle floor)
+  let tickerCoalesceT = 0;          // setTimeout id for the trailing-edge flush
+  let tickerFadeT = 0;              // setTimeout id for the idle fade-out
+  const TICKER_MIN_MS = 500;        // ≤ ~2 updates/sec
+  const TICKER_IDLE_MS = 7000;      // clean frame after 7s of no activity
+  // tool-in-flight state for the STRETCH desk glyph: agentId -> { name, callId } while a tool_call is open.
+  const glyphByAgent = new Map();
+
+  // codename for an agentId (hero or crew body), else a short id fallback — never throws.
+  function tickerName(aid) {
+    const b = bodyForAgent(aid);
+    if (b && b.name) return String(b.name);
+    return aid ? String(aid).slice(0, 8) : 'AGENT';
+  }
+  // suit colour for an agentId (inline colour is the established exception for suit tint), else null.
+  function tickerSuit(aid) {
+    const b = bodyForAgent(aid);
+    return (b && b.color) ? String(b.color) : null;
+  }
+  // tool name → terse HUD glyph: mcp__foo__bar → FOO::BAR, web.search → WEB.SEARCH, else UPPERCASED.
+  function tickerTool(name) {
+    let n = String(name || '').trim();
+    if (!n) return 'TOOL';
+    const m = /^mcp__(.+?)__(.+)$/.exec(n);
+    if (m) n = m[1] + '::' + m[2];
+    return n.replace(/[_-]+/g, '.').toUpperCase();
+  }
+  function tickerClip(s, max) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  }
+
+  // create the ticker span inside the existing .cam-hud overlay (never touches index.html). Idempotent.
+  function setupTicker() {
+    if (tickerReady) return;
+    tickerReady = true;
+    if (typeof document === 'undefined') return;
+    const host = document.querySelector('.cam-hud');
+    if (!host) return;
+    const el = document.createElement('span');
+    el.className = 'cam-ticker';
+    el.setAttribute('aria-hidden', 'true');   // the SR summary (#stage-summary) is the accessible channel; this is decorative HUD dressing
+    host.appendChild(el);
+    tickerEl = el;
+  }
+
+  // paint one line NOW (bypasses coalescing) — sets HTML (name span may carry a suit tint), tint class, and
+  // arms the CRT blip + idle fade. transform/opacity only; instant swap under reduced motion.
+  function paintTicker(text, cls, suit) {
+    if (!tickerEl) return;
+    const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    tickerLastPaint = now;
+    // structure: "<name> ▸ <rest>" — split on the first " ▸ " so only the codename gets the suit tint.
+    let html;
+    const sep = ' ▸ ';
+    const i = text.indexOf(sep);
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (i > 0) {
+      const nm = esc(text.slice(0, i)), rest = esc(text.slice(i + sep.length));
+      const style = suit ? ' style="color:' + suit + '"' : '';
+      html = '<b class="ct-name"' + style + '>' + nm + '</b><span class="ct-sep"> ▸ </span>' + rest;
+    } else {
+      html = esc(text);
+    }
+    tickerEl.innerHTML = html;
+    tickerEl.classList.toggle('cam-ticker--bad', cls === 'bad');
+    // CRT blip: retrigger the one-step enter transition unless the OS asked for less motion.
+    tickerEl.classList.remove('cam-ticker--on', 'cam-ticker--blip');
+    if (!reduceMotion()) { void tickerEl.offsetWidth; tickerEl.classList.add('cam-ticker--blip'); }
+    tickerEl.classList.add('cam-ticker--on');
+    // (re)arm the idle fade — a fresh event resets the 7s clock.
+    if (tickerFadeT) clearTimeout(tickerFadeT);
+    tickerFadeT = setTimeout(() => { if (tickerEl) tickerEl.classList.remove('cam-ticker--on', 'cam-ticker--blip'); tickerFadeT = 0; }, TICKER_IDLE_MS);
+  }
+
+  // public entry: queue a line, coalescing bursts to ≤ ~2/sec and always ending on the latest event.
+  function pushTicker(text, cls, suit) {
+    if (!text) return;
+    setupTicker();
+    if (!tickerEl) return;
+    const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    const since = now - tickerLastPaint;
+    if (since >= TICKER_MIN_MS && !tickerCoalesceT) { paintTicker(text, cls, suit); return; }
+    // inside the throttle window: stash as the pending trailing-edge line and (re)arm one flush timer.
+    tickerPending = { text, cls, suit };
+    if (!tickerCoalesceT) {
+      const wait = Math.max(0, TICKER_MIN_MS - since);
+      tickerCoalesceT = setTimeout(() => {
+        tickerCoalesceT = 0;
+        if (tickerPending) { const q = tickerPending; tickerPending = null; paintTicker(q.text, q.cls, q.suit); }
+      }, wait);
+    }
+  }
+
   // one app-level EventSource: re-emit validated channel/work-item events onto U.bus, and react in-world
   function connectChannelBridge() {
     if (bridged || typeof U === 'undefined' || !U.bus) return;
     bridged = true;
+    setupTicker();   // join the .cam-hud overlay (starts empty — no fake backfill)
+    // ── CAM-HUD ACTIVITY TICKER: narrate the latest REAL harness event as one diegetic camera line. ──
+    U.bus.on('agent.run.start', p => {
+      if (!p || !p.agentId) return;
+      const trig = String(p.trigger || '').toLowerCase();
+      const tag = (trig === 'schedule') ? ' · ROUTINE' : (trig === 'event') ? ' · EVENT' : '';
+      pushTicker(tickerName(p.agentId) + ' ▸ RUN INITIATED' + tag, '', tickerSuit(p.agentId));
+    });
+    U.bus.on('agent.tool_call', p => {
+      if (!p || !p.name) return;
+      const arg = tickerClip(p.argsSummary, 48);
+      pushTicker(tickerName(p.agentId) + ' ▸ ' + tickerTool(p.name) + (arg ? ' · ' + arg : ''), '', tickerSuit(p.agentId));
+    });
+    // successes replace themselves via the next tool_call; only surface a genuine tool FAILURE tick.
+    U.bus.on('agent.tool_result', p => {
+      if (!p || !p.isError) return;
+      pushTicker(tickerName(p.agentId) + ' ▸ ✗ ' + tickerClip(p.summary || 'tool error', 40), 'bad', tickerSuit(p.agentId));
+    });
+    U.bus.on('agent.run.error', p => {
+      if (!p) return;
+      pushTicker(tickerName(p.agentId) + ' ▸ RUN FAULT · ' + tickerClip(p.message || 'error', 40).toUpperCase(), 'bad', tickerSuit(p.agentId));
+    });
+    U.bus.on('agent.run.end', p => {
+      if (!p) return;
+      const turns = (p.turns | 0);
+      const usd = +p.usd;
+      let line = tickerName(p.agentId) + ' ▸ RUN COMPLETE';
+      if (turns > 0) line += ' · ' + turns + ' TURN' + (turns === 1 ? '' : 'S');
+      if (isFinite(usd) && usd > 0) line += ' · $' + (Math.round(usd * 100) / 100).toFixed(2);
+      pushTicker(line, '', tickerSuit(p.agentId));
+    });
+    U.bus.on('provider.fallback', p => {
+      if (!p || !p.toModel) return;
+      const to = String(p.toModel).split('/').pop();
+      pushTicker('STATION ▸ REROUTE · ' + tickerClip(to, 32).toUpperCase(), '', null);
+    });
+    // ── STRETCH: desk work-glyph state — a tool in flight (tool_call → its tool_result) marks the agent;
+    //    the render pass (drawWorkGlyphs) draws a tiny tag at that desk. run.end clears any stale mark. ──
+    U.bus.on('agent.tool_call', p => { if (p && p.agentId && p.name) glyphByAgent.set(p.agentId, { name: p.name, callId: p.callId || null }); });
+    U.bus.on('agent.tool_result', p => {
+      if (!p || !p.agentId) return;
+      const g = glyphByAgent.get(p.agentId);
+      if (g && (!p.callId || !g.callId || g.callId === p.callId)) glyphByAgent.delete(p.agentId);
+    });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId) glyphByAgent.delete(p.agentId); });
     U.bus.on('workitem.placed', p => intakeMessage(p));
     U.bus.on('workitem.delivered', p => outboundMessage(p));
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
