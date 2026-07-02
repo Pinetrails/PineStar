@@ -70,6 +70,7 @@ A.eq([sFree.actsUnattended, sFree.buildsUnattended, sFree.reachesOut], [true, tr
 const sBuild = Au.summary({ initiative: 'leash', reach: 'sandbox', leashPerDay: 2 });
 A.eq([sBuild.actsUnattended, sBuild.buildsUnattended, sBuild.reachesOut], [true, true, false], 'leash+sandbox: acts + builds, but never reaches out');
 A.eq(sBuild.leashPerDay, 2, 'summary carries the leash allowance');
+A.eq(Au.summary(Au.setLeash(Au.fresh(), 6)).leashPerDay, 6, 'a setLeash change is reflected in summary().leashPerDay (the dial reads it back)');
 const sProp = Au.summary({ initiative: 'propose', reach: 'sandbox' });
 A.eq([sProp.proposesOnly, sProp.actsUnattended], [true, false], 'propose: proposes only, never acts unattended (even with a sandbox ceiling)');
 // the key coexistence guarantee: free INITIATIVE but only sandbox REACH → builds all day, never sends/spends.
@@ -81,6 +82,7 @@ A.ok(/waiting/i.test(Au.describe({ initiative: 'wait' })), 'describe(wait) says 
 A.ok(/approve|suggestions/i.test(Au.describe({ initiative: 'propose' })), 'describe(propose) says it only suggests');
 A.ok(/3 small jobs/i.test(Au.describe({ initiative: 'leash', reach: 'sandbox', leashPerDay: 3 })), 'describe(leash) names the daily allowance');
 A.ok(/freely toward your goals/i.test(Au.describe({ initiative: 'free', reach: 'sandbox' })), 'describe(free) says it works freely');
+A.ok(/up to 7 jobs a day/i.test(Au.describe({ initiative: 'free', reach: 'sandbox', leashPerDay: 7 })), 'describe(free) also names the daily leash cap (full autonomy is honest about the pace)');
 A.ok(/nothing leaves the machine/i.test(Au.describe({ initiative: 'free', reach: 'sandbox' })), 'describe(sandbox) is explicit that nothing leaves');
 A.ok(/send|publish|external/i.test(Au.describe({ initiative: 'free', reach: 'reach' })), 'describe(reach) is explicit it can act externally');
 A.ok(Au.describe({ initiative: 'free', reach: 'reach' }).indexOf('see everything it did') >= 0, 'describe always promises legibility (you see everything)');

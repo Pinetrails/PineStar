@@ -137,7 +137,7 @@
     const reachWord = s.reach === 'observe' ? 'research only (writes nothing)'
       : s.reach === 'sandbox' ? 'builds locally, nothing leaves the machine'
       : 'can send, publish, or contact external services';
-    const how = s.initiative === 'leash' ? ('up to ' + s.leashPerDay + ' small jobs a day') : 'freely toward your goals';
+    const how = s.initiative === 'leash' ? ('up to ' + s.leashPerDay + ' small jobs a day') : ('freely toward your goals (up to ' + s.leashPerDay + ' jobs a day)');
     return 'Works on its own ' + how + ' — ' + reachWord + '. You see everything it did.';
   }
 

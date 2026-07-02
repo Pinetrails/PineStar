@@ -2245,6 +2245,13 @@ const StationUI = (() => {
         '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
         '<button class="set-theme" data-reach="reach" title="can send, publish, or contact external services">REACH-OUT</button>' +
       '</div>' +
+      '<div class="set-row"><span class="dim">PACE — how many unattended jobs per day</span></div>' +
+      '<div class="set-themes" id="auto-pace">' +
+        '<button class="set-theme" data-pace="1" title="one small job a day">LIGHT</button>' +
+        '<button class="set-theme" data-pace="3" title="a few small jobs a day — the default">STANDARD</button>' +
+        '<button class="set-theme" data-pace="6" title="a busier station — up to 6 jobs a day">BUSY</button>' +
+        '<button class="set-theme" data-pace="12" title="as much as it&#39;s allowed — up to 12 jobs a day">MAX</button>' +
+      '</div>' +
       // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
       // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
@@ -2387,16 +2394,18 @@ const StationUI = (() => {
     // AUTONOMY dial — retune Initiative / Reach in place (AutonomyStore persists; no rerender so it won't wipe an
     // open key editor). The describe() line repaints live so the posture is always honestly spelled out.
     if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {
-      const initWrap = host.querySelector('#auto-init'), reachWrap = host.querySelector('#auto-reach'), autoDesc = host.querySelector('#auto-desc');
+      const initWrap = host.querySelector('#auto-init'), reachWrap = host.querySelector('#auto-reach'), paceWrap = host.querySelector('#auto-pace'), autoDesc = host.querySelector('#auto-desc');
       const paintAuto = () => {
         const a = AutonomyStore.summary() || {};
         if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
         if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
+        if (paceWrap) paceWrap.querySelectorAll('[data-pace]').forEach(x => x.classList.toggle('sel', Number(x.dataset.pace) === a.leashPerDay));
         if (autoDesc) autoDesc.textContent = AutonomyStore.describe();
         try { syncPerm(); } catch (_) {}   // keep the permissions level highlight + blurb in step with the dial
       };
       if (initWrap) initWrap.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setInitiative(b.dataset.init); paintAuto(); sfx('click'); }));
       if (reachWrap) reachWrap.querySelectorAll('[data-reach]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setReach(b.dataset.reach); paintAuto(); sfx('click'); }));
+      if (paceWrap) paceWrap.querySelectorAll('[data-pace]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setLeash(Number(b.dataset.pace)); paintAuto(); sfx('click'); }));
       paintAuto();
     }
     // PERMISSIONS panel — the never→fully-autonomous LEVEL chooser + the OS-style standing-grant list
@@ -2410,9 +2419,10 @@ const StationUI = (() => {
       const repaintDial = () => {
         if (typeof AutonomyStore === 'undefined' || !AutonomyStore.summary) return;
         const a = AutonomyStore.summary() || {};
-        const iw = host.querySelector('#auto-init'), rw = host.querySelector('#auto-reach'), ad = host.querySelector('#auto-desc');
+        const iw = host.querySelector('#auto-init'), rw = host.querySelector('#auto-reach'), pw = host.querySelector('#auto-pace'), ad = host.querySelector('#auto-desc');
         if (iw) iw.querySelectorAll('[data-init]').forEach(x => x.classList.toggle('sel', x.dataset.init === a.initiative));
         if (rw) rw.querySelectorAll('[data-reach]').forEach(x => x.classList.toggle('sel', x.dataset.reach === a.reach));
+        if (pw) pw.querySelectorAll('[data-pace]').forEach(x => x.classList.toggle('sel', Number(x.dataset.pace) === a.leashPerDay));
         if (ad && AutonomyStore.describe) ad.textContent = AutonomyStore.describe();
       };
       // the agent's LIVE placed caps (cabinet→files …) — so a granted-but-inert capability is shown honestly with a
