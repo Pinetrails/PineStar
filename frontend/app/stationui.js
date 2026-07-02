@@ -1617,6 +1617,59 @@ const StationUI = (() => {
   // display a USD amount for the spend readout / cap echo. Whole-cent granularity for readability (the ledger
   // itself keeps micro-dollar precision; this is presentation only). No app-wide formatter exists to reuse.
   function fmtUsd(v) { return U.usd(v); }   // canonical spend formatter (util.js U.usd)
+
+  // open a URL in the user's real browser (Tauri shell when packaged, a new tab otherwise). Buying credits is
+  // ALWAYS an external link — this app never renders a payment form or handles card data.
+  function openExternal(url) {
+    if (!url) return;
+    try {
+      const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+      if (invoke) { invoke('open_external_url', { url }).catch(() => { try { window.open(url, '_blank', 'noopener'); } catch (_) {} }); return; }
+    } catch (_) {}
+    try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+  }
+
+  // STORE / MANAGED CREDITS — populate #credits-store from the real /api/credits payload. The endpoint 404s unless
+  // a credits backend is configured, so an UNconfigured install renders NOTHING here (no dead STORE, no fake balance
+  // — the honesty law). Balance + history are read from the adapter; PURCHASE opens the external buy page.
+  function wireCredits(body) {
+    const host = body.querySelector('#credits-store');
+    if (!host) return;
+    host.innerHTML = '';   // stay empty until we KNOW credits are configured
+    fetch('/api/credits', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { configured: false })
+      .then(j => {
+        if (!j || !j.configured) return;   // unconfigured → no surface at all
+        const bal = (j.balanceUsd == null) ? '—' : fmtUsd(j.balanceUsd);
+        const reach = j.reachable === false;
+        const hist = Array.isArray(j.history) ? j.history : [];
+        const rows = hist.length ? hist.slice(0, 12).map(e => {
+          const when = e && e.ts ? new Date(e.ts).toLocaleString() : '';
+          const kind = esc(String((e && e.kind) || 'entry'));
+          const amt = (e && e.usd != null) ? fmtUsd(e.usd) : '';
+          return '<div class="mc-row"><div class="mc-top"><b>' + kind + '</b> <span class="dim">' + esc(when) + '</span></div>' +
+            '<div class="mc-url dim">' + esc(amt) + (e && e.runId ? ' · run ' + esc(String(e.runId).slice(0, 8)) : '') + '</div></div>';
+        }).join('') : '<div class="fb-empty">No credit activity yet.</div>';
+        host.innerHTML =
+          '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
+          '<p class="set-about">This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.</p>' +
+          '<div class="set-row"><span class="dim">BALANCE</span><b class="credits-bal" style="margin-left:auto">' + esc(bal) + '</b></div>' +
+          (reach ? '<div class="set-row dim">⚠ the credits service didn’t answer — the balance shown may be stale.</div>' : '') +
+          '<div class="mc-acts">' +
+            '<button class="bb sm" id="credits-buy">＋ ADD CREDITS ↗</button>' +
+            '<button class="bb xs" id="credits-refresh" title="re-read the balance">↻ REFRESH</button>' +
+          '</div>' +
+          '<div class="mc-hint">Adding credits opens your browser — StarNet never handles your payment details.</div>' +
+          '<div class="set-row"><span class="dim">RECENT ACTIVITY</span></div>' +
+          '<div class="mc-list">' + rows + '</div>';
+        const buy = host.querySelector('#credits-buy');
+        if (buy) buy.addEventListener('click', () => { sfx('click'); openExternal(j.purchaseUrl); });
+        const ref = host.querySelector('#credits-refresh');
+        if (ref) ref.addEventListener('click', () => { sfx('click'); wireCredits(body); });
+      })
+      .catch(() => {});   // sidecar offline / not configured → leave the STORE absent
+  }
+
   // BUDGET panel — read the live caps + real spend from the sidecar, fill the four inputs, wire SAVE / RESET.
   // Caps persist server-side and apply live; this is the ONLY UI for money limits (previously env-var-only).
   const BG_KEYS = ['perRun', 'perAgent', 'perDay', 'global'];
@@ -1920,6 +1973,10 @@ const StationUI = (() => {
       '<h4 class="ms-h">API KEYS</h4>' +
       '<div class="key-list">' + keysHtml() + '</div>' +
       '<p class="set-about">Keys live locally on this machine and are sent only to the STARNET sidecar (127.0.0.1) per request — never anywhere else. They are shown masked; the full secret is never displayed. (The shipped desktop build moves keys behind the OS keychain.)</p>' +
+      // STORE / MANAGED CREDITS — rendered ONLY when the sidecar reports a configured credits backend (/api/credits).
+      // When credits aren't wired this stays an empty node (no dead card, no fake balance — the honesty law). wireCredits
+      // fetches the real balance + history and the external purchase link; buying opens a browser tab, never an in-app form.
+      '<div id="credits-store"></div>' +
       // AUTONOMY — the "alive between sessions" dial: two independent axes (autonomy.js). Reuses the theme-picker
       // button idiom (.set-themes/.set-theme) so it needs no new CSS. The live describe() line keeps it honest.
       '<h4 class="ms-h">AUTONOMY <span class="dim">— how much it runs on its own while you’re away</span></h4>' +
@@ -2027,6 +2084,7 @@ const StationUI = (() => {
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
     wireProviderActions(body);
     wireKeyActions(body);
+    wireCredits(body);
     wireBudget(body);
     wireFallbackChain(body);
     wireNotifyPrefs(body);

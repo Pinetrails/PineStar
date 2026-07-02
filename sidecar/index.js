@@ -17,6 +17,7 @@ const { runAgentLoop } = require('./loop.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
+const { makeCredits } = require('./credits.js');   // managed-credit backend adapter (inert unless STARNET_CREDITS_URL is set)
 const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) + validate patch — SETTINGS→Budget (P0-2)
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
@@ -234,6 +235,16 @@ const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurren
 // Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
 // runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
 const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
+// ---- MANAGED CREDITS (opt-in, config-gated). The whole managed-credit path is INERT unless STARNET_CREDITS_URL
+// points at a credits backend: no payment client is built, admission stays pure BYOK, no STORE UI renders, and
+// /api/credits 404s (the honesty law — a control that does nothing is a bug). When wired, a managed account can
+// run without BYOK: each run RESERVES its per-run cap against the account before the model is called, and the
+// unused headroom is refunded at settle (see sidecar/credits.js + sidecar/billing.js). The purchase flow is an
+// external link only — this app never renders a payment form. STARNET_CREDITS_ACCOUNT names the account to bill.
+const CREDITS_URL = String(ENV('CREDITS_URL') || '').trim();
+const CREDITS_API_KEY = String(ENV('CREDITS_API_KEY') || '').trim();
+const CREDITS_ACCOUNT = String(ENV('CREDITS_ACCOUNT') || '').trim();
+const CREDITS_PURCHASE_URL = String(ENV('CREDITS_PURCHASE_URL') || '').trim();
 // a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
 // STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
 const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
@@ -358,6 +369,18 @@ const ledgerIo = {
 };
 const ledger = makeLedger({ io: ledgerIo, clock: { now: () => Date.now() } });
 const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global }, ledger, clock: { now: () => Date.now() } });
+/* ---- managed credits (config-gated). Shares the SAME spend ledger as the run finalizer, so a managed run's
+   final truth lands in one place. INERT (configured() === false) unless CREDITS_URL is set — then admission can
+   reserve/refund against a managed account and the STORE surface + /api/credits come alive. */
+// NB: no `ledger` is passed — the run finalizer below is the SINGLE ledger writer (drives the budget pools).
+// billing.js therefore does refund-only settlement here; the managed account's own spend record lives on the
+// credits backend (posted via debit/credit), so the local ledger is never double-counted for a managed run.
+const credits = makeCredits({
+  url: CREDITS_URL, apiKey: CREDITS_API_KEY, accountId: CREDITS_ACCOUNT, purchaseUrl: CREDITS_PURCHASE_URL,
+  fetch: globalThis.fetch, clock: { now: () => Date.now() },
+  onError: (stage, err) => console.warn('[credits] ' + stage + ' failed:', (err && err.message) || err)
+});
+if (credits.configured()) { credits.refresh().catch(() => {}); }   // warm the balance cache at boot (fail-open)
 
 /* ---- P0-2 budget-caps persistence (SETTINGS → Budget). The four USD caps were env-only; now they persist in a
    PROTECTED sibling file (durable + .bak, like connectors/permissions) and apply LIVE to the running governor
@@ -1538,6 +1561,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
   if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/credits') return handleCredits(req, res);   // 404s (no surface) unless managed credits are configured
   if (req.method === 'POST' && req.url === '/api/budget/caps') return handleBudgetCaps(req, res);
   if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
   if (req.method === 'GET' && req.url === '/api/fallback/chain') return handleFallbackStatus(req, res);
@@ -1711,6 +1735,25 @@ function handleBudgetStatus(req, res) {
     lifetime: ledger.totalUsd(),
     totalUsd: ledger.totalUsd(), runs: ledger.count()
   }, budget.status(now))));
+}
+/* ---- GET /api/credits — the managed-credit STORE surface (balance + recent history + the external purchase URL).
+   HONESTY LAW: 404s when managed credits are NOT configured, so the frontend renders no STORE card and shows no
+   dead balance. Never emits a secret (no api key, no account internals beyond the display id). Read-only. ---- */
+async function handleCredits(req, res) {
+  if (!credits.configured()) { res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ configured: false })); }
+  await credits.refresh(CREDITS_ACCOUNT).catch(() => {});   // reconcile the cached balance before we report it
+  const hist = await credits.history(CREDITS_ACCOUNT, 20).catch(() => ({ entries: [] }));
+  const snap = credits.snapshot();
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    configured: true,
+    accountId: snap.accountId,               // display id only (the API key is never surfaced)
+    balanceUsd: snap.balanceUsd,             // null when the backend hasn't answered yet (UI shows "—")
+    purchaseUrl: snap.purchaseUrl,           // external link the STORE opens; this app renders no payment form
+    perRun: effectiveCaps.perRun,            // the reservation size a run will hold
+    history: Array.isArray(hist.entries) ? hist.entries : [],
+    reachable: !hist.error
+  }));
 }
 /* ---- POST /api/budget/caps { perRun?, perAgent?, perDay?, global? } — set one or more USD caps. Each value:
    a positive number = a real cap; 0 (or "0") = NO CAP (ungoverned) — an explicit saved choice; null / "" = CLEAR
@@ -2760,6 +2803,40 @@ async function runOnce(o) {
   // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
   try {
 
+  // ---- managed-credit admission (config-gated; INERT unless STARNET_CREDITS_URL is set) ----
+  // A metered run (BYOK-shaped, real $ cost) reserves its per-run cap against the managed account BEFORE the
+  // model is called; unused headroom refunds at settle. Codex/unmetered runs never touch managed credit. When
+  // credits aren't configured, credits.beginRun() is an inert byok pass-through — zero behaviour change.
+  // The per-run cap the loop enforces (o.maxCostUsd override, else the Balanced perRun; 0/∞ => ungoverned).
+  const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
+    : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity);
+  const managedRun = credits.configured() && !providerUnmetered;
+  let billed = false;   // did admission reserve managed credit? (drives the settle in finally)
+  if (managedRun) {
+    // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
+    if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
+      emit('agent.run.start', { agentId, runId, trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: false, message: 'Managed credits need a per-run budget cap — set STARNET_BUDGET_PER_RUN to a dollar amount.' });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
+    }
+    await credits.refresh(CREDITS_ACCOUNT).catch(() => {});   // reconcile the cached balance right before admission
+    const adm = credits.beginRun({ runId, agentId, capUsd: runCapUsd });
+    if (!adm || adm.ok === false) {
+      // fail closed — never spend against an unknown/exhausted managed balance. Surface it as a billing fault
+      // so the UI (friendlyerror) can point at the STORE, and the error string carries the 'credit' vocabulary.
+      const exhausted = adm && adm.reason === 'managed_credits_exhausted';
+      const msg = exhausted
+        ? 'Out of managed credit — add credits in the STORE to keep running (or connect your own provider key).'
+        : 'Managed credits are unavailable right now — the credits service did not answer (try again, or use your own provider key).';
+      emit('agent.run.start', { agentId, runId, trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: !exhausted, reason: 'billing', message: msg });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
+    }
+    billed = adm.managed === true;
+  }
+
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
   const loadedSkills = [];
@@ -3223,7 +3300,7 @@ async function runOnce(o) {
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity) },
+      limits: { maxIters: CAPS.maxIters, maxCostUsd: runCapUsd },   // runCapUsd computed once at admission (also the managed reservation)
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
@@ -3253,6 +3330,9 @@ async function runOnce(o) {
     const finalTurns = (result && result.turns) || 0;
     const finalTokens = (result && result.tokens) || 0;
     try { ledger.record({ runId, agentId, turns: finalTurns, usd: finalUsd, tokens: finalTokens, model: finalModel, unmetered: providerUnmetered }); } catch (_) {}
+    // managed-credit SETTLE: reconcile the reservation to the real spend — refund the unused headroom to the
+    // account (billing.js caps finalUsd at the reservation). Inert/no-op unless this run actually reserved credit.
+    if (billed) { try { credits.finishRun({ runId, agentId, usd: finalUsd, tokens: finalTokens, turns: finalTurns, reason: (result && result.reason) || 'done' }); } catch (_) {} }
     // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
     try {
       let title = '';
@@ -3292,6 +3372,9 @@ async function runOnce(o) {
   return result;
 
   } finally {
+    // safety net: if managed credit was reserved but a throw before the inner finally left it unsettled, settle it
+    // now (full refund on usd=0). billing.js's finishRun is idempotent, so a normal settle above makes this a no-op.
+    if (billed) { try { credits.finishRun({ runId, agentId, usd: 0, reason: 'leak-guard' }); } catch (_) {} }
     concurrencyGate.leave(agentId);   // release the admission slot on EVERY exit (normal, early-return, or throw)
   }
 }

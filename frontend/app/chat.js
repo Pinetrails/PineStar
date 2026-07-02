@@ -1389,6 +1389,11 @@ const Chat = (() => {
       choices([{ label: '⚙ Open Settings', value: 'settings' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
       return;
     }
+    if (verdict.action === 'store') {
+      // the STORE (managed credits) lives in the SETTINGS panel; open it so the user can top up or switch to BYOK.
+      choices([{ label: '🛒 Open STORE', value: 'store' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
+      return;
+    }
     if (verdict.action === 'skills') {
       choices([{ label: '✦ Open SKILLS', value: 'skills' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); });
       return;

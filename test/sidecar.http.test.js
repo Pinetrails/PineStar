@@ -30,6 +30,11 @@ function boot(port, workspaces, attemptsLeft) {
       env: Object.assign({}, process.env, {
         SKYNET_PORT: String(port),
         SKYNET_WORKSPACES: workspaces,
+        // keep the managed-credits path OFF for the default boot so /api/credits proves the unconfigured 404 path
+        // deterministically (a dev machine with these set in the ambient env would otherwise flip the assertion).
+        STARNET_CREDITS_URL: '', SKYNET_CREDITS_URL: '',
+        STARNET_CREDITS_API_KEY: '', SKYNET_CREDITS_API_KEY: '',
+        STARNET_CREDITS_ACCOUNT: '', SKYNET_CREDITS_ACCOUNT: '',
         SKYNET_IPC_TOKEN: IPC_TOKEN,
         OPENAI_API_KEY: '',
         STARNET_OPENAI_API_KEY: '',
@@ -171,6 +176,15 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(getNoTok.status, 403, 'GET /api/budget/status WITHOUT a token -> 403 (GET data routes are gated now)');
     const getWithTok = await fetch(B + '/api/budget/status', { headers: tok });
     A.eq(getWithTok.status, 200, 'GET /api/budget/status WITH the token -> 200');
+
+    // ---- managed credits: UNCONFIGURED boot exposes ZERO surface (honesty law — no dead STORE, no fake balance) ----
+    // This boot sets no STARNET_CREDITS_URL, so /api/credits must 404 with { configured: false } — the frontend
+    // reads that and renders no STORE card at all.
+    const creditsNoTok = await fetch(B + '/api/credits');
+    A.eq(creditsNoTok.status, 403, 'GET /api/credits WITHOUT a token -> 403 (gated like other data routes)');
+    const creditsUnconf = await j('GET', '/api/credits');
+    A.eq(creditsUnconf.status, 404, 'GET /api/credits with no credits backend configured -> 404 (no surface)');
+    A.eq(creditsUnconf.body.configured, false, 'the 404 body honestly reports configured:false');
 
     // ---- provider registry/catalog routes: dynamic provider surface boots and remains token-gated ----
     const providersNoTok = await fetch(B + '/api/providers');
