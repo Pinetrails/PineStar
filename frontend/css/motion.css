@@ -647,3 +647,19 @@ textarea, select {
 @media (prefers-reduced-motion: reduce) {
   .con-rail-item { transition-duration: 0.01ms !important; }
 }
+
+/* ============================================================
+   settings-truth lane — armed REMOVE pulse (owned by agent/settings-truth)
+   The two-step key REMOVE arms on first click; the armed CONFIRM button
+   breathes so the destructive state is unmistakable (the calm→armed jump
+   was being misread as "nothing happened"). Transform/box-shadow only.
+   Static colour/fill lives in app.css; retired under reduced-motion.
+   ============================================================ */
+@keyframes rm-arm-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 10px 1px var(--bad); }
+}
+.bb.danger.armed { animation: rm-arm-pulse 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .bb.danger.armed { animation: none !important; }
+}

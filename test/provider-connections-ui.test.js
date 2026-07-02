@@ -33,4 +33,15 @@ for (const id of hostedProviders) {
 }
 ok(/PROVIDERS\.forEach\(p\s*=>\s*addProvider\(p\.id\)\)/.test(station), 'Settings lists any configured provider, not only the active provider');
 
+// settings-truth: the credential list must reflect ACTUALLY-stored keys, never DEVMODE-fabricated ones.
+// The honest getter (hasStoredCredential) is exported and used by the Settings list; configured() (which
+// reports true in DEVMODE for auto-resume) must NOT be the credential-list gate.
+ok(/function\s+hasStoredCredential\s*\(/.test(harness), 'harness exposes an honest hasStoredCredential getter');
+ok(/return\s*\{[\s\S]*hasStoredCredential[\s\S]*\}/.test(harness), 'hasStoredCredential is on the harness public API');
+ok(/DEVMODE\s*&&\s*DEV\s*&&\s*normalizeProviderId\(DEV\.prov\)\s*===\s*p/.test(harness), 'DEV seed only backs the seeded provider (DEV.prov), not all providers');
+ok(/const\s+set\s*=\s*h\.hasStoredCredential\s*\?\s*h\.hasStoredCredential\(provider\)/.test(station), 'Settings credential list gates rows on hasStoredCredential, not the DEVMODE-fabricated configured()');
+// armed REMOVE must be unmistakable: filled --bad button + row hairline + inline confirm hint.
+ok(/b\.classList\.add\('armed'\)/.test(station) && /rowEl\.classList\.add\('rm-armed'\)/.test(station), 'REMOVE arm marks both the button and its row');
+ok(/click again to confirm removal/.test(station), 'armed REMOVE shows an inline confirm hint');
+
 console.log('provider-connections-ui.test.js OK -', n, 'assertions');
