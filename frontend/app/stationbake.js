@@ -187,38 +187,47 @@ const StationBake = (() => {
       return;
     }
 
-    // up > 0 → clean standing metal plating. Height is sold by the lit crown + a single soft
-    // top band; deliberately no windows/vents/weld-lines at the shipped height.
+    // up > 0 → clean standing metal plating, painted in the STATION'S OWN PIXEL IDIOM: opaque
+    // colours stepped via U.shade (hard 1px transitions), a per-tile plate seam on the floor's
+    // tile grid, and sparse single-pixel accents — so at 3x the face grain matches the floor
+    // grain. NO low-alpha full-width washes (those read as blur next to the hard floor steps).
     const capH = Math.max(2, Math.round(WALL.capH));
-    const h = up + inFace, topY = Y - up;
+    const h = up + inFace, topY = Y - up;              // all integer already (up/capH rounded, T/inFace int)
+    const n = h2(e.x, e.y, 'nwall');
+    // per-tile plate tone: discrete opaque jitter (±0.03..0.06), keyed on the hash so long walls
+    // read as individual plates without ever crossing into a gradient
+    const plate = U.shade(wallFace, ((n % 4) - 1.5) * 0.03);   // one of 4 hard tones, opaque
     // dark hull lip above the crown (the old NCAP band, pushed up with the wall)
     b.fillStyle = wallDk; b.fillRect(X, topY - capH - 2, T, 2);
-    // lit crown — the wall's top surface catching the ceiling lights. Kept BRIGHT on purpose:
-    // after the ambient bake this continuous line is what defines the wall height at any zoom.
+    // lit crown — opaque cap band, 1px lighter top edge, 1px darker seam beneath. Kept BRIGHT:
+    // after the ambient bake this continuous line defines the wall height at any zoom.
     b.fillStyle = wallCap; b.fillRect(X, topY - capH, T, capH);
-    b.fillStyle = 'rgba(255,255,255,0.22)'; b.fillRect(X, topY - capH, T, 1);
-    // flat face base colour — one clean plate, no gradient banding
-    b.fillStyle = wallFace; b.fillRect(X, topY, T, h);
-    // one subtle lighter band across the top ~1/3 + a soft highlight directly under the crown
-    b.fillStyle = 'rgba(255,236,196,0.04)'; b.fillRect(X, topY, T, Math.max(2, (h / 3) | 0));
-    b.fillStyle = 'rgba(255,236,196,0.10)'; b.fillRect(X, topY, T, 1);
-    // ultra-subtle per-tile brightness jitter so long walls don't band (unshaped, keyed on hash)
-    const n = h2(e.x, e.y, 'nwall');
-    b.fillStyle = (n % 2 === 0) ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.03)';
-    b.fillRect(X, topY, T, h);
-    // 2-3px darker AO where the face meets the floor
-    b.fillStyle = 'rgba(0,0,0,0.28)'; b.fillRect(X, Y + inFace - 3, T, 3);
-    // per-tile vertical seam rib (low alpha so it reads as a plate join, not a line)
-    b.fillStyle = 'rgba(0,0,0,0.19)'; b.fillRect(X + 5, topY, 1, h);
+    b.fillStyle = U.shade(wallCap, 0.30); b.fillRect(X, topY - capH, T, 1);          // 1px lighter top edge
+    b.fillStyle = U.shade(wallCap, -0.45); b.fillRect(X, topY - 1, T, 1);            // 1px darker seam beneath
+    // face: opaque stepped bands — lighter top course, base plate tone, darker foot. Hard 1px
+    // transitions, exactly how bakeRoomFloor steps its values.
+    b.fillStyle = plate; b.fillRect(X, topY, T, h);
+    const topCourse = Math.max(2, Math.min(4, (h / 3) | 0));
+    b.fillStyle = U.shade(plate, 0.10); b.fillRect(X, topY, T, topCourse);            // lit top course (opaque)
+    b.fillStyle = U.shade(plate, 0.16); b.fillRect(X, topY, T, 1);                    // 1px bright course edge
+    b.fillStyle = U.shade(plate, -0.22); b.fillRect(X, Y + inFace - 2, T, 2);         // 2px darker foot / floor AO
+    b.fillStyle = U.shade(plate, -0.42); b.fillRect(X, Y + inFace - 1, T, 1);         // 1px hard contact shadow
+    // per-tile darker plate seam at the tile boundary (aligns with the floor's tile grid — the
+    // floor draws its grid at X and X+? ; this 1px seam at the left tile edge matches that pitch)
+    b.fillStyle = U.shade(wallFace, -0.34); b.fillRect(X, topY, 1, h);
+    // sparse single-pixel accents like the floor's (deterministic on the hash): a bright rivet
+    // dot high on the plate and an occasional dark speck, both opaque, both 1px
+    b.fillStyle = U.shade(plate, 0.24); b.fillRect(X + 2 + (n % 7), topY + 1 + (n % 2), 1, 1);
+    if (n % 5 === 0) { b.fillStyle = U.shade(plate, -0.30); b.fillRect(X + 4 + (n % 5), topY + 3 + (n % 3), 1, 1); }
     // richer dressing only at the tall CRT-lab 'Towering' preset — the shipped up:10 stays clean
     if (up >= 18) {
-      b.fillStyle = 'rgba(0,0,0,0.3)'; b.fillRect(X, topY + ((h * 0.55) | 0), T, 1);   // weld line
+      b.fillStyle = U.shade(wallFace, -0.30); b.fillRect(X, topY + ((h * 0.55) | 0), T, 1);   // opaque weld line
       if (room && n % 4 === 0) {                                                        // recessed vent panel
         b.fillStyle = '#1a1712'; b.fillRect(X + 7, topY + 4, 4, 5);
-        b.fillStyle = 'rgba(0,0,0,0.5)';
+        b.fillStyle = U.shade('#1a1712', -0.4);
         for (let i = 0; i < 2; i++) b.fillRect(X + 8, topY + 5 + i * 2, 2, 1);
       } else if (n % 7 === 3) {                                                         // pale conduit drop
-        b.fillStyle = 'rgba(255,255,255,0.08)'; b.fillRect(X + 2, topY + 2, 1, h - 6);
+        b.fillStyle = U.shade(wallFace, 0.22); b.fillRect(X + 2, topY + 2, 1, h - 6);
       }
     }
     // floor-contact cap line (identical to the old look)
@@ -497,14 +506,27 @@ const StationBake = (() => {
           const k = Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up;
           return [ax + Math.cos(ang) * R, ay + Math.sin(ang) * R, k];
         };
-        b.fillStyle = wallFace;
-        for (let i = 0; i <= steps; i++) { const [px, py, k] = pt(i / steps); b.fillRect(px - 1.6, py - k, 3.2, k + 1); }
-        b.lineWidth = capH; b.strokeStyle = wallCap; b.beginPath();
-        for (let i = 0; i <= steps; i++) { const [px, py, k] = pt(i / steps); const yy = py - k - capH / 2; if (i) b.lineTo(px, yy); else b.moveTo(px, yy); }
-        b.stroke();
-        b.lineWidth = 1; b.strokeStyle = 'rgba(255,255,255,0.08)'; b.beginPath();
-        for (let i = 0; i <= steps; i++) { const [px, py, k] = pt(i / steps); const yy = py - k; if (i) b.lineTo(px, yy); else b.moveTo(px, yy); }
-        b.stroke();
+        // Rasterize the SAME arc+taper curve (same R, ang, k) into per-COLUMN integer fills —
+        // no fractional rects, no stroked polylines (those AA'd → blurry). Oversample the arc so
+        // every integer screen-x the curve passes through gets a column; per column keep the
+        // highest crown top the curve reaches there, then draw crisp pixel-stair fills.
+        const cols = new Map();   // ix -> { top, base }  (top = lowest y the FACE top reaches; base = floor contact)
+        const fine = steps * 4;
+        for (let i = 0; i <= fine; i++) {
+          const [px, py, k] = pt(i / fine);
+          const ix = Math.round(px), top = Math.round(py - k), base = Math.round(py);
+          const c = cols.get(ix);
+          if (!c) cols.set(ix, { top, base });
+          else { if (top < c.top) c.top = top; if (base > c.base) c.base = base; }
+        }
+        for (const [ix, c] of cols) {
+          const faceH = c.base - c.top; if (faceH <= 0) continue;
+          b.fillStyle = wallFace; b.fillRect(ix, c.top, 1, faceH + 1);            // face column, integer
+          // crown = opaque cap pixels stepped up the curve (pixel stairs, not a stroke)
+          b.fillStyle = wallCap; b.fillRect(ix, c.top - capH, 1, capH);
+          b.fillStyle = U.shade(wallCap, 0.30); b.fillRect(ix, c.top - capH, 1, 1); // 1px lit top edge
+          b.fillStyle = U.shade(wallCap, -0.45); b.fillRect(ix, c.top - 1, 1, 1);   // 1px darker seam beneath crown
+        }
       }
     }
 
