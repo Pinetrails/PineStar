@@ -59,6 +59,12 @@ const XpStore = (() => {
     if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(a && a.id ? a.id : 'agent', level);
     if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((a.name || 'Agent') + ' reached Level ' + level, 'gold');
+    // COMMS: a terse ambient station broadcast — the codename tinted with the agent's suit colour (the one
+    // established colour exception). Not a beat-slot card; coalesced + in-game-gated inside Chat.broadcast.
+    if (typeof Chat !== 'undefined' && Chat.broadcast) {
+      const nm = String((a && a.name) || 'AGENT').toUpperCase();
+      try { Chat.broadcast(nm + ' REACHED LEVEL ' + level, { highlight: nm, tint: (a && a.color) || null }); } catch (_) {}
+    }
     if (typeof Tutorial !== 'undefined' && Tutorial.onLevelUp) Tutorial.onLevelUp(level);   // first-touch coachmark: what leveling means
   }
   function celebrateStation(level) {
@@ -67,10 +73,20 @@ const XpStore = (() => {
     if (chip) { chip.classList.remove('lvup'); void chip.offsetWidth; chip.classList.add('lvup'); }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('STATION advanced to Level ' + level, 'gold');
   }
+  // a milestone's short trophy title for the broadcast (the notify text carries the fuller sentence).
+  const MILESTONE_TITLE = {
+    first_light: 'FIRST LIGHT', approved: 'APPROVED', pack_rat: 'PACK RAT',
+    centurion: 'CENTURION', trusted: 'TRUSTED', veteran: 'VETERAN',
+  };
   function announceMilestone(id) {
     // G3a: a milestone lands with its own sting — grander than a quest, smaller than a level-up (was mute).
     if (typeof SFX !== 'undefined' && SFX.milestone) { try { SFX.milestone(); } catch (_) {} }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(MILESTONE_TEXT[id] || ('Milestone — ' + id), 'gold');
+    // COMMS: the trophy broadcast — rarer than a level, so the brighter gold treatment.
+    if (typeof Chat !== 'undefined' && Chat.broadcast) {
+      const nm = MILESTONE_TITLE[id] || String(id || '').toUpperCase().replace(/_/g, ' ');
+      try { Chat.broadcast('TROPHY EARNED · ' + nm, { highlight: nm, tone: 'gold' }); } catch (_) {}
+    }
   }
 
   // fold one real event into BOTH the agent's stats and the station rollup (same engine, same path).
