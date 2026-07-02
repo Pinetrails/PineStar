@@ -1806,8 +1806,9 @@ const World = (() => {
       const zB = zoneFor(b); const rb = zoneRect(zB); if (!rb) continue;
       const edge = sharedEdge(ra, rb); if (!edge) continue;              // no shared edge → not a border pair
       // each body walks to the nearest tile of the shared line INSIDE its own rect
-      const ta = borderTileFor(ra, edge, tileOf(a.px, a.py));
-      const tb = borderTileFor(rb, edge, tileOf(b.px, b.py));
+      const walk = (x, y) => geo.walkable(x, y, blocked);   // injected so borderTileFor stays pure (headless-testable)
+      const ta = borderTileFor(ra, edge, tileOf(a.px, a.py), walk);
+      const tb = borderTileFor(rb, edge, tileOf(b.px, b.py), walk);
       if (!ta || !tb) continue;
       if (!tileInZone(zA, ta.x, ta.y) || !tileInZone(zB, tb.x, tb.y)) continue;   // belt-and-suspenders containment
       return startEncounter(a, b, 'border', now,
@@ -1818,6 +1819,11 @@ const World = (() => {
   }
   // the single normalized rect of a 'room' zone, else null (leash/multi don't express a clean shared edge)
   function zoneRect(zone) { return (zone && zone.kind === 'room' && zone.rect) ? zone.rect : null; }
+  /* D3-PURE-GEOMETRY-BEGIN — sharedEdge + borderTileFor are PURE (no module state, no RNG, no DOM; the walkable
+     test is injected). test/social-border.test.js extracts THIS marked block from the source and executes it
+     headlessly (the world IIFE itself can't load under node), so the shipped code — not a copy — is what's under
+     test. Keep this block self-contained: only Math.* + its own params. Also exposed read-only on the World API
+     as _dbgSocialGeom for the in-browser dev harness. */
   // shared edge between two inclusive rects that are ADJACENT (abut along a full or partial line). Returns
   // { axis:'v'|'h', line, lo, hi } — a vertical shared edge at column `line` spanning rows lo..hi (or horizontal).
   // Adjacency = the rects touch along one line (one's right edge == the other's left edge (±0/1), overlapping span).
@@ -1840,7 +1846,8 @@ const World = (() => {
     return null;
   }
   // nearest walkable tile of `rect` along the shared edge (inside rect), closest to the body's current tile.
-  function borderTileFor(rect, edge, cur) {
+  // `walkableFn(x,y)` is injected so the function stays pure (callers pass the live geo.walkable+blocked).
+  function borderTileFor(rect, edge, cur, walkableFn) {
     const cands = [];
     if (edge.axis === 'v') {
       // the column of THIS rect that sits on the shared edge: rect.x2 if rect is the left one, else rect.x1
@@ -1851,9 +1858,10 @@ const World = (() => {
       for (let x = edge.lo; x <= edge.hi; x++) cands.push({ x, y: row });
     }
     cands.sort((p, q) => (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) - (Math.abs(q.x - cur.x) + Math.abs(q.y - cur.y)));
-    for (const c of cands) if (geo.walkable(c.x, c.y, blocked)) return c;
+    for (const c of cands) if (walkableFn(c.x, c.y)) return c;
     return null;
   }
+  /* D3-PURE-GEOMETRY-END */
   // nearest walkable in-zone tile to (tx,ty), searching a small ring; `cur` biases toward reachability; `excl` an
   // optional tile to skip (so a huddle partner doesn't target the same tile). Deterministic ring scan (no RNG).
   function nearestWalkableInZone(zone, tx, ty, cur, radius, excl) {
@@ -4325,6 +4333,10 @@ const World = (() => {
     },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount },
+    // TEST/DEBUG ONLY — the D3 border-meeting pure geometry (sharedEdge/borderTileFor), exposed read-only for the
+    // DEV harness. No world state touched (both are pure; borderTileFor takes an injected walkable predicate).
+    // The headless coverage lives in test/social-border.test.js (extracts the D3-PURE-GEOMETRY block from source).
+    _dbgSocialGeom: { sharedEdge: (ra, rb) => sharedEdge(ra, rb), borderTileFor: (rect, edge, cur, walkableFn) => borderTileFor(rect, edge, cur, walkableFn) },
     // read-only body snapshot for the DEV test harness (window.__SKYNET_TEST__) — the Tier A/B/C substrate.
     // Pure read, no side effects: the hero + every crew body, each with tile/zone/glance/goal/moving so the
     // floor invariants (idle stays in-zone · awareness is gaze-only · summoned walks to its OWN workstation)

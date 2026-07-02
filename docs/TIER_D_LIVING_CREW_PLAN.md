@@ -358,10 +358,17 @@ encounters …` (557dccb2) + the fall-through / one-sided-break fixes.
 Computed **directly from the two zone rects** — no `zones.js` API change. `zoneRect(zone)` yields the single rect
 of a `'room'` zone (`'leash'`/`'multi'` zones can't express a clean shared edge → those pairs are simply NOT
 border candidates, a documented skip, not a `zones.js` edit). `sharedEdge(ra,rb)` returns a vertical/horizontal
-shared line iff the rects abut with an overlapping span; `borderTileFor(rect,edge,cur)` returns the nearest walkable
-tile of that line INSIDE the given rect. Each body walks to its OWN rect's edge tile — they meet ACROSS the line,
-never crossing (containment staged, not hidden). 16/16 pure-geometry smoke assertions pass (each body's target is
-inside its own rect only; gaps yield no edge; partial overlaps span correctly; blocked edge tiles are skipped).
+shared line iff the rects abut with an overlapping span; `borderTileFor(rect,edge,cur,walkableFn)` returns the
+nearest walkable tile of that line INSIDE the given rect (the walkable test is INJECTED so the function is pure).
+Each body walks to its OWN rect's edge tile — they meet ACROSS the line, never crossing (containment staged, not
+hidden). **Automated coverage: `test/social-border.test.js`, chained into `test:fast` right after zones.test (the
+established chain pattern)** — 23 assertions. world.js is a browser IIFE (un-requireable under node), so the test
+extracts the marked `D3-PURE-GEOMETRY` block from the SOURCE and executes it — the shipped code, not a copy (the
+same eval-the-engine-source spirit as `test/test_world.js`) — with `Zones.rectHas` as the containment oracle:
+each body's target is inside its own rect ONLY; gaps yield no edge; partial overlaps span exactly; blocked edge
+tiles are skipped; a fully-blocked edge yields null (the pair is skipped, nothing strands); plus a purity lint on
+the extracted block and source locks on the live wiring. The two helpers are also exposed read-only on the World
+API as `_dbgSocialGeom` for the in-browser DEV harness.
 
 ### Final tuning constants
 `SOCIAL_SEL_ROLL = 0.02` (per idle re-decide, only when a candidate pair exists + gate open); hold `U.irnd(3000,
@@ -400,3 +407,9 @@ unchanged — RARE by design (a 6-agent floor sees an encounter every few minute
   attended check.
 - **Border meeting requires two `'room'`-zone bodies with abutting rects.** A solo hero (`'multi'` zone) or a
   leashed deskless crew body never border-meets — by design (documented skip), not a bug.
+- **Known limit — mid-encounter zone shrink (reviewer note 2):** huddle/watch/border targets are zone-clamped at
+  PLAN time only; a REFIT that shrinks a zone mid-encounter isn't re-checked step-by-step for those three beats
+  (the half-follow DOES re-clamp each incremental step). This is the same clamp-at-pick model as the entire
+  existing idle stack (wander/rounds/gaze-out all clamp when the target is chosen), so it is not a D3 regression —
+  and any stale walk is bounded by the 25 s whole-encounter hard cap. Recorded, not fixed: fixing it here would
+  mean a new per-step containment layer the rest of the idle stack doesn't have.
