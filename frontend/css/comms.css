@@ -223,3 +223,55 @@
   }
   .comms-newpill { transition-duration: 0.01ms !important; }
 }
+
+/* ============================================================
+   6 · CELEBRATION — the terse station BROADCAST line (level-up /
+   quest-complete / trophy). NOT a transmission card: it's an
+   ambient system line — dim, letter-spaced, centered, with a
+   hairline rule to either side of the text. The eerie register:
+   a CRT broadcast surging in, never confetti. Theme vars only
+   (the suit-colour tint on .bc-name is set inline in chat.js —
+   the one established per-agent colour exception, mirroring the
+   canvas nameplate). A one-shot surge-in on entrance; nothing
+   lingers or blinks (a MOMENT, per the COMMS beat rules).
+   ============================================================ */
+.cmsg.broadcast {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; margin: 10px 0; padding: 3px 4px;
+  background: none !important; box-shadow: none !important; border: 0 !important;
+}
+/* the hairline rules that flank the centered line */
+.cmsg.broadcast::before,
+.cmsg.broadcast::after {
+  content: ""; flex: 1 1 auto; height: 1px; max-width: 84px;
+  background: linear-gradient(90deg, transparent, var(--ph-faint), transparent);
+}
+.cmsg.broadcast .bc-line {
+  flex: 0 0 auto;
+  font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.cmsg.broadcast .bc-glyph { color: var(--ph); opacity: .8; }
+/* the tinted name span already carries its inline suit colour; keep its weight up */
+.cmsg.broadcast .bc-name { font-weight: bold; }
+/* trophies are rarer → a brighter, gold-accented treatment (kept restrained) */
+.cmsg.broadcast.broadcast-gold .bc-line { color: var(--gold); text-shadow: 0 0 7px var(--ph-glow); }
+.cmsg.broadcast.broadcast-gold .bc-glyph { color: var(--gold); opacity: 1; }
+.cmsg.broadcast.broadcast-gold::before,
+.cmsg.broadcast.broadcast-gold::after {
+  background: linear-gradient(90deg, transparent, var(--gold), transparent); opacity: .5;
+}
+
+/* the surge-in: a brief phosphor bloom that settles — the CRT "broadcast lands" feel, once, then still */
+@keyframes bc-surge {
+  0%   { opacity: 0; letter-spacing: 6px; text-shadow: 0 0 14px var(--ph-glow); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; letter-spacing: 2.5px; }
+}
+.cmsg.broadcast .bc-line { animation: bc-surge var(--t-slow, .34s) var(--ease-out, ease-out) both; }
+
+/* reduced motion: the line appears instantly at its settled state — no surge, no glow ramp */
+@media (prefers-reduced-motion: reduce) {
+  .cmsg.broadcast .bc-line { animation: none !important; letter-spacing: 2.5px; }
+}

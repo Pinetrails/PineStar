@@ -411,6 +411,59 @@ const Chat = (() => {
   }
   function addUser(t) { row('user', { stamp: true }).body.textContent = t; autoscroll(); }
   function localLine(t) { row('agent', { stamp: true }).body.textContent = t; autoscroll(); }
+
+  /* ---------- CELEBRATION broadcast: a terse station system line (level-up / quest / trophy) ----------
+     NOT a beat-slot card: it never touches activeNudge/the post-run precedence chain (turn-in→suggestion→
+     seed→curiosity), so it can never compete with or suppress a real ask. It's an ambient system line —
+     dim, letter-spaced, centered, hairline rules either side — appended to the transcript exactly where it
+     happened (so it slots UNDER a live presence card, never over it). The eerie register: a terse broadcast,
+     never a party. `tint` (an agent suit colour) is the ONE established colour exception, applied to a
+     highlighted span only. RESTRAINT enforced here: fires only in-game (never on the create/onboarding
+     screens), and coalesces — two broadcasts inside ~3s never stack; the later one is dropped. */
+  const BROADCAST_COALESCE_MS = 3000;
+  let lastBroadcastAt = 0;
+  function broadcastBlocked() {
+    // never during the create/onboarding/interview flows — a celebration must land only on the live station
+    const game = el('screen-game');
+    if (!game || !game.classList.contains('active')) return true;
+    if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return true;
+    if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return true;
+    return false;
+  }
+  // text: the terse line WITHOUT the leading ▸ (added here). opts.highlight: the substring to tint (the agent
+  // name); opts.tint: the suit colour for that span; opts.tone: 'gold' brightens the whole line (trophies).
+  function broadcast(text, opts) {
+    if (!log) return false;
+    opts = opts || {};
+    if (broadcastBlocked()) return false;
+    const now = Date.now();
+    if (now - lastBroadcastAt < BROADCAST_COALESCE_MS) return false;   // coalesce: no back-to-back broadcasts
+    lastBroadcastAt = now;
+    clearEmptyState();
+    const d = document.createElement('div');
+    d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');
+    d.setAttribute('role', 'status');   // a live-region system line for AT (it renders no speaker chip)
+    const line = document.createElement('span'); line.className = 'bc-line';
+    const raw = String(text == null ? '' : text);
+    const hi = opts.highlight ? String(opts.highlight) : '';
+    const ix = hi ? raw.indexOf(hi) : -1;
+    // prefix glyph
+    const pre = document.createElement('span'); pre.className = 'bc-glyph'; pre.textContent = '▸ ';
+    line.appendChild(pre);
+    if (ix >= 0) {
+      if (ix > 0) line.appendChild(document.createTextNode(raw.slice(0, ix)));
+      const em = document.createElement('span'); em.className = 'bc-name'; em.textContent = hi;
+      if (opts.tint) { em.style.color = opts.tint; em.style.textShadow = '0 0 6px ' + opts.tint; }
+      line.appendChild(em);
+      line.appendChild(document.createTextNode(raw.slice(ix + hi.length)));
+    } else {
+      line.appendChild(document.createTextNode(raw));
+    }
+    d.appendChild(line);
+    log.appendChild(d);
+    autoscroll();
+    return true;
+  }
   // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible. Kept for
   // REPLAY (Channels stores pre-formatted strings) and for the ⏹ stop-reason line; the LIVE call/result path
   // now renders structured tool CHIPS (toolChip / resolveChip) instead. Ends any open chip rail first so the
@@ -1761,5 +1814,5 @@ const Chat = (() => {
   // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
   function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
 
-  return { init, load, send, status, localLine, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, awayDigest, awayReview };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, awayDigest, awayReview };
 })();
