@@ -49,6 +49,8 @@ const Chat = (() => {
                                 // the bottom with work floating above it. streamingAgent() segments the prose so an action drops
                                 // in BETWEEN text blocks, exactly where it happened.
   let proposalsWired = false;   // the memory.proposed (turn-in) U.bus listener is registered exactly once
+  let studyWired = false;       // the agent.run.end STUDY (dossier Phase B) listener is registered exactly once
+  let studyRunsSeen = new Set();   // runIds already study-fetched (agent.run.end can re-fire; fetch once per run)
   let curiosityWired = false;   // the agent.run.end curiosity-nudge listener is registered exactly once
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
@@ -274,7 +276,7 @@ const Chat = (() => {
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
-    proposalRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
+    proposalRunsSeen.clear(); studyRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
@@ -300,6 +302,7 @@ const Chat = (() => {
     input.value = '';
     warmSlashCatalog();
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
+    wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     load(opts.ws);
     input.onkeydown = e => {
@@ -799,6 +802,10 @@ const Chat = (() => {
     // G3a confidence narrative: the same DIRECT hand-off (this verdict never rides the bus, so the fire-once
     // calibration/TRUSTED beats must be told here, AFTER the meter folded). Speaks at most twice, ever; mints nothing.
     if (typeof ConfBeats !== 'undefined' && ConfBeats.onFeedback) { try { ConfBeats.onFeedback({ agentId: agentId || 'agent', id: 'work:' + runId, delta: delta, reason: reason }); } catch (_) {} }
+    // GROWTH Tier 1 §4 — RATINGS → TASTE: fold this verdict into the per-archetype streak; a fresh 3-streak mints
+    // ONE style-dim study proposal (Commander consistently likes/dislikes <archetype> work), surfaced at the same
+    // one beat. The archetype is classified from the run's directive (RUN_META.title). Fail-open.
+    try { const rm = runMeta(runId); maybeTasteBeat(agentId, runId, rm && rm.title, verdict); } catch (_) {}
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   function workRateControl(host, agentId, runId, onSettle) {
@@ -1120,6 +1127,134 @@ const Chat = (() => {
         }
       }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
     });
+  }
+
+  /* GROWTH Tier 1 — THE STUDY BEAT (dossier Phase B: work → understanding). After a salient run the sidecar
+     studies the transcript and stashes DOSSIER belief-update proposals; here we fetch them and — at TURN-IN
+     PRIORITY but NEVER stacking a second beat — offer ONE for Keep / Edit / Discard. Keep folds the belief into
+     the dossier (source:'study'); Discard denylists it forever; leaving it unanswered tallies an ignore (2× =
+     stop). It rides the SAME one-post-run-beat discipline as the memory turn-in: a memory turn-in for the run
+     WINS (study cedes and re-offers on the next task end), and a live study card stands curiosity down. */
+  let activeStudy = null;            // the single visible study card { node } — one at a time, like activeTurnin
+  const studyPending = [];           // {runId, agentId} study batches deferred behind a memory turn-in — retried next run end
+  const tastePending = [];           // ready-made taste proposals (from a ratings streak) waiting for a free beat
+  function studyBusy() { return !!(activeStudy && activeStudy.node && activeStudy.node.isConnected); }
+  // a MEMORY turn-in owns this run's moment? (it fetched proposals, or a deck is live/queued). Study must cede.
+  function memoryOwnsRun(runId) {
+    if (activeTurnin) return true;                       // a memory deck is live — study waits
+    if (runId && proposalRunsSeen.has(runId) && turninQueue.length) return true;
+    return false;
+  }
+  // render ONE study proposal as a gold-inset turn-in card (Keep / Edit / Discard). Mirrors renderTurninBatch's
+  // family but routes consent to StudyStore (the dossier lives in the browser — no server verdict call).
+  function studyCard(prop, agentId, runId) {
+    if (!log || !prop || typeof StudyStore === 'undefined') return false;
+    clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
+    if (typeof StudyStore.markShown === 'function') StudyStore.markShown();   // spend one session-cap slot
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('study');
+    const dimName = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? ((Dossier.DIMS.find(d => d.key === prop.dim) || {}).label || prop.dim) : prop.dim;
+    const verb = prop.kind === 'retire' ? 'thinks this no longer holds' : 'learned something about your ' + String(dimName).toLowerCase();
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ ' + name + ' ' + verb + ' — keep it?';
+    const slot = document.createElement('span'); slot.className = 'turnin-slot';
+    r.body.appendChild(title); r.body.appendChild(slot);
+    const item = document.createElement('div'); item.className = 'turnin-item';
+    const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = prop.kind === 'retire' ? 'RETIRE' : String(dimName).toUpperCase();
+    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = prop.text;
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
+    slot.appendChild(item);
+    activeStudy = { node: r.d };
+    let decided = false;
+    function done() { activeStudy = null; vanish(r.d, () => flushStudyPending()); }
+    function settle(label, isDeny) {
+      decided = true; btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
+      item.appendChild(tag);
+      setTimeout(done, 600);
+    }
+    function commit(verdict, editedText) {
+      if (decided) return;
+      if (verdict === 'keep') { const ok = StudyStore.accept(prop, editedText); settle(prop.kind === 'retire' ? '✓ retired' : (editedText != null ? 'saved (edited)' : 'kept'), false); return ok; }
+      StudyStore.discard(prop); settle('✕ discarded', true);
+    }
+    function renderChoices() {
+      btns.innerHTML = '';
+      const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
+      mk(prop.kind === 'retire' ? 'Retire it' : 'Keep', '', () => commit('keep'));
+      if (prop.kind !== 'retire') mk('Edit', '', enterEdit);
+      mk('Discard', 'deny', () => commit('discard'));
+    }
+    function enterEdit() {
+      if (decided) return;
+      const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'turnin-edit'; inp.value = prop.text;
+      item.replaceChild(inp, text); inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
+      const commitEdit = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } text.textContent = v; item.replaceChild(text, inp); commit('keep', v); };
+      const cancel = () => { item.replaceChild(text, inp); renderChoices(); };
+      btns.innerHTML = '';
+      const mk = (lbl, fn) => { const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
+      mk('Save', commitEdit); mk('Cancel', cancel);
+      inp.onkeydown = e => { if (e.key === 'Enter') commitEdit(); else if (e.key === 'Escape') cancel(); };
+    }
+    renderChoices();
+    autoscroll();
+    return true;
+  }
+  // try to place a deferred beat (a ready taste proposal first, else a deferred study batch) now that the moment
+  // may be free. One at a time — the vanish() of each card calls this again, draining the queues without stacking.
+  function flushStudyPending() {
+    if (studyBusy()) return;
+    if (tastePending.length && StudyStore && StudyStore.canShow && StudyStore.canShow()) {
+      const t = tastePending.shift();
+      if (t) { studyCard(t, 'agent', null); return; }
+    }
+    if (studyPending.length) { const next = studyPending.pop(); if (next) offerStudy(next.runId, next.agentId, true); }
+  }
+  // fetch (unless retrying) + offer ONE live study proposal for a run, obeying the one-beat + session-cap gates.
+  async function offerStudy(runId, agentId, isRetry) {
+    if (typeof StudyStore === 'undefined') return;
+    if (studyBusy()) { if (!isRetry) studyPending.push({ runId, agentId }); return; }        // a study card is already up
+    if (memoryOwnsRun(runId)) { if (!isRetry) studyPending.push({ runId, agentId }); return; } // memory turn-in wins this run
+    if (!StudyStore.canShow || !StudyStore.canShow()) return;                                 // session cap spent
+    const proposals = await StudyStore.fetchProposals(runId, agentId);
+    if (!proposals.length) return;
+    const prop = StudyStore.nextLive(proposals);   // drops declined/ignored/exhausted beliefs
+    if (!prop) return;
+    // re-check the moment after the async fetch — a memory turn-in may have claimed it meanwhile.
+    if (studyBusy() || memoryOwnsRun(runId)) { studyPending.push({ runId, agentId }); return; }
+    studyCard(prop, agentId, runId);
+  }
+  function wireStudy() {
+    if (studyWired || typeof U === 'undefined' || !U.bus) return;
+    studyWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p || p.reason !== 'done') return;                       // only after a clean run
+      if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never study-nudges)
+      const runId = p.runId || p.id;
+      // each run-end is also a chance to retry a study deferred behind an earlier memory turn-in (anti-starve).
+      setTimeout(() => {
+        flushStudyPending();
+        if (!runId || studyRunsSeen.has(runId)) return;            // fetch a run's study proposals at most once
+        studyRunsSeen.add(runId);
+        if (studyRunsSeen.size > 200) studyRunsSeen.delete(studyRunsSeen.values().next().value);
+        offerStudy(runId, p.agentId || 'agent', false);
+      }, 900);   // AFTER wireProposals' 350ms fetch + wireCuriosity's 650ms slot, so a memory turn-in claims the moment first
+    });
+  }
+  // GROWTH Tier 1 §4 — RATINGS → TASTE: after a work verdict folds, a 3-streak on one archetype may mint a
+  // style-dim taste proposal. Surfaced through the SAME study card (one beat), obeying the same gates. Called
+  // from rateWork with the run's directive (for the archetype) + the verdict.
+  function maybeTasteBeat(agentId, runId, directive, verdict) {
+    if (typeof StudyStore === 'undefined' || typeof Study === 'undefined') return;
+    const arch = Study.classifyArchetype(directive || '');
+    const prop = StudyStore.noteRating(arch, verdict);   // persists the streak; returns a proposal only on a fresh 3-streak
+    if (!prop) return;
+    // ride the one-beat discipline: if the moment is taken, queue it (studyPending carries runId only, so stash the
+    // ready-made taste proposal on a tiny side channel keyed by a synthetic runId).
+    setTimeout(() => {
+      if (studyBusy() || memoryOwnsRun(runId) || !StudyStore.canShow()) { tastePending.push(prop); return; }
+      studyCard(prop, agentId || 'agent', runId);
+    }, 300);
   }
 
   /* JUST-IN-TIME CURIOSITY (Commander Dossier, Phase B slice 2): after a clean run, the station may ask

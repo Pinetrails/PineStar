@@ -1241,6 +1241,7 @@ const App = (() => {
     if (typeof SuggestStore !== 'undefined') SuggestStore.reset();   // …and a fresh ongoing-suggestion cadence
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
+    if (typeof StudyStore !== 'undefined') StudyStore.reset();   // …and a fresh STUDY state — a new Commander never inherits the prior hero's studyDeclined denylist / ignore tallies / rating streaks (own key)
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
@@ -1375,6 +1376,11 @@ const App = (() => {
       pendingDossier = null;
       agent.systemPrompt = composeSystemPrompt(agent);   // include the dossier block before Chat.init reads it below
     }
+    // GROWTH Tier 1 — STUDY (dossier Phase B): after a salient run, the station proposes DOSSIER belief updates
+    // (goals/pain/style/… ADD or RETIRE), consented at the turn-in beat. Self-persists its own key (declined
+    // denylist + per-belief ignore tallies + per-archetype rating streaks). Init AFTER DossierStore (its accept()
+    // folds into it); the per-session shown-cap resets here.
+    if (typeof StudyStore !== 'undefined') StudyStore.init({ now: () => Date.now() });
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();

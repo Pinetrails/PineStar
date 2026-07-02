@@ -3475,7 +3475,7 @@ const StationUI = (() => {
      provenance — add / edit / pin / forget, all local-first. It reads + mutates DossierStore (which
      recomposes the live prompt + persists on each edit); the panel re-renders after a mutation. Belief text
      is rendered as textContent (never interpreted), mirroring the Memory Core's injection-safe discipline. */
-  const CD_SOURCE = { onboarding: 'from your awakening', commander: 'you told the station', interview: 'from the intake interview', curiosity: 'you answered a question' };
+  const CD_SOURCE = { onboarding: 'from your awakening', commander: 'you told the station', interview: 'from the intake interview', curiosity: 'you answered a question', study: 'observed from your work' };
   const CDS = () => (typeof DossierStore !== 'undefined') ? DossierStore : null;
 
   // STATION RECORD — the durable lifetime pride counters (G3a). Reads the pure PrideStore snapshot and renders a
@@ -3596,11 +3596,16 @@ const StationUI = (() => {
   }
 
   function cdCard(dim, b) {
-    const card = el('div', 'cd-rec' + (b.pinned ? ' pinned' : ''));
+    const card = el('div', 'cd-rec' + (b.pinned ? ' pinned' : '') + (b.source === 'study' ? ' cd-observed' : ''));
     const txt = el('div', 'cd-body'); txt.textContent = b.text; card.appendChild(txt);   // textContent — belief text is never interpreted
+    const metaRow = el('div', 'cd-meta');
+    // GROWTH Tier 1: a STUDY-sourced belief (the station learned it from real work, not the Commander authoring it)
+    // gets a distinct "observed" tag so the glass box stays honest about provenance.
+    if (b.source === 'study') { const tag = el('span', 'cd-observed-tag'); tag.textContent = 'observed'; tag.title = 'the station proposed this from your work; you kept it'; metaRow.appendChild(tag); }
     const meta = el('span', 'cd-src');
-    meta.textContent = (b.pinned ? '★ pinned · ' : '') + (CD_SOURCE[b.source] || 'you told the station') + (b.createdAt ? ' · ' + new Date(b.createdAt).toLocaleDateString() : '');
-    card.appendChild(el('div', 'cd-meta')).appendChild(meta);
+    const when = (Number.isFinite(b.observedAt) && b.observedAt > 0) ? b.observedAt : b.createdAt;
+    meta.textContent = (b.pinned ? '★ pinned · ' : '') + (CD_SOURCE[b.source] || 'you told the station') + (when ? ' · ' + new Date(when).toLocaleDateString() : '');
+    card.appendChild(metaRow).appendChild(meta);
 
     const btns = el('div', 'consent-btns cd-acts'); card.appendChild(btns);
     let busy = false;

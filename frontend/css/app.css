@@ -518,8 +518,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cd-reenable:hover { border-color: var(--ph); border-style: solid; }
 .cd-rec { padding: 7px 10px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim); margin-bottom: 7px; }
 .cd-rec.pinned { border-left-color: var(--gold); }
+.cd-rec.cd-observed { border-left-color: var(--ph-mid, var(--ph-dim)); border-left-style: dashed; }   /* GROWTH Tier 1: a station-observed (study) belief reads distinct from a Commander-authored one */
 .cd-body { color: var(--ph-bright); font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
 .cd-meta { margin-top: 6px; font-size: 11px; color: var(--ph-dim); letter-spacing: 0.3px; }
+.cd-observed-tag { display: inline-block; margin-right: 6px; padding: 0 5px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--ph-bg, #0c0e0d); background: var(--ph-dim); border-radius: 2px; vertical-align: 1px; }
 .cd-acts { margin-top: 8px; }
 .cd-add { margin: 2px 0 4px; }
 .cd-addbtn { font: inherit; font-size: 12px; color: var(--ph-dim); background: transparent; border: 1px dashed var(--ph-dim); border-radius: 3px; padding: 3px 10px; cursor: pointer; letter-spacing: 0.5px; }
