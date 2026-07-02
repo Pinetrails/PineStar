@@ -96,7 +96,9 @@ const ConfBeats = (() => {
     } catch (_) {}
   }
 
-  // the bus hook: a real satisfaction verdict on the HERO's work landed (the same quality gate xp.js uses).
+  // a real satisfaction verdict on the HERO's work landed (the same quality gate xp.js uses). TWO callers,
+  // mirroring how the meter itself is fed: the U.bus memory.feedback subscription (turn-in Keep/Edit — the
+  // sidecar emits those) AND a DIRECT call from chat.js rateWork (the 👍/👌/👎 verdict never rides the bus).
   // Defer past XpStore's fold + the rate control's vanish, then decide off the LIVE meter.
   function onFeedback(p) {
     if (!state) return;
@@ -123,8 +125,9 @@ const ConfBeats = (() => {
   // S2/new-hero: a fresh agent re-earns both spoken moments (its meter starts over too). Own key.
   function reset() { state = hydrate(null); try { localStorage.removeItem(KEY); } catch (_) {} }
 
+  // onFeedback is public: chat.js rateWork hands its direct (never-on-the-bus) verdict here.
   // _-prefixed handles are for the deterministic node test (harmless in the browser).
-  return { init, reset, decide, latch, TRUSTED_AT, _state: () => state, _hydrate: hydrate, _onFeedback: onFeedback, _lines: LINES };
+  return { init, reset, decide, latch, onFeedback, TRUSTED_AT, _state: () => state, _hydrate: hydrate, _lines: LINES };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { ConfBeats };
