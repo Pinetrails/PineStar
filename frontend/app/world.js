@@ -124,6 +124,11 @@ const World = (() => {
   let lastCursor = { wx: 0, wy: 0, t: -1e9 };
   let userReturnUntil = 0;
   let deepLocks = 0;
+  /* TIER D · D1 ATTENTIVE AUDIENCE — which agent the Commander currently has COMMS focus on (chat.js
+     announces it via setChatFocus on every load(ws) rebind; null = no conversation / awakening interview).
+     The focused body, while idle, drops its wander/quirk/social life and holds its attention on the Commander
+     (see the chat-stare beat in decideIdle + the per-tick hold in tick/crewEngineStep). D0 plumbing only. */
+  let chatFocusId = null;
   /* First-person self-talk — ONE conscious mind narrating its OWN state to itself. Never crew/colony
      banter (a lie for a solo agent). Every line is gated by curiositySay (no live bubble + global
      cooldown + the chatty trait), so they read as rare honest thoughts tied to the true inner state. */
@@ -715,6 +720,15 @@ const World = (() => {
     }
   }
   /* kind: 'task' (walk to the workstation + work) | 'talk' (face the Commander) | 'idle' (wander the station) */
+  /* TIER D · D1 — the Commander's COMMS focus. chat.js calls this with the active stream's agent id on every
+     conversation rebind (load(ws)), and null when there's no live conversation. Stores the id ONLY; all the
+     stare behavior reads chatFocusId from the idle path. Airtight cleanup: when focus moves off a body (null
+     or another id) its next idle decision restores normal wander (decideIdle clears stilling on entry), so no
+     stuck stillness / suppressed-forever wander can leak. Unknown / not-yet-spawned id → the resolver no-ops. */
+  function setChatFocus(agentId) { chatFocusId = agentId || null; }
+  // the body (hero or crew) the Commander is chatting with, or null. bodyForAgent maps 'agent'→hero + crew by id.
+  function chatFocusBody() { return chatFocusId ? bodyForAgent(chatFocusId) : null; }
+
   function setActivity(kind) {
     activity = kind;
     if (!agent) return;
@@ -1039,6 +1053,11 @@ const World = (() => {
     if (self.sitting && self.goal !== 'use' && self.goal !== 'lounge') { self.sitting = false; self.state = 'idle'; self.idleUntil = Math.max(self.idleUntil || 0, now + U.irnd(200, 800)); }
     // self-heal a stuck walker (mirrors the hero tick): walk pose with nowhere to go → drop to idle so this tick re-decides
     if (self.state === 'walk' && !self.target && (!self.pathPts || self.pathIdx >= self.pathPts.length)) { self.state = 'idle'; self.idleUntil = 0; }
+    // TIER D · D1 ATTENTIVE AUDIENCE: if the Commander has COMMS focus on THIS crew body and it's idle, hold its
+    // attention on you (faces south / tracks the cursor) every tick — crew have no maybeGlance, so the hold drives
+    // facing directly. Self-gates OFF while working/walking/mid-goal (b.working is set ABOVE in stepCrew, so a live
+    // run never reaches here), so the work-seize always wins (G2). A held body skips the rest of the idle engine.
+    if (chatStareHold(now)) return;
     if (self.target) {
       if (now < (self.pauseUntil || 0)) {
         self.state = 'idle';                                // a deliberate hold mid-walk (maybeStrollBeat's considered pause / double-take)
@@ -1521,6 +1540,33 @@ const World = (() => {
     self.glance = null; self.trackUntil = 0;   // drop any in-flight head-turn / box-track so nothing bleeds into the hold
     self.idleUntil = now + offbeat(now, U.irnd(4500, 9000));
   }
+  /* TIER D · D1 ATTENTIVE AUDIENCE — the chat-stare hold. While the Commander has COMMS focus on THIS body
+     (self === chatFocusBody()) and the body is genuinely idle, it drops its wander/quirk/social life, stands
+     genuinely still (reusing the CONTENT=STILL `stilling` machinery — same as standStill), and HOLDS its
+     attention on the Commander: facing south, drifting toward lastCursor while the cursor is fresh (<8s) so it
+     tracks you around the screen. ONE tracker — reuses the existing dirToward(→lastCursor) pattern, no second
+     cursor sampler. Called TWO ways: (a) as an early-out from decideIdle so the body never CHOOSES to wander
+     while held, and (b) every tick as a HOLD from the hero tick / crewEngineStep idle branch so the facing keeps
+     tracking the cursor between idle decisions (crew have no maybeGlance, so the hold drives facing directly).
+     Returns true when it took/holds the body. G2: reachable ONLY while free (never while activity==='task' /
+     working / walking / mid-goal) — it sits BELOW the summon-seize, which the callers gate for us. */
+  function chatStareHold(now) {
+    if (!self || self !== chatFocusBody()) return false;                 // not the focused body → normal life
+    if (self === agent && activity !== 'idle') return false;            // G2: working-at-desk (task) wins; and a live VOICE conversation ('talk') keeps its own listening-glances (maybeGlance) — the stare is an IDLE beat only
+    if (self.working || self.unplaced) return false;                    // a live run owns the body (crew) — never stare mid-work
+    if (self.state === 'walk' || self.target) return false;             // let an in-flight walk finish before holding
+    if (self.goal != null && self.goal !== 'stare-chat') return false;  // don't yank it out of a deliberate goal (leisure/inspect/etc.) — it'll fall to the hold on its NEXT free decision
+    // hold: genuine stillness + attention on the Commander (reuse the stilling latch so maybeGlance's stilling
+    // branch and the cargo body-track stay suppressed for the hero; crew facing is driven directly below).
+    self.goal = 'stare-chat'; self.stilling = true; self.usingProp = null; self.state = 'idle'; self.sitting = false;
+    self.trackUntil = 0;                                                 // drop any in-flight box-track — attention is on YOU, not cargo
+    const fresh = (now - lastCursor.t) < 8000;
+    self.dir = fresh ? dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy) : 'south';
+    if (self.dir === 'north') self.dir = 'south';                       // never turn its back on the Commander — the face is the point (mirrors THE LOOK-UP)
+    self.glance = null;                                                 // the whole body faces you; no lingering head-turn bleeding through
+    self.idleUntil = now + 400;                                         // re-affirm the hold soon so cursor tracking stays live (cheap; no motion)
+    return true;
+  }
   // OFF-BEAT HOLD: rarely (and on its own long cooldown) stretch a single dwell to ~2.2x-3.0x — a learned rhythm that
   // suddenly refuses to end. Skipped under reduceMotion so motion-sensitive users keep the normal cadence.
   function offbeat(now, ms) {
@@ -1846,6 +1892,7 @@ const World = (() => {
   // planners run, but now there is a legible reason behind every move so it stops reading as aimless.
   function decideIdle(now) {
     self.stilling = false;                            // every fresh decision starts clean (standStill re-sets it)
+    if (chatStareHold(now)) return;                   // TIER D · D1: the Commander has COMMS focus on this body → give it your attention, don't choose to wander (G2: chatStareHold self-gates OFF while activity==='task'/working, so a summon still wins)
     // The grief + novelty reflexes read the MODULE pendingMourn/novelty queues, which are the HERO's awareness
     // (scanNovelty/maybeMourn only run for the hero). A crew body must NOT consume the hero's queue (J2) — gate
     // both reflexes to self===agent so only the hero acts on them. Crew get their idle life from the want-engine below.
@@ -2059,6 +2106,7 @@ const World = (() => {
       if (planInspect(now)) agent.noticeCd = now + 1500;
     }
     maybeGlance(now);   // head-turns over the top of whatever else the agent is doing
+    chatStareHold(now); // TIER D · D1: if the Commander has COMMS focus on the hero + it's idle, hold its attention on you (faces south / tracks the cursor) — runs AFTER maybeGlance so the stare owns the final facing. Self-gates OFF while activity==='task'/mid-goal/walking, so the summon-seize above always wins (G2)
     if (agent.target) {
       // belt-yield: about to cross a belt with cargo bearing down → pause and let it pass (only on a casual stroll)
       if (now >= (agent.pauseUntil || 0) && now >= (agent.yieldCd || 0) && agent.goal == null && shouldYieldToCargo()) {
@@ -3835,7 +3883,7 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, setActivityFor, focusBody, setChatFocus, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

@@ -335,6 +335,12 @@ const Chat = (() => {
     syncStatus();      // also paints the Stop control + this stream's queued pills (updateControls)
     maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
     if (activeWs) flushQueued(activeWs.id);   // returned to an idle stream that has a queued follow-up → send it now
+    // TIER D · D1 ATTENTIVE AUDIENCE: announce which agent the Commander now has COMMS focus on. load(ws) is the
+    // sole conversation-rebind boundary (open + every switch), and the persistent COMMS panel has no separate
+    // close — so this one hook covers focus on/switch, and null when there's no active stream. world.js owns all
+    // behavior: the focused body, while idle, stops wandering and holds its attention on you (faces you, tracks the
+    // cursor); it yields instantly to a reply run and resumes after. This is the ONLY chat.js change for D1 (G7).
+    if (typeof World !== 'undefined' && World.setChatFocus) World.setChatFocus(activeWs ? (activeWs.agentId || 'agent') : null);
   }
 
   function setSystem(s) { system = s; }
