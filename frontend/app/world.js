@@ -84,7 +84,8 @@ const World = (() => {
   let pinnedCount = 0, pinFlourishAt = -1e9, pinTargetTile = null, pinCheckAt = -1e9;
   // TIER D · D5 — THE OVERSEER OVERSEES. The hero (`agent`, the station's OVERSEER — no separate overseer body
   // exists in-world) reads as a supervisor: (2) a rare walk to the MISSION BOARD to survey the queue when it is
-  // non-empty (goal 'post', modeled on the 'pin' beat above), gated by the D2 station budget. `postCd` is its
+  // non-empty (goal 'post', modeled on the 'pin' beat above); it ARMS the D2 station budget on fire but is not
+  // itself damp-gated (crewBeatDamp is a no-op for the hero by J1 parity design). `postCd` is its
   // per-hero cooldown; `postTargetTile` the board approach tile it walks to. Beats (1) inspection-rounds and
   // (3) queue-aware idle bias ride existing machinery (maybeRounds / decideIdle) and need no new module state.
   let postCd = 0, postTargetTile = null;
@@ -342,7 +343,7 @@ const World = (() => {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
-        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
+        if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'post' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/board-survey/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
         if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = deskFace || 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
@@ -500,14 +501,15 @@ const World = (() => {
   /* TIER D · D5 beat 2 — MISSION-BOARD POST. When the frontend-visible task/mission queue is NON-EMPTY, the board
      is inside the hero's zone, and the hero is idle+free, occasionally (rare, ~2-4 min cooldown) the OVERSEER walks
      to the MISSION BOARD, faces it, and surveys the queue a beat (3-6s) before returning to its business. Rides the
-     goal machinery like the 'pin' beat (goal 'post'); it IS a noticeable beat, so it consults the D2 station budget
-     (crewBeatDamp) and arms it (armBeat). Board out-of-zone or absent ⇒ pure no-op (no reach, no exception). The
+     goal machinery like the 'pin' beat (goal 'post'); it IS a noticeable beat, so it ARMS the D2 station budget on
+     fire (armBeat — quieting crew beats in its shadow). It is NOT itself budget-gated: crewBeatDamp returns 1 for
+     the hero unconditionally (J1 parity), and this beat is hero-only, so a damp check here would be provably inert
+     — its rarity comes from the 2-4 min postCd. Board out-of-zone or absent ⇒ pure no-op (no reach, no exception). The
      queue count is read from missionPinCounts (mpOpen), state the frontend ALREADY holds (QuestStore projection,
      cached 1Hz) — no new bus round-trip (G1). Hero-only: only ever called for `agent`. */
   function maybeBoardPost(now) {
     if (!agent || agent.unplaced) return false;
     if (now < postCd) return false;
-    if (crewBeatDamp(now) < 1) return false;                     // D2 (G5): station budget — a noticeable beat waits its turn
     if ((missionPinCounts(now)[0] | 0) <= 0) return false;       // queue empty → the overseer has nothing to survey (no-op; N=1-with-no-queue path draws no further RNG)
     const tile = boardAnchorTile();
     if (!tile) return false;                                     // no board / no reachable approach → no reach (out-of-zone board is caught below via the zone clamp)
@@ -2588,7 +2590,7 @@ const World = (() => {
     if (self === agent) {
       if (pendingMourn && planMourn(now)) return;      // grief reflex: a beloved spot was just emptied — go stand where it was
       if (novelty.length && planInspect(now)) return;  // curiosity reflex: a fresh placement always wins
-      if (maybeBoardPost(now)) return;                 // TIER D · D5 beat 2: OVERSEER surveys the MISSION BOARD when the queue is non-empty (rare, 2-4min cd, board in-zone, station-budgeted). HERO-ONLY. Draws ZERO RNG when the queue is empty / cd unexpired ⇒ a no-queue floor is byte-identical.
+      if (maybeBoardPost(now)) return;                 // TIER D · D5 beat 2: OVERSEER surveys the MISSION BOARD when the queue is non-empty (rare, 2-4min cd, board in-zone; ARMS the station budget on fire — not damp-gated, crewBeatDamp is a hero no-op). HERO-ONLY. Draws ZERO RNG when the queue is empty / cd unexpired ⇒ a no-queue floor is byte-identical.
     }
     if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
     // AUTONOMOUS PROP PLACEMENT — REMOVED (Thronglet direction). The agent no longer drops

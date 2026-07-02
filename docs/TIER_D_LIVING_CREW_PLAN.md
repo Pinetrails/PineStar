@@ -553,7 +553,10 @@ run it on crew), and rides existing hero machinery. **Zero crew behavior change.
   rather than being skipped (self-review hunt 4).
 - **`boardAnchorTile()`** — the MISSION BOARD's approach tile via the shared `PropAnchor` law (already used by the
   autojob pin beat). Beat 2 models its goal `'post'` directly on the existing `maybePinProposal`/goal `'pin'` beat.
-- **`crewBeatDamp`/`armBeat`** (D2 station budget) — beat 2 consults + arms it (it IS a noticeable beat).
+- **`armBeat`** (D2 station budget) — beat 2 ARMS it on fire (a noticeable beat: crew beats quiet in its 45-90 s
+  shadow). It is **NOT itself budget-gated**: `crewBeatDamp` returns 1 for the hero unconditionally (the J1-parity
+  short-circuit) and the board-post is hero-only, so a damp guard would be provably inert — the first cut carried
+  one; the adversarial review flagged it and it was removed. Beat 2's rarity comes from its own 2-4 min `postCd`.
 - **`zoneFor(self)` + `tileInZone`** (Tier A containment) — every new target clamped at pick, as the whole idle
   stack already does. Hero zone kind may be `'room'`/`'leash'`/`'multi'`; with crew present the hero can be caged to
   its own room, so beats 1+2 both re-check `tileInZone(zoneFor(agent), …)` and never reach outside.
@@ -568,10 +571,11 @@ run it on crew), and rides existing hero machinery. **Zero crew behavior change.
    and rounds are byte-identical to trunk.** It does NOT touch the D3 `socialBeat` slot (single-body, no partner
    state) and does NOT consult `crewBeatDamp` (rounds are a Tier-1 beat already outside that budget — kept so).
 2. **Mission-board post** (beat 2) — `maybeBoardPost(now)`, called from `decideIdle` under the `self === agent`
-   reflex block, goal `'post'`. Gates, in order (all pre-RNG): `now < postCd` → `crewBeatDamp < 1` (D2 budget) →
+   reflex block, goal `'post'`. Gates, in order (all pre-RNG): `now < postCd` →
    `missionPinCounts(now)[0] <= 0` (queue empty ⇒ nothing to survey) → board absent/no approach → **approach tile
    outside the hero's zone ⇒ no-op** (containment; no reach, no exception) → `setPathTo` fails ⇒ skip. Only AFTER the
-   queue is confirmed non-empty does it draw RNG (`U.irnd` for `postCd`, `armBeat`). Walks to the board, faces it,
+   queue is confirmed non-empty does it draw RNG (`U.irnd` for `postCd`, `armBeat` — armed on fire, quieting crew
+   beats in its shadow; see the `armBeat` bullet above for why there is no damp GATE). Walks to the board, faces it,
    **holds 3-6 s (a real queue survey)** via `studyUntil`, then the `'post'` dwell-release branch drifts back to
    idle. 2-4 min per-hero cooldown. **HARD UNTIL (hunt 3):** `maybeBoardPost` also sets `studyUntil = now + 12000`
    as a walk-cap so a board deleted/refit mid-walk (path cleared, arrive never fires) can never strand the goal —
@@ -602,10 +606,11 @@ early-out in decideIdle) or during a live social/mimic/chase (those hold `goal !
    (identical). Beat 2 is only ever called under `self === agent`. Beat 3's bias is `0.3` for crew. CLEAR.
 2. **No-queue-no-crew hero byte-parity (RNG order).** Beat 1: empty/no-working-crew loop appends nothing, draws no
    RNG → identical stops/shuffle/pick. Beat 2: returns at the `missionPinCounts[0] <= 0` gate BEFORE any `U.*` draw
-   (the cd + damp + cached-queue reads are RNG-free). Beat 3: no-queue → `0.3`, identical `U.chance` draw.
+   (the cd + cached-queue reads are RNG-free). Beat 3: no-queue → `0.3`, identical `U.chance` draw.
    ⇒ a floor with no queue and no crew is byte-identical to trunk. CLEAR.
-3. **Board-post stuck state** (board deleted/refit mid-walk). The self-heal drops a pathless walker to idle; the
-   `'post'` dwell-release frees the goal, and the `studyUntil = now + 12000` HARD UNTIL guarantees release even if
+3. **Board-post stuck state** (board deleted/refit mid-walk). `'post'` is in the geometry-refit goal-drop list
+   (alongside `'rounds'`/its siblings), so a REFIT releases it the same frame; the self-heal drops a pathless walker
+   to idle; the `'post'` dwell-release frees the goal, and the `studyUntil = now + 12000` HARD UNTIL backstops even if
    arrive never fires. An unreachable board is caught by `setPathTo` returning false (goal never set). CLEAR.
 4. **Queue state from EXISTING frontend state only.** `missionPinCounts` reads the QuestStore projection already
    computed for the board render (cached 1 Hz). No new fetch/bus subscription added anywhere → beats 2+3 shipped
