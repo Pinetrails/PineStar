@@ -152,12 +152,22 @@ const World = (() => {
      Lines stay sparse and unresolved; the SILENCE is the unsettling part. */
   // quirk/off-beat cooldowns are now PER-BODY (self.quirkCd / self.offbeatCd, seeded on the hero literal + crew init) —
   // J2: a body's gate must never throttle another body. (Module globals removed; maybeQuirk/offbeat read/write self.)
-  // B3 RESTRAINT-AT-SCALE: a single FLOOR-WIDE "a quirk just fired somewhere" timestamp. It is NOT cross-agent
-  // awareness (no body perceives another — that is Tier C); it is a light rarity governor so a floor of N agents
-  // doesn't burst into simultaneous quirks/stares. Only CREW quirk rolls are damped by it (the hero's roll stays
-  // byte-identical → J1 parity); every quirk (hero or crew) arms it. lastQuirkAt is wall-clock-free (set from the
-  // tick's `now`, which is U-driven), so it stays deterministic (J5).
-  let lastQuirkAt = -1e9;
+  // B3/D2 STATION RARITY BUDGET (G5): a single FLOOR-WIDE "a noticeable eerie beat just fired somewhere" timestamp.
+  // It is NOT cross-agent awareness (no body perceives another — that is Tier C); it is a light rarity governor on the
+  // dice only, so a floor of N crew doesn't burst into simultaneous beats. Rates were tuned for ~1 body; without this,
+  // N crew all running the shared engine fire ~Nx the quirks/strolls/off-beats/revisits and read busy/cute — breaking
+  // the Pass-7 stillness law. THE FAMILIES it governs: quirks (incl. vigil/stare-entry, via maybeQuirk), stroll
+  // double-takes (maybeStrollBeat), off-beat dwell-stretches (offbeat), and haunt revisits (maybeRevisit). Each ARMS it
+  // when it fires and DAMPS the next CREW roll if the floor just produced one — so the STATION's total noticeable-beat
+  // rate stays ~a single agent's, whatever the crew count. Ambient TEXTURE (glances, cursor facing-drift, mutual-glance)
+  // is deliberately NOT budgeted — only the noticeable beats are. CALIBRATION / N=1 PARITY: crewBeatDamp returns 1
+  // (a no-op) whenever self===agent, so the HERO's rolls are byte-identical to today and a single-body floor behaves
+  // EXACTLY as before (J1/N=1). Only crew rolls (self!==agent, which only exist when crew.length>0) are ever damped.
+  // Wall-clock-free (armed from the tick's U-driven `now`) → deterministic (J5). Subsumes the old per-quirk lastQuirkAt.
+  let lastBeatAt = -1e9;
+  // damp a CREW roll if the floor produced a noticeable beat within `win` ms; hero (self===agent) is never damped (parity).
+  function crewBeatDamp(now, win) { return (self !== agent && (now - lastBeatAt) < (win || 8000)) ? 0.35 : 1; }
+  function armBeat(now) { lastBeatAt = now; }   // arm the floor-wide governor (called by whichever body fired a beat)
   const Q_PONDER = ['hm.', '...', 'i wonder', 'strange', 'thinking'];
   const Q_STARE = ['...', 'are you there?', 'hello.', 'still watching?', 'hm.'];   // mostly it just stares in silence
   const Q_LISTEN = ['did you hear that?', 'something moved', '...', 'who is there'];
@@ -800,15 +810,18 @@ const World = (() => {
     if (!self || self.goal != null || ((self === agent) && activity !== 'idle') || self.unplaced) return;
     const now = fnow;
     if (now < (self.pauseCd || 0)) return;
+    // D2 (G5): station budget — soften a CREW stroll-beat roll if the floor just fired a noticeable beat (no-op for the hero).
+    const damp = crewBeatDamp(now, 8000);
     // THE DOUBLE-TAKE (rare): stop and turn to look back the way it came, as if something caught its attention
-    if (now >= (self.lookBackCd || 0) && U.chance(0.045 * (self.pers ? self.pers.curious : 1))) {
+    if (now >= (self.lookBackCd || 0) && U.chance(0.045 * (self.pers ? self.pers.curious : 1) * damp)) {
       self.pauseUntil = now + U.irnd(900, 1700); self.pauseLook = 'back';
       self.pauseCd = now + U.irnd(9000, 16000); self.lookBackCd = now + U.irnd(50000, 95000);
+      armBeat(now);   // the double-take is a noticeable beat — count it against the station budget
       curiositySay(['hm?', '...', 'did something move', 'thought i saw something'], 0.22, now);
       return;
     }
     // a considered pause mid-stroll: a beat of weight, then on it goes (rarer now — a stroll shouldn't be peppered with stutters)
-    if (U.chance(0.07)) { self.pauseUntil = now + U.irnd(320, 720); self.pauseLook = null; self.pauseCd = now + U.irnd(10000, 18000); }
+    if (U.chance(0.07 * damp)) { self.pauseUntil = now + U.irnd(320, 720); self.pauseLook = null; self.pauseCd = now + U.irnd(10000, 18000); armBeat(now); }
   }
   // active cargo passing right in front of it while it walks → wait a beat and let it go by (belt-yield)
   function shouldYieldToCargo() {
@@ -1571,7 +1584,9 @@ const World = (() => {
   // suddenly refuses to end. Skipped under reduceMotion so motion-sensitive users keep the normal cadence.
   function offbeat(now, ms) {
     if (reduceMotion()) return ms;
-    if (now >= (self.offbeatCd || 0) && U.chance(0.09)) { self.offbeatCd = now + U.irnd(70000, 140000); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }   // J2: per-body off-beat gate — a crew dwell-stretch must NOT throttle hero/siblings (was the shared module global)
+    // J2: per-body off-beat gate — a crew dwell-stretch must NOT throttle hero/siblings (was the shared module global).
+    // D2 (G5): also soften the CREW roll by the station budget (no-op for the hero) and arm the floor governor on a fire.
+    if (now >= (self.offbeatCd || 0) && U.chance(0.09 * crewBeatDamp(now, 8000))) { self.offbeatCd = now + U.irnd(70000, 140000); armBeat(now); return Math.round(ms * (220 + U.irnd(0, 80)) / 100); }
     return ms;
   }
   /* FIRST LIGHT — the newborn's first autonomous act: hold the gaze, take one slow look at the room it now
@@ -1688,13 +1703,15 @@ const World = (() => {
   function maybeQuirk(now) {
     if (now < (self.quirkCd || 0)) return false;   // J2: per-body cooldown — a crew quirk must NOT throttle the hero or siblings (was the shared module global)
     let p = 0.085 * (0.6 + self.pers.restless * 0.4);
-    // B3: the hero's probability is UNCHANGED (J1 byte-parity). For a crew body, if a quirk fired ANYWHERE on the
-    // floor in the last ~8s, soften this roll so the floor doesn't quirk in unison — eerie restraint at scale (G3).
-    // Not awareness: the body learns nothing about the other; it's a global rarity governor on the dice only.
-    if (self !== agent && (now - lastQuirkAt) < 8000) p *= 0.35;
+    // B3/D2: the hero's probability is UNCHANGED (J1 byte-parity). For a crew body, if ANY noticeable beat fired
+    // ANYWHERE on the floor in the last ~8s (a quirk OR a D2-budgeted stroll/off-beat/revisit — all arm lastBeatAt),
+    // soften this roll so the floor doesn't beat in unison — eerie restraint at scale (G3/G5). Not awareness: the
+    // body learns nothing about the other; it's a global rarity governor on the dice only. crewBeatDamp reads
+    // lastBeatAt, which every beat (quirk included, via armBeat above) advances — so it subsumes the old lastQuirkAt.
+    p *= crewBeatDamp(now, 8000);
     if (!U.chance(p)) return false;
     self.quirkCd = now + U.irnd(45000, 90000);    // quirks stay special — even rarer now, so each lands with weight
-    lastQuirkAt = now;                            // arm the floor-wide governor (hero or crew) so the NEXT crew quirk is damped if it clusters
+    armBeat(now);                                 // D2 (G5): arm the floor-wide governor — a quirk is a noticeable beat, so it also damps the NEXT crew quirk AND the station's stroll/off-beat/revisit budget (subsumes the old per-quirk lastQuirkAt)
     const r = U.irnd(0, 999);
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
     if (r < 520) return quirkScan(now);      // 20% — a slow, deliberate sweep of the room
@@ -1855,6 +1872,10 @@ const World = (() => {
   // rarely, drawn back to its favorite spot just to be there a while (gated by a long cooldown + a real favorite)
   function maybeRevisit(now) {
     if (now < (self.revisitCd || 0)) return false;
+    // D2 (G5): station budget — a CREW body skips a haunt-revisit if the floor just fired a noticeable beat, so N crew
+    // don't all drift to their favorites at once (no-op for the hero → N=1 parity). A skip leaves revisitCd untouched,
+    // so the beat simply re-considers on the next idle tick — no starvation.
+    if (crewBeatDamp(now, 8000) < 1) return false;
     const f = favTile(); if (!f) return false;
     if (!tileInZone(zoneFor(self), f.x, f.y)) return false;   // P1: a remembered haunt outside the new zone isn't revisited (a zone change must not strand revisit — it just no-ops this beat)
     const cur = tileOf(self.px, self.py);
@@ -1862,6 +1883,7 @@ const World = (() => {
     if (!geo.walkable(f.x, f.y, blocked) || !setPathTo({ x: f.x, y: f.y })) return false;
     self.goal = 'revisit'; self.useFace = U.pick(['south', 'north', 'east', 'west']); self.usingProp = null; self.studyKey = null;
     self.revisitCd = now + U.irnd(60000, 120000);
+    armBeat(now);   // D2 (G5): a haunt-revisit walk is a noticeable beat — count it against the station budget
     if (!self.target) arrive(now);
     return true;
   }

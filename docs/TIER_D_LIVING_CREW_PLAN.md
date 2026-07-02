@@ -247,3 +247,57 @@ and (by intent) THE LONG STARE hold.
 - **Cleanup:** `setChatFocus(null)` (or focus moving to another id) needs no teardown — the previously-focused
   body's next `decideIdle` clears `stilling` on entry (:1848) and re-enters the normal menu. If the focused id
   doesn't resolve to a live body, `chatStareHold` no-ops.
+
+## D2 — implementation notes (as built)
+
+### Half 1 — hero-only-beat extension: per-beat disposition
+The D0 audit had already confirmed the **want-engine is shared** via the `self` pointer — quirks (listen/scan/
+ponder/faceWall/gazeOut/vigil), caretaker rounds, revisit/fond, off-beat hold, sleep, pace, gaze-out, mutual-glance
+and the stroll-beats are ALL already reachable by every summoned+placed crew body through `crewEngineStep`/`decideIdle`.
+So the only OPEN candidates for D2 were the remaining hero-only beats. Each was verified against the live file (the
+audit table is the map, the code is the truth) and disposed of as follows:
+
+| Beat | Live gate (verified) | Disposition | Rationale |
+| --- | --- | --- | --- |
+| quirks (listen/scan/ponder/faceWall/gazeOut) | `maybeQuirk` :1703, all `self.*` | **already shared** | crew run it via `decideIdle`; only retuned under G5 (Half 2) |
+| caretaker rounds, revisit, off-beat, sleep, pace, gaze-out, mutual-glance | all `self.*`, from crew paths | **already shared** | no change needed; revisit/off-beat now also G5-budgeted (Half 2) |
+| stroll-beats / double-take | `maybeStrollBeat` :809, `self.*`; `activity` guard only applies to hero | **already shared** | crew already double-take; now G5-budgeted (Half 2) |
+| **THE LOOK-UP** | inside `maybeGlance` :1969; references `agent` directly; called ONLY from hero `tick()` :2124; entangled with hero-only `deepLocks`/`userReturnUntil` | **SKIPPED (kept hero-only)** | NOT crew-wide today (verified: `lookCd` is a hero field; no `lastCrewLook`/crew look-up exists). Porting requires building the whole `maybeGlance`-class continuous-facing layer onto crew — exactly the larger, non-mechanical effort the D0 KEY INSIGHT flags, and the KEY INSIGHT lists THE LOOK-UP in the hero-exclusive keep set. Out of a mechanical-safe D2 extension. |
+| **belt-yield** (`shouldYieldToCargo`) | :824, reads `agent.target`/`agent.px` directly; wired ONLY into the hero walk block (:2112); crew `crewEngineStep` has no belt-yield hook | **SKIPPED (hero-coupled)** | The `self`-rename looks mechanical, but the beat is hero-coupled in practice: belts run through the central concourse the hero occupies, while crew wander is zone-clamped to their assigned zones — a crew body rarely (if ever) paths across a live belt, so a ported check would be dead code where it can't fire and a pileup/stall risk where it could (a crew body freezing on a shared belt). Per brief: hero-coupled ⇒ document + skip rather than force. |
+| **novelty-inspect reflex** (`planInspect`/`novelty[]`) | reflex gated `if(self===agent)` in `decideIdle`; `novelty[]` is a single MODULE queue filled only by the hero | **SKIPPED (queue doesn't generalize per-body)** | `novelty[]` is one shared queue, not per-body. Extending as-is → all crew inspect the same placed prop (swarm, violates G3/G5); making it per-body is a rebuild, out of D2 scope. |
+| mourning, deep-lock, FIRST LIGHT, THE LONG STARE hold | hero-only by audit | **KEPT hero-exclusive** | design-intent per plan §D2 keep-list — untouched. |
+
+**Net for Half 1:** zero new extensions were needed or safe — the safe set was already shared (D0's finding), and every
+remaining hero-only beat is either design-intent-exclusive, hero-coupled, or a non-mechanical rebuild. The crew liveliness
+gain in D2 therefore comes entirely from Half 2 (the retune that lets the already-shared beats run at a *calm* station rate).
+
+### Half 2 — G5 station-level rarity budget (the retune; landed)
+- **Shape (follows the existing `lastQuirkAt` floor-governor):** a single module-local timestamp `lastBeatAt` +
+  two helpers — `armBeat(now)` (sets `lastBeatAt = now`) and `crewBeatDamp(now, win)` (returns `0.35` for a CREW body
+  when `now - lastBeatAt < win`, else `1`; **always `1` for the hero**). This *generalizes* and *subsumes* the old
+  per-quirk `lastQuirkAt` (removed — it was write-only after this change).
+- **Governed families (the noticeable beats only):** quirks (`maybeQuirk`, incl. vigil + long-stare entry), stroll
+  double-takes + considered pauses (`maybeStrollBeat`), off-beat dwell-stretches (`offbeat`), and haunt revisits
+  (`maybeRevisit`). Each **arms** the governor when it fires and **damps** its own crew roll (`p *= crewBeatDamp(...)`,
+  or an early skip for revisit which has no chance-roll). Ambient **texture** — glances, cursor facing-drift,
+  mutual-glance, wander, needs — is deliberately NOT budgeted (per G5: only noticeable beats).
+- **CALIBRATION — why N=1 is a provable no-op:** `crewBeatDamp` short-circuits to `1` whenever `self === agent`.
+  A single-agent floor never populates `crew[]`, so `self` is only ever `agent`, so every damp multiplier is `* 1`
+  (byte-identical in IEEE754) and the revisit skip (`crewBeatDamp() < 1` ⇒ `1 < 1`) is never taken. The extra
+  `armBeat` writes to `lastBeatAt` are inert in N=1 (only `crewBeatDamp` reads it, and it ignores the value for the
+  hero). **⇒ N=1 behaves EXACTLY as pre-D2, and the hero's rolls stay byte-identical at ANY crew count (J1 parity).**
+- **Expected effect at N=6:** before, 6 bodies × the per-body rate ≈ 6× the station's noticeable-beat rate (busy/cute).
+  After, once ANY body fires a beat, every *crew* body's next-8s roll is cut to 35% — so overlapping beats within the
+  window collapse toward a single-agent cadence. The hero is never damped, so the floor's rate floors at ~1 agent's
+  and rises only gently with crew (each additional body adds only its damped share). Restraint scales with the crew,
+  which is the G5 goal (Pass-7 stillness holds at scale). The 8000 ms window + 0.35 factor mirror the proven B3 quirk
+  governor exactly (not a new magic number).
+- **No deadlock:** the governor is a *soft* multiplier keyed off the advancing frame clock `now`; it decays to `1`
+  after `win` ms with no new beat, and even inside the window a crew roll keeps 35% of its chance (revisit's skip is
+  re-evaluated every idle tick). Nothing holds `lastBeatAt` in the future or stalls `now`.
+- **Determinism (G6):** `now` is the U-driven frame clock; only `U.chance`/`U.irnd` + arithmetic used; no
+  `Math.random`/`Date.now`/`new Date`. `lint-determinism` green.
+- **Blast radius (G7):** `frontend/app/world.js` + this doc only. No chat.js, no shared/*, no new modules.
+- **Verification:** `node --check` clean; full `npm run test:fast` green incl. `lint-determinism` + `lint-emits`.
+  Behavioral rates are not headless-testable (rAF pauses; plan's honest-limits section) — verified by code review
+  against the G-hunts (N=1 drift, non-summoned-body fire, deadlock, cross-body mutation, determinism) all clear.
