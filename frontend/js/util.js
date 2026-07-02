@@ -177,6 +177,15 @@ const SFX = {
   // quest-complete sting (G1a): a shorter, brighter cousin of level() — three quick gold steps + one high
   // shimmer. A MOMENT, deliberately smaller than a level-up: quests pay out in real work, not fanfare.
   quest() { [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.15, type: 'triangle', vol: 0.2, when: i * 0.055, verb: 0.3 })); SFX.voice({ freq: 1976, dur: 0.32, type: 'sine', vol: 0.09, when: 0.19, verb: 0.5 }); },
+  // idea sting (G3a): a pitch / fresh suggestion / spoken notice slots into the feed — SOFT, two warm sine
+  // steps up, quieter and rounder than notify() so a proactive aside lands gently, never startles.
+  idea() { SFX.voice({ freq: 587, dur: 0.12, type: 'sine', vol: 0.12, verb: 0.25 }); SFX.voice({ freq: 880, dur: 0.16, type: 'sine', vol: 0.10, when: 0.07, verb: 0.3 }); },
+  // seed-saved sting (G3a): PLANTING — one warm low tuck + two high sparkles settling over it; deliberately
+  // distinct from chime() (one held bell) and sale() (major run) so "saved to your shelf" has its own signature.
+  seed() { SFX.voice({ freq: 262, dur: 0.16, type: 'triangle', vol: 0.18, verb: 0.2 }); SFX.voice({ freq: 1568, dur: 0.09, type: 'sine', vol: 0.10, when: 0.10, verb: 0.4 }); SFX.voice({ freq: 2093, dur: 0.22, type: 'sine', vol: 0.08, when: 0.16, verb: 0.5 }); },
+  // milestone sting (G3a): grander than quest() (3 steps), smaller than level() (5 steps) — four rising gold
+  // steps under a long high shimmer. A milestone is PERMANENT, so its sting carries a little more weight.
+  milestone() { [523, 659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.17, type: 'triangle', vol: 0.21, when: i * 0.06, verb: 0.28 })); SFX.voice({ freq: 2637, dur: 0.4, type: 'sine', vol: 0.08, when: 0.26, verb: 0.55 }); },
   type() { SFX.noise({ dur: 0.018, cut: 3200, vol: 0.05, type: 'highpass' }); },
 
   /* ---- new stings the music director (audio.js) plays on real colony events ---- */
