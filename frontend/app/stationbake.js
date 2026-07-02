@@ -30,7 +30,7 @@ const StationBake = (() => {
        skirt  = hull extrusion depth below the station silhouette (the south wall seen outside)
        side   = width of the e/w wall-top band beyond the floor edge
        capH   = thickness of the lit cap that crowns a tall wall */
-  const WALL = { up: 22, corUp: 11, skirt: 28, side: 7, capH: 3 };
+  const WALL = { up: 10, corUp: 0, skirt: 32, side: 12, capH: 3 };
 
   /* live-tunable lighting — the CRT LAB (crtlab.js, dev-gated) writes these and calls
      World.rebake() to re-run the bake. These ARE the shipped defaults.
@@ -130,8 +130,6 @@ const StationBake = (() => {
         px(X + (n % 7) + 1, Y + (n % 4) + 6, 3, 1, 'rgba(255,255,255,0.05)');
       }
     }
-    b.fillStyle = 'rgba(226,214,184,0.28)';
-    for (let x = r.x1 * T + 3; x < (r.x2 + 1) * T - 3; x += 10) b.fillRect(x, r.y1 * T + NFACE + 2, 6, 1);
   }
 
   function bakeCorridorFloor(b, r) {
@@ -175,6 +173,22 @@ const StationBake = (() => {
     const room = e.room;
     const up = Math.max(0, Math.round(room ? WALL.up : WALL.corUp));
     const inFace = room ? NFACE : 5;
+
+    // up === 0 → the EXACT legacy short wall (verbatim from the pre-tall-wall bake): a dark
+    // hull cap band above the seam, the plain face + rib, the floor-contact line, the seam
+    // hairline. Corridors at corUp:0 hit this path and read as they did before tall walls.
+    if (up === 0) {
+      const cap = room ? 4 : 2;                                        // legacy NCAP (rooms) / 2 (corridors)
+      b.fillStyle = wallDk; b.fillRect(X, Y - cap, T, cap);
+      b.fillStyle = wallFace; b.fillRect(X, Y, T, inFace);
+      b.fillStyle = 'rgba(0,0,0,0.25)'; b.fillRect(X + 5, Y, 1, inFace);
+      b.fillStyle = wallTop; b.fillRect(X, Y + inFace, T, 1);
+      b.fillStyle = 'rgba(255,255,255,0.05)'; b.fillRect(X, Y, T, 1);
+      return;
+    }
+
+    // up > 0 → clean standing metal plating. Height is sold by the lit crown + a single soft
+    // top band; deliberately no windows/vents/weld-lines at the shipped height.
     const capH = Math.max(2, Math.round(WALL.capH));
     const h = up + inFace, topY = Y - up;
     // dark hull lip above the crown (the old NCAP band, pushed up with the wall)
@@ -183,25 +197,29 @@ const StationBake = (() => {
     // after the ambient bake this continuous line is what defines the wall height at any zoom.
     b.fillStyle = wallCap; b.fillRect(X, topY - capH, T, capH);
     b.fillStyle = 'rgba(255,255,255,0.22)'; b.fillRect(X, topY - capH, T, 1);
-    // the face: a 3-band vertical gradient (lit top → mid → dark base) so it reads as a
-    // STANDING surface, not a floor shadow
-    b.fillStyle = '#4a4433'; b.fillRect(X, topY, T, h);
-    b.fillStyle = '#39342a'; b.fillRect(X, topY + Math.max(2, (h * 0.35) | 0), T, h - Math.max(2, (h * 0.35) | 0));
-    b.fillStyle = wallFace; b.fillRect(X, topY + Math.max(3, (h * 0.68) | 0), T, h - Math.max(3, (h * 0.68) | 0));
-    // warm under-crown glow (lamp light licking the wall top) + floor AO
-    b.fillStyle = 'rgba(255,220,160,0.10)'; b.fillRect(X, topY, T, 1);
-    b.fillStyle = 'rgba(0,0,0,0.28)'; b.fillRect(X, Y + inFace - 3, T, 3);
-    // panel work: one vertical seam per tile + a weld line, then per-tile greebles
-    b.fillStyle = 'rgba(0,0,0,0.3)';
-    b.fillRect(X + 5, topY, 1, h);
-    b.fillRect(X, topY + ((h * 0.55) | 0), T, 1);
+    // flat face base colour — one clean plate, no gradient banding
+    b.fillStyle = wallFace; b.fillRect(X, topY, T, h);
+    // one subtle lighter band across the top ~1/3 + a soft highlight directly under the crown
+    b.fillStyle = 'rgba(255,236,196,0.04)'; b.fillRect(X, topY, T, Math.max(2, (h / 3) | 0));
+    b.fillStyle = 'rgba(255,236,196,0.10)'; b.fillRect(X, topY, T, 1);
+    // ultra-subtle per-tile brightness jitter so long walls don't band (unshaped, keyed on hash)
     const n = h2(e.x, e.y, 'nwall');
-    if (room && up >= 10 && n % 4 === 0) {          // a recessed vent panel
-      b.fillStyle = '#1a1712'; b.fillRect(X + 7, topY + 4, 4, 5);
-      b.fillStyle = 'rgba(0,0,0,0.5)';
-      for (let i = 0; i < 2; i++) b.fillRect(X + 8, topY + 5 + i * 2, 2, 1);
-    } else if (up >= 8 && n % 7 === 3) {            // a pale conduit drop
-      b.fillStyle = 'rgba(255,255,255,0.08)'; b.fillRect(X + 2, topY + 2, 1, h - 6);
+    b.fillStyle = (n % 2 === 0) ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.03)';
+    b.fillRect(X, topY, T, h);
+    // 2-3px darker AO where the face meets the floor
+    b.fillStyle = 'rgba(0,0,0,0.28)'; b.fillRect(X, Y + inFace - 3, T, 3);
+    // per-tile vertical seam rib (low alpha so it reads as a plate join, not a line)
+    b.fillStyle = 'rgba(0,0,0,0.19)'; b.fillRect(X + 5, topY, 1, h);
+    // richer dressing only at the tall CRT-lab 'Towering' preset — the shipped up:10 stays clean
+    if (up >= 18) {
+      b.fillStyle = 'rgba(0,0,0,0.3)'; b.fillRect(X, topY + ((h * 0.55) | 0), T, 1);   // weld line
+      if (room && n % 4 === 0) {                                                        // recessed vent panel
+        b.fillStyle = '#1a1712'; b.fillRect(X + 7, topY + 4, 4, 5);
+        b.fillStyle = 'rgba(0,0,0,0.5)';
+        for (let i = 0; i < 2; i++) b.fillRect(X + 8, topY + 5 + i * 2, 2, 1);
+      } else if (n % 7 === 3) {                                                         // pale conduit drop
+        b.fillStyle = 'rgba(255,255,255,0.08)'; b.fillRect(X + 2, topY + 2, 1, h - 6);
+      }
     }
     // floor-contact cap line (identical to the old look)
     b.fillStyle = wallTop; b.fillRect(X, Y + inFace, T, 1);
@@ -284,8 +302,9 @@ const StationBake = (() => {
         const lx = X + RW * (i + 0.5) / count;
         // when the tile behind the fixture carries a TALL exterior face, mount the flood
         // high on that wall (just under the crown); a door/interior seam keeps the old spot
-        const tall = extN.has(Math.floor(lx / T) + ',' + r.y1);
-        const fy = tall ? r.y1 * T - Math.round(WALL.up) + 2 : r.y1 * T + 1;
+        const up = Math.round(WALL.up);
+        const tall = up > 0 && extN.has(Math.floor(lx / T) + ',' + r.y1);
+        const fy = tall ? r.y1 * T - up + 2 : r.y1 * T + 1;   // just under the crown when tall; legacy spot at up:0
         b.fillStyle = '#6a6253'; b.fillRect(Math.round(lx) - 4, fy, 8, 2);
         b.fillStyle = 'rgba(255,255,255,0.55)'; b.fillRect(Math.round(lx) - 3, fy, 6, 1);
       }

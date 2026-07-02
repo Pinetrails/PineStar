@@ -12,7 +12,7 @@
 
   const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
   const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
-  const WALL_DEFAULTS = { up: 22, corUp: 11, skirt: 28, side: 7 };
+  const WALL_DEFAULTS = { up: 10, corUp: 0, skirt: 32, side: 12 };
 
   const PRESETS = {
     'Clean (off)':     { crt: { scan: 0, fade: 0 } },
@@ -24,7 +24,7 @@
     'Balanced':        { light: { ambient: 0.66, pool: 0.95, floor: 0.22 } },
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
     'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 } },
-    'Tall halls':      { wall: { up: 22, corUp: 11, skirt: 28, side: 7 } },
+    'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 12 } },
     'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 9 } },
   };
 
