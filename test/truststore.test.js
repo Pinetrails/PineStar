@@ -55,6 +55,8 @@ initStore();
 const fb = (reason) => bus.emit('memory.feedback', { agentId: 'agent', reason, delta: 2 });
 const runEnd = (reason, agentId) => bus.emit('agent.run.end', { agentId: agentId || 'agent', runId: 'r' + Math.random(), reason });
 
+(async () => {   // the grant accept path is async (server-verified) — the whole suite runs in one async scope
+
 /* ---------- 1. no track record → no offer; the un-calibrated meter never offers ---------- */
 A.eq(TrustStore.currentOffer(), null, 'a fresh store offers nothing');
 A.ok(TrustStore.canShow(), 'the session offer budget starts open');
@@ -115,6 +117,57 @@ fb('work_miss');
 A.eq(setInitiativeCalls.length, 1, 'further misses with NO earned rung never touch the dial (the manual posture is untouchable)');
 A.eq(initiative, 'propose', 'the dial never goes below the Commander\'s own floor');
 
+/* ---------- 7b. REVIEW BLOCKER regression — a STALE earned record must never move the dial ----------
+   Non-dial posture writers (settings-backup import, permissions-level preset) can move initiative without the
+   dial's onManualInitiative retirement. A stale earned record must then RETIRE on the next demotion check —
+   never demote "from" a rung the dial isn't at. Reproduces both directions of the blocker. */
+// stale-HIGH: earn leash, posture then set DOWN to 'wait' by an import → 3 misses must NOT raise wait→propose.
+for (let i = 0; i < 6; i++) fb('kept');
+xp = { level: 4, confidence: 80, samples: 12, tasksDone: 20 };
+initiative = 'propose';
+const ofH = TrustStore.currentOffer();
+A.eq(ofH && ofH.to, 'leash', 'stale-HIGH setup: a leash offer is live');
+A.ok(TrustStore.accept(ofH), 'earned leash (floor propose); the dial sits at leash');
+initiative = 'wait';                       // a settings-backup import rewrites the posture directly (no retirement hook)
+setInitiativeCalls.length = 0; notices.length = 0;
+fb('work_miss'); fb('work_miss'); fb('work_miss');
+A.eq(setInitiativeCalls, [], 'stale-HIGH: the diverged record NEVER touches the dial — no silent escalation dressed as a step-back');
+A.eq(initiative, 'wait', 'the imported posture stands untouched');
+A.eq(TrustStore._state().earned.initiative, undefined, 'the stale record is retired (user override wins, recorded as such)');
+A.eq(notices.length, 0, 'retirement is silent — no fake "stepping back" notice for a demotion that never happened');
+// stale-LOW: earn leash, the user then raises the dial ABOVE it via a non-dial path → misses must not slash it.
+for (let i = 0; i < 6; i++) fb('kept');
+initiative = 'propose';
+const ofL = TrustStore.currentOffer();
+A.eq(ofL && ofL.to, 'leash', 'stale-LOW setup: a leash offer is live');
+A.ok(TrustStore.accept(ofL), 'earned leash again');
+initiative = 'free';                       // the user raised the dial through a path that skipped retirement
+setInitiativeCalls.length = 0; notices.length = 0;
+fb('work_miss'); fb('work_miss'); fb('work_miss');
+A.eq(setInitiativeCalls, [], 'stale-LOW: a user-raised rung is never slashed by a stale earned record');
+A.eq(initiative, 'free', 'the user\'s own rung stands');
+A.eq(TrustStore._state().earned.initiative, undefined, 'the stale record is retired here too');
+
+/* ---------- 7c. REVIEW NIT 5 — apply-FIRST: a throwing dial writer leaves the record + notice untouched ---------- */
+for (let i = 0; i < 6; i++) fb('kept');
+initiative = 'propose';
+const ofT = TrustStore.currentOffer();
+A.ok(TrustStore.accept(ofT), 'earned leash for the throwing-writer scenario');
+TrustStore.init({   // same store state (re-hydrates from the key) but the dial writer now THROWS
+  now: () => 424242, getStats: () => xp, getPosture: () => ({ initiative: initiative, reach: 'sandbox' }),
+  setInitiative: () => { throw new Error('dial offline'); },
+  grantable: ['cabinet:write'], getGrants: () => grants.slice(),
+  grant: (key) => { grantCalls.push(key); grants.push(key); return true; },
+  notify: (text, kind) => notices.push({ text, kind })
+});
+notices.length = 0;
+fb('work_miss'); fb('work_miss'); fb('work_miss');
+A.eq(TrustStore._state().earned.initiative.to, 'leash', 'a THROWING dial writer leaves the earned record untouched (apply-first, never a lying record)');
+A.eq(notices.length, 0, '…and no demotion notice is claimed for a write that never landed');
+A.eq(initiative, 'leash', 'the live dial rung is untouched by the failed write');
+initStore();   // restore the standard deps; clear the leftover earned record via the dial's own retirement rule
+TrustStore.onManualInitiative('propose'); initiative = 'propose';
+
 /* ---------- 8. decline / ignore-2× negative state, per level band ---------- */
 // rebuild a positive streak so offers can fire again
 for (let i = 0; i < 6; i++) fb('kept');
@@ -140,7 +193,7 @@ initiative = 'free';   // initiative maxed → the grant path
 xp = { level: 6, confidence: 88, samples: 12, tasksDone: 30 };
 const gOffer = TrustStore.currentOffer();
 A.eq([gOffer.kind, gOffer.to], ['grant', 'cabinet:write'], 'with initiative maxed + the grant bars met, the GRANTABLE pre-bless is offered');
-A.ok(TrustStore.accept(gOffer), 'the grant accept applies');
+A.ok(await TrustStore.accept(gOffer), 'the grant accept applies (awaited — the server grant is async)');
 A.eq(grantCalls, ['cabinet:write'], 'accept blessed the capability THROUGH the injected grant (the existing permgrants plumbing, never a parallel path)');
 A.ok(TrustStore.earnedGrant('cabinet:write'), 'the earned grant records provenance for the ledger');
 A.eq(TrustStore.currentOffer(), null, 'a held grant is never re-offered');
@@ -177,6 +230,32 @@ TrustStore.reset();
 A.eq(mem[KEY], undefined, 'reset() removes the persisted key');
 A.eq(TrustStore._state().track.posStreak, 0, 'a new hero starts with a clean track record');
 A.eq(TrustStore._state().earned, {}, '…and no inherited earned rungs');
+
+/* ---------- 13b. REVIEW FIX 2 — a FAILED server grant is never claimed as granted ----------
+   PermissionsStore.grant swallows failures and always resolves, so accept must VERIFY the authoritative
+   held-grants state actually carries the key before recording provenance or reporting success. */
+grants = []; grantCalls.length = 0;
+TrustStore.init({
+  now: () => 424242,
+  getStats: () => xp,
+  getPosture: () => ({ initiative: initiative, reach: 'sandbox' }),
+  setInitiative: (lvl) => { setInitiativeCalls.push(lvl); initiative = lvl; },
+  grantable: ['cabinet:write'],
+  getGrants: () => grants.slice(),
+  grant: (key) => { grantCalls.push(key); return Promise.resolve({ ok: false }); },   // resolves, but the grant did NOT land
+  notify: (text, kind) => notices.push({ text, kind })
+});
+for (let i = 0; i < 6; i++) fb('kept');
+initiative = 'free';
+xp = { level: 6, confidence: 88, samples: 12, tasksDone: 30 };
+const gFail = TrustStore.currentOffer();
+A.eq(gFail && gFail.kind, 'grant', 'the failing-grant scenario still mints the offer');
+A.eq(await TrustStore.accept(gFail), false, 'accept resolves FALSE when the verified held-grants state lacks the key (no "✓ granted" lie)');
+A.eq(grantCalls, ['cabinet:write'], 'the grant WAS attempted through the plumbing');
+A.eq(TrustStore.earnedGrant('cabinet:write'), null, '…but NO earned-grant provenance is recorded on a failed grant');
+// and a throwing grant dep also resolves false, never throws out
+TrustStore.init({ now: () => 1, getStats: () => xp, getPosture: () => ({ initiative: 'free' }), grantable: ['cabinet:write'], getGrants: () => [], grant: () => { throw new Error('boom'); } });
+A.eq(await TrustStore.accept({ kind: 'grant', to: 'cabinet:write', provenance: null }), false, 'a throwing grant dep resolves false (fail-open, never a crash)');
 
 /* ---------- 14. THE ONE-BEAT DISCIPLINE — all FOUR participants (memory > study > arc > trust) ----------
    Behavioral state assertions through the REAL Study.makeBeatSlot: the trust offer is the LOWEST priority —
@@ -228,3 +307,5 @@ TrustStore.reset();
 A.eq(emitted, 0, 'TrustStore never emits on U.bus (read-only citizen; lint-emits stays green)');
 
 A.report('truststore.test');
+
+})().catch(e => { console.log('FAIL: uncaught — ' + (e && e.stack || e)); process.exit(1); });

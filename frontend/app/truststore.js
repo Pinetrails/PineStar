@@ -22,6 +22,8 @@ const TrustStore = (() => {
   const KEY = 'starnet.trust.v1';
   const IGNORE_LIMIT = 2;        // ignore an offered rung this many times → stop offering it in this level band (stop-forever, per band)
   const SESSION_OFFER_CAP = 1;   // at most ONE trust offer shown per session (anti-nag; rung offers are rare by construction)
+  const MAP_CAP = 40;            // FIFO cap for every persisted keyed map (declined / ignores / earned.grant) — rungs
+                                 // and grantable keys are few by construction, so 40 is generous headroom, never growth
 
   let state = null;              // persisted: { v, track (trust.fold state), earned:{initiative:{to,floor,provenance}}, declined:{'kind:to':band}, ignores:{'kind:to':n} }
   let sessionShown = 0;          // trust offers shown THIS session (in-memory; resets each app run)
@@ -49,27 +51,34 @@ const TrustStore = (() => {
           provenance: (e.provenance && typeof e.provenance === 'object') ? sanitizeProv(e.provenance) : null
         };
       }
-      // the EARNED grant records (provenance for the ledger badge): keep only well-formed rows.
+      // the EARNED grant records (provenance for the ledger badge): keep only well-formed rows in a PLAIN object
+      // (an array would pass a bare typeof check via its indices), FIFO-capped like every persisted map here.
       const eg = raw.earned && raw.earned.grant;
-      if (eg && typeof eg === 'object') {
-        for (const k in eg) {
+      if (eg && typeof eg === 'object' && !Array.isArray(eg)) {
+        for (const k of Object.keys(eg).slice(-MAP_CAP)) {
           const g = eg[k];
-          if (!g || typeof g !== 'object') continue;
+          if (!g || typeof g !== 'object' || Array.isArray(g)) continue;
           if (!s.earned.grant) s.earned.grant = {};
           s.earned.grant[k] = { provenance: (g.provenance && typeof g.provenance === 'object') ? sanitizeProv(g.provenance) : null, earnedAt: (typeof g.earnedAt === 'number' && isFinite(g.earnedAt)) ? g.earnedAt : null };
         }
       }
-      if (raw.declined && typeof raw.declined === 'object') for (const k in raw.declined) { const b = Math.floor(Number(raw.declined[k])); if (Number.isFinite(b) && b > 0) s.declined[k] = b; }
-      // ignore tallies are { band, n } records (band-scoped stop-forever) — keep only well-formed ones.
-      if (raw.ignores && typeof raw.ignores === 'object') for (const k in raw.ignores) {
-        const ig = raw.ignores[k];
-        if (!ig || typeof ig !== 'object') continue;
-        const band = Math.floor(Number(ig.band)), n = Math.floor(Number(ig.n));
-        if (Number.isFinite(band) && band > 0 && Number.isFinite(n) && n > 0) s.ignores[k] = { band: band, n: n };
+      if (raw.declined && typeof raw.declined === 'object' && !Array.isArray(raw.declined)) {
+        for (const k of Object.keys(raw.declined).slice(-MAP_CAP)) { const b = Math.floor(Number(raw.declined[k])); if (Number.isFinite(b) && b > 0) s.declined[k] = b; }
+      }
+      // ignore tallies are { band, n } records (band-scoped stop-forever) — keep only well-formed ones, capped.
+      if (raw.ignores && typeof raw.ignores === 'object' && !Array.isArray(raw.ignores)) {
+        for (const k of Object.keys(raw.ignores).slice(-MAP_CAP)) {
+          const ig = raw.ignores[k];
+          if (!ig || typeof ig !== 'object' || Array.isArray(ig)) continue;
+          const band = Math.floor(Number(ig.band)), n = Math.floor(Number(ig.n));
+          if (Number.isFinite(band) && band > 0 && Number.isFinite(n) && n > 0) s.ignores[k] = { band: band, n: n };
+        }
       }
     }
     return s;
   }
+  // FIFO-cap a persisted keyed map in place (string-key insertion order is spec-preserved): drop the oldest rows.
+  function capMap(m) { const ks = Object.keys(m); while (ks.length > MAP_CAP) delete m[ks.shift()]; }
   // provenance is DATA the dial renders — keep only well-formed numeric fields (never a secret; the offer's `why`
   // is composed from task counts + %, never from any run content). Belt-and-suspenders against a hand-edited save.
   function sanitizeProv(p) {
@@ -97,11 +106,22 @@ const TrustStore = (() => {
   // Commander's manual floor), records the new earned floor (or clears it), and surfaces an EXPLICIT notice.
   function maybeDemote() {
     if (!ready() || !state.earned.initiative) return;
+    // STALENESS GUARD (review blocker): the earned record is only actionable while the LIVE dial rung still IS the
+    // earned rung. A non-dial writer (settings-backup import, permissions-level preset) can move the posture without
+    // passing onManualInitiative — demoting from a stale record could then RAISE the dial (stale-high: earned 'free'
+    // over a posture already at 'wait' would setInitiative('leash') — a silent two-rung escalation dressed as a
+    // step-back) or slash a rung the user deliberately raised (stale-low). Divergence = the user override wins:
+    // retire the record, touch nothing, say nothing (the same rule the dial's onManualInitiative applies).
+    const live = (posture().initiative) || 'wait';
+    if (live !== state.earned.initiative.to) { delete state.earned.initiative; save(); return; }
     const res = Trust.demote(state.track, { earned: state.earned, xp: xp() });
     if (!res || !res.demote) return;
     const d = res.demote;
-    // apply to the dial through the SAME writer the panel uses (no parallel plumbing).
-    try { if (typeof deps.setInitiative === 'function') deps.setInitiative(d.to); } catch (_) {}
+    // apply to the dial FIRST, through the SAME writer the panel uses (no parallel plumbing) — and only mutate the
+    // record + notify if the write actually landed (a thrown/missing writer must not strand a lying earned record).
+    let applied = false;
+    try { if (typeof deps.setInitiative === 'function') { deps.setInitiative(d.to); applied = true; } } catch (_) { applied = false; }
+    if (!applied) return;
     // update / clear the earned record: if we've stepped back to the manual floor, the rung is no longer "earned".
     if (d.to === state.earned.initiative.floor) delete state.earned.initiative;
     else state.earned.initiative = { to: d.to, floor: state.earned.initiative.floor, provenance: state.earned.initiative.provenance };
@@ -109,12 +129,19 @@ const TrustStore = (() => {
     try { if (typeof deps.notify === 'function') deps.notify('◈ ' + d.why, 'warn'); } catch (_) {}
   }
 
+  // the event's agent, exactly as xpstore reads it (eventAgentId: typed + trimmed, '' → 'agent') so the two
+  // stores count the SAME events — a payload with a non-string / padded agentId folds identically in both.
+  function eventAgentId(payload) {
+    const id = payload && typeof payload.agentId === 'string' ? payload.agentId.trim() : '';
+    return id || 'agent';
+  }
+
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
     sessionShown = 0;
     if (!wired && typeof U !== 'undefined' && U.bus) {
-      for (const n of ['agent.run.end', 'memory.feedback']) U.bus.on(n, p => { try { if ((p && p.agentId ? p.agentId : 'agent') === 'agent') onEvent(n, p); } catch (e) { /* fail-open */ } });
+      for (const n of ['agent.run.end', 'memory.feedback']) U.bus.on(n, p => { try { if (eventAgentId(p) === 'agent') onEvent(n, p); } catch (e) { /* fail-open */ } });
       wired = true;
     }
   }
@@ -163,27 +190,44 @@ const TrustStore = (() => {
   // ACCEPT: apply the earned rung THROUGH the existing plumbing (AutonomyStore.setInitiative for initiative;
   // PermissionsStore.grant for a grant — never a parallel path), record provenance, and (initiative) remember the
   // manual FLOOR we raised from so a later demotion can never step below the Commander's own setting.
+  // RETURN SHAPE: boolean for initiative (a sync dial write); a Promise<boolean> for a grant — the server grant is
+  // async and can FAIL while resolving (PermissionsStore.grant swallows errors and always resolves), so success is
+  // only claimed after re-reading the authoritative held-grants state and finding the key actually blessed
+  // (review fix 2 — never a "✓ granted" on a grant that didn't land). Callers wrap in Promise.resolve().
   function accept(offer) {
     if (!ready() || !offer) return false;
-    let ok = false;
     if (offer.kind === 'initiative') {
       const from = (posture().initiative) || 'wait';    // the Commander's current (manual) rung = the demotion floor
+      let ok = false;
       try { if (typeof deps.setInitiative === 'function') { deps.setInitiative(offer.to); ok = true; } } catch (_) { ok = false; }
       if (ok) {
         // if a lower rung was already earned, keep the ORIGINAL manual floor (don't move the floor up to an earned rung).
         const prevFloor = (state.earned.initiative && state.earned.initiative.floor) || from;
         state.earned.initiative = { to: offer.to, floor: prevFloor, provenance: offer.provenance || null };
+        save();
       }
-    } else if (offer.kind === 'grant') {
-      try {
-        if (typeof deps.grant === 'function') { const r = deps.grant(offer.to); ok = (r && typeof r.then === 'function') ? true : (r !== false); }
-      } catch (_) { ok = false; }
-      // a grant's provenance is recorded on the earned record too (for the dial history), but grants have no
-      // "floor" to demote toward — revoking is the Commander's, and a grant demotion is out of scope this tier.
-      if (ok) { state.earned.grant = state.earned.grant || {}; state.earned.grant[offer.to] = { provenance: offer.provenance || null, earnedAt: now() }; }
+      return ok;
     }
-    if (ok) save();
-    return ok;
+    if (offer.kind === 'grant') {
+      let p;
+      try { p = (typeof deps.grant === 'function') ? deps.grant(offer.to) : null; } catch (_) { return Promise.resolve(false); }
+      if (p == null || p === false) return Promise.resolve(false);
+      return Promise.resolve(p).then(() => {
+        // VERIFY: the grant only "took" if the authoritative held-grants state now carries the key. A swallowed
+        // server failure leaves it absent → resolve false, record nothing (the card settles its ✕ path).
+        const ok = grantsHeld().indexOf(offer.to) >= 0;
+        if (ok) {
+          // a grant's provenance is recorded on the earned record too (for the ledger badge), but grants have no
+          // "floor" to demote toward — revoking is the Commander's, and a grant demotion is out of scope this tier.
+          state.earned.grant = state.earned.grant || {};
+          state.earned.grant[offer.to] = { provenance: offer.provenance || null, earnedAt: now() };
+          capMap(state.earned.grant);
+          save();
+        }
+        return ok;
+      }).catch(() => false);
+    }
+    return false;
   }
 
   // DECLINE: the Commander tapped "Not yet" — stop offering THIS rung in this level band for good (a NEW level
@@ -193,6 +237,7 @@ const TrustStore = (() => {
     if (!ready() || !offer) return;
     const snap = Trust.xpSnapshot(xp());
     state.declined[offer.kind + ':' + offer.to] = Trust.bandOf(snap.level);
+    capMap(state.declined);
     save();
   }
 
@@ -205,6 +250,7 @@ const TrustStore = (() => {
     const cur = state.ignores[key];
     if (cur && cur.band != null && Trust.bandOf(snap.level) <= Trust.bandOf(cur.band)) { cur.n = (cur.n || 0) + 1; }
     else state.ignores[key] = { band: Trust.bandOf(snap.level), n: 1 };
+    capMap(state.ignores);
     save();
   }
 

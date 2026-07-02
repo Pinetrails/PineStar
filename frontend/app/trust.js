@@ -53,9 +53,13 @@
   const MIN_CONF_SAMPLES = 3;        // confidence is "calibrating" below this many feedback samples (mirrors xp.MIN_SAMPLES) — no offer on an un-calibrated meter
 
   // ---- the folded shape (persisted by the store). posStreak/negStreak are CONSECUTIVE run-outcome streaks;
-  // window is the recent FIFO ring of {ok} outcomes (used only to recompute streaks defensively on hydrate). ----
+  // window is the recent FIFO ring of {ok} outcomes (used only to recompute streaks defensively on hydrate).
+  // lastStreakRun caps the streak at ONE move per runId (review fix 3): a single turn-in deck can fold five keeps
+  // from one run — that is five APPROVALS, not five runs — so only the FIRST feedback carrying a runId moves the
+  // streak for that run. Feedback with NO runId (the sidecar turn-in path today) still counts each — the offer
+  // copy says "approvals in a row" so the provenance line stays honest either way. ----
   function fresh() {
-    return { v: 1, posStreak: 0, negStreak: 0, window: [], samples: 0, lastConf: 0 };
+    return { v: 1, posStreak: 0, negStreak: 0, window: [], samples: 0, lastConf: 0, lastStreakRun: null };
   }
   function clone(s) { return s ? JSON.parse(JSON.stringify(s)) : fresh(); }
   function num(v, d) { return Number.isFinite(v) ? v : d; }
@@ -68,6 +72,7 @@
       s.negStreak = Math.max(0, Math.floor(num(raw.negStreak, 0)));
       s.samples = Math.max(0, Math.floor(num(raw.samples, 0)));
       s.lastConf = Math.max(0, Math.min(100, num(raw.lastConf, 0)));
+      if (typeof raw.lastStreakRun === 'string' && raw.lastStreakRun) s.lastStreakRun = raw.lastStreakRun;
       if (Array.isArray(raw.window)) s.window = raw.window.filter(x => x && typeof x === 'object').map(x => ({ ok: !!x.ok })).slice(-WINDOW);
     }
     return s;
@@ -95,8 +100,15 @@
       const sign = feedbackSign(p.reason);
       if (sign === 0) return s;                       // 👌/unknown: no track-record signal, streaks untouched
       s.samples += 1;
-      if (sign > 0) { s.posStreak += 1; s.negStreak = 0; }
-      else { s.negStreak += 1; s.posStreak = 0; }
+      // review fix 3 — one streak move per runId: a turn-in deck folds several keeps from ONE run; only the
+      // first feedback of that run moves the streak (either direction). The window still records each verdict.
+      const runId = (typeof p.runId === 'string' && p.runId) ? p.runId : null;
+      const streakMoves = !runId || runId !== s.lastStreakRun;
+      if (streakMoves) {
+        if (sign > 0) { s.posStreak += 1; s.negStreak = 0; }
+        else { s.negStreak += 1; s.posStreak = 0; }
+        if (runId) s.lastStreakRun = runId;
+      }
       s.window.push({ ok: sign > 0 });
       while (s.window.length > WINDOW) s.window.shift();
     } else if (name === 'agent.run.end') {
@@ -237,7 +249,7 @@
     if (toRank >= rankInit(from)) return { demote: null };             // already at/below the floor — nothing to take
     const to = INITIATIVE[toRank];
     const why = badStreak
-      ? 'stepping back to a shorter leash after ' + s.negStreak + ' rough runs — earn it back'
+      ? 'stepping back to a shorter leash after ' + s.negStreak + ' rough results — earn it back'
       : 'confidence slipped to ' + snap.confidence + '% — easing off until it recovers';
     return { demote: { from: from, to: to, why: why } };
   }

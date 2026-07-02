@@ -58,6 +58,25 @@ const folded = T.fold(frozen, fb('kept'));
 A.eq(frozen.posStreak, 0, 'fold never mutates its input (pure)');
 A.eq(folded.posStreak, 1, '…and returns the new state');
 
+/* ---------- 1b. the streak is capped at ONE move per runId (review fix 3) ----------
+   A single turn-in deck can fold five keeps from one run — five APPROVALS, not five runs. Only the FIRST
+   feedback carrying a runId moves the streak for that run; the window + samples still record every verdict. */
+const fbr = (reason, runId) => ({ name: 'memory.feedback', payload: { reason, runId } });
+let cap = T.fresh();
+for (let i = 0; i < 5; i++) cap = T.fold(cap, fbr('kept', 'run_A'));
+A.eq(cap.posStreak, 1, '5 keeps in one run → streak 1 (one move per runId)');
+A.eq(cap.samples, 5, '…but every verdict still counts as a satisfaction sample');
+A.eq(cap.window.length, 5, '…and every verdict still lands in the outcome window');
+cap = T.fold(cap, fbr('kept', 'run_B'));
+A.eq(cap.posStreak, 2, 'a keep from a DIFFERENT run moves the streak (2 runs approved = streak 2)');
+cap = T.fold(cap, fbr('work_miss', 'run_B'));
+A.eq([cap.posStreak, cap.negStreak], [2, 0], 'a second verdict from the SAME run cannot move the streak either way (the first decided it)');
+cap = T.fold(cap, fbr('work_miss', 'run_C'));
+A.eq([cap.posStreak, cap.negStreak], [0, 1], 'a miss from a new run breaks the streak normally');
+cap = T.fold(cap, fb('kept'));
+A.eq(cap.posStreak, 1, 'feedback with NO runId still counts each (the sidecar turn-in path today — copy says "approvals in a row" to stay honest)');
+A.eq(T.sanitize({ lastStreakRun: 'run_X' }).lastStreakRun, 'run_X', 'lastStreakRun survives sanitize (the cap persists across reloads)');
+
 /* ---------- 2. assess: the INITIATIVE offer thresholds (exact boundaries) ---------- */
 // a ready track record: streak 5, no negatives
 let ready5 = T.fresh();
@@ -134,7 +153,7 @@ A.eq(T.demote(bad3, { earned: null, xp: xpAt(3, 20, 10) }).demote, null, 'demoti
 // an earned free rung over a leash floor demotes ONE rung
 const dem = T.demote(bad3, { earned: { initiative: { to: 'free', floor: 'leash' } }, xp: xpAt(3, 60, 10) }).demote;
 A.eq([dem.from, dem.to], ['free', 'leash'], 'a 3-negative-streak demotes the earned rung one step');
-A.ok(/rough runs/.test(dem.why), 'the demotion carries an explicit, honest why (never silent)');
+A.ok(/rough results/.test(dem.why), "the demotion carries an explicit, honest why (never silent)");
 // never below the floor: earned propose over a propose floor cannot demote below propose
 A.eq(T.demote(bad3, { earned: { initiative: { to: 'propose', floor: 'propose' } }, xp: xpAt(3, 60, 10) }).demote, null, 'a rung already at the manual floor cannot demote below it');
 // earned free over a WAIT floor: one rung at a time (free→leash), not a collapse to the floor
