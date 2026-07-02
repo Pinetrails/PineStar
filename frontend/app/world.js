@@ -82,6 +82,12 @@ const World = (() => {
   // plays once per proposal (keyed to the count high-water mark). pinnedCount is that mark; pinFlourishAt drives
   // the amber pin-burst render; pinTargetTile is the board approach tile the agent walks to.
   let pinnedCount = 0, pinFlourishAt = -1e9, pinTargetTile = null, pinCheckAt = -1e9;
+  // TIER D · D5 — THE OVERSEER OVERSEES. The hero (`agent`, the station's OVERSEER — no separate overseer body
+  // exists in-world) reads as a supervisor: (2) a rare walk to the MISSION BOARD to survey the queue when it is
+  // non-empty (goal 'post', modeled on the 'pin' beat above), gated by the D2 station budget. `postCd` is its
+  // per-hero cooldown; `postTargetTile` the board approach tile it walks to. Beats (1) inspection-rounds and
+  // (3) queue-aware idle bias ride existing machinery (maybeRounds / decideIdle) and need no new module state.
+  let postCd = 0, postTargetTile = null;
   // G4 feature 3 — MEESEEKS sub-agent sprites. A real background sub-agent (team.dispatch/team.spawn) makes
   // itself observable via a frozen `task` event (kind:'subagent', status running→done). SubagentSprites folds
   // that stream into a live-only helper ledger (truthfulness law: a sprite exists IFF a real sub-agent is live).
@@ -211,6 +217,7 @@ const World = (() => {
   const Q_STARTLE = ['!', 'whoa', 'what was that', 'huh!', 'oh'];   // sudden change right beside it
   const SELF_PLACE = ['there', 'better', 'that belongs here', 'mine now', 'hm, nice'];   // after placing its own decor
   const SELF_ROUNDS = ['all in order', 'good', 'belt is humming', 'as it should be', 'checks out'];   // ownership beat on a caretaker lap
+  const SELF_SUPERVISE = ['good work', 'keep at it', 'coming along', 'steady', 'looking sharp', 'carry on'];   // D5: the OVERSEER's over-the-shoulder glance at a working crew body
   const SLEEP_LINE = ['...', 'powering down', 'standby', 'going quiet', 'resting'];   // dormant in the deep wind-down mood
   const MOURN_LINE = ['it was here', 'gone', 'where did it go', '...', 'something is missing', 'it was right here'];   // stands where a fond thing used to be
   const REVISIT_LINE = ['back here again', 'my spot', 'here is good', '...', 'i like it here'];                       // drawn back to a favorite haunt
@@ -489,6 +496,29 @@ const World = (() => {
     agent.goal = 'pin'; agent.usingProp = null; agent.watchProp = null; agent.target = null; agent.pathPts = null;
     agent.sitting = false; agent.working = false; agent.state = 'idle';
     if (!setPathTo({ x: tile.tx, y: tile.ty })) { pinFlourishAt = now; pinnedCount = count | 0; agent.goal = null; }   // unreachable → count it pinned, no walk
+  }
+  /* TIER D · D5 beat 2 — MISSION-BOARD POST. When the frontend-visible task/mission queue is NON-EMPTY, the board
+     is inside the hero's zone, and the hero is idle+free, occasionally (rare, ~2-4 min cooldown) the OVERSEER walks
+     to the MISSION BOARD, faces it, and surveys the queue a beat (3-6s) before returning to its business. Rides the
+     goal machinery like the 'pin' beat (goal 'post'); it IS a noticeable beat, so it consults the D2 station budget
+     (crewBeatDamp) and arms it (armBeat). Board out-of-zone or absent ⇒ pure no-op (no reach, no exception). The
+     queue count is read from missionPinCounts (mpOpen), state the frontend ALREADY holds (QuestStore projection,
+     cached 1Hz) — no new bus round-trip (G1). Hero-only: only ever called for `agent`. */
+  function maybeBoardPost(now) {
+    if (!agent || agent.unplaced) return false;
+    if (now < postCd) return false;
+    if (crewBeatDamp(now) < 1) return false;                     // D2 (G5): station budget — a noticeable beat waits its turn
+    if ((missionPinCounts(now)[0] | 0) <= 0) return false;       // queue empty → the overseer has nothing to survey (no-op; N=1-with-no-queue path draws no further RNG)
+    const tile = boardAnchorTile();
+    if (!tile) return false;                                     // no board / no reachable approach → no reach (out-of-zone board is caught below via the zone clamp)
+    if (!tileInZone(zoneFor(agent), tile.tx, tile.ty)) return false;   // board approach outside the hero's zone → no-op (containment; with crew present the hero may be caged to its own room)
+    if (!setPathTo({ x: tile.tx, y: tile.ty })) return false;    // unreachable → skip (leaves postCd untouched; re-considered next idle tick)
+    postTargetTile = tile;
+    agent.goal = 'post'; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.working = false; agent.stilling = false; agent.state = 'idle';
+    postCd = now + U.irnd(120000, 240000);                       // 2-4 min per-hero cooldown
+    armBeat(now);                                                // count it against the shared station beat budget (G5)
+    if (!agent.target) arrive(now);                             // already standing on the approach tile → survey now
+    return true;
   }
   // the hero's ASSIGNED conveyor: a walkable tile beside the BAY bound to this agent (agentId match, so it never
   // reacts to another agent's bay). null = this agent has no conveyor → no fetch leg (straight to work).
@@ -898,6 +928,14 @@ const World = (() => {
       curiositySay(['pinned.', 'left it on the board', 'proposal up', 'for you to weigh'], 0.5, now);
       return;
     }
+    // TIER D · D5 beat 2: reached the MISSION BOARD to SURVEY the queue — face it and HOLD 3-6s (a real read of the
+    // board, not the pin's instant flourish), then the tick ladder ('post' dwell-release) drifts back to wandering.
+    if (self.goal === 'post') {
+      self.sitting = false; self.working = false; self.state = 'idle'; self.dir = (postTargetTile && postTargetTile.face) || 'north';
+      self.glanceCd = 0; self.studyUntil = now + U.irnd(3000, 6000);
+      curiositySay(['reviewing the queue', 'what needs doing', 'the board', 'checking the docket', 'surveying the work'], 0.4, now);
+      return;
+    }
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
     if (FOND[self.goal]) noteFond(now, FOND[self.goal]);   // dwelling somewhere by choice deepens attachment to that tile
     if (self.goal === 'work') { self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
@@ -921,9 +959,14 @@ const World = (() => {
       else { self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, self.useFace); }
     }
     else if (self.goal === 'rounds') {
-      // a stop on the caretaker lap — face it, a brief ownership beat, then tick advances to the next stop
+      // a stop on the caretaker lap — face it, a brief ownership beat, then tick advances to the next stop.
+      // D5 beat 1: a SUPERVISOR stop (behind a working crew body) gets the same brief 1.5-3s hold (a glance, not
+      // the D3 watch's 3-7s study) — the shorter hold IS the supervisor's-glance vs a peer's-watch distinction —
+      // with an over-the-shoulder flavor line instead of the ownership beat.
       self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
-      self.glanceCd = 0; self.studyUntil = now + U.irnd(1500, 3000); curiositySay(SELF_ROUNDS, 0.4, now);
+      self.glanceCd = 0; self.studyUntil = now + U.irnd(1500, 3000);
+      curiositySay(self.roundsSup ? SELF_SUPERVISE : SELF_ROUNDS, 0.4, now);
+      self.roundsSup = false;
     }
     else if (self.goal === 'mourn') {
       // stands where its thing used to be — a long, near-silent beat (the off-beat duration is the unsettling part)
@@ -2411,17 +2454,52 @@ const World = (() => {
     return true;
   }
 
-  /* ---------- caretaker rounds: a deliberate 2-3 stop lap of the station, an ownership beat at each ---------- */
+  /* ---------- caretaker rounds: a deliberate 2-3 stop lap of the station, an ownership beat at each ----------
+     TIER D · D5 beat 1 — INSPECTION ROUNDS: for the HERO (the OVERSEER) only, when crew are WORKING in the hero's
+     zone, the rounds prefers a supervisor stop ~2 tiles behind each working crew body (reusing the D3 watch-a-peer
+     stand-point geometry) with a shorter FACE-THE-WORKER hold than a D3 social watch (a glance, not a study). With
+     no working crew in-zone (incl. every N=1 floor), rounds behave EXACTLY as before — the worker scan appends
+     nothing, draws no RNG, and the shuffle/pick run over the identical stop list. */
+  // D5 beat 1: the supervisor stand-point ~2 tiles behind a working body, inside the observer's zone, facing the
+  // worker. Same "behind" geometry as planWatch (approach from where the observer already is), returned as a
+  // ready {tx,ty,face} stand so it slots straight into the rounds queue. null if no in-zone stand-tile resolves.
+  function supStandBehind(obs, worker) {
+    const zone = zoneFor(obs);
+    const wt = tileOf(worker.px, worker.py);
+    const dx = Math.sign(obs.px - worker.px) || 0, dy = Math.sign(obs.py - worker.py) || 0;
+    const cands = [];
+    for (const dist of [2, 3, 1]) cands.push({ x: wt.x + dx * dist, y: wt.y + dy * dist });
+    cands.push({ x: wt.x + 2, y: wt.y }, { x: wt.x - 2, y: wt.y }, { x: wt.x, y: wt.y + 2 }, { x: wt.x, y: wt.y - 2 });
+    for (const c of cands) {
+      if (!tileInZone(zone, c.x, c.y) || !geo.walkable(c.x, c.y, blocked)) continue;
+      if (c.x === wt.x && c.y === wt.y) continue;
+      return { tx: c.x, ty: c.y, face: dirToward((c.x + 0.5) * T, (c.y + 0.5) * T, (wt.x + 0.5) * T, (wt.y + 0.5) * T), sup: true };
+    }
+    return null;
+  }
   function maybeRounds(now) {
     if (now < (self.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
     const zone = zoneFor(self);   // P1: a caretaker lap stays inside the zone (no straddling into the next room)
     const cur = tileOf(self.px, self.py), stops = [];
     for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another body's (or unclaimed) workstation, and never out of zone
     const belts = (geo.belts || []).filter(b => tileInZone(zone, b.x, b.y)); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
+    // D5 beat 1 (HERO-ONLY): fold in a supervisor stop behind each crew body WORKING in the hero's zone. Guarded on
+    // self===agent so crew rounds are byte-identical (crew never scan crew — zero crew-side diff); the whole block is
+    // skipped (no RNG) when there are no working crew in-zone, so an N=1 floor is unchanged.
+    if (self === agent) {
+      for (const b of crew) {
+        if (!b || !b.working || b === self) continue;
+        const bt = tileOf(b.px, b.py);
+        if (!tileInZone(zone, bt.x, bt.y)) continue;   // only supervise crew inside the hero's own zone (containment)
+        const stand = supStandBehind(self, b);
+        if (stand) stops.push({ sup: stand });
+      }
+    }
     if (stops.length < 2) return false;
     for (let i = stops.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = stops[i]; stops[i] = stops[j]; stops[j] = t; }   // shuffle
     const q = [];
     for (const st of stops.slice(0, U.irnd(2, 3))) {
+      if (st.sup) { q.push(st.sup); continue; }   // D5: a ready supervisor stand — already {tx,ty,face,sup} + zone-checked
       const foot = st.belt ? { x: st.belt.x, y: st.belt.y, w: 1, h: 1 } : st.prop;
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra: st.belt ? beltUnion() : blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) q.push({ tx: a.tx, ty: a.ty, face: a.face });   // the stand-tile of each stop stays in-zone too
@@ -2433,7 +2511,7 @@ const World = (() => {
   function roundsNext(now) {
     while (self.roundsQueue && self.roundsQueue.length) {
       const s = self.roundsQueue.shift();
-      if (setPathTo({ x: s.tx, y: s.ty })) { self.goal = 'rounds'; self.useFace = s.face; if (!self.target) arrive(now); return true; }
+      if (setPathTo({ x: s.tx, y: s.ty })) { self.goal = 'rounds'; self.useFace = s.face; self.roundsSup = !!s.sup; if (!self.target) arrive(now); return true; }
     }
     self.goal = null; self.roundsQueue = null; self.idleUntil = now + U.irnd(400, 1400); return true;   // lap complete -> back to the menu
   }
@@ -2506,6 +2584,7 @@ const World = (() => {
     if (self === agent) {
       if (pendingMourn && planMourn(now)) return;      // grief reflex: a beloved spot was just emptied — go stand where it was
       if (novelty.length && planInspect(now)) return;  // curiosity reflex: a fresh placement always wins
+      if (maybeBoardPost(now)) return;                 // TIER D · D5 beat 2: OVERSEER surveys the MISSION BOARD when the queue is non-empty (rare, 2-4min cd, board in-zone, station-budgeted). HERO-ONLY. Draws ZERO RNG when the queue is empty / cd unexpired ⇒ a no-queue floor is byte-identical.
     }
     if (maybeQuirk(now)) return;                       // rare unpredictable detour — the eerie inner life surfacing
     // AUTONOMOUS PROP PLACEMENT — REMOVED (Thronglet direction). The agent no longer drops
@@ -2532,7 +2611,13 @@ const World = (() => {
     if (top === wRest) { if (planProp(now)) return; }                                  // tired -> lounge / couch
     else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
     else {                                                                             // bored / restless
-      if (U.chance(0.3) && maybeRounds(now)) return;                                    //   do a deliberate caretaker lap (purpose, not aimless)
+      // TIER D · D5 beat 3 — QUEUE-AWARE IDLE BIAS: while the visible task/mission queue is non-empty, the OVERSEER
+      // (hero only) leans harder into a purposeful caretaker lap (which visits desks / belts / the board — the
+      // work-adjacent points) rather than an aimless beat — a WEIGHT shift (x1.5, never absolute), not new movement.
+      // The multiplier derives from missionPinCounts (cached, no RNG) so the U.chance draw count is UNCHANGED; a
+      // no-queue floor keeps the exact 0.3 (byte-identical), and crew (self!==agent) always use 0.3.
+      const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.45 : 0.3;
+      if (U.chance(roundsBias) && maybeRounds(now)) return;                             //   do a deliberate caretaker lap (purpose, not aimless)
       if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
       if (idleAge > 30000 && U.chance(0.35) && planGazeOut(now)) return;               //   long quiet -> contemplate the void
       if (p.restless * ph.restless > 1.0 && pace(now)) return;                          //   antsy -> pace in place
@@ -2765,8 +2850,8 @@ const World = (() => {
       if (now >= agent.studyUntil) roundsNext(now);   // ownership pause done -> walk to the next stop (or end the lap)
     } else if (agent.goal === 'sleep') {
       if (now >= agent.studyUntil) { agent.goal = null; agent.sitting = false; agent.glanceCd = 0; agent.state = 'idle'; agent.idleUntil = now + U.irnd(600, 1800); }   // wakes naturally from dormancy
-    } else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'mourn' || agent.goal === 'revisit') {
-      // observing / tending / gazing / a quirk / the long stare / grief / a haunt revisit: hold until the dwell ends (maybeGlance animates it), then re-decide
+    } else if (agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'post') {
+      // observing / tending / gazing / a quirk / the long stare / grief / a haunt revisit / D5 board-survey: hold until the dwell ends (maybeGlance animates it), then re-decide
       if (now >= agent.studyUntil) {
         const back = (agent.goal === 'inspect' || agent.goal === 'watch') ? agent.useFace : null;   // a glance back at what it studied as it turns away
         agent.goal = null; agent.usingProp = null; agent.studyKey = null; agent.quirkKind = null; agent.state = 'idle'; agent.idleUntil = now + U.irnd(1400, 3000);
