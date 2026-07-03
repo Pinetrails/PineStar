@@ -34,13 +34,17 @@
   // static list is only the OFFLINE FALLBACK (curated to the slugs verified accepted as of 2026-05/06). All
   // Codex models are tool-capable; a subscription is flat-rate, so per-token price is null (cost = $0).
   const CLIENT_VERSION = '1.0.0';   // chatgpt.com/backend-api/codex/models?client_version=…
+  // The ChatGPT-account Codex backend accepts EXACTLY these slugs (verified live 2026-07-02); every model
+  // exposes the four reasoning levels low/medium/high/xhigh (no 'none', no 'minimal'). The Codex CLI's
+  // "Fast mode" is just the 'low' level surfaced as a variant — there is no separate fast slug.
+  const CODEX_EFFORT_LIST = ['low', 'medium', 'high', 'xhigh'];
   const STATIC_MODELS = [
-    { id: 'gpt-5.3-codex',       context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
-    { id: 'gpt-5.5',             context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
-    { id: 'gpt-5.4',             context_length: 272000, max_completion_tokens: 128000, supportsTools: true },
-    { id: 'gpt-5.4-mini',        context_length: 272000, max_completion_tokens: 128000, supportsTools: true }
+    { id: 'gpt-5.5',             displayName: 'GPT-5.5',             context_length: 272000, max_completion_tokens: 128000, supportsTools: true, reasoningEfforts: CODEX_EFFORT_LIST.slice(), defaultReasoningLevel: 'medium' },
+    { id: 'gpt-5.4',             displayName: 'GPT-5.4',             context_length: 272000, max_completion_tokens: 128000, supportsTools: true, reasoningEfforts: CODEX_EFFORT_LIST.slice(), defaultReasoningLevel: 'medium' },
+    { id: 'gpt-5.4-mini',        displayName: 'GPT-5.4 mini',        context_length: 272000, max_completion_tokens: 128000, supportsTools: true, reasoningEfforts: CODEX_EFFORT_LIST.slice(), defaultReasoningLevel: 'medium' },
+    { id: 'gpt-5.3-codex-spark', displayName: 'GPT-5.3 Codex Spark', context_length: 272000, max_completion_tokens: 128000, supportsTools: true, reasoningEfforts: CODEX_EFFORT_LIST.slice(), defaultReasoningLevel: 'high' }
   ];
-  const DEFAULT_MODEL = 'gpt-5.3-codex';
+  const DEFAULT_MODEL = 'gpt-5.5';
 
   const RETRY_DELAYS = [400, 1200];   // up to 2 pre-stream retries (no jitter -> determinism)
   function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
@@ -358,11 +362,27 @@
             if (!it || typeof it.slug !== 'string' || !it.slug.trim()) continue;
             const vis = String(it.visibility || '').toLowerCase();
             if (vis === 'hide' || vis === 'hidden') continue;   // backend marks slugs it won't serve to this account
+            // Carry the backend's own reasoning-level semantics through so the model dock can render the
+            // exact chips (and their descriptions) the account is allowed, not a hardcoded guess.
+            const levels = Array.isArray(it.supported_reasoning_levels) ? it.supported_reasoning_levels : [];
+            const efforts = [];
+            const effortDescriptions = {};
+            for (const lv of levels) {
+              const eff = lv && typeof lv.effort === 'string' ? lv.effort.trim().toLowerCase() : '';
+              if (!eff || efforts.indexOf(eff) >= 0) continue;
+              efforts.push(eff);
+              if (lv.description) effortDescriptions[eff] = String(lv.description);
+            }
             out.push({
               id: it.slug.trim(),
+              displayName: it.display_name || undefined,
+              description: it.description || undefined,
               context_length: it.context_window || it.max_context_window || 272000,
               max_completion_tokens: it.max_output_tokens || null,
               supportsTools: true, pricing: null,
+              reasoningEfforts: efforts.length ? efforts : CODEX_EFFORT_LIST.slice(),
+              defaultReasoningLevel: it.default_reasoning_level ? String(it.default_reasoning_level).trim().toLowerCase() : 'medium',
+              reasoningLevelDescriptions: Object.keys(effortDescriptions).length ? effortDescriptions : undefined,
               _rank: (typeof it.priority === 'number') ? it.priority : 10000
             });
           }
@@ -375,8 +395,10 @@
     function contextLimit(id) { const m = findModel(id); return (m && m.context_length) || 272000; }   // sane default for an unlisted Codex model
     function priceOf() { return null; }                  // flat-rate subscription -> no per-token price
     function supportsTools(id) { const m = findModel(id); return m ? !!m.supportsTools : true; }   // Codex models are tool-capable; never false-refuse
+    // Which reasoning levels a codex model exposes — the static entry's list, or the four-level default.
+    function reasoningEfforts(id) { const m = findModel(id); return (m && Array.isArray(m.reasoningEfforts) && m.reasoningEfforts.length) ? m.reasoningEfforts.slice() : CODEX_EFFORT_LIST.slice(); }
 
-    return { stream, listModels, contextLimit, priceOf, supportsTools };
+    return { stream, listModels, contextLimit, priceOf, supportsTools, reasoningEfforts };
   }
 
   // Responses usage uses input_tokens/output_tokens; remap to the prompt_tokens/completion_tokens shape

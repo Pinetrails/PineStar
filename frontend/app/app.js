@@ -879,7 +879,7 @@ const App = (() => {
   // Offline FALLBACK only — the real list is fetched per-account from /api/auth/codex/models (see
   // loadCodexModels). The ChatGPT-account Codex lineup drifts: stale slugs (e.g. gpt-5.1-codex) get
   // 400-rejected by the backend, so we never hardcode the menu when we can discover it.
-  const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
+  const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'];
 
   function selectProviderUI(p) {
     pickedProvider = normalizeProviderId(p);
@@ -919,15 +919,20 @@ const App = (() => {
   // Populate the model datalist with EXACTLY the slugs the connected account's Codex backend accepts, so the
   // user can't pick a 400-rejected model. Falls back to the curated list when discovery fails / not connected.
   async function loadCodexModels() {
-    let models = CODEX_MODELS, def = CODEX_MODELS[0];
+    // Entries may be bare id strings (old shape) or rich {id, displayName, …} objects (new shape) — handle both.
+    let models = CODEX_MODELS.map(id => ({ id: id })), def = CODEX_MODELS[0];
     try {
       const r = await fetch('/api/auth/codex/models'); const j = await r.json();
-      if (Array.isArray(j.models) && j.models.length) { models = j.models; def = j.default || j.models[0]; }
+      if (Array.isArray(j.models) && j.models.length) {
+        models = j.models.map(m => (typeof m === 'string' ? { id: m } : m)).filter(m => m && m.id);
+        def = j.default || (models[0] && models[0].id);
+      }
     } catch (_) {}
+    const ids = models.map(m => m.id);
     const dl = el('model-list'); dl.innerHTML = '';
-    for (const id of models) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
+    for (const m of models) { const o = document.createElement('option'); o.value = m.id; if (m.displayName && m.displayName !== m.id) o.label = m.displayName; dl.appendChild(o); }
     el('model-count').textContent = '(ChatGPT subscription)';
-    const mi = el('in-model'); if (!models.includes(mi.value)) mi.value = def;
+    const mi = el('in-model'); if (!ids.includes(mi.value)) mi.value = def;
     updateHint();
   }
 
