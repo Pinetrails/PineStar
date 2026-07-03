@@ -593,7 +593,7 @@ const StationUI = (() => {
           pane.classList.remove('con-sec-hidden');
           pane.classList.add('con-sec-searchshow');
           // a "row" = a labelled control block. We match on visible text of these granular blocks.
-          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row');
+          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row, .con-sec-body .ts-row');
           let hits = 0;
           rows.forEach(r => {
             const hit = (r.textContent || '').toLowerCase().indexOf(q) >= 0;
@@ -1428,6 +1428,20 @@ const StationUI = (() => {
     loadSkillLibrary(agentId);
     loadAgentSkills(agentId);
     wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
+    // TOOLSET honesty: a family switched OFF in the TOOLSETS console must read as OFF here too, so the two
+    // surfaces can't tell different stories. Cheap best-effort: fetch the toolset state and dim matching perks
+    // (mapped by the granting objectType == SKILLS[].cap). Never blocks the panel; a fetch miss leaves perks as-is.
+    fetch('/api/toolsets').then(r => r.json()).then(j => {
+      const disabledObjs = {};
+      (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
+      const perks = body.querySelectorAll('.perk-grid .perk');
+      skills.forEach((s, i) => {
+        if (s.cap && disabledObjs[s.cap] && perks[i]) {
+          perks[i].classList.remove('on'); perks[i].classList.add('ts-disabled');
+          const stat = perks[i].querySelector('.perk-stat'); if (stat) { stat.textContent = '○ OFF · toolset disabled'; stat.classList.remove('ask'); }
+        }
+      });
+    }).catch(() => {});
   }
 
   // async: fetch the bundled recipe catalog (with THIS agent's placed objects, so the active/locked readout is
@@ -3044,10 +3058,39 @@ const StationUI = (() => {
      become real agent tools, gated by the same consent prompt as everything else. The server URL +
      optional bearer token are stored by the sidecar (never displayed) via /api/connectors. */
   function buildConnectors(body) {
-    // CONSOLE MODE: MCP CONNECTORS (the main event — list + add/edit form kept adjacent) and SPOTIFY as two
-    // sections instead of one long scroll. Every id/data-attr and wiring function below is unchanged — the markup
-    // just moved into panes. mountConsole appends its host to `body`, so the existing body.querySelector wiring
-    // (setupSpotify, the MCP form/list handlers) resolves against the mounted panes with no rewrite.
+    // CONSOLE MODE: TOOLSETS & CONNECTORS. TOOLSETS (first) is the Hermes-style organized surface — one CRT
+    // pill-switch row per capId FAMILY (web, files, workbench, delegation, studio, memory, jukebox), each a
+    // kill-switch layered on object=capability (available = object placed AND toolset enabled). The JUKEBOX row
+    // is where Spotify now lives (the connect flow is hosted inline, all sp-* ids intact). MCP CONNECTORS (second)
+    // is the pre-existing generic manager, unchanged except each row gains a per-connector ENABLE pill.
+    // mountConsole appends its host to `body`, so the existing body.querySelector wiring (setupSpotify, the MCP
+    // form/list handlers) resolves against the mounted panes with no rewrite.
+    // ---- TOOLSETS pane: rendered async from GET /api/toolsets; the Spotify flow markup is embedded in-line so
+    //      the JUKEBOX row can host it (kept verbatim from the old SPOTIFY section, ids unchanged). ----
+    const spotifyInline =
+      '<div class="ts-spotify" id="ts-spotify">' +
+        '<p class="set-about">One-time setup: make a free app at <span class="dim">developer.spotify.com/dashboard</span>, add the redirect URI below to it, paste the Client ID, then connect. ' +
+          '<span class="dim">(OAuth PKCE — no client secret is ever stored.)</span></p>' +
+        '<div id="sp-status" class="mc-url dim">checking…</div>' +
+        '<div class="mc-form">' +
+          '<input id="sp-client" class="key-input" placeholder="Spotify Client ID" autocomplete="off" spellcheck="false" maxlength="64">' +
+          '<div class="mc-url dim">Redirect URI to whitelist: <code id="sp-redir">…</code></div>' +
+          '<div class="mc-acts">' +
+            '<button class="bb sm" id="sp-connect">▶ CONNECT SPOTIFY</button>' +
+            '<button class="bb xs danger" id="sp-disconnect" style="display:none">✕ DISCONNECT</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="sp-msg" class="msg"></div>' +
+      '</div>';
+    const secToolsets =
+      '<p class="set-about">Every capability your agents can use, grouped into <b>toolsets</b>. A switch is a ' +
+        'kill-switch: a toolset is available only when its <b>prop is placed</b> on the station <i>and</i> the switch ' +
+        'is on. <span class="dim">Turning one off instantly removes those tools from every agent’s next turn.</span></p>' +
+      '<div class="ts-core set-row"><span class="ts-glyph" aria-hidden="true">◉</span>' +
+        '<span class="ts-main"><span class="ts-name">COMPUTE <span class="ts-core-tag">CORE</span></span>' +
+        '<span class="ts-desc dim">The compute gate — an agent can always think. Always on.</span></span></div>' +
+      '<div id="ts-list"><span class="loading pulse">loading toolsets…</span></div>';
+    // ---- CONNECTORS pane markup (unchanged generic MCP manager) ----
     const secMcp =
       '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
         'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
@@ -3088,25 +3131,60 @@ const StationUI = (() => {
         '</div>' +
       '</div>' +
       '<div id="mc-msg" class="msg"></div>';
-    const secSpotify =
-      '<p class="set-about">Let your agents <b>search & control your Spotify</b> — play, pause, queue, “what’s playing”. ' +
-        'One-time setup: make a free app at <span class="dim">developer.spotify.com/dashboard</span>, add the redirect URI below to it, paste the Client ID, then connect. ' +
-        '<span class="dim">(OAuth PKCE — no client secret is ever stored.)</span></p>' +
-      '<div id="sp-status" class="mc-url dim">checking…</div>' +
-      '<div class="mc-form">' +
-        '<input id="sp-client" class="key-input" placeholder="Spotify Client ID" autocomplete="off" spellcheck="false" maxlength="64">' +
-        '<div class="mc-url dim">Redirect URI to whitelist: <code id="sp-redir">…</code></div>' +
-        '<div class="mc-acts">' +
-          '<button class="bb sm" id="sp-connect">▶ CONNECT SPOTIFY</button>' +
-          '<button class="bb xs danger" id="sp-disconnect" style="display:none">✕ DISCONNECT</button>' +
-        '</div>' +
-      '</div>' +
-      '<div id="sp-msg" class="msg"></div>';
     const frag = h => (el => { el.innerHTML = h; });
     mountConsole(body, 'connectors', [
-      { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) },
-      { id: 'spotify', label: 'SPOTIFY', glyph: '♫', desc: 'Let your agents search and control your Spotify — play, pause, queue, “what’s playing”.', build: frag(secSpotify) }
-    ], { search: true, searchPlaceholder: 'search connectors…' });
+      { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
+      { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) }
+    ], { search: true, searchPlaceholder: 'search toolsets & connectors…' });
+
+    // ===== TOOLSETS: render pill-switch rows from GET /api/toolsets, honestly reflecting placement + consent =====
+    const tsListEl = body.querySelector('#ts-list');
+    // station-wide placed object types (the same source SKILLS uses) so a row can say "no prop on station" honestly.
+    let placedTypes = [];
+    try { placedTypes = (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps().map(c => c.objectType) : []; } catch (_) {}
+    function tsRowHTML(t, ri) {
+      const off = !t.enabled;
+      const inert = !t.placed;
+      const hint = inert
+        ? '<span class="ts-inert">no ' + esc(t.object || 'prop') + ' on station — place one to grant these tools</span>'
+        : '';
+      const consent = t.consentGated ? '<span class="ts-tag">asks first</span>' : '';
+      const isJuke = t.id === 'jukebox';
+      const tools = (t.tools && t.tools.length)
+        ? '<div class="ts-tools">' + t.tools.map(n => '<code>' + esc(n) + '</code>').join('') + '</div>' : '';
+      return '<div class="set-row ts-row' + (off ? ' ts-off' : '') + (inert ? ' ts-inert-row' : '') + '" data-id="' + esc(t.id) + '" style="--ci:' + (ri || 0) + '">' +
+          '<input type="checkbox" data-ts-toggle="' + esc(t.id) + '"' + (t.enabled ? ' checked' : '') + ' aria-label="Enable ' + esc(t.label) + '">' +
+          '<span class="ts-glyph" aria-hidden="true">' + esc(t.glyph || '▪') + '</span>' +
+          '<span class="ts-main">' +
+            '<span class="ts-name">' + esc(t.label) + ' ' + consent +
+              '<span class="ts-count dim">' + t.toolCount + ' tool' + (t.toolCount === 1 ? '' : 's') + '</span></span>' +
+            '<span class="ts-desc dim">' + esc(t.desc) + '</span>' + hint + tools +
+            (isJuke ? spotifyInline : '') +
+          '</span>' +
+        '</div>';
+    }
+    async function tsRefresh() {
+      try {
+        const j = await (await fetch('/api/toolsets?placed=' + encodeURIComponent(placedTypes.join(',')))).json();
+        const list = (j && j.toolsets) || [];
+        tsListEl.innerHTML = list.map(tsRowHTML).join('');
+        if (body.querySelector('#sp-connect')) setupSpotify(body);   // wire Spotify now the sp-* markup is in the JUKEBOX row
+      } catch (_) { tsListEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage toolsets.</div>'; }
+    }
+    tsListEl.addEventListener('change', async ev => {
+      const cb = ev.target.closest('input[data-ts-toggle]'); if (!cb) return;
+      const id = cb.dataset.tsToggle; const enabled = cb.checked;
+      cb.disabled = true;
+      try {
+        const r = await fetch('/api/toolsets/' + encodeURIComponent(id), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) { cb.checked = !enabled; sfx('bad'); notify('✕ ' + (j.error || 'toggle failed')); }
+        else { sfx('tick'); notify((enabled ? 'Enabled ' : 'Disabled ') + id, enabled ? 'good' : undefined); }
+      } catch (e) { cb.checked = !enabled; sfx('bad'); notify('✕ ' + ((e && e.message) || 'request failed')); }
+      cb.disabled = false;
+      tsRefresh();
+    });
+    tsRefresh();
 
     const listEl = body.querySelector('#mc-list');
     const msgEl = body.querySelector('#mc-msg');
@@ -3191,13 +3269,14 @@ const StationUI = (() => {
         : ('<span class="mc-tag">http</span> ' + esc(c.url) + (c.hasToken ? ' · token saved' : '') + (c.hasHeaders ? ' · headers set' : ''));
       const timeout = (c.timeoutMs && c.timeoutMs !== 30000) ? '<span class="dim"> · ' + Math.round(c.timeoutMs / 1000) + 's</span>' : '';
       return '<div class="mc-row" data-id="' + esc(c.id) + '" data-enabled="' + (c.enabled ? '1' : '0') + '" style="--ci:' + (ri || 0) + '">' +
-        '<div class="mc-top"><b>' + esc(c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
+        '<div class="mc-top">' +
+          '<span class="set-row mc-enable"><input type="checkbox" data-act="toggle"' + (c.enabled ? ' checked' : '') + ' aria-label="Enable connector ' + esc(c.id) + '"></span>' +
+          '<b>' + esc(c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
           '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
         '<div class="mc-url dim">' + where + timeout + '</div>' + detail + tools +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-act="reload">↻ RELOAD</button>' +
           '<button class="bb xs" data-act="edit">✎ EDIT</button>' +
-          '<button class="bb xs" data-act="toggle">' + (c.enabled ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
           '<button class="bb xs danger" data-act="remove">✕ REMOVE</button>' +
         '</div></div>';
     }
@@ -3231,11 +3310,19 @@ const StationUI = (() => {
           if (j.status && j.status.state === 'up') { msgEl.classList.add('ok'); msgEl.textContent = '✓ ' + id + ' — ' + (j.status.toolCount || 0) + ' tool(s)'; }
           else { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + id + ' — ' + ((j.status && j.status.detail) || j.error || 'not connected'); }
           sfx('click');
-        } else if (act === 'toggle') {
-          const c = lastList.find(x => x.id === id) || {};
-          await postJSON('/api/connectors', { id, transport: c.transport, enabled: rowEl.dataset.enabled !== '1' }); sfx('click');
         }
       } catch (e) { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((e && e.message) || 'request failed'); sfx('bad'); }
+      refresh();
+    });
+    // per-connector ENABLE pill switch (upgraded presentation of the old DISABLE/ENABLE button; same server flag).
+    listEl.addEventListener('change', async ev => {
+      const cb = ev.target.closest('input[data-act="toggle"]'); if (!cb) return;
+      const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      const c = lastList.find(x => x.id === id) || {};
+      cb.disabled = true;
+      try { await postJSON('/api/connectors', { id, transport: c.transport, enabled: cb.checked }); sfx('tick'); }
+      catch (e) { cb.checked = !cb.checked; msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((e && e.message) || 'request failed'); sfx('bad'); }
+      cb.disabled = false;
       refresh();
     });
     addBtn.addEventListener('click', async () => {
@@ -3278,7 +3365,7 @@ const StationUI = (() => {
       refresh();
     });
     refresh();
-    setupSpotify(body);
+    // NB: setupSpotify(body) is invoked from tsRefresh() above, once the JUKEBOX toolset row has mounted the sp-* markup.
   }
 
   /* ---- SPOTIFY connect (OAuth PKCE): open the consent window, then poll /api/spotify/status until the
@@ -4092,7 +4179,7 @@ const StationUI = (() => {
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
-    connectors:['CONNECTORS',            buildConnectors,{ console: true }],
+    connectors:['TOOLSETS & CONNECTORS', buildConnectors,{ console: true }],
     routines: ['ROUTINES',               buildRoutines,  { console: true }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
     logbook:  ['LOGBOOK',                buildLogbook,   { console: true }],

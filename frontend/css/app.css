@@ -1749,6 +1749,39 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .mc-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px; padding: 1px 5px; background: rgba(0,0,0,.4); }
 .mc-acts { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .mc-form { display: flex; flex-direction: column; gap: 6px; }
+/* per-connector ENABLE pill lives inline in the row header; align it to the title baseline row */
+.mc-top { align-items: center; }
+.mc-enable { flex: 0 0 auto; margin: 0; }
+.mc-enable input[type=checkbox] { margin: 0; }
+
+/* ===== TOOLSETS console: one CRT pill-switch row per capability family ===== */
+.ts-core { align-items: center; gap: 8px; border: 1px dashed var(--ph-dim); border-radius: var(--r-sm);
+  padding: 8px 10px; margin-bottom: 8px; background: rgba(0,0,0,.28); opacity: .85; }
+.ts-core-tag { font-size: 9px; letter-spacing: 1.5px; color: var(--gold); border: 1px solid var(--gold);
+  border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: middle; }
+#ts-list { display: flex; flex-direction: column; gap: 8px; }
+.ts-row { align-items: flex-start; gap: 8px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  padding: 8px 10px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms); }
+.ts-row > input[type=checkbox] { margin-top: 2px; }
+.ts-glyph { font-size: 15px; color: var(--ph); line-height: 1.4; flex: 0 0 auto; }
+.ts-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.ts-name { color: var(--ph-bright); letter-spacing: .5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ts-count { font-size: 10px; letter-spacing: 1px; }
+.ts-desc { font-size: 12px; }
+.ts-tag { font-size: 9px; letter-spacing: 1px; color: var(--warn); border: 1px solid var(--warn);
+  border-radius: 3px; padding: 0 4px; }
+.ts-inert { display: block; font-size: 11px; color: var(--gold); margin-top: 3px; letter-spacing: .3px; }
+.ts-tools { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.ts-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px;
+  padding: 1px 5px; background: rgba(0,0,0,.4); }
+.ts-row.ts-off { opacity: .62; }
+.ts-row.ts-off .ts-name { color: var(--ph-dim); }
+.ts-row.ts-inert-row .ts-glyph { color: var(--ph-dim); }
+.ts-spotify { margin-top: 8px; border-top: 1px solid var(--ph-dim); padding-top: 8px; }
+/* SKILLS capabilities perk dimmed when its toolset is switched off (honesty parity with the TOOLSETS console) */
+.perk.ts-disabled { opacity: .55; }
+.perk.ts-disabled .perk-stat { color: var(--ph-dim); }
 .bb.xs { font-size: 11px; padding: 2px 7px; }
 /* connector add/edit form: one-line help, transport toggle, key:value textareas, transport tag on a row */
 .mc-hint { font-size: 11px; color: var(--ph-dim); margin: -2px 0 2px; line-height: 1.35; }
