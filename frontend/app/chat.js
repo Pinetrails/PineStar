@@ -1042,11 +1042,14 @@ const Chat = (() => {
     if (activeTurnin && (!activeTurnin.node || !activeTurnin.node.isConnected)) activeTurnin = null;
     // one visible consent beat, EVER: a deck arriving over another deck OR over a live STUDY card queues (the
     // beat-slot arbiter is consulted so a memory deck can never stack on a study card — it renders the moment
-    // the card resolves; memory keeps priority via the queue-first drain in the study card's done()).
-    if (activeTurnin || slotMemoryDeck() === 'queue') {
+    // the card resolves; memory keeps priority via the queue-first drain in the study card's done()). A deck
+    // arriving over a FOCUSED FLOW (awakening/intake question, Dialogue panel) queues too — memory wins the
+    // post-run moment, but never by stacking on top of a question the Commander is mid-answering.
+    if (activeTurnin || turninBlocked() || slotMemoryDeck() === 'queue') {
       turninQueue.push(batch);
       updateTurninQueueNote();
       autoscroll();
+      armTurninDrain();
       return;
     }
     renderTurninBatch(batch);
@@ -1059,8 +1062,29 @@ const Chat = (() => {
     activeTurnin.queueNote.hidden = !waiting;
   }
 
-  function showNextTurnin() {
+  // the FOCUSED-FLOW gate for the memory deck: an interview question (awakening/intake) or a focused Dialogue
+  // panel owns the input AND the moment — the deck queues behind it. Mirrors studyBlocked MINUS isBusy: the
+  // turn-in deliberately still renders while the next run streams (memory wins the post-run moment).
+  function turninBlocked() {
+    if (interview) return true;
+    if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return true;
+    if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return true;
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
+    return false;
+  }
+  // bounded re-drain for a deck queued behind a focused flow: endInterview kicks the queue immediately; this
+  // retry covers the Dialogue-close and onboarding-end paths (delayed, never starved — armRateFallback-style).
+  let turninDrainTimer = null;
+  function armTurninDrain(tries) {
+    if (turninDrainTimer) return;
+    const t = (tries == null) ? 200 : tries;   // ~5min at 1.5s cadence
+    if (t <= 0) return;
+    turninDrainTimer = setTimeout(() => { turninDrainTimer = null; showNextTurnin(t - 1); }, 1500);
+  }
+  function showNextTurnin(drainTries) {
     if (activeTurnin) return;
+    if (!turninQueue.length) return;
+    if (turninBlocked()) { armTurninDrain(drainTries); return; }
     const next = turninQueue.shift();
     if (next) renderTurninBatch(next);
   }
@@ -1621,7 +1645,8 @@ const Chat = (() => {
     r.body.textContent = '✦ one curious thing — i still don’t know your ' + dimLabel(dim).toLowerCase() + '. want to tell me? it sharpens how every agent here works for you.';
     autoscroll();
     const choiceRow = choices([{ label: 'sure — ask me', value: 'yes' }, { label: 'not now', value: 'no', skip: true }], item => {
-      activeNudge = null;   // answered → release the post-run beat slot (the choice row removes itself)
+      const a = activeNudge; activeNudge = null;   // answered → release the post-run beat slot (the choice row removes itself)
+      if (a) vanish(a.row);   // decided beats LEAVE: the prompt goes with its chips, never lingers over what follows
       if (item.value === 'yes' && typeof Intake !== 'undefined' && typeof Dossier !== 'undefined') {
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
@@ -1644,7 +1669,11 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('nudge');
     r.body.textContent = String(text == null ? '' : text);
     autoscroll();
-    const choiceRow = choices(options || [], item => { activeNudge = null; try { if (onPick) onPick(item); } catch (_) {} });
+    const choiceRow = choices(options || [], item => {
+      const a = activeNudge; activeNudge = null;
+      if (a) vanish(a.row);   // decided beats LEAVE (same law as the curiosity nudge — no stacked residue)
+      try { if (onPick) onPick(item); } catch (_) {}
+    });
     activeNudge = { row: r.d, choiceRow: choiceRow, dim: null };   // share the curiosity-nudge lifecycle so a turn-in's clearNudge() retires a suggestion beat too (keeps "one beat at a time")
     return { row: r.d, choiceRow: choiceRow };
   }
@@ -3211,6 +3240,9 @@ const Chat = (() => {
     clearChoices();
     if (input) input.placeholder = 'speak to your agent…';
     status('online');
+    // a memory deck that arrived MID-interview queued behind the focused flow — drain it now that the
+    // question is answered (short hold so the interview's closing line lands first, not under the deck).
+    setTimeout(() => showNextTurnin(), 700);
   }
   function echoUser(text) { addUser(text); }
   // scaffold the COMMS input with a starter the Commander finishes typing (the awakening's open CONTEXT
