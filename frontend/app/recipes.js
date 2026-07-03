@@ -28,11 +28,49 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const STORE_KEY = 'starnet.recipes.v1';   // localStorage home for custom (save-your-own) recipes
+  const STORE_KEY = 'starnet.recipes.v2';        // localStorage home for custom (save-your-own) recipes (schema v2)
+  const STORE_KEY_V1 = 'starnet.recipes.v1';     // legacy v1 home — read once + migrated forward, then left in place
 
   // the interest vocabulary the personalization recommender ranks against (mirrors classify.js getTag and
   // specialties.js) — a recipe's `tags` map weights these lanes so it ranks honestly in the same feed.
   const TAGS = ['code', 'research', 'general'];
+
+  // ---- schema v2 vocabularies (all ADVISORY — a recipe NEVER gates execution) ----
+  // GEAR = the capability objectTypes a use case draws on, same vocabulary as the skills catalog `requires`
+  // (dish=web, cabinet=files, notebook=memory, workbench=terminal, studio=images, computer, connector). A recipe
+  // renders a WANT badge for gear the station lacks; it never blocks the launch (sandbox/no-gating law).
+  const GEAR_TYPES = ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'computer', 'connector'];
+  // the SUGGESTED-cadence ids a recipe may carry (mirrors autojobs.js CADENCES). null = one-shot by nature.
+  const CADENCES = ['morning', 'weekly', 'sixhourly', 'hourly'];
+  // browse buckets for the marketplace category rail. 'general' is the catch-all fallback.
+  const CATEGORIES = ['research', 'code', 'writing', 'planning', 'general'];
+  // provenance: where a recipe came from. 'builtin' = curated; 'custom' = hand-authored; 'fork' = tweaked from another.
+  const SOURCES = ['builtin', 'custom', 'fork'];
+
+  // keep only the known gear objectTypes, de-duped, order preserved. Garbage → []. Advisory list, never a gate.
+  function normGear(arr) {
+    const seen = {}, out = [];
+    (Array.isArray(arr) ? arr : []).forEach(g => {
+      const t = String(g == null ? '' : g).trim();
+      if (t && GEAR_TYPES.indexOf(t) >= 0 && !seen[t]) { seen[t] = true; out.push(t); }
+    });
+    return out;
+  }
+  // keep only non-empty string skill slugs, de-duped, order preserved.
+  function normSkills(arr) {
+    const seen = {}, out = [];
+    (Array.isArray(arr) ? arr : []).forEach(s => {
+      const t = String(s == null ? '' : s).trim();
+      if (t && !seen[t]) { seen[t] = true; out.push(t); }
+    });
+    return out;
+  }
+  // a valid suggested cadence id, else null (null = one-shot; never a bogus id the routine picker can't resolve).
+  function normCadence(c) { const t = String(c == null ? '' : c).trim(); return CADENCES.indexOf(t) >= 0 ? t : null; }
+  // a known category, else 'general' (every recipe is always browsable under some bucket).
+  function normCategory(c) { const t = String(c == null ? '' : c).trim(); return CATEGORIES.indexOf(t) >= 0 ? t : 'general'; }
+  // a known source, else the supplied fallback ('builtin' for the catalog, 'custom' for a save-your-own).
+  function normSource(s, fallback) { const t = String(s == null ? '' : s).trim(); return SOURCES.indexOf(t) >= 0 ? t : fallback; }
 
   // keep only the known lanes with a positive weight; an empty/garbage map falls back to the general lane
   // (the catch-all) so every recipe is always rankable and never silently scores zero across the board.
@@ -111,105 +149,61 @@
       tags: Object.freeze(normTags(r.tags)),          // interest-lane weights the recommender ranks by
       params: Object.freeze(normParams(r.params)),    // the param form: [{ key, label, placeholder, required, default }]
       task: r.task || '',                             // the directive TEMPLATE; {key} tokens get param values
+      // ---- schema v2 (all ADVISORY; never gate execution) ----
+      gear: Object.freeze(normGear(r.gear)),          // capability objectTypes this use case draws on (WANT badge)
+      skills: Object.freeze(normSkills(r.skills)),    // bundled-skill references (pairs-with hints)
+      cadence: normCadence(r.cadence),                // suggested cadence id, or null (one-shot by nature)
+      category: normCategory(r.category),             // browse bucket
+      source: normSource(r.source, 'builtin'),        // provenance
+      forkedFrom: r.forkedFrom != null ? String(r.forkedFrom) : null,
       custom: false
     });
   }
 
   /* ---------- the curated catalog ---------- *
-     Every `task` is written as an imperative DIRECTIVE (so Classify.isTaskDirective fires and the agent does
-     the work instead of just chatting), in the harness voice, leading with the bottom-line ask. {tokens} are
-     substituted from the param form at launch. tags map each recipe onto the interest lanes for ranking. */
-  const BUILTINS = Object.freeze([
-    {
-      id: 'morning-brief', name: 'Morning Brief', emoji: '☀', tagline: 'Daily what-changed digest', accent: '#6fa8bf',
-      blurb: 'A tight standup on what moved in your space overnight — answer first, sources under it.',
-      tags: { research: 1 },
-      params: [
-        { key: 'topic', label: 'Topic', placeholder: 'e.g. AI agent tooling' },
-        { key: 'window', label: 'Look-back', placeholder: 'the last 24 hours', required: false, default: 'the last 24 hours' }
-      ],
-      task: 'Brief me on {topic}: what meaningfully changed in {window}. Lead with the bottom line, then the supporting detail with sources. Skip anything stale or trivial — signal only.'
-    },
-    {
-      id: 'deep-research', name: 'Deep-Dive Research', emoji: '◎', tagline: 'Sourced brief on a question', accent: '#6fa8bf',
-      blurb: 'Digs the live web, cross-checks across independent sources, and briefs it tightly.',
-      tags: { research: 1 },
-      params: [{ key: 'topic', label: 'Question / topic', placeholder: 'e.g. is X worth adopting?' }],
-      task: 'Research {topic} in depth. Cross-check across at least two independent sources, then give me a sourced brief: lead with the answer, then the evidence, and flag what is uncertain or contested.'
-    },
-    {
-      id: 'fact-check', name: 'Fact-Check', emoji: '⊜', tagline: 'Verify a claim, with sources', accent: '#88b6c4',
-      blurb: 'Takes one claim, checks it against the record, and tells you true / false / it-depends.',
-      tags: { research: 0.8, general: 0.2 },
-      params: [{ key: 'claim', label: 'The claim', placeholder: 'paste the statement to verify' }],
-      task: 'Fact-check this claim and cite your sources: "{claim}". Verdict first (true / false / misleading / unverifiable), then the evidence. Never present an unsourced claim as fact.'
-    },
-    {
-      id: 'fix-bug', name: 'Fix a Bug', emoji: '⌗', tagline: 'Diagnose & patch a defect', accent: '#7bc88a',
-      blurb: 'Reads the surrounding code first, makes a focused fix, and verifies it actually works.',
-      tags: { code: 1 },
-      params: [{ key: 'error', label: 'Error / symptom', placeholder: 'paste the error or describe the bug' }],
-      task: 'Fix this bug: {error}. Read the surrounding code before changing it, make the smallest focused edit that fixes it, then verify the fix works and report what changed and why.'
-    },
-    {
-      id: 'code-review', name: 'Code Review', emoji: '⊗', tagline: 'Adversarial review pass', accent: '#cf8a7d',
-      blurb: 'Stress-tests a change before it ships — bugs, edge cases, weak spots, ranked with fixes.',
-      tags: { code: 0.8, general: 0.2 },
-      params: [{ key: 'target', label: 'What to review', placeholder: 'a file, a diff, or a plan' }],
-      task: 'Review {target} adversarially — actively try to break it. Hunt for bugs, edge cases, and weak spots; rank findings by severity and give a concrete fix for each. Separate real defects from nitpicks.'
-    },
-    {
-      id: 'ship-feature', name: 'Build a Feature', emoji: '⊞', tagline: 'Add something, end to end', accent: '#7bc88a',
-      blurb: 'Adds a focused feature in the codebase’s own style and verifies it before calling it done.',
-      tags: { code: 1 },
-      params: [
-        { key: 'feature', label: 'Feature', placeholder: 'what to build' },
-        { key: 'where', label: 'Where', placeholder: 'file / module / area', required: false, default: 'the right place in the codebase' }
-      ],
-      task: 'Add {feature} to {where}. Read the surrounding code first and match its style, keep the diff focused on exactly what the feature needs, then verify it works and summarize what changed.'
-    },
-    {
-      id: 'draft-reply', name: 'Draft a Reply', emoji: '✉', tagline: 'Answer a message in your voice', accent: '#6fbcc0',
-      blurb: 'Reads an incoming message and drafts a reply in the tone you pick — ready to send or tweak.',
-      tags: { general: 1 },
-      params: [
-        { key: 'message', label: 'The message', placeholder: 'paste what you’re replying to' },
-        { key: 'tone', label: 'Tone', placeholder: 'warm & concise', required: false, default: 'warm and concise' }
-      ],
-      task: 'Draft a reply to this message in a {tone} tone:\n\n{message}\n\nGive me one clean draft first. Do not send anything — just draft it for my review.'
-    },
-    {
-      id: 'tighten-writing', name: 'Tighten This', emoji: '✎', tagline: 'Cut filler, keep the meaning', accent: '#b790c0',
-      blurb: 'Edits a passage down — sharper, clearer, no fluff — without changing what it says.',
-      tags: { general: 1 },
-      params: [{ key: 'text', label: 'The text', placeholder: 'paste the passage to tighten' }],
-      task: 'Tighten this writing — cut the filler, favor clear concrete language, and make it land — while preserving the meaning. Flag anything you would change substantively:\n\n{text}'
-    },
-    {
-      id: 'plan-project', name: 'Plan a Project', emoji: '◇', tagline: 'Break a goal into a plan', accent: '#d9a85a',
-      blurb: 'Turns a big, fuzzy goal into concrete steps, then flags what needs you.',
-      tags: { general: 1 },
-      params: [{ key: 'goal', label: 'The goal', placeholder: 'what you’re trying to accomplish' }],
-      task: 'Break {goal} into a concrete, ordered step-by-step plan. Keep steps small and actionable; call out dependencies, risks, and exactly what needs me before we can move.'
-    },
-    {
-      id: 'summarize', name: 'Summarize', emoji: '▤', tagline: 'TL;DR of anything', accent: '#9fc0c4',
-      blurb: 'Distills a wall of text down to the bottom line plus the few points that matter.',
-      tags: { general: 0.6, research: 0.4 },
-      params: [{ key: 'content', label: 'Content', placeholder: 'paste the text / notes / thread' }],
-      task: 'Summarize this clearly — lead with the bottom line, then the few points that actually matter:\n\n{content}'
+     The built-in records are DATA now, authored in recipe-catalog/ (core.js today; persona files under R4). We
+     read the aggregate (recipe-catalog/index.js) and freeze each here — the same freeze pass every built-in went
+     through when they lived inline, so nothing downstream can tell the difference. Under node the module requires
+     the catalog; in the browser it's the `RecipeCatalog` global set by recipe-catalog/index.js (loaded first).
+     Fallback [] keeps recipes.js from throwing if the catalog is somehow unavailable (empty library, never a crash). */
+  function loadCatalog() {
+    if (typeof require === 'function' && typeof module !== 'undefined') {
+      try { const c = require('./recipe-catalog/index.js'); return Array.isArray(c) ? c : []; } catch (_) { return []; }
     }
-  ].map(freezeRecipe));
+    const g = (typeof RecipeCatalog !== 'undefined') ? RecipeCatalog : null;
+    return Array.isArray(g) ? g : [];
+  }
+  const BUILTINS = Object.freeze(loadCatalog().map(freezeRecipe));
 
   /* ---------- custom (save-your-own) recipes ---------- */
   let customs = [];   // plain (mutable) records with custom:true
-  function readStore() {
+  // read one localStorage key as an array (tolerant: missing/garbage -> []).
+  function readKey(key) {
     try {
-      if (typeof localStorage === 'undefined') return [];
-      const raw = localStorage.getItem(STORE_KEY);
-      const arr = raw ? JSON.parse(raw) : [];
+      if (typeof localStorage === 'undefined') return null;
+      const raw = localStorage.getItem(key);
+      if (raw == null) return null;
+      const arr = JSON.parse(raw);
       return Array.isArray(arr) ? arr : [];
     } catch (_) { return []; }
+  }
+  // migrate the v1 custom store forward to v2 ONCE. The record shape is a strict superset (v2 only ADDS
+  // gear/skills/cadence/category/source/forkedFrom), so migration is: read v1 rows, hand them to normCustom
+  // (which fills v2 defaults — normSource(...,'custom') stamps provenance, category derives from tags), and
+  // persist under the v2 key. NEVER loses a user recipe: we only migrate if v2 is absent AND v1 has rows, and
+  // we leave the v1 key untouched (a belt-and-braces fallback if a downgrade ever re-reads it).
+  function readStore() {
+    const v2 = readKey(STORE_KEY);
+    if (v2 != null) return v2;                       // v2 already exists (even if empty) — authoritative
+    const v1 = readKey(STORE_KEY_V1);
+    if (v1 && v1.length) {                           // first run since the v2 upgrade with real v1 recipes
+      try {
+        const migrated = v1.map(normCustom).filter(r => r.id);
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORE_KEY, JSON.stringify(migrated));
+      } catch (_) {}
+      return v1;                                     // hydrate from v1 this run; the write above persists v2
+    }
+    return [];
   }
   function writeStore() {
     try { if (typeof localStorage !== 'undefined') localStorage.setItem(STORE_KEY, JSON.stringify(customs)); } catch (_) {}
@@ -229,12 +223,31 @@
       // hand-edited or corrupted import still falls through to template derivation instead of shipping ungated.
       params: (function () { const np = normParams(r.params); return np.length ? np : normParams(paramsFromTemplate(task)); })(),
       task,
+      // ---- schema v2 (all ADVISORY; never gate execution) ----
+      gear: normGear(r.gear),                         // capability objectTypes this custom draws on
+      skills: normSkills(r.skills),                   // bundled-skill references
+      cadence: normCadence(r.cadence),                // suggested cadence id (for MAKE ROUTINE), or null
+      // a v1 record (or a hand-authored save) carries no category → derive one from its dominant ranking lane, so
+      // it still lands in a browse bucket. code→code, research→research, general→general (the catch-all).
+      category: normCategory(r.category || dominantCategory(r.tags && Object.keys(r.tags).length ? r.tags : deriveTags(name + ' ' + tagline + ' ' + task))),
+      // provenance: a TWEAK mints source:'fork' + forkedFrom; a hand-authored save is 'custom'. A v1 record has
+      // neither field → normSource falls back to 'custom'. forkedFrom is only meaningful on a fork.
+      source: normSource(r.source, 'custom'),
+      forkedFrom: r.forkedFrom != null ? String(r.forkedFrom) : null,
       custom: true,
       // G3a seed callouts: a recipe the AGENT authored from an observed pattern (seedstore.save) carries this
       // durable flag, so a later pitch/suggestion/digest that reuses it can CREDIT the Commander's saved seed.
       // A hand-authored save-your-own recipe leaves it false — only agent-minted seeds get the callout.
       seedborn: !!r.seedborn
     };
+  }
+  // the browse category implied by a tag map: the highest-weighted known lane, or 'general'. code/research map
+  // 1:1 to their category bucket; anything else falls to general (writing/planning are author-set, not derived).
+  function dominantCategory(tags) {
+    if (!tags || typeof tags !== 'object') return 'general';
+    let best = null, bestW = 0;
+    for (const k of TAGS) { const w = Number(tags[k]) || 0; if (w > bestW) { bestW = w; best = k; } }
+    return best === 'code' ? 'code' : best === 'research' ? 'research' : 'general';
   }
   customs = readStore().map(normCustom).filter(r => r.id);   // hydrate on load (drops any malformed record with no id)
 
@@ -293,7 +306,8 @@
   }
 
   // build a DRAFT custom recipe from a launched one (P3 "save what you keep asking for" seam). Returns a plain
-  // draft (no id, custom not set) for saveCustom — mirrors Specialties.fromAgent.
+  // draft (no id, custom not set) for saveCustom — mirrors Specialties.fromAgent. Carries the v2 authoring fields
+  // through so a caller (e.g. the TWEAK editor) can prefill every picker.
   function draft(over) {
     over = over || {};
     return {
@@ -305,8 +319,34 @@
       tags: over.tags || null,
       params: over.params || [],
       task: over.task || '',
+      gear: Array.isArray(over.gear) ? over.gear.slice() : [],
+      skills: Array.isArray(over.skills) ? over.skills.slice() : [],
+      cadence: over.cadence != null ? over.cadence : null,
+      category: over.category || null,
+      source: over.source || null,
+      forkedFrom: over.forkedFrom != null ? over.forkedFrom : null,
       seedborn: !!over.seedborn   // carried through so an agent-authored seed keeps its provenance on save
     };
+  }
+
+  // FORK a recipe (R2 TWEAK): produce a DRAFT prefilled from an existing recipe's authoring surface, stamped
+  // source:'fork' + forkedFrom:<id>. The draft has NO id (saveCustom mints a fresh custom-recipe-<slug>), so the
+  // original — builtin OR custom — is never touched. Every editable field (name/emoji/params/task/gear/cadence/
+  // category) is copied so the editor opens fully populated; the caller adjusts and saves a new custom recipe.
+  // Returns null for an unknown id. The name gets a distinguishing suffix so the fork doesn't look like a dupe.
+  function forkFrom(idOrRecipe) {
+    const r = typeof idOrRecipe === 'string' ? get(idOrRecipe) : idOrRecipe;
+    if (!r) return null;
+    return draft({
+      name: (r.name || 'Recipe') + ' (my version)',
+      emoji: r.emoji, tagline: r.tagline, blurb: r.blurb, accent: r.accent,
+      // copy params as plain objects (the source's are frozen); the editor mutates these freely.
+      params: (r.params || []).map(p => ({ key: p.key, label: p.label, placeholder: p.placeholder, required: p.required, default: p.default })),
+      task: r.task,
+      gear: (r.gear || []).slice(), skills: (r.skills || []).slice(),
+      cadence: r.cadence || null, category: r.category || null,
+      source: 'fork', forkedFrom: r.id
+    });
   }
 
   // upsert a custom recipe (assigns a unique custom-recipe-<slug> id on first save). Returns the saved record.
@@ -331,9 +371,19 @@
     return removed;
   }
 
+  // R3 soft-warning heuristic: does this recipe's directive template imply an OUTBOUND action (a send / post /
+  // message / publish / file write / commit)? Scheduling such a recipe as an UNATTENDED routine deserves a warn
+  // line (never a block — law 1). Pure string scan over the task template; a false positive just shows a warning.
+  const OUTBOUND_RE = /\b(send|reply|post|publish|message|email|e-mail|dm|tweet|commit|push|deploy|write\s+(?:to\s+)?(?:the\s+)?(?:file|disk)|save\s+(?:to\s+)?(?:the\s+)?(?:file|disk)|delete|remove)\b/i;
+  function impliesOutbound(idOrRecipe) {
+    const r = typeof idOrRecipe === 'string' ? get(idOrRecipe) : idOrRecipe;
+    if (!r) return false;
+    return OUTBOUND_RE.test(String(r.task || ''));
+  }
+
   return {
-    TAGS,
+    TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES,
     list, builtins, customs: customList, get, exists,
-    fillTask, requiredMissing, paramsFromTemplate, draft, saveCustom, removeCustom
+    fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, saveCustom, removeCustom, impliesOutbound
   };
 });
