@@ -88,6 +88,7 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
+const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
@@ -618,7 +619,7 @@ const spotifyPending = new Map();
 const notebookStore = makeMemoryStore({
   fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
   onRecover: (key, file) => console.warn('[memory] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
-  onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : (String(key).indexOf('declined:') === 0 ? 'declined' : 'notebook')),
+  onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : (String(key).indexOf('declined:') === 0 ? 'declined' : (String(key).indexOf('minted:') === 0 ? 'minted' : 'notebook'))),
   warn: (...args) => console.warn.apply(console, args)
 });
 
@@ -634,6 +635,49 @@ const workshopStore = makeWorkshopStore({
   warn: (...args) => console.warn.apply(console, args)
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+
+/* W6 MINT LEDGER — the server-side authority that stops an agent re-creating a routine it already made (Andrew,
+   2026-07-03: an idle agent minted TWO near-identical "ULTRON daily operating loop" routines). The pure gate +
+   ledger reducers live in mint-ledger.js; these helpers are the ambient glue over the durable `minted:<agentId>`
+   memory store (sibling of notebook:/todo:/declined:, outside the fs jail). The GATE is the hard stop; the ledger
+   summary handed to the model is the soft "you already maintain: …" so it doesn't even try. */
+function mintLedgerFor(agentId) {
+  const id = cronStore.isValidId(String(agentId || 'agent')) ? String(agentId) : 'agent';
+  return mintLedger.load(notebookStore.get('minted:' + id));
+}
+// live jobs owned by this agent (the corpus the gate compares against).
+function jobsForAgent(agentId) {
+  const id = String(agentId || 'agent');
+  return (cronJobs || []).filter(j => j && j.agentId === id);
+}
+/* mintGate — the single choke-point check both create paths funnel through. Returns { dup } where dup is an
+   EXISTING live job (exact/near name match for this agent) that the caller returns instead of minting a second,
+   or null when the name is free to mint. Also blocks a name the agent already DECLINED (deleted) from re-minting
+   even if no live job carries it — a declined creation must never be resurrected. */
+function mintGate(agentId, name) {
+  const dup = mintLedger.dupOf(name, jobsForAgent(agentId));
+  if (dup) return { dup: dup, reason: 'duplicate' };
+  if (mintLedger.isDeclined(mintLedgerFor(agentId), name)) return { dup: null, reason: 'declined' };
+  return { dup: null, reason: null };
+}
+// record a successful agent-initiated creation into the per-agent ledger (durable, FIFO-capped). Best-effort:
+// a ledger write failure never blocks the created routine (the gate already used the live-jobs corpus).
+function recordMint(agentId, spec) {
+  const id = cronStore.isValidId(String(agentId || 'agent')) ? String(agentId) : 'agent';
+  try {
+    notebookStore.update('minted:' + id, (stored) =>
+      mintLedger.record(mintLedger.load(stored), { title: (spec && spec.name) || '', kind: (spec && spec.kind) || 'routine' }, { now: Date.now() }));
+  } catch (e) { console.warn('[mint] ledger record failed:', (e && e.message) || e); }
+}
+// the user deleted a routine → mark its name declined in the creating agent's ledger so the agent never
+// resurrects it. best-effort per the same discipline.
+function markMintDeclined(agentId, name) {
+  const id = cronStore.isValidId(String(agentId || 'agent')) ? String(agentId) : 'agent';
+  try {
+    notebookStore.update('minted:' + id, (stored) =>
+      mintLedger.markDeclined(mintLedger.load(stored), name, { now: Date.now() }));
+  } catch (e) { console.warn('[mint] ledger decline failed:', (e && e.message) || e); }
+}
 
 // PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
 // browser (POST /api/dossier) and folded into server-composed autonomous personas (cron) so an unattended
@@ -1381,6 +1425,20 @@ function loadCronJobs() {
   }
 }
 let cronJobs = loadCronJobs();
+/* W6 ONE-TIME SWEEP — on boot, collapse any accidental double-mints (jobs identical in agentId + normalized name
+   + prompt), keeping the OLDEST, logging each removal plainly. This cleans up the pre-fix duplicate "ULTRON daily
+   operating loop" pair the mint gate now prevents going forward. Only ever removes a true exact-triple dup, never
+   two deliberately-distinct routines. Persists through the SAME durable saveCronJobs so the cleanup survives. */
+(function sweepCronDuplicatesOnBoot() {
+  try {
+    const { jobs: kept, removed } = mintLedger.sweepDuplicates(cronJobs);
+    if (removed.length) {
+      cronJobs = kept;
+      for (const j of removed) console.warn('[mint] sweep removed duplicate routine "' + (j.name || j.id) + '" (agent ' + (j.agentId || 'agent') + ', id ' + j.id + ') — kept the oldest identical one.');
+      try { saveCronJobs(); } catch (e) { console.warn('[mint] sweep persist failed:', (e && e.message) || e); }
+    }
+  } catch (e) { console.warn('[mint] sweep failed:', (e && e.message) || e); }
+})();
 function saveCronJobs() {   // throws on failure (the CRUD routes let it surface); the driver's setJobs catches+logs
   // G4.2: crash-SAFE persistence. The advance-before-run window (cron-driver persists the ADVANCED nextRunAt
   // BEFORE launching a fire) is the one place a lost/zero-length write would DOUBLE-FIRE a routine on restart,
@@ -2619,6 +2677,12 @@ function handleCronCreate(req, res) {
     let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
     let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    // W6 MINT GATE — server is the authority. If this agent already has a routine with the same (or near-same)
+    // name, return the EXISTING job with a plain anti-retry message instead of minting a second one. Same guard
+    // as routine.create so every create path funnels through it.
+    const gate = mintGate(agentId, body.name);
+    if (gate.dup) return json(200, { ok: true, duplicate: true, job: gate.dup, message: mintLedger.ANTI_RETRY });
+    if (gate.reason === 'declined') return json(200, { ok: false, declined: true, message: mintLedger.ANTI_RETRY });
     const id = crypto.randomUUID();
     try {
       // G4.3: re-read-modify-write UNDER the cron lock so a concurrent advance/CRUD save is not clobbered.
@@ -2631,6 +2695,7 @@ function handleCronCreate(req, res) {
         meta: body.meta
       }, { id: id, now: Date.now() }));
     } catch (e) { return json(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
+    recordMint(agentId, { name: body.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
     json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
@@ -2674,8 +2739,12 @@ function handleCronRemove(req, res) {
   readBody(req, 4096).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
+    // W6: capture the job BEFORE removal so we can mark its name declined in the creating agent's mint ledger —
+    // a routine the Commander deletes must never be re-minted by the agent that made it.
+    const doomed = cronStore.getJob(cronJobs, id);
     try { withCronWrite(jobs => cronStore.removeJob(jobs, id)); }   // G4.3: re-read-modify-write under the lock
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    if (doomed && doomed.name) markMintDeclined(doomed.agentId, doomed.name);   // sticky: the agent must not resurrect it
     json(200, { ok: true });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
@@ -3522,6 +3591,11 @@ async function runOnce(o) {
     normalizeProvider: normalizeProviderId,
     createRoutine: (spec) => {
       spec = spec || {};
+      // W6 MINT GATE (server authority): the target agent already runs this (or a near-identical) routine → do NOT
+      // mint a second. Return the EXISTING job flagged `_duplicate` so the tool answers with the anti-retry line.
+      const gate = mintGate(spec.agentId, spec.name);
+      if (gate.dup) return Object.assign({}, gate.dup, { _duplicate: true });
+      if (gate.reason === 'declined') return { _declined: true, name: spec.name };
       const id = crypto.randomUUID();
       const schedule = parseCronScheduleOr400(spec.schedule, Date.now(), spec.timezone);
       let created = null;
@@ -3534,8 +3608,12 @@ async function runOnce(o) {
         created = cronStore.getJob(next, id);
         return next;
       });
+      recordMint(spec.agentId, { name: spec.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
       return created || cronStore.getJob(cronJobs, id);
     },
+    // W6: the "you already maintain: …" summary the tool folds into its create response so the model KNOWS what
+    // exists (informational reinforcement of the hard gate). Pure read of the per-agent ledger.
+    mintSummary: (agentId) => { try { return mintLedger.summary(mintLedgerFor(agentId)); } catch (_) { return ''; } },
     armScheduler: (enabled) => {
       const want = enabled === true;
       saveCronArmed(want);

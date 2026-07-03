@@ -77,6 +77,21 @@ qs = WorkQuestStore.quests();
 A.eq(qs.find(q => q.id === gapId).status, 'done', 'the run finishing completes the build (no claim button)');
 A.ok(/^built —/.test(qs.find(q => q.id === gapId).title), 'a completed build reads as built');
 
+/* ---------- W6 DEDUP: accepting an identical LIVE build returns the existing quest, never a duplicate card ---------- */
+{
+  const first = WorkQuestStore.accept({ title: 'the weekly roundup', build: { kind: 'workflow', recipeId: null } });
+  const before = WorkQuestStore.quests().length;
+  // a reordered/padded restatement of the SAME title while it is still live (open) must not mint a second quest.
+  const again = WorkQuestStore.accept({ title: '  The   Weekly Roundup  ', build: { kind: 'workflow', recipeId: null } });
+  A.eq(again, first, 'accepting an identical live build returns the EXISTING quest id (no duplicate)');
+  A.eq(WorkQuestStore.quests().length, before, 'no second quest card was minted for the duplicate accept');
+  // finish it so it does not interfere with later assertions, and prove a DONE title CAN re-mint.
+  start('agent', 'run-wk'); end('agent', 'run-wk', 'done');
+  const remint = WorkQuestStore.accept({ title: 'the weekly roundup', build: { kind: 'workflow', recipeId: null } });
+  A.ok(remint && remint !== first, 'once a build is DONE, the same title may be accepted again (a completed one does not block)');
+  start('agent', 'run-wk2'); end('agent', 'run-wk2', 'done');
+}
+
 /* ---------- a runnable/workflow build → a single run step; a non-done end STALLS (never falsely completes) ---------- */
 const runId = WorkQuestStore.accept({ title: 'the price watcher', build: { kind: 'workflow', recipeId: null } });
 start('agent', 'run-b');

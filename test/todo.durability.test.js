@@ -44,8 +44,10 @@ function memFs() {
   A.eq(memoryFileFor(ROOT, path, 'notebook:hero'), path.join(ROOT, 'hero.notebook.json'), 'notebook keys map to notebook sibling files');
   A.eq(memoryFileFor(ROOT, path, 'todo:hero'), path.join(ROOT, 'hero.todo.json'), 'todo keys map to todo sibling files');
   A.eq(memoryFileFor(ROOT, path, 'declined:hero'), path.join(ROOT, 'hero.declined.json'), 'declined keys map to declined sibling files');
+  A.eq(memoryFileFor(ROOT, path, 'minted:hero'), path.join(ROOT, 'hero.minted.json'), 'minted keys map to minted sibling files (W6 mint ledger)');
   A.throws(() => memoryFileFor(ROOT, path, 'todo:../bad'), 'invalid todo agent ids are rejected');
   A.throws(() => memoryFileFor(ROOT, path, 'declined:../bad'), 'invalid declined agent ids are rejected');
+  A.throws(() => memoryFileFor(ROOT, path, 'minted:../bad'), 'invalid minted agent ids are rejected');
   A.throws(() => memoryFileFor(ROOT, path, 'other:hero'), 'unknown memory keys are rejected');
 
   const fs = memFs();
@@ -82,11 +84,13 @@ function memFs() {
   await rstore.update('notebook:hero', () => [{ content: 'a kept belief' }]);
   await rstore.update('declined:hero', () => ['a permanently-rejected belief']);
   await rstore.update('todo:hero', () => [{ id: 'x', content: 'a plan item', status: 'pending' }]);
+  await rstore.update('minted:hero', () => [{ fp: 'ultron daily operating loop', title: 'ULTRON daily operating loop', status: 'created', at: 1 }]);
   await rstore.update('notebook:other', () => [{ content: 'a DIFFERENT hero belief' }]);
   await resetAgentMemory(rstore, 'hero');
   A.eq(rstore.get('notebook:hero'), [], 'reset wipes the kept notebook (no inherited memories)');
   A.eq(rstore.get('declined:hero'), [], 'reset wipes the declined reject-list (no inherited suppression)');
   A.eq(rstore.get('todo:hero'), [], 'reset wipes the active todo plan');
+  A.eq(rstore.get('minted:hero'), [], 'reset wipes the mint ledger (a fresh hero re-earns its own routines)');
   A.eq(rstore.get('notebook:other'), [{ content: 'a DIFFERENT hero belief' }], 'reset is scoped to ONE agent — a different agent is untouched');
 
   /* ---------- restoreDeclined: the undo-a-discard escape hatch removes ONE entry from the reject-list ---------- */

@@ -1585,7 +1585,9 @@ const App = (() => {
         return out;
       },
       getExistingJobs: () => fetch('/api/cron', { cache: 'no-store' }).then(r => r.ok ? r.json() : { jobs: [] }).then(j => (j.jobs || []).map(x => x && x.name).filter(Boolean)).catch(() => []),
-      scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false })),
+      // W6: surface the server's `duplicate` flag so the store retires a proposal the mint gate refused (rather than
+      // treating it as a plain success and re-offering). A non-JSON body degrades to { ok } exactly as before.
+      scheduleJob: (body) => fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json().then(j => ({ ok: r.ok, duplicate: !!(j && j.duplicate) })).catch(() => ({ ok: r.ok }))).catch(() => ({ ok: false })),
       // G4 feature 2: is a MISSION BOARD placed? When it is, a proposal gets a BODY (agent walks + pins an amber
       // card on the board) instead of the inline Dialogue approval. No board → the Dialogue flow is untouched.
       boardPlaced: () => { try { const d = World.stationDoc && World.stationDoc(); return !!(d && d.props && d.props.some(p => p && p.t === 'missionboard')); } catch (_) { return false; } }

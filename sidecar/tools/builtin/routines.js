@@ -151,6 +151,10 @@
     const armScheduler = deps.armScheduler;
     const schedulerState = typeof deps.schedulerState === 'function' ? deps.schedulerState : function () { return false; };
     const roster = typeof deps.roster === 'function' ? deps.roster : function () { return new Map(); };
+    // W6: the plain anti-retry line + the per-agent "you already maintain: …" summary. Injected so this tool
+    // stays node-testable; defaults keep it a no-op when the host doesn't wire the mint ledger.
+    const ANTI_RETRY = 'this routine already exists — do not recreate it';
+    const mintSummary = typeof deps.mintSummary === 'function' ? deps.mintSummary : function () { return ''; };
     const normalizeProvider = typeof deps.normalizeProvider === 'function' ? deps.normalizeProvider : function (p) {
       p = lower(p).trim();
       if (!p) return null;
@@ -172,7 +176,7 @@
 
     const createTool = {
       name: 'routine.create', capability: 'orchestrator', scope: 'write', requiresConsent: true, timeoutMs: 15000,
-      description: 'Create a StarNet ROUTINES scheduled job in the built-in harness scheduler. Use this whenever the Commander asks for a cron, routine, recurring task, reminder, standing job, or scheduled research. Do NOT use shell.exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers for this. If agentId is omitted, this tool routes the routine to the best matching station agent from the live roster (research/news/latest -> research/scout/analyst agents). arm defaults to true so saved routines actually fire.',
+      description: 'Create a StarNet ROUTINES scheduled job in the built-in harness scheduler. Use this whenever the Commander asks for a cron, routine, recurring task, reminder, standing job, or scheduled research. Do NOT use shell.exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers for this. If agentId is omitted, this tool routes the routine to the best matching station agent from the live roster (research/news/latest -> research/scout/analyst agents). arm defaults to true so saved routines actually fire. Before creating, check routine.list — do NOT create a routine that already exists; the server rejects a duplicate name and tells you it already exists.',
       schema: {
         type: 'object',
         required: ['prompt', 'schedule'],
@@ -218,6 +222,24 @@
         };
         const job = await createRoutine(spec);
 
+        // W6 MINT GATE: the server refused to mint a duplicate. `_duplicate` -> this agent already runs an
+        // exact/near-identical routine (job is the existing one); `_declined` -> the Commander previously deleted
+        // this routine and it must not be resurrected. Either way, answer plainly with the anti-retry line and do
+        // NOT arm — nothing new was created (server is the authority; this is truthful, not a second store entry).
+        if (job && job._declined) {
+          return {
+            content: JSON.stringify({ ok: false, declined: true, message: ANTI_RETRY, routedTo: route.agentId }),
+            summary: 'not created — this routine was removed and must not be recreated'
+          };
+        }
+        if (job && job._duplicate) {
+          const existing = packJob(job);
+          return {
+            content: JSON.stringify({ ok: true, duplicate: true, message: ANTI_RETRY, routedTo: route.agentId, job: existing }),
+            summary: 'already exists — did not create a duplicate for ' + route.agentId
+          };
+        }
+
         let armError = null;
         if (!args || args.arm !== false) {
           try { if (typeof armScheduler === 'function') armScheduler(true); }
@@ -230,7 +252,9 @@
           armError: armError,
           routedTo: route.agentId,
           routingReason: route.reason,
-          job: packJob(job)
+          job: packJob(job),
+          // W6: the plain "you already maintain: …" reminder so the model tracks what exists across turns.
+          maintains: mintSummary(route.agentId) || undefined
         };
         return {
           content: JSON.stringify(body),
