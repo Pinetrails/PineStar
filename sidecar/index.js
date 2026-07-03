@@ -1156,6 +1156,26 @@ const TELEGRAM_API_BASE = String(ENV('TELEGRAM_API_BASE') || '').trim() || undef
 const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
 try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
 let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
+
+// STT model for /api/stt — an audio-INPUT-capable chat model on OpenRouter (verified live). Overridable so a
+// better/cheaper transcription model can be swapped without a code change. gemini-3.1-flash-lite-preview
+// documents audio input/ASR; a comma-list lets us try fallbacks in order if the first is unavailable.
+const STT_MODELS = String(ENV('STT_MODELS') || 'google/gemini-3.1-flash-lite-preview,google/gemini-2.5-flash')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+// Voice round-trips (TTS/STT) are the app's hottest external calls, back-to-back to one host. Node's global
+// fetch (undici) already pools + keep-alives connections, but a dedicated dispatcher lets us widen the pool and
+// give TTS/STT their own generous timeouts without touching every other fetch. undici isn't a resolvable module
+// in this Node build (it's the internal impl, not a package), so this is guarded: on failure we simply pass no
+// dispatcher and rely on the default pool — never a hack, never a hard dependency.
+let voiceDispatcher = null;
+(async () => {
+  try {
+    const u = await import('undici');
+    if (u && u.Agent) voiceDispatcher = new u.Agent({ keepAliveTimeout: 30000, keepAliveMaxTimeout: 60000, connections: 8 });
+  } catch (_) { voiceDispatcher = null; }   // internal undici not importable → default global pool (still keep-alived)
+})();
+function voiceFetchOpts(base) { return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base; }
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 function loadChannelSecrets() {
@@ -1729,6 +1749,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
@@ -4185,12 +4206,21 @@ async function handleTts(req, res) {
   if (text.length > 1200) { const head = text.slice(0, 1200); const m = head.match(/[\s\S]*[.!?]["')\]]?(?=\s|$)/); text = (m && m[0].length > 600 ? m[0] : head).trim(); }
   const model = String((body && body.model) || TTS_DEFAULT_MODEL).trim();
   const voice = String((body && body.voice) || 'Umbriel').trim();
+  // per-persona delivery style (personas.js:ttsStyle) — Gemini TTS is steered by a natural-language
+  // instruction PREPENDED to the input ("Say the following in <style>: <text>"). Optional; capped so a
+  // malformed client can't blow the input past the model's limit. Empty style → plain synthesis (unchanged).
+  const style = String((body && body.style) || '').replace(/\s+/g, ' ').trim().slice(0, 240);
   if (!text) return fallback('no text');
   if (!key) return fallback('no key');
 
-  // cache the synthesized (speed-independent) audio by model+voice+text; per-personality pacing is
-  // applied client-side via Audio.playbackRate, so it stays out of the key for better cache hits.
-  const ck = crypto.createHash('sha1').update(model + '|' + voice + '|' + text).digest('hex');
+  // fold the style into the spoken input the way Gemini TTS documents (a leading directive it obeys but
+  // does not read aloud). Kept separate from `text` so the cache key can include the style (below).
+  const input = style ? ('Say the following in ' + style + ': ' + text) : text;
+
+  // cache the synthesized (speed-independent) audio by model+voice+STYLE+text; per-personality pacing is
+  // applied client-side via Audio.playbackRate, so it stays out of the key for better cache hits. Style
+  // MUST be in the key — same words in a different delivery are a different clip.
+  const ck = crypto.createHash('sha1').update(model + '|' + voice + '|' + style + '|' + text).digest('hex');
   const serveCached = async () => {
     for (const ext of ['wav', 'mp3']) {
       try {
@@ -4204,14 +4234,14 @@ async function handleTts(req, res) {
   if (await serveCached()) return;
 
   // pcm is the only format Gemini TTS supports (and is widely available); we wrap it to WAV below.
-  const payload = { model, input: text, voice, response_format: 'pcm' };
+  const payload = { model, input, voice, response_format: 'pcm' };
   let or;
   try {
-    or = await fetch('https://openrouter.ai/api/v1/audio/speech', {
+    or = await fetch('https://openrouter.ai/api/v1/audio/speech', voiceFetchOpts({
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
       body: JSON.stringify(payload)
-    });
+    }));
   } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
   if (!or.ok) {
     let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
@@ -4240,6 +4270,90 @@ async function handleTts(req, res) {
   res.end(buf);
   // every 32nd miss, sweep the cache AFTER the response so it never adds latency to a spoken reply.
   if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
+}
+
+// read a raw binary request body into a single Buffer (readBody concatenates as a string, which mangles
+// non-UTF8 audio bytes). Capped like readBody so a hostile client can't OOM the host.
+function readBodyBuffer(req, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let n = 0;
+    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+/* POST /api/stt — speech-to-text for the DESKTOP voice path (WebView2 has no SpeechRecognition, so the
+   frontend records mic audio and posts it here). Accepts the audio two ways, whichever the client finds
+   simplest:
+     • raw bytes    — Content-Type: audio/webm | audio/wav | …  (the recorder-provider default; smallest)
+     • JSON base64  — { audio: <base64>, format: 'webm'|'wav', key }
+   Transcribes via an audio-input chat model on OpenRouter (STT_MODELS, tried in order). Returns {text}.
+   On ANY failure returns 200 {text:'', reason} so the frontend degrades gracefully (never a hard error that
+   would wedge the hands-free loop) — the caller surfaces `reason` in a console.warn + status line. */
+const STT_MAX_BYTES = 10 * 1024 * 1024;   // ~10MB — a ~30s opus clip is well under this; a JSON base64 body is ~1.33x
+const STT_PROMPT = 'Transcribe this audio verbatim. Output ONLY the transcribed words, nothing else. If there is no speech, output nothing.';
+async function handleStt(req, res) {
+  const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
+  const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
+
+  const u = new URL(req.url, 'http://127.0.0.1');
+  const ctReq = String(req.headers['content-type'] || '').toLowerCase();
+  let audioB64 = '', format = '', key = '';
+  try {
+    if (ctReq.indexOf('application/json') === 0) {
+      const body = JSON.parse((await readBodyBuffer(req, Math.ceil(STT_MAX_BYTES * 1.4)).catch(() => Buffer.alloc(0))).toString('utf8') || '{}');
+      audioB64 = String((body && body.audio) || '').replace(/^data:[^,]*,/, '');   // tolerate a data: URL prefix
+      format = String((body && body.format) || '').trim();
+      key = String((body && body.key) || '').trim();
+    } else {
+      const buf = await readBodyBuffer(req, STT_MAX_BYTES);
+      audioB64 = buf.toString('base64');
+      // derive format from the content-type: audio/webm → webm, audio/wav|x-wav → wav, audio/ogg → ogg
+      const m = ctReq.match(/audio\/(?:x-)?([a-z0-9]+)/);
+      format = m ? m[1] : '';
+      // key travels out-of-band for the raw path: query ?key= or an X-OpenRouter-Key header
+      key = String(u.searchParams.get('key') || req.headers['x-openrouter-key'] || '').trim();
+    }
+  } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
+
+  key = key || runtimeKey;   // desktop: key lives in the keychain-seeded env, not the request
+  if (!key) return degrade('no key');
+  if (!audioB64) return degrade('no audio');
+  // OpenRouter's input_audio format field wants a codec name; normalize the common WebView2/browser containers.
+  // 'webm' (opus) and 'wav' are the two we produce; ogg/opus map to their documented names.
+  format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
+
+  const payload = (model) => ({
+    model,
+    messages: [{ role: 'user', content: [
+      { type: 'input_audio', input_audio: { data: audioB64, format } },
+      { type: 'text', text: STT_PROMPT }
+    ] }]
+  });
+
+  let lastReason = 'no model';
+  for (const model of STT_MODELS) {
+    let r;
+    try {
+      r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
+        body: JSON.stringify(payload(model))
+      }));
+    } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
+    if (!r.ok) {
+      let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
+      lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
+      // a 4xx that names the model/modality is "this model can't do audio" — try the next candidate. Other
+      // errors (auth, rate) will repeat on every model, but the loop is short so it's cheap either way.
+      continue;
+    }
+    let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
+    const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
+    return ok(text);   // empty string is a valid "no speech heard" result — deliver it, don't fall through
+  }
+  return degrade(lastReason);
 }
 
 function readBody(req, max) {
