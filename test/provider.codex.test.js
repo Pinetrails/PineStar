@@ -189,10 +189,10 @@ async function collect(provider, req) { const out = []; for await (const e of pr
   // H. capability surface: known Codex models are tool-capable; unknown -> true (never a false refusal); price null
   {
     const p = makeCodexProvider({ fetch: async () => new Response('', { status: 200 }), token: 'acc' });
-    A.eq(p.supportsTools('gpt-5.3-codex'), true, 'known Codex model is tool-capable');
+    A.eq(p.supportsTools('gpt-5.5'), true, 'known Codex model is tool-capable');
     A.eq(p.supportsTools('some-future-model'), true, 'unknown model -> true (do not false-refuse)');
-    A.eq(p.priceOf('gpt-5.3-codex'), null, 'subscription model has no per-token price');
-    A.ok(p.contextLimit('gpt-5.3-codex') > 0, 'context limit reported');
+    A.eq(p.priceOf('gpt-5.5'), null, 'subscription model has no per-token price');
+    A.ok(p.contextLimit('gpt-5.5') > 0, 'context limit reported');
   }
 
   // I. listModels discovers the account's REAL catalog live: queries /models, drops hidden, sorts by priority
@@ -211,10 +211,32 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(ids, ['gpt-5.3-codex', 'gpt-5.4', 'gpt-5.5'], 'priority-sorted; hidden slug dropped');
   }
 
+  // I2. per-model reasoning metadata (display_name/default level/supported levels + descriptions) is carried through
+  {
+    const modelsResp = { models: [
+      { slug: 'gpt-5.5', priority: 1, display_name: 'GPT-5.5', default_reasoning_level: 'medium',
+        supported_reasoning_levels: [
+          { effort: 'low', description: 'Fast responses with lighter reasoning' },
+          { effort: 'medium', description: 'Balanced' },
+          { effort: 'high', description: 'Deep' },
+          { effort: 'xhigh', description: 'Deepest' }
+        ] }
+    ] };
+    const f = async () => new Response(JSON.stringify(modelsResp), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const m = (await makeCodexProvider({ fetch: f, token: 'ACC' }).listModels())[0];
+    A.eq(m.displayName, 'GPT-5.5', 'display_name carried as displayName');
+    A.eq(m.defaultReasoningLevel, 'medium', 'default_reasoning_level carried');
+    A.eq(m.reasoningEfforts.join(','), 'low,medium,high,xhigh', 'supported levels carried in order (no none/minimal)');
+    A.eq(m.reasoningLevelDescriptions.low, 'Fast responses with lighter reasoning', 'per-level descriptions carried');
+    const p = makeCodexProvider({ fetch: f, token: 'ACC' });
+    A.eq(p.reasoningEfforts('gpt-5.5').join(','), 'low,medium,high,xhigh', 'reasoningEfforts() reports the static model levels');
+    A.eq(p.reasoningEfforts('unknown-model').join(','), 'low,medium,high,xhigh', 'reasoningEfforts() falls back to the four codex levels');
+  }
+
   // J. discovery failure (offline / 500) falls back to the curated static list — never an empty menu
   {
     const ids = (await makeCodexProvider({ fetch: async () => new Response('nope', { status: 500 }), token: 'acc' }).listModels()).map(m => m.id);
-    A.ok(ids.length > 0 && ids.indexOf('gpt-5.3-codex') >= 0, 'falls back to curated models on discovery failure');
+    A.ok(ids.length > 0 && ids.indexOf('gpt-5.5') >= 0, 'falls back to curated models on discovery failure');
   }
 
   A.report('provider.codex.test');
