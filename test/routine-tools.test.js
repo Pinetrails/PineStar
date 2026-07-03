@@ -83,6 +83,67 @@ const call = (name, args) => ({ id: 'c1', name, args: args || {}, argsRaw: JSON.
     A.ok(threw, 'unknown explicit agentId is rejected');
   }
 
+  // ---- W6 mint gate: a duplicate returns the existing job + anti-retry, does NOT arm, no second store entry ----
+  {
+    let createCalls = 0, armCalls = 0;
+    const existing = { id: 'job_dup', name: 'ULTRON daily operating loop', agentId: 'agent', enabled: true, state: 'scheduled' };
+    const dupTools = makeRoutineTools({
+      roster: () => roster,
+      listJobs: () => [existing],
+      schedulerState: () => false,
+      // the host's createRoutine ran its mint gate and refused — it hands back the EXISTING job flagged _duplicate.
+      createRoutine: (spec) => { createCalls++; return Object.assign({}, existing, { _duplicate: true }); },
+      armScheduler: () => { armCalls++; return true; },
+      mintSummary: () => 'You already maintain these routines — do not recreate them: ULTRON daily operating loop.'
+    });
+    const out = await dupTools.createTool.run({
+      name: 'ULTRON daily operating loop', prompt: 'run the loop', schedule: 'every 6h', agentId: 'agent'
+    }, { agentId: 'agent' });
+    const body = JSON.parse(out.content);
+    A.eq(body.duplicate, true, 'duplicate flagged in the tool response');
+    A.eq(body.message, 'this routine already exists — do not recreate it', 'plain anti-retry message returned');
+    A.eq(body.job.id, 'job_dup', 'the EXISTING job is returned (not a new one)');
+    A.eq(armCalls, 0, 'a duplicate create does NOT arm the scheduler (nothing new happened)');
+    A.eq(createCalls, 1, 'the gate ran once (via createRoutine) and refused — no retry loop');
+  }
+
+  // ---- W6 mint gate: a DECLINED (previously-deleted) name is refused with the anti-retry line, never resurrected ----
+  {
+    const decTools = makeRoutineTools({
+      roster: () => roster,
+      listJobs: () => [],
+      schedulerState: () => false,
+      createRoutine: (spec) => ({ _declined: true, name: spec.name }),
+      armScheduler: () => true
+    });
+    const out = await decTools.createTool.run({
+      name: 'ULTRON daily operating loop', prompt: 'run the loop', schedule: 'every 6h', agentId: 'agent'
+    }, { agentId: 'agent' });
+    const body = JSON.parse(out.content);
+    A.eq(body.ok, false, 'a declined creation is not ok');
+    A.eq(body.declined, true, 'declined flagged in the tool response');
+    A.eq(body.message, 'this routine already exists — do not recreate it', 'anti-retry line for a resurrected name');
+  }
+
+  // ---- W6 ledger summary: a fresh (non-dup) create folds the "you already maintain: …" reminder into its result ----
+  {
+    let armed2 = false;
+    const sumTools = makeRoutineTools({
+      roster: () => roster,
+      listJobs: () => [],
+      schedulerState: () => armed2,
+      createRoutine: (spec) => ({ id: 'job_ok', name: spec.name, agentId: spec.agentId, enabled: true, state: 'scheduled' }),
+      armScheduler: (e) => { armed2 = e === true; return armed2; },
+      mintSummary: () => 'You already maintain these routines — do not recreate them: Morning market brief.'
+    });
+    const out = await sumTools.createTool.run({
+      name: 'Quarterly planning digest', prompt: 'draft the quarterly plan', schedule: 'every 24h', agentId: 'agent'
+    }, { agentId: 'agent' });
+    const body = JSON.parse(out.content);
+    A.eq(body.job.id, 'job_ok', 'a genuinely new routine is created');
+    A.ok(body.maintains && body.maintains.indexOf('Morning market brief') >= 0, 'the ledger summary rides the create response');
+  }
+
   // ---- registry: routine.create is capability- and consent-gated ----
   {
     let created = 0;
