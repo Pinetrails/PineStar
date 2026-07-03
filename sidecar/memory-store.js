@@ -1,8 +1,8 @@
 /* sidecar/memory-store.js - durable per-agent memory KV routing.
 
-   The notebook, todo, and declined stores intentionally share one injected store contract, but they do not
-   share the same on-disk file: notebook:<agent> is durable long-term memory, todo:<agent> is the active task
-   plan that must survive restarts/compaction, and declined:<agent> is the permanent reject-list of memory
+   The notebook, todo, declined, and minted stores intentionally share one injected store contract, but they
+   do not share the same on-disk file: notebook:<agent> is durable long-term memory, todo:<agent> is the active
+   task plan that must survive restarts/compaction, declined:<agent> is the permanent reject-list of memory
    proposals the Commander Discarded (so reflection never re-proposes them — §5.6 "discard = never again").
    Unknown keys are rejected instead of being accidentally mapped into a notebook filename. */
 'use strict';
@@ -20,6 +20,7 @@ function memoryFileFor(workspaces, pathMod, key) {
   if (k.indexOf('notebook:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^notebook:/) + '.notebook.json');
   if (k.indexOf('todo:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^todo:/) + '.todo.json');
   if (k.indexOf('declined:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^declined:/) + '.declined.json');
+  if (k.indexOf('minted:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^minted:/) + '.minted.json');
   throw new Error('unsupported memory store key: ' + k);
 }
 
@@ -65,7 +66,7 @@ function makeMemoryStore(deps) {
 // without booting the server (the new-hero clean-slate is a named hard rule, not just a source-grep).
 async function resetAgentMemory(store, agentId) {
   const id = String(agentId || 'agent');
-  for (const key of ['notebook:' + id, 'declined:' + id, 'todo:' + id]) {
+  for (const key of ['notebook:' + id, 'declined:' + id, 'todo:' + id, 'minted:' + id]) {
     try { await store.update(key, () => []); } catch (_) {}
   }
 }
