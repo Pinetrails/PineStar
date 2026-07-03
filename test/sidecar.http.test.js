@@ -36,6 +36,9 @@ function boot(port, workspaces, attemptsLeft) {
         STARNET_CREDITS_API_KEY: '', SKYNET_CREDITS_API_KEY: '',
         STARNET_CREDITS_ACCOUNT: '', SKYNET_CREDITS_ACCOUNT: '',
         SKYNET_IPC_TOKEN: IPC_TOKEN,
+        // clear the OpenRouter key so the voice routes' no-key fallback path is deterministic (a dev machine
+        // with the key in its ambient env would otherwise hit the network and flip the {text:''} assertions).
+        OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '',
         OPENAI_API_KEY: '',
         STARNET_OPENAI_API_KEY: '',
         SKYNET_OPENAI_API_KEY: '',
@@ -557,6 +560,31 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(rstBad.status, 400, 'reset of an unknown section -> 400');
     const expNoTok = await fetch(B + '/api/config/export', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: '{}' });
     A.eq(expNoTok.status, 403, 'POST /api/config/export WITHOUT a token -> 403');
+
+    // ---- voice: /api/tts + /api/stt graceful degradation (no key in this boot → no network) ----
+    // Both routes must ALWAYS answer 200 with a degrade envelope rather than a hard error, so the client's
+    // voice path never wedges. With the OpenRouter key cleared above, we exercise exactly that path.
+    const ttsNoKey = await j('POST', '/api/tts', { text: 'station check', voice: 'Umbriel', style: 'a low, detached transmission' });
+    A.eq(ttsNoKey.status, 200, 'POST /api/tts with no key -> 200 (never a hard error)');
+    A.eq(ttsNoKey.body.fallback, true, 'no-key TTS returns the {fallback:true} envelope so the client uses speechSynthesis');
+    A.ok(/no key/i.test(ttsNoKey.body.reason || ''), 'the TTS fallback names the no-key reason');
+    const ttsNoText = await j('POST', '/api/tts', { text: '   ' });
+    A.eq(ttsNoText.body.fallback, true, 'empty-text TTS also degrades cleanly');
+
+    // STT JSON shape: no audio -> {text:'',reason}; audio present but no key -> {text:'',reason:'no key'}.
+    const sttNoAudio = await j('POST', '/api/stt', { format: 'wav' });
+    A.eq(sttNoAudio.status, 200, 'POST /api/stt with no audio -> 200 (degrades, never 4xx into the loop)');
+    A.eq(sttNoAudio.body.text, '', 'no-audio STT returns an empty transcript');
+    A.ok(typeof sttNoAudio.body.reason === 'string' && sttNoAudio.body.reason.length > 0, 'no-audio STT surfaces a reason for the console.warn');
+    const sttNoKey = await j('POST', '/api/stt', { audio: Buffer.from('not real audio').toString('base64'), format: 'wav' });
+    A.eq(sttNoKey.status, 200, 'POST /api/stt with audio but no key -> 200');
+    A.eq(sttNoKey.body.text, '', 'no-key STT returns an empty transcript');
+    A.ok(/no key/i.test(sttNoKey.body.reason || ''), 'the STT degrade names the no-key reason');
+    // raw-bytes shape (the recorder-provider default): a webm content-type body, still no key -> clean degrade.
+    const sttRaw = await fetch(B + '/api/stt', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/webm' }, apiToken ? { 'X-StarNet-Token': apiToken } : {}), body: Buffer.from('fake opus bytes') });
+    A.eq(sttRaw.status, 200, 'POST /api/stt raw audio bytes -> 200');
+    const sttRawBody = await sttRaw.json();
+    A.eq(sttRawBody.text, '', 'raw-bytes STT with no key returns an empty transcript');
 
   } finally {
     try { child.kill(); } catch (_) {}
