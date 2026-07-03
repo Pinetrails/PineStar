@@ -272,10 +272,13 @@ const S = require('../frontend/app/study.js');
   A.ok(/wireProposals\(\);[\s\S]{0,220}wireStudy\(\);/.test(chatSrc), 'wireStudy is wired in init next to wireProposals');
   // memory reserves its claim the moment memory.proposed arrives (BEFORE the 350ms fetch), and releases on empty/notify-only
   const iWireProps = chatSrc.indexOf('function wireProposals');
-  const iPropsEnd = chatSrc.indexOf('function proposalCard');
   A.ok(/slotMemoryProposed\(runId\);/.test(chatSrc.slice(iWireProps)), 'memory.proposed reserves the beat-slot claim immediately (covers the fetch gap)');
-  const wpBody = chatSrc.slice(iWireProps, iWireProps + 2600);
-  A.ok((wpBody.match(/slotMemoryEmpty\(runId\)/g) || []).length >= 2, 'an empty fetch AND the notify-only path both release the claim');
+  // the claim is released on both no-deck outcomes — inside routeProposalBatch (the shared proposed/write route):
+  // the off-stream notify-only path AND the empty/no-deck path each slotMemoryEmpty so study/arc/trust aren't wedged.
+  const iRoute = chatSrc.indexOf('async function routeProposalBatch');
+  A.ok(iRoute > 0, 'chat.js defines routeProposalBatch');
+  const rbBody = chatSrc.slice(iRoute, iRoute + 2400);
+  A.ok((rbBody.match(/slotMemoryEmpty\(runId\)/g) || []).length >= 2, 'the notify-only path AND the empty/no-deck path both release the claim');
   // the deck render path consults the arbiter and queues over a live study card
   const iCard = chatSrc.indexOf('function proposalCard');
   A.ok(/slotMemoryDeck\(\) === 'queue'\)\s*\{[\s\S]{0,120}turninQueue\.push\(batch\)/.test(chatSrc.slice(iCard, iCard + 1200)),
