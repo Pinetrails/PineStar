@@ -105,4 +105,5 @@ node scripts/qa/ledger.mjs --dedup-check <fingerprint>
 node scripts/qa/ledger.mjs --status
 ```
 
+- 2026-07-03 agent/golden-dismissed-gate → trunk dfeccd4 (test:fast green): golden gate now excuses frames whose fingerprint matches a dismissed/known ledger finding (P0.1b); sys-rewind noise can no longer pin the Guardian RED; novel diffs still exit 3 + file findings (21-assertion test).
 - 2026-07-03 agent/desktop-control → trunk a1c22c6a (test:fast + test:http green): visible controlled browser by default, desktop.open, wired win32 computer.use + keyboard, honest browser.vision. Fixes "agent can't open a visible browser / lied about it" defect class. main.rs env line not Rust-compiled in-session (proves on next desktop:build).
