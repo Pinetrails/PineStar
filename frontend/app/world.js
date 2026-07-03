@@ -32,8 +32,9 @@ const World = (() => {
   const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13, dust: 0.5, aberr: 0.35, grain: 0.06 };
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
-  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
+  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
+  let _grainCv = null, _grainPat = null;   // cached film-grain noise tile + pattern — see grainPattern()/drawCRT()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -3145,7 +3146,36 @@ const World = (() => {
       ctx.fillStyle = 'rgba(' + Math.round(11 * CRT.fade) + ',' + Math.round(12 * CRT.fade) + ',' + Math.round(15 * CRT.fade) + ',1)';
       ctx.fillRect(0, 0, W, H);
     }
+    if (CRT.grain > 0.001) {                          // FILM GRAIN — one cached noise tile, jittered per frame (CRT.grain)
+      // 'overlay' around mid-gray so grain modulates without lifting black levels; the tile is built
+      // ONCE and only its pattern offset changes each frame (a whole-number jitter derived from `now`,
+      // quantized to ~15fps so it reads as phosphor noise, not smooth scrolling texture).
+      const fi = Math.floor(now / 66);
+      const jx = (fi * 53) % 128, jy = (fi * 97) % 128;
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.globalAlpha = Math.min(0.25, CRT.grain);
+      ctx.translate(jx, jy);
+      ctx.fillStyle = grainPattern();
+      ctx.fillRect(-jx, -jy, W, H);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+    }
     ctx.globalCompositeOperation = 'source-over';
+  }
+  // Cached 128px mid-gray noise tile for the film grain — built once, reused forever (only the
+  // draw offset animates). Mid-gray (128) is the 'overlay' neutral, so ±spread is pure texture.
+  function grainPattern() {
+    if (_grainPat) return _grainPat;
+    const S = 128;
+    _grainCv = document.createElement('canvas'); _grainCv.width = S; _grainCv.height = S;
+    const gctx = _grainCv.getContext('2d'), id = gctx.createImageData(S, S);
+    for (let i = 0; i < S * S; i++) {
+      const v = 128 + Math.round((Math.random() - 0.5) * 110);
+      id.data[i * 4] = v; id.data[i * 4 + 1] = v; id.data[i * 4 + 2] = v; id.data[i * 4 + 3] = 255;
+    }
+    gctx.putImageData(id, 0, 0);
+    _grainPat = ctx.createPattern(_grainCv, 'repeat');
+    return _grainPat;
   }
 
   // ---- BARREL CURVE — bows the whole feed like a CRT tube --------------------------------------
@@ -3196,13 +3226,25 @@ const World = (() => {
       if (!_gl) throw new Error('no webgl');
       const gl = _gl;
       const vs = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos*0.5+0.5; gl_Position = vec4(aPos,0.0,1.0); }';
-      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK;\n' +
+      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK; uniform float uAberr;\n' +
         'void main(){\n' +
         '  vec2 n = (vUv-0.5)*2.0; float ro = length(n); float rs = ro;\n' +
         '  for(int i=0;i<6;i++){ float g = rs*(1.0-uK*rs*rs)-ro; float dg = 1.0-3.0*uK*rs*rs; rs = rs - g/dg; }\n' +
         '  float scale = ro>1e-5 ? rs/ro : 1.0; vec2 sUv = n*scale*0.5+0.5;\n' +
         '  if(sUv.x<0.0||sUv.x>1.0||sUv.y<0.0||sUv.y>1.0){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }\n' +
-        '  vec3 col = texture2D(uTex, sUv).rgb; float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
+        // CHROMATIC ABERRATION (Slice 5a): fringe the channels along the radial direction, offset ∝ curve·r²,
+        // so edges split R/B and the center stays clean. uAberr scales the whole effect (0 = none).
+        '  vec3 col;\n' +
+        '  if(uAberr>0.0001){\n' +
+        '    vec2 dir = ro>1e-5 ? n/ro : vec2(0.0);\n' +
+        '    float amt = uAberr * (0.008 + uK*0.06) * ro*ro;\n' +   // grows toward the bowed edges
+        '    vec2 offs = dir * amt;\n' +
+        '    float r = texture2D(uTex, sUv + offs).r;\n' +
+        '    float gg = texture2D(uTex, sUv).g;\n' +
+        '    float b = texture2D(uTex, sUv - offs).b;\n' +
+        '    col = vec3(r, gg, b);\n' +
+        '  } else { col = texture2D(uTex, sUv).rgb; }\n' +
+        '  float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
         '  gl_FragColor = vec4(col*vig, 1.0);\n' +
         '}';
       const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -3222,7 +3264,7 @@ const World = (() => {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is top; flip so texcoords line up right-side-up
       gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
-      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glProg = prog; _glReady = true;
+      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glAberrLoc = gl.getUniformLocation(prog, 'uAberr'); _glProg = prog; _glReady = true;
       return true;
     } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
   }
@@ -3235,6 +3277,7 @@ const World = (() => {
       gl.bindTexture(gl.TEXTURE_2D, _glTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);   // upload the composited frame
       gl.uniform1f(_glKLoc, k);
+      if (_glAberrLoc) gl.uniform1f(_glAberrLoc, Math.max(0, CRT.aberr || 0));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
