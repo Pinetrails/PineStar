@@ -170,6 +170,10 @@ const App = (() => {
       if (typeof patch.approvalMode === 'string') {
         agent.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
       }
+      // Away-workshop grant (W3): a plain per-agent consent flag. NOT a system-prompt field — it only
+      // changes what an autonomous run is allowed to WRITE inside its own jail. Reaches the sidecar via
+      // pushRoster (below) so the consent broker can honor it; the backend lane (W1) reads it there.
+      if (typeof patch.workshop === 'boolean') agent.workshop = patch.workshop;
     }
     if (typeof DossierStore !== 'undefined') DossierStore.syncDocs(d);   // seed the dossier from any newly-authored onboarding doc (first-seed-wins per doc) BEFORE the recompose
     agent.systemPrompt = composeSystemPrompt(agent);
@@ -203,6 +207,30 @@ const App = (() => {
     pushRoster();   // the pin reaches the sidecar roster (honored by runOnce + cron)
     persist();
     return true;
+  }
+
+  // W3 per-agent AWAY-WORKSHOP grant: flip the "build things while I'm away" consent for this agent.
+  // The AUTHORITY is the sidecar: POST /api/workshop/grant records the grant server-side (workshopStore)
+  // AND arms/disarms the agent's unattended "workshop shift" cron routine — pushRoster alone does NEITHER
+  // (the roster ingest drops the workshop field), so without this POST the toggle would be a silent no-op:
+  // the shift would never fire. We write a.workshop locally + pushRoster (so the away-driver's dossier still
+  // sees the flag) + persist for reload, but the RETURNED promise resolves off the real route so the toggle
+  // never asserts a grant the harness didn't record (truthful telemetry). Optimistic caller reverts on false.
+  function setAgentWorkshop(agentId, enabled) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return Promise.resolve(false);
+    const on = !!enabled;
+    a.workshop = on;
+    pushRoster();
+    persist();
+    return fetch('/api/workshop/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: a.id, on: on }) })
+      .then(r => r.json().catch(() => null))
+      .then(j => {
+        const ok = !!(j && j.ok);
+        if (!ok) { a.workshop = !on; pushRoster(); persist(); }   // revert local truth: the station didn't record it
+        return ok;
+      })
+      .catch(() => { a.workshop = !on; pushRoster(); persist(); return false; });
   }
 
   // Rename an agent from its dossier. The name is DISPLAY identity only — the agentId (the `agents` Map key, the
@@ -362,7 +390,7 @@ const App = (() => {
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, provider: a.provider || null, reasoningEffort: a.reasoningEffort || null, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
-             approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
+             approvalMode: a.approvalMode || 'ask', workshop: !!a.workshop, purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
              skills: Array.isArray(a.skills) ? a.skills.slice() : [],   // Class Loadouts S1: per-agent skill package persists
              stats: a.stats || null, createdAt: a.createdAt };
   }
@@ -375,7 +403,7 @@ const App = (() => {
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   provider: s.provider || (agent && agent.provider) || null, reasoningEffort: s.reasoningEffort || (agent && agent.reasoningEffort) || null,   // #4: per-agent provider+effort (fall back to the hero's)
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
-                  approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  approvalMode: s.approvalMode || 'ask', workshop: !!s.workshop, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   skills: Array.isArray(s.skills) ? s.skills.slice() : [],   // Class Loadouts S1: restore the per-agent skill package
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
@@ -669,6 +697,7 @@ const App = (() => {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+        workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
       lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
       return lastRosterPush;
@@ -1373,6 +1402,7 @@ const App = (() => {
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
     if (typeof AutopilotStore !== 'undefined') AutopilotStore.reset();   // …and a fresh idle autopilot (no inherited idle/armed state — its decision is re-earned by the new Commander's posture + dossier)
     if (typeof ReturnStore !== 'undefined') ReturnStore.reset();   // …and no inherited return-ritual trail — a fresh Commander gets no prior hero's pending OUTBOX crates or attendance stamp (own key)
+    if (typeof WorkshopStore !== 'undefined') WorkshopStore.reset();   // W3: no inherited "later" list or seen-ledger for a fresh Commander (own key)
     if (typeof PrideStore !== 'undefined') PrideStore.reset();   // …and a brand-new station record — a fresh Commander founds their OWN colony, inheriting no prior hero's lifetime tasks/deliverables/routines/founding-date (own key)
     if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
     if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
@@ -1465,7 +1495,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3)
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }
@@ -1635,6 +1665,11 @@ const App = (() => {
     // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
     // rides the same rate-the-work path as an attended run. Init AFTER Chat.init so the beat can render.
     if (typeof ReturnStore !== 'undefined') ReturnStore.init({ enabled: !opts.awaitingPurpose });
+    // W3 AWAY-WORKSHOP RETURN CARD: on attach (once per session, never during the awakening) poll
+    // /api/workshop/pending and hand the oldest undecided manifest to Chat.workshopReturn — the same
+    // one-post-run-beat slot the digest rides. Keep/Later/Discard route back through WorkshopStore.decide.
+    // Init AFTER Chat.init so the beat can render.
+    if (typeof WorkshopStore !== 'undefined') WorkshopStore.init({ enabled: !opts.awaitingPurpose, agentIds: () => liveAgents().map(a => a.id) });
     // CRON SESSIONS: surface each unattended routine run as a readable session — cron.fire adds a busy rail row
     // (no focus-steal), cron.result folds the run's durable 'cron-<runId>' transcript into it, and a boot backfill
     // recovers sessions for routines that finished while the browser was closed. Read-only on U.bus. Init AFTER

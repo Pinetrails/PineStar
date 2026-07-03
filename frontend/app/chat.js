@@ -1087,6 +1087,158 @@ const Chat = (() => {
     autoscroll();
   }
 
+  /* W3 — THE AWAY-WORKSHOP RETURN CARD. On attach, WorkshopStore polls /api/workshop/pending and hands ONE
+     undecided manifest here. Same gold-inset family + the ONE post-run beat slot every return beat rides:
+     it DEFERS (bounded, never starved — awayDigest cadence) behind a live run / the awakening / a focused
+     panel / a live turn-in or nudge, then renders exactly once. Collapsed = a one-glance headline with an
+     "open" affordance; expanded = a two-pane viewer (manifest summary + jailed file browser) and EXACTLY
+     three one-click actions: Keep (default-Desktop path input → decide keep), Later (dismiss, may return
+     next session), Discard (single confirm → decide discard). Decided cards vanish().
+     TRUTHFUL TELEMETRY: the verification line renders "tested — N passed" ONLY from a real manifest.verified
+     block; absent → "built, not yet tested". The card never asserts status the manifest doesn't prove.
+     opts: { onDecide(decision, destPath) -> Promise<{ok,destPath?,error?}>, readFile(agentId,runId,path)
+             -> Promise<string>, desktopDefault: string }. */
+  function workshopReturn(m, opts, _try) {
+    if (!log || !m || !m.runId) return;
+    opts = opts || {};
+    const onDecide = opts.onDecide || (() => Promise.resolve({ ok: true }));
+    const blocked = isBusy() || interview || activeTurnin || activeNudge
+      || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
+      || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
+      || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
+    if (blocked) {   // defer — DELAY but never STARVE (same law as awayDigest): fast retry, then slow, never gives up.
+      const t = (_try || 0);
+      setTimeout(() => workshopReturn(m, opts, t + 1), t < 25 ? 7000 : 60000);
+      return;
+    }
+    const agentId = m.agentId || 'agent';
+    const who = (agentId === 'agent') ? name : agentId;
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
+
+    // ── collapsed headline (one glance) ──
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ while you were away — ' + who + ' built: ' + String(m.title || 'a deliverable');
+    r.body.appendChild(title);
+
+    // HONEST verification line — proves off the manifest ONLY.
+    const ver = document.createElement('span'); ver.className = 'ws-verline';
+    const vcmds = (m.verified && Array.isArray(m.verified.commands)) ? m.verified.commands : null;
+    if (vcmds && vcmds.length) {
+      const passed = vcmds.filter(c => c && Number(c.exit) === 0).length;
+      ver.textContent = 'tested — ' + passed + ' of ' + vcmds.length + ' command' + (vcmds.length > 1 ? 's' : '') + ' passed';
+      if (passed === vcmds.length) ver.classList.add('ok');
+    } else {
+      ver.textContent = 'built, not yet tested';
+      ver.classList.add('dim');
+    }
+    r.body.appendChild(ver);
+
+    const slot = document.createElement('div'); slot.className = 'ws-slot';
+    r.body.appendChild(slot);
+
+    const foot = document.createElement('div'); foot.className = 'turnin-rate';
+    const openBtn = document.createElement('button'); openBtn.className = 'consent-btn'; openBtn.textContent = 'review';
+    foot.appendChild(openBtn);
+    r.body.appendChild(foot);
+    autoscroll();
+
+    let expanded = false, settled = false;
+    const settle = (label, isDeny) => {
+      if (settled) return; settled = true;
+      slot.innerHTML = ''; foot.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
+      r.body.appendChild(tag);
+      setTimeout(() => vanish(r.d), 900);   // flash the outcome, then the decided card leaves
+    };
+
+    openBtn.onclick = () => {
+      if (expanded) return; expanded = true;
+      foot.remove();
+      renderExpanded();
+      autoscroll();
+    };
+
+    function renderExpanded() {
+      slot.innerHTML = '';
+      const pane = document.createElement('div'); pane.className = 'ws-panes';
+
+      // ── pane 1: manifest summary ──
+      const sum = document.createElement('div'); sum.className = 'ws-pane ws-summary';
+      const mkLine = (k, v) => { if (!v) return; const d = document.createElement('div'); d.className = 'ws-line';
+        const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = k;
+        const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = v;
+        d.appendChild(kk); d.appendChild(vv); sum.appendChild(d); };
+      mkLine('kind', m.kind || 'other');
+      mkLine('what', m.summary || '');
+      mkLine('how to use', m.howToUse || '');
+      if (Array.isArray(m.notVerified) && m.notVerified.length) mkLine('not verified', m.notVerified.join('; '));
+      pane.appendChild(sum);
+
+      // ── pane 2: jailed file browser ──
+      const fb = document.createElement('div'); fb.className = 'ws-pane ws-files';
+      const fhead = document.createElement('div'); fhead.className = 'ws-fhead'; fhead.textContent = 'files';
+      fb.appendChild(fhead);
+      const list = document.createElement('div'); list.className = 'ws-flist';
+      const view = document.createElement('pre'); view.className = 'ws-fview'; view.textContent = '(select a file)';
+      const files = Array.isArray(m.files) ? m.files : [];
+      if (!files.length) { const e = document.createElement('div'); e.className = 'dim'; e.textContent = '(no files listed)'; list.appendChild(e); }
+      files.forEach(f => {
+        if (!f || !f.path) return;
+        const b = document.createElement('button'); b.className = 'ws-file'; b.type = 'button';
+        b.textContent = f.path + (f.bytes != null ? '  ·  ' + f.bytes + 'B' : '');
+        b.onclick = async () => {
+          list.querySelectorAll('.ws-file.sel').forEach(x => x.classList.remove('sel'));
+          b.classList.add('sel');
+          view.textContent = 'loading…';
+          let content = '';
+          try { content = opts.readFile ? await opts.readFile(agentId, m.runId, f.path) : ''; } catch (_) { content = ''; }
+          view.textContent = content || '(no preview available)';
+        };
+        list.appendChild(b);
+      });
+      fb.appendChild(list); fb.appendChild(view);
+      pane.appendChild(fb);
+      slot.appendChild(pane);
+
+      // ── three actions, one row ──
+      const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
+      // KEEP — a simple path input (default = the Commander's Desktop) then decide keep.
+      const keepWrap = document.createElement('span'); keepWrap.className = 'ws-keep';
+      const path = document.createElement('input'); path.className = 'turnin-edit ws-path'; path.type = 'text';
+      path.placeholder = 'folder to copy into'; path.value = opts.desktopDefault || '';
+      path.setAttribute('aria-label', 'Destination folder to keep the deliverable in');
+      const keepBtn = document.createElement('button'); keepBtn.className = 'consent-btn'; keepBtn.textContent = 'Keep';
+      keepBtn.onclick = async () => {
+        const dest = String(path.value || '').trim();
+        if (!dest) { path.focus(); return; }
+        keepBtn.disabled = true; keepBtn.textContent = 'keeping…';
+        let res = null; try { res = await onDecide('keep', dest); } catch (_) { res = { ok: false }; }
+        if (res && res.ok) settle('✓ kept — files copied to ' + (res.destPath || dest), false);
+        else { keepBtn.disabled = false; keepBtn.textContent = 'Keep'; localLine('Could not keep this: ' + ((res && res.error) || 'the station refused the copy') + '.'); }
+      };
+      keepWrap.appendChild(path); keepWrap.appendChild(keepBtn);
+      acts.appendChild(keepWrap);
+
+      // LATER — dismiss; the card may return next session (no confirm).
+      const laterBtn = document.createElement('button'); laterBtn.className = 'consent-btn'; laterBtn.textContent = 'Later';
+      laterBtn.onclick = async () => { try { await onDecide('later'); } catch (_) {} settle('↩ left in the workshop', false); };
+      acts.appendChild(laterBtn);
+
+      // DISCARD — the ONE confirm (single click to arm, second to confirm). decide discard → wipe + denylist.
+      const discardBtn = document.createElement('button'); discardBtn.className = 'consent-btn deny'; discardBtn.textContent = 'Discard';
+      let armed = false;
+      discardBtn.onclick = async () => {
+        if (!armed) { armed = true; discardBtn.textContent = 'Discard — sure?'; setTimeout(() => { if (!settled) { armed = false; discardBtn.textContent = 'Discard'; } }, 4000); return; }
+        discardBtn.disabled = true;
+        let res = null; try { res = await onDecide('discard'); } catch (_) { res = { ok: false }; }
+        if (res && res.ok) settle('✕ discarded', true);
+        else { discardBtn.disabled = false; armed = false; discardBtn.textContent = 'Discard'; localLine('Could not discard this: ' + ((res && res.error) || 'the station kept it') + '.'); }
+      };
+      acts.appendChild(discardBtn);
+      slot.appendChild(acts);
+    }
+  }
+
   // Cortex (M-mem.5b) — THE TURN-IN BEAT. After a run, reflection proposes durable memories; the Commander
   // decides Keep / Edit / Discard. Keep/Edit commit a real memory (the click IS the consent, §5.6); every
   // verdict feeds the agent's confidence. This is the gamified formation loop — the agent learns, you approve.
@@ -2157,6 +2309,7 @@ const Chat = (() => {
     Object.freeze({ name: 'save', desc: 'save the current station state', action: 'save' }),
     Object.freeze({ name: 'agents', aliases: ['tasks'], desc: 'show active agents and running streams', action: 'agents' }),
     Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', action: 'background' }),
+    Object.freeze({ name: 'build-away', aliases: ['buildaway', 'away'], desc: 'queue an idea for this agent to build while you are away', action: 'build-away' }),
     Object.freeze({ name: 'goal', desc: 'set an autonomous standing goal (status/pause/resume/clear)', action: 'goal' }),
     Object.freeze({ name: 'subgoal', desc: 'add a criterion the goal loop must also satisfy', action: 'subgoal' }),
     Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
@@ -2449,6 +2602,18 @@ const Chat = (() => {
     }
     const arr = queued.get(activeWs.id) || [];
     localLine(arr.length ? ('Queue: ' + arr.length + ' pending - ' + arr.map((t, i) => (i + 1) + '. ' + String(t).slice(0, 80)).join(' | ')) : 'Queue is empty for this stream.');
+  }
+  // W3 — the free-text "build this while I'm away" entry point. Queues the typed idea onto the focused
+  // agent's away-workshop backlog (POST /api/workshop/queue via WorkshopStore). One line in, one confirm out.
+  function buildAwayCommand(args) {
+    const text = String(args || '').trim();
+    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build while you’re away.');
+    if (typeof WorkshopStore === 'undefined' || !WorkshopStore.queue) return localLine('Away workshop isn’t available on this station.');
+    const agentId = (activeWs && activeWs.agentId) || 'agent';
+    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text' }).then(res => {
+      if (res && res.ok) localLine('◈ queued for the away workshop — ' + name + ' will build this in its sandbox while you’re away. You’ll review it on return.');
+      else localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.');
+    });
   }
   function steerCommand(args) {
     if (!activeWs) return localLine('No active workstream.');
@@ -2833,7 +2998,7 @@ const Chat = (() => {
       usage: usageCommand, queue: queueCommand, steer: steerCommand, undo: undoCommand,
       compress: compressCommand, title: titleCommand, resume: resumeCommand,
       save: saveCommand, agents: agentsCommand, background: backgroundCommand,
-      goal: goalCommand, subgoal: subgoalCommand,
+      goal: goalCommand, subgoal: subgoalCommand, 'build-away': buildAwayCommand,
       clear: clearCommand, history: historyCommand, whoami: whoamiCommand, insights: insightsCommand,
       model: modelCommand, personality: personalityCommand, yolo: yoloCommand,
       reasoning: reasoningCommand, fast: fastCommand, voice: voiceCommand,
@@ -3003,7 +3168,11 @@ const Chat = (() => {
     input.value = ''; closeSlash(); autoGrowInput();   // consume the "/query"; a recipe's run() then refills the input
     if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
     if (item.serverBacked && await dispatchSlash(item, rawInput)) return;
-    try { item.run(); } catch (_) {}
+    // FALLBACK path (command not resolved by the server dispatcher): parse the trailing text off the raw
+    // "/name rest…" input and hand it to the local action, so an arg-taking builtin (e.g. /build-away) still
+    // gets its argument even when the server slash catalog doesn't know it. Arg-less actions ignore it.
+    const args = String(rawInput || '').replace(/^\/\S+\s*/, '');
+    try { item.run(args); } catch (_) {}
   }
 
   async function send(text, opts) {
@@ -3459,5 +3628,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, runDidWork, awayDigest, awayReview };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, runDidWork, awayDigest, awayReview, workshopReturn };
 })();

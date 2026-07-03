@@ -1130,7 +1130,26 @@ const StationUI = (() => {
   function agConfig(a) {
     return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
-      modelCard(a);
+      modelCard(a) +
+      workshopCard(a);
+  }
+
+  // W3 per-agent AWAY-WORKSHOP grant. One plainly-worded consent toggle — no jargon, no wizard. When on,
+  // this agent may build queued ideas in its own quarantined sandbox while the Commander is away; nothing
+  // touches real files until the Commander approves it on return (the return card). Writes a.workshop via
+  // App.setWorkshop → pushRoster, so the sidecar consent broker honors the grant. Available from minute one
+  // (sandbox law: a consent switch, never an unlock wall).
+  function workshopCard(a) {
+    const on = !!(a && a.workshop);
+    return '<div class="cf-card">' +
+      '<div class="cf-head"><span class="cf-file">◈ away workshop</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<label class="set-row" style="align-items:flex-start;gap:8px;">' +
+        '<input type="checkbox" id="ag-workshop-on"' + (on ? ' checked' : '') + ' aria-label="Build things while I am away">' +
+        '<span><b>Build things while I’m away</b>' +
+        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">While you’re gone, this agent works on queued ideas in its own sandbox. Nothing touches your files until you approve it.</span></span>' +
+      '</label>' +
+      '<div id="ag-workshop-msg" class="msg"></div>' +
+    '</div>';
   }
 
   // P1-6 per-agent MODEL/PROVIDER pin. Shows what this agent runs on and lets you override it independently of the
@@ -1217,6 +1236,26 @@ const StationUI = (() => {
     });
     const mClear = body.querySelector('#ag-model-clear');
     if (mClear) mClear.addEventListener('click', () => applyModel('', '', ''));
+    // W3 AWAY-WORKSHOP toggle: flip a.workshop via App.setWorkshop (updates the flag + pushRoster + persist).
+    // Optimistic UI: on failure we revert the checkbox and say so — never assert a grant the harness didn't record.
+    const wOn = body.querySelector('#ag-workshop-on');
+    const wMsg = body.querySelector('#ag-workshop-msg');
+    const setWMsg = (t, ok) => { if (wMsg) { wMsg.textContent = t || ''; wMsg.className = 'msg' + (ok ? ' ok' : ''); } };
+    if (wOn) wOn.addEventListener('change', () => {
+      const next = !!wOn.checked;
+      if (!(access.config && access.config.setWorkshop)) { setWMsg('away workshop unavailable', false); wOn.checked = !next; return; }
+      // OPTIMISTIC then TRUTHFUL: show the intent immediately, but the switch only stays flipped if the sidecar
+      // actually recorded the grant (POST /api/workshop/grant). setWorkshop resolves to that real result; on
+      // failure we revert the checkbox + say so, so the UI never asserts a grant the harness didn't record.
+      wOn.disabled = true;
+      sfx('click');
+      setWMsg(next ? 'saving…' : 'saving…', true);
+      Promise.resolve(access.config.setWorkshop(a && a.id, next)).then(ok => {
+        wOn.disabled = false;
+        if (!ok) { setWMsg('could not save that — the station didn’t record it', false); sfx('bad'); wOn.checked = !next; return; }
+        setWMsg(next ? 'on — this agent can build in its sandbox while you’re away' : 'off — this agent stays idle while you’re away', true);
+      });
+    });
   }
 
   // header wiring (present on EVERY tab, so it lives here rather than in a per-tab wire): the rename affordance
@@ -4074,6 +4113,14 @@ const StationUI = (() => {
       + '</div>';
   }
 
+  // W3: is the away-workshop grant on for the hero (the agent the quest-log queue button targets)? The queue
+  // affordance only appears when the grant is on — never offer to queue into a lane the Commander hasn't opened.
+  function heroAgent() {
+    if (!Array.isArray(present)) return null;
+    return present.find(a => a && a.id === 'agent') || present[0] || null;
+  }
+  function workshopGrantOn() { const h = heroAgent(); return !!(h && h.workshop); }
+
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
     const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
@@ -4124,8 +4171,16 @@ const StationUI = (() => {
           + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
           + '<div class="sub">' + esc(q.desc) + '</div>' + accept + '</div>';
       }
+      // W3: a "build this while I'm away" affordance on an OPEN, buildable quest (an accepted-but-unbuilt
+      // pitch/quest). One click queues it onto the focused agent's away-workshop backlog. Only when the
+      // grant is on for that agent (else it would queue into a lane the Commander never opened).
+      const canQueue = q.status !== 'done' && (q.kind === 'work' || q.kind === 'station-gap') && workshopGrantOn();
+      const queueBtn = canQueue
+        ? '<button class="q-queue" data-qid="' + esc(q.id) + '" title="Build this while I’m away — queue it for the sandbox">◈</button>'
+        : '';
       return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
         + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
+        + queueBtn
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
         + '</div>'
         + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
@@ -4186,6 +4241,21 @@ const StationUI = (() => {
         : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
         : (QSS && QSS.dismiss && QSS.dismiss(q));
       if (took) { sfx('click'); rerender('quests'); }
+    }));
+    // W3 — BUILD THIS WHILE I'M AWAY: queue the quest onto the hero's away-workshop backlog (POST
+    // /api/workshop/queue via WorkshopStore). One click; a notice confirms. Never launches a live run —
+    // it hands the idea to the sandbox for an unattended shift to pick up.
+    body.querySelectorAll('.q-queue').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const q = qs.find(x => x && x.id === b.dataset.qid);
+      if (!q) return;
+      if (typeof WorkshopStore === 'undefined' || !WorkshopStore.queue) { notify('away workshop unavailable', 'bad'); return; }
+      b.disabled = true;
+      const text = q.title + (q.desc ? ' — ' + q.desc : '');
+      WorkshopStore.queue({ agentId: (heroAgent() && heroAgent().id) || 'agent', text: text, sourceType: 'quest', sourceId: q.id }).then(res => {
+        if (res && res.ok) { sfx('click'); notify('◈ queued for the away workshop — it’ll be built in the sandbox while you’re away', 'good'); }
+        else { b.disabled = false; notify('could not queue: ' + ((res && res.error) || 'refused'), 'bad'); }
+      });
     }));
     // Tier 2 — ACCEPT a milestone step: route the next open milestone through the work-quest path (a real run
     // launches; completing THAT work completes the milestone and chains the next). No manual tick.
