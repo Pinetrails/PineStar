@@ -194,6 +194,24 @@
       return 'data:' + mime + ';base64,' + buf.toString('base64');
     }
 
+    // Core vision call, reusable by other tools (e.g. browser.vision). `url` is a data/http(s)
+    // image URL; returns the model's answer text (truncated). Throws with a clear message when
+    // no key is configured (orPost) so the caller can report honestly rather than fake success.
+    async function analyzeImageUrl(url, question, modelOverride) {
+      const model = String(modelOverride || VISION_MODEL);
+      const q = String(question || '').trim() || 'Describe this image in detail.';
+      const data = await orPost({
+        model,
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: q },     // text first, then image — OpenRouter's recommended order
+          { type: 'image_url', image_url: { url } }
+        ] }]
+      }, ANALYZE_TIMEOUT_MS);
+      const text = textFromResponse(data);
+      if (!text) throw new Error('vision model "' + model + '" returned no text — is it vision-capable?');
+      return text.length > ANALYZE_RETURN_CHARS ? text.slice(0, ANALYZE_RETURN_CHARS) + '\n…[truncated]' : text;
+    }
+
     const analyzeTool = {
       name: 'image_analyze', capability: 'studio', scope: 'read', requiresConsent: false, timeoutMs: ANALYZE_TIMEOUT_MS + 15000,
       description: 'Look at an image and answer a question about it (vision). "image" is EITHER a file in your workspace ' +
@@ -207,25 +225,23 @@
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const url = await imageToUrl(aid, args.image);
-        const question = String(args.prompt || '').trim() || 'Describe this image in detail.';
-        const model = String(args.model || VISION_MODEL);
-        const data = await orPost({
-          model,
-          messages: [{ role: 'user', content: [
-            { type: 'text', text: question },     // text first, then image — OpenRouter's recommended order
-            { type: 'image_url', image_url: { url } }
-          ] }]
-        }, ANALYZE_TIMEOUT_MS);
-        const text = textFromResponse(data);
-        if (!text) throw new Error('vision model "' + model + '" returned no text — is it vision-capable?');
-        const out = text.length > ANALYZE_RETURN_CHARS ? text.slice(0, ANALYZE_RETURN_CHARS) + '\n…[truncated]' : text;
+        const out = await analyzeImageUrl(url, args.prompt, args.model);
         return { content: out, summary: 'analyzed image (' + out.length + ' chars)' };
       }
     };
 
+    // A vision callback for makeBrowserTools: takes a base64 PNG (CDP screenshot) + question,
+    // returns the model's answer. Honest failure (no key) propagates as a thrown Error which
+    // browser.vision converts to an 'vision unavailable' result.
+    const hasVision = !!apiKey;
+    async function browserVision({ imageBase64, question }) {
+      const url = 'data:image/png;base64,' + String(imageBase64 || '');
+      return analyzeImageUrl(url, question);
+    }
+
     return {
-      generateTool, analyzeTool,
-      _internals: { parseImageFromResponse, textFromResponse, dataUrlToBuffer, imageUrlFromPart, imageToUrl },
+      generateTool, analyzeTool, analyzeImageUrl, browserVision, hasVision,
+      _internals: { parseImageFromResponse, textFromResponse, dataUrlToBuffer, imageUrlFromPart, imageToUrl, analyzeImageUrl },
       register(reg) { reg.register(generateTool); reg.register(analyzeTool); return reg; }
     };
   }

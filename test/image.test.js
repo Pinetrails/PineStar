@@ -100,6 +100,17 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
   let noKey = false; try { await T4.generateTool.run({ prompt: 'q' }, ctx); } catch (e) { noKey = /API key/i.test(e.message); }
   A.ok(noKey, 'image_generate errors helpfully when no OpenRouter key is configured');
 
+  // ---- H. browserVision: reusable vision callback for browser.vision ----
+  A.eq(T3.hasVision, true, 'hasVision is true when a key is present');
+  A.eq(T4.hasVision, false, 'hasVision is false with no key (browser.vision stays unwired -> honest unavailable)');
+  const bv = await T3.browserVision({ imageBase64: Buffer.from('png').toString('base64'), question: 'what is on screen?' });
+  A.ok(/red cube/i.test(bv), 'browserVision returns the vision model text');
+  const bvParts = anFetch.calls[anFetch.calls.length - 1].body.messages[0].content;
+  A.eq(bvParts[0].text, 'what is on screen?', 'browserVision forwards the question');
+  A.ok(bvParts[1].image_url.url.indexOf('data:image/png;base64,') === 0, 'browserVision wraps the screenshot as a PNG data URL');
+  let bvNoKey = false; try { await T4.browserVision({ imageBase64: 'x', question: 'q' }); } catch (e) { bvNoKey = /API key/i.test(e.message); }
+  A.ok(bvNoKey, 'browserVision throws a clear no-key error (browser.vision converts this to unavailable)');
+
   try { await fsp.rm(ROOT, { recursive: true, force: true }); } catch (_) {}
   A.report('image.test');
 })().catch(e => { console.log('FATAL', e && e.stack || e); process.exit(1); });

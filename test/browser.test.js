@@ -118,5 +118,19 @@ function fakeDriver() {
     A.ok(/browser unavailable/.test(r.content), 'missing Chromium error is explicit');
   }
 
+  // browser.vision: with a vision dep the answer flows through; with NONE it is honestly unavailable
+  {
+    const withVision = makeBrowserTools({ driver: fakeDriver(), vision: async ({ question }) => 'I see: ' + question });
+    const ok = await withVision.tools.find(t => t.name === 'browser.vision').run({ question: 'what page?' }, {});
+    A.eq(ok.summary, 'vision', 'wired vision reports success summary');
+    A.ok(/I see: what page\?/.test(ok.content), 'wired vision answer flows through');
+
+    const noVision = makeBrowserTools({ driver: fakeDriver() });   // no vision dep
+    const un = await noVision.tools.find(t => t.name === 'browser.vision').run({ question: 'what page?' }, {});
+    A.eq(un.summary, 'vision unavailable', 'missing vision provider yields an honest unavailable summary, not a success stub');
+    A.ok(/unavailable/i.test(un.content) && /OpenRouter key|vision model/i.test(un.content), 'unavailable content says what would enable it');
+    A.ok(!/I see:/.test(un.content), 'unavailable content never fabricates a description');
+  }
+
   A.report('browser.test');
 })();

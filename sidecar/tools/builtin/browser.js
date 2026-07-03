@@ -351,8 +351,13 @@
     async function dialog(action, promptText) { return ensureDriver().handleDialog(action || 'accept', promptText || ''); }
     async function vision(question) {
       const data = await ensureDriver().screenshot();
-      if (deps.vision) return deps.vision({ imageBase64: data, question: question || '' });
-      return 'Captured viewport screenshot (' + Math.round(String(data || '').length * 3 / 4) + ' bytes). Vision model is not configured in this harness slice.';
+      const bytes = Math.round(String(data || '').length * 3 / 4);
+      if (deps.vision) {
+        const answer = await deps.vision({ imageBase64: data, question: question || '' });
+        return { ok: true, answer: String(answer == null ? '' : answer), bytes };
+      }
+      // No vision provider wired — do NOT fake an answer. Report honestly.
+      return { ok: false, bytes, reason: 'no vision model configured — connect an OpenRouter key to enable browser.vision' };
     }
     function close() { if (driver && driver.close) driver.close(); }
     // Visibility of the controlled window, for truthful navigate reporting. Only meaningful
@@ -414,8 +419,15 @@
         }),
       read('browser.get_text', 'Return visible page text, optionally scoped by CSS selector.', { type: 'object', properties: { selector: { type: 'string' } } },
         async a => ({ content: clamp(await session.getText(a.selector || ''), MAX_TEXT), summary: 'text' })),
-      read('browser.vision', 'Capture the current viewport for visual inspection. If a vision provider is configured, answer the supplied question.', { type: 'object', properties: { question: { type: 'string' } } },
-        async a => ({ content: await session.vision(a.question || ''), summary: 'vision' }))
+      read('browser.vision', 'Capture the current viewport and, if a vision model is configured (OpenRouter key connected), answer a question about what is on screen. Without a vision model this returns a clear "unavailable" result — it never fabricates a description.', { type: 'object', properties: { question: { type: 'string' } } },
+        async a => {
+          const r = await session.vision(a.question || '');
+          if (r && r.ok) {
+            return { content: r.answer || '(vision model returned no text)', summary: 'vision' };
+          }
+          const reason = (r && r.reason) || 'vision model is not configured';
+          return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).', summary: 'vision unavailable' };
+        })
     ];
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, CHROME_CANDIDATES } };
   }

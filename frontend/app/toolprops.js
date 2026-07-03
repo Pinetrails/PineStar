@@ -5,7 +5,8 @@
    worldmodel's CAP_PROP_MAP keys prop types to capability objectTypes:
 
      fs.*                                        -> 'cabinet'   (files)
-     web_search / web_fetch / browser.*          -> 'dish'      (web)
+     web_search / web_fetch / browser.*
+       / desktop.open                            -> 'dish'      (web)
      notebook.* / skill.* / recall_conversation
        / todo                                    -> 'notebook'  (memory)
      image_*                                     -> 'studio'    (media)
@@ -27,6 +28,7 @@ const ToolProps = (() => {
   const EXACT = {
     web_search: 'dish',
     web_fetch: 'dish',
+    'desktop.open': 'dish',   // opens on the user's real screen; a web-family (dish) grant
     todo: 'notebook',
     recall_conversation: 'notebook'
   };

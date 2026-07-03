@@ -541,6 +541,11 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         .env("SKYNET_API_TOKEN", &state.api_token)
         .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
         .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
+        // Tells the sidecar it is running under the real desktop shell (a visible
+        // WebView2 with a live screen), so the win32 computer-use driver defaults ON.
+        // A headless/server/CI `node sidecar/index.js` never sets this, so it keeps the
+        // safe no-driver stub. STARNET_COMPUTER_DRIVER still overrides either way.
+        .env("STARNET_DESKTOP_SHELL", "1")
         .current_dir(&state.root);
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
