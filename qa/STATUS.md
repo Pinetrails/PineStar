@@ -112,3 +112,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-03 agent/refit-ui → trunk 2eac250d (test:fast green): builder-mode UI rebuilt — REFIT dock becomes a full-height LEFT build panel (premium chrome); palette is a real scroll region (old bottom strip clipped the prop gallery with overflow:hidden), category tabs wrap, fitCamera centers the station in the visible viewport. Live-verified: DOM round-trips on seeded :8827 + CDP uishoot captures (build-station, build-prop-gallery); tutorial selectors untouched.
 
 - 2026-07-03 merge: agent/workshop-backend -> feat/harness-backend (5e08d6db) — W1 workshop consent grant + W2 away-work driver; gates test:fast + test:http GREEN (workshop.e2e 19 assertions).
+- 2026-07-03 merge: agent/mint-ledger -> feat/harness-backend (54d8f1e4) — W6 mint gate + per-agent minted ledger + dup boot sweep; gates test:fast + test:http GREEN.
