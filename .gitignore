@@ -38,6 +38,7 @@ src-tauri/binaries/
 .mock-shot/
 .qa_tmp/
 .tmpshot/
+.postcard-verify/
 .uiplay/
 .uiresidue/
 .uisummon/

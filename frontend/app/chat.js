@@ -772,7 +772,37 @@ const Chat = (() => {
     const foot = document.createElement('div'); foot.className = 'recap-line recap-foot';
     foot.textContent = [fmtRecapCost(entry), durMs > 0 ? fmtMs(durMs) : '', (entry.model && entry.model !== '(unknown)') ? entry.model : ''].filter(Boolean).join(' · ');
     if (foot.textContent) r.body.appendChild(foot);
+    // G5 SPECTACLE — the SHAREABLE POSTCARD affordance. A quiet button on the recap card (NOT the one post-run
+    // beat slot — the recap deliberately never claims it): capture the live station scene + this run's REAL
+    // summary + the agent's honest growth into a draggable/saveable PNG. Fail-open: absent module = no button.
+    if (typeof Postcard !== 'undefined' && Postcard.capture) {
+      const share = document.createElement('button'); share.type = 'button'; share.className = 'recap-postcard';
+      share.textContent = '⎙ postcard'; share.title = 'save a shareable PNG of this run';
+      share.onclick = () => firePostcard(entry, arts, agentId, durMs, share);
+      r.body.appendChild(share);
+    }
     autoscroll();
+  }
+
+  /* Capture the postcard for a completed run. Assembles ONLY provable numbers (the Postcard reducer decides
+     inclusion): the run entry's real reason/title/artifacts/cost/duration/model/tokens, the hero's honest
+     Level/lifetime from Xp.compute(agent.stats), and the lifetime station record from PrideStore.snapshot().
+     The scene is the live #stage canvas pixels at click time. Downloads the PNG + shows a brief inline stamp. */
+  function firePostcard(entry, arts, agentId, durMs, btn) {
+    const agent = (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null;
+    const pride = (typeof PrideStore !== 'undefined' && PrideStore.snapshot) ? PrideStore.snapshot() : null;
+    const run = {
+      reason: entry.reason, title: entry.title,
+      artifacts: Array.isArray(arts) ? arts : (entry.artifacts || []),
+      usd: entry.usd, unmetered: entry.unmetered, model: entry.model, tokens: entry.tokens,
+    };
+    if (btn) { btn.disabled = true; btn.textContent = '⎙ …'; }
+    Postcard.capture({ run: run, durMs: durMs, agent: agent, pride: pride })
+      .then(res => {
+        if (btn) { btn.textContent = '⎙ saved'; btn.title = res.name; }
+        if (typeof SFX !== 'undefined' && SFX.click) { try { SFX.click(); } catch (_) {} }
+      })
+      .catch(() => { if (btn) { btn.disabled = false; btn.textContent = '⎙ postcard'; } });
   }
   async function renderRunRecap(ws, runId, durMs) {
     try {
