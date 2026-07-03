@@ -3,7 +3,7 @@
 
 const ModelDock = (() => {
   const el = id => document.getElementById(id);
-  const CODEX_MODELS = ['gpt-5.3-codex', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
+  const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'];
   const ANTHROPIC_MODELS = ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest'];
   const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
   const HOSTED_FALLBACKS = {
@@ -32,7 +32,9 @@ const ModelDock = (() => {
     { id: 'xhigh', label: 'XHIGH', title: 'Extra-high reasoning' },
     { id: 'max', label: 'MAX', title: 'Maximum reasoning' }
   ];
-  const CODEX_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'];
+  // The ChatGPT-account Codex backend exposes EXACTLY these four levels (verified live) — no 'none', no
+  // 'minimal'. The CLI's "Fast mode" is just 'low' surfaced as a variant, so the low chip reads FAST here.
+  const CODEX_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
   const OPENROUTER_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   const REASONING_EFFORT_ORDER = OPENROUTER_REASONING_EFFORTS;
   const OFF_ONLY_EFFORTS = ['none'];
@@ -158,13 +160,18 @@ const ModelDock = (() => {
 
   function asModel(item, p) {
     if (typeof item === 'string') return { id: item, name: item, provider: normalizeProvider(p) };
-    const out = { id: String((item && item.id) || ''), name: (item && item.name) || String((item && item.id) || ''), provider: normalizeProvider(p) };
+    const out = { id: String((item && item.id) || ''), name: (item && (item.displayName || item.name)) || String((item && item.id) || ''), provider: normalizeProvider(p) };
     const params = (item && (item.supported_parameters || item.supportedParameters)) || null;
     const efforts = (item && (item.reasoningEfforts || item.reasoning_efforts || item.supportedReasoningEfforts || item.supported_reasoning_efforts)) || null;
     if (Array.isArray(params)) out.supported_parameters = params.slice();
     if (Array.isArray(efforts)) out.reasoningEfforts = efforts.slice();
     if (item && item.supportsReasoning != null) out.supportsReasoning = !!item.supportsReasoning;
     if (item && item.supportsTools != null) out.supportsTools = !!item.supportsTools;
+    // Codex carries the backend's own reasoning semantics: which level to preselect, and per-level glosses.
+    const dl = item && (item.defaultReasoningLevel || item.default_reasoning_level);
+    if (dl) out.defaultReasoningLevel = normalizeEffort(dl);
+    const desc = item && (item.reasoningLevelDescriptions || item.reasoning_level_descriptions);
+    if (desc && typeof desc === 'object') out.reasoningLevelDescriptions = desc;
     return out;
   }
 
@@ -263,6 +270,10 @@ const ModelDock = (() => {
     const opts = effortOptionsFor(item);
     let effort = normalizeEffort(value);
     if (opts.indexOf(effort) >= 0) return effort;
+    // When the current effort isn't supported by this model, prefer the model's own recommended default
+    // (Codex carries default_reasoning_level) before falling back to nearest-neighbour clamping.
+    const def = item && item.defaultReasoningLevel ? normalizeEffort(item.defaultReasoningLevel) : '';
+    if (def && opts.indexOf(def) >= 0) return def;
     const set = new Set(opts);
     let idx = REASONING_EFFORT_ORDER.indexOf(effort);
     if (idx < 0) idx = REASONING_EFFORT_ORDER.indexOf('medium');
@@ -349,14 +360,17 @@ const ModelDock = (() => {
     if (!wrap) return;
     wrap.innerHTML = '';
     const item = currentModelItem();
+    const isCodex = normalizeProvider((item && item.provider) || provider()) === 'codex';
+    const levelDescs = (item && item.reasoningLevelDescriptions) || null;
     const selected = ensureCurrentEffort();
     const available = effortOptionsFor(item).map(effortDef);
     for (const e of available) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'model-dock-effort' + (e.id === selected ? ' sel' : '');
-      b.textContent = e.label;
-      b.title = e.title;
+      // Codex has no 'off' tier — its 'low' level is the CLI's "Fast mode", so surface it as FAST.
+      b.textContent = (isCodex && e.id === 'low') ? 'FAST' : e.label;
+      b.title = (levelDescs && levelDescs[e.id]) || ((isCodex && e.id === 'low') ? 'Fast responses with lighter reasoning' : e.title);
       b.setAttribute('role', 'option');
       b.setAttribute('aria-selected', String(e.id === selected));
       b.addEventListener('click', () => applyEffort(e.id));
