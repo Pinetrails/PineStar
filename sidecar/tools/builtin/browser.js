@@ -21,9 +21,17 @@
 
   const MAX_TEXT = 12000;
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
+  // Headless by default ONLY when a headless env is set; on a real desktop run the
+  // controlled browser is HEADED so the user can watch (and hear) what the agent drives.
+  function headlessRequested(env) {
+    env = env || process.env;
+    return /^(1|true|yes|on)$/i.test(String(env.STARNET_BROWSER_HEADLESS || env.SKYNET_BROWSER_HEADLESS || ''));
+  }
   function playwrightChromes() {
     // ms-playwright caches live under per-user app data with a versioned dir name;
     // scan for them instead of pinning any machine-specific path or revision.
+    // Each candidate is tagged headless:true when it is a chrome-headless-shell build
+    // (those CANNOT run headed — a headed launch must skip them).
     const roots = [];
     if (process.env.LOCALAPPDATA) roots.push(P.join(process.env.LOCALAPPDATA, 'ms-playwright'));
     roots.push(P.join(OS.homedir(), '.cache', 'ms-playwright'));
@@ -34,25 +42,30 @@
       try { dirs = FS.readdirSync(root); } catch (_) { continue; }
       for (const d of dirs.sort().reverse()) {
         if (/^chromium_headless_shell-\d+$/.test(d)) {
-          out.push(P.join(root, d, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'));
-          out.push(P.join(root, d, 'chrome-headless-shell-linux', 'headless_shell'));
+          out.push({ path: P.join(root, d, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'), headless: true });
+          out.push({ path: P.join(root, d, 'chrome-headless-shell-linux', 'headless_shell'), headless: true });
         } else if (/^chromium-\d+$/.test(d)) {
-          out.push(P.join(root, d, 'chrome-win64', 'chrome.exe'));
-          out.push(P.join(root, d, 'chrome-linux', 'chrome'));
-          out.push(P.join(root, d, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'));
+          out.push({ path: P.join(root, d, 'chrome-win64', 'chrome.exe'), headless: false });
+          out.push({ path: P.join(root, d, 'chrome-linux', 'chrome'), headless: false });
+          out.push({ path: P.join(root, d, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'), headless: false });
         }
       }
     }
     return out;
   }
+  // Candidate list, each tagged whether it is a headless-only binary. Env overrides and
+  // real installed browsers are full Chrome (can run headed or headless).
   const CHROME_CANDIDATES = [
-    process.env.STARNET_CHROME,
-    process.env.SKYNET_CHROME,
+    process.env.STARNET_CHROME && { path: process.env.STARNET_CHROME, headless: false },
+    process.env.SKYNET_CHROME && { path: process.env.SKYNET_CHROME, headless: false },
     ...playwrightChromes(),
-    'C:/Program Files/Google/Chrome/Application/chrome.exe',
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium'
+    { path: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: false },
+    { path: 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe', headless: false },
+    process.env.LOCALAPPDATA && { path: P.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'), headless: false },
+    { path: '/usr/bin/google-chrome', headless: false },
+    { path: '/usr/bin/chromium-browser', headless: false },
+    { path: '/usr/bin/chromium', headless: false },
+    { path: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: false }
   ].filter(Boolean);
 
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -90,12 +103,26 @@
     }
     return u;
   }
-  function findChrome(existsSync) {
+  // Resolve a Chrome binary. When wantHeaded is true, PREFER a full Chrome (headless-shell
+  // builds can't show a window); only fall back to a headless-shell binary if nothing else
+  // exists. Returns { path, headless } where headless=true means "this binary is headless-only,
+  // a visible window is impossible" so the caller can report the truth.
+  function resolveChrome(wantHeaded, existsSync) {
     existsSync = existsSync || FS.existsSync;
-    for (const c of CHROME_CANDIDATES) {
-      try { if (existsSync(c)) return c; } catch (_) {}
+    const exists = (c) => { try { return existsSync(c.path); } catch (_) { return false; } };
+    if (wantHeaded) {
+      for (const c of CHROME_CANDIDATES) { if (!c.headless && exists(c)) return { path: c.path, headless: false }; }
+      // no full Chrome found — fall back to a headless-only binary (window impossible)
+      for (const c of CHROME_CANDIDATES) { if (c.headless && exists(c)) return { path: c.path, headless: true }; }
+      return null;
     }
-    return '';
+    for (const c of CHROME_CANDIDATES) { if (exists(c)) return { path: c.path, headless: c.headless }; }
+    return null;
+  }
+  // Back-compat shim (tests/other callers): return just the path of the first existing binary.
+  function findChrome(existsSync) {
+    const r = resolveChrome(false, existsSync);
+    return r ? r.path : '';
   }
 
   class CdpClient {
@@ -138,22 +165,37 @@
     const fetchImpl = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     const WebSocketImpl = deps.WebSocketImpl || (typeof WebSocket !== 'undefined' ? WebSocket : null);
     const spawn = deps.spawn || CP.spawn;
-    const chrome = deps.chrome || findChrome(deps.existsSync);
+    // Headed unless a headless env is set (or deps.headless forces it, e.g. tests/soak rigs).
+    const wantHeaded = deps.headless != null ? !deps.headless : !headlessRequested(deps.env);
+    // Resolve the binary honoring the headed preference (skip headless-shell when headed).
+    let chromePath = deps.chrome || null, binIsHeadlessOnly = false;
+    if (!chromePath) {
+      const r = resolveChrome(wantHeaded, deps.existsSync);
+      if (r) { chromePath = r.path; binIsHeadlessOnly = r.headless; }
+    }
     const cdpPort = deps.cdpPort || DEFAULT_PORT;
     const profileDir = deps.profileDir || P.join(OS.tmpdir(), 'starnet-browser-' + process.pid);
     const timeoutMs = deps.timeoutMs || 15000;
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
-    if (!chrome) throw new Error('browser unavailable: Chromium not found; set STARNET_CHROME');
+    if (!chromePath) throw new Error('browser unavailable: Chromium not found; set STARNET_CHROME');
+    // We run headed only if requested AND the chosen binary can actually show a window.
+    const headed = wantHeaded && !binIsHeadlessOnly;
 
     let proc = null, cdp = null, consoleLog = [], dialog = null;
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
-      proc = spawn(chrome, [
-        '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-        '--hide-scrollbars', '--mute-audio', '--remote-debugging-port=' + cdpPort,
-        '--window-size=1440,900', '--user-data-dir=' + profileDir, 'about:blank'
-      ], { stdio: 'ignore', windowsHide: true });
+      const args = ['--disable-gpu', '--no-first-run', '--no-default-browser-check',
+        '--remote-debugging-port=' + cdpPort, '--window-size=1440,900',
+        '--user-data-dir=' + profileDir];
+      if (headed) {
+        // Visible window the user can watch (and hear — no --mute-audio in headed mode).
+        args.push('--new-window');
+      } else {
+        args.push('--headless=new', '--hide-scrollbars', '--mute-audio');
+      }
+      args.push('about:blank');
+      proc = spawn(chromePath, args, { stdio: 'ignore', windowsHide: !headed });
       for (let i = 0; i < 40; i++) {
         try {
           const r = await fetchImpl('http://127.0.0.1:' + cdpPort + '/json/list');
@@ -250,7 +292,11 @@
       try { proc && proc.kill('SIGKILL'); } catch (_) {}
       cdp = null; proc = null;
     }
-    return { navigate, snapshot, click, type, press, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog };
+    // visible() is the TRUTH the model reports: true only if the controlled window is
+    // actually on the user's screen. Headless mode, or a headless-only binary fallback in
+    // a headed request, both read as not visible.
+    function visible() { return headed; }
+    return { navigate, snapshot, click, type, press, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly };
   }
 
   function makeBrowserSession(deps) {
@@ -309,7 +355,17 @@
       return 'Captured viewport screenshot (' + Math.round(String(data || '').length * 3 / 4) + ' bytes). Vision model is not configured in this harness slice.';
     }
     function close() { if (driver && driver.close) driver.close(); }
-    return { navigate, snapshot, click, type, press, scroll, back, getText, consoleLog, dialog, vision, close, _internals: { refs, version: () => version } };
+    // Visibility of the controlled window, for truthful navigate reporting. Only meaningful
+    // once a driver exists; an injected test driver may not expose it (default true = don't lie about headless).
+    function visible() {
+      const d = ensureDriver();
+      return typeof d.visible === 'function' ? d.visible() : (d.visible != null ? !!d.visible : true);
+    }
+    function headlessFallback() {
+      const d = driver || null;
+      return !!(d && d.headlessFallback);
+    }
+    return { navigate, snapshot, click, type, press, scroll, back, getText, consoleLog, dialog, vision, close, visible, headlessFallback, _internals: { refs, version: () => version } };
   }
 
   function makeBrowserTools(deps) {
@@ -318,8 +374,18 @@
     const read = (name, description, schema, run) => ({ name, capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
     const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
     const tools = [
-      read('browser.navigate', 'Navigate the controlled browser to a public http(s) URL. Private, loopback, intranet, and unsafe redirects are refused, so local dev servers need shell/HTTP verification instead.', { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
-        async a => ({ content: 'Browser navigated to ' + await session.navigate(a.url), summary: 'navigated' })),
+      read('browser.navigate', 'Navigate the AGENT-CONTROLLED browser to a public http(s) URL. On a real desktop this opens a VISIBLE Chrome window the user can watch (and hear) while you drive it with browser.snapshot/click/type — the same window you control. (In headless/CI mode, set by STARNET_BROWSER_HEADLESS, no window is shown; the result says so.) Use this whenever the user wants to SEE you open/browse a page ("open youtube for me", "on my screen") AND you may then interact with it. For a fire-and-forget open in the user\'s OWN default browser that you will NOT control afterward, use desktop.open. Private, loopback, intranet, and unsafe redirects are refused, so local dev servers need shell/HTTP verification instead.', { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
+        async a => {
+          const url = await session.navigate(a.url);
+          let vis = true;
+          try { vis = session.visible(); } catch (_) {}
+          const suffix = vis
+            ? ' (visible window on the user\'s screen)'
+            : (session.headlessFallback && session.headlessFallback()
+              ? ' (headless fallback — no visible window; no full Chrome found, only a headless-shell binary)'
+              : ' (headless — not visible to the user)');
+          return { content: 'Browser navigated to ' + url + suffix, summary: 'navigated' };
+        }),
       read('browser.snapshot', 'Return a structured snapshot of visible interactive elements. Element refs expire after the next snapshot.', { type: 'object', properties: { limit: { type: 'number' } } },
         async a => {
           const nodes = await session.snapshot(a.limit || 80);
@@ -351,8 +417,8 @@
       read('browser.vision', 'Capture the current viewport for visual inspection. If a vision provider is configured, answer the supplied question.', { type: 'object', properties: { question: { type: 'string' } } },
         async a => ({ content: await session.vision(a.question || ''), summary: 'vision' }))
     ];
-    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome } };
+    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, CHROME_CANDIDATES } };
 });

@@ -52,7 +52,10 @@
       { capId: 'web', tool: 'browser.press', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.dialog', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.scroll', scope: 'execute', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'browser.back', scope: 'execute', requiresConsent: false, network: true }
+      { capId: 'web', tool: 'browser.back', scope: 'execute', requiresConsent: false, network: true },
+      // desktop.open: open a URL/app on the user's REAL screen (visible window), unlike the
+      // headless browser.* surface. Execute + consent-gated (an outward action on the desktop).
+      { capId: 'web', tool: 'desktop.open', scope: 'execute', requiresConsent: true, network: true }
     ],
     // CONNECTORS: a 'connector' object is a DYNAMIC capability — its grants are the tools its configured MCP
     // server reports at runtime (tools/list), which can't be statically listed here. The connector manager

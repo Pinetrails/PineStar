@@ -26,6 +26,7 @@ const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
 const { makeComputerTools } = require('./tools/builtin/computer.js');
+const { makeDesktopTools } = require('./tools/builtin/desktop.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
@@ -3160,6 +3161,7 @@ async function runOnce(o) {
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
   makeWebTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   makeBrowserTools({}).register(registry);   // browser.* automation: exposed only through the web/dish capability
+  makeDesktopTools({}).register(registry);   // desktop.open: open URL/app on the user's REAL screen (visible), web/dish capability
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
