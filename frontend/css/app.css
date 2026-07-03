@@ -1327,6 +1327,59 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-row.busy .ws-meta { color: var(--ph-bright); }
 .ws-row.attn .ws-meta { color: var(--gold); }
 
+/* ---- session row actions: pin marker · hover ⋯ · archived state · in-place rename ---- */
+.ws-head-acts { display: inline-flex; align-items: center; gap: 6px; }
+#ws-archived {
+  font-family: inherit; font-size: 11px; letter-spacing: 1px; color: var(--ink);
+  background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
+}
+#ws-archived:hover { background: rgba(0,0,0,.2); }
+#ws-archived.on { background: rgba(0,0,0,.34); }
+#ws-archived[hidden] { display: none; }
+/* pinned rows sort to the top AND carry a small gold star so the "kept" state is legible at a glance */
+.ws-pin { flex: 0 0 auto; font-size: 10px; line-height: 1; color: var(--gold); text-shadow: 0 0 6px rgba(255,211,74,.5); }
+/* the ⋯ button is the discoverable twin of right-click: hidden until the row is hovered, where it takes the meta slot */
+.ws-kebab {
+  display: none; flex: 0 0 auto; font-family: inherit; font-size: 15px; line-height: 1; letter-spacing: 1px;
+  color: var(--ph-dim); background: transparent; border: 0; cursor: pointer; padding: 0 2px;
+}
+.ws-row:hover .ws-meta, .ws-row:focus-within .ws-meta { display: none; }
+.ws-row:hover .ws-kebab, .ws-row:focus-within .ws-kebab { display: inline-block; }
+.ws-kebab:hover { color: var(--ph-bright); text-shadow: 0 0 6px var(--ph-glow); }
+.ws-row.renaming .ws-kebab, .ws-row.renaming .ws-meta { display: none; }
+/* archived (put-away) streams show dimmed only while the ARCHIVED toggle is on */
+.ws-row.archived { opacity: .5; }
+.ws-row.archived .ws-title { font-style: italic; }
+.ws-row.archived:hover { opacity: .85; }
+/* rename-in-place: the title becomes a compact phosphor input inside the same row */
+.ws-rename {
+  flex: 1; min-width: 0; font-family: inherit; font-size: 14px; color: var(--ph-bright);
+  background: var(--panel2); border: 1px solid var(--ph); outline: none; padding: 1px 4px; border-radius: 3px;
+}
+
+/* ---- the floating actions menu (phosphor chrome, never the native context menu) ---- */
+.ws-menu {
+  position: fixed; z-index: 140; min-width: 170px; padding: 4px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--ph);
+  box-shadow: 0 0 0 1px var(--ph-dim), 0 8px 24px rgba(0,0,0,.7), 0 0 18px var(--ph-glow2);
+  display: flex; flex-direction: column; gap: 1px; animation: wsMenuIn .09s ease-out;
+}
+@keyframes wsMenuIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.ws-menu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; border-radius: 4px;
+  font-family: inherit; font-size: 13px; letter-spacing: .3px; color: var(--ph);
+  background: transparent; border: 0; cursor: pointer; padding: 7px 10px;
+}
+.ws-menu-item:hover { background: var(--ph-faint); color: var(--ph-bright); }
+.ws-menu-glyph { flex: 0 0 auto; width: 14px; text-align: center; font-size: 12px; color: var(--ph-dim); }
+.ws-menu-item:hover .ws-menu-glyph { color: var(--ph-bright); }
+.ws-menu-item.danger { color: var(--bad); }
+.ws-menu-item.danger .ws-menu-glyph { color: var(--bad); }
+.ws-menu-item.danger:hover { background: rgba(255,92,77,.14); color: var(--bad); }
+.ws-menu-item.danger.armed, .ws-menu-item.danger.armed:hover { background: var(--bad); color: var(--ink); }
+.ws-menu-item.danger.armed .ws-menu-glyph { color: var(--ink); }
+.ws-menu-sep { height: 1px; margin: 3px 6px; background: var(--ph-dim); opacity: .5; }
+
 #chat-panel h3 .h3-right { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; flex: 0 1 auto; overflow: hidden; }
 #chat-panel h3 #chat-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #chat-status.status-thinking { color: var(--ph-bright); text-shadow: 0 0 7px var(--ph-glow2); }

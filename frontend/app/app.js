@@ -1702,6 +1702,7 @@ const App = (() => {
     pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
     el('ws-new').onclick = newWorkstream;
+    { const wsArch = el('ws-archived'); if (wsArch) wsArch.onclick = toggleArchived; }
     if (opts.awaitingPurpose && typeof Onboarding !== 'undefined') {
       // THE AWAKENING — a guided first meeting that authors identity/purpose/context/operating-manual.md
       // while the room rises from dark to first light. Replaces the old single "what is my purpose?" beat.
@@ -1741,6 +1742,7 @@ const App = (() => {
   // a 1s ticker keeps the seconds moving. The full status word ("working…"/"awaiting your approval…") lives in the
   // row's hover tooltip so the one-line layout never has to spell it out.
   let railTicker = 0;
+  let railShowArchived = false;   // when true the rail also lists archived (put-away) sessions, dimmed
   function railFmtElapsed(ms) {
     const s = Math.floor((ms < 0 ? 0 : ms) / 1000);
     if (s < 60) return s + 's';
@@ -1770,23 +1772,34 @@ const App = (() => {
     return { dot: 'ws-dot lane-' + w.lane, meta: railRelTime(w.lastActiveAt), busy: false, attn: false, status: '' };
   }
   function rowClass(w, st, activeId) {
-    return 'ws-row' + (w.id === activeId ? ' sel' : '') + (st.busy ? ' busy' : '') + (st.attn ? ' attn' : '');
+    return 'ws-row' + (w.id === activeId ? ' sel' : '') + (st.busy ? ' busy' : '') + (st.attn ? ' attn' : '')
+      + (w.pinned ? ' pinned' : '') + (w.archived ? ' archived' : '');
   }
   function renderRail() {
     const ul = el('workstreams');
     if (!ul || typeof Workstreams === 'undefined') return;
     const activeId = Workstreams.activeId();
-    ul.innerHTML = Workstreams.list().map(w => {
+    ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
       const title = w.title || 'General';
       const st = railRowState(w);
-      const tip = title + (st.busy ? ' · ' + st.status : '');
+      const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '') + ' — right-click for actions';
       return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
+        (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
         '<span class="ws-meta">' + U.esc(st.meta) + '</span>' +
+        '<button class="ws-kebab" tabindex="-1" aria-label="session actions" title="session actions">⋯</button>' +
         '</li>';
     }).join('');
-    ul.querySelectorAll('.ws-row').forEach(li => li.onclick = () => switchWorkstream(li.dataset.id));
+    ul.querySelectorAll('.ws-row').forEach(li => {
+      const id = li.dataset.id;
+      li.onclick = () => switchWorkstream(id);
+      // right-click OR the hover ⋯ button opens the same actions menu (rename · pin · archive · delete)
+      li.oncontextmenu = (e) => { e.preventDefault(); openWsMenu(id, e.clientX, e.clientY); };
+      const keb = li.querySelector('.ws-kebab');
+      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const r = keb.getBoundingClientRect(); openWsMenu(id, r.left, r.bottom + 2); };
+    });
+    updateArchivedToggle();
     armRailTicker();
     if (typeof StationUI !== 'undefined' && StationUI.refreshBoard) StationUI.refreshBoard();
   }
@@ -1801,6 +1814,7 @@ const App = (() => {
     if (!ul || typeof Workstreams === 'undefined' || !game || !game.classList.contains('active')) { stopRailTicker(); return; }
     const activeId = Workstreams.activeId();
     ul.querySelectorAll('.ws-row').forEach(li => {
+      if (li.querySelector('.ws-rename')) return;   // leave a row alone while its title is being edited in place
       const w = Workstreams.get(li.dataset.id); if (!w) return;
       const st = railRowState(w);
       const dot = li.querySelector('.ws-dot'); if (dot && dot.className !== st.dot) dot.className = st.dot;
@@ -1835,6 +1849,146 @@ const App = (() => {
     const ws = Workstreams.create(null);
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
+
+  /* ---------- session (workstream) row actions: rename · pin · archive · delete ----------
+     Reached by right-click OR the hover ⋯ on any rail row. A floating menu drawn in the phosphor
+     chrome (no native context menu / no window.prompt / no window.confirm): rename is edited IN
+     PLACE in the row, delete is a two-step arm/confirm (the terminal idiom for anything destructive),
+     and every mutation goes through the Workstreams store — which already guards General from being
+     archived or deleted — then re-renders + persists. Archived streams are hidden by default; the
+     ARCHIVED toggle in the rail head reveals them so they can be restored or deleted. */
+  let wsMenuEl = null;
+  function closeWsMenu() {
+    if (!wsMenuEl) return;
+    wsMenuEl.remove(); wsMenuEl = null;
+    document.removeEventListener('pointerdown', onWsMenuOutside, true);
+    document.removeEventListener('keydown', onWsMenuKey, true);
+    window.removeEventListener('blur', closeWsMenu);
+    window.removeEventListener('resize', closeWsMenu);
+    const ul = el('workstreams'); if (ul) ul.removeEventListener('scroll', closeWsMenu, true);
+  }
+  function onWsMenuOutside(e) { if (wsMenuEl && !wsMenuEl.contains(e.target)) closeWsMenu(); }
+  function onWsMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeWsMenu(); } }
+  function openWsMenu(id, x, y) {
+    closeWsMenu();
+    const w = Workstreams.get(id); if (!w) return;
+    const isGeneral = (id === Workstreams.generalId());
+    const menu = document.createElement('div');
+    menu.className = 'ws-menu'; menu.setAttribute('role', 'menu');
+    const item = (act, label, glyph, cls) =>
+      '<button class="ws-menu-item' + (cls ? ' ' + cls : '') + '" role="menuitem" data-act="' + act + '">' +
+      '<span class="ws-menu-glyph" aria-hidden="true">' + glyph + '</span>' + U.esc(label) + '</button>';
+    let html = item('rename', 'Rename', '✎') + item('pin', w.pinned ? 'Unpin' : 'Pin to top', w.pinned ? '☆' : '★');
+    if (!isGeneral) {
+      html += item('archive', w.archived ? 'Unarchive' : 'Archive', w.archived ? '⇱' : '⇲') +
+        '<div class="ws-menu-sep"></div>' + item('delete', 'Delete', '✕', 'danger');
+    }
+    menu.innerHTML = html;
+    document.body.appendChild(menu);
+    // clamp to the viewport so a row near an edge still shows the whole menu
+    const r = menu.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    menu.style.left = Math.max(6, Math.min(x, vw - r.width - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(y, vh - r.height - 6)) + 'px';
+    wsMenuEl = menu;
+    menu.querySelectorAll('.ws-menu-item').forEach(btn => {
+      const act = btn.dataset.act;
+      if (act === 'delete') {   // destructive → arm on first click, act on a second within 4s
+        btn.addEventListener('click', () => {
+          if (btn.dataset.armed) { closeWsMenu(); deleteWorkstream(id); return; }
+          btn.dataset.armed = '1'; btn.classList.add('armed');
+          btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>Confirm delete';
+          SFX.bad();
+          setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.classList.remove('armed'); btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>Delete'; } }, 4000);
+        });
+      } else {
+        btn.addEventListener('click', () => { closeWsMenu(); wsMenuAction(act, id); });
+      }
+    });
+    document.addEventListener('pointerdown', onWsMenuOutside, true);
+    document.addEventListener('keydown', onWsMenuKey, true);
+    window.addEventListener('blur', closeWsMenu);
+    window.addEventListener('resize', closeWsMenu);
+    const ul = el('workstreams'); if (ul) ul.addEventListener('scroll', closeWsMenu, true);
+    SFX.click();
+  }
+  function wsMenuAction(act, id) {
+    const w = Workstreams.get(id); if (!w) return;
+    if (act === 'rename') { beginRenameRow(id); return; }
+    if (act === 'pin') { Workstreams.pin(id, !w.pinned); SFX.click(); renderRail(); persist(); return; }
+    if (act === 'archive') {
+      const wasActive = (id === Workstreams.activeId());
+      const nowArchived = !w.archived, label = w.title || 'General';
+      if (!Workstreams.archive(id, nowArchived)) { SFX.bad(); return; }
+      SFX.close();
+      if (wasActive && Workstreams.activeId() !== id) loadActiveStream();   // archiving the OPEN stream falls back to General
+      renderRail(); persist();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((nowArchived ? 'archived ' : 'restored ') + '“' + label + '”', '');
+    }
+  }
+  function deleteWorkstream(id) {
+    const w = Workstreams.get(id); const label = w ? (w.title || 'General') : '';
+    const wasActive = (id === Workstreams.activeId());
+    if (!Workstreams.del(id)) { SFX.bad(); return; }
+    SFX.bad();
+    if (wasActive) loadActiveStream();   // deleting the OPEN stream falls back to General
+    renderRail(); persist();
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn');
+  }
+  // re-open whatever the store now treats as active (after archive/delete bumps the open stream to General)
+  function loadActiveStream() {
+    const a = Workstreams.active(); if (!a) return;
+    focusAgent(a.agentId || 'agent'); Chat.load(a); refreshUsage();
+  }
+  // RENAME in place: the row title becomes an input. Enter / blur commits, Esc cancels. An empty commit
+  // on a normal stream is treated as cancel (so it can never collapse into a stray second "General"); the
+  // real General stays title=null. rename() locks titleAuto so the one-shot auto-title can't later stomp it.
+  function beginRenameRow(id) {
+    const ul = el('workstreams'); if (!ul) return;
+    const sel = (window.CSS && CSS.escape) ? CSS.escape(id) : id;
+    const li = ul.querySelector('.ws-row[data-id="' + sel + '"]'); if (!li) return;
+    const titleSpan = li.querySelector('.ws-title'); if (!titleSpan || li.querySelector('.ws-rename')) return;
+    const w = Workstreams.get(id); if (!w) return;
+    const input = document.createElement('input');
+    input.type = 'text'; input.className = 'ws-rename'; input.maxLength = 80;
+    input.value = w.title || ''; input.placeholder = 'General';
+    li.classList.add('renaming');
+    titleSpan.replaceWith(input);
+    input.focus(); input.select();
+    let done = false;
+    const finish = (save) => {
+      if (done) return; done = true;
+      let changed = false;
+      if (save) {
+        const v = input.value.trim();
+        if (v || id === Workstreams.generalId()) changed = Workstreams.rename(id, v);   // empty on a normal stream = cancel
+      }
+      if (changed) {
+        SFX.click(); persist();
+        if (id === Workstreams.activeId() && typeof Chat !== 'undefined' && Chat.load) { const a = Workstreams.active(); if (a) Chat.load(a); }   // refresh the COMMS header title
+      }
+      renderRail();
+    };
+    input.addEventListener('click', e => e.stopPropagation());   // don't switch the stream while editing its name
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+  // the rail-head ARCHIVED toggle: shown only when ≥1 stream is archived; flips the rail between
+  // hiding and revealing them (revealed rows are dimmed and offer Unarchive in their menu).
+  function updateArchivedToggle() {
+    const btn = el('ws-archived'); if (!btn) return;
+    let n = 0; for (const w of Workstreams.list({ includeArchived: true })) if (w.archived) n++;
+    if (!n) { btn.hidden = true; btn.classList.remove('on'); railShowArchived = false; return; }
+    btn.hidden = false;
+    btn.classList.toggle('on', railShowArchived);
+    btn.textContent = (railShowArchived ? '▾ ' : '▸ ') + 'ARCHIVED ' + n;
+    btn.title = railShowArchived ? 'hide archived sessions' : 'show ' + n + ' archived session' + (n === 1 ? '' : 's');
+  }
+  function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
   // DISCONNECT (the ⏏ button) tears down the live game but NEVER wipes data and NEVER lands on a dead title
   // screen — it persists, then re-enters via reentry(): straight back into the station if creds are still in
