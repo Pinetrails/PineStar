@@ -16,7 +16,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-01 23:28Z @ ef47f9d9 | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-03 @ 91b9415e | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-01T23:30:22.312Z · ui-only · 84014ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -74,6 +74,20 @@ through `scripts/qa/ledger.mjs --add` so dedup / known-refusal stays the ONE imp
 files a **P0 BLOCKED** finding loudly and the cycle exits nonzero — it never silently
 passes. Scheduling (Task Scheduler vs. a `/loop` session) is lane Q5's job; this script is
 schedule-agnostic.
+
+**Dismissed-frame gate (golden).** A golden frame whose *current* fingerprint is already
+**dismissed/known** in the ledger is **review-clean**, not a regression: `scripts/golden.mjs`
+asks the ledger's `suppressedFingerprints()` (the ONE dedup/known authority) and computes each
+frame's Green-Guardian fingerprint (`goldenFrameFingerprint(name)` == `fingerprintOf({crew:'Green
+Guardian', checkId:'golden', subject:'frame/'+name})`). A match is logged as `review-clean …
+matches dismissed finding <fp>` and kept OUT of `flagged`, so golden exits 0 and the row above
+stays GREEN. This exists because `sys-rewind` (the one modal that doesn't full-bleed over the
+animated CRT floor) diffs forever as animation noise — its finding `01c40465` was triaged and
+**dismissed**, yet a naïve golden gate would re-flag it every cycle and pin this row RED with 0
+open findings (a lying dashboard). **Narrow by design:** only a frame whose fingerprint is on the
+dismissed/known baseline is excused; a new frame, a different frame, or a diff on a non-dismissed
+frame STILL flags → exit 3 → the Guardian files it through the ledger exactly as before. Fail-open:
+if the ledger can't be read, nothing is suppressed. Covered by `test/golden.test.js`.
 
 ## Ledger quick reference
 
