@@ -1130,7 +1130,26 @@ const StationUI = (() => {
   function agConfig(a) {
     return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
-      modelCard(a);
+      modelCard(a) +
+      workshopCard(a);
+  }
+
+  // W3 per-agent AWAY-WORKSHOP grant. One plainly-worded consent toggle — no jargon, no wizard. When on,
+  // this agent may build queued ideas in its own quarantined sandbox while the Commander is away; nothing
+  // touches real files until the Commander approves it on return (the return card). Writes a.workshop via
+  // App.setWorkshop → pushRoster, so the sidecar consent broker honors the grant. Available from minute one
+  // (sandbox law: a consent switch, never an unlock wall).
+  function workshopCard(a) {
+    const on = !!(a && a.workshop);
+    return '<div class="cf-card">' +
+      '<div class="cf-head"><span class="cf-file">◈ away workshop</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<label class="set-row" style="align-items:flex-start;gap:8px;">' +
+        '<input type="checkbox" id="ag-workshop-on"' + (on ? ' checked' : '') + ' aria-label="Build things while I am away">' +
+        '<span><b>Build things while I’m away</b>' +
+        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">While you’re gone, this agent works on queued ideas in its own sandbox. Nothing touches your files until you approve it.</span></span>' +
+      '</label>' +
+      '<div id="ag-workshop-msg" class="msg"></div>' +
+    '</div>';
   }
 
   // P1-6 per-agent MODEL/PROVIDER pin. Shows what this agent runs on and lets you override it independently of the
@@ -1217,6 +1236,19 @@ const StationUI = (() => {
     });
     const mClear = body.querySelector('#ag-model-clear');
     if (mClear) mClear.addEventListener('click', () => applyModel('', '', ''));
+    // W3 AWAY-WORKSHOP toggle: flip a.workshop via App.setWorkshop (updates the flag + pushRoster + persist).
+    // Optimistic UI: on failure we revert the checkbox and say so — never assert a grant the harness didn't record.
+    const wOn = body.querySelector('#ag-workshop-on');
+    const wMsg = body.querySelector('#ag-workshop-msg');
+    const setWMsg = (t, ok) => { if (wMsg) { wMsg.textContent = t || ''; wMsg.className = 'msg' + (ok ? ' ok' : ''); } };
+    if (wOn) wOn.addEventListener('change', () => {
+      const next = !!wOn.checked;
+      if (!(access.config && access.config.setWorkshop)) { setWMsg('away workshop unavailable', false); wOn.checked = !next; return; }
+      const ok = access.config.setWorkshop(a && a.id, next);
+      if (ok === false) { setWMsg('could not update this agent', false); sfx('bad'); wOn.checked = !next; return; }
+      sfx('click');
+      setWMsg(next ? 'on — this agent can build in its sandbox while you’re away' : 'off — this agent stays idle while you’re away', true);
+    });
   }
 
   // header wiring (present on EVERY tab, so it lives here rather than in a per-tab wire): the rename affordance

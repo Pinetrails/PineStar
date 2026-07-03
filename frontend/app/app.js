@@ -170,6 +170,10 @@ const App = (() => {
       if (typeof patch.approvalMode === 'string') {
         agent.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
       }
+      // Away-workshop grant (W3): a plain per-agent consent flag. NOT a system-prompt field — it only
+      // changes what an autonomous run is allowed to WRITE inside its own jail. Reaches the sidecar via
+      // pushRoster (below) so the consent broker can honor it; the backend lane (W1) reads it there.
+      if (typeof patch.workshop === 'boolean') agent.workshop = patch.workshop;
     }
     if (typeof DossierStore !== 'undefined') DossierStore.syncDocs(d);   // seed the dossier from any newly-authored onboarding doc (first-seed-wins per doc) BEFORE the recompose
     agent.systemPrompt = composeSystemPrompt(agent);
@@ -201,6 +205,19 @@ const App = (() => {
       if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
     }
     pushRoster();   // the pin reaches the sidecar roster (honored by runOnce + cron)
+    persist();
+    return true;
+  }
+
+  // W3 per-agent AWAY-WORKSHOP grant: flip the "build things while I'm away" consent for this agent.
+  // Writes a.workshop, then pushRoster() so the sidecar roster carries the grant (the consent broker /
+  // away-work driver — W1/W2 — read it there). Persists so the toggle survives reload. A recorded yes,
+  // same durability as the model pin — never a silent default.
+  function setAgentWorkshop(agentId, enabled) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return false;
+    a.workshop = !!enabled;
+    pushRoster();
     persist();
     return true;
   }
@@ -362,7 +379,7 @@ const App = (() => {
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, provider: a.provider || null, reasoningEffort: a.reasoningEffort || null, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
-             approvalMode: a.approvalMode || 'ask', purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
+             approvalMode: a.approvalMode || 'ask', workshop: !!a.workshop, purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
              skills: Array.isArray(a.skills) ? a.skills.slice() : [],   // Class Loadouts S1: per-agent skill package persists
              stats: a.stats || null, createdAt: a.createdAt };
   }
@@ -375,7 +392,7 @@ const App = (() => {
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   provider: s.provider || (agent && agent.provider) || null, reasoningEffort: s.reasoningEffort || (agent && agent.reasoningEffort) || null,   // #4: per-agent provider+effort (fall back to the hero's)
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
-                  approvalMode: s.approvalMode || 'ask', purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  approvalMode: s.approvalMode || 'ask', workshop: !!s.workshop, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   skills: Array.isArray(s.skills) ? s.skills.slice() : [],   // Class Loadouts S1: restore the per-agent skill package
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
@@ -669,6 +686,7 @@ const App = (() => {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+        workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
       lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
       return lastRosterPush;
@@ -1465,7 +1483,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3)
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }
