@@ -21,10 +21,8 @@
    NO U.bus emits. Self-persists a tiny "shown this session / declined-later" ledger to its own key
    (rides the backup prefix like returnstore/mintstore) — no save.js change. node-exportable for its test.
 
-   DEV STUB (frontend-only, removable): when the backend routes aren't live yet, ?workshopstub=1 (or
-   localStorage 'starnet.workshop.devstub'='1') makes the fetch layer return a canned manifest and accept
-   decisions in-memory, so the return-card UI can be verified against the PINNED contract shape before the
-   W1/W2 backend lands. Guarded + clearly marked; it is a no-op the moment a real backend answers. */
+   The W1/W2 backend is LIVE on trunk (routes /api/workshop/grant|queue|pending|decide|shift|backlog), so
+   this store talks to the real sidecar only — no dev stub. */
 'use strict';
 const WorkshopStore = (() => {
   const KEY = 'starnet.workshop.v1';
@@ -45,41 +43,24 @@ const WorkshopStore = (() => {
   }
   const ready = () => !!state;
 
-  // ---- dev stub (frontend fetch layer only — see header) ----
-  function stubOn() {
-    try {
-      if (typeof localStorage !== 'undefined' && localStorage.getItem('starnet.workshop.devstub') === '1') return true;
-      if (typeof location !== 'undefined' && /(?:^|[?&])workshopstub=1(?:&|$)/.test(location.search)) return true;
-    } catch (_) {}
-    return false;
-  }
-  let STUB = null;   // lazily-built in-memory pending list when the stub is on
-  function stubPending() {
-    if (!STUB) STUB = [{
-      v: 1, runId: 'stub-run-1', agentId: 'agent', backlogId: 'stub-backlog-1',
-      title: 'CSV → JSON converter', kind: 'tool',
-      summary: 'A small Node script that reads a CSV file and writes the same rows as pretty-printed JSON.',
-      files: [ { path: 'convert.js', bytes: 812 }, { path: 'README.md', bytes: 240 } ],
-      howToUse: 'Run `node convert.js input.csv > out.json` from the folder.',
-      notVerified: ['edge cases with quoted commas untested'],
-      verified: null
-    }];
-    return STUB.slice();
-  }
-
   // ---- reads ----
   // undecided manifests the Commander hasn't acted on. Filters out anything they said "Later" to this
   // session (anti-nag) and anything already shown this session (poll-race guard). Fail-open to [].
+  // which agents to poll for pending deliverables. The backend keys the backlog per-agent and requires an
+  // explicit ?agent=<id>, so we ask for each live agent (the hero + any crew) and flatten. deps.agentIds()
+  // is injected by app.js; absent → just the hero.
+  function agentIds() { try { const a = deps.agentIds ? deps.agentIds() : null; return (Array.isArray(a) && a.length) ? a : ['agent']; } catch (_) { return ['agent']; } }
+
   async function fetchPending() {
     let list = [];
-    if (stubOn()) { list = stubPending(); }
-    else {
+    for (const id of agentIds()) {
       try {
-        const r = await fetch('/api/workshop/pending', { cache: 'no-store' });
-        if (!r.ok) return [];
+        const r = await fetch('/api/workshop/pending?agent=' + encodeURIComponent(id), { cache: 'no-store' });
+        if (!r.ok) continue;
         const j = await r.json();
-        list = Array.isArray(j) ? j : (j && Array.isArray(j.pending) ? j.pending : []);
-      } catch (_) { return []; }
+        const arr = Array.isArray(j) ? j : (j && Array.isArray(j.pending) ? j.pending : []);
+        for (const m of arr) { if (m && m.runId) { if (!m.agentId) m.agentId = id; list.push(m); } }
+      } catch (_) { /* fail-open: this agent just contributes nothing */ }
     }
     if (!ready()) state = hydrate(load());
     return list.filter(m => m && m.runId && !state.later[m.runId] && state.seen.indexOf(m.runId) === -1);
@@ -89,19 +70,25 @@ const WorkshopStore = (() => {
   // queue an idea for an agent to build while away. item: { agentId, text, sourceType, sourceId? }.
   // Returns { ok, error? }. Never throws — the caller shows a one-line notice off the result.
   async function queue(item) {
+    const text = String((item && item.text) || '').trim();
+    // PINNED-contract → live backend shape: the sidecar's /api/workshop/queue takes { agentId, title,
+    // detail?, source: 'quest'|'queued', id? }. Our callers speak {text, sourceType, sourceId}; map here so
+    // the entry points stay simple. 'quest' is the only special source; everything else is a plain queued idea.
     const body = {
       agentId: (item && item.agentId) || 'agent',
-      text: String((item && item.text) || '').trim(),
-      sourceType: (item && item.sourceType) || 'text',
-      sourceId: (item && item.sourceId) || null
+      title: text,
+      source: ((item && item.sourceType) === 'quest') ? 'quest' : 'queued'
     };
-    if (!body.text) return { ok: false, error: 'nothing to build' };
-    if (stubOn()) return { ok: true, stub: true };
+    if (item && item.sourceId) body.id = String(item.sourceId).replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 64);
+    if (!text) return { ok: false, error: 'nothing to build' };
     try {
       const r = await fetch('/api/workshop/queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => null);
-      if (r.ok && j && j.ok !== false) return { ok: true };
-      return { ok: false, error: (j && j.error) || 'queue failed' };
+      // ok:true → added/exists (already-queued is a benign success). ok:false → duplicate/discarded/not-granted:
+      // surface the backend's own plain, anti-retry message so we never re-queue the same thing.
+      if (r.ok && j && j.ok === true) return { ok: true, reason: j.reason };
+      if (r.ok && j && j.ok === false) return { ok: false, error: j.message || 'already handled' };
+      return { ok: false, error: (j && (j.error || j.message)) || 'queue failed' };
     } catch (_) { return { ok: false, error: 'queue error' }; }
   }
 
@@ -116,10 +103,6 @@ const WorkshopStore = (() => {
     save();
     const body = { agentId: agentId || 'agent', runId: runId, decision: decision };
     if (decision === 'keep' && destPath) body.destPath = destPath;
-    if (stubOn()) {
-      if (STUB) STUB = STUB.filter(m => m.runId !== runId);
-      return { ok: true, stub: true, destPath: body.destPath };
-    }
     try {
       const r = await fetch('/api/workshop/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => null);
@@ -128,18 +111,17 @@ const WorkshopStore = (() => {
     } catch (_) { return { ok: false, error: 'decision failed to reach the station' }; }
   }
 
-  // read a file inside the deliverable for the viewer, via the existing jailed fs read route. Fail-open to ''.
+  // read a file inside the deliverable for the viewer, via the EXISTING jailed read-only route /api/file
+  // (resolveInside proves the path can't escape the agent's workspace). The deliverable's files are relative
+  // to the run dir, so we prefix workshop/<runId>/. Auth: the hardened window.fetch (harness.js) attaches the
+  // per-launch token header to every /api/ URL, so we don't hand-append ?token= here. Fail-open to '' so a
+  // missing/edited file never throws.
   async function readFile(agentId, runId, relPath) {
-    if (stubOn()) {
-      const canned = { 'convert.js': "const fs=require('fs');\n// reads a CSV, writes JSON\n// (dev-stub sample content)\n", 'README.md': '# CSV to JSON\n\nRun `node convert.js input.csv`.\n' };
-      return canned[relPath] || '(no preview)';
-    }
     try {
-      const qs = 'agent=' + encodeURIComponent(agentId || 'agent') + '&runId=' + encodeURIComponent(runId) + '&path=' + encodeURIComponent(relPath);
-      const r = await fetch('/api/workshop/file?' + qs, { cache: 'no-store' });
+      const rel = 'workshop/' + runId + '/' + relPath;
+      const url = '/api/file?agent=' + encodeURIComponent(agentId || 'agent') + '&path=' + encodeURIComponent(rel);
+      const r = await fetch(url, { cache: 'no-store' });
       if (!r.ok) return '';
-      const ct = (r.headers.get('content-type') || '');
-      if (ct.indexOf('application/json') >= 0) { const j = await r.json().catch(() => null); return (j && typeof j.content === 'string') ? j.content : ''; }
       return await r.text();
     } catch (_) { return ''; }
   }
@@ -166,7 +148,7 @@ const WorkshopStore = (() => {
   // init({ enabled, desktopDefault }) — called from enterGame. enabled:false (the awakening) skips the beat.
   function init(opts) {
     opts = opts || {};
-    deps = { desktopDefault: opts.desktopDefault };
+    deps = { desktopDefault: opts.desktopDefault, agentIds: opts.agentIds };
     state = hydrate(load());
     if (opts.enabled !== false) setTimeout(() => { maybePresent().catch(() => {}); }, ATTACH_DELAY_MS);
   }
@@ -174,7 +156,7 @@ const WorkshopStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, readFile, desktopDefault, fetchPending, reset, _hydrate: hydrate, _stubOn: stubOn };
+  return { init, queue, decide, readFile, desktopDefault, fetchPending, reset, _hydrate: hydrate };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };
