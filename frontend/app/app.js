@@ -210,16 +210,27 @@ const App = (() => {
   }
 
   // W3 per-agent AWAY-WORKSHOP grant: flip the "build things while I'm away" consent for this agent.
-  // Writes a.workshop, then pushRoster() so the sidecar roster carries the grant (the consent broker /
-  // away-work driver — W1/W2 — read it there). Persists so the toggle survives reload. A recorded yes,
-  // same durability as the model pin — never a silent default.
+  // The AUTHORITY is the sidecar: POST /api/workshop/grant records the grant server-side (workshopStore)
+  // AND arms/disarms the agent's unattended "workshop shift" cron routine — pushRoster alone does NEITHER
+  // (the roster ingest drops the workshop field), so without this POST the toggle would be a silent no-op:
+  // the shift would never fire. We write a.workshop locally + pushRoster (so the away-driver's dossier still
+  // sees the flag) + persist for reload, but the RETURNED promise resolves off the real route so the toggle
+  // never asserts a grant the harness didn't record (truthful telemetry). Optimistic caller reverts on false.
   function setAgentWorkshop(agentId, enabled) {
     const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
-    if (!a) return false;
-    a.workshop = !!enabled;
+    if (!a) return Promise.resolve(false);
+    const on = !!enabled;
+    a.workshop = on;
     pushRoster();
     persist();
-    return true;
+    return fetch('/api/workshop/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: a.id, on: on }) })
+      .then(r => r.json().catch(() => null))
+      .then(j => {
+        const ok = !!(j && j.ok);
+        if (!ok) { a.workshop = !on; pushRoster(); persist(); }   // revert local truth: the station didn't record it
+        return ok;
+      })
+      .catch(() => { a.workshop = !on; pushRoster(); persist(); return false; });
   }
 
   // Rename an agent from its dossier. The name is DISPLAY identity only — the agentId (the `agents` Map key, the
@@ -1656,7 +1667,7 @@ const App = (() => {
     // /api/workshop/pending and hand the oldest undecided manifest to Chat.workshopReturn — the same
     // one-post-run-beat slot the digest rides. Keep/Later/Discard route back through WorkshopStore.decide.
     // Init AFTER Chat.init so the beat can render.
-    if (typeof WorkshopStore !== 'undefined') WorkshopStore.init({ enabled: !opts.awaitingPurpose });
+    if (typeof WorkshopStore !== 'undefined') WorkshopStore.init({ enabled: !opts.awaitingPurpose, agentIds: () => liveAgents().map(a => a.id) });
     // CRON SESSIONS: surface each unattended routine run as a readable session — cron.fire adds a busy rail row
     // (no focus-steal), cron.result folds the run's durable 'cron-<runId>' transcript into it, and a boot backfill
     // recovers sessions for routines that finished while the browser was closed. Read-only on U.bus. Init AFTER

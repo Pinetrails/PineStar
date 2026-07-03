@@ -1244,10 +1244,17 @@ const StationUI = (() => {
     if (wOn) wOn.addEventListener('change', () => {
       const next = !!wOn.checked;
       if (!(access.config && access.config.setWorkshop)) { setWMsg('away workshop unavailable', false); wOn.checked = !next; return; }
-      const ok = access.config.setWorkshop(a && a.id, next);
-      if (ok === false) { setWMsg('could not update this agent', false); sfx('bad'); wOn.checked = !next; return; }
+      // OPTIMISTIC then TRUTHFUL: show the intent immediately, but the switch only stays flipped if the sidecar
+      // actually recorded the grant (POST /api/workshop/grant). setWorkshop resolves to that real result; on
+      // failure we revert the checkbox + say so, so the UI never asserts a grant the harness didn't record.
+      wOn.disabled = true;
       sfx('click');
-      setWMsg(next ? 'on — this agent can build in its sandbox while you’re away' : 'off — this agent stays idle while you’re away', true);
+      setWMsg(next ? 'saving…' : 'saving…', true);
+      Promise.resolve(access.config.setWorkshop(a && a.id, next)).then(ok => {
+        wOn.disabled = false;
+        if (!ok) { setWMsg('could not save that — the station didn’t record it', false); sfx('bad'); wOn.checked = !next; return; }
+        setWMsg(next ? 'on — this agent can build in its sandbox while you’re away' : 'off — this agent stays idle while you’re away', true);
+      });
     });
   }
 
