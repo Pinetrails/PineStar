@@ -156,6 +156,7 @@
       category: normCategory(r.category),             // browse bucket
       source: normSource(r.source, 'builtin'),        // provenance
       forkedFrom: r.forkedFrom != null ? String(r.forkedFrom) : null,
+      sourceRunId: r.sourceRunId != null ? String(r.sourceRunId) : null,   // R5: the interactive run this was bottled from (null for the catalog)
       custom: false
     });
   }
@@ -234,6 +235,9 @@
       // neither field → normSource falls back to 'custom'. forkedFrom is only meaningful on a fork.
       source: normSource(r.source, 'custom'),
       forkedFrom: r.forkedFrom != null ? String(r.forkedFrom) : null,
+      // R5 "Bottle a run": a custom minted from a completed interactive run carries that run's id (the agent-skill
+      // sourceRunId pattern) — honest provenance for a bottled recipe. A hand-authored / forked save leaves it null.
+      sourceRunId: r.sourceRunId != null ? String(r.sourceRunId) : null,
       custom: true,
       // G3a seed callouts: a recipe the AGENT authored from an observed pattern (seedstore.save) carries this
       // durable flag, so a later pitch/suggestion/digest that reuses it can CREDIT the Commander's saved seed.
@@ -325,6 +329,7 @@
       category: over.category || null,
       source: over.source || null,
       forkedFrom: over.forkedFrom != null ? over.forkedFrom : null,
+      sourceRunId: over.sourceRunId != null ? over.sourceRunId : null,   // R5: carried through so a bottled run keeps its provenance on save
       seedborn: !!over.seedborn   // carried through so an agent-authored seed keeps its provenance on save
     };
   }
@@ -346,6 +351,84 @@
       gear: (r.gear || []).slice(), skills: (r.skills || []).slice(),
       cadence: r.cadence || null, category: r.category || null,
       source: 'fork', forkedFrom: r.id
+    });
+  }
+
+  /* R5 "Bottle a run" — mint a DRAFT custom recipe from a completed interactive run's DIRECTIVE. Pure +
+     deterministic + node-testable (the beat's decide-half lives in bottlestore.js; this is its templating half).
+     Agent-side templating is out of scope, so we derive everything with honest heuristics:
+       • NAME   — the first few meaningful words of the directive, Title-Cased (stopwords trimmed off the front).
+       • TASK   — the directive VERBATIM, except obvious parameter candidates are wrapped in {tokens} so the R2
+                  editor's paramsFromTemplate() surfaces them as fill-ins. Zero candidates is fine — a one-tap recipe.
+       • PARAMS — derived from those {tokens} (so the editor opens with the fill-in grid pre-populated).
+     Parameter candidates (kept SIMPLE + honest): "double-quoted"/'single-quoted' strings and http(s) URLs. Each
+     distinct candidate becomes one param, keyed topic/topic2/… (quotes) or url/url2/… (links). We NEVER invent a
+     value the user didn't type; a directive with none yields a faithful one-tap recipe. The draft is unsaved
+     (no id, custom not set) and stamped source:'custom' + sourceRunId — the caller opens the R2 editor on it and
+     the user confirms/edits/saves. Returns null for an empty/whitespace directive (nothing real to bottle). */
+  const NAME_STOP = { the: 1, a: 1, an: 1, please: 1, kindly: 1, could: 1, can: 1, you: 1, i: 1, we: 1, let: 1, lets: 1, "let's": 1, my: 1, our: 1, this: 1, that: 1, go: 1, now: 1 };
+  function deriveName(directive) {
+    // first line only (a multi-line directive names off its headline), words → drop leading stopwords → take up to 5.
+    const firstLine = String(directive || '').split(/\r?\n/)[0] || '';
+    const words = firstLine.replace(/[`"'*_>#]/g, ' ').split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < words.length && NAME_STOP[words[i].toLowerCase().replace(/[^a-z']/g, '')]) i++;
+    const picked = words.slice(i, i + 5).map(w => w.replace(/[^\w'-]+$/, ''));   // trim trailing punctuation
+    const name = picked.join(' ').trim();
+    if (!name) return 'My Recipe';
+    return name.replace(/\b\w/g, c => c.toUpperCase()).slice(0, 48);
+  }
+  function mintFromRun(directive, opts) {
+    const text = String(directive == null ? '' : directive);
+    if (!text.trim()) return null;                    // no real directive → nothing honest to bottle
+    opts = opts || {};
+    // find parameter candidates in ORDER of appearance, de-duped by their literal value. Quoted strings first
+    // (topic-shaped), then bare URLs (url-shaped). We wrap each in a {token} in the task template.
+    const params = [];                                // { key, raw, label }
+    const seen = {};
+    let quoteN = 0, urlN = 0;
+    // quoted strings: "…" or '…' (non-empty, no embedded newline). The captured inner value is the substitution.
+    const QUOTE_RE = /"([^"\n]+)"|'([^'\n]+)'/g;
+    // bare URLs not already inside quotes (those are handled above; a quoted URL becomes a topic param, fine).
+    const URL_RE = /\bhttps?:\/\/[^\s"'<>)\]]+/g;
+    let out = text, m;
+    // pass 1 — quotes. Rebuild the string so replacements don't shift subsequent match indices.
+    let rebuilt = '', cursor = 0;
+    while ((m = QUOTE_RE.exec(text)) !== null) {
+      const inner = (m[1] != null ? m[1] : m[2]);
+      rebuilt += text.slice(cursor, m.index);
+      cursor = m.index + m[0].length;
+      if (Object.prototype.hasOwnProperty.call(seen, inner)) { rebuilt += '{' + seen[inner] + '}'; continue; }
+      const key = quoteN === 0 ? 'topic' : 'topic' + (quoteN + 1); quoteN++;
+      seen[inner] = key;
+      params.push({ key: key, raw: inner, label: humanize(key) });
+      rebuilt += '{' + key + '}';
+    }
+    rebuilt += text.slice(cursor);
+    out = rebuilt;
+    // pass 2 — URLs, over the quote-substituted string (so a quoted URL isn't double-wrapped).
+    rebuilt = ''; cursor = 0;
+    while ((m = URL_RE.exec(out)) !== null) {
+      const raw = m[0];
+      rebuilt += out.slice(cursor, m.index);
+      cursor = m.index + m[0].length;
+      if (Object.prototype.hasOwnProperty.call(seen, raw)) { rebuilt += '{' + seen[raw] + '}'; continue; }
+      const key = urlN === 0 ? 'url' : 'url' + (urlN + 1); urlN++;
+      seen[raw] = key;
+      params.push({ key: key, raw: raw, label: humanize(key) });
+      rebuilt += '{' + key + '}';
+    }
+    rebuilt += out.slice(cursor);
+    const task = rebuilt.trim();
+    return draft({
+      name: deriveName(text),
+      emoji: '✦',
+      task: task,
+      // fill-in grid pre-populated from the detected candidates (placeholder = the value the user actually typed,
+      // so the editor shows a concrete example). Empty → a one-tap recipe (paramsFromTemplate finds no tokens).
+      params: params.map(p => ({ key: p.key, label: p.label, placeholder: p.raw, required: true })),
+      source: 'custom',
+      sourceRunId: opts.runId != null ? String(opts.runId) : null
     });
   }
 
@@ -384,6 +467,6 @@
   return {
     TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES,
     list, builtins, customs: customList, get, exists,
-    fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, saveCustom, removeCustom, impliesOutbound
+    fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound
   };
 });

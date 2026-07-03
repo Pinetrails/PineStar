@@ -266,4 +266,49 @@ const sendy = R.saveCustom({ name: 'Sendy', task: 'Post the update to the channe
 A.ok(R.impliesOutbound(sendy.id), 'a task that says "post" implies outbound');
 R.removeCustom(sendy.id);
 
+/* ---------- R5: mintFromRun() — bottle a completed run's directive into a draft custom recipe ---------- */
+// an empty / whitespace directive has nothing honest to bottle.
+A.eq(R.mintFromRun(''), null, 'mintFromRun of an empty directive is null');
+A.eq(R.mintFromRun('   \n  '), null, 'mintFromRun of whitespace-only is null');
+
+// a plain directive with NO parameter candidates → a faithful one-tap recipe (task verbatim, zero params).
+const plain = R.mintFromRun('Summarize my open pull requests and flag the risky ones.', { runId: 'run-1' });
+A.ok(plain, 'mintFromRun returns a draft for a real directive');
+A.eq(plain.source, 'custom', 'a bottled draft is provenance custom');
+A.eq(plain.sourceRunId, 'run-1', 'the draft carries the run it was bottled from');
+A.eq(plain.params.length, 0, 'a directive with no quoted strings / URLs yields a one-tap recipe (zero params)');
+A.eq(plain.task, 'Summarize my open pull requests and flag the risky ones.', 'the task is the directive verbatim when no candidates are found');
+A.ok(!plain.id && plain.custom !== true, 'the draft is unsaved (no id, custom not set — the editor confirm saves it)');
+A.ok(/^[A-Z]/.test(plain.name) && plain.name.length > 0, 'a name is derived (Title-Cased): ' + plain.name);
+
+// a quoted string becomes a {topic} fill-in; the raw value rides along as the placeholder (a concrete example).
+const quoted = R.mintFromRun('Research "quantum computing" and write me a brief.', { runId: 'run-2' });
+A.eq(quoted.params.length, 1, 'one quoted string → one param');
+A.eq(quoted.params[0].key, 'topic', 'the first quoted candidate keys as topic');
+A.eq(quoted.params[0].placeholder, 'quantum computing', 'the param placeholder is the value the user actually typed');
+A.ok(quoted.task.indexOf('{topic}') >= 0, 'the quoted value is wrapped in a {topic} token in the task template');
+A.ok(quoted.task.indexOf('"quantum computing"') < 0, 'the literal quoted value no longer appears (it became a token)');
+// the wrapped token round-trips through fillTask (the derived param actually drives the launch).
+const qSaved = R.saveCustom(quoted);
+A.eq(R.fillTask(qSaved.id, { topic: 'gene editing' }), 'Research gene editing and write me a brief.', 'the bottled recipe fills its derived {topic} param on launch');
+A.eq(R.get(qSaved.id).sourceRunId, 'run-2', 'a saved bottled recipe persists its sourceRunId');
+R.removeCustom(qSaved.id);
+
+// a URL becomes a {url} fill-in.
+const urly = R.mintFromRun('Watch https://example.com/feed and ping me on changes.', { runId: 'run-3' });
+A.eq(urly.params.length, 1, 'one URL → one param');
+A.eq(urly.params[0].key, 'url', 'a bare URL keys as url');
+A.eq(urly.params[0].placeholder, 'https://example.com/feed', 'the URL param placeholder is the real URL');
+A.ok(urly.task.indexOf('{url}') >= 0, 'the URL is wrapped in a {url} token');
+
+// multiple distinct candidates → distinct keys (topic, topic2, url); a repeated value reuses its first token.
+const multi = R.mintFromRun('Compare "alpha" with "beta", then also brief me on "alpha" from https://x.io/a.', { runId: 'run-4' });
+const keys = multi.params.map(p => p.key);
+A.eq(keys, ['topic', 'topic2', 'url'], 'distinct candidates get distinct keys; a repeated value reuses its first token: ' + JSON.stringify(keys));
+A.eq((multi.task.match(/\{topic\}/g) || []).length, 2, 'the repeated "alpha" reuses the SAME {topic} token both times');
+
+// a leading stopword is trimmed off the derived name (concrete headline, not "Please…").
+const named = R.mintFromRun('Please review the auth module for security bugs.', { runId: 'run-5' });
+A.ok(/^Review/i.test(named.name), 'the derived name trims a leading stopword ("Please"): ' + named.name);
+
 A.report('recipes');

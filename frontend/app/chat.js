@@ -876,6 +876,13 @@ const Chat = (() => {
     // ONE style-dim study proposal (Commander consistently likes/dislikes <archetype> work), surfaced at the same
     // one beat. The archetype is classified from the run's directive (RUN_META.title). Fail-open.
     try { const rm = runMeta(runId); maybeTasteBeat(agentId, runId, rm && rm.title, verdict); } catch (_) {}
+    // R5 "BOTTLE A RUN": a 👍 ('great') verdict on a real interactive run (not recipe-launched, not cron) may earn a
+    // one-time "bottle it as a recipe?" offer — SAME direct hand-off (this verdict never rides the bus). BottleStore
+    // gates on the run's honest info (via App.runBottleInfo → RUN_META) and defers behind the shared beat slot; it
+    // mints nothing here (the editor confirm does that). Fail-open — a bottle offer is never load-bearing. Placed
+    // AFTER the taste beat so this verdict's other one-beat consumers keep their precedence; BottleStore's own slot
+    // guards (busy / a live rate|turn-in control) already stop it from stacking on any beat still on screen.
+    if (typeof BottleStore !== 'undefined' && BottleStore.onVerdict) { try { BottleStore.onVerdict(runId, verdict, agentId || 'agent'); } catch (_) {} }
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   function workRateControl(host, agentId, runId, onSettle) {
@@ -2964,6 +2971,9 @@ const Chat = (() => {
 
   async function send(text, opts) {
     const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
+    // R5 "Bottle a run": did THIS directive come from a recipe launch? launchRecipe() passes fromRecipe:true. A
+    // recipe-launched run must NEVER be offered for bottling (it already IS a recipe) — recorded in RUN_META below.
+    const fromRecipe = !!(opts && opts.fromRecipe);
     // GOAL LOOP: is THIS turn a loop-driven continuation (kickGoal) rather than a real user message? A real user
     // message mid-loop PREEMPTS the loop; a continuation is judged and may fire the next one. Captured here so the
     // teardown routes correctly even if the active loop is paused/cleared mid-run.
@@ -3091,7 +3101,7 @@ const Chat = (() => {
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is
@@ -3408,6 +3418,9 @@ const Chat = (() => {
   // read-only lookup of a run's start-time metadata ({ isTask, title }) by runId, or null. Used by the proactive
   // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
   function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
+  // read-only: did this run do REAL work (>=1 successful tool call OR >=1 delivered product)? The same "real work
+  // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
+  function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, awayDigest, awayReview };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, runDidWork, awayDigest, awayReview };
 })();

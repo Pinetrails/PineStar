@@ -588,9 +588,42 @@ const App = (() => {
     const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission') : null;
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);   // make the new stream the compose target before sending
     refreshUsage(); renderRail();
-    if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text);   // kicks off the run on the fresh stream
+    // fromRecipe marks this run as recipe-launched so R5 "Bottle a run" never offers to re-bottle a recipe (it
+    // already IS one). chat.js records it into RUN_META at onRunId; BottleStore reads it via runBottleInfo below.
+    if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text, { fromRecipe: true });   // kicks off the run on the fresh stream
     persist();
     return true;
+  }
+
+  // R5 "BOTTLE A RUN" — the honest facts BottleStore gates on for a given run, read from chat.js's RUN_META (the
+  // directive + isTask + recipe provenance recorded at run start) plus Chat.runDidWork (real tool-work / delivery).
+  // A run with no meta (unknown id) reports nothing bottle-worthy. cron/unattended runs never flow through the
+  // interactive rateWork path, so cron:false here is honest — the guard is belt-and-braces for a future caller.
+  function runBottleInfo(runId) {
+    const m = (typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null;
+    if (!m) return null;
+    return {
+      isTask: !!m.isTask,
+      fromRecipe: !!m.fromRecipe,
+      cron: false,
+      directive: m.directive || m.title || '',
+      didWork: (typeof Chat !== 'undefined' && Chat.runDidWork) ? Chat.runDidWork(runId) : false
+    };
+  }
+  // R5 — open the R2 recipe editor PRE-FILLED with a bottled-run proposal (Recipes.mintFromRun draft). Nothing
+  // auto-saves; the user confirms/edits/saves in the editor. Routes through the RECIPES tab of the bay, seeding the
+  // mint via ctx.recipeMint (the additive seed the marketplace editor reads on open).
+  function openBottleEditor(proposal) {
+    if (typeof Marketplace === 'undefined' || !agent || !proposal) return;
+    SFX.click();
+    Marketplace.open({
+      mode: 'deploy',
+      tab: 'recipes',
+      recipeMint: proposal,                 // ← the R2 editor opens pre-filled from this draft (additive ctx seed)
+      agentName: agent.name,
+      notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
+      onLaunch: launchRecipe
+    });
   }
 
   // push the live agent identity (the run agentId + composed system prompt) to the sidecar so any connected
@@ -1343,6 +1376,7 @@ const App = (() => {
     if (typeof PrideStore !== 'undefined') PrideStore.reset();   // …and a brand-new station record — a fresh Commander founds their OWN colony, inheriting no prior hero's lifetime tasks/deliverables/routines/founding-date (own key)
     if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
     if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
+    if (typeof BottleStore !== 'undefined') BottleStore.reset();   // …and R5's per-run bottle-decision denylist clears — a fresh hero re-earns every "bottle it?" offer (own key)
     if (typeof TrustStore !== 'undefined') TrustStore.reset();   // GROWTH Tier 3: …and a fresh EARNED-AUTONOMY track record — a new Commander never inherits the prior hero's earned rungs / declined-offer state / streak (own key); the earned dial rung must be re-earned from scratch
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
@@ -1532,6 +1566,10 @@ const App = (() => {
     // G3a CONFIDENCE NARRATIVE: two fire-once spoken moments in the hero's reliability arc (calibration
     // complete + TRUSTED). Init AFTER XpStore so its memory.feedback hook sees an already-folded meter.
     if (typeof ConfBeats !== 'undefined') ConfBeats.init({ getStats: () => { const a = agents.get('agent'); return a ? a.stats : null; } });
+    // R5 "BOTTLE A RUN": the post-run offer to save a 👍-rated interactive run as a custom recipe. Fed a DIRECT
+    // verdict from chat.js rateWork (like ConfBeats); reads each run's honest facts via runBottleInfo and opens the
+    // R2 editor pre-filled on "bottle it". Shares the one post-run beat slot (Chat.nudge) — never stacks an ask.
+    if (typeof BottleStore !== 'undefined') BottleStore.init({ openEditor: openBottleEditor, runInfo: runBottleInfo });
     // SELF-INITIATION (Slice 2): the agent proposes recurring standing JOBS grounded in the dossier → the Commander
     // approves → each becomes a scheduled cron routine (POST /api/cron, the same endpoint the ROUTINES panel uses).
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.init({
