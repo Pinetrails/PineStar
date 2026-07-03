@@ -43,6 +43,8 @@ const { makeTranscriptStore } = require('./transcriptstore.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
 const { makeCredPool } = require('./credpool.js');
 const { resolveTools } = require('./capability/resolve.js');
+const { CAP_REGISTRY } = require('./capability/registry.js');
+const { toolsetRows, toggleableCaps } = require('./capability/toolsets.js');   // TOOLSETS console: capId families derived from CAP_REGISTRY
 const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
@@ -1263,6 +1265,40 @@ const connectors = makeConnectorManager({
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
+/* ---- TOOLSETS kill-switch store (the Hermes-style "toolsets" surface): a per-capId-FAMILY on/off flag
+   layered on top of object=capability. available = the granting object is placed AND the toolset is enabled.
+   Default = enabled for every family; we only PERSIST the ones a user explicitly turned OFF (a sparse
+   { capId:false } map), so a fresh install is byte-identical to no file and adding a new family never needs a
+   migration. `compute` is NEVER in this map (the COMPUTE GATE freebie — resolveTools ignores it, and the
+   toggle route refuses it). Same durable sibling-file idiom as connectors/cron (temp->fsync->rename + .bak).
+   Lives in the PROTECTED WORKSPACES dir so the agent's own fs.* tools can't reach in and re-grant itself. */
+const TOOLSETS_FILE = path.join(WORKSPACES, 'toolsets.json');
+const TOGGLEABLE_CAPS = toggleableCaps(CAP_REGISTRY);   // the only capIds a switch may target
+function loadToolsetState() {
+  try {
+    const raw = loadResilient(TOOLSETS_FILE, 'toolsets');
+    const src = (raw && raw.disabled && typeof raw.disabled === 'object') ? raw.disabled : {};
+    const out = {};
+    // fail-safe: only honour KNOWN toggleable capIds set explicitly to false; ignore compute / junk keys.
+    for (const c of TOGGLEABLE_CAPS) { if (src[c] === false) out[c] = false; }
+    return out;
+  } catch (_) { return {}; }   // unrecoverable -> everything enabled (fail OPEN: a broken flag never silently strips tools)
+}
+let toolsetDisabled = loadToolsetState();   // { capId: false } for OFF families (absent = ON)
+function saveToolsetState() {
+  try {
+    const disabled = {};
+    for (const c of TOGGLEABLE_CAPS) { if (toolsetDisabled[c] === false) disabled[c] = false; }
+    saveResilient(TOOLSETS_FILE, { version: 1, disabled });   // fsync-durable + .bak last-known-good
+  } catch (e) { console.warn('[toolsets] persist failed:', (e && e.message) || e); }
+}
+// the disabledCaps view resolveTools consumes: a live snapshot of OFF families (compute can never appear).
+function disabledCapsSet() {
+  const s = {};
+  for (const c of TOGGLEABLE_CAPS) { if (toolsetDisabled[c] === false) s[c] = true; }
+  return s;
+}
+
 /* ---- cron / scheduled routines store + tick driver (CRON Commit 4b). The job DEFINITIONS persist in a
    PROTECTED sibling of the fs jail (WORKSPACES/cron.jobs.json, the allowlist idiom above: versioned envelope,
    atomic + DURABLE temp->fsync->rename + .bak last-known-good (G4.2: no double-fire on a crash in the
@@ -1741,6 +1777,8 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/toolsets') === 0) return handleToolsetsList(req, res);
+  if (req.method === 'POST' && req.url.indexOf('/api/toolsets/') === 0) return handleToolsetToggle(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/slash/catalog') === 0) return serveSlashCatalog(req, res);
   if (req.method === 'POST' && req.url === '/api/slash/dispatch') return handleSlashDispatch(req, res);
   if (req.method === 'POST' && req.url === '/api/skills/toggle') return handleSkillToggle(req, res);
@@ -2229,6 +2267,48 @@ async function handleSetKey(req, res) {
   const baseUrl = providerRuntimeBaseUrl(id, '');
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   return res.end(JSON.stringify({ ok: true, provider: id, configured: providerHasCredential(id, key, baseUrl) }));
+}
+
+/* ---- /api/toolsets: the TOOLSETS console. GET lists every toggleable capId family (DERIVED from CAP_REGISTRY,
+   never a hand-kept parallel list) with its enabled flag, the granting objectType, its tools, a consent summary,
+   and whether that object is PLACED anywhere on the station (the client passes ?placed=<types> — the same
+   station-wide placement source SKILLS uses; we never guess). POST /api/toolsets/:id { enabled } flips the
+   persisted kill-switch and applies LIVE (the next resolveTools call reflects it). `compute` is refused. ---- */
+function handleToolsetsList(req, res) {
+  let placedTypes = [];
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    placedTypes = placedTypesFrom(u.searchParams.get('placed') || '');
+  } catch (_) {}
+  const placedSet = {}; for (const t of placedTypes) placedSet[t] = true;
+  const rows = toolsetRows(CAP_REGISTRY).map(r => ({
+    id: r.id,
+    label: r.label,
+    glyph: r.glyph,
+    desc: r.desc,
+    object: r.object,                         // the objectType that must be placed to grant this family
+    tools: r.tools,
+    toolCount: r.tools.length,
+    enabled: toolsetDisabled[r.id] !== false, // default ON; only false when explicitly persisted OFF
+    placed: !!(r.object && placedSet[r.object]),
+    consentGated: r.consentGated              // does any tool in the family ask first?
+  }));
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ toolsets: rows }));
+}
+async function handleToolsetToggle(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let id = '';
+  try { id = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname.replace(/^\/api\/toolsets\//, '')); } catch (_) {}
+  id = String(id || '').trim();
+  if (!id) return json(400, { error: 'a toolset id is required' });
+  if (id === 'compute') return json(400, { error: 'compute is the always-on compute gate and cannot be toggled' });
+  if (TOGGLEABLE_CAPS.indexOf(id) < 0) return json(404, { error: 'unknown toolset: ' + id });
+  let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  if (typeof body.enabled !== 'boolean') return json(400, { error: 'enabled must be a boolean' });
+  if (body.enabled) delete toolsetDisabled[id]; else toolsetDisabled[id] = false;   // sparse: only OFF is persisted
+  saveToolsetState();   // durable; the in-memory map is already live for the next resolveTools call
+  return json(200, { ok: true, id, enabled: body.enabled });
 }
 
 /* ---- /api/connectors: the Connectors panel manages MCP servers. A token is accepted here, persisted to the
@@ -3114,7 +3194,10 @@ async function runOnce(o) {
   // account-level (both surfaces); the LEAD alone gets the orchestrator object so a delegated worker can't re-delegate.
   const defaultObjects = composeOffice({ surface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
   const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
-  const resolved = resolveTools(agentId, station);
+  // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
+  // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
+  // below and keep their own per-connector enabled flag, so they are unaffected.
+  const resolved = resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() });
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
   // Register them into this run's fresh registry and union their names into the resolved set so the capability
   // gate, network classification, and the wire tool-list treat them exactly like a built-in. Never breaks a run.

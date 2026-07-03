@@ -7,8 +7,14 @@
      rooms:  { <roomId>: { id, objects: [ { instanceId, objectType } ] } },
      agents: { <agentId>: { id, room: <roomId> } }
    }
-   resolveTools(agentId, station, capRegistry?) ->
-     { agentId, room, hasCompute, tools[], grants[], approvalRules{}, networkCaps{} } */
+   resolveTools(agentId, station, capRegistry?, opts?) ->
+     { agentId, room, hasCompute, tools[], grants[], approvalRules{}, networkCaps{} }
+
+   opts.disabledCaps: an object/Set of capIds the user has switched OFF in the TOOLSETS console (the
+   toolset kill-switch layered on top of object=capability). A disabled family's grants are DROPPED here
+   before they ever reach the tool gate. `compute` is NEVER filtered (the COMPUTE GATE freebie — disabling
+   it would make the agent unable to think). MCP connector tools are projected separately by the caller and
+   never pass through this map, so their own per-connector `enabled` flag stays authoritative. */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./registry.js'));
@@ -18,8 +24,14 @@
 
   const DEFAULT = capReg.CAP_REGISTRY;
 
-  function resolveTools(agentId, station, capRegistry) {
+  function resolveTools(agentId, station, capRegistry, opts) {
     capRegistry = capRegistry || DEFAULT;
+    // disabledCaps may be a Set, an array, or a plain map { capId: true }. Normalise to a has(capId) probe.
+    const dc = opts && opts.disabledCaps;
+    const isDisabled = !dc ? (() => false)
+      : (typeof dc.has === 'function') ? (c => dc.has(c))
+      : Array.isArray(dc) ? (c => dc.indexOf(c) >= 0)
+      : (c => !!dc[c]);
     const agent = station && station.agents && station.agents[agentId];
     const roomId = agent && agent.room;
     const room = roomId && station.rooms && station.rooms[roomId];
@@ -32,7 +44,8 @@
     for (const obj of objects) {
       const list = capRegistry[obj.objectType] || [];
       for (const g of list) {
-        if (g.capId === 'compute') { hasCompute = true; continue; } // gates the run; not a callable tool
+        if (g.capId === 'compute') { hasCompute = true; continue; } // gates the run; not a callable tool — never filtered
+        if (isDisabled(g.capId)) continue;                          // TOOLSET kill-switch: family switched OFF in the console
         if (seen[g.tool]) continue;
         seen[g.tool] = true;
         tools.push(g.tool);
