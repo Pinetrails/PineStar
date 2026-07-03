@@ -1654,17 +1654,41 @@ const App = (() => {
         const lines = (info.lines && info.lines.length) ? '\n' + info.lines.join('\n') : '';
         const canUndo = !!(sum.wroteCount && sum.undoSnapshot);
         const restore = (snap) => fetch('/api/checkpoint/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: (agent && agent.id) || 'agent', snapshotId: snap }) }).then(r => r.ok).catch(() => false);
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + headline, 'gold', 'cronDigest');   // P1-8 category: autonomous digest
-        if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
-          '✦ welcome back — while you were away (' + mins + 'm): ' + headline + lines + (canUndo ? '\n(undo rolls your workspace back to before i wrote them)' : ''),
-          canUndo ? [{ label: 'got it', value: 'ok', skip: true }, { label: 'undo the writes', value: 'undo' }] : [{ label: 'got it', value: 'ok', skip: true }],
-          item => {
-            if (!item || item.value !== 'undo' || !canUndo) return;
-            restore(sum.undoSnapshot).then(ok => {
-              if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? 'rolled back the files i wrote while you were away' : 'could not roll back — the snapshot is gone', ok ? 'gold' : 'warn');
-              if (ok && typeof World !== 'undefined' && World.say) World.say('✦ rolled back my away-writes');
+        // TRANSPARENCY LAW — the digest must be able to SHOW the work, not just count it. "show me" prints every
+        // fresh draft's full body (and the real path of anything written) straight into the feed from the draft
+        // log — the Commander never has to take "1 draft on your desk" on faith.
+        const reveal = () => {
+          if (typeof Chat === 'undefined' || typeof Chat.localLine !== 'function') return;
+          for (const d of (info.drafts || [])) {
+            if (!d || !d.title) continue;
+            const wrotePath = d.wrote && d.wrote.path;
+            Chat.localLine((wrotePath ? '✎ ' : '▤ ') + String(d.title).trim() + (wrotePath ? '  ·  ' + wrotePath : ''));
+            if (d.body) Chat.localLine(String(d.body));
+            else Chat.localLine(wrotePath ? '(the full text is in the file above)' : '(this draft has no saved body — it may predate the draft log)');
+          }
+        };
+        const showBeat = () => {
+          if (typeof Chat === 'undefined' || !Chat.nudge) return;
+          const opts = [{ label: 'show me', value: 'show' }, { label: 'got it', value: 'ok', skip: true }];
+          if (canUndo) opts.push({ label: 'undo the writes', value: 'undo' });
+          Chat.nudge(
+            '✦ welcome back — while you were away (' + mins + 'm): ' + headline + lines + (canUndo ? '\n(undo rolls your workspace back to before i wrote them)' : ''),
+            opts,
+            item => {
+              if (!item) return;
+              if (item.value === 'show') return reveal();
+              if (item.value !== 'undo' || !canUndo) return;
+              restore(sum.undoSnapshot).then(ok => {
+                if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? 'rolled back the files i wrote while you were away' : 'could not roll back — the snapshot is gone', ok ? 'gold' : 'warn');
+                if (ok && typeof World !== 'undefined' && World.say) World.say('✦ rolled back my away-writes');
+              });
             });
-          });
+        };
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + headline, 'gold', 'cronDigest');   // P1-8 category: autonomous digest
+        // DEFERRED a beat: this fires from the capture phase of the Commander's first pointerdown/keydown back.
+        // Posting the nudge synchronously would clearNudge()/clearChoices() an in-flight answer on a live beat
+        // (e.g. the per-draft "show me" chip) mid-press — the very tap that woke the digest would be eaten.
+        setTimeout(showBeat, 400);
       }
     });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
