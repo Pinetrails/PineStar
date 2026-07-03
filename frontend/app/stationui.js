@@ -476,6 +476,7 @@ const StationUI = (() => {
   function mountConsole(body, key, sections, opts) {
     opts = opts || {};
     body.classList.add('term-console-body');
+    body.classList.toggle('con-tabstop', !!opts.tabsTop);
     body.innerHTML = '';
     // pick the section to land on: remembered > first. A stale remembered id (section removed) falls back.
     let activeId = consoleSection[key];
@@ -499,18 +500,31 @@ const StationUI = (() => {
       left.appendChild(sw);
       searchInput = sw.querySelector('.con-search-in');
     }
+    // tabsTop (additive): the section tabs move OUT of the rail into a horizontal strip at the top of
+    // the content pane. The rail then holds only opts.railTop (+ search). Callers that pass nothing get
+    // the identical vertical rail — this whole branch is inert for them. The AGENT DOSSIER opts in so its
+    // left rail is purely the agent roster.
+    const tabsTop = !!opts.tabsTop;
     const rail = el('div', 'con-rail-list');
     rail.setAttribute('role', 'tablist');
     rail.setAttribute('aria-label', String(key).toUpperCase() + ' sections');
-    left.appendChild(rail);
+    if (!tabsTop) left.appendChild(rail);
 
     // ---- right: the content host (all panes mounted; one visible) ----
     const host = el('div', 'con-pane');
+    // the horizontal tab strip lives at the top of the pane in tabsTop mode; it reuses the tablist role.
+    let topTabs = null;
+    if (tabsTop) {
+      topTabs = el('div', 'con-toptabs');
+      topTabs.setAttribute('role', 'tablist');
+      topTabs.setAttribute('aria-label', String(key).toUpperCase() + ' sections');
+      host.appendChild(topTabs);
+    }
 
-    const railItems = {};    // id -> rail button
+    const railItems = {};    // id -> rail/tab button
     const panes = {};        // id -> pane wrapper element
     sections.forEach((sec, i) => {
-      const item = el('button', 'con-rail-item');
+      const item = el('button', tabsTop ? 'con-rail-item con-toptab' : 'con-rail-item');
       item.type = 'button';
       item.dataset.section = sec.id;
       item.setAttribute('role', 'tab');
@@ -518,7 +532,7 @@ const StationUI = (() => {
       item.innerHTML = '<span class="con-rail-glyph" aria-hidden="true">' + (sec.glyph || '▪') + '</span>' +
         '<span class="con-rail-label">' + esc(sec.label) + '</span>';
       item.addEventListener('click', () => selectSection(sec.id, true));
-      rail.appendChild(item);
+      (tabsTop ? topTabs : rail).appendChild(item);
       railItems[sec.id] = item;
 
       // build the pane content once, into its own section wrapper (header + description + body slot)
@@ -559,8 +573,9 @@ const StationUI = (() => {
       if (viaClick) { try { railItems[id].focus(); } catch (_) {} }
     }
 
-    // keyboard nav on the rail: Up/Down move + activate; Home/End jump ends.
-    rail.addEventListener('keydown', ev => {
+    // keyboard nav on the tablist: Up/Down (vertical rail) or Left/Right (horizontal top strip) move + activate;
+    // Home/End jump ends. Both arrow pairs are accepted regardless of orientation, so this handler is shared.
+    (tabsTop ? topTabs : rail).addEventListener('keydown', ev => {
       const ids = sections.map(s => s.id);
       const cur = ids.indexOf(activeId);
       let next = -1;
@@ -1267,6 +1282,9 @@ const StationUI = (() => {
       { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'The markdown files that compose this agent’s prompt, plus its per-agent model pin.',
         build: frag(agConfig(a)) }
     ], {
+      // tabsTop: the five section tabs (BRIEF/GROWTH/MEMORY/SKILLS/CONFIG) render as a horizontal strip at the
+      // top of the right pane; the left rail becomes the agent roster full-height (railTop below).
+      tabsTop: true,
       search: true, searchPlaceholder: 'search dossier…',
       railTop: (top) => {
         // ROSTER: keep the exact .ag-list / .ag-item class names; upgrade the rows premium (color dot, name,
