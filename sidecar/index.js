@@ -2809,7 +2809,7 @@ function workshopPrompt(runId, item) {
 async function validateWorkshopManifest(agentId, runId) {
   const relDir = 'workshop/' + runId;
   let manAbs, base;
-  try { const r = await fsJail._internals.resolveInside(agentId, relDir + '/deliverable.json'); manAbs = r.abs; base = r.base; }
+  try { const r = await fsJail.resolveInside(agentId, relDir + '/deliverable.json'); manAbs = r.abs; base = r.base; }
   catch (e) { console.warn('[workshop] manifest path rejected for', agentId, runId, '-', (e && e.message) || e); return null; }
   let raw;
   try { raw = await fsp.readFile(manAbs, 'utf8'); }
@@ -2824,7 +2824,7 @@ async function validateWorkshopManifest(agentId, runId) {
   for (const f of man.files) {
     const p = String((f && f.path) || '').replace(/^[\\/]+/, '');
     if (!p || p === 'deliverable.json') continue;
-    let abs; try { ({ abs } = await fsJail._internals.resolveInside(agentId, runDirRel + p)); } catch (_) { continue; }
+    let abs; try { ({ abs } = await fsJail.resolveInside(agentId, runDirRel + p)); } catch (_) { continue; }
     let st; try { st = await fsp.stat(abs); } catch (_) { continue; }
     if (st && st.isFile()) provenFiles.push({ path: p, bytes: st.size });
   }
@@ -3001,7 +3001,7 @@ async function handleWorkshopDecide(req, res) {
 
   if (decision === 'discard') {
     // wipe the run dir (jail-checked) and denylist the backlogId so it isn't silently rebuilt.
-    try { const { abs } = await fsJail._internals.resolveInside(agentId, relDir); await fsp.rm(abs, { recursive: true, force: true }); } catch (_) {}
+    try { const { abs } = await fsJail.resolveInside(agentId, relDir); await fsp.rm(abs, { recursive: true, force: true }); } catch (_) {}
     if (item) { try { await workshopStore.discard(agentId, item.id); } catch (_) {} }
     try { chanEmit('workshop.decided', { agentId, runId, decision: 'discard' }); } catch (_) {}
     return json(200, { ok: true, decision: 'discard' });
@@ -3017,7 +3017,7 @@ async function handleWorkshopDecide(req, res) {
   let copied = 0;
   try {
     for (const f of man.files) {
-      const { abs: srcAbs } = await fsJail._internals.resolveInside(agentId, relDir + '/' + f.path);
+      const { abs: srcAbs } = await fsJail.resolveInside(agentId, relDir + '/' + f.path);
       const destAbs = path.join(destPath, f.path);
       await fsp.mkdir(path.dirname(destAbs), { recursive: true });
       await fsp.copyFile(srcAbs, destAbs);
