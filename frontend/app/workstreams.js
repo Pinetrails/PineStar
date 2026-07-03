@@ -121,6 +121,19 @@
     if (opts.activate !== false) activeId = w.id;   // board "add" passes {activate:false} so it won't hijack the active chat
     return w;
   }
+  // ADOPT a workstream with a CALLER-CHOSEN id (idempotent): if one already exists with opts.id it is
+  // returned untouched; otherwise a new record is minted from opts and inserted WITHOUT stealing the active
+  // stream (never sets activeId — the caller decides whether to focus it). This is the seam the autosessions
+  // layer uses to surface an unattended cron run as a session keyed by its own 'cron-<runId>' stream id, so
+  // the rail row and the durable server transcript share one identity. Returns the (existing or new) record.
+  function adopt(opts) {
+    opts = opts || {};
+    if (opts.id) { const ex = find(opts.id); if (ex) return ex; }
+    const w = make(opts);
+    ws.push(w);
+    return w;
+  }
+
   // a MANUAL rename: locks the title (titleAuto=false) so the auto-summary upgrade never overwrites it.
   function rename(id, title) { const w = find(id); if (!w) return false; w.title = title ? clamp(title, 80) : null; w.titleAuto = false; return true; }
   // bind this stream to an agent (the multi-agent summon seam). The id must match the backend's agentId
@@ -257,7 +270,7 @@
 
   return {
     init, reset, serialize, all, list, search,
-    create, get, active, activeId: getActiveId, generalId: getGeneralId,
+    create, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, pin, archive, del, touch,
     autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
