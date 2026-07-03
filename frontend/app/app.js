@@ -1671,9 +1671,14 @@ const App = (() => {
       // otherwise it's a desk draft. Either way nothing is sent/published/spent.
       present: (d) => {
         const didWrite = !!(d && d.wrote && d.wrote.path);
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((didWrite ? 'wrote a file while you were away: ' : 'drafted while you were away: ') + d.title, 'gold', 'cronDigest');   // P1-8 category: autonomous run
+        // ONE SURFACE PER MOMENT (beat-fat trim 2026-07-03): the COMMS nudge below is the announcement — an
+        // actionable beat sitting in the feed. The toast only fires as the FALLBACK when the nudge can't render
+        // (no Chat yet), so the same draft is never announced twice (toast + nudge was the "pushy" double).
+        // World.say stays: an ambient in-world cue, not a popup. The return digest recaps everything anyway.
+        const canNudge = typeof Chat !== 'undefined' && Chat.nudge;
+        if (!canNudge && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((didWrite ? 'wrote a file while you were away: ' : 'drafted while you were away: ') + d.title, 'gold', 'cronDigest');   // P1-8 category: autonomous run
         if (typeof World !== 'undefined' && World.say) World.say(didWrite ? '✦ saved a file to your workspace' : '✦ left a draft on your desk');
-        if (typeof Chat !== 'undefined' && Chat.nudge) Chat.nudge(
+        if (canNudge) Chat.nudge(
           didWrite
             ? ('✦ while you were away i wrote “' + d.title + '” to your workspace (' + d.wrote.path + '). want to see it?')
             : ('✦ while you were away i drafted “' + d.title + '”. want to see it?'),
@@ -1730,7 +1735,11 @@ const App = (() => {
               });
             });
         };
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + headline, 'gold', 'cronDigest');   // P1-8 category: autonomous digest
+        // ONE SURFACE PER MOMENT (beat-fat trim 2026-07-03): the welcome-back nudge (showBeat) IS the digest —
+        // richer than a toast (show me / undo) and it fires at the same instant the toast used to, saying the
+        // SAME sentence. The toast is now only the FALLBACK when the nudge can't render (no Chat), so the
+        // Commander's first interaction back is greeted once, not twice.
+        if ((typeof Chat === 'undefined' || !Chat.nudge) && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('while you were away (' + mins + 'm): ' + headline, 'gold', 'cronDigest');   // P1-8 category: autonomous digest
         // DEFERRED a beat: this fires from the capture phase of the Commander's first pointerdown/keydown back.
         // Posting the nudge synchronously would clearNudge()/clearChoices() an in-flight answer on a live beat
         // (e.g. the per-draft "show me" chip) mid-press — the very tap that woke the digest would be eaten.

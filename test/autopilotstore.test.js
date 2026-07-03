@@ -91,6 +91,19 @@ A.ok(/\/api\/autonomy\/write/.test(appSrc), 'app.js persists the deliverable via
 A.ok(/Autopilot\.digestSummary\(/.test(appSrc), 'B3: the welcome-back digest summarizes files written vs drafted (digestSummary)');
 A.ok(/\/api\/checkpoint\/restore/.test(appSrc), 'B3: the digest offers a one-tap UNDO via the checkpoint restore endpoint');
 A.ok(/value:\s*'undo'/.test(appSrc), 'B3: the undo action is wired into the welcome-back beat');
+/* ---------- ONE SURFACE PER MOMENT (beat-fat trim 2026-07-03): the cronDigest toasts are FALLBACKS only —
+   they fire solely when the COMMS nudge can't render, never beside it (the "announced twice" double). ---------- */
+{
+  const iPresent = appSrc.indexOf('present: (d) =>');
+  const iDigest = appSrc.indexOf('digest: (info) =>');
+  A.ok(iPresent > 0 && iDigest > iPresent, 'present + digest hooks exist in order');
+  const presentSeg = appSrc.slice(iPresent, iDigest);
+  A.ok(/const canNudge = typeof Chat !== 'undefined' && Chat\.nudge;/.test(presentSeg), 'present() decides ONE surface up front (canNudge)');
+  A.ok(/if \(!canNudge && typeof StationUI[\s\S]{0,80}StationUI\.notify\)/.test(presentSeg), 'present(): the toast fires ONLY when the nudge cannot (fallback, not a duplicate)');
+  const digestSeg = appSrc.slice(iDigest, iDigest + 4500);
+  A.ok(/if \(\(typeof Chat === 'undefined' \|\| !Chat\.nudge\) && typeof StationUI/.test(digestSeg), 'digest(): the toast fires ONLY when the welcome-back nudge cannot (fallback, not a duplicate)');
+  A.ok(/'cronDigest'\)/.test(presentSeg) && /'cronDigest'\)/.test(digestSeg), 'both fallback toasts stay tagged cronDigest (P1-8 category mute still works)');
+}
 
 /* ---------- A2: the ACT branch — anti-slop pipeline → draft on the desk ---------- */
 (async () => {
