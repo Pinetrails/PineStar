@@ -487,6 +487,35 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(restoreMiss.status, 200, 'restore of an absent belief -> 200 (no-op)');
     A.eq(restoreMiss.body.removed, false, 'restore reports removed=false when nothing matched');
 
+    // ---- silent-save UX: the one-tap VETO on an auto-saved memory. Seed a real notebook record on disk (the
+    //      sidecar's durable store reads through to the file on every get), then undo it: the record is removed
+    //      AND its text lands on the permanent declined denylist, and a repeat veto is an idempotent no-op. ----
+    const vetoNoTok = await fetch(B + '/api/memory/turnin', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ agentId: 'agent', id: 'note_1', verdict: 'veto' }) });
+    A.eq(vetoNoTok.status, 403, 'POST /api/memory/turnin veto WITHOUT a token -> 403');
+    const vetoBadVerdict = await j('POST', '/api/memory/turnin', { agentId: 'agent', id: 'note_1', verdict: 'nonsense' });
+    A.eq(vetoBadVerdict.status, 400, 'an unknown verdict -> 400');
+    const vetoNoId = await j('POST', '/api/memory/turnin', { agentId: 'agent', verdict: 'veto' });
+    A.eq(vetoNoId.status, 400, 'veto without an id -> 400');
+    // seed one saved record + a distinct one that must survive the veto
+    fs.writeFileSync(path.join(ws, 'agent.notebook.json'), JSON.stringify([
+      { id: 'note_1', kind: 'fact', title: 'Fact', body: 'deploys the alpha service with npm publish', content: 'deploys the alpha service with npm publish', scope: 'global', createdAt: 1, ts: 1, useCount: 0, trust: 0, pinned: false },
+      { id: 'note_2', kind: 'profile', title: 'Preference', body: 'prefers terse answers', content: 'prefers terse answers', scope: 'global', createdAt: 2, ts: 2, useCount: 0, trust: 0, pinned: false }
+    ]));
+    const veto = await j('POST', '/api/memory/turnin', { agentId: 'agent', id: 'note_1', verdict: 'veto', content: 'deploys the alpha service with npm publish' });
+    A.eq(veto.status, 200, 'veto of a saved record -> 200');
+    A.eq(veto.body.ok, true, 'veto reports ok');
+    const recsAfter = await j('GET', '/api/memory/records?agent=agent');
+    const ids = (recsAfter.body.records || []).map(r => r.id);
+    A.ok(ids.indexOf('note_1') < 0, 'the vetoed record was removed from the notebook');
+    A.ok(ids.indexOf('note_2') >= 0, 'the distinct record beside it survived');
+    const declVeto = await j('GET', '/api/memory/declined?agent=agent');
+    A.ok((declVeto.body.declined || []).indexOf('deploys the alpha service with npm publish') >= 0, 'the vetoed belief joined the permanent declined denylist');
+    // idempotent: vetoing an already-gone record still succeeds (no 404, no double-append)
+    const vetoAgain = await j('POST', '/api/memory/turnin', { agentId: 'agent', id: 'note_1', verdict: 'veto', content: 'deploys the alpha service with npm publish' });
+    A.eq(vetoAgain.status, 200, 'a repeat veto of an already-removed record is an idempotent 200 no-op');
+    const declAgain = await j('GET', '/api/memory/declined?agent=agent');
+    A.eq((declAgain.body.declined || []).filter(t => t === 'deploys the alpha service with npm publish').length, 1, 'the denylist has no duplicate after a repeat veto');
+
     const resetNoTok = await fetch(B + '/api/memory/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ agent: 'agent' }) });
     A.eq(resetNoTok.status, 403, 'POST /api/memory/reset WITHOUT a token -> 403');
     const resetBad = await j('POST', '/api/memory/reset', { agent: '../evil' });
