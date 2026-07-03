@@ -177,7 +177,9 @@ const Voice = (() => {
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
   function ttsConfig() {
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
-    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0 };
+    // ttsStyle is the natural-language delivery instruction the sidecar folds into the input (and the
+    // cache key) — the station's eerie register, distinct per persona. Empty → plain synthesis.
+    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '' };
   }
 
   /* text → speakable: strip what TTS would otherwise read LITERALLY (markdown, emoji, URLs/paths, and
@@ -307,7 +309,7 @@ const Voice = (() => {
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     job.result = fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-      body: JSON.stringify({ key, text: job.text, model: cfg.model, voice: cfg.voice })
+      body: JSON.stringify({ key, text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
