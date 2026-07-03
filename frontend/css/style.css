@@ -626,6 +626,17 @@ body.no-scan .crt-scan { display: none; }
 }
 .ag-item.sel .ag-item-st { color: var(--ink); opacity: .8; }
 .ag-item.sel .ag-item-st.working { color: var(--ink); }
+/* tabsTop: the roster now OWNS the whole left rail (the five section tabs moved to the pane top). The rail
+   is [roster, search] in DOM order; put the search on TOP with flex order, then let the roster fill the rest
+   of the column full-height. Rows get a touch more room to breathe now that the rail is theirs alone. */
+.con-tabstop .con-search { order: 0; }
+.con-tabstop .con-rail-top {
+  order: 1; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  border-bottom: none; padding-top: 4px;
+}
+.con-tabstop .con-rail-top .ag-list { flex: 1 1 auto; max-height: none; }
+.con-tabstop .ag-item { padding: 8px 10px; gap: 9px; }
+.con-tabstop .ag-item-dot { font-size: 12px; }
 #ag-portrait {
   width: 88px; height: 116px; image-rendering: pixelated;
   border: 2px solid var(--ph-dim); background: #02080a; flex-shrink: 0;

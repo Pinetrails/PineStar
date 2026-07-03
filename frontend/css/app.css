@@ -1973,6 +1973,32 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: 0 0 12px var(--ph-gl
 .con-rail-item.con-rail-dim { opacity: .32; }
 .con-rail-item.con-rail-hit:not(.active) { color: var(--ph-bright); }
 
+/* ---- tabsTop: the section tabs as a horizontal strip at the top of the content pane ----
+   Opted into by the AGENT DOSSIER so its left rail is purely the agent roster. The strip reuses
+   .con-rail-item for base type/colour, then .con-toptab reshapes it horizontal: the active state is a
+   hairline phosphor underline + inverted chip (echoes the vertical rail's inset-left edge, turned to the
+   bottom). The strip is sticky so the tabs stay put while a long section pane scrolls under them. */
+.con-toptabs {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch;
+  margin: 0 0 var(--s-3); padding-bottom: 8px;
+  border-bottom: 1px solid var(--ph-dim);
+  /* the pane's own top padding is var(--s-3); the sticky strip masks scrolled content behind it */
+  background: linear-gradient(180deg, rgba(0,0,0,0.92) 70%, transparent),
+              linear-gradient(180deg, var(--ph-glow2), transparent 60%);
+}
+.con-rail-item.con-toptab {
+  width: auto; flex: 0 1 auto; position: relative;
+  padding: 8px 14px; border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+.con-rail-item.con-toptab .con-rail-glyph { width: auto; }
+/* active top tab = inverted chip like the vertical rail, but the phosphor edge rides the BOTTOM as an
+   underline (hairline) instead of the left inset — consistent CRT-console active idiom, horizontal. */
+.con-rail-item.con-toptab.active {
+  color: var(--ink); background: var(--ph); border-color: var(--ph);
+  text-shadow: none; box-shadow: 0 0 12px var(--ph-glow2), inset 0 -3px 0 var(--ph-bright);
+}
+
 /* ---- right: content pane, one section shown ---- */
 .con-pane {
   flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto;
