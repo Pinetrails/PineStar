@@ -70,7 +70,7 @@
         { key: 'idea', label: 'The idea', placeholder: 'what the video / episode is about' },
         { key: 'length', label: 'Rough length', placeholder: 'e.g. 8 minutes', required: false, default: 'a short-to-mid length piece' }
       ],
-      task: 'Outline a script for {idea} at {length}. Give me the beat-by-beat structure — hook, the promise, the middle beats that keep tension, and the payoff — with a one-line note on pacing at each. Flag the spot most likely to lose the viewer so I can shore it up.',
+      task: 'Outline {idea} at {length}. Give me the beat-by-beat structure — hook, the promise, the middle beats that keep tension, and the payoff — with a one-line note on pacing at each. Flag the spot most likely to lose the viewer so I can shore it up.',
       category: 'creator', gear: [], skills: ['creative-ideation'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
@@ -103,7 +103,7 @@
       blurb: 'Sketches distinct thumbnail concepts — composition, focal point, text — and can render a rough mock.',
       tags: { general: 1 },
       params: [{ key: 'subject', label: 'Video subject', placeholder: 'what the thumbnail is for' }],
-      task: 'Give me 5 thumbnail concepts for a video about {subject}. For each: the focal image, the composition, the 2–4 word overlay, and the emotion it should trigger. Make them genuinely distinct. If it helps, rough out a mock of the strongest one so I can react to something real.',
+      task: 'Give me 5 thumbnail concepts for a video about {subject}. For each: the focal image, the composition, the 2–4 word overlay, and the emotion it should trigger. Make them genuinely distinct. If it helps, rough out a mock of the strongest one so I can respond to something real.',
       category: 'creator', gear: ['studio'], skills: ['meme-generation'], cadence: null,
       source: 'builtin', forkedFrom: null
     },

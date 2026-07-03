@@ -28,12 +28,12 @@
   }
 
   const MODULES = [
-    mod('./core.js', 'RecipeCatalogCore')
-    // R4 persona catalogs register here (one line each):
-    // mod('./dev.js', 'RecipeCatalogDev'),
-    // mod('./research.js', 'RecipeCatalogResearch'),
-    // mod('./creator.js', 'RecipeCatalogCreator'),
-    // mod('./ops.js', 'RecipeCatalogOps'),
+    mod('./core.js', 'RecipeCatalogCore'),
+    // R4 persona catalogs (one line each):
+    mod('./dev.js', 'RecipeCatalogDev'),
+    mod('./research.js', 'RecipeCatalogResearch'),
+    mod('./creator.js', 'RecipeCatalogCreator'),
+    mod('./ops.js', 'RecipeCatalogOps'),
   ];
 
   // flatten + de-dup by id (first occurrence wins). The aggregate is the single built-in source recipes.js reads.

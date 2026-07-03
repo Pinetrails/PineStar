@@ -35,7 +35,7 @@
       blurb: 'Walks the open pull requests and flags the ones that are risky, stale, or a fast merge.',
       tags: { code: 1 },
       params: [{ key: 'scope', label: 'Repo / area', placeholder: 'e.g. the frontend, or the whole repo', required: false, default: 'the open pull requests' }],
-      task: 'Sweep {scope} and tell me which pull requests need my attention. For each: is it safe to merge, risky, or stale? Lead with the ones carrying real risk — untested changes, big diffs, touched hot paths — then the quick wins. One line of reasoning each.',
+      task: 'Sweep {scope} and tell me which pull requests need my attention. For each: is it safe to merge, risky, or stale? Lead with the ones carrying real risk — untested changes, big diffs, touched hot code paths — then the quick wins. One line of reasoning each.',
       category: 'developer', gear: ['cabinet'], skills: ['code-review'], cadence: 'morning',
       source: 'builtin', forkedFrom: null
     },
@@ -45,7 +45,7 @@
       blurb: 'Checks the dependency tree for stale, vulnerable, or dead packages and ranks what to touch.',
       tags: { code: 0.8, research: 0.2 },
       params: [{ key: 'project', label: 'Project / manifest', placeholder: 'e.g. this repo, or package.json', required: false, default: 'this project' }],
-      task: 'Audit the dependencies of {project}. Read the manifest and lockfile, then report: what is meaningfully outdated, anything with a known advisory, and packages that look unused. Rank by risk and give the safe upgrade path — never suggest a bump you have not sanity-checked.',
+      task: 'Audit the dependencies of {project}. Read the repo's manifest and lockfile, then report: what is meaningfully outdated, anything with a known advisory, and packages that look unused. Rank by risk and give the safe upgrade path — never suggest a bump you have not sanity-checked.',
       category: 'developer', gear: ['cabinet', 'workbench'], skills: ['security-sweep'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     },

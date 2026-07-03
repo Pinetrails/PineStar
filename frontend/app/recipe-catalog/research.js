@@ -27,7 +27,7 @@
         { key: 'source', label: 'Source / topic', placeholder: 'e.g. a blog, subreddit, or "OpenAI releases"' },
         { key: 'lens', label: 'What matters', placeholder: 'anything material', required: false, default: 'anything materially new' }
       ],
-      task: 'Watch {source} and surface {lens}. Check what changed since last time, and tell me ONLY what is genuinely new and worth knowing — lead with the single most important item, sourced. If nothing material happened, say so in one line rather than padding.',
+      task: 'Watch {source} and surface {lens}. Browse what changed since last time, and tell me ONLY what is genuinely new and worth knowing — lead with the single most important item, sourced. If nothing material happened, say so in one line rather than padding.',
       category: 'research', gear: ['dish'], skills: ['feed-watch'], cadence: 'sixhourly',
       source: 'builtin', forkedFrom: null
     },
@@ -120,7 +120,7 @@
         { key: 'topics', label: 'Topics', placeholder: 'e.g. AI agents, robotics, chip supply' },
         { key: 'window', label: 'Window', placeholder: 'the past week', required: false, default: 'the past week' }
       ],
-      task: 'Compile a research digest on {topics} covering {window}. Group findings by theme, lead each theme with its single most important item, and keep it skimmable — sourced bullets, no filler. End with a two-line "what this means" read. Skip anything stale or trivial.',
+      task: 'Put together a research digest on {topics} covering {window}. Group findings by theme, lead each theme with its single most important item, and keep it skimmable — sourced bullets, no filler. End with a two-line "what this means" read. Skip anything stale or trivial.',
       category: 'research', gear: ['dish', 'cabinet'], skills: ['digest-composer', 'web-research'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     }
