@@ -174,12 +174,49 @@ const Voice = (() => {
   const TTS_MODEL = 'google/gemini-3.1-flash-tts-preview';
   let ttsDisabled = false;        // latched once we learn there's no usable key — skip the round-trip after that
   let neuralColdUntil = 0;        // after a transient neural error, prefer the browser voice until this time (ms)
+  // how long to prefer the browser voice after a transient neural error. The robotic fallback is the thing
+  // users hate most, so keep this SHORT: one transient blip shouldn't rob several replies of the real voice —
+  // we retry neural on essentially the next reply. (Was 8s.)
+  const NEURAL_COLD_MS = 4000;
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
   function ttsConfig() {
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
     // ttsStyle is the natural-language delivery instruction the sidecar folds into the input (and the
     // cache key) — the station's eerie register, distinct per persona. Empty → plain synthesis.
     return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '' };
+  }
+  function haveKey() { return !!apiKey() || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured()); }
+
+  /* PRE-WARM the voice cache: when the speaker turns on, quietly synthesize the active persona's stock lines
+     (ambient mutters + the sample reply) so those exact lines later play INSTANTLY from the sidecar's disk
+     cache instead of paying a synth round-trip mid-conversation. Sequential + fire-and-forget + low urgency:
+     never blocks the UI, never fights a live reply for bandwidth. Guarded so it NEVER runs without a key
+     (that would just spam 'no key' fallbacks). Idempotent per persona so toggling doesn't re-warm needlessly. */
+  let prewarmedFor = null;
+  async function prewarmVoice() {
+    if (!speakReplies || !haveKey()) return;
+    if (prewarmedFor === activePersonaId) return;   // already warmed this persona's shelf
+    prewarmedFor = activePersonaId;
+    const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
+    if (!p) return;
+    const cfg = ttsConfig(), key = apiKey();
+    const lines = [];
+    if (Array.isArray(p.ambientLines)) for (const l of p.ambientLines) lines.push(l);
+    if (p.sampleVoiceReply) lines.push(p.sampleVoiceReply);
+    for (const raw of lines) {
+      const text = speakable(raw);
+      if (!text) continue;
+      try {
+        // warm the SAME cache key the live path will request (model|voice|style|text) — we only need the
+        // sidecar to synthesize + cache it; we discard the audio. A failure is silent (best-effort).
+        const r = await fetch('/api/tts', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+        });
+        try { await r.arrayBuffer(); } catch (_) {}
+      } catch (_) { break; }   // network gone → stop warming, don't hammer
+      if (!speakReplies) break;   // user muted mid-warm → abandon
+    }
   }
 
   /* text → speakable: strip what TTS would otherwise read LITERALLY (markdown, emoji, URLs/paths, and
@@ -362,8 +399,7 @@ const Voice = (() => {
     const key = apiKey(), cfg = ttsConfig();
     // desktop: the key lives in the sidecar's env (keychain), so apiKey() is '' — gate on "configured?"
     // and send no key; the sidecar /api/tts falls back to its env key.
-    const haveKey = !!key || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
-    if (!haveKey || ttsDisabled || Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'browser' }); return; }
+    if (!haveKey() || ttsDisabled || Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'browser' }); return; }
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     job.result = fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
@@ -373,13 +409,13 @@ const Voice = (() => {
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
       let reason = 'http ' + r.status;
       try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
-      if (/no key/i.test(reason)) ttsDisabled = true; else neuralColdUntil = Date.now() + 8000;
+      if (/no key/i.test(reason)) ttsDisabled = true; else neuralColdUntil = Date.now() + NEURAL_COLD_MS;
       console.warn('[voice] neural TTS → browser fallback:', reason);
       return { kind: 'browser' };
     }).catch(e => {
       if (e && e.name === 'AbortError') return { kind: 'skip' };   // intentionally cancelled — stay silent
       console.warn('[voice] neural TTS error:', (e && e.message) || e);
-      neuralColdUntil = Date.now() + 8000;
+      neuralColdUntil = Date.now() + NEURAL_COLD_MS;
       return { kind: 'browser' };
     });
   }
@@ -417,6 +453,29 @@ const Voice = (() => {
     if (wasDraining) { const cb = onReplyDone; onReplyDone = null; if (cb) cb(); }
   }
 
+  // FIRST-WORD fast path: the time-to-first-audio is dominated by how long the FIRST TTS call takes, which
+  // scales with the chunk's length. When a reply opens with one long chunk, peel a SHORT lead off the front
+  // (first clause: comma/semicolon/dash, else a word break near ~120 chars) so the first synth call is tiny
+  // and audio starts almost immediately; the remainder rides the normal queue behind it. Only splits a big
+  // first chunk — short chunks are already fast, and later chunks already overlap playback. Returns [lead, rest]
+  // or [whole] if no worthwhile split exists.
+  const FASTPATH_MIN = 140;   // only bother splitting a first chunk longer than this
+  function firstClauseSplit(s) {
+    if (s.length <= FASTPATH_MIN) return [s];
+    // prefer a natural clause boundary in the first ~130 chars. A SHORT lead is the whole point (fast first
+    // audio), so take the earliest usable clause break; only fall back to a word split if there's none.
+    const head = s.slice(0, 130);
+    let cut = -1;
+    const m = head.match(/^[\s\S]*?[,;:—–-](?=\s)/);    // up to & incl. the first clause punctuation followed by space
+    if (m && m[0].length >= 10) cut = m[0].length;      // ≥10 so we don't split on a 2-3 char stub ("Oh, ")
+    if (cut < 0) {                                        // no clause break → last word boundary before ~120
+      const back = s.slice(0, 120).lastIndexOf(' ');
+      if (back >= 40) cut = back;
+    }
+    if (cut < 0 || cut >= s.length - 10) return [s];      // nothing useful (or the split leaves a tiny tail)
+    return [s.slice(0, cut).trim(), s.slice(cut).trim()];
+  }
+
   /* ---- PRODUCER API ---- */
   // push one chunk of an in-progress reply (chat.js streams these sentence-by-sentence). The first chunk
   // opens a reply; endReply() closes it. mutter() rides the same path as a one-shot quiet aside.
@@ -425,10 +484,19 @@ const Voice = (() => {
     if (voiceId) activeVoiceId = voiceId;
     opts = opts || {};
     const clean = speakable(text);
-    const body = opts.mutter ? clean.slice(0, 80) : clean;
+    let body = opts.mutter ? clean.slice(0, 80) : clean;
     if (!body.trim()) return;
+    const opening = (jobs.length === 0);   // FIRST chunk of this reply → eligible for the fast-path lead split
     replyClosed = false; draining = true;
-    for (const seg of splitForTts(body, TTS_CHUNK_MAX)) jobs.push({ text: seg, opts, seq: speakSeq, result: null, ac: null });
+    // on the opening chunk, peel a short lead so the first synth call (and thus first audio) is fast.
+    let pieces;
+    if (opening && !opts.mutter) {
+      const [lead, rest] = firstClauseSplit(body);
+      pieces = rest ? [lead].concat(splitForTts(rest, TTS_CHUNK_MAX)) : splitForTts(lead, TTS_CHUNK_MAX);
+    } else {
+      pieces = splitForTts(body, TTS_CHUNK_MAX);
+    }
+    for (const seg of pieces) { if (seg && seg.trim()) jobs.push({ text: seg, opts, seq: speakSeq, result: null, ac: null }); }
     pumpSynth(); pumpPlay();
   }
   // signal end-of-reply; the heartbeat (default: re-arm the hands-free loop) fires once the LAST chunk ends.
@@ -878,6 +946,7 @@ const Voice = (() => {
     speakReplies = !speakReplies; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;   // a manual speaker change is the user's own choice — keep it (don't restore on voice-mode exit)
     if (!speakReplies) stopSpeaking();
+    else prewarmVoice();   // turning ON → quietly warm the stock lines so mutters/samples play instantly
     reflectToggle();
     if (typeof SFX !== 'undefined') SFX.click();
   }
@@ -887,6 +956,7 @@ const Voice = (() => {
     speakReplies = want; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;
     if (!speakReplies) stopSpeaking();
+    else prewarmVoice();
     reflectToggle();
     return speakReplies;
   }
@@ -924,6 +994,10 @@ const Voice = (() => {
     // awakening, which owns the COMMS input). Never auto-starts; the click is the required mic-permission gesture.
     if (opts.resumeCue !== false && canListen() && loadPref(LS_CONVO, false)) showResumeCue();
     else clearResumeCue();
+    // if the speaker is already on for this agent AND the harness is configured, warm the stock lines now
+    // (background, fire-and-forget) so the very first mutter/sample plays from cache. No key → no-op.
+    prewarmedFor = null;   // new agent/persona → allow a fresh warm
+    if (speakReplies) prewarmVoice();
   }
 
   // let other code (or a future hotkey) retarget the active voice when the workstream's agent changes.
