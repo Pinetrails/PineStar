@@ -3272,7 +3272,13 @@ const Chat = (() => {
     let done = false;
     (items || []).forEach(it => {
       const b = document.createElement('button'); b.className = 'choice'; b.textContent = it.label;
-      b.onclick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
+      const pick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
+      // activate on POINTERDOWN, not click: a document-level activity listener (autopilotstore's welcome-back
+      // digest) can fire during the capture phase of this same press and remove this row mid-dispatch. The event
+      // path is fixed at dispatch start, so this listener still runs on the detached button — whereas the later
+      // `click` (press+release) never fires on a removed element and the answer was silently eaten.
+      b.addEventListener('pointerdown', e => { if (e.button === 0) pick(); });
+      b.onclick = pick;   // keyboard activation (Enter/Space synthesizes click, no pointerdown)
       rowEl.appendChild(b);
     });
     log.appendChild(rowEl); autoscroll();
