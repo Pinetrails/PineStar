@@ -53,6 +53,21 @@ data loss — that is the single failure mode this protocol exists to prevent.
 | Merge your branch to trunk  | (from integration tree) `git merge agent/<name>` then test gate |
 | Tear down when merged       | `gen-trees\remove-agent-tree.ps1 <name> -DeleteBranch`         |
 
+## Operating doctrine — MANDATORY skills (all models)
+
+This repo ships its senior engineer's judgment as skills in `.claude/skills/`. They are not
+optional reading; they encode the project's locked decisions and recurring failure modes.
+
+1. **Before your first edit on any task**, invoke the Skill tool with `starnet-task-doctrine`
+   and follow it. It routes you to the others:
+   - `starnet-verify` — before claiming ANYTHING done (live-app proof, canvas gotchas).
+   - `starnet-frontend-law` — any change under frontend/ or to the rendered world.
+   - `starnet-backend-law` — any change under sidecar/ or shared/.
+   - `starnet-debugging` — when a behavior is broken and the cause is unknown.
+   - `starnet-merge-ritual` — when integrating any branch into trunk.
+2. The two laws that override everything else: **only claim what you verified live**, and
+   **the app must never assert state the harness can't prove** (truthful telemetry).
+
 ## Why this is set up this way
 
 Many agents sharing a single checkout overwrite each other with no warning (last-write-wins;
