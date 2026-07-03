@@ -2719,7 +2719,11 @@ async function handleCronRun(req, res) {
     await runOnce({
       key: key, model: model, system: cronSystemFor(job.agentId), messages: [{ role: 'user', content: String(job.prompt || '') }],
       agentId: job.agentId, isTask: true, emit: teeEmit, signal: ac.signal,
-      runId: runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: true
+      // streamId 'cron-'+runId matches the SCHEDULED fire (cron-driver.js): Run Now must persist its transcript
+      // under the SAME per-run stream so the frontend cron-session (autosessions.js), which forms off the
+      // identical cron.fire/cron.result events, can fetch the real output via /api/transcript?stream=cron-<runId>.
+      // Per-run id keeps the seed empty (index.js reconstructs a stream only when messages<=1) — no behavior drift.
+      runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: true
     });
   } catch (e) {
     state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));

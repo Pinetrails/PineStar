@@ -9,6 +9,14 @@
       "autoPort": false
     },
     {
+      "name": "cron-sessions-proof",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dev/seed-mock-cron.js"],
+      "port": 8783,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8783" }
+    },
+    {
       "name": "integrated-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": ["dev/seed.js", "--keep"],

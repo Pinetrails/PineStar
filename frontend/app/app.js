@@ -1633,6 +1633,11 @@ const App = (() => {
     // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
     // rides the same rate-the-work path as an attended run. Init AFTER Chat.init so the beat can render.
     if (typeof ReturnStore !== 'undefined') ReturnStore.init({ enabled: !opts.awaitingPurpose });
+    // CRON SESSIONS: surface each unattended routine run as a readable session — cron.fire adds a busy rail row
+    // (no focus-steal), cron.result folds the run's durable 'cron-<runId>' transcript into it, and a boot backfill
+    // recovers sessions for routines that finished while the browser was closed. Read-only on U.bus. Init AFTER
+    // Chat.init + App is fully formed (this returns App) so the module's App.refreshRail/persist bridges resolve.
+    if (typeof AutoSessions !== 'undefined') AutoSessions.init();
     // G3a PRIDE LAYER: arm the durable lifetime STATION RECORD — folds real completed runs / delivered
     // work-items / fired routines / summed run durations into counters that persist across sessions (own key,
     // read-only on the bus). The COMMANDER DOSSIER panel renders snapshot() as the STATION RECORD block.

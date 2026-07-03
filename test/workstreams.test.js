@@ -177,4 +177,20 @@ A.ok(W.setAgent(def.id, '../evil') === false, 'setAgent rejects a non-conforming
 A.eq(W.get(def.id).agentId, 'analyst_7', 'a rejected setAgent leaves the prior binding intact');
 A.ok(W.setAgent('nope', 'researcher-2') === false, 'setAgent on an unknown stream -> false');
 
+/* ---------- adopt(id): caller-chosen id, idempotent, never hijacks active (the cron-session seam) ---------- */
+W.reset();
+const activeBeforeAdopt = W.activeId();
+const cronId = 'cron-2f1a9c00-1111-4222-8333-444455556666';
+const ad = W.adopt({ id: cronId, title: 'Daily digest', agentId: 'cron_daily', lane: 'active', history: [{ role: 'user', content: 'summarize the day' }] });
+A.eq(ad.id, cronId, 'adopt uses the caller-chosen id verbatim');
+A.eq(ad.title, 'Daily digest', 'adopt carries the title');
+A.eq(ad.agentId, 'cron_daily', 'adopt binds the routine agent');
+A.eq(ad.lane, 'active', 'adopt honors the lane');
+A.eq(ad.history.length, 1, 'adopt seeds history');
+A.eq(W.activeId(), activeBeforeAdopt, 'adopt does NOT hijack the active stream (appears without stealing focus)');
+A.ok(W.list().some(x => x.id === cronId), 'the adopted stream is listed');
+const ad2 = W.adopt({ id: cronId, title: 'different title' });
+A.ok(ad2 === ad, 'adopt is idempotent — re-adopting the same id returns the existing record untouched');
+A.eq(W.get(cronId).title, 'Daily digest', 'a re-adopt never stomps the existing title/history');
+
 A.report('workstreams.test');

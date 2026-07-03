@@ -90,6 +90,7 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(s.runs[0].trigger, 'schedule', 'fire passes trigger:schedule');
     A.eq(s.runs[0].isTask, true, 'a scheduled run is a task');
     A.eq(s.runs[0].agentId, 'cron_j1', 'fire runs as the job agent');
+    A.eq(s.runs[0].streamId, 'cron-' + s.runs[0].runId, 'fire passes streamId=cron-<runId> so the transcript is durable + surfaceable as a session');
     const fire = firstOf(s.events, 'cron.fire');
     A.eq(fire.jobId, 'j1', 'cron.fire jobId');
     A.eq(fire.runId, s.runs[0].runId, 'cron.fire runId == the launched run');
