@@ -27,6 +27,24 @@ const WorkQuestStore = (() => {
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   const ready = () => typeof WorkQuests !== 'undefined' && state;
+
+  // W6 DEDUP: a normalized-title fingerprint (lowercase, alnum tokens >=3 chars, sorted+unique) so an accept for
+  // a build already in flight returns the EXISTING quest instead of minting a second identical card. Mirrors the
+  // mint-ledger/suggeststore fingerprint. Only LIVE quests count (a completed/dismissed/stalled one may re-mint).
+  function titleFp(s) {
+    const toks = String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+    return Array.from(new Set(toks)).sort().join(' ');
+  }
+  function liveQuestByTitle(title) {
+    const fp = titleFp(title);
+    if (!fp || !state || !state.quests) return null;
+    for (const id of Object.keys(state.quests)) {
+      const q = state.quests[id];
+      if (!q || q.completedAt != null || q.dismissedAt != null || q.stalledAt != null) continue;
+      if (titleFp(q.title) === fp) return id;
+    }
+    return null;
+  }
   const nowMs = () => (typeof Date !== 'undefined' ? Date.now() : 0);
   function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests'); } catch (_) {} }
 
@@ -35,6 +53,10 @@ const WorkQuestStore = (() => {
      store resolves the live gap list + the seed credit; the pure engine shapes the steps. */
   function accept(parsed) {
     if (!ready() || !parsed) return null;
+    // W6: an identical build is already in flight → return the EXISTING quest, don't mint a duplicate card. Re-arm
+    // it so the next launched run still binds (an accept is still a "build it now" intent), but no second quest.
+    const dupId = liveQuestByTitle(parsed.title);
+    if (dupId) { armedId = dupId; armedAt = nowMs(); return dupId; }
     const b = parsed.build || {};
     let recipeId = null, gaps = [];
     if (b.kind === 'recipe' && b.recipeId && typeof Recipes !== 'undefined' && Recipes.get) {

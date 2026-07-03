@@ -25,6 +25,24 @@ const AutoJobStore = (() => {
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   const ready = () => typeof AutoJobs !== 'undefined' && state;
 
+  // W6 DEDUP (frontend UX layer — the SERVER gate is the real authority, this just avoids a doomed POST + a
+  // ghost proposal). A normalized-name fingerprint (mirrors suggeststore.fingerprint): lowercase, alnum tokens
+  // >=3 chars, sorted+unique — so a reordered/padded restatement of an existing routine name still matches.
+  function nameFp(s) {
+    const toks = String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+    return Array.from(new Set(toks)).sort().join(' ');
+  }
+  // fetch the LIVE routine names (never the stale propose-time list) so the check reflects what actually exists now.
+  async function liveJobNames() {
+    try { return deps.getExistingJobs ? ((await deps.getExistingJobs()) || []) : []; } catch (_) { return []; }
+  }
+  // does a live routine already carry this proposal's name? (exact normalized-name match against the live list).
+  function existsAmong(title, liveNames) {
+    const fp = nameFp(title);
+    if (!fp) return false;
+    return (liveNames || []).some(n => nameFp(n) === fp);
+  }
+
   // G4 feature 2 — PIN-TO-BOARD. When a MISSION BOARD is placed, a parsed proposal gets a BODY: instead of the
   // inline Dialogue approval, the agent walks to the board and pins an amber PROPOSAL card. The pending ledger
   // below is the source of truth the board pin-feed projects and the quest log renders (approve → the real POST
@@ -115,11 +133,15 @@ const AutoJobStore = (() => {
       }
 
       await Dialogue.say(AutoJobs.introLine(proposals.length));
+      // W6: the live routine names, re-read once here, so an approve for a name that already exists is skipped
+      // (the server would reject it anyway — this keeps the count honest and avoids a doomed POST).
+      const live = await liveJobNames();
       for (const pr of proposals) {
         if (!Dialogue.isOpen()) break;
+        if (existsAmong(pr.title, live)) continue;   // already a live routine with this name — don't offer a dup
         const choice = await Dialogue.node({ lines: AutoJobs.proposalLines(pr), options: AutoJobs.approveChoices() });
         if (choice && choice.value === 'yes' && deps.scheduleJob) {
-          try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); if (r && r.ok !== false) scheduled++; } catch (_) {}
+          try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); if (r && r.ok !== false && !(r && r.duplicate)) { scheduled++; live.push(pr.title); } } catch (_) {}
         }
       }
       if (Dialogue.isOpen()) { await Dialogue.say(AutoJobs.doneLine(scheduled)); Dialogue.close(); }
@@ -159,10 +181,16 @@ const AutoJobStore = (() => {
   async function acceptPending(id) {
     const pr = findPending(id);
     if (!pr || !ready()) return { ok: false };
-    let ok = false;
-    if (deps.scheduleJob) { try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); ok = !!(r && r.ok !== false); } catch (_) { ok = false; } }
-    if (ok) { state.pending = state.pending.filter(p => p && p.id !== id); save(); }
-    return { ok };
+    // W6: if a live routine already carries this name, DON'T mint a second — mark the proposal decided so the
+    // amber card vanishes (COMMS rule: a decided card is removed, never left ghosting). The server gate would
+    // reject the POST anyway; this keeps the board honest without a doomed round-trip.
+    const live = await liveJobNames();
+    if (existsAmong(pr.title, live)) { state.pending = state.pending.filter(p => p && p.id !== id); save(); return { ok: true, duplicate: true }; }
+    let ok = false, duplicate = false;
+    if (deps.scheduleJob) { try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); duplicate = !!(r && r.duplicate); ok = !!(r && r.ok !== false); } catch (_) { ok = false; } }
+    // a real success OR a server-reported duplicate both retire the card (a dup is "already handled", not a failure).
+    if (ok || duplicate) { state.pending = state.pending.filter(p => p && p.id !== id); save(); }
+    return { ok, duplicate };
   }
   // DECLINE: drop the card (dismissed → gone; the walk-and-pin already played once, it never re-nags for this one).
   function declinePending(id) {

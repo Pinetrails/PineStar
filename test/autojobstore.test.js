@@ -227,6 +227,51 @@ global.Onboarding = undefined;
     A.eq(AutoJobStore.pendingCount(), 0, 'no board → nothing is parked on a (non-existent) board');
     A.eq(rn.scheduled, 1, 'no-board propose reports scheduled count as before');
 
+    /* ========== W6 MINT DEDUP: the frontend never offers/mints a routine that already exists ========== */
+
+    /* inline Dialogue flow: a proposal whose name already matches a LIVE routine is skipped (no doomed offer) ---- */
+    clearFakes(); AutoJobStore.reset(); boardHere = false;
+    const realGet = deps.getExistingJobs;
+    deps.getExistingJobs = () => Promise.resolve(['Standup draft']);   // 'Standup draft' already runs
+    AutoJobStore.init(deps);
+    hn.next = { text: TWO };
+    dlg.choices = [{ value: 'yes' }];   // would approve the ONE remaining proposal
+    const rdup = await AutoJobStore.propose({ proactive: true });
+    A.eq(dlg.noded, 1, 'the already-live proposal is skipped — only the genuinely-new one is offered');
+    A.eq(scheduled.length, 1, 'only the new routine is scheduled (the duplicate never reaches a POST)');
+    A.eq(scheduled[0].name, 'Ship nudge', 'the scheduled one is the non-duplicate proposal');
+    A.ok(rdup.scheduled === 1, 'propose reports one scheduled (the dup was silently skipped)');
+    deps.getExistingJobs = realGet;
+
+    /* board flow: acceptPending on a name that is already live retires the card WITHOUT a second POST ---- */
+    clearFakes(); AutoJobStore.reset(); boardHere = true;
+    deps.getExistingJobs = () => Promise.resolve(['Standup draft']);
+    AutoJobStore.init(deps);
+    hn.next = { text: TWO };
+    await AutoJobStore.propose({ proactive: true });
+    A.eq(AutoJobStore.pendingCount(), 2, 'both proposals pinned (the board pins optimistically)');
+    const dupCardId = AutoJobStore.pendingList().find(p => p.title === 'Standup draft').id;
+    const dr = await AutoJobStore.acceptPending(dupCardId);
+    A.eq(dr.ok, true, 'accepting a now-duplicate card resolves it (not a failure)');
+    A.eq(dr.duplicate, true, 'the accept reports it was a duplicate');
+    A.eq(scheduled.length, 0, 'accepting a duplicate card fires NO POST (the routine already exists)');
+    A.ok(!AutoJobStore.pendingList().some(p => p.id === dupCardId), 'the duplicate card vanishes (COMMS: a decided card is removed)');
+    deps.getExistingJobs = realGet; boardHere = false;
+
+    /* server-reported duplicate (mint gate) also retires a pending card ---- */
+    clearFakes(); AutoJobStore.reset(); boardHere = true;
+    AutoJobStore.init(deps);
+    hn.next = { text: TWO };
+    await AutoJobStore.propose({ proactive: true });
+    const anyId = AutoJobStore.pendingList()[0].id;
+    const realSched2 = deps.scheduleJob;
+    deps.scheduleJob = () => Promise.resolve({ ok: true, duplicate: true });   // the server gate refused it
+    AutoJobStore.init(deps);
+    const sr = await AutoJobStore.acceptPending(anyId);
+    A.eq(sr.duplicate, true, 'a server-reported duplicate is surfaced');
+    A.ok(!AutoJobStore.pendingList().some(p => p.id === anyId), 'a server-reported duplicate also retires the card (no ghost)');
+    deps.scheduleJob = realSched2; boardHere = false;
+
     A.report('autojobstore.test');
   } catch (e) {
     A.ok(false, 'unexpected throw: ' + (e && e.stack || e));
