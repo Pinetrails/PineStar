@@ -711,7 +711,10 @@ const StationUI = (() => {
      system prompt the model runs on, so editing one here re-shapes the agent for real (App's
      applyAgentConfig, injected as access.config.apply). memory.md is the agent's own notebook —
      shown read-only and honestly labelled, because the agent writes it, not the Commander. */
-  let agTab = 'brief';      // 'brief' | 'growth' | 'memory' | 'skills' | 'config'
+  // DOSSIER is CONSOLE MODE: the five sub-tabs are console sections (ids brief|growth|memory|skills|config),
+  // so the ACTIVE section lives in consoleSection['agents'] (not a private var). agSection() reads it with a
+  // 'brief' fallback; it's the single source of truth for the memory-live guard + the BRIEF-only tick.
+  function agSection() { return consoleSection['agents'] || 'brief'; }
   const agEdit = {};        // config fileKey -> true while its editor is open
   let memLiveWired = false, memRefreshTimer = 0;   // M-mem.6: the once-wired, debounced Memory Core live-refresh
   let skillsLiveWired = false, skillsRefreshTimer = 0;   // A3: the once-wired, debounced AGENT SKILLS live-refresh
@@ -1084,7 +1087,7 @@ const StationUI = (() => {
     if (memLiveWired || typeof U === 'undefined' || !U.bus) return;
     memLiveWired = true;
     const bump = () => {
-      if (!open['agents'] || agTab !== 'memory') return;
+      if (!open['agents'] || agSection() !== 'memory') return;
       clearTimeout(memRefreshTimer);
       memRefreshTimer = setTimeout(() => { const a = present[sel]; if (a) loadMemoryCore(a); }, 400);
     };
@@ -1207,7 +1210,8 @@ const StationUI = (() => {
     const a = present[sel];
     const goCfg = body.querySelector('.ag-tags .tag.model[data-goconfig]');
     if (goCfg) {
-      const jump = () => { agTab = 'config'; sfx('click'); rerender('agents'); };
+      // console mode: "jump to CONFIG" = land the rail on the config section, then rerender (mountConsole reads consoleSection).
+      const jump = () => { consoleSection['agents'] = 'config'; sfx('click'); rerender('agents'); };
       goCfg.addEventListener('click', jump);
       goCfg.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); jump(); } });
     }
@@ -1238,34 +1242,58 @@ const StationUI = (() => {
   }
 
   function buildAgents(body) {
-    if (!present.length) { body.innerHTML = '<p class="dim">No agents on station.</p>'; return; }
+    if (!present.length) {
+      // shared empty-state vocabulary rather than a bare paragraph (no agents = nothing to dossier)
+      body.innerHTML = '<div class="empty-state" style="margin:32px auto;"><span class="es-glyph">▯</span>' +
+        '<b>NO AGENTS ON STATION</b><span>Commission one from RECRUITMENT to open its dossier.</span></div>';
+      return;
+    }
     if (sel >= present.length) sel = 0;
     const a = present[sel];
     const act = activity();
-    const tabContent = agTab === 'config' ? agConfig(a) : agTab === 'skills' ? agSkills(a && a.id) : agTab === 'growth' ? agGrowth(a) : agTab === 'memory' ? agMemory(a) : agBrief(a);
-    body.innerHTML =
-      '<div class="ag-wrap"><div class="ag-list">' +
-      present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '" style="--ci:' + i + '">' +
-        '<span style="color:' + x.color + '">●</span> ' + esc(x.name) + '</div>').join('') +
-      '</div><div class="ag-detail">' +
-      agHead(a, act) +
-      '<div class="ag-tabs">' +
-      '<button class="ag-tab ' + (agTab === 'brief' ? 'sel' : '') + '" data-tab="brief">BRIEF</button>' +
-      '<button class="ag-tab ' + (agTab === 'growth' ? 'sel' : '') + '" data-tab="growth">GROWTH</button>' +
-      '<button class="ag-tab ' + (agTab === 'memory' ? 'sel' : '') + '" data-tab="memory">MEMORY</button>' +
-      '<button class="ag-tab ' + (agTab === 'skills' ? 'sel' : '') + '" data-tab="skills">SKILLS</button>' +
-      '<button class="ag-tab ' + (agTab === 'config' ? 'sel' : '') + '" data-tab="config">CONFIG</button>' +
-      '</div>' +
-      tabContent +
-      '</div></div>';
-    body.querySelectorAll('.ag-item').forEach(it =>
-      it.addEventListener('click', () => { sel = +it.dataset.i; delete agEdit['__name']; sfx('click'); rerender('agents'); }));
-    body.querySelectorAll('.ag-tab').forEach(tb =>
-      tb.addEventListener('click', () => { agTab = tb.dataset.tab; delete agEdit['__name']; sfx('click'); rerender('agents'); }));
-    wireHead(body);
-    if (agTab === 'config') wireConfig(body);
-    if (agTab === 'memory') { wireMemoryLive(); loadMemoryCore(a); }
-    drawPortrait(body.querySelector('#ag-portrait'), a);
+    // CONSOLE MODE: the roster is the rail-top; the five former sub-tabs are console sections. Every section
+    // pane is built up-front (mountConsole keeps them all in the DOM), so the single wire pass below reaches
+    // every control — wireHead (header, all sections), wireConfig (CONFIG pane), loadMemoryCore (MEMORY pane).
+    const frag = html => (elx => { elx.innerHTML = html; });
+    const host = mountConsole(body, 'agents', [
+      { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is right now — identity, level, purpose, and live status.',
+        build: frag(agHead(a, act) + agBrief(a)) },
+      { id: 'growth', label: 'GROWTH', glyph: '★', desc: 'XP ladder, satisfaction gauge, trophy case, and station prestige.',
+        build: frag(agGrowth(a)) },
+      { id: 'memory', label: 'MEMORY', glyph: '◈', desc: 'Every belief this agent has kept, traced to the run that earned it.',
+        build: frag(agMemory(a)) },
+      { id: 'skills', label: 'SKILLS', glyph: '◇', desc: 'The capabilities granted by the objects at this agent’s workstation.',
+        build: frag(agSkills(a && a.id)) },
+      { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'The markdown files that compose this agent’s prompt, plus its per-agent model pin.',
+        build: frag(agConfig(a)) }
+    ], {
+      search: true, searchPlaceholder: 'search dossier…',
+      railTop: (top) => {
+        // ROSTER: keep the exact .ag-list / .ag-item class names; upgrade the rows premium (color dot, name,
+        // and a cheap live status hint driven by the same run state the crew panel reads).
+        const hint = (x) => runningAgents.has(x.id)
+          ? '<span class="ag-item-st working">' + (act === 'talk' ? 'talking' : 'working') + '</span>'
+          : '<span class="ag-item-st">idle</span>';
+        top.innerHTML =
+          '<div class="ag-list" role="listbox" aria-label="Agents on station">' +
+          present.map((x, i) => '<div class="ag-item ' + (i === sel ? 'sel' : '') + '" data-i="' + i + '" role="option" aria-selected="' + (i === sel ? 'true' : 'false') + '" tabindex="0" style="--ci:' + i + '">' +
+            '<span class="ag-item-dot" style="color:' + x.color + '">●</span>' +
+            '<span class="ag-item-nm">' + esc(x.name) + '</span>' + hint(x) + '</div>').join('') +
+          '</div>';
+        const pick = (it) => { sel = +it.dataset.i; delete agEdit['__name']; sfx('click'); rerender('agents'); };
+        top.querySelectorAll('.ag-item').forEach(it => {
+          it.addEventListener('click', () => pick(it));
+          it.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(it); } });
+        });
+      }
+    });
+    // ONE wire pass against the all-panes host (mirrors buildSettings/buildSkills). The BRIEF-only tick and the
+    // memory live-refresh never wipe CONFIG/MEMORY DOM, so open editors survive.
+    wireHead(host);
+    wireConfig(host);
+    wireMemoryLive();
+    loadMemoryCore(a);
+    drawPortrait(host.querySelector('#ag-portrait'), a);
   }
   function drawPortrait(cv, a) {
     if (!cv) return;
@@ -1309,7 +1337,35 @@ const StationUI = (() => {
     if ('imageSmoothingQuality' in pctx) pctx.imageSmoothingQuality = 'high';
     pctx.drawImage(buf, minX, minY, sw, sh, (cv.width - dw) / 2, cv.height - padBot - dh, dw, dh);
   }
-  function openAgent(i) { sel = i; if (open.agents) { if (minimized.agents) restoreTerm('agents'); rerender('agents'); } else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { w: '600px', feature: true }); }
+  // BRIEF live telemetry, painted in place (no DOM rebuild → open CONFIG/MEMORY editors are never wiped).
+  // Touches only: the hero status dot + role line (agHead), and the roster idle/working hints (railTop). Every
+  // lookup is scoped to the open dossier window and no-ops if the node isn't there (e.g. mid-rename, retab).
+  function refreshDossierLive() {
+    const w = open.agents; if (!w) return;
+    const act = activity();
+    const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
+    const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    // hero: the status dot (class) + the role line's status word (keeps ' · HAB-01' suffix)
+    const dot = w.querySelector('.ag-role-line .ag-sdot');
+    if (dot) dot.className = 'ag-sdot ' + dotCls;
+    const line = w.querySelector('.ag-role-line');
+    if (line) {
+      // rebuild the line's TEXT after the dot span without touching the dot node itself
+      let node = dot ? dot.nextSibling : null;
+      const txt = statusText + ' · HAB-01';
+      if (node && node.nodeType === 3) node.textContent = txt;
+      else if (line && dot) dot.insertAdjacentText('afterend', txt);
+    }
+    // roster: recompute each row's idle/working hint from the live run state
+    w.querySelectorAll('.ag-list .ag-item').forEach(it => {
+      const x = present[+it.dataset.i]; if (!x) return;
+      const st = it.querySelector('.ag-item-st'); if (!st) return;
+      const live = runningAgents.has(x.id);
+      st.textContent = live ? (act === 'talk' ? 'talking' : 'working') : 'idle';
+      st.classList.toggle('working', live);
+    });
+  }
+  function openAgent(i) { sel = i; if (open.agents) { if (minimized.agents) restoreTerm('agents'); rerender('agents'); } else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { console: true, feature: true }); }
 
   /* ============== SKILLS — capability readout (mirrors the sidecar CAP_REGISTRY) ==============
      The agent's real tools come from the OBJECTS at its workstation (object = capability — see
@@ -2798,9 +2854,11 @@ const StationUI = (() => {
     const [txt, cls] = pillFor(activity());
     const p = $('#status-pill');
     if (p) { p.textContent = txt; p.className = cls; }
-    // refresh BRIEF's live telemetry only — never on CONFIG or MEMORY, where a rerender would wipe an open
-    // editor (and MEMORY self-refreshes via its own debounced memory.* U.bus listener, so it never needs tick)
-    if (open.agents && agTab !== 'config' && agTab !== 'memory') rerender('agents');
+    // refresh BRIEF's live telemetry only. CONSOLE MODE keeps every section pane in the DOM at once, so a full
+    // rerender would rebuild (and wipe) an open CONFIG editor / MEMORY list even when BRIEF is showing. Instead
+    // surgically repaint just the live nodes (hero status dot + line, roster idle/working hints) in place — no
+    // DOM rebuild, so open editors are never touched. (MEMORY self-refreshes via its own debounced U.bus listener.)
+    if (open.agents) refreshDossierLive();
   }
   function flashSave() {
     const d = $('#save-dot'); if (!d) return;
@@ -3998,7 +4056,7 @@ const StationUI = (() => {
 
   /* ============== lifecycle ============== */
   const BUILDERS = {
-    agents:   ['AGENT DOSSIER',          buildAgents,    { w: '560px' }],
+    agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
     skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { console: true }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
