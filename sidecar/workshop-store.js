@@ -32,13 +32,21 @@ function agentIdOf(key) {
   return raw;
 }
 
+// normalized title key for duplicate-work detection (doctrine: an agent must never re-create work that already
+// exists). Lowercase, trim, collapse internal whitespace. An empty normalized key means "no title" — those never
+// dedup against each other (they dedup by id only).
+function normTitle(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
+
 // the on-disk shape, normalized so a partial/legacy/absent file always loads to a full, safe record.
 function normalize(stored) {
   const s = (stored && typeof stored === 'object') ? stored : {};
   return {
     grant: s.grant === true,
     backlog: Array.isArray(s.backlog) ? s.backlog.filter(it => it && typeof it === 'object' && it.id) : [],
-    denylist: Array.isArray(s.denylist) ? s.denylist.filter(x => x != null).map(String).filter(Boolean) : []
+    denylist: Array.isArray(s.denylist) ? s.denylist.filter(x => x != null).map(String).filter(Boolean) : [],
+    // normalized titles of DISCARDED items — a discarded piece of work can't be re-queued under a fresh id either
+    // (doctrine: never re-create work the Commander already rejected). Distinct from `denylist` (by backlogId).
+    deniedTitles: Array.isArray(s.deniedTitles) ? s.deniedTitles.filter(x => x != null).map(String).filter(Boolean) : []
   };
 }
 
@@ -80,27 +88,34 @@ function makeWorkshopStore(deps) {
     });
   }
 
-  // add a build request to the queue. item: { id, title, detail?, source? }. now = injected ms. A duplicate id or
-  // a denylisted id is a no-op (returns the item that already exists / null). Returns the stored item.
+  // add a build request to the queue. item: { id, title, detail?, source? }. now = injected ms. Dedup doctrine —
+  // an agent must never re-create work that already exists:
+  //   • same backlogId → idempotent add (returns the existing item);
+  //   • denylisted backlogId → refused ('discarded');
+  //   • same NORMALIZED title as a live backlog item → refused ('duplicate', returns the existing item);
+  //   • same NORMALIZED title as a previously DISCARDED item → refused ('discarded').
+  // Returns { item, reason } where reason ∈ 'added'|'exists'|'duplicate'|'discarded'. item is null on 'discarded'.
   function queue(agentId, item, now) {
     const it = item || {};
     const id = String(it.id || '').trim();
     if (!id) throw new Error('workshop.queue: item.id required');
-    let out = null;
+    const title = String(it.title || '').slice(0, 200);
+    const nt = normTitle(title);
+    let out = { item: null, reason: 'added' };
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
-      if (rec.denylist.indexOf(id) >= 0) { out = null; return rec; }          // discarded once → never re-queue
-      const existing = rec.backlog.find(b => b.id === id);
-      if (existing) { out = existing; return rec; }                            // idempotent add
-      out = {
-        id: id,
-        title: String(it.title || '').slice(0, 200),
-        detail: String(it.detail || '').slice(0, 4000),
-        source: String(it.source || 'queued').slice(0, 40),   // 'queued' | 'quest'
-        ts: Number(now) || 0
-      };
-      rec.backlog.push(out);
+      if (rec.denylist.indexOf(id) >= 0) { out = { item: null, reason: 'discarded' }; return undefined; }   // discarded id → never re-queue
+      const existingById = rec.backlog.find(b => b.id === id);
+      if (existingById) { out = { item: existingById, reason: 'exists' }; return undefined; }                // idempotent add
+      if (nt) {
+        if (rec.deniedTitles.indexOf(nt) >= 0) { out = { item: null, reason: 'discarded' }; return undefined; }   // that work was discarded before
+        const dupByTitle = rec.backlog.find(b => normTitle(b.title) === nt);
+        if (dupByTitle) { out = { item: dupByTitle, reason: 'duplicate' }; return undefined; }               // already lined up
+      }
+      const stored = { id: id, title: title, detail: String(it.detail || '').slice(0, 4000), source: String(it.source || 'queued').slice(0, 40), ts: Number(now) || 0 };
+      rec.backlog.push(stored);
       while (rec.backlog.length > BACKLOG_CAP) rec.backlog.shift();
+      out = { item: stored, reason: 'added' };
       return rec;
     }).then(() => out);
   }
@@ -147,8 +162,12 @@ function makeWorkshopStore(deps) {
     if (!id) return Promise.resolve();
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
+      const gone = rec.backlog.find(b => b.id === id);
       rec.backlog = rec.backlog.filter(b => b.id !== id);
       if (rec.denylist.indexOf(id) < 0) { rec.denylist.push(id); while (rec.denylist.length > DENYLIST_CAP) rec.denylist.shift(); }
+      // also denylist the normalized TITLE so the same work can't be re-queued under a fresh id (dedup doctrine).
+      const nt = normTitle(gone && gone.title);
+      if (nt && rec.deniedTitles.indexOf(nt) < 0) { rec.deniedTitles.push(nt); while (rec.deniedTitles.length > DENYLIST_CAP) rec.deniedTitles.shift(); }
       return rec;
     });
   }

@@ -1493,7 +1493,18 @@ const cronDriver = makeCronDriver({
       cronJobs = jobs; saveCronJobs();   // contended beyond budget: persist locally (advance already serialized in-tick)
     } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); }
   },
-  runOnce: (opts) => runOnce(opts),                       // the SAME run host the browser uses (hoisted decl below)
+  // the SAME run host the browser uses (hoisted decl below). AWAY WORKSHOP: a workshop shift routine stores the
+  // WORKSHOP_MARK sentinel as its prompt; when the driver fires it, redirect to runWorkshopShift (which pops the
+  // agent's backlog, builds under workshop/<runId>/, validates the manifest, emits workshop.built). An empty
+  // backlog makes runWorkshopShift a silent no-op — the cron machinery still records a clean run. Any other
+  // routine runs unchanged.
+  runOnce: (opts) => {
+    const first = opts && Array.isArray(opts.messages) && opts.messages[0] && String(opts.messages[0].content || '');
+    if (first && first.indexOf(WORKSHOP_MARK) === 0) {
+      return runWorkshopShift(opts.agentId, { runId: opts.runId, emit: opts.emit, signal: opts.signal });
+    }
+    return runOnce(opts);
+  },
   emit: cronEmitNotify, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
   getKey: (provider) => cronKeyFor(provider),
   providerForJob: (job) => cronProviderFor(job),
@@ -1859,6 +1870,13 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/arm') return handleCronArm(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
+  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
@@ -2753,6 +2771,277 @@ async function handleCronRun(req, res) {
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     try { res.end(); } catch (_) {}
   }
+}
+
+/* ============================ AWAY WORKSHOP (W2 — the away-work driver) ============================
+   When the Commander grants "Build things while I'm away" for an agent, a per-agent WORKSHOP SHIFT (reusing the
+   cron scheduler — see armWorkshopShift below) pops the top backlog item and fires a runOnce on the AUTONOMOUS
+   surface (isTask, jail-scoped writes unlocked by the W1 grant) with a persona that REQUIRES building the
+   deliverable under workshop/<runId>/ and writing a deliverable.json manifest (pinned schema, plan §4). On
+   completion the manifest is VALIDATED against the real files on disk; only a valid manifest emits workshop.built.
+   Empty backlog → a silent no-op (no toast, no event). Nothing is ever auto-applied to the user's real projects. */
+
+// the WORKSHOP shift prompt/persona. Plain language (ease-of-use law): it tells the agent to actually BUILD, where
+// to put it, and to describe it honestly. The '[WORKSHOP_SHIFT]' first line is also the cron routine's stored
+// prompt sentinel (armWorkshopShift) — the injected runOnce wrapper detects it and redirects to runWorkshopShift.
+const WORKSHOP_MARK = '[WORKSHOP_SHIFT]';
+function workshopPrompt(runId, item) {
+  const dir = 'workshop/' + runId;
+  const what = (item && (item.title || item.detail)) ? ((item.title || '') + (item.detail ? ('\n\nDetails: ' + item.detail) : '')) : 'a small, genuinely useful deliverable';
+  return WORKSHOP_MARK + '\n'
+    + 'You are working in your private workshop while the Commander is away — build something real and reviewable.\n\n'
+    + 'BUILD THIS:\n' + what + '\n\n'
+    + 'RULES:\n'
+    + '- Put every file for this deliverable UNDER the folder "' + dir + '/" in your workspace (use fs.write with paths like "' + dir + '/<file>").\n'
+    + '- Do the actual work with your real tools (web search/read, files, memory). Ground factual claims in what the tools return.\n'
+    + '- You CANNOT run commands or tests here, so do not claim anything was tested — list what a human still needs to verify.\n'
+    + '- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:\n'
+    + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + ((item && item.id) || '') + '",\n'
+    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",\n'
+    + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
+    + '    "howToUse": "<how the Commander uses it>", "notVerified": ["<what you could not check>"] }\n'
+    + '- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). This is required — a shift with no manifest is discarded.';
+}
+
+// validate a run's deliverable.json against the pinned schema v1 AND the real files on disk. Returns the parsed
+// manifest (normalized) on success, or null with a reason logged. Truthful telemetry: workshop.built is emitted
+// ONLY when this passes, so the return-card never asserts a deliverable the harness can't prove exists.
+async function validateWorkshopManifest(agentId, runId) {
+  const relDir = 'workshop/' + runId;
+  let manAbs, base;
+  try { const r = await fsJail._internals.resolveInside(agentId, relDir + '/deliverable.json'); manAbs = r.abs; base = r.base; }
+  catch (e) { console.warn('[workshop] manifest path rejected for', agentId, runId, '-', (e && e.message) || e); return null; }
+  let raw;
+  try { raw = await fsp.readFile(manAbs, 'utf8'); }
+  catch (_) { console.warn('[workshop] no deliverable.json for', agentId, 'run', runId, '— not emitting'); return null; }
+  let man; try { man = JSON.parse(raw); } catch (_) { console.warn('[workshop] deliverable.json is not valid JSON for run', runId); return null; }
+  if (!man || typeof man !== 'object' || man.v !== 1) { console.warn('[workshop] manifest missing v:1 for run', runId); return null; }
+  if (!Array.isArray(man.files) || !man.files.length) { console.warn('[workshop] manifest lists no files for run', runId); return null; }
+  // PROVE each listed file exists inside the run dir (jail-checked). Recompute bytes from disk (never trust the
+  // model's number) and drop any listed file that isn't actually there — an empty proven set fails validation.
+  const runDirRel = relDir + '/';
+  const provenFiles = [];
+  for (const f of man.files) {
+    const p = String((f && f.path) || '').replace(/^[\\/]+/, '');
+    if (!p || p === 'deliverable.json') continue;
+    let abs; try { ({ abs } = await fsJail._internals.resolveInside(agentId, runDirRel + p)); } catch (_) { continue; }
+    let st; try { st = await fsp.stat(abs); } catch (_) { continue; }
+    if (st && st.isFile()) provenFiles.push({ path: p, bytes: st.size });
+  }
+  if (!provenFiles.length) { console.warn('[workshop] no listed file actually exists on disk for run', runId, '— not emitting'); return null; }
+  // return a normalized, disk-proven manifest (the card renders THIS, not the model's raw claims).
+  return {
+    v: 1, runId: String(runId), agentId: String(agentId), backlogId: String(man.backlogId || ''),
+    title: String(man.title || 'Untitled deliverable').slice(0, 200),
+    kind: ['tool', 'fix', 'draft', 'doc', 'other'].indexOf(man.kind) >= 0 ? man.kind : 'other',
+    summary: String(man.summary || '').slice(0, 4000),
+    files: provenFiles,
+    howToUse: String(man.howToUse || '').slice(0, 4000),
+    notVerified: Array.isArray(man.notVerified) ? man.notVerified.map(s => String(s).slice(0, 500)).slice(0, 40) : []
+  };
+}
+
+// run ONE workshop shift for an agent: claim the top backlog item, build it under workshop/<runId>/, validate the
+// manifest, and (only if valid) emit workshop.built. Reuses the SAME runOnce host + autonomous posture as cron.
+// Returns { fired, runId?, reason }. An empty/denied backlog is a SILENT no-op (fired:false, no event, no toast).
+async function runWorkshopShift(agentId, opts) {
+  const o = opts || {};
+  const id = String(agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { fired: false, reason: 'bad-agent' };
+  if (!workshopOf(id)) return { fired: false, reason: 'not-granted' };   // grant revoked between arm and fire
+  const runId = o.runId || crypto.randomUUID();
+  const item = await workshopStore.claimNext(id, runId);
+  if (!item) return { fired: false, reason: 'empty-backlog' };           // nothing to build → silent no-op
+
+  const model = cronModelFor({ agentId: id });
+  const provider = cronProviderFor({ agentId: id });
+  const key = cronKeyFor(provider);
+  if (!model || !cronHasCredential(provider, key)) {
+    await workshopStore.releaseClaim(id, runId);                          // couldn't run → return the item to the queue
+    return { fired: false, reason: 'no-capability' };
+  }
+
+  const ac = o.signal ? null : new AbortController();
+  const signal = o.signal || (ac && ac.signal);
+  if (ac) runs.set(runId, ac);
+  const emit = typeof o.emit === 'function' ? o.emit : function () {};
+  const prompt = workshopPrompt(runId, item);
+  try { placeCronWorkitem(id, 'Workshop: ' + (item.title || 'build'), runId); } catch (_) {}
+  let threw = null;
+  try {
+    await runOnce({
+      key: key, model: model, system: cronSystemFor(id),
+      messages: [{ role: 'user', content: prompt }],
+      agentId: id, isTask: true, emit: emit, signal: signal,
+      runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast
+    });
+  } catch (e) { threw = e; }
+  finally { if (ac) runs.delete(runId); }
+
+  // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
+  const manifest = await validateWorkshopManifest(id, runId);
+  if (!manifest) {
+    await workshopStore.releaseClaim(id, runId);   // no deliverable produced → item stays queued for a later shift
+    return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest' };
+  }
+  await workshopStore.markBuilt(id, item.id, runId);
+  try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
+  return { fired: true, runId: runId, reason: 'built', manifest: manifest };
+}
+
+/* ---- the WORKSHOP SHIFT ROUTINE: a per-agent cron routine, armed when the toggle flips ON, disarmed OFF.
+   We REUSE the cron scheduler rather than build a new one: the routine's stored prompt is the WORKSHOP_MARK
+   sentinel, and the runOnce wrapper injected into the cron driver (below) detects it and redirects the fire to
+   runWorkshopShift(). Default cadence: a slow recurring shift so an away agent picks up queued work on its own;
+   force-fireable via POST /api/workshop/shift for an attended test. Idempotent: at most ONE workshop routine per
+   agent (found by meta.workshop). ---- */
+const WORKSHOP_SHIFT_SCHEDULE = String(ENV('WORKSHOP_SHIFT_SCHEDULE') || 'every 360m');   // slow by default; overridable
+function findWorkshopRoutine(agentId) {
+  const id = String(agentId || '');
+  return (cronJobs || []).find(j => j && j.meta && j.meta.workshop === true && j.agentId === id) || null;
+}
+function armWorkshopShift(agentId) {
+  const id = String(agentId || '');
+  if (findWorkshopRoutine(id)) return false;   // already armed (idempotent)
+  let schedule; try { schedule = parseCronScheduleOr400(WORKSHOP_SHIFT_SCHEDULE, Date.now()); } catch (_) { schedule = cron.parseSchedule('every 360m', Date.now()); }
+  const jobId = crypto.randomUUID();
+  try {
+    withCronWrite(jobs => cronStore.createJob(jobs, {
+      id: jobId, name: 'Away workshop — ' + id, prompt: WORKSHOP_MARK, schedule: schedule,
+      agentId: id, enabled: true, meta: { workshop: true }
+    }, { id: jobId, now: Date.now() }));
+  } catch (e) { console.warn('[workshop] arm routine failed:', (e && e.message) || e); return false; }
+  // arming the shift needs the tick timer running so it actually fires unattended; arm cron if it isn't already.
+  try { if (!cronArmed) { cronArmed = true; saveCronArmed(true); armCron(); } } catch (_) {}
+  return true;
+}
+function disarmWorkshopShift(agentId) {
+  const j = findWorkshopRoutine(agentId);
+  if (!j) return false;
+  try { withCronWrite(jobs => cronStore.removeJob(jobs, j.id)); } catch (e) { console.warn('[workshop] disarm routine failed:', (e && e.message) || e); return false; }
+  return true;
+}
+
+// POST /api/workshop/grant { agentId, on } — record/clear the Commander's "Build things while I'm away" consent
+// for an agent, and arm/disarm its workshop shift routine accordingly. Plain-language surface; not a jargon knob.
+async function handleWorkshopGrant(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
+  const agentId = String(body.agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  const on = body.on === true || body.on === 'true';
+  try { await workshopStore.setGrant(agentId, on); } catch (e) { return json(500, { error: 'could not save that setting' }); }
+  try { if (on) armWorkshopShift(agentId); else disarmWorkshopShift(agentId); } catch (_) {}
+  json(200, { ok: true, agentId: agentId, on: on });
+}
+
+// POST /api/workshop/queue { agentId, title, detail?, source? } — add a build request ("Build this while I'm
+// away"). Returns the queued item, or a plain error if the agent isn't granted / the id was already discarded.
+async function handleWorkshopQueue(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
+  const agentId = String(body.agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  const title = String(body.title || '').trim();
+  if (!title && !String(body.detail || '').trim()) return json(400, { error: 'say what to build' });
+  const item = { id: (body.id && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.id))) ? String(body.id) : crypto.randomUUID(), title: title, detail: body.detail, source: (body.source === 'quest' ? 'quest' : 'queued') };
+  let r;
+  try { r = await workshopStore.queue(agentId, item, Date.now()); } catch (e) { return json(500, { error: 'could not queue that' }); }
+  // DEDUP DOCTRINE (mint-ledger lane): never re-create work that already exists. A duplicate/discarded add returns
+  // ok:false with a plain, anti-retry-style message so the model/UI stops re-queuing the same thing.
+  if (r.reason === 'duplicate') return json(200, { ok: false, reason: 'duplicate', item: r.item, message: 'That is already on the build list — no need to add it again.' });
+  if (r.reason === 'discarded') return json(200, { ok: false, reason: 'discarded', message: 'That work was discarded before and will not be built again — do not re-queue it.' });
+  if (r.reason === 'exists') return json(200, { ok: true, item: r.item, reason: 'exists', message: 'Already queued.' });
+  json(200, { ok: true, item: r.item, reason: 'added' });
+}
+
+// GET /api/workshop/backlog?agent=<id> — the raw queued/building/built items for an agent (the "what's lined up" view).
+async function handleWorkshopBacklog(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const agentId = String((new URL(req.url, 'http://x')).searchParams.get('agent') || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  let rec; try { rec = workshopStore.read(agentId); } catch (e) { return json(500, { error: 'could not read the backlog' }); }
+  json(200, { ok: true, agentId: agentId, granted: rec.grant, backlog: rec.backlog });
+}
+
+// GET /api/workshop/pending?agent=<id> — undecided deliverable manifests (built, not yet kept/discarded/dismissed).
+// Reads each built item's on-disk manifest (re-validated so a wiped/edited dir never shows a phantom deliverable).
+async function handleWorkshopPending(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const agentId = String((new URL(req.url, 'http://x')).searchParams.get('agent') || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  const rec = workshopStore.read(agentId);
+  const out = [];
+  for (const it of rec.backlog) {
+    if (!it.builtRunId) continue;
+    const man = await validateWorkshopManifest(agentId, it.builtRunId);   // re-prove it still exists
+    if (man) out.push(man);
+  }
+  json(200, { ok: true, agentId: agentId, pending: out });
+}
+
+// POST /api/workshop/decide { agentId, runId, decision: 'keep'|'discard'|'later', destPath? } — the return-card's
+// verdict. keep = copy the run dir's files to destPath under normal interactive consent; discard = delete the run
+// dir + denylist the backlogId; later = dismiss only (leave everything in the workshop). Emits workshop.decided.
+async function handleWorkshopDecide(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
+  const agentId = String(body.agentId || '');
+  const runId = String(body.runId || '');
+  const decision = String(body.decision || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  if (['keep', 'discard', 'later'].indexOf(decision) < 0) return json(400, { error: 'unknown decision' });
+  const item = workshopStore.itemForRun(agentId, runId);
+  const relDir = 'workshop/' + runId;
+
+  if (decision === 'later') {
+    try { chanEmit('workshop.decided', { agentId, runId, decision: 'later' }); } catch (_) {}
+    return json(200, { ok: true, decision: 'later' });
+  }
+
+  if (decision === 'discard') {
+    // wipe the run dir (jail-checked) and denylist the backlogId so it isn't silently rebuilt.
+    try { const { abs } = await fsJail._internals.resolveInside(agentId, relDir); await fsp.rm(abs, { recursive: true, force: true }); } catch (_) {}
+    if (item) { try { await workshopStore.discard(agentId, item.id); } catch (_) {} }
+    try { chanEmit('workshop.decided', { agentId, runId, decision: 'discard' }); } catch (_) {}
+    return json(200, { ok: true, decision: 'discard' });
+  }
+
+  // keep: copy the deliverable's real files out to destPath. destPath is an ABSOLUTE, user-chosen folder — this is
+  // an interactive, user-initiated action (they clicked Keep and picked a folder), so it writes OUTSIDE the jail
+  // by design. We validate the manifest first (only copy proven files) and never touch anything but destPath.
+  const destPath = String(body.destPath || '');
+  if (!destPath) return json(400, { error: 'choose where to keep it' });
+  const man = await validateWorkshopManifest(agentId, runId);
+  if (!man) return json(404, { error: 'that deliverable is no longer available' });
+  let copied = 0;
+  try {
+    for (const f of man.files) {
+      const { abs: srcAbs } = await fsJail._internals.resolveInside(agentId, relDir + '/' + f.path);
+      const destAbs = path.join(destPath, f.path);
+      await fsp.mkdir(path.dirname(destAbs), { recursive: true });
+      await fsp.copyFile(srcAbs, destAbs);
+      copied++;
+    }
+  } catch (e) { return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) }); }
+  try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', destPath: destPath }); } catch (_) {}
+  json(200, { ok: true, decision: 'keep', destPath: destPath, copied: copied });
+}
+
+// POST /api/workshop/shift { agentId } — force-fire ONE workshop shift NOW (attended test of the unattended path).
+// Streams the run as NDJSON like /api/cron/run, then reports whether a deliverable was built.
+async function handleWorkshopShiftNow(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const agentId = String(body.agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'choose a valid agent' })); }
+  res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
+  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  let result;
+  try { result = await runWorkshopShift(agentId, { emit: emit, broadcast: true }); }
+  catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
+  try { res.write(JSON.stringify({ name: 'workshop.shift.result', payload: result }) + '\n'); } catch (_) {}
+  try { res.end(); } catch (_) {}
 }
 
 /* POST /api/checkpoint/restore { agentId, snapshotId } — the manual "rewind": hard-reset an agent's workspace to

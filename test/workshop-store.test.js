@@ -44,16 +44,39 @@ function freshStore() {
     A.ok(s2.hasGrant('hero') === false, 'grant flips back to false');
   }
 
-  // ---- 2. queue: idempotent by id, denylisted ids refused, FIFO order preserved ----
+  // ---- 2. queue: idempotent by id, denylisted ids refused, FIFO order preserved, returns { item, reason } ----
   {
     const s = freshStore();
     const a = await s.queue('hero', { id: 'b1', title: 'Build a CSV cleaner', source: 'queued' }, 1000);
-    A.ok(a && a.id === 'b1', 'queue returns the stored item');
+    A.ok(a && a.item && a.item.id === 'b1' && a.reason === 'added', 'queue returns { item, reason:added }');
     const dup = await s.queue('hero', { id: 'b1', title: 'again' }, 2000);
-    A.ok(dup && dup.title === 'Build a CSV cleaner', 'queue is idempotent by id (keeps the first)');
+    A.ok(dup.reason === 'exists' && dup.item.title === 'Build a CSV cleaner', 'idempotent by id (reason:exists, keeps the first)');
     await s.queue('hero', { id: 'b2', title: 'second' }, 3000);
     const bl = s.backlogOf('hero');
     A.eq(bl.map(x => x.id), ['b1', 'b2'], 'backlog preserves FIFO insertion order');
+  }
+
+  // ---- 2b. DEDUP BY NORMALIZED TITLE: never re-create work that already exists (mint-ledger doctrine) ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'x1', title: 'Build a CSV Cleaner' }, 1);
+    const dupTitle = await s.queue('hero', { id: 'x2', title: '  build   a csv cleaner ' }, 2);   // same normalized title, diff id
+    A.ok(dupTitle.reason === 'duplicate', 'a same-normalized-title add is rejected as a duplicate');
+    A.ok(dupTitle.item && dupTitle.item.id === 'x1', 'duplicate returns the EXISTING lined-up item');
+    A.eq(s.backlogOf('hero').map(x => x.id), ['x1'], 'the duplicate never enters the backlog');
+    // a genuinely different title still queues
+    const diff = await s.queue('hero', { id: 'x3', title: 'Build a JSON validator' }, 3);
+    A.ok(diff.reason === 'added', 'a distinct title still queues normally');
+  }
+
+  // ---- 2c. a DISCARDED title cannot be re-queued under a fresh id ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'd1', title: 'Write the onboarding doc' }, 1);
+    await s.discard('hero', 'd1');
+    const reId = await s.queue('hero', { id: 'd2', title: 'write the ONBOARDING doc' }, 2);   // same work, new id
+    A.ok(reId.reason === 'discarded' && reId.item === null, 'a discarded title is refused even under a fresh id');
+    A.eq(s.backlogOf('hero').length, 0, 'the discarded work never re-enters the backlog');
   }
 
   // ---- 3. claimNext pops the top un-built item and stamps the building runId; empty queue -> null ----
@@ -96,7 +119,7 @@ function freshStore() {
     A.eq(s.backlogOf('hero').map(x => x.id), [], 'discard removes the item from the backlog');
     A.ok(s.isDenied('hero', 'b1') === true, 'discarded id is on the permanent denylist');
     const re = await s.queue('hero', { id: 'b1', title: 'sneaking it back' }, 5);
-    A.ok(re === null, 'a discarded id is REFUSED on re-queue (discard = never again)');
+    A.ok(re.item === null && re.reason === 'discarded', 'a discarded id is REFUSED on re-queue (discard = never again)');
     A.eq(s.backlogOf('hero').length, 0, 'the denylisted item never re-enters the backlog');
     // denylist survives a fresh store
     const fs = s._durable; A.ok(fs, 'durable handle exposed');
@@ -110,12 +133,12 @@ function freshStore() {
     await s1.discard('hero', 'z1');
     const s2 = makeWorkshopStore({ fs, path, workspaces: '/ws', writeDurable });
     A.ok(s2.isDenied('hero', 'z1') === true, 'denylist survives a restart (durable)');
-    A.ok((await s2.queue('hero', { id: 'z1', title: 'q2' }, 2)) === null, 'restart-loaded denylist still refuses');
+    A.ok((await s2.queue('hero', { id: 'z1', title: 'q2' }, 2)).reason === 'discarded', 'restart-loaded denylist still refuses');
   }
 
   // ---- 7. normalize is defensive: partial/legacy/absent records load to a full safe shape ----
   {
-    A.eq(normalize(null), { grant: false, backlog: [], denylist: [] }, 'null -> empty safe record');
+    A.eq(normalize(null), { grant: false, backlog: [], denylist: [], deniedTitles: [] }, 'null -> empty safe record');
     A.eq(normalize({ grant: true }).grant, true, 'partial record keeps its grant');
     A.eq(normalize({ backlog: [{ id: 'ok' }, { nope: 1 }, 'junk'] }).backlog.length, 1, 'backlog drops entries without an id');
     A.eq(normalize({ denylist: ['a', 1, null, 'b'] }).denylist, ['a', '1', 'b'], 'denylist coerces to non-empty strings');
