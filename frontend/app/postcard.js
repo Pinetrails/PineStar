@@ -254,7 +254,7 @@
       phosphorText(ctx, 'STATION RECORD', rx, colY, 20, phDim, '', 'right');
       const s = card.station;
       const parts = [];
-      if (s.tasks != null) parts.push(s.tasks + ' tasks');
+      if (s.tasks != null) parts.push(s.tasks + (s.tasks === 1 ? ' task' : ' tasks'));
       if (s.deliverables != null) parts.push(s.deliverables + ' delivered');
       if (s.workMinutes != null) parts.push(s.workMinutes + ' min worked');
       if (parts.length) phosphorText(ctx, parts.join('   ·   '), rx, colY + 34, 26, phBright, '', 'right');
