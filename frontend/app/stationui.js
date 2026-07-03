@@ -593,7 +593,7 @@ const StationUI = (() => {
           pane.classList.remove('con-sec-hidden');
           pane.classList.add('con-sec-searchshow');
           // a "row" = a labelled control block. We match on visible text of these granular blocks.
-          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint');
+          const rows = pane.querySelectorAll('.con-sec-body .set-row, .con-sec-body label.set-row, .con-sec-body .prov-card, .con-sec-body .key-row, .con-sec-body .set-about, .con-sec-body .ms-h, .con-sec-body .perk, .con-sec-body .sk-card, .con-sec-body .mc-hint, .con-sec-body .mc-row');
           let hits = 0;
           rows.forEach(r => {
             const hit = (r.textContent || '').toLowerCase().indexOf(q) >= 0;
@@ -3044,27 +3044,16 @@ const StationUI = (() => {
      become real agent tools, gated by the same consent prompt as everything else. The server URL +
      optional bearer token are stored by the sidecar (never displayed) via /api/connectors. */
   function buildConnectors(body) {
-    body.innerHTML =
-      '<h4 class="ms-h">SPOTIFY</h4>' +
-      '<p class="set-about">Let your agents <b>search & control your Spotify</b> — play, pause, queue, “what’s playing”. ' +
-        'One-time setup: make a free app at <span class="dim">developer.spotify.com/dashboard</span>, add the redirect URI below to it, paste the Client ID, then connect. ' +
-        '<span class="dim">(OAuth PKCE — no client secret is ever stored.)</span></p>' +
-      '<div id="sp-status" class="mc-url dim">checking…</div>' +
-      '<div class="mc-form">' +
-        '<input id="sp-client" class="key-input" placeholder="Spotify Client ID" autocomplete="off" spellcheck="false" maxlength="64">' +
-        '<div class="mc-url dim">Redirect URI to whitelist: <code id="sp-redir">…</code></div>' +
-        '<div class="mc-acts">' +
-          '<button class="bb sm" id="sp-connect">▶ CONNECT SPOTIFY</button>' +
-          '<button class="bb xs danger" id="sp-disconnect" style="display:none">✕ DISCONNECT</button>' +
-        '</div>' +
-      '</div>' +
-      '<div id="sp-msg" class="msg"></div>' +
-      '<h4 class="ms-h">MCP CONNECTORS</h4>' +
+    // CONSOLE MODE: MCP CONNECTORS (the main event — list + add/edit form kept adjacent) and SPOTIFY as two
+    // sections instead of one long scroll. Every id/data-attr and wiring function below is unchanged — the markup
+    // just moved into panes. mountConsole appends its host to `body`, so the existing body.querySelector wiring
+    // (setupSpotify, the MCP form/list handlers) resolves against the mounted panes with no rewrite.
+    const secMcp =
       '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
         'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
         '<span class="dim">(Remote http(s) servers, or a local <code>stdio</code> command. Secrets are stored locally by the sidecar and never displayed.)</span></p>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
-      '<h4 class="ms-h" id="mc-form-h">ADD A CONNECTOR</h4>' +
+      '<div class="sec"><span class="sec-l" id="mc-form-h">ADD A CONNECTOR</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form" id="mc-form">' +
         '<input id="mc-id" class="key-input" placeholder="id — e.g. github (a-z 0-9 _ -)" autocomplete="off" spellcheck="false" maxlength="40">' +
         '<div class="mc-hint">A short handle for this server. Its tools appear to agents as <code>mcp__&lt;id&gt;__&lt;tool&gt;</code>.</div>' +
@@ -3099,6 +3088,25 @@ const StationUI = (() => {
         '</div>' +
       '</div>' +
       '<div id="mc-msg" class="msg"></div>';
+    const secSpotify =
+      '<p class="set-about">Let your agents <b>search & control your Spotify</b> — play, pause, queue, “what’s playing”. ' +
+        'One-time setup: make a free app at <span class="dim">developer.spotify.com/dashboard</span>, add the redirect URI below to it, paste the Client ID, then connect. ' +
+        '<span class="dim">(OAuth PKCE — no client secret is ever stored.)</span></p>' +
+      '<div id="sp-status" class="mc-url dim">checking…</div>' +
+      '<div class="mc-form">' +
+        '<input id="sp-client" class="key-input" placeholder="Spotify Client ID" autocomplete="off" spellcheck="false" maxlength="64">' +
+        '<div class="mc-url dim">Redirect URI to whitelist: <code id="sp-redir">…</code></div>' +
+        '<div class="mc-acts">' +
+          '<button class="bb sm" id="sp-connect">▶ CONNECT SPOTIFY</button>' +
+          '<button class="bb xs danger" id="sp-disconnect" style="display:none">✕ DISCONNECT</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="sp-msg" class="msg"></div>';
+    const frag = h => (el => { el.innerHTML = h; });
+    mountConsole(body, 'connectors', [
+      { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) },
+      { id: 'spotify', label: 'SPOTIFY', glyph: '♫', desc: 'Let your agents search and control your Spotify — play, pause, queue, “what’s playing”.', build: frag(secSpotify) }
+    ], { search: true, searchPlaceholder: 'search connectors…' });
 
     const listEl = body.querySelector('#mc-list');
     const msgEl = body.querySelector('#mc-msg');
@@ -3353,17 +3361,20 @@ const StationUI = (() => {
       return '<button type="button" class="rt-agent-btn' + (active ? ' active' : '') + '" data-agent="' + esc(id) + '" aria-pressed="' + (active ? 'true' : 'false') + '" style="--rt-agent-color:' + esc((a && a.color) || 'var(--ph)') + '">' +
         '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(nm) + '</span><span class="rt-agent-id">' + esc(id) + '</span></button>';
     }
-    body.innerHTML =
-      '<div class="sec"><span class="sec-l">SCHEDULED ROUTINES</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+    // CONSOLE MODE: two sections — ACTIVE ROUTINES (the state you check: gate badge + suggest CTA + list) and
+    // CREATE ROUTINE (the whole form + preview + run-output). A third grouping felt forced, so 2 it is. Every id /
+    // data-attr / wiring stays; the markup just moved into panes (mountConsole appends its host to `body`, so the
+    // body.querySelector wiring below resolves unchanged).
+    const secActive =
+      '<div id="rt-gate" class="set-about"></div>' +
+      // SELF-INITIATION (autonomy Slice 2): let the agent propose standing jobs grounded in what it knows about you.
+      '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ SUGGEST ROUTINES</button>' +
+      '<div id="rt-list" class="mc-list"><span class="loading pulse">loading…</span></div>';
+    const secCreate =
       '<div class="brief-block"><div class="brief-k">HOW IT WORKS</div>' +
         '<div class="brief-v">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
         'With no one watching, ungranted file writes are denied silently unless you have pre-approved them. ' +
         '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></div></div>' +
-      '<div id="rt-gate" class="set-about"></div>' +
-      // SELF-INITIATION (autonomy Slice 2): let the agent propose standing jobs grounded in what it knows about you.
-      '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ SUGGEST ROUTINES</button>' +
-      '<div id="rt-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
-      '<div class="sec"><span class="sec-l">ADD A ROUTINE</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form">' +
         '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
         '<textarea id="rt-prompt" class="key-input" rows="2" placeholder="what should it do each run? e.g. search for new AI-policy news and summarize the top 3" style="resize:vertical"></textarea>' +
@@ -3375,6 +3386,11 @@ const StationUI = (() => {
       '</div>' +
       '<div id="rt-msg" class="msg"></div>' +
       '<div id="rt-out" class="msg" hidden style="white-space:pre-wrap;max-height:220px;overflow:auto"></div>';
+    const frag = h => (el => { el.innerHTML = h; });
+    mountConsole(body, 'routines', [
+      { id: 'active', label: 'ACTIVE ROUTINES', glyph: '◷', desc: 'Standing jobs that fire on a schedule — their next run, last result, and whether the scheduler is armed.', build: frag(secActive) },
+      { id: 'create', label: 'CREATE ROUTINE', glyph: '✦', desc: 'Put your agent to work on a schedule — a morning brief, a nightly summary, a recurring check.', build: frag(secCreate) }
+    ], { search: false });
 
     const listEl = body.querySelector('#rt-list'), gateEl = body.querySelector('#rt-gate');
     const msgEl = body.querySelector('#rt-msg'), outEl = body.querySelector('#rt-out');
@@ -3430,7 +3446,15 @@ const StationUI = (() => {
             '<b>NO ROUTINES YET</b><span>Put your agent to work on a schedule — a morning brief, a nightly summary, a recurring check.</span>' +
             '<button class="es-cta" id="rt-empty-cta" type="button">+ ADD A ROUTINE</button></div>';
           const cta = listEl.querySelector('#rt-empty-cta');
-          if (cta) cta.addEventListener('click', () => { sfx('click'); const nm = body.querySelector('#rt-name'); if (nm) nm.focus(); });
+          // jump the console to the CREATE section (mirrors buildAgents' CONFIG jump: set the remembered section,
+          // then re-activate the console tab) and focus the name field once the pane is visible.
+          if (cta) cta.addEventListener('click', () => {
+            sfx('click');
+            consoleSection['routines'] = 'create';
+            const tab = body.querySelector('#con-tab-routines-create');
+            if (tab) tab.click();
+            const nm = body.querySelector('#rt-name'); if (nm) nm.focus();
+          });
         }
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage routines.</div>'; }
     }
@@ -3602,15 +3626,20 @@ const StationUI = (() => {
   const LB_REASON = { done: '✓ done', max_iters: '⟳ looped out', budget: 'over budget', cancelled: '⏹ cancelled', error: '✕ error', refusal: '⊘ refused' };
   function buildLogbook(body) {
     const agentId = (present[sel] && present[sel].id) || 'agent';
-    body.innerHTML =
-      '<h4 class="ms-h">LOGBOOK — ' + esc(agentId) + '</h4>' +
-      '<div class="set-save"><button class="bb sm lb-tab active" data-tab="runs">▦ RUNS</button> ' +
-      '<button class="bb sm lb-tab" data-tab="slag">⚠ SLAG</button> ' +
-      '<button class="bb sm lb-tab" data-tab="insights">📊 INSIGHTS</button></div>' +
-      '<p class="set-about" id="lb-about"></p>' +
-      '<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>';
-    const listEl = body.querySelector('#lb-list'), aboutEl = body.querySelector('#lb-about');
-    let tab = 'runs';
+    // CONSOLE MODE: RUNS · SLAG · INSIGHTS as three sections instead of an inline tab strip. Each section owns its
+    // OWN list host (#lb-list / #lb-slag / #lb-insights) so a mid-fetch close of one can't overwrite another. The
+    // per-section desc carries the honest copy #lb-about used to hold. mountConsole appends its host to `body`, so
+    // the section-scoped body.querySelector loads below resolve against the mounted panes.
+    const frag = h => (el => { el.innerHTML = h; });
+    mountConsole(body, 'logbook', [
+      { id: 'runs', label: 'RUNS', glyph: '▦', desc: 'Every finished run, newest first — what it produced and why it ended.',
+        build: frag('<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>') },
+      { id: 'slag', label: 'SLAG', glyph: '⚠', desc: 'Post-mortems for runs that ended without a deliverable, diagnosed into a real, fixable cause.',
+        build: frag('<div id="lb-slag" class="mc-list"><span class="loading pulse">loading…</span></div>') },
+      { id: 'insights', label: 'INSIGHTS', glyph: '◨', desc: 'Run totals, success rate, and model distribution.',
+        build: frag('<div id="lb-insights" class="mc-list"><span class="loading pulse">loading…</span></div>') }
+    ], {});
+    const listEl = body.querySelector('#lb-list');
     function runRow(r) {
       const when = r.ts ? esc(fmtRel(new Date(r.ts).toISOString())) : '';
       const rl = LB_REASON[r.reason] || esc(r.reason || 'done');
@@ -3647,49 +3676,49 @@ const StationUI = (() => {
         '<div class="mc-url dim">' + esc(noSpendText(d.cause || '')) + '</div>' +
         (d.fix ? '<div class="mc-detail">→ ' + esc(noSpendText(d.fix)) + '</div>' : '') + '</div>';
     }
-    async function refresh() {
-      if (tab === 'runs') {
-        aboutEl.innerHTML = 'Every finished run, newest first — what it produced and why it ended.';
-        try {
-          const j = await (await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100')).json();
-          const runs = (j && j.runs) || [];
-          listEl.innerHTML = runs.length ? runs.map(runRow).join('') : '<div class="fb-empty">NO RUNS YET.<br><span>Finished runs appear here once this agent does real work.</span></div>';
-          // H3.2: clicking a run opens its durable transcript (GET /api/transcript?stream=) inline — toggle + lazy-load.
-          listEl.querySelectorAll('.lb-run-open').forEach(row => row.addEventListener('click', async () => {
-            const tx = row.querySelector('.lb-tx'); if (!tx) return;
-            if (!tx.hidden) { tx.hidden = true; return; }
-            tx.hidden = false;
-            if (tx.dataset.loaded) return;
-            tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
-            try {
-              const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(row.dataset.stream) + '&agent=' + encodeURIComponent(agentId) + '&limit=50')).json();
-              const turns = (t && t.turns) || [];
-              tx.innerHTML = turns.length ? turns.map(m => '<div class="mc-detail"><b>' + esc(m.role) + ':</b> ' + esc(String(m.content || '').slice(0, 400)) + '</div>').join('') : '<div class="mc-detail">no transcript recorded for this workstream.</div>';
-              tx.dataset.loaded = '1';
-            } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load transcript.</div>'; }
-          }));
-        } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see run history.</div>'; }
-      } else if (tab === 'slag') {
-        aboutEl.innerHTML = 'Post-mortems for runs that ended without a deliverable, diagnosed into a real, fixable cause.';
-        let slag = [];
-        try { if (typeof World !== 'undefined' && World.slagLog) slag = World.slagLog().slice().reverse(); } catch (_) {}
-        listEl.innerHTML = slag.length ? slag.map(slagRow).join('') : '<div class="fb-empty">NO SLAG — clean line.<br><span>A post-mortem appears here when a run ends without producing a result.</span></div>';
-      } else {
-        // H3.3: aggregate outcomes folded from the run history (GET /api/insights).
-        aboutEl.innerHTML = 'Run totals, success rate, and model distribution.';
-        try {
-          const j = await (await fetch('/api/insights?agent=' + encodeURIComponent(agentId))).json();
-          listEl.innerHTML = insightsHtml(j);
-        } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see insights.</div>'; }
-      }
+    // RUNS: the append-only run history (GET /api/runs), with each run's transcript lazy-expandable inline.
+    // Each loader re-queries its host by id after the await so a panel closed mid-fetch is a safe no-op (mirrors
+    // loadMemoryCore), and only ever writes its OWN section host — never a sibling's.
+    async function loadRuns() {
+      const host = body.querySelector('#lb-list'); if (!host) return;
+      try {
+        const j = await (await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100')).json();
+        const h = body.querySelector('#lb-list'); if (!h) return;
+        const runs = (j && j.runs) || [];
+        h.innerHTML = runs.length ? runs.map(runRow).join('') : '<div class="fb-empty">NO RUNS YET.<br><span>Finished runs appear here once this agent does real work.</span></div>';
+        // H3.2: clicking a run opens its durable transcript (GET /api/transcript?stream=) inline — toggle + lazy-load.
+        h.querySelectorAll('.lb-run-open').forEach(row => row.addEventListener('click', async () => {
+          const tx = row.querySelector('.lb-tx'); if (!tx) return;
+          if (!tx.hidden) { tx.hidden = true; return; }
+          tx.hidden = false;
+          if (tx.dataset.loaded) return;
+          tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
+          try {
+            const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(row.dataset.stream) + '&agent=' + encodeURIComponent(agentId) + '&limit=50')).json();
+            const turns = (t && t.turns) || [];
+            tx.innerHTML = turns.length ? turns.map(m => '<div class="mc-detail"><b>' + esc(m.role) + ':</b> ' + esc(String(m.content || '').slice(0, 400)) + '</div>').join('') : '<div class="mc-detail">no transcript recorded for this workstream.</div>';
+            tx.dataset.loaded = '1';
+          } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load transcript.</div>'; }
+        }));
+      } catch (_) { const h = body.querySelector('#lb-list'); if (h) h.innerHTML = '<div class="mc-detail">sidecar offline — start it to see run history.</div>'; }
     }
-    body.querySelectorAll('.lb-tab').forEach(b => b.addEventListener('click', () => {
-      if (b.dataset.tab === tab) return;
-      tab = b.dataset.tab; sfx('click');
-      body.querySelectorAll('.lb-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
-      refresh();
-    }));
-    refresh();
+    // SLAG: the unproductive-run post-mortems (World.slagLog), synchronous — no fetch, just the live ring.
+    function loadSlag() {
+      const host = body.querySelector('#lb-slag'); if (!host) return;
+      let slag = [];
+      try { if (typeof World !== 'undefined' && World.slagLog) slag = World.slagLog().slice().reverse(); } catch (_) {}
+      host.innerHTML = slag.length ? slag.map(slagRow).join('') : '<div class="fb-empty">NO SLAG — clean line.<br><span>A post-mortem appears here when a run ends without producing a result.</span></div>';
+    }
+    // INSIGHTS: aggregate outcomes folded from the run history (GET /api/insights). H3.3.
+    async function loadInsights() {
+      const host = body.querySelector('#lb-insights'); if (!host) return;
+      try {
+        const j = await (await fetch('/api/insights?agent=' + encodeURIComponent(agentId))).json();
+        const h = body.querySelector('#lb-insights'); if (h) h.innerHTML = insightsHtml(j);
+      } catch (_) { const h = body.querySelector('#lb-insights'); if (h) h.innerHTML = '<div class="mc-detail">sidecar offline — start it to see insights.</div>'; }
+    }
+    // all three panes exist up-front (mountConsole keeps them all in the DOM), so load each once — no tab gating.
+    loadRuns(); loadSlag(); loadInsights();
   }
 
   /* ============== COMMANDER DOSSIER — the station-wide model of the USER (the glass box) ==============
@@ -4063,10 +4092,10 @@ const StationUI = (() => {
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
-    connectors:['CONNECTORS',            buildConnectors,{ w: '560px' }],
-    routines: ['ROUTINES',               buildRoutines,  { w: '600px' }],
+    connectors:['CONNECTORS',            buildConnectors,{ console: true }],
+    routines: ['ROUTINES',               buildRoutines,  { console: true }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
-    logbook:  ['LOGBOOK',                buildLogbook,   { w: '600px' }],
+    logbook:  ['LOGBOOK',                buildLogbook,   { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
     manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }],
