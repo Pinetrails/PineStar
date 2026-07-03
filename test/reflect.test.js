@@ -16,12 +16,12 @@ const { makeClock } = require('../shared/clock-rng.js');
   ] };
   const stub = () => 'PREFERENCE: user prefers terse answers\nFACT: deploys with npm publish\nrandom chatter, no tag\nSKILL: can tag releases';
 
-  // ---- happy path: tagged lines -> structured, stamped, scoped proposals (untagged line ignored) ----
+  // ---- happy path: tagged lines -> structured, stamped, scoped proposals (untagged + SKILL lines ignored:
+  //      skill distillation is owned by the background skill review, never the memory turn-in) ----
   const r = await reflect(run, { propose: stub, clock: makeClock(500), redact });
-  A.eq(r.proposals.length, 3, 'three tagged lines -> three proposals (untagged line ignored)');
+  A.eq(r.proposals.length, 2, 'two accepted tagged lines -> two proposals (untagged + SKILL ignored)');
   A.eq(r.proposals[0].kind, 'profile', 'PREFERENCE maps to profile');
   A.eq(r.proposals[1].kind, 'fact', 'FACT maps to fact');
-  A.eq(r.proposals[2].kind, 'skill', 'SKILL maps to skill');
   A.eq(r.proposals[0].content, 'user prefers terse answers', 'content parsed off the tag');
   A.eq(r.proposals[0].scope, 'global', 'proposals are global by default');
   A.eq(r.proposals[0].streamId, null, 'no stream scope until M-mem.2b');
@@ -89,6 +89,17 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq((await reflect(run, { propose: () => 'NOTE: some loose observation about the run', clock: makeClock(0), redact })).proposals.length, 0, 'NOTE-tagged lines are ignored (dropped from the contract)');
   A.eq(parse('NOTE: x\nFACT: deploys the alpha service nightly').length, 1, 'parse() ignores NOTE, keeps FACT');
   A.eq(parse('NOTE: x').length, 0, 'a lone NOTE parses to nothing');
+
+  // ---- SKILL is no longer an accepted kind: reflection's one-liner "skills" were restated run instructions
+  //      (the fake-feeling popup class), and real skills belong to the background skill review ----
+  A.eq((await reflect(run, { propose: () => 'SKILL: To use OpenRouter-powered image generation from tools, the API key should be exposed as OPENROUTER_API_KEY', clock: makeClock(0), redact })).proposals.length, 0, 'SKILL-tagged lines are ignored (dropped from the contract)');
+  A.eq(parse('SKILL: x\nFACT: deploys the alpha service nightly').length, 1, 'parse() ignores SKILL, keeps FACT');
+
+  // ---- advice-echo floor: restated instructions/how-to from the run are not beliefs — dropped even when tagged FACT ----
+  A.eq((await reflect(run, { propose: () => 'FACT: to use image generation the key should be exposed as OPENROUTER_API_KEY', clock: makeClock(0), redact })).proposals.length, 0, 'a "to use X…" instruction echo is floored');
+  A.eq((await reflect(run, { propose: () => 'FACT: the token should be set in the environment file', clock: makeClock(0), redact })).proposals.length, 0, 'a "should be set…" instruction echo is floored');
+  A.eq((await reflect(run, { propose: () => 'FACT: you should run the migration before deploying', clock: makeClock(0), redact })).proposals.length, 0, 'a "you should…" advice echo is floored');
+  A.eq((await reflect(run, { propose: () => 'FACT: deploys the alpha service with npm publish then tags the release', clock: makeClock(0), redact })).proposals.length, 1, 'a durable belief survives the advice-echo floor');
 
   // ---- NONE / empty / untagged / thrown / missing-propose -> no proposals, never throws ----
   A.eq((await reflect(run, { propose: () => 'NONE', clock: makeClock(0), redact })).proposals.length, 0, 'NONE -> nothing');

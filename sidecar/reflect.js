@@ -14,10 +14,14 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // Accepted kinds match the advertised FACT/PREFERENCE/SKILL contract. NOTE was dropped: it was a loose
+  // Accepted kinds match the advertised FACT/PREFERENCE contract. NOTE was dropped: it was a loose
   // catch-all the model used for run-specific chatter ("we discussed X"), which is exactly the low-value noise
-  // the Commander complained about. KIND_LABEL keeps 'note' for legacy KEPT records, but reflection no longer mints it.
-  const KIND = { FACT: 'fact', SKILL: 'skill', PREFERENCE: 'profile', PROFILE: 'profile' };
+  // the Commander complained about. SKILL was dropped next (2026-07-03, same complaint): reflection's one-liner
+  // "skills" were restated instructions from the run ("expose OPENROUTER_API_KEY…") — not procedures — and the
+  // credential-shaped ones tripped the high-stakes confirm deck, so the junkiest class got the LOUDEST popup.
+  // Real skill distillation is owned by the background skill review (skillreview.js): it gates on substantial
+  // tool work and writes actual skill documents. KIND_LABEL keeps 'note'/'skill' for legacy KEPT records.
+  const KIND = { FACT: 'fact', PREFERENCE: 'profile', PROFILE: 'profile' };
   const KIND_LABEL = { fact: 'Fact', skill: 'Skill', profile: 'Preference', note: 'Note' };
   const MAX_CONTENT = 280;        // a memory is a short durable belief, not a transcript
   const MIN_CONTENT = 8;          // below this it isn't a durable belief — a value floor against trivia
@@ -25,9 +29,15 @@
   const DEFAULT_MAX = 5;          // never dump a wall of proposals at the turn-in beat
   const PROMPT_CAP = 4000;        // chars of recent exchange fed to the aux model
   const MIN_REFLECT_CHARS = 200;  // skip reflection on trivial exchanges (one cheap call still costs)
+  // SKILL stays in LINE so a model that still emits it parses cleanly — KIND no longer maps it, so the
+  // candidate is silently dropped (conservative: never mis-tagged as a fact).
   const LINE = /^\s*[-*•]?\s*(FACT|SKILL|PREFERENCE|PROFILE)\s*[:\-—]\s*(.+?)\s*$/i;
   // transient openers that mark a line as run-specific narration rather than a durable belief — dropped by the floor.
   const TRANSIENT = /^(the user (said|asked|wanted|mentioned|requested)|we (discussed|talked|covered|went over)|in this (run|task|session|conversation)|this (run|task|session)|today (i|we)|the (task|conversation) (was|is))\b/i;
+  // advice-echo: instructions/procedures restated from the run ("to use X, expose Y…", "the key should be set…")
+  // are how-to chatter the agent just SAID, not beliefs about the user/world — the fake-feeling popup class the
+  // Commander flagged. Procedure knowledge belongs to the background skill review, never the memory turn-in.
+  const ADVICE = /^(to (use|enable|set up|configure|get|install|run|access)\b|(here('s| is) )?how to\b|steps? to\b|you (can|should|need to)\b)|\bshould be (exposed|set|added|configured|stored|placed|defined|passed|provided)\b/i;
 
   // strip a recall fence the model may have echoed, so a forged <recalled-memory> block can't be reflected
   // into a durable memory (mirrors context.stripRecallFence — kept inline so reflect stays standalone).
@@ -44,8 +54,9 @@
     }
     let body = turns.join('\n');
     if (body.length > cap) body = body.slice(body.length - cap);   // keep the most recent exchange
-    return 'From this exchange, list ONLY durable facts, preferences, or skills worth remembering for future ' +
-      'runs — one per line, each tagged FACT:, PREFERENCE:, or SKILL:. Skip anything transient or already ' +
+    return 'From this exchange, list ONLY durable facts or preferences worth remembering for future ' +
+      'runs — one per line, each tagged FACT: or PREFERENCE:. These are beliefs about the user or the world, ' +
+      'never instructions, procedures, or advice you gave. Skip anything transient or already ' +
       'obvious. If nothing is worth keeping, reply NONE.\n\n' + body;
   }
 
@@ -97,6 +108,7 @@
     if (c.length < MIN_CONTENT) return true;
     if (floorTokens(c) < MIN_TOKENS) return true;
     if (TRANSIENT.test(c)) return true;
+    if (ADVICE.test(c)) return true;   // restated how-to from the run is not a belief — drop it (see ADVICE)
     return false;
   }
 

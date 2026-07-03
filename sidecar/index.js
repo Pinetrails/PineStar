@@ -832,7 +832,7 @@ async function runReflection(o) {
   // the prompt (recent user/agent exchange) and parses the tagged reply; here we only supply the model.
   const propose = async (prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [
-      { role: 'system', content: 'You are an agent reflecting right after finishing a task. Extract only DURABLE, reusable memories worth keeping for future runs — stable user preferences, learned facts (state the gist, not the whole result), or repeatable skills. One per line, each tagged FACT:, PREFERENCE:, or SKILL:. Skip anything transient, run-specific, or already obvious. If nothing is worth keeping, reply NONE.' },
+      { role: 'system', content: 'You are an agent reflecting right after finishing a task. Extract only DURABLE, reusable memories worth keeping for future runs — stable user preferences or learned facts (state the gist, not the whole result). These are beliefs about the user or the world, never instructions, procedures, or advice you gave during the run. One per line, each tagged FACT: or PREFERENCE:. Skip anything transient, run-specific, or already obvious. If nothing is worth keeping, reply NONE.' },
       { role: 'user', content: prompt }
     ] };
     let out = '', usage = null;
