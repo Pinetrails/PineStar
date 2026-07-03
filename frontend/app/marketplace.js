@@ -24,6 +24,9 @@ const Marketplace = (() => {
   // R2 editor working state (the unified fork/create form): the picked gear set, cadence id, category, and the
   // fork provenance carried from a TWEAK. Reset on every open of the editor.
   let editGear = [], editCadence = null, editCategory = 'general', editForkedFrom = null, editParams = [];
+  // R5 handoff: the run this editor session is bottling (a mintFromRun proposal's sourceRunId), preserved through
+  // save so a bottled recipe keeps honest provenance. null for every other entry point (create / tweak / edit / import).
+  let editSourceRunId = null;
   // R3 launch/routine state: the live cron jobs (fetched once when the recipes dossier renders) so a recipe can
   // show a "● live — every morning" indicator, and whether the launch pane is in RUN-NOW or MAKE-ROUTINE mode.
   let cronJobs = null, cronArmed = false, launchMode = 'run', launchCadence = null;
@@ -157,6 +160,7 @@ const Marketplace = (() => {
     opener = trigger;
     ctx = context || {};
     view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
+    editForkedFrom = null; editSourceRunId = null;
     laneFilter = 'all'; catFilter = 'all'; query = '';
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();
@@ -194,6 +198,23 @@ const Marketplace = (() => {
     renderBar();
     renderStage();
     const panel = root.querySelector('.mkt'); if (panel) panel.focus();
+    maybeConsumeRecipeMint();   // R5: if opened to bottle a run, drop straight into the editor pre-filled from it
+  }
+  // R5 "BOTTLE A RUN" consume: app.js seeds ctx.recipeMint (a Recipes.mintFromRun proposal — a DRAFT custom recipe
+  // pre-filled from a 👍-rated run's directive, carrying sourceRunId) before opening the bay on the RECIPES tab.
+  // Open the R2 editor on it (same entry as TWEAK, but source:'custom' + sourceRunId preserved), then CLEAR the seed
+  // so it's one-shot (a re-render / tab-switch never re-triggers it). Graceful no-op if absent or malformed.
+  function maybeConsumeRecipeMint() {
+    const seed = ctx && ctx.recipeMint;
+    if (!seed || typeof seed !== 'object') return;
+    if (ctx) ctx.recipeMint = null;   // one-shot: consume before doing anything that could re-render
+    if (!hasRecipes() || tab !== 'recipes') return;
+    // a bottled proposal must at least carry a task template to be editable; anything less is a malformed seed.
+    if (!seed.task || !String(seed.task).trim()) return;
+    pendingMintKey = null; pendingMintTemplate = null;
+    // 'create' entry (a brand-new custom, not a fork of an existing recipe) — the proposal is the pre-fill.
+    // enterRecipeEditor lifts seed.sourceRunId into editSourceRunId so it survives save.
+    enterRecipeEditor(seed, 'create');
   }
   function close() {
     if (!root) return;
@@ -1244,6 +1265,9 @@ const Marketplace = (() => {
     // map any legacy/raw category onto a rail bucket so the CATEGORY <select> (developer/research/creator/ops/
     // general) always has a matching option selected; unknown → general.
     editCategory = (seed.category && CAT_TO_RAIL[seed.category]) || 'general';
+    // R5 bottled-run provenance: a mintFromRun proposal carries sourceRunId; carry it through save. Every other
+    // entry (blank create / tweak / import) has none → null. An EDIT preserves whatever the saved record had.
+    editSourceRunId = (seed.sourceRunId != null) ? String(seed.sourceRunId) : null;
     // params: plain, editable copies ({key,label,placeholder,required}). A blank create starts with none — the
     // author writes {tokens} and the param rows are derived on save (paramsFromTemplate) if they leave them empty.
     editParams = (Array.isArray(seed.params) ? seed.params : []).map(p => ({
@@ -1335,7 +1359,7 @@ const Marketplace = (() => {
   }
   function wireRecipeSaveForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; editForkedFrom = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; editForkedFrom = null; editSourceRunId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
     const taskIn = stage.querySelector('#mkt-r-task'), tokens = stage.querySelector('#mkt-r-tokens'), preview = stage.querySelector('#mkt-r-preview');
     // read the fill-in grid back into editParams (keys/labels/placeholder/required) from the live inputs.
     const syncParamsFromDOM = () => {
@@ -1420,10 +1444,14 @@ const Marketplace = (() => {
       // provenance: an EDIT keeps its id (and its existing source); a FORK stamps source:'fork' + forkedFrom.
       if (editing) rec.id = editing.id;
       else if (editForkedFrom) { rec.source = 'fork'; rec.forkedFrom = editForkedFrom; }
+      // R5: a bottled-run mint carries sourceRunId through save (honest provenance). Prefer the live editor state;
+      // on an EDIT of an already-bottled custom, fall back to the saved record's value so it isn't dropped.
+      const srid = editSourceRunId != null ? editSourceRunId : (editing && editing.sourceRunId != null ? editing.sourceRunId : null);
+      if (srid != null) rec.sourceRunId = srid;
       try {
         const saved = Recipes.saveCustom(rec);
         if (pendingMintKey && mintApi()) MintStore.markMinted(pendingMintKey);
-        pendingMintKey = null; pendingMintTemplate = null; editForkedFrom = null;
+        pendingMintKey = null; pendingMintTemplate = null; editForkedFrom = null; editSourceRunId = null;
         focusRecipe = saved.id;
         sfx('click'); note((editing ? 'updated' : 'saved') + ' recipe: ' + saved.name, 'good');
         editingRecipeId = null; view = 'grid'; renderStage();
