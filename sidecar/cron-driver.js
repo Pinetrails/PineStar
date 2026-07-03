@@ -157,7 +157,13 @@
         p = runOnce({
           key: key, model: model, system: (ident.system && String(ident.system)) || personaOf(job.agentId, job), messages: messages,
           agentId: job.agentId, isTask: true, emit: sink, signal: ac.signal,
-          runId: runId, surface: 'autonomous', trigger: 'schedule', provider: provider
+          // streamId 'cron-'+runId makes this run's transcript durable under a per-RUN named stream (runId is a
+          // fresh newId() already in scope — determinism-clean). Without it the reply is buffered into `state.buf`
+          // and only an outcome enum escapes, so the actual work is invisible: it persists under the 'global'
+          // stream no UI renders. A PER-RUN id (not per-job) keeps the run's message seed empty (index.js only
+          // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
+          // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
+          runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider
         });
       } catch (e) { p = Promise.reject(e); }
       Promise.resolve(p).then(
