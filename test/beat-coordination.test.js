@@ -118,12 +118,15 @@ const iRunEnd = chatSrc.indexOf('armRateFallback(p.agentId');
 const iBusyGuard = chatSrc.indexOf('if (isBusy() || interview) return;', iWire);
 A.ok(iRunEnd > iWire && iBusyGuard > 0 && iRunEnd < iBusyGuard,
   'the fallback is armed BEFORE the post-run slot\'s stand-down guards (a blocked moment cannot skip arming)');
-// hole 1: proposed-but-empty batch — the early return must rate first (the beat-slot release that now precedes
-// it on the same line — slotMemoryEmpty, GROWTH Tier 1 — is tolerated: this lock is about the RATE guarantee)
-A.ok(/if \(!proposals\.length\) \{[^}]*maybeStandaloneRate\(agentId, runId\); return; \}/.test(chatSrc),
-  'an EMPTY proposal batch (turn-in stood the slot down, then never rendered) still fires the standalone rate beat');
+// hole 1: proposed-but-empty batch (no deck AND no receipts) — the no-deck branch of routeProposalBatch must
+// release any reserved slot and STILL rate (the silent-save UX split receipts from the deck; the RATE guarantee
+// is unchanged — a run that reflected but rendered nothing must not silently drop its rating).
+const iRoute = chatSrc.indexOf('async function routeProposalBatch');
+A.ok(iRoute > 0, 'chat.js defines routeProposalBatch (the shared proposed/write fetch+route)');
+A.ok(/if \(reservedSlot\) slotMemoryEmpty\(runId\);\s*maybeStandaloneRate\(agentId, runId\);/.test(chatSrc.slice(iRoute, iRoute + 2400)),
+  'an EMPTY/no-deck proposal batch releases the reserved slot and still fires the standalone rate beat');
 // hole 3: a batch on a non-displayed stream is notify-only — the rating must not vanish with it
-const iNotify = chatSrc.indexOf('memories to review');
+const iNotify = chatSrc.indexOf('to review');
 A.ok(iNotify > 0 && /maybeStandaloneRate\(agentId, runId\)/.test(chatSrc.slice(iNotify, iNotify + 400)),
   'an off-stream (notify-only) batch still fires the standalone rate beat');
 // hole 2: a deck decided without rating — finishBatch must hand the rating to the standalone beat

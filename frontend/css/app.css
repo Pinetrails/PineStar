@@ -432,6 +432,31 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
+/* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
+   memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
+   quiet stream line (no auto-collapse). Shares the gold-inset turn-in family but reads calmer (thinner border,
+   softer fill) — it's a notice, not a prompt. .receipts drops the deck's flex-gap so lines stack tight. */
+.cmsg.turnin.receipts { background: linear-gradient(180deg, rgba(255,211,74,.05), rgba(255,211,74,.02)); }
+.cmsg.turnin.receipts .body { gap: 4px; }
+.receipt-item {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 4px 8px;
+  padding: 5px 8px; border-radius: 3px; background: var(--ph-faint); border-left: 2px solid var(--gold);
+}
+.receipt-text {
+  min-width: 0; color: var(--ph-bright); font-size: 13.5px; line-height: 1.35;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.receipt-veto {
+  flex: 0 0 auto; align-self: center; cursor: pointer; font: inherit; font-size: 12px; line-height: 1;
+  color: var(--ph-dim); background: transparent; border: 1px solid var(--ph-dim); border-radius: 2px;
+  padding: 1px 5px; transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.receipt-veto:hover { color: var(--bad); border-color: var(--bad); background: rgba(255,90,90,.08); }
+.receipt-veto:disabled { opacity: .5; cursor: default; }
+.receipt-item.vetoed { border-left-color: var(--ph-dim); opacity: .6; }
+.receipt-item.vetoed .receipt-text { color: var(--ph-dim); text-decoration: line-through; }
+.receipt-item.vetoed .turnin-kind { color: var(--ph-dim); border-color: var(--ph-dim); }
+
 /* JUST-IN-TIME CURIOSITY nudge — a QUIET aside, not a second lit reply. It used to reuse .cmsg.agent.reply
    (the glowing headline), so it read as a duplicate answer competing with the real one. Now it shares the
    soft gold-inset language of the consent / turn-in beats: clearly "the station is asking", visually subordinate

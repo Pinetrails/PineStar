@@ -466,6 +466,16 @@ const Harness = (() => {
       return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
     } catch (e) { return { ok: false }; }
   }
+  // SILENT-SAVE UX: undo an auto-saved memory (the one-tap ✕ on a passive receipt). verdict:'veto' removes the
+  // saved record (a notebook note, or a skill when kind:'skill') and adds its text to the permanent declined
+  // denylist so it's never re-proposed. Server emits memory.forget/feedback over SSE. { ok } on success.
+  function memoryVeto(o) {
+    return memoryTurninSend(Object.assign({ verdict: 'veto' }, o || {}));
+  }
+  function memoryTurninSend(o) {
+    return fetch('/api/memory/turnin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) })
+      .then(r => r.ok ? r.json().catch(() => ({ ok: true })) : { ok: false }).catch(() => ({ ok: false }));
+  }
   // wipe a hero's SERVER-SIDE memory (notebook/declined/todo) on new-hero commission, so a fresh Commander never
   // inherits a stranger's kept memories or permanently-declined proposals. Fire-and-forget; a fresh hero proceeds
   // regardless (the browser advice stores are already reset locally).
@@ -524,7 +534,7 @@ const Harness = (() => {
   return {
     getKey, setKey, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
-    memoryProposals, memoryTurnin, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
+    memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     agentSkills, agentSkillManage,
     apiToken: ensureApiToken,

@@ -65,6 +65,7 @@ const Chat = (() => {
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
+  const receiptRunsSeen = new Set();    // runIds whose SILENT auto-saved receipts already rendered (memory.write triggers once per run)
   const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
                                 // beat's HONEST, un-farmable size + the delivery gate (real tools/deliverables only). FIFO-capped.
   const workRatedRuns = new Set();   // runIds already given a 👍/👌/👎 work verdict → one rating per run, never double-mint
@@ -284,7 +285,7 @@ const Chat = (() => {
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
     onTurn = opts.onTurn || null; interview = null;
-    proposalRunsSeen.clear(); studyRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
+    proposalRunsSeen.clear(); receiptRunsSeen.clear(); studyRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
     // never flush into a new session (same law as turninQueue above). A fresh beat-slot arbiter matches the DOM.
     studyPending.length = 0; tastePending.length = 0; activeStudy = null;
@@ -1201,34 +1202,96 @@ const Chat = (() => {
   function wireProposals() {
     if (proposalsWired || typeof U === 'undefined' || !U.bus) return;
     proposalsWired = true;
+    // TWO triggers, ONE fetch+route (deduped per-run by proposalRunsSeen):
+    //  - memory.proposed fires ONLY for HIGH-STAKES proposals (the rare-confirm deck). It reserves the beat slot
+    //    BEFORE the fetch so study/arc/trust cede across the proposed→fetch→deck window (the fetch-gap race).
+    //  - memory.write fires for the SILENTLY AUTO-SAVED memories (the common case). Those render a PASSIVE receipt
+    //    that must NOT claim the beat slot — so this trigger reserves nothing.
+    // A MIXED batch (some high-stakes) fires both; the shared guard renders it once (receipts + deck together).
     U.bus.on('memory.proposed', p => {
       const runId = p && p.runId; const agentId = (p && p.agentId) || 'agent';
       if (!runId || proposalRunsSeen.has(runId)) return;
       proposalRunsSeen.add(runId);
-      // reserve MEMORY's claim on the moment IMMEDIATELY (before the fetch settles) — the beat-slot arbiter
-      // makes the study beat cede across the whole proposed→fetch→deck window, closing the fetch-gap race.
-      slotMemoryProposed(runId);
-      setTimeout(async () => {
-        const proposals = await Harness.memoryProposals(runId, agentId);
-        // G2.4 starve hole 1: memory.proposed fired (so the post-run slot stood down for the turn-in)
-        // but the batch fetch came back empty — no card would ever carry the rate control. Rate now.
-        if (!proposals.length) { slotMemoryEmpty(runId); maybeStandaloneRate(agentId, runId); return; }   // release the claim — no deck will render
-        const batch = { runId, agentId, proposals };
-        // route to the ORIGIN stream (the one whose run proposed these) — many streams share agentId 'agent',
-        // so gating on agentId can drop the card into the wrong COMMS after a mid-window switch.
-        let originWs = null;
-        if (typeof Workstreams !== 'undefined' && Workstreams.all) { try { originWs = Workstreams.all().find(w => (w.runIds || []).indexOf(runId) >= 0) || null; } catch (_) {} }
-        const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
-        if (onActive) proposalCard(batch, activeWs);
-        else {
-          slotMemoryEmpty(runId);   // notify-only — the claim is released, no deck will render here
-          if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + proposals.length + ' memories to review', 'gold');
-          // G2.4 starve hole 3: the batch landed on a NON-displayed stream — a soft notify carries no
-          // rate control. The hero's work still deserves its rating in the visible COMMS.
-          maybeStandaloneRate(agentId, runId);
-        }
-      }, 350);   // let the per-proposal SSE events + the stash settle before the single fetch
+      slotMemoryProposed(runId);   // reserve the slot for the coming confirm deck (released if the fetch is deck-empty)
+      setTimeout(() => routeProposalBatch(runId, agentId, true), 350);
     });
+    U.bus.on('memory.write', p => {
+      const runId = p && p.runId; const agentId = (p && p.agentId) || 'agent';
+      // dedup vs BOTH the deck path (proposalRunsSeen, set by memory.proposed) and this receipt path. Deliberately
+      // NOT added to proposalRunsSeen: a passive receipt is not a review DECK, so it must not suppress the run's
+      // curiosity/suggestion nudge (the wireCuriosity guard keys on proposalRunsSeen = "a deck owns the moment").
+      if (!runId || proposalRunsSeen.has(runId) || receiptRunsSeen.has(runId)) return;
+      receiptRunsSeen.add(runId);
+      if (receiptRunsSeen.size > 200) receiptRunsSeen.delete(receiptRunsSeen.values().next().value);
+      // NO slot reservation — receipts are passive log lines. A tiny debounce lets the per-record memory.write
+      // events + the server-side batch stash settle before the single fetch (mirrors the proposed path's 350ms).
+      setTimeout(() => routeProposalBatch(runId, agentId, false), 350);
+    });
+  }
+
+  // fetch the run's batch and route it: SAVED items (saved:true) render passive receipts; PENDING items (the
+  // high-stakes fallback) render the Keep/Edit/Discard confirm deck. `reservedSlot` = memory.proposed already
+  // claimed the beat slot for a deck; if the fetch yields no deck items, release it.
+  async function routeProposalBatch(runId, agentId, reservedSlot) {
+    const items = await Harness.memoryProposals(runId, agentId);
+    const saved = items.filter(p => p && p.saved);
+    const pending = items.filter(p => p && !p.saved);
+    // route to the ORIGIN stream (many streams share agentId 'agent', so agentId-gating can drop the card into
+    // the wrong COMMS after a mid-window switch).
+    let originWs = null;
+    if (typeof Workstreams !== 'undefined' && Workstreams.all) { try { originWs = Workstreams.all().find(w => (w.runIds || []).indexOf(runId) >= 0) || null; } catch (_) {} }
+    const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
+
+    if (onActive && saved.length) renderReceipts({ runId, agentId, proposals: saved });   // passive — no beat slot
+    if (pending.length) {
+      const deck = { runId, agentId, proposals: pending };
+      if (onActive) proposalCard(deck, activeWs);
+      else {
+        slotMemoryEmpty(runId);   // release the reserved claim — no deck renders on a non-displayed stream
+        if (typeof StationUI !== 'undefined') StationUI.notify('an agent has ' + pending.length + ' ' + (pending.length > 1 ? 'memories' : 'memory') + ' to review', 'gold');
+        maybeStandaloneRate(agentId, runId);
+      }
+    } else {
+      // no deck will render. Release any reserved slot so study/arc/trust aren't wedged, and make sure the run's
+      // rating still fires (the receipt carries no rate control — that lives on the standalone beat / deck).
+      if (reservedSlot) slotMemoryEmpty(runId);
+      maybeStandaloneRate(agentId, runId);
+    }
+  }
+
+  // PASSIVE RECEIPT (silent-save UX): one compact non-blocking line per auto-saved memory — "◈ remembered: <text>"
+  // + kind tag + a small ✕ veto. It does NOT claim the one-beat slot, does not wait for input, and stays in the
+  // stream as a quiet log line (no auto-collapse). The ✕ UNDOES the save (record removed + text denylisted); the
+  // line then shows a muted "✕ forgotten" (Memory Core Restore is the undo-for-the-undo). Reuses the gold-inset
+  // turn-in visual family. Receipts render even during a focused flow (interview/onboarding) — they're passive
+  // and carry no input to compete with, so unlike the confirm deck they don't gate behind turninBlocked().
+  function renderReceipts(batch) {
+    if (!batch || !batch.proposals || !batch.proposals.length) return;
+    const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin'); head.d.classList.add('receipts');
+    for (const prop of batch.proposals) {
+      const item = document.createElement('div'); item.className = 'receipt-item';
+      const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = KIND_TAG[prop.kind] || 'NOTE';
+      const text = document.createElement('span'); text.className = 'receipt-text'; text.textContent = '◈ remembered: ' + prop.content;
+      const veto = document.createElement('button'); veto.className = 'receipt-veto'; veto.type = 'button';
+      veto.textContent = '✕'; veto.title = 'forget this — undo the save';
+      veto.setAttribute('aria-label', 'forget this memory');
+      let busy = false;
+      veto.onclick = async () => {
+        if (busy) return; busy = true; veto.disabled = true;
+        const r = await Harness.memoryVeto({ agentId: batch.agentId, id: prop.id, kind: prop.kind, content: prop.content });
+        if (r && r.ok) {
+          veto.remove();
+          item.classList.add('vetoed');
+          text.textContent = '✕ forgotten: ' + prop.content;   // muted state; stays denylisted (Memory Core Restore is the undo)
+        } else {
+          busy = false; veto.disabled = false;
+          if (typeof StationUI !== 'undefined') StationUI.notify('could not forget that ' + (prop.kind === 'skill' ? 'skill' : 'memory') + ' - try again', 'warn');
+        }
+      };
+      item.appendChild(kind); item.appendChild(text); item.appendChild(veto);
+      head.body.appendChild(item);
+    }
+    autoscroll();
   }
 
   /* GROWTH Tier 1 — THE STUDY BEAT (dossier Phase B: work → understanding). After a salient run the sidecar
