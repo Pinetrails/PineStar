@@ -341,6 +341,31 @@ const StationBake = (() => {
     else { b.fillStyle = track; b.fillRect(X + T - 1, Y, 2, T); b.fillStyle = lip; b.fillRect(X + T - 1, Y, 1, T); }
   }
 
+  /* a vertical reflection streak on the polished deck under a ceiling light. `cx,cy` = streak
+     centre, `w` ≈ its half-width. Rendered as a warm-neutral radial gradient painted into a
+     TALL-NARROW rect (height ≈ 2.6×width) so the round falloff is clipped into a vertical lens —
+     reads as a glossy floor highlight, not fog. Caller supplies the 'lighter' composite. Uses only
+     createRadialGradient + fillRect (portable to the headless canvas mock; no scale/ellipse). */
+  function bakeSheen(b, cx, cy, w) {
+    const s = Math.max(0, DEPTH.sheen);
+    if (s <= 0.001 || w < 2) return;
+    const halfW = Math.max(2, w);
+    // Build the vertical lens from THREE stacked circular radial dabs (top / mid / bright core),
+    // spanning ≈2.6×width tall — no scale()/ellipse() so it bakes identically in the headless mock.
+    const a0 = s * 0.5;
+    const dab = (dy, rad, a) => {
+      if (a < 0.004) return;
+      const g = b.createRadialGradient(cx, cy + dy, 0.5, cx, cy + dy, rad);
+      g.addColorStop(0, 'rgba(252,244,224,' + a.toFixed(3) + ')');
+      g.addColorStop(0.6, 'rgba(252,244,224,' + (a * 0.3).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(252,244,224,0)');
+      b.fillStyle = g; b.fillRect(cx - rad, cy + dy - rad, rad * 2, rad * 2);
+    };
+    dab(0, halfW, a0);                       // bright core
+    dab(-halfW * 1.1, halfW * 0.72, a0 * 0.55);  // upper taper
+    dab(halfW * 1.1, halfW * 0.72, a0 * 0.55);   // lower taper
+  }
+
   function bakeRoomLighting(b) {
     b.globalCompositeOperation = 'lighter';
     for (const r of G.allRects) {
@@ -353,8 +378,16 @@ const StationBake = (() => {
         const gw = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
         gw.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')'); gw.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')'); gw.addColorStop(1, 'rgba(250,236,206,0)');
         b.fillStyle = gw; b.fillRect(Math.max(X, lx - rad * 0.7), Y, Math.min(rad * 1.4, RW), Math.min(rad * 1.2, RH));
+        // FLOOR SHEEN (Slice 2): a faint vertical reflection streak on the deck below the pool, as if
+        // the polished plating catches the ceiling light. Narrow (≈40% pool width), taller than wide,
+        // additive + very low alpha, warm-neutral like the pool. Drawn under the same 'lighter' pass.
+        bakeSheen(b, lx, ly + T * 0.9, rad * 0.34);
         lampPos.push({ x: lx, y: ly, r: rad * 1.4 });
       }
+    }
+    // tiny sheen under each doorway light spill (the threshold catches a little floor gloss too)
+    for (const [x1, y1, x2, y2] of (G.doorDefs || [])) {
+      bakeSheen(b, (x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T + T * 0.4, T * 0.4);
     }
     b.globalCompositeOperation = 'source-over';
     for (const r of G.allRects) {
