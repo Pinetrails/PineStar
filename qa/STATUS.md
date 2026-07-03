@@ -113,3 +113,4 @@ node scripts/qa/ledger.mjs --status
 
 - 2026-07-03 merge: agent/workshop-backend -> feat/harness-backend (5e08d6db) — W1 workshop consent grant + W2 away-work driver; gates test:fast + test:http GREEN (workshop.e2e 19 assertions).
 - 2026-07-03 merge: agent/mint-ledger -> feat/harness-backend (54d8f1e4) — W6 mint gate + per-agent minted ledger + dup boot sweep; gates test:fast + test:http GREEN.
+- 2026-07-03 agent/env-depth-fx -> 4f4058cf : env depth+polish FX stack (wall shadows, sheen, dust, parallax stars, aberration, grain; CRT LAB Depth+), test:fast GREEN
