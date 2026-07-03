@@ -638,7 +638,8 @@ const Marketplace = (() => {
     const saveas = stage.querySelector('.mkt-saveas');
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; renderStage(); });
     const build = stage.querySelector('.mkt-build');
-    if (build) build.addEventListener('click', () => { sfx('click'); buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
+    // editingId cleared: ＋ is always a FRESH class, never a stale upsert (the edit view can be abandoned by closing the window)
+    if (build) build.addEventListener('click', () => { sfx('click'); editingId = null; buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
 
