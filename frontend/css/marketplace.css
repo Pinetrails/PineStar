@@ -361,6 +361,21 @@
 .mkt-suggest-review { color: var(--ink) !important; background: var(--gold) !important; border-color: var(--gold) !important; text-shadow: none !important; flex: 1 1 auto; }
 .mkt-suggest-dismiss { flex: 0 0 auto; }
 
+/* ---- R6: the "FOR YOU" discovery row (dossier-interest + goal-text ranked; honest category-spread fallback) ----
+   Phosphor-headed (not gold) so it reads as distinct from the affinity SUGGESTED/RECOMMENDED shelves. Each card's
+   WHY chip shows the recipe's browse CATEGORY — a truthful label, never a fabricated "popular" number. */
+.mkt-sect-h.mkt-foryou-sect { color: var(--ink); background: var(--ph); }
+.mkt-foryou .mkt-rec-why-k { color: var(--ph-bright); border-color: var(--ph-dim); }
+
+/* ---- R6: IMPORT button in the recipes bar (file → validate → save as custom) ---- */
+.mkt-import { flex: 0 0 auto; margin-left: auto; }
+
+/* ---- R6: recipe dossier "PAIRS WITH SKILLS" — the skill refs render as inline chips, not stacked rows
+   (distinct from the agent dossier's SKILL PACKAGE, which keeps its name+desc stacked rows) ---- */
+.mkt-skills.mkt-pair { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.mkt-skills.mkt-pair .mkt-skill-row { display: inline-flex; padding: 4px 10px; border-radius: 20px; gap: 0; }
+.mkt-skills.mkt-pair .mkt-skill-name { min-width: 0; }
+
 /* ---- SUMMON skin bar (the agent's APPEARANCE — its own choice, separate from the class) ----
    The headline fix: 40px stills of a chunky sprite are unidentifiable, so the picker uses big
    smooth-downscaled wells beside a LIVE preview stage (shared SkinStage) that plays the picked/hovered

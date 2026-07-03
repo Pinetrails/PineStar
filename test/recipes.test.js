@@ -311,4 +311,104 @@ A.eq((multi.task.match(/\{topic\}/g) || []).length, 2, 'the repeated "alpha" reu
 const named = R.mintFromRun('Please review the auth module for security bugs.', { runId: 'run-5' });
 A.ok(/^Review/i.test(named.name), 'the derived name trims a leading stopword ("Please"): ' + named.name);
 
+/* ---------- R6: marketplace surface — export / import / ranking ---------- */
+
+/* categories: the R4 persona catalog (developer/creator/ops) MUST survive normalization as real buckets so the
+   discovery rail can group them — not silently collapse to 'general'. */
+for (const c of ['developer', 'research', 'creator', 'ops', 'general']) A.ok(R.CATEGORIES.indexOf(c) >= 0, 'the rail bucket "' + c + '" is a known category');
+const catCounts = {};
+R.builtins().forEach(r => { catCounts[r.category] = (catCounts[r.category] || 0) + 1; });
+A.ok((catCounts.developer || 0) > 0, 'developer recipes keep their bucket (not collapsed to general): ' + (catCounts.developer || 0));
+A.ok((catCounts.creator || 0) > 0, 'creator recipes keep their bucket: ' + (catCounts.creator || 0));
+A.ok((catCounts.ops || 0) > 0, 'ops recipes keep their bucket: ' + (catCounts.ops || 0));
+
+/* exportRecipe(): a portable, format-marked, deep-copied object carrying only the authoring surface. */
+A.eq(R.exportRecipe('no-such-recipe'), null, 'exportRecipe of an unknown id is null');
+const exp = R.exportRecipe('morning-brief');
+A.eq(exp.starnetRecipe, R.EXPORT_FORMAT, 'an exported recipe carries the format marker (starnetRecipe)');
+A.eq(exp.name, R.get('morning-brief').name, 'the export carries the recipe name');
+A.eq(exp.task, R.get('morning-brief').task, 'the export carries the task template verbatim');
+A.eq(exp.category, 'research', 'the export carries the browse category');
+A.ok(!('custom' in exp), 'the export omits the runtime `custom` flag (not part of the portable unit)');
+A.ok(!('seedborn' in exp), 'the export omits local-only provenance (seedborn)');
+A.ok(Array.isArray(exp.params) && !Object.isFrozen(exp.params), 'the export params are a plain (unfrozen) copy');
+A.ok(JSON.stringify(exp).length > 0, 'the export is JSON-serializable');
+
+/* export → import round-trip: importing an exported recipe yields an EQUIVALENT, runnable custom (fresh id). */
+const imp = R.importRecipe(exp);
+A.ok(imp.ok, 'importing an exported recipe succeeds');
+A.ok(imp.recipe.id.indexOf('custom-recipe-') === 0, 'an imported recipe mints a fresh custom-recipe- id: ' + imp.recipe.id);
+A.ok(imp.recipe.id !== 'morning-brief', 'the import never reuses (or overwrites) the origin id');
+A.eq(imp.recipe.custom, true, 'an imported recipe is a custom (always yours)');
+A.eq(imp.recipe.source, 'fork', 'an imported recipe with an origin id is stamped a fork of it');
+A.eq(imp.recipe.forkedFrom, 'morning-brief', 'the import records the origin id as provenance');
+A.eq(R.get('morning-brief').custom, false, 'the origin built-in is untouched by the import');
+// runnable + equivalent: same filled directive as the original for the same inputs
+const origFilled = R.fillTask('morning-brief', { topic: 'X' });
+const impFilled = R.fillTask(imp.recipe.id, { topic: 'X' });
+A.eq(impFilled, origFilled, 'the imported recipe fills to the SAME directive as the original (equivalent + runnable)');
+A.eq(imp.recipe.gear.join(','), R.get('morning-brief').gear.join(','), 'the import preserves the gear list');
+A.eq(imp.recipe.cadence, 'morning', 'the import preserves the suggested cadence');
+R.removeCustom(imp.recipe.id);
+
+/* validateImport(): the trust boundary — rejects malformed, sanitizes, never produces an ungated recipe. */
+A.eq(R.validateImport(null).ok, false, 'validateImport rejects null');
+A.eq(R.validateImport('nope').ok, false, 'validateImport rejects a non-object');
+A.eq(R.validateImport([]).ok, false, 'validateImport rejects an array');
+A.eq(R.validateImport({ task: 'do it' }).ok, false, 'validateImport rejects a nameless file');
+A.eq(R.validateImport({ name: 'X' }).ok, false, 'validateImport rejects a file with no task');
+// unknown fields are stripped; only known authoring fields survive
+const dirty = R.validateImport({ name: 'Dirty', task: 'Do {x}.', evil: 'rm -rf', __proto__: { polluted: 1 }, gear: ['dish', 'bogus'], cadence: 'yearly', category: 'nonsense' });
+A.ok(dirty.ok, 'a well-shaped (if dirty) file validates');
+A.ok(!('evil' in dirty.recipe), 'an unknown field is stripped from the sanitized draft');
+// import it and confirm the normalizers ran (garbage gear/cadence/category dropped, params derived, gated)
+const dimp = R.importRecipe({ name: 'Dirty', task: 'Do {x}.', evil: 'rm -rf', gear: ['dish', 'bogus'], cadence: 'yearly', category: 'nonsense' });
+A.ok(dimp.ok, 'the dirty-but-valid file imports');
+A.eq(dimp.recipe.gear.join(','), 'dish', 'import drops unknown gear types (bogus removed)');
+A.eq(dimp.recipe.cadence, null, 'import normalizes an unknown cadence to null (never unschedulable)');
+A.eq(dimp.recipe.category, 'general', 'import normalizes an unknown category to general');
+A.eq(R.requiredMissing(dimp.recipe.id, {}).join(','), 'x', 'a malformed file can NEVER produce an ungated recipe — the {x} token still gates launch');
+A.ok(R.fillTask(dimp.recipe.id, { x: 'it' }).indexOf('Do it.') >= 0, 'the imported recipe fills correctly');
+R.removeCustom(dimp.recipe.id);
+// a params array of garbage still yields a gated recipe (derived from tokens), never a literal {token}
+const gimp = R.importRecipe({ name: 'Garbagey', task: 'Brief on {topic}.', params: [{ label: 'no key' }, 'not even an object', 42] });
+A.ok(gimp.ok, 'a file with a garbage params array still imports');
+A.eq(gimp.recipe.params.map(p => p.key).join(','), 'topic', 'a garbage params array falls through to token derivation (gated)');
+R.removeCustom(gimp.recipe.id);
+// import mints a UNIQUE id even for two files that share a name — never collide/overwrite
+const a1 = R.importRecipe({ name: 'Dup', task: 'Do {a}.' });
+const a2 = R.importRecipe({ name: 'Dup', task: 'Do {b}.' });
+A.ok(a1.recipe.id !== a2.recipe.id, 'two imports of the same name get distinct ids (never overwrite): ' + a1.recipe.id + ' vs ' + a2.recipe.id);
+A.eq(R.customs().length, 2, 'both imports persisted as separate customs');
+R.removeCustom(a1.recipe.id); R.removeCustom(a2.recipe.id);
+
+/* goalKeywordScore(): deterministic keyword overlap (name+tagline+tags), case-insensitive, >=3-char words. */
+A.eq(R.goalKeywordScore(R.get('fix-bug'), ''), 0, 'no goal text → no goal score');
+A.eq(R.goalKeywordScore(null, 'anything'), 0, 'no recipe → no goal score');
+A.ok(R.goalKeywordScore(R.get('fix-bug'), 'I want to fix a bug in my code') > 0, 'a goal mentioning "bug"/"fix" scores the fix-bug recipe');
+A.eq(R.goalKeywordScore(R.get('fix-bug'), 'FIX FIX FIX'), R.goalKeywordScore(R.get('fix-bug'), 'fix'), 'goal scoring is de-duped + case-insensitive (repeats/case don\'t inflate)');
+
+/* rankRecipes(): deterministic for a fixed input; honest category-spread fallback when signal is silent. */
+const items = R.builtins();
+// goal-only ranking (no profile): the code-goal surfaces code recipes, deterministically
+const gRank = R.rankRecipes(items, { goalText: 'ship code and fix bugs', limit: 3 });
+A.ok(gRank.length === 3, 'rankRecipes honors the limit');
+const gRank2 = R.rankRecipes(items, { goalText: 'ship code and fix bugs', limit: 3 });
+A.eq(gRank.map(r => r.id).join(','), gRank2.map(r => r.id).join(','), 'rankRecipes is deterministic for a fixed input');
+A.ok(gRank.some(r => r.id === 'fix-bug' || r.id === 'code-review'), 'a code-goal ranks code recipes into the FOR YOU row');
+// profile-affinity ranking: a fake scorer that loves the research lane ranks research recipes first
+const researchLover = tags => (tags && tags.research ? tags.research : 0);
+const pRank = R.rankRecipes(items, { score: researchLover, limit: 3 });
+A.ok(pRank.length > 0 && pRank.every(r => (r.tags && r.tags.research > 0)), 'a research-loving scorer ranks only research-tagged recipes');
+// exclude: the dossier's own recipe is omitted
+const exRank = R.rankRecipes(items, { score: researchLover, exclude: pRank[0].id, limit: 3 });
+A.ok(!exRank.some(r => r.id === pRank[0].id), 'rankRecipes omits the excluded id');
+// COLD START: no profile signal + no goal → an honest category SPREAD (distinct categories first), not arbitrary
+const cold = R.rankRecipes(items, { score: () => 0, goalText: '', limit: 5 });
+A.ok(cold.length === 5, 'cold-start still fills the row');
+const coldCats = cold.map(r => r.category);
+A.ok(new Set(coldCats).size >= 3, 'the cold-start fallback spreads across distinct categories (varied, not arbitrary): ' + coldCats.join(','));
+const cold2 = R.rankRecipes(items, { score: () => 0, goalText: '', limit: 5 });
+A.eq(cold.map(r => r.id).join(','), cold2.map(r => r.id).join(','), 'the cold-start fallback is deterministic (stable order)');
+
 A.report('recipes');

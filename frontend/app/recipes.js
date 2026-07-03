@@ -42,8 +42,12 @@
   const GEAR_TYPES = ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'computer', 'connector'];
   // the SUGGESTED-cadence ids a recipe may carry (mirrors autojobs.js CADENCES). null = one-shot by nature.
   const CADENCES = ['morning', 'weekly', 'sixhourly', 'hourly'];
-  // browse buckets for the marketplace category rail. 'general' is the catch-all fallback.
-  const CATEGORIES = ['research', 'code', 'writing', 'planning', 'general'];
+  // browse buckets for the marketplace category rail (R6 discovery front: developer / research / creator / ops /
+  // general). The R4 persona catalog (dev.js / creator.js / ops.js) authors 'developer'/'creator'/'ops' — they
+  // MUST be known buckets or normCategory collapses them to 'general' and the rail can't group them. 'code',
+  // 'writing' and 'planning' stay valid legacy aliases (older customs) that the rail maps into developer/general.
+  // 'general' is the catch-all fallback. Additive only — no bucket is ever renamed or removed.
+  const CATEGORIES = ['developer', 'research', 'creator', 'ops', 'general', 'code', 'writing', 'planning'];
   // provenance: where a recipe came from. 'builtin' = curated; 'custom' = hand-authored; 'fork' = tweaked from another.
   const SOURCES = ['builtin', 'custom', 'fork'];
 
@@ -464,9 +468,159 @@
     return OUTBOUND_RE.test(String(r.task || ''));
   }
 
+  /* ================= R6: marketplace surface (export / import / ranking) =================
+     Pure, node-testable helpers appended near the public API. They do NOT touch the launch primitives above —
+     export/import move a recipe as a portable JSON unit; rankRecipes powers the "FOR YOU" row deterministically. */
+
+  // the on-disk format marker. Bump only on a breaking format change; importers accept any value they understand.
+  const EXPORT_FORMAT = 1;
+  // the fields an exported recipe carries — the v2 authoring surface, nothing runtime/derived. `custom`,
+  // `seedborn`, timestamps and any live-routine state are deliberately NOT exported (they're local provenance).
+  const EXPORT_FIELDS = ['id', 'name', 'emoji', 'tagline', 'blurb', 'accent', 'tags', 'params', 'task', 'gear', 'skills', 'cadence', 'category', 'source', 'forkedFrom'];
+
+  // EXPORT: a plain, JSON-serializable object for ONE recipe (built-in or custom), stamped with a format marker.
+  // Returns null for an unknown id. The result is a deep copy (never a live/frozen ref) so a caller can pretty-print
+  // and hand it to a file download. It is the seed of the open-core marketplace unit — a clean portable format,
+  // no network. The original recipe's `id` is kept as provenance; importRecipe re-homes it into forkedFrom.
+  function exportRecipe(idOrRecipe) {
+    const r = typeof idOrRecipe === 'string' ? get(idOrRecipe) : idOrRecipe;
+    if (!r) return null;
+    const out = { starnetRecipe: EXPORT_FORMAT };
+    for (const k of EXPORT_FIELDS) {
+      const v = r[k];
+      if (v == null) { out[k] = (k === 'cadence' || k === 'forkedFrom') ? null : v; continue; }
+      if (k === 'tags') out.tags = Object.assign({}, v);
+      else if (k === 'params') out.params = (Array.isArray(v) ? v : []).map(p => ({ key: p.key, label: p.label, placeholder: p.placeholder, required: p.required, default: p.default }));
+      else if (k === 'gear' || k === 'skills') out[k] = (Array.isArray(v) ? v : []).slice();
+      else out[k] = v;
+    }
+    return out;
+  }
+
+  // validate the SHAPE of a parsed import object (never executes anything from it). Returns { ok:true, recipe } with
+  // a sanitized DRAFT (unknown fields stripped, arrays coerced) or { ok:false, error } with an honest reason. This is
+  // the trust boundary: an imported file is data, so we only ever read strings/arrays out of it and re-run them
+  // through the same normalizers a hand-authored save uses — a malformed file can NEVER produce an ungated or
+  // ambiguous recipe, and there is no code path from the file into the agent's directive beyond the task TEMPLATE.
+  function validateImport(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false, error: 'not a recipe file (expected a JSON object)' };
+    // required: a name and a task template. `id` is used only for provenance (forkedFrom), never to overwrite.
+    const name = typeof obj.name === 'string' ? obj.name.trim() : '';
+    const task = typeof obj.task === 'string' ? obj.task.trim() : '';
+    if (!name) return { ok: false, error: 'the file has no recipe name' };
+    if (!task) return { ok: false, error: 'the file has no directive (task) template' };
+    // params: an array of sane {key,...} descriptors. A non-array (or garbage) is dropped → normCustom re-derives
+    // from the template tokens, so the recipe is never left with a literal {token} it can't fill.
+    const rawParams = Array.isArray(obj.params) ? obj.params : [];
+    const params = rawParams
+      .filter(p => p && typeof p === 'object' && !Array.isArray(p) && typeof p.key === 'string' && p.key.trim())
+      .map(p => ({
+        key: String(p.key).trim(),
+        label: typeof p.label === 'string' ? p.label : '',
+        placeholder: typeof p.placeholder === 'string' ? p.placeholder : '',
+        required: p.required !== false,
+        default: typeof p.default === 'string' ? p.default : ''
+      }));
+    // a sanitized DRAFT (plain strings/arrays only) — saveCustom/normCustom apply the real freezing + defaults.
+    // provenance: if the file carried an id, keep it as forkedFrom (source:'fork') so the import reads as "from
+    // <original>"; else it's a plain 'custom'. A file that already declared forkedFrom keeps that lineage.
+    const originId = (obj.id != null && String(obj.id).trim()) ? String(obj.id).trim() : null;
+    const carriedFork = (obj.forkedFrom != null && String(obj.forkedFrom).trim()) ? String(obj.forkedFrom).trim() : null;
+    const forkedFrom = carriedFork || originId;
+    const recipe = draft({
+      name, task,
+      emoji: typeof obj.emoji === 'string' ? obj.emoji : '',
+      tagline: typeof obj.tagline === 'string' ? obj.tagline : '',
+      blurb: typeof obj.blurb === 'string' ? obj.blurb : '',
+      accent: typeof obj.accent === 'string' ? obj.accent : '',
+      tags: (obj.tags && typeof obj.tags === 'object' && !Array.isArray(obj.tags)) ? obj.tags : null,
+      params,
+      gear: Array.isArray(obj.gear) ? obj.gear : [],
+      skills: Array.isArray(obj.skills) ? obj.skills : [],
+      cadence: obj.cadence != null ? obj.cadence : null,
+      category: typeof obj.category === 'string' ? obj.category : null,
+      // an imported recipe is never a builtin — it's always yours. If it named a parent, mark it a fork of that.
+      source: forkedFrom ? 'fork' : 'custom',
+      forkedFrom
+    });
+    return { ok: true, recipe };
+  }
+
+  // IMPORT: validate a parsed object, then SAVE it as a fresh custom (mints a new custom-recipe-<slug> id so it can
+  // never collide with — or overwrite — an existing recipe). Returns { ok:true, recipe:<saved> } or { ok:false,
+  // error }. Nothing from the file is executed; only the recipe's own launch (later, by the user) ever runs its task.
+  function importRecipe(obj) {
+    const v = validateImport(obj);
+    if (!v.ok) return v;
+    // strip any id from the draft so saveCustom always mints a fresh one (the file's id lives on in forkedFrom).
+    const clean = Object.assign({}, v.recipe); delete clean.id;
+    try {
+      const saved = saveCustom(clean);
+      return { ok: true, recipe: saved };
+    } catch (e) { return { ok: false, error: (e && e.message) || 'could not save the imported recipe' }; }
+  }
+
+  // does a recipe's browsable text match a free-text goal string? A deterministic keyword overlap over the goal's
+  // words (>=3 chars, de-duped) against the recipe's name+tagline+tags — returns a small count used as a ranking
+  // nudge (never the sole signal). Pure + case-insensitive; punctuation is split on. No fuzzy matching (honest).
+  function goalKeywordScore(recipe, goalText) {
+    if (!recipe || !goalText) return 0;
+    const words = String(goalText).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    if (!words.length) return 0;
+    const seen = {}; const uniq = [];
+    for (const w of words) if (!seen[w]) { seen[w] = true; uniq.push(w); }
+    const hay = ((recipe.name || '') + ' ' + (recipe.tagline || '') + ' ' + Object.keys(recipe.tags || {}).join(' ')).toLowerCase();
+    let hits = 0;
+    for (const w of uniq) if (hay.indexOf(w) >= 0) hits++;
+    return hits;
+  }
+
+  // RANK the "FOR YOU" row deterministically. `opts`:
+  //   score(itemTags) -> number  — the profile affinity scorer (ProfileStore.score), or null when learning is off/thin.
+  //   goalText        -> string  — the user's goals belief text (keyword-matched into the ranking as a small nudge).
+  //   exclude         -> id      — a recipe to omit (e.g. the one already in the dossier).
+  //   limit           -> N       — how many to return (default 4).
+  // Signal blend: (profile affinity × 4) + (goal-keyword hits × 2), tie-broken by original catalog order so the
+  // result is STABLE for a fixed input (test-friendly). If BOTH signals are silent (no profile + no goal match), we
+  // fall back to an HONEST category spread — one recipe per distinct category in catalog order — so a cold-start
+  // user still sees a varied, non-arbitrary row (never a fake "popular" ordering; truthful-telemetry law).
+  function rankRecipes(items, opts) {
+    opts = opts || {};
+    const list0 = Array.isArray(items) ? items : builtins();
+    const exclude = opts.exclude || null;
+    const limit = opts.limit != null ? opts.limit : 4;
+    const scoreFn = typeof opts.score === 'function' ? opts.score : null;
+    const goalText = opts.goalText || '';
+    const pool = list0.filter(r => r && r.id !== exclude);
+    let anySignal = false;
+    const scored = pool.map((r, idx) => {
+      const aff = scoreFn ? (Number(scoreFn(r.tags || {})) || 0) : 0;
+      const goal = goalKeywordScore(r, goalText);
+      if (aff > 0 || goal > 0) anySignal = true;
+      return { r, idx, s: aff * 4 + goal * 2 };
+    });
+    if (anySignal) {
+      return scored
+        .filter(x => x.s > 0)
+        .sort((a, b) => (b.s - a.s) || (a.idx - b.idx))
+        .slice(0, limit)
+        .map(x => x.r);
+    }
+    // honest cold-start fallback: a category spread (first recipe of each distinct category, catalog order), topped
+    // up with the next recipes in order if there aren't enough distinct categories to fill the row.
+    const byCat = [], usedCat = {}, rest = [];
+    pool.forEach(r => {
+      const c = r.category || 'general';
+      if (!usedCat[c]) { usedCat[c] = true; byCat.push(r); } else rest.push(r);
+    });
+    return byCat.concat(rest).slice(0, limit);
+  }
+
   return {
     TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES,
     list, builtins, customs: customList, get, exists,
-    fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound
+    fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound,
+    // R6 marketplace surface
+    EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, goalKeywordScore
   };
 });

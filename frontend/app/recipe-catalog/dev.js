@@ -45,7 +45,7 @@
       blurb: 'Checks the dependency tree for stale, vulnerable, or dead packages and ranks what to touch.',
       tags: { code: 0.8, research: 0.2 },
       params: [{ key: 'project', label: 'Project / manifest', placeholder: 'e.g. this repo, or package.json', required: false, default: 'this project' }],
-      task: 'Audit the dependencies of {project}. Read the repo's manifest and lockfile, then report: what is meaningfully outdated, anything with a known advisory, and packages that look unused. Rank by risk and give the safe upgrade path — never suggest a bump you have not sanity-checked.',
+      task: 'Audit the dependencies of {project}. Read the repo\'s manifest and lockfile, then report: what is meaningfully outdated, anything with a known advisory, and packages that look unused. Rank by risk and give the safe upgrade path — never suggest a bump you have not sanity-checked.',
       category: 'developer', gear: ['cabinet', 'workbench'], skills: ['security-sweep'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     },

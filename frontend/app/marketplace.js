@@ -32,7 +32,8 @@ const Marketplace = (() => {
   let pickedSummonSkin = null;
   let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
-  let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'
+  let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'  (AGENTS tab)
+  let catFilter = 'all';                         // 'all' | 'mine' | <rail bucket>          (RECIPES tab, R6)
   let query = '';
   let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
   let buildKit = [], buildSkills = [], buildEffort = null;   // the custom-class builder's picked loadout (Class Loadouts S3)
@@ -56,8 +57,18 @@ const Marketplace = (() => {
   // the gear objectTypes a recipe editor offers (same pickable set as the class builder — dish/cabinet/notebook/
   // workbench/studio; computer/connector are per-agent binds, not advisory recipe gear). Labels from the live source.
   const RECIPE_GEAR_PICK = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
-  const RECIPE_CATEGORIES = ['research', 'code', 'writing', 'planning', 'general'];
-  const CAT_LABEL = { research: 'RESEARCH', code: 'CODE', writing: 'WRITING', planning: 'PLANNING', general: 'GENERAL' };
+  // the category buckets the EDITOR offers as authorable browse buckets (the R6 discovery-rail personas).
+  const RECIPE_CATEGORIES = ['developer', 'research', 'creator', 'ops', 'general'];
+  const CAT_LABEL = { developer: 'DEVELOPER', research: 'RESEARCH', creator: 'CREATOR', ops: 'OPS', general: 'GENERAL',
+    // legacy aliases older customs may still carry — labeled so a dossier chip never shows a raw slug.
+    code: 'DEVELOPER', writing: 'CREATOR', planning: 'OPS' };
+  // R6 discovery-rail buckets (in rail order) + how a recipe's raw category maps into one. The catalog authors
+  // developer/research/creator/ops/general; legacy customs may carry code/writing/planning — fold those in so the
+  // rail groups every recipe under exactly one visible bucket (never a stray slug, never an uncounted recipe).
+  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'ops', 'general'];
+  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', creator: 'creator',
+    writing: 'creator', ops: 'ops', planning: 'ops', general: 'general' };
+  function railBucket(r) { return CAT_TO_RAIL[(r && r.category) || 'general'] || 'general'; }
 
   /* ---------- personalization (the recommender's read surface) ---------- */
   const FAM_TAGS = ['code', 'research', 'general'];
@@ -146,7 +157,7 @@ const Marketplace = (() => {
     opener = trigger;
     ctx = context || {};
     view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
-    laneFilter = 'all'; query = '';
+    laneFilter = 'all'; catFilter = 'all'; query = '';
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();
     pickedSummonSkin = null;
@@ -234,23 +245,47 @@ const Marketplace = (() => {
         (tab === id ? 'true' : 'false') + '" data-tab="' + id + '">' + label + '</button>';
       html += '<div class="mkt-tabs" role="tablist">' + t('agents', '☰ AGENTS') + t('recipes', '❒ RECIPES') + '</div>';
     }
-    const pool = (tab === 'recipes' && hasRecipes()) ? Recipes.builtins() : Specialties.builtins();
-    const counts = { all: pool.length, code: 0, research: 0, general: 0 };
-    pool.forEach(it => { counts[laneOf(it)] = (counts[laneOf(it)] || 0) + 1; });
-    const lane = (id, label) => '<button class="mkt-lane' + (laneFilter === id ? ' on' : '') + '" data-lane="' + id + '">' +
-      label + '<span class="ct">' + (counts[id] || 0) + '</span></button>';
-    html += '<span class="mkt-lanes-lbl">FILTER</span><div class="mkt-lanes">' +
-      lane('all', 'ALL') + lane('code', 'CODE') + lane('research', 'RESEARCH') + lane('general', 'OPS') + '</div>';
+    if (tab === 'recipes' && hasRecipes()) {
+      // R6 CATEGORY RAIL — persona buckets (developer/research/creator/ops/general) + ALL + MINE, each with a
+      // live count. MINE holds the Commander's own customs (saved / forked / imported). An IMPORT button sits at
+      // the end of the rail (file → validate → save as custom); EXPORT lives per-recipe in the dossier.
+      const builtins = Recipes.builtins(), customs = Recipes.customs();
+      const all = builtins.concat(customs);
+      const counts = { all: all.length, mine: customs.length };
+      RAIL_BUCKETS.forEach(b => counts[b] = 0);
+      all.forEach(r => { const rb = railBucket(r); counts[rb] = (counts[rb] || 0) + 1; });
+      const cat = (id, label) => '<button class="mkt-lane' + (catFilter === id ? ' on' : '') + '" data-cat="' + id + '">' +
+        label + '<span class="ct">' + (counts[id] || 0) + '</span></button>';
+      let rail = cat('all', 'ALL');
+      RAIL_BUCKETS.forEach(b => { if (counts[b] > 0 || b === 'general') rail += cat(b, CAT_LABEL[b] || b); });
+      rail += cat('mine', 'MINE');
+      html += '<span class="mkt-lanes-lbl">BROWSE</span><div class="mkt-lanes">' + rail + '</div>' +
+        '<button class="mkt-import bb sm" title="import a recipe from a JSON file">⇪ IMPORT</button>' +
+        '<input type="file" id="mkt-import-file" accept="application/json,.json" hidden>';
+    } else {
+      const pool = Specialties.builtins();
+      const counts = { all: pool.length, code: 0, research: 0, general: 0 };
+      pool.forEach(it => { counts[laneOf(it)] = (counts[laneOf(it)] || 0) + 1; });
+      const lane = (id, label) => '<button class="mkt-lane' + (laneFilter === id ? ' on' : '') + '" data-lane="' + id + '">' +
+        label + '<span class="ct">' + (counts[id] || 0) + '</span></button>';
+      html += '<span class="mkt-lanes-lbl">FILTER</span><div class="mkt-lanes">' +
+        lane('all', 'ALL') + lane('code', 'CODE') + lane('research', 'RESEARCH') + lane('general', 'OPS') + '</div>';
+    }
     bar.innerHTML = html;
     bar.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.tab; if (!next || next === tab) return;
-      tab = next; view = 'grid'; laneFilter = 'all'; sfx('click');
+      tab = next; view = 'grid'; laneFilter = 'all'; catFilter = 'all'; sfx('click');
       renderBar(); renderStage(); syncSub();
     }));
-    bar.querySelectorAll('.mkt-lane').forEach(b => b.addEventListener('click', () => {
+    bar.querySelectorAll('.mkt-lane[data-lane]').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.lane; if (next === laneFilter) return;
       laneFilter = next; sfx('click'); renderBar(); renderStage();
     }));
+    bar.querySelectorAll('.mkt-lane[data-cat]').forEach(b => b.addEventListener('click', () => {
+      const next = b.dataset.cat; if (next === catFilter) return;
+      catFilter = next; sfx('click'); renderBar(); renderStage();
+    }));
+    wireImport(bar);
   }
   function syncSub() { const s = root && root.querySelector('#mkt-sub'); if (s) s.textContent = subtitle(); }
 
@@ -273,8 +308,8 @@ const Marketplace = (() => {
     wireRoster(stage);
     wireDossier(stage);
     paintDossierAccent();
-    if (tab !== 'recipes') hydrateSkillRows();   // fill real skill names/descriptions once the catalog loads
-    else hydrateLiveRoutines();                  // fill the "● live as a routine" indicator once /api/cron loads
+    hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
+    if (tab === 'recipes') hydrateLiveRoutines();   // fill the "● live as a routine" indicator once /api/cron loads
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
   }
   function renderDossier() {
@@ -282,8 +317,8 @@ const Marketplace = (() => {
     d.innerHTML = dossierHTML();
     wireDossier(root);
     paintDossierAccent();
-    if (tab !== 'recipes') hydrateSkillRows();   // fill real skill names/descriptions once the catalog loads
-    else hydrateLiveRoutines();                  // refresh the live-routine indicator for the focused recipe
+    hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
+    if (tab === 'recipes') hydrateLiveRoutines();   // refresh the live-routine indicator for the focused recipe
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
     root.querySelectorAll('.mkt-card').forEach(c => c.classList.toggle('sel', c.dataset.id === fid));
   }
@@ -295,6 +330,14 @@ const Marketplace = (() => {
   }
   function passLane(it) { return laneFilter === 'all' || laneOf(it) === laneFilter; }
   function filt(list) { return list.filter(it => passLane(it) && matchq(it)); }
+  // RECIPES tab filtering (R6): category rail + free-text search. 'all' passes everything, 'mine' passes customs,
+  // any other value is a rail bucket. Search (matchq) also spans the blurb — the plan's name/tagline/blurb search.
+  function passCat(r) {
+    if (catFilter === 'all') return true;
+    if (catFilter === 'mine') return !!r.custom;
+    return railBucket(r) === catFilter;
+  }
+  function filtRecipes(list) { return list.filter(r => passCat(r) && matchq(r)); }
 
   /* ---------- roster (left pane) ---------- */
   function rosterHTML() {
@@ -332,15 +375,24 @@ const Marketplace = (() => {
       '<span class="mkt-hint">pick a recipe, fill in the blanks, and ' + esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
     html += glassHTML();
     html += suggestedShelfHTML();
-    html += recipeRecShelfHTML();
-    const builtins = filt(Recipes.builtins());
-    const customs = filt(Recipes.customs());
-    html += '<div class="mkt-sect-h">▮ RECIPE LIBRARY</div>';
+    html += forYouShelfHTML();
+    const builtins = filtRecipes(Recipes.builtins());
+    const customs = filtRecipes(Recipes.customs());
+    // MINE view: a single "YOUR RECIPES" section (the builtins are all filtered out anyway).
+    if (catFilter === 'mine') {
+      html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
+      html += customs.length ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
+        : '<div class="mkt-empty">' + (query ? 'none of your recipes match your search.'
+            : 'no saved recipes yet — hit “＋ save a recipe” above, TWEAK any recipe into your own, or ⇪ IMPORT one from a file.') + '</div>';
+      return html;
+    }
+    const libLabel = catFilter === 'all' ? '▮ RECIPE LIBRARY' : ('▮ ' + (CAT_LABEL[catFilter] || catFilter) + ' RECIPES');
+    html += '<div class="mkt-sect-h">' + libLabel + '</div>';
     html += builtins.length ? '<div class="mkt-grid">' + builtins.map(recipeCardHTML).join('') + '</div>'
-      : '<div class="mkt-empty">no recipes match your filter.</div>';
+      : '<div class="mkt-empty">no recipes match your ' + (query ? 'search' : 'filter') + '.</div>';
     html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
     html += customs.length ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
-      : '<div class="mkt-empty">no saved recipes yet — hit “＋ save a recipe” above to turn a job you do often into a one-tap recipe you own.</div>';
+      : '<div class="mkt-empty">no saved recipes here yet — ＋ save one, TWEAK any recipe, or ⇪ IMPORT from a file.</div>';
     return html;
   }
 
@@ -577,6 +629,21 @@ const Marketplace = (() => {
     return '<div class="mkt-block"><div class="bh">DRAWS ON GEAR</div><div class="mkt-kit">' + rows + '</div>' +
       '<div class="mkt-kit-note">advisory — this use case leans on the above; it still launches without it.</div></div>';
   }
+  // SKILLS PAIRING (R6) — the bundled-skill references this use case pairs with, as chips. Renders slug-only
+  // immediately (works offline), then hydrateSkillRows fills real names once the /api/skills catalog resolves.
+  // Empty skills => the block is omitted. Advisory only — a recipe never enables a skill on its own.
+  function recipeSkillsHTML(r) {
+    const skills = (r && Array.isArray(r.skills)) ? r.skills : [];
+    if (!skills.length) return '';
+    const cached = skillCatalog || {};
+    const chips = skills.map(slug => {
+      const meta = cached[slug];
+      return '<span class="mkt-skill-row" data-slug="' + esc(slug) + '"><span class="mkt-skill-name">' +
+        esc(meta ? meta.name : slug) + '</span></span>';
+    }).join('');
+    return '<div class="mkt-block"><div class="bh">PAIRS WITH SKILLS</div><div class="mkt-skills mkt-pair">' + chips + '</div>' +
+      '<div class="mkt-kit-note">skills that fit this use case — enable them in SKILLS to sharpen the run.</div></div>';
+  }
   // R3 live-routine lookup: the ENABLED cron jobs whose meta.recipeId matches this recipe (from the last
   // /api/cron fetch). Returns { count, cadence } so the dossier can show "● live — every morning" (or "×N").
   function liveRoutinesFor(recipeId) {
@@ -605,22 +672,24 @@ const Marketplace = (() => {
       ? '<div class="mkt-r-fork">⑃ tweaked from <b>' + esc(parent ? parent.name : r.forkedFrom) + '</b></div>' : '';
     const cadHint = r.cadence
       ? '<div class="mkt-r-cadhint">◷ naturally recurring — suggests <b>' + esc(cadenceLabel(r.cadence)) + '</b></div>' : '';
-    // TWEAK is on EVERY dossier (fork any recipe); EDIT/DELETE only on your own customs.
+    // TWEAK + EXPORT are on EVERY dossier (fork/export any recipe); EDIT/DELETE only on your own customs.
     const tweakBtn = '<button class="bb sm mkt-recipe-tweak" data-id="' + esc(r.id) + '">✎ TWEAK</button>';
+    const exportBtn = '<button class="bb sm mkt-recipe-export" data-id="' + esc(r.id) + '" title="download this recipe as a portable JSON file">⇩ EXPORT</button>';
     const custActs = r.custom
       ? '<div class="mkt-cta-row">' + tweakBtn +
-        '<button class="bb sm mkt-recipe-edit" data-id="' + esc(r.id) + '">✐ EDIT</button>' +
+        '<button class="bb sm mkt-recipe-edit" data-id="' + esc(r.id) + '">✐ EDIT</button>' + exportBtn +
         '<button class="bb sm danger mkt-recipe-del" data-id="' + esc(r.id) + '">⌫ DELETE</button></div>'
-      : '<div class="mkt-cta-row">' + tweakBtn + '</div>';
+      : '<div class="mkt-cta-row">' + tweakBtn + exportBtn + '</div>';
     return '<div class="mkt-dos-label">▮ RECIPE DOSSIER</div>' +
       '<div class="mkt-dos-hero">' + sealHTML(r, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
-          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc((CAT_LABEL[r.category] || r.category || 'GENERAL')) + '</span></div></div></div>' +
+          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span></div></div></div>' +
       liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs +
       recipeGearHTML(r) +
+      recipeSkillsHTML(r) +
       '<div class="mkt-dos-cta">' + custActs +
         '<button class="mkt-cta-main mkt-launch" data-id="' + esc(r.id) + '">' + (n ? '▸ SET UP &amp; LAUNCH' : '▸ LAUNCH RECIPE') + '</button>' +
         '<div class="mkt-cta-sub">run it now · or put it on a schedule</div>' +
@@ -687,23 +756,43 @@ const Marketplace = (() => {
     const items = rankItems(Specialties.builtins(), ctx && ctx.currentSpecialtyId); if (!items) return '';
     return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div><div class="mkt-rec-rail">' + items.map(recCardHTML).join('') + '</div>';
   }
-  function recipeRecShelfHTML() {
+  /* ---------- R6: the "FOR YOU" row (ranked by dossier interest lanes + goal-text keyword match) ----------
+     The plan's discovery-front recommender. Distinct from the profile-affinity "RECOMMENDED FOR YOU" shelf above:
+     FOR YOU blends the SAME profile affinity with the Commander's GOALS belief text (keyword-matched into the rank),
+     and ALWAYS renders (with an honest category-spread fallback when the profile is thin AND no goals are set) — so
+     even a cold-start user gets a varied, non-arbitrary starting row. Never a fake "popular" ordering. Shown only in
+     the un-filtered top-level view (no active category/search) so it doesn't fight the filtered grid below. */
+  function goalText() {
+    try {
+      if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return '';
+      return (DossierStore.beliefs('goals') || []).map(b => b && b.text).filter(Boolean).join(' ');
+    } catch (_) { return ''; }
+  }
+  function forYouShelfHTML() {
     if (!hasRecipes()) return '';
-    const items = rankItems(Recipes.builtins(), null); if (!items) return '';
-    return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div><div class="mkt-rec-rail">' + items.map(recipeRecCardHTML).join('') + '</div>';
+    if (catFilter !== 'all' || query) return '';   // only in the clean top-level view
+    const ps = profileApi();
+    const learningOff = !!(ps && ps.enabled && !ps.enabled());
+    // the affinity scorer only feeds the rank when learning is ON and the profile has signal; else rankRecipes
+    // leans on goal text, then the honest category-spread fallback.
+    const scoreFn = (ps && ps.score && !learningOff) ? (tags => ps.score(tags)) : null;
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: goalText(), limit: 4 });
+    if (!items || !items.length) return '';
+    return '<div class="mkt-sect-h mkt-foryou-sect">◈ FOR YOU</div><div class="mkt-rec-rail">' +
+      items.map(forYouCardHTML).join('') + '</div>';
+  }
+  function forYouCardHTML(r) {
+    const cat = CAT_LABEL[railBucket(r)] || 'GENERAL';
+    return '<button class="mkt-rec mkt-foryou" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+      '<div class="mkt-rec-top">' + sealHTML(r, false) +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
+      '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(cat) + '</span>' + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div></button>';
   }
   function recCardHTML(s) {
     const why = becauseText(s);
     return '<button class="mkt-rec" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
       '<div class="mkt-rec-top">' + sealHTML(s, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(s.name) + '</div><div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div></div>' +
-      (why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(why) + '</div>' : '') + '</button>';
-  }
-  function recipeRecCardHTML(r) {
-    const why = becauseText(r);
-    return '<button class="mkt-rec" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
-      '<div class="mkt-rec-top">' + sealHTML(r, false) +
-        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
       (why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(why) + '</div>' : '') + '</button>';
   }
 
@@ -840,6 +929,14 @@ const Marketplace = (() => {
       if (!forkDraft) { note('could not tweak that recipe', 'bad'); return; }
       enterRecipeEditor(forkDraft, 'fork');
     });
+    // EXPORT — download the focused recipe as a portable JSON file (R6). On EVERY dossier (builtins are seeds too).
+    const rExport = sc.querySelector('.mkt-recipe-export');
+    if (rExport) rExport.addEventListener('click', () => {
+      if (!hasRecipes()) return;
+      const obj = Recipes.exportRecipe(rExport.dataset.id);
+      if (!obj) { sfx('bad'); note('could not export that recipe', 'bad'); return; }
+      sfx('click'); downloadRecipeFile(obj);
+    });
     const del = sc.querySelector('.mkt-del');
     if (del) del.addEventListener('click', () => armDelete(del, '⌫ DELETE', () => {
       const s = Specialties.get(del.dataset.id);
@@ -910,6 +1007,53 @@ const Marketplace = (() => {
       if (mintApi()) MintStore.markDismissed(b.dataset.key);
       sfx('close'); renderStage();
     }));
+  }
+
+  /* ---------- R6: export / import a recipe as a portable JSON file ----------
+     EXPORT downloads the v2 recipe object (pretty-printed, format-marked) as a single file. IMPORT reads a picked
+     file, JSON-parses it, and hands it to Recipes.importRecipe which validates the shape, strips unknown fields,
+     and saves it as a fresh custom (never executes anything from the file). A malformed file → an honest inline
+     note, no crash. This is the seed of the open-core marketplace unit — a clean portable format, no network. */
+  function safeFilename(name) {
+    const base = String(name || 'recipe').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return (base || 'recipe') + '.starnet-recipe.json';
+  }
+  function downloadRecipeFile(obj) {
+    try {
+      const json = JSON.stringify(obj, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = safeFilename(obj && obj.name); a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (_) {} }, 0);
+      note('exported recipe: ' + ((obj && obj.name) || 'recipe') + ' — saved to your downloads', 'good');
+    } catch (_) { sfx('bad'); note('could not export the recipe file', 'bad'); }
+  }
+  // IMPORT: the file-picker button (in the bar) fires a hidden <input type=file>; this reads + parses + imports it.
+  function wireImport(scope) {
+    const sc = scope || root; if (!sc) return;
+    const btn = sc.querySelector('.mkt-import'), file = sc.querySelector('#mkt-import-file');
+    if (!btn || !file) return;
+    btn.addEventListener('click', () => { sfx('click'); file.value = ''; file.click(); });
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0]; if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        let parsed = null;
+        try { parsed = JSON.parse(String(reader.result || '')); }
+        catch (_) { sfx('bad'); note('that file isn’t valid JSON — nothing imported', 'bad'); return; }
+        if (!hasRecipes()) return;
+        const res = Recipes.importRecipe(parsed);
+        if (!res.ok) { sfx('bad'); note('could not import: ' + (res.error || 'malformed recipe file'), 'bad'); return; }
+        // land the Commander on their freshly imported recipe (MINE view, dossier focused on it).
+        focusRecipe = res.recipe.id; catFilter = 'mine'; view = 'grid';
+        sfx('click'); note('imported recipe: ' + res.recipe.name + ' — it’s in YOUR RECIPES', 'good');
+        renderBar(); renderStage();
+      };
+      reader.onerror = () => { sfx('bad'); note('could not read that file', 'bad'); };
+      reader.readAsText(f);
+    });
   }
 
   /* ---------- launch a recipe ---------- */
@@ -1097,7 +1241,9 @@ const Marketplace = (() => {
     editForkedFrom = (mode === 'fork') ? (seed.forkedFrom || null) : (seed.forkedFrom || null);
     editGear = Array.isArray(seed.gear) ? seed.gear.slice() : [];
     editCadence = seed.cadence || null;
-    editCategory = seed.category || 'general';
+    // map any legacy/raw category onto a rail bucket so the CATEGORY <select> (developer/research/creator/ops/
+    // general) always has a matching option selected; unknown → general.
+    editCategory = (seed.category && CAT_TO_RAIL[seed.category]) || 'general';
     // params: plain, editable copies ({key,label,placeholder,required}). A blank create starts with none — the
     // author writes {tokens} and the param rows are derived on save (paramsFromTemplate) if they leave them empty.
     editParams = (Array.isArray(seed.params) ? seed.params : []).map(p => ({
