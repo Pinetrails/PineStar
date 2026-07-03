@@ -205,13 +205,43 @@
 
   // The signed trust/XP feedback for a turn-in verdict (§5.7). Keep = strong positive (the user confirmed the
   // agent's judgment); Edit = lighter positive (it was worth keeping but needed fixing); Discard = negative
-  // (the agent proposed something not worth remembering) — so confidence honestly tracks proposal acceptance.
+  // (the agent proposed something not worth remembering); Veto = negative (the silent-save UX: the user undid an
+  // auto-saved memory — the same "not worth remembering" signal as a discard) — so confidence honestly tracks
+  // proposal acceptance across BOTH the old confirm deck and the new one-tap veto.
   function feedbackFor(verdict) {
     if (verdict === 'keep') return { delta: 2, reason: 'kept' };
     if (verdict === 'edit') return { delta: 1, reason: 'edited' };
     if (verdict === 'discard') return { delta: -1, reason: 'discarded' };
+    if (verdict === 'veto') return { delta: -1, reason: 'vetoed' };
     return null;   // unknown verdict -> no feedback
   }
 
-  return { reflect, buildPrompt, parse, worthReflecting, usedTools, reflectSalient, recordFromProposal, feedbackFor, KIND_LABEL };
+  // HIGH-STAKES GATE (silent-save UX): most reflection proposals now auto-save with no user confirmation, but a
+  // conservative set must NOT — they fall back to the old Keep/Edit/Discard confirm deck. A proposal is high-stakes
+  // when its content carries a CREDENTIAL / PII shape (an api key, password, token, or secret; an email, phone
+  // number, or street address) or a STANDING-INSTRUCTION phrasing ("always …", "never …", "from now on …") — the
+  // kind of durable directive the Commander should get to approve before it silently steers every future run.
+  // Deliberately conservative (better to auto-save a borderline line than to nag on the common case): redact()
+  // already ran upstream, so a live secret is usually already scrubbed — this is the belief-shaped backstop.
+  const HIGH_STAKES = [
+    /\bapi[\s_-]?keys?\b/i,                 // "api key", "api_key"
+    /\bpasswords?\b/i,
+    /\b(?:access|auth|bearer|secret|refresh)[\s_-]?tokens?\b/i,
+    /\btokens?\b/i,
+    /\bsecrets?\b/i,
+    /\bcredentials?\b/i,
+    /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/,               // an email address
+    /\+?\d(?:[\s().-]*\d){9,}/,                                      // a phone number (>=10 digits, common seps between)
+    /\b\d{1,6}\s+[A-Za-z0-9.'-]+(?:\s+[A-Za-z0-9.'-]+)*\s+(?:st(?:reet)?|ave(?:nue)?|road|rd|blvd|boulevard|lane|ln|drive|dr|court|ct|way|place|pl)\b/i,   // a street address
+    /(?:^|[^A-Za-z])(?:always|never)\b/i,                           // a standing instruction ("always …", "never …")
+    /\bfrom now on\b/i
+  ];
+  function highStakes(content) {
+    const c = String(content == null ? '' : content);
+    if (!c.trim()) return false;
+    for (const re of HIGH_STAKES) if (re.test(c)) return true;
+    return false;
+  }
+
+  return { reflect, buildPrompt, parse, worthReflecting, usedTools, reflectSalient, recordFromProposal, feedbackFor, highStakes, KIND_LABEL };
 });

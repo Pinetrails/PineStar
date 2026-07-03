@@ -4,7 +4,7 @@
    run), and determinism. Auto-proposals are candidates only — nothing is written here. */
 'use strict';
 const A = require('./_assert.js');
-const { reflect, parse, buildPrompt, worthReflecting, usedTools, reflectSalient, recordFromProposal, feedbackFor } = require('../sidecar/reflect.js');
+const { reflect, parse, buildPrompt, worthReflecting, usedTools, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('../sidecar/reflect.js');
 const { redact } = require('../sidecar/context.js');
 const { makeClock } = require('../shared/clock-rng.js');
 
@@ -157,7 +157,34 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq(feedbackFor('edit').delta, 1, 'edit is the lighter positive (it needed fixing)');
   A.ok(feedbackFor('discard').delta < 0, 'discard is negative (calibrates confidence down)');
   A.eq(feedbackFor('discard').reason, 'discarded', 'discard reason');
+  // veto (silent-save UX): the user undid an auto-saved memory — same negative signal as a discard
+  A.ok(feedbackFor('veto').delta < 0, 'veto is negative (the auto-save was undone)');
+  A.eq(feedbackFor('veto').reason, 'vetoed', 'veto reason');
   A.eq(feedbackFor('nonsense'), null, 'an unknown verdict yields no feedback');
+
+  // ---- highStakes (silent-save UX): the CONSERVATIVE gate deciding which proposals must NOT auto-save (they fall
+  //      back to the old Keep/Edit/Discard confirm deck). Positive = credential/PII shape OR a standing instruction. ----
+  // POSITIVES — credentials / secrets
+  A.eq(highStakes('the api key is stored in the vault'), true, 'an "api key" mention is high-stakes');
+  A.eq(highStakes('remembers the deploy password for staging'), true, 'a "password" mention is high-stakes');
+  A.eq(highStakes('the bearer token rotates weekly'), true, 'a bearer token mention is high-stakes');
+  A.eq(highStakes('keeps a shared secret in the config'), true, 'a "secret" mention is high-stakes');
+  A.eq(highStakes('rotate the access credentials monthly'), true, 'a "credentials" mention is high-stakes');
+  // POSITIVES — PII
+  A.eq(highStakes('reach the Commander at andrew@example.com'), true, 'an email address is high-stakes');
+  A.eq(highStakes('the office number is +1 (415) 555-0199'), true, 'a phone number is high-stakes');
+  A.eq(highStakes('ships packages to 1600 Pennsylvania Avenue'), true, 'a street address is high-stakes');
+  // POSITIVES — standing instructions
+  A.eq(highStakes('always deploy to production on Fridays'), true, 'an "always …" standing instruction is high-stakes');
+  A.eq(highStakes('never merge without a green test run'), true, 'a "never …" standing instruction is high-stakes');
+  A.eq(highStakes('from now on, use npm start not serve'), true, 'a "from now on …" standing instruction is high-stakes');
+  // NEGATIVES — the common case must stay silent (auto-save)
+  A.eq(highStakes('prefers terse answers'), false, 'a plain preference is NOT high-stakes (auto-saves)');
+  A.eq(highStakes('deploys the alpha service with npm publish'), false, 'a plain fact is NOT high-stakes (auto-saves)');
+  A.eq(highStakes('works mostly in the evenings'), false, 'a durable habit is NOT high-stakes (auto-saves)');
+  A.eq(highStakes('the reactor gauge is cost-driven'), false, 'a benign fact is NOT high-stakes (auto-saves)');
+  A.eq(highStakes(''), false, 'empty content is not high-stakes');
+  A.eq(highStakes(null), false, 'garbage in -> not high-stakes (never throws)');
 
   A.report('reflect.test');
 })();
