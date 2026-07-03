@@ -30,7 +30,7 @@
    ============================================================ */
 .btn, .btn-xl, .btn-sm, .prov,
 .bb, .bb-grp, .bb.sm,
-.ag-tab, .lb-tab, .mc-seg-btn, .set-theme,
+.lb-tab, .mc-seg-btn, .set-theme,
 .phosphor-swatches .swatch,
 .term-x,
 input[type=text], input[type=password], input:not([type]),
@@ -44,7 +44,7 @@ textarea, select {
 
 /* subtle hover bloom — a soft phosphor glow, no layout shift */
 .btn:hover, .btn-xl:hover, .btn-sm:hover, .prov:hover,
-.ag-tab:hover, .lb-tab:hover, .set-theme:hover,
+.lb-tab:hover, .set-theme:hover,
 .term-x:hover {
   box-shadow: 0 0 12px var(--ph-glow2);
 }
@@ -55,7 +55,7 @@ textarea, select {
 
 /* :active — keep the existing translateY(1px) sink, add a brief brightness dip */
 .btn:active, .btn-xl:active, .btn-sm:active, .prov:active,
-.bb:active, .bb-grp:active, .ag-tab:active, .lb-tab:active,
+.bb:active, .bb-grp:active, .lb-tab:active,
 .term-x:active {
   filter: brightness(0.86);
   transition-duration: 60ms;
@@ -585,7 +585,7 @@ textarea, select {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
-  .btn, .btn-xl, .btn-sm, .prov, .bb, .bb-grp, .ag-tab, .lb-tab,
+  .btn, .btn-xl, .btn-sm, .prov, .bb, .bb-grp, .lb-tab,
   .mc-seg-btn, .set-theme, .phosphor-swatches .swatch, .term-x, .term-min, .term-chip,
   .empty-state .es-cta,
   input, textarea, select,
