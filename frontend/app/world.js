@@ -29,7 +29,7 @@ const World = (() => {
   // live-tunable CRT knobs — drawCRT/drawGlows read these every frame so the dev CRT LAB
   // (crtlab.js, dev-gated) can tune them live. These ARE the shipped defaults: bold scanlines,
   // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
-  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
+  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13, dust: 0.5, aberr: 0.35, grain: 0.06 };
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
   let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
@@ -3050,6 +3050,7 @@ const World = (() => {
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
+    drawDust(now);   // Slice 3: tiny motes drifting through the light pools (world-space, additive, over the glows)
     drawDeskFlashes(now);   // G0.4/G0.8: red distress strobe over a desk whose run just died (additive, with the glows)
     drawAwakenLight(now);   // the soul kindling: ignition spark + a growing halo + motes (world-space additive, awakening only)
     // the AWAKENING veil — now a SPOTLIGHT on the newborn (center light, corners dark) that warms cold->dawn,
@@ -3256,6 +3257,36 @@ const World = (() => {
       const g = ctx.createRadialGradient(f.x, f.y, 1, f.x, f.y, f.r * 0.7);
       g.addColorStop(0, 'rgba(240,230,206,' + a + ')'); g.addColorStop(1, 'rgba(240,230,206,0)');
       ctx.fillStyle = g; ctx.fillRect(f.x - f.r * 0.7, f.y - f.r * 0.7, f.r * 1.4, f.r * 1.4);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Slice 3 — DUST MOTES. Tiny specks drifting slowly THROUGH the baked light pools (only there — a mote
+  // is only visible where light catches it). Purely cosmetic atmosphere; never encodes agent/run state.
+  // Deterministic from `now` + each fixture's position seed (no state array, no per-frame allocation —
+  // the awakening-motes idiom at drawAwakenLight). ~2-3 motes per fixture, additive, each breathing its
+  // alpha 0→~0.35→0 over a long period with a gentle sinusoidal drift confined to the pool radius.
+  // Steady (motes hidden) under prefers-reduced-motion; CRT.dust scales/zeroes the whole effect.
+  function drawDust(now) {
+    if (!cache || !cache.flickers || CRT.dust <= 0.001 || reduceMotion()) return;
+    ctx.globalCompositeOperation = 'lighter';
+    const amp = CRT.dust;
+    for (const f of cache.flickers) {
+      const per = 3;                                   // 2-3 motes per fixture
+      const R = f.r * 0.5;                             // keep motes inside the visible pool
+      for (let k = 0; k < per; k++) {
+        const seed = (f.x * 0.11 + f.y * 0.07) + k * 2.399;
+        // slow, long-period drift — each mote traces a lazy Lissajous within the pool
+        const dx = Math.sin(now / (5200 + k * 900) + seed) * R * 0.7;
+        const dy = Math.cos(now / (6100 + k * 700) + seed * 1.7) * R * 0.5;
+        // alpha breathes 0 → ~0.35 → 0 over a long, per-mote period (fully off part of the cycle)
+        const br = 0.5 + 0.5 * Math.sin(now / (3400 + k * 600) + seed * 2.3);
+        const a = amp * 0.35 * br * br;               // squared → longer dark valleys, brief glints
+        if (a < 0.01) continue;
+        const mx = f.x + dx, my = f.y + dy;
+        ctx.fillStyle = 'rgba(246,240,220,' + a.toFixed(3) + ')';
+        ctx.fillRect(mx - 0.5, my - 0.5, 1.2, 1.2);   // ~1px speck
+      }
     }
     ctx.globalCompositeOperation = 'source-over';
   }
