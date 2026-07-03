@@ -515,6 +515,15 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(vetoAgain.status, 200, 'a repeat veto of an already-removed record is an idempotent 200 no-op');
     const declAgain = await j('GET', '/api/memory/declined?agent=agent');
     A.eq((declAgain.body.declined || []).filter(t => t === 'deploys the alpha service with npm publish').length, 1, 'the denylist has no duplicate after a repeat veto');
+    // SOURCE LOCK — auto-saved (saved:true) stash items carry a REAL record id; a keep/edit on one would mint a
+    // DUPLICATE note and a discard would denylist while the record survives. The handler must 409 them before the
+    // write path (the stash is in-memory + LLM-fed, so this guarantee is locked at the source seam).
+    const idxSrc = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+    const iTurnin = idxSrc.indexOf('async function handleMemoryTurnin');
+    const iWrite = idxSrc.indexOf('writeMemoryRecord(agentId, prop', iTurnin);
+    const guard = idxSrc.indexOf('if (prop.saved) return json(409', iTurnin);
+    A.ok(iTurnin > 0 && iWrite > iTurnin, 'handleMemoryTurnin routes keep/edit through writeMemoryRecord');
+    A.ok(guard > iTurnin && guard < iWrite, 'a saved:true stash item is 409-rejected BEFORE the keep/edit write path (no duplicate mint)');
 
     const resetNoTok = await fetch(B + '/api/memory/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ agent: 'agent' }) });
     A.eq(resetNoTok.status, 403, 'POST /api/memory/reset WITHOUT a token -> 403');

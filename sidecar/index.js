@@ -4783,6 +4783,10 @@ async function handleMemoryTurnin(req, res) {
   const batch = proposalsByRun.get(runId);
   const prop = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
   if (!prop) return json(404, { error: 'no such proposal (it may have expired)' });
+  // AUTO-SAVED items ride the same stash (saved:true, carrying a REAL notebook/skill id) so the frontend can fetch
+  // the receipt batch — but they are already written. A keep/edit here would mint a DUPLICATE record; a discard
+  // would denylist the text while the record silently survives. Only veto (handled above) may target them.
+  if (prop.saved) return json(409, { error: 'already saved — use verdict veto to undo it' });
   // resolved either way — drop it from the pending batch (and the batch entry when it empties)
   batch.proposals = batch.proposals.filter(p => p.id !== id);
   if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }

@@ -1233,6 +1233,10 @@ const Chat = (() => {
   // high-stakes fallback) render the Keep/Edit/Discard confirm deck. `reservedSlot` = memory.proposed already
   // claimed the beat slot for a deck; if the fetch yields no deck items, release it.
   async function routeProposalBatch(runId, agentId, reservedSlot) {
+    // MIXED-BATCH RACE: the server emits memory.write (auto-saves) BEFORE memory.proposed (high-stakes) for the
+    // same run, so both triggers can schedule a route before either fires. At fire time the deck route owns the
+    // whole render (receipts + deck together); the receipt-only route bails so nothing draws twice.
+    if (!reservedSlot && proposalRunsSeen.has(runId)) return;
     const items = await Harness.memoryProposals(runId, agentId);
     const saved = items.filter(p => p && p.saved);
     const pending = items.filter(p => p && !p.saved);
@@ -1243,6 +1247,11 @@ const Chat = (() => {
     const onActive = originWs ? (activeWs && activeWs.id === originWs.id) : (activeWs && (activeWs.agentId || 'agent') === agentId);
 
     if (onActive && saved.length) renderReceipts({ runId, agentId, proposals: saved });   // passive — no beat slot
+    else if (saved.length && typeof StationUI !== 'undefined') {
+      // origin stream not displayed (or gone): don't lose the transparency signal — the memories ARE saved, so
+      // surface a soft notify instead of a receipt (Memory Core shows the records; ✕ undo lives there too).
+      StationUI.notify('an agent remembered ' + saved.length + ' ' + (saved.length > 1 ? 'things' : 'thing'), 'gold');
+    }
     if (pending.length) {
       const deck = { runId, agentId, proposals: pending };
       if (onActive) proposalCard(deck, activeWs);

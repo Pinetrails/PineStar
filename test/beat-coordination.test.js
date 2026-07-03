@@ -123,7 +123,7 @@ A.ok(iRunEnd > iWire && iBusyGuard > 0 && iRunEnd < iBusyGuard,
 // is unchanged — a run that reflected but rendered nothing must not silently drop its rating).
 const iRoute = chatSrc.indexOf('async function routeProposalBatch');
 A.ok(iRoute > 0, 'chat.js defines routeProposalBatch (the shared proposed/write fetch+route)');
-A.ok(/if \(reservedSlot\) slotMemoryEmpty\(runId\);\s*maybeStandaloneRate\(agentId, runId\);/.test(chatSrc.slice(iRoute, iRoute + 2400)),
+A.ok(/if \(reservedSlot\) slotMemoryEmpty\(runId\);\s*maybeStandaloneRate\(agentId, runId\);/.test(chatSrc.slice(iRoute, iRoute + 3400)),
   'an EMPTY/no-deck proposal batch releases the reserved slot and still fires the standalone rate beat');
 // hole 3: a batch on a non-displayed stream is notify-only — the rating must not vanish with it
 const iNotify = chatSrc.indexOf('to review');

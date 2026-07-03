@@ -183,6 +183,10 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq(highStakes('deploys the alpha service with npm publish'), false, 'a plain fact is NOT high-stakes (auto-saves)');
   A.eq(highStakes('works mostly in the evenings'), false, 'a durable habit is NOT high-stakes (auto-saves)');
   A.eq(highStakes('the reactor gauge is cost-driven'), false, 'a benign fact is NOT high-stakes (auto-saves)');
+  // bare "token(s)" must NOT trip the gate — an AI harness talks about token budgets/costs in ordinary memories
+  A.eq(highStakes('cares about token costs on long runs'), false, 'bare "token" talk is NOT high-stakes (auto-saves)');
+  A.eq(highStakes('the run burned 12k tokens'), false, 'token counts are NOT high-stakes (auto-saves)');
+  A.eq(highStakes('the session token lives in the keychain'), true, 'a session token (credential-shaped) IS high-stakes');
   A.eq(highStakes(''), false, 'empty content is not high-stakes');
   A.eq(highStakes(null), false, 'garbage in -> not high-stakes (never throws)');
 

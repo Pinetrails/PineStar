@@ -277,7 +277,7 @@ const S = require('../frontend/app/study.js');
   // the off-stream notify-only path AND the empty/no-deck path each slotMemoryEmpty so study/arc/trust aren't wedged.
   const iRoute = chatSrc.indexOf('async function routeProposalBatch');
   A.ok(iRoute > 0, 'chat.js defines routeProposalBatch');
-  const rbBody = chatSrc.slice(iRoute, iRoute + 2400);
+  const rbBody = chatSrc.slice(iRoute, iRoute + 3400);   // window covers the whole route fn (mixed-race guard + off-active notify grew it)
   A.ok((rbBody.match(/slotMemoryEmpty\(runId\)/g) || []).length >= 2, 'the notify-only path AND the empty/no-deck path both release the claim');
   // the deck render path consults the arbiter and queues over a live study card
   const iCard = chatSrc.indexOf('function proposalCard');

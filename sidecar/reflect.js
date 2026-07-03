@@ -226,8 +226,9 @@
   const HIGH_STAKES = [
     /\bapi[\s_-]?keys?\b/i,                 // "api key", "api_key"
     /\bpasswords?\b/i,
-    /\b(?:access|auth|bearer|secret|refresh)[\s_-]?tokens?\b/i,
-    /\btokens?\b/i,
+    // bare "token(s)" is deliberately NOT matched — in an AI harness ordinary memories talk about token
+    // budgets/costs/limits constantly; only credential-shaped token phrases are high-stakes.
+    /\b(?:access|auth|bearer|secret|refresh|session|oauth)[\s_-]?tokens?\b/i,
     /\bsecrets?\b/i,
     /\bcredentials?\b/i,
     /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/,               // an email address
