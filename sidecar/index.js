@@ -4096,8 +4096,19 @@ async function handleCodexModels(req, res) {
     const token = await ensureCodexAccessToken();
     const provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token });
     const models = await provider.listModels();
-    const ids = models.map(m => m.id);
-    json(200, { models: ids, default: ids[0] || null });
+    // Rich objects now (id + display/reasoning metadata) so the model dock can render per-model chips.
+    // The bare `id` is still present on every entry, so older consumers that read m.id keep working.
+    const rich = models.map(m => ({
+      id: m.id,
+      displayName: m.displayName || m.name || m.id,
+      description: m.description || '',
+      context_length: m.context_length || 0,
+      max_completion_tokens: m.max_completion_tokens || null,
+      reasoningEfforts: Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : [],
+      defaultReasoningLevel: m.defaultReasoningLevel || 'medium',
+      reasoningLevelDescriptions: m.reasoningLevelDescriptions || null
+    }));
+    json(200, { models: rich, default: (rich[0] && rich[0].id) || null });
   } catch (e) {
     json(200, { models: [], default: null, error: (e && e.message) || 'not connected', code: (e && e.code) || '' });
   }
