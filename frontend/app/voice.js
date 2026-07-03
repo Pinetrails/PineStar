@@ -23,6 +23,13 @@ const Voice = (() => {
   const el = id => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   const synth = ('speechSynthesis' in window) ? window.speechSynthesis : null;
+  // does this environment let us RECORD the mic (MediaRecorder → /api/stt)? This is the desktop path:
+  // WebView2 ships getUserMedia/MediaRecorder but NOT SpeechRecognition, so browser-native STT is dead
+  // there and voice mode was completely broken. `?stt=recorder` forces this path in a normal browser so
+  // the desktop flow can be exercised without a Tauri build.
+  const canRecordMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && typeof MediaRecorder !== 'undefined');
+  let forceRecorder = false;
+  try { forceRecorder = /(?:^|[?&])stt=recorder(?:&|$)/.test(location.search); } catch (_) {}
   const LS_SPEAK = 'starnet.voice.speak';
   const LS_CONVO = 'starnet.voice.convo';   // remembers the user WAS hands-free, so a refresh can offer one-tap resume
   const REARM_DELAY = 350;                 // ms after the agent stops talking before the mic re-opens (echo guard)
@@ -39,7 +46,9 @@ const Voice = (() => {
     modeLive: '<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6.5v3"/><path d="M6.33 4v8"/><path d="M9.67 5.5v5"/><path d="M13 6.8v2.4"/></g></svg>'
   };
 
-  const canListen = () => !!SR;
+  // STT works if EITHER provider is usable: browser-native SpeechRecognition, or mic recording → /api/stt.
+  // `?stt=recorder` forces the recorder even when SR exists (so the desktop path is testable in a browser).
+  const canListen = () => (!forceRecorder && !!SR) || canRecordMic;
   const canSpeak = () => !!synth;
 
   // ---- prefs --------------------------------------------------------------
@@ -433,7 +442,7 @@ const Voice = (() => {
   // every inter-chunk fetch gap, so the loop waits through all of it (no echo, no swallowed chunk).
   function talking() { return draining || playing || !!currentAudio || !!(synth && (synth.speaking || synth.pending)); }
   function maybeRearm() {
-    if (!convoMode || !SR || rearmTimer) return;
+    if (!convoMode || !canListen() || rearmTimer) return;
     if (busyNow() || listening || talking()) return;   // not ready — a finishing event re-calls this
     const delay = (lastAudioPath === 'synth') ? REARM_DELAY : 150;   // neural <audio> stops cleanly → shorter guard
     rearmTimer = setTimeout(() => {
@@ -445,7 +454,7 @@ const Voice = (() => {
   // turn hands-free on/off. ON jumps straight into listening; agents must be audible to converse,
   // so it also flips the speaker on. OFF tears the loop down.
   function toggleVoiceMode() {
-    if (!SR) return;
+    if (!canListen()) return;
     clearResumeCue();
     convoMode = !convoMode;
     if (typeof SFX !== 'undefined') SFX.open();
@@ -491,9 +500,16 @@ const Voice = (() => {
      ====================================================================== */
 
   let rec = null;
-  // the STT provider seam — Phase 2 swaps this for record→Whisper. start(cbs) opens a stream;
-  // callbacks: onInterim(partial), onFinal(text), onEnd(), onError(msg).
-  const sttProvider = {
+  /* the STT provider seam. start(cbs) opens a listen; callbacks: onInterim(partial), onFinal(text),
+     onEnd(), onError(msg). Two implementations share this contract so the whole listen loop (push-to-talk
+     + hands-free) is provider-agnostic:
+       • webSpeechProvider — browser-native SpeechRecognition (real interim results). The default in Chrome.
+       • recorderProvider  — MediaRecorder → POST /api/stt. The DESKTOP path (WebView2 has no SpeechRecognition)
+                             and the `?stt=recorder` test path. No interim text (that's fine — the UI shows a
+                             live 'listening…' state instead).
+     `activeStt` is chosen once at module load and used everywhere; nothing else in this file references SR
+     or MediaRecorder directly. */
+  const webSpeechProvider = {
     name: 'web-speech',
     start(cbs) {
       if (!SR) { cbs.onError && cbs.onError('unsupported'); return; }
@@ -520,10 +536,151 @@ const Voice = (() => {
     abort() { if (rec) { try { rec.abort(); } catch (_) {} } }          // hard stop, suppress the final result (teardown)
   };
 
+  /* recorderProvider — record the mic, POST the clip to /api/stt, deliver the transcription as onFinal.
+     No browser-native STT is used, so this is what makes voice mode work on desktop (and under ?stt=recorder).
+     Auto-stops on silence via a WebAudio AnalyserNode: it calibrates an ambient floor from the first ~300ms,
+     then ends the take after ~1.4s below (floor + margin). Hard cap ~30s. stop() ends+delivers; abort()
+     discards. A mic-permission denial is mapped to the SAME 'not-allowed' string SpeechRecognition emits, so
+     the existing UX copy ('allow microphone access…') fires unchanged. */
+  const REC = {
+    SILENCE_MS: 1400,        // trailing quiet before we auto-stop
+    HARD_CAP_MS: 30000,      // absolute ceiling on one take
+    MIN_MS: 500,             // ignore silence detection for the first moment (let the speaker start)
+    CALIBRATE_MS: 300,       // sample ambient level over this window to set the noise floor
+    MARGIN: 0.010            // RMS above (floor+margin) counts as speech
+  };
+  const recorderProvider = (() => {
+    let stream = null, mr = null, chunks = [], ac = null, analyser = null, rafId = null;
+    let cb = null, mime = '', startedAt = 0, floor = null, lastVoiceAt = 0, calibrateUntil = 0, silenceTimer = null;
+    let aborted = false, delivered = false, hardCapTimer = null;
+
+    function pickMime() {
+      const prefs = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      for (const m of prefs) { try { if (MediaRecorder.isTypeSupported(m)) return m; } catch (_) {} }
+      return '';   // let the browser choose
+    }
+    function fmtFromMime(m) {
+      if (/webm/.test(m)) return 'webm';
+      if (/ogg/.test(m)) return 'ogg';
+      if (/mp4|m4a|aac/.test(m)) return 'mp4';
+      if (/wav/.test(m)) return 'wav';
+      return 'webm';
+    }
+    function teardownAudio() {
+      if (rafId) { try { cancelAnimationFrame(rafId); } catch (_) {} rafId = null; }
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      if (hardCapTimer) { clearTimeout(hardCapTimer); hardCapTimer = null; }
+      if (ac) { try { ac.close(); } catch (_) {} ac = null; }
+      analyser = null;
+      if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (_) {} stream = null; }
+    }
+    // WebAudio VAD: read the analyser's RMS each frame; below the calibrated floor for SILENCE_MS → stop().
+    function watchLevel() {
+      if (!analyser) return;
+      const buf = new Float32Array(analyser.fftSize);
+      const tick = () => {
+        if (!analyser) return;
+        try { analyser.getFloatTimeDomainData(buf); } catch (_) { rafId = requestAnimationFrame(tick); return; }
+        let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        const now = Date.now();
+        if (now < calibrateUntil) { floor = (floor == null) ? rms : Math.max(floor, rms); }   // ambient = loudest calm sample
+        else {
+          const thresh = (floor == null ? 0.02 : floor) + REC.MARGIN;
+          if (rms > thresh) lastVoiceAt = now;
+          // only arm the silence cut once we're past MIN_MS AND have heard at least one voiced frame
+          if (now - startedAt > REC.MIN_MS && lastVoiceAt && (now - lastVoiceAt) > REC.SILENCE_MS) { stop(); return; }
+        }
+        // surface a coarse "still listening" pulse (no real interim text on this path) — dots by elapsed seconds
+        if (cb && cb.onInterim) { const secs = Math.floor((now - startedAt) / 1000); cb.onInterim(secs > 0 ? '·'.repeat(Math.min(secs, 8)) : ''); }
+        rafId = requestAnimationFrame(tick);
+      };
+      rafId = requestAnimationFrame(tick);
+    }
+    async function transcribe(blob) {
+      const fmt = fmtFromMime(mime || blob.type || '');
+      // desktop: apiKey() is '' (key is in the sidecar env) — send it as a header when we DO have one (browser).
+      const key = apiKey();
+      const headers = { 'Content-Type': blob.type || ('audio/' + fmt) };
+      if (key) headers['X-OpenRouter-Key'] = key;
+      const r = await fetch('/api/stt', { method: 'POST', headers, body: blob });
+      const j = await r.json().catch(() => ({}));
+      if (j && j.reason) console.warn('[voice] STT:', j.reason);
+      return { text: (j && j.text) || '', reason: j && j.reason };
+    }
+    function finish() {
+      if (delivered) return; delivered = true;
+      const blob = chunks.length ? new Blob(chunks, { type: mime || 'audio/webm' }) : null;
+      chunks = [];
+      if (aborted || !blob || !blob.size) { cb && cb.onEnd && cb.onEnd(); return; }
+      transcribe(blob).then(({ text, reason }) => {
+        if (aborted) { cb && cb.onEnd && cb.onEnd(); return; }
+        if (!text && reason) setStatus('voice: ' + String(reason).slice(0, 60));
+        cb && cb.onFinal && cb.onFinal(String(text || '').trim());
+        cb && cb.onEnd && cb.onEnd();
+      }).catch(e => {
+        console.warn('[voice] STT post failed:', (e && e.message) || e);
+        cb && cb.onError && cb.onError('stt-failed');
+        cb && cb.onEnd && cb.onEnd();
+      });
+    }
+    async function start(cbs) {
+      cb = cbs; chunks = []; aborted = false; delivered = false; floor = null; lastVoiceAt = 0;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        // NotAllowedError / SecurityError → the user (or policy) denied the mic. Map to the SR error string
+        // so startListening()'s existing not-allowed branch (drop hands-free + clear copy) fires unchanged.
+        const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+        cb && cb.onError && cb.onError(denied ? 'not-allowed' : 'mic-failed');
+        return;
+      }
+      try {
+        mime = pickMime();
+        mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        mime = mr.mimeType || mime;
+        mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+        mr.onstop = () => { teardownAudio(); finish(); };
+        mr.onerror = () => { teardownAudio(); if (!delivered) { cb && cb.onError && cb.onError('rec-error'); } };
+        // WebAudio level meter for silence auto-stop (guarded — if it fails we still record, just no VAD).
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          ac = new AC(); const src = ac.createMediaStreamSource(stream);
+          analyser = ac.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
+        } catch (_) { ac = null; analyser = null; }
+        startedAt = Date.now(); calibrateUntil = startedAt + REC.CALIBRATE_MS; lastVoiceAt = 0;
+        mr.start();
+        watchLevel();
+        hardCapTimer = setTimeout(() => { stop(); }, REC.HARD_CAP_MS);   // absolute ceiling
+      } catch (e) {
+        teardownAudio();
+        cb && cb.onError && cb.onError('rec-failed');
+      }
+    }
+    function stop() {   // end + deliver
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      if (mr && mr.state !== 'inactive') { try { mr.stop(); } catch (_) { teardownAudio(); finish(); } }
+      else { teardownAudio(); finish(); }
+    }
+    function abort() {   // hard stop, discard (teardown / barge-in)
+      aborted = true;
+      if (mr && mr.state !== 'inactive') { try { mr.stop(); } catch (_) {} }
+      teardownAudio();
+      // deliver an onEnd so endListening() runs its teardown branch; onFinal is suppressed by `aborted`.
+      if (!delivered) { delivered = true; cb && cb.onEnd && cb.onEnd(); }
+    }
+    return { name: 'recorder', start, stop, abort };
+  })();
+
+  // provider selection: prefer browser-native SpeechRecognition (real interims), else the recorder (desktop).
+  // `?stt=recorder` forces the recorder even where SR exists, to exercise the desktop path in a normal browser.
+  const sttProvider = (!forceRecorder && SR) ? webSpeechProvider : (canRecordMic ? recorderProvider : webSpeechProvider);
+  const usingRecorder = () => sttProvider === recorderProvider;
+
   function busyNow() { return typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy(); }
 
   function startListening() {
-    if (!SR || listening) return;
+    if (!canListen() || listening) return;
     if (busyNow()) { setStatus('busy — wait for the reply'); return; }  // don't talk over a live run
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
@@ -590,7 +747,7 @@ const Voice = (() => {
   // mic button: interrupt the agent if it's talking (barge-in), else start/stop a listen. In voice
   // mode the loop manages re-opening; clicking just lets you jump in (or resume from passive).
   function onMicClick() {
-    if (!SR) return;
+    if (!canListen()) return;
     clearResumeCue();
     // barge-in: interrupt whenever the agent is making OR about to make sound (talking() also covers the
     // neural-fetch gap, where `speaking` is still false but a reply is imminent) — stopSpeaking aborts it.
@@ -600,7 +757,7 @@ const Voice = (() => {
   }
 
   function toggleListen() {
-    if (!SR) return;
+    if (!canListen()) return;
     if (listening) stopListening(); else startListening();
   }
 
