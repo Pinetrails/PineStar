@@ -339,7 +339,7 @@
 .mkt-skin-section .skin-picker { flex: 1 1 auto; min-width: 0; display: grid;
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; align-content: flex-start;
   max-height: 176px; overflow-y: auto; padding-right: 2px; }
-.mkt-skinbar .skin-thumb { position: relative; aspect-ratio: 1; width: 100%; padding: 4px; cursor: pointer;
+.mkt-skinbar .skin-thumb { position: relative; aspect-ratio: 1; width: 100%; height: auto; padding: 4px; cursor: pointer;
   background: radial-gradient(ellipse 64% 42% at 50% 86%, var(--ph-glow2), transparent 72%), var(--panel2);
   border: 1px solid var(--ph-dim); border-radius: 6px; box-shadow: var(--well);
   display: flex; align-items: flex-end; justify-content: center;
