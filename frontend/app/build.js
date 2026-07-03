@@ -710,13 +710,34 @@ const Build = (() => {
     stars = [];
     for (let i = 0; i < 110; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
   }
+  // the chrome-occluded margins of the canvas (device px): the build panel (left sidebar on
+  // desktop, bottom sheet on narrow screens) + the top bar — so FIT frames the station in the
+  // VISIBLE viewport instead of centering half of it behind the panel.
+  function viewInsets() {
+    const out = { l: 0, t: 0, b: 0 };
+    if (!cv || !root) return out;
+    const c = cv.getBoundingClientRect();
+    if (!c.width || !c.height) return out;
+    const sx = cv.width / c.width, sy = cv.height / c.height;
+    const top = root.querySelector('.refit-top');
+    if (top) out.t = Math.max(0, top.getBoundingClientRect().bottom - c.top) * sy;
+    const dock = root.querySelector('.refit-dock');
+    if (dock) {
+      const d = dock.getBoundingClientRect();
+      if (d.width < c.width * 0.6) out.l = Math.max(0, d.right - c.left) * sx;  // left sidebar (narrow column)
+      else out.b = Math.max(0, c.bottom - d.top) * sy;                          // bottom sheet (spans the width)
+    }
+    return out;
+  }
   function fitCamera() {
     const b = station.bounds(), t = T();
     const wx1 = b.minTx * t, wy1 = b.minTy * t, wx2 = (b.maxTx + 1) * t, wy2 = (b.maxTy + 1) * t;
     const ww = (wx2 - wx1) + 8 * t, wh = (wy2 - wy1) + 8 * t;
-    zoom = clamp(Math.min(cv.width / ww, cv.height / wh), MINZ, MAXZ);
-    panX = cv.width / 2 - (wx1 + wx2) / 2 * zoom;
-    panY = cv.height / 2 - (wy1 + wy2) / 2 * zoom;
+    const ins = viewInsets();
+    const vw = Math.max(1, cv.width - ins.l), vh = Math.max(1, cv.height - ins.t - ins.b);
+    zoom = clamp(Math.min(vw / ww, vh / wh), MINZ, MAXZ);
+    panX = ins.l + vw / 2 - (wx1 + wx2) / 2 * zoom;
+    panY = ins.t + vh / 2 - (wy1 + wy2) / 2 * zoom;
   }
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   function toCanvas(ev) {
