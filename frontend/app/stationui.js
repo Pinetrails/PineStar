@@ -4106,6 +4106,14 @@ const StationUI = (() => {
       + '</div>';
   }
 
+  // W3: is the away-workshop grant on for the hero (the agent the quest-log queue button targets)? The queue
+  // affordance only appears when the grant is on — never offer to queue into a lane the Commander hasn't opened.
+  function heroAgent() {
+    if (!Array.isArray(present)) return null;
+    return present.find(a => a && a.id === 'agent') || present[0] || null;
+  }
+  function workshopGrantOn() { const h = heroAgent(); return !!(h && h.workshop); }
+
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
     const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
@@ -4156,8 +4164,16 @@ const StationUI = (() => {
           + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
           + '<div class="sub">' + esc(q.desc) + '</div>' + accept + '</div>';
       }
+      // W3: a "build this while I'm away" affordance on an OPEN, buildable quest (an accepted-but-unbuilt
+      // pitch/quest). One click queues it onto the focused agent's away-workshop backlog. Only when the
+      // grant is on for that agent (else it would queue into a lane the Commander never opened).
+      const canQueue = q.status !== 'done' && (q.kind === 'work' || q.kind === 'station-gap') && workshopGrantOn();
+      const queueBtn = canQueue
+        ? '<button class="q-queue" data-qid="' + esc(q.id) + '" title="Build this while I’m away — queue it for the sandbox">◈</button>'
+        : '';
       return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
         + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
+        + queueBtn
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
         + '</div>'
         + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
@@ -4218,6 +4234,21 @@ const StationUI = (() => {
         : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
         : (QSS && QSS.dismiss && QSS.dismiss(q));
       if (took) { sfx('click'); rerender('quests'); }
+    }));
+    // W3 — BUILD THIS WHILE I'M AWAY: queue the quest onto the hero's away-workshop backlog (POST
+    // /api/workshop/queue via WorkshopStore). One click; a notice confirms. Never launches a live run —
+    // it hands the idea to the sandbox for an unattended shift to pick up.
+    body.querySelectorAll('.q-queue').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const q = qs.find(x => x && x.id === b.dataset.qid);
+      if (!q) return;
+      if (typeof WorkshopStore === 'undefined' || !WorkshopStore.queue) { notify('away workshop unavailable', 'bad'); return; }
+      b.disabled = true;
+      const text = q.title + (q.desc ? ' — ' + q.desc : '');
+      WorkshopStore.queue({ agentId: (heroAgent() && heroAgent().id) || 'agent', text: text, sourceType: 'quest', sourceId: q.id }).then(res => {
+        if (res && res.ok) { sfx('click'); notify('◈ queued for the away workshop — it’ll be built in the sandbox while you’re away', 'good'); }
+        else { b.disabled = false; notify('could not queue: ' + ((res && res.error) || 'refused'), 'bad'); }
+      });
     }));
     // Tier 2 — ACCEPT a milestone step: route the next open milestone through the work-quest path (a real run
     // launches; completing THAT work completes the milestone and chains the next). No manual tick.

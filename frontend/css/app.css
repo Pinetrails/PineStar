@@ -446,6 +446,32 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
+/* W3 — THE AWAY-WORKSHOP RETURN CARD. Rides the gold-inset turn-in family (.cmsg.turnin.workshop-return);
+   these styles are only the expanded two-pane viewer + the honest verification line. Collapsed, it's just a
+   title + one review button (inherited). */
+.ws-verline { display:block; font-size:12px; letter-spacing:.3px; margin-top:-2px; }
+.ws-verline.ok { color:var(--gold); }
+.ws-verline.dim { color:var(--ph-dim); }
+.ws-slot { display:block; min-width:0; }
+.ws-panes { display:flex; gap:9px; margin-top:6px; flex-wrap:wrap; }
+.ws-pane { flex:1 1 220px; min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
+  border-radius:3px; padding:7px 8px; box-sizing:border-box; }
+.ws-summary .ws-line { display:block; margin-bottom:5px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+.ws-summary .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+.ws-summary .ws-v { display:block; color:var(--ph-bright); }
+.ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
+.ws-flist { display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
+.ws-file { text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
+  font-family:inherit; font-size:12px; padding:2px 5px; cursor:pointer; overflow-wrap:anywhere; }
+.ws-file:hover { border-color:var(--ph-glow2); color:var(--ph-bright); }
+.ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(255,211,74,.06); }
+.ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
+  border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
+  overflow-wrap:anywhere; }
+.ws-acts { margin-top:8px; gap:6px 8px; }
+.ws-keep { display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap; }
+.ws-path { width:220px; max-width:100%; }
+
 /* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
    quiet stream line (no auto-collapse). Shares the gold-inset turn-in family but reads calmer (thinner border,
@@ -1562,6 +1588,13 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-dismiss { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;
   color:var(--ph-dim); opacity:.55; font-family:inherit; font-size:11px; line-height:1; padding:1px 4px; cursor:pointer; }
 .q-dismiss:hover { color:var(--ph-bright); border-color:var(--ph-glow2); opacity:1; }
+/* W3 — "build this while I'm away" affordance on an open, buildable quest. Sits before the dismiss ✕; the
+   ◈ marks the away-workshop lane. Gold on hover (it opens the sandbox lane, an amber/consent action). */
+.q-queue { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;
+  color:var(--ph-dim); opacity:.7; font-family:inherit; font-size:12px; line-height:1; padding:1px 4px; cursor:pointer; }
+.q-queue + .q-dismiss { margin-left:2px; }
+.q-queue:hover { color:var(--gold); border-color:var(--gold); opacity:1; }
+.q-queue:disabled { opacity:.4; cursor:default; }
 .gx-tro.q-celebrate { border-color:var(--gold); animation:q-celebrate 2.4s ease-out 1; }
 @keyframes q-celebrate {
   0%   { box-shadow:0 0 18px rgba(255,211,74,.85), inset 0 0 14px rgba(255,211,74,.45); background:rgba(255,211,74,.22); }

@@ -1391,6 +1391,7 @@ const App = (() => {
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
     if (typeof AutopilotStore !== 'undefined') AutopilotStore.reset();   // …and a fresh idle autopilot (no inherited idle/armed state — its decision is re-earned by the new Commander's posture + dossier)
     if (typeof ReturnStore !== 'undefined') ReturnStore.reset();   // …and no inherited return-ritual trail — a fresh Commander gets no prior hero's pending OUTBOX crates or attendance stamp (own key)
+    if (typeof WorkshopStore !== 'undefined') WorkshopStore.reset();   // W3: no inherited "later" list or seen-ledger for a fresh Commander (own key)
     if (typeof PrideStore !== 'undefined') PrideStore.reset();   // …and a brand-new station record — a fresh Commander founds their OWN colony, inheriting no prior hero's lifetime tasks/deliverables/routines/founding-date (own key)
     if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
     if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
@@ -1651,6 +1652,11 @@ const App = (() => {
     // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
     // rides the same rate-the-work path as an attended run. Init AFTER Chat.init so the beat can render.
     if (typeof ReturnStore !== 'undefined') ReturnStore.init({ enabled: !opts.awaitingPurpose });
+    // W3 AWAY-WORKSHOP RETURN CARD: on attach (once per session, never during the awakening) poll
+    // /api/workshop/pending and hand the oldest undecided manifest to Chat.workshopReturn — the same
+    // one-post-run-beat slot the digest rides. Keep/Later/Discard route back through WorkshopStore.decide.
+    // Init AFTER Chat.init so the beat can render.
+    if (typeof WorkshopStore !== 'undefined') WorkshopStore.init({ enabled: !opts.awaitingPurpose });
     // CRON SESSIONS: surface each unattended routine run as a readable session — cron.fire adds a busy rail row
     // (no focus-steal), cron.result folds the run's durable 'cron-<runId>' transcript into it, and a boot backfill
     // recovers sessions for routines that finished while the browser was closed. Read-only on U.bus. Init AFTER
