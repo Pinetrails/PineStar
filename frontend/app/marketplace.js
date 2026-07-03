@@ -21,6 +21,12 @@ const Marketplace = (() => {
   let opener = null;
   let editingId = null, editingRecipeId = null, launchId = null;
   let pendingMintKey = null, pendingMintTemplate = null;
+  // R2 editor working state (the unified fork/create form): the picked gear set, cadence id, category, and the
+  // fork provenance carried from a TWEAK. Reset on every open of the editor.
+  let editGear = [], editCadence = null, editCategory = 'general', editForkedFrom = null, editParams = [];
+  // R3 launch/routine state: the live cron jobs (fetched once when the recipes dossier renders) so a recipe can
+  // show a "● live — every morning" indicator, and whether the launch pane is in RUN-NOW or MAKE-ROUTINE mode.
+  let cronJobs = null, cronArmed = false, launchMode = 'run', launchCadence = null;
   let tab = 'agents';                            // 'agents' | 'recipes'
   let glassOpen = false;
   let pickedSummonSkin = null;
@@ -34,6 +40,24 @@ const Marketplace = (() => {
   const hasRecipes = () => typeof Recipes !== 'undefined';
   const hasIcons = () => typeof ClassIcons !== 'undefined';
   const mintApi = () => (typeof MintStore !== 'undefined' && MintStore.candidates) ? MintStore : null;
+
+  /* ---------- recipe R2/R3 vocabularies ----------
+     CADENCE_OPTS mirrors autojobs.js CADENCES (the proven 4-option menu) — each id maps to a schedule STRING the
+     sidecar's cron.parseSchedule accepts (interval or a 5-field cron). Kept here so MAKE ROUTINE can convert a
+     recipe's suggested cadence id into a real schedule without a round-trip. 'none' = one-shot (RUN NOW only). */
+  const CADENCE_OPTS = [
+    { id: 'morning',   label: 'every morning',        schedule: '0 9 * * *' },
+    { id: 'weekly',    label: 'every Monday morning', schedule: '0 9 * * 1' },
+    { id: 'sixhourly', label: 'every 6 hours',        schedule: 'every 6h' },
+    { id: 'hourly',    label: 'every hour',           schedule: 'every 1h' }
+  ];
+  function cadenceOpt(id) { return CADENCE_OPTS.filter(c => c.id === id)[0] || null; }
+  function cadenceLabel(id) { const c = cadenceOpt(id); return c ? c.label : 'one-shot'; }
+  // the gear objectTypes a recipe editor offers (same pickable set as the class builder — dish/cabinet/notebook/
+  // workbench/studio; computer/connector are per-agent binds, not advisory recipe gear). Labels from the live source.
+  const RECIPE_GEAR_PICK = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
+  const RECIPE_CATEGORIES = ['research', 'code', 'writing', 'planning', 'general'];
+  const CAT_LABEL = { research: 'RESEARCH', code: 'CODE', writing: 'WRITING', planning: 'PLANNING', general: 'GENERAL' };
 
   /* ---------- personalization (the recommender's read surface) ---------- */
   const FAM_TAGS = ['code', 'research', 'general'];
@@ -250,6 +274,7 @@ const Marketplace = (() => {
     wireDossier(stage);
     paintDossierAccent();
     if (tab !== 'recipes') hydrateSkillRows();   // fill real skill names/descriptions once the catalog loads
+    else hydrateLiveRoutines();                  // fill the "● live as a routine" indicator once /api/cron loads
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
   }
   function renderDossier() {
@@ -258,6 +283,7 @@ const Marketplace = (() => {
     wireDossier(root);
     paintDossierAccent();
     if (tab !== 'recipes') hydrateSkillRows();   // fill real skill names/descriptions once the catalog loads
+    else hydrateLiveRoutines();                  // refresh the live-routine indicator for the focused recipe
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
     root.querySelectorAll('.mkt-card').forEach(c => c.classList.toggle('sel', c.dataset.id === fid));
   }
@@ -465,6 +491,30 @@ const Marketplace = (() => {
     });
   }
 
+  /* ---------- R3: live cron routines (the "● live as a routine" provenance) ---------- */
+  // cron-job cache: fetched from /api/cron once per open of the recipes tab, then reused. Best-effort — a missing
+  // sidecar just means no live-routine badges (the recipe still launches). The window.fetch shim attaches the token.
+  let cronPending = null;
+  function loadCronJobs(force) {
+    if (cronJobs && !force) return Promise.resolve(cronJobs);
+    if (cronPending) return cronPending;
+    cronPending = fetch('/api/cron').then(r => r.ok ? r.json() : { jobs: [], enabled: false })
+      .then(d => { cronJobs = Array.isArray(d && d.jobs) ? d.jobs : []; cronArmed = !!(d && d.enabled); cronPending = null; return cronJobs; })
+      .catch(() => { cronJobs = cronJobs || []; cronPending = null; return cronJobs; });
+    return cronPending;
+  }
+  // async: fetch cron jobs, then repaint the focused recipe's dossier so its live-routine badge appears. Re-queries
+  // the DOM after the await (a dossier swapped mid-fetch is a safe no-op). Only repaints if the badge would change.
+  function hydrateLiveRoutines() {
+    const had = cronJobs != null;
+    loadCronJobs().then(() => {
+      if (!root || tab !== 'recipes') return;
+      const d = root.querySelector('#mkt-dossier'); if (!d) return;
+      // if this is the first load (badge wasn't rendered), or the badge state differs from what's shown, repaint.
+      if (!had) renderDossier();
+    });
+  }
+
   function agentDossierHTML() {
     const s = (focusAgent && Specialties.get(focusAgent)) || Specialties.builtins()[0];
     if (!s) return '<div class="mkt-dos-empty">no class selected.</div>';
@@ -511,6 +561,37 @@ const Marketplace = (() => {
         '<div class="mkt-cta-sub">' + ctaSub + '</div>' +
       '</div>';
   }
+  // GEAR the recipe draws on — one advisory row per objectType: prop label + what it grants + a present/WANT
+  // check against the live station gear (skills-panel WANT pattern). Missing gear is a WANT badge, NEVER a lock.
+  function recipeGearHTML(r) {
+    const gear = (r && Array.isArray(r.gear)) ? r.gear : [];
+    if (!gear.length) return '';
+    const have = stationGearSet();
+    const rows = gear.map(t => {
+      const present = have.has(t);
+      return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
+        '<span class="mkt-kit-obj">' + esc(kitPropLabel(t)) + '</span>' +
+        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span>' +
+        '<span class="mkt-kit-state">' + (present ? 'on station' : 'WANT — add in REFIT') + '</span></div>';
+    }).join('');
+    return '<div class="mkt-block"><div class="bh">DRAWS ON GEAR</div><div class="mkt-kit">' + rows + '</div>' +
+      '<div class="mkt-kit-note">advisory — this use case leans on the above; it still launches without it.</div></div>';
+  }
+  // R3 live-routine lookup: the ENABLED cron jobs whose meta.recipeId matches this recipe (from the last
+  // /api/cron fetch). Returns { count, cadence } so the dossier can show "● live — every morning" (or "×N").
+  function liveRoutinesFor(recipeId) {
+    if (!Array.isArray(cronJobs) || !recipeId) return null;
+    const mine = cronJobs.filter(j => j && j.enabled && j.meta && j.meta.recipeId === recipeId);
+    if (!mine.length) return null;
+    return { count: mine.length, display: mine[0].scheduleDisplay || '' };
+  }
+  function liveRoutineBadgeHTML(r) {
+    const live = liveRoutinesFor(r.id);
+    if (!live) return '';
+    const sched = live.display ? esc(live.display) : 'on a schedule';
+    const extra = live.count > 1 ? ' <span class="dim">×' + live.count + '</span>' : '';
+    return '<div class="mkt-r-live"><span class="mkt-r-live-dot" aria-hidden="true">●</span> live as a routine — ' + sched + extra + '</div>';
+  }
   function recipeDossierHTML() {
     const r = (focusRecipe && Recipes.get(focusRecipe)) || Recipes.builtins()[0];
     if (!r) return '<div class="mkt-dos-empty">no recipe selected.</div>';
@@ -518,18 +599,31 @@ const Marketplace = (() => {
     const n = (r.params || []).length;
     const inputs = n ? '<div class="mkt-block"><div class="bh">INPUTS</div><ul class="mkt-starters">' +
       r.params.map(p => '<li>' + esc(p.label) + (p.required ? '' : ' <i>(optional)</i>') + '</li>').join('') + '</ul></div>' : '';
+    // fork provenance: a forked custom names its parent (a live jump would be nice but the parent may be gone).
+    const parent = (r.source === 'fork' && r.forkedFrom) ? Recipes.get(r.forkedFrom) : null;
+    const forkLine = (r.source === 'fork')
+      ? '<div class="mkt-r-fork">⑃ tweaked from <b>' + esc(parent ? parent.name : r.forkedFrom) + '</b></div>' : '';
+    const cadHint = r.cadence
+      ? '<div class="mkt-r-cadhint">◷ naturally recurring — suggests <b>' + esc(cadenceLabel(r.cadence)) + '</b></div>' : '';
+    // TWEAK is on EVERY dossier (fork any recipe); EDIT/DELETE only on your own customs.
+    const tweakBtn = '<button class="bb sm mkt-recipe-tweak" data-id="' + esc(r.id) + '">✎ TWEAK</button>';
     const custActs = r.custom
-      ? '<div class="mkt-cta-row"><button class="bb sm mkt-recipe-edit" data-id="' + esc(r.id) + '">✎ EDIT</button>' +
-        '<button class="bb sm danger mkt-recipe-del" data-id="' + esc(r.id) + '">⌫ DELETE</button></div>' : '';
+      ? '<div class="mkt-cta-row">' + tweakBtn +
+        '<button class="bb sm mkt-recipe-edit" data-id="' + esc(r.id) + '">✐ EDIT</button>' +
+        '<button class="bb sm danger mkt-recipe-del" data-id="' + esc(r.id) + '">⌫ DELETE</button></div>'
+      : '<div class="mkt-cta-row">' + tweakBtn + '</div>';
     return '<div class="mkt-dos-label">▮ RECIPE DOSSIER</div>' +
       '<div class="mkt-dos-hero">' + sealHTML(r, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
-          '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div></div></div>' +
+          '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
+          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc((CAT_LABEL[r.category] || r.category || 'GENERAL')) + '</span></div></div></div>' +
+      liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs +
+      recipeGearHTML(r) +
       '<div class="mkt-dos-cta">' + custActs +
         '<button class="mkt-cta-main mkt-launch" data-id="' + esc(r.id) + '">' + (n ? '▸ SET UP &amp; LAUNCH' : '▸ LAUNCH RECIPE') + '</button>' +
-        '<div class="mkt-cta-sub">opens a fresh workstream · sets <b>' + esc(who) + '</b> to work on it</div>' +
+        '<div class="mkt-cta-sub">run it now · or put it on a schedule</div>' +
       '</div>';
   }
 
@@ -653,7 +747,7 @@ const Marketplace = (() => {
     // editingId cleared: ＋ is always a FRESH class, never a stale upsert (the edit view can be abandoned by closing the window)
     if (build) build.addEventListener('click', () => { sfx('click'); editingId = null; buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
-    if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
+    if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); pendingMintKey = null; pendingMintTemplate = null; enterRecipeEditor(null, 'create'); });
 
     const skinWrap = stage.querySelector('#mkt-skin-picker');
     if (skinWrap) {
@@ -711,8 +805,11 @@ const Marketplace = (() => {
       if (!hasRecipes()) return;
       const r = Recipes.get(launchBtn.dataset.id); if (!r) return;
       sfx('click');
-      if (r.params && r.params.length) { launchId = r.id; view = 'launch'; renderStage(); }
-      else launchRecipeNow(r, {});
+      // always open the launch pane (even for a no-setup recipe) so BOTH verbs are offered — RUN NOW and MAKE
+      // ROUTINE (R3). A param-less recipe simply shows no fill-in fields; the two action buttons still appear.
+      launchId = r.id; launchMode = 'run'; launchCadence = null; view = 'launch';
+      loadCronJobs();   // warm the armed-state note for the MAKE ROUTINE panel
+      renderStage();
     });
     const edit = sc.querySelector('.mkt-edit');
     if (edit) edit.addEventListener('click', () => {
@@ -728,7 +825,21 @@ const Marketplace = (() => {
       view = 'build'; renderStage();
     });
     const rEdit = sc.querySelector('.mkt-recipe-edit');
-    if (rEdit) rEdit.addEventListener('click', () => { editingRecipeId = rEdit.dataset.id; pendingMintKey = null; pendingMintTemplate = null; sfx('click'); view = 'recipesave'; renderStage(); });
+    if (rEdit) rEdit.addEventListener('click', () => {
+      pendingMintKey = null; pendingMintTemplate = null; sfx('click');
+      // EDIT an existing custom in place — seed the editor from the saved record so every picker prefills.
+      const r = hasRecipes() ? Recipes.get(rEdit.dataset.id) : null;
+      enterRecipeEditor(r || {}, 'edit', rEdit.dataset.id);
+    });
+    // TWEAK — on EVERY recipe dossier (builtin or custom): fork it into a new editable custom, prefilled.
+    const rTweak = sc.querySelector('.mkt-recipe-tweak');
+    if (rTweak) rTweak.addEventListener('click', () => {
+      if (!hasRecipes()) return;
+      pendingMintKey = null; pendingMintTemplate = null; sfx('click');
+      const forkDraft = Recipes.forkFrom(rTweak.dataset.id);
+      if (!forkDraft) { note('could not tweak that recipe', 'bad'); return; }
+      enterRecipeEditor(forkDraft, 'fork');
+    });
     const del = sc.querySelector('.mkt-del');
     if (del) del.addEventListener('click', () => armDelete(del, '⌫ DELETE', () => {
       const s = Specialties.get(del.dataset.id);
@@ -790,8 +901,10 @@ const Marketplace = (() => {
     sc.querySelectorAll('.mkt-suggest-review').forEach(b => b.addEventListener('click', () => {
       const c = suggestedMissions().find(x => x.key === b.dataset.key);
       if (!c) { renderStage(); return; }
-      pendingMintKey = c.key; pendingMintTemplate = c.template; editingRecipeId = null;
-      sfx('click'); view = 'recipesave'; renderStage();
+      pendingMintKey = c.key; pendingMintTemplate = c.template;
+      sfx('click');
+      // a mint review seeds the editor with the observed template (params derive from its {tokens} on save).
+      enterRecipeEditor({ task: c.template }, 'create');
     }));
     sc.querySelectorAll('.mkt-suggest-dismiss').forEach(b => b.addEventListener('click', () => {
       if (mintApi()) MintStore.markDismissed(b.dataset.key);
@@ -805,6 +918,17 @@ const Marketplace = (() => {
     if (ok) { note('recipe launched: ' + r.name + ' — ' + ((ctx && ctx.agentName) || 'your agent') + ' is on it', 'good'); close(); }
     else { sfx('bad'); note('could not launch ' + r.name + ' — nothing to send', 'bad'); }
   }
+  // the schedule string a launchCadence id maps to, plus a 'custom' free-text entry the user types (every Nh or
+  // a 5-field cron). The sidecar re-validates via cron.parseSchedule, so a bad custom string is caught server-side.
+  function scheduleForLaunchCadence(customStr) {
+    if (launchCadence === 'custom') return String(customStr || '').trim();
+    const c = cadenceOpt(launchCadence); return c ? c.schedule : '';
+  }
+  function launchCadenceOptionsHTML() {
+    let html = CADENCE_OPTS.map(c => '<option value="' + esc(c.id) + '"' + (launchCadence === c.id ? ' selected' : '') + '>' + esc(c.label) + '</option>').join('');
+    html += '<option value="custom"' + (launchCadence === 'custom' ? ' selected' : '') + '>custom…</option>';
+    return html;
+  }
   function launchFormHTML() {
     const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
     if (!r) { view = 'grid'; return '<div class="mkt-roster">' + rosterHTML() + '</div>'; }
@@ -813,69 +937,325 @@ const Marketplace = (() => {
       '<label class="mkt-lbl">' + esc(p.label) +
         (p.required ? ' <span class="mkt-req" title="required">*</span>' : ' <span class="mkt-opt">(optional)</span>') +
         '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '"></textarea></label>').join('');
+    // MAKE ROUTINE panel — revealed when launchMode==='routine'. Cadence defaults to the recipe's suggested one.
+    const outbound = hasRecipes() && Recipes.impliesOutbound(r);
+    const warnLine = outbound
+      ? '<div class="mkt-r-warn">⚠ this routine runs UNATTENDED. its directive looks like it may SEND or WRITE something — while you’re away it can only reason &amp; draft, so it will leave the result on the desk, not actually send. (a heads-up, not a block.)</div>'
+      : '';
+    const armNote = (cronJobs != null && !cronArmed)
+      ? '<div class="mkt-r-warn dim">◷ scheduling is currently OFF — your routine is saved but dormant until you enable the scheduler in ROUTINES.</div>' : '';
+    const routinePanel = (launchMode === 'routine')
+      ? '<div class="mkt-r-routine">' +
+          '<label class="mkt-lbl">CADENCE<select class="mkt-in" id="mkt-l-cad">' + launchCadenceOptionsHTML() + '</select></label>' +
+          '<label class="mkt-lbl mkt-l-custom" id="mkt-l-custom-wrap"' + (launchCadence === 'custom' ? '' : ' hidden') + '>CUSTOM SCHEDULE ' +
+            '<span class="mkt-lbl-hint">— “every 6h”, “in 2h”, or a 5-field cron “0 9 * * 1”</span>' +
+            '<input class="mkt-in" id="mkt-l-custom" placeholder="every 6h"></label>' +
+          '<div class="mkt-r-pv" id="mkt-l-pv"></div>' +
+          warnLine + armNote +
+        '</div>' : '';
+    // the action row switches on the mode: RUN NOW + MAKE ROUTINE side by side; in routine mode a CONFIRM button.
+    const acts = (launchMode === 'routine')
+      ? '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button>' +
+          '<button class="bb sm mkt-launch-run-alt">▸ RUN NOW INSTEAD</button>' +
+          '<button class="bb sm mkt-do-routine">◷ SCHEDULE IT</button></div>'
+      : '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button>' +
+          '<button class="bb sm mkt-do-launch">▸ RUN NOW</button>' +
+          '<button class="bb sm mkt-do-makeroutine">◷ MAKE ROUTINE</button></div>';
+    const modeNote = (launchMode === 'routine')
+      ? '◷ fills the blanks ONCE, then runs the same directive on your chosen cadence as <b>' + esc(who) + '</b>.'
+      : '▸ opens a fresh workstream and sets <b>' + esc(who) + '</b> to work on it — or put it on a schedule.';
     return '<div class="mkt-save mkt-launch-form">' +
-      '<div class="mkt-save-h">' + esc('▸ LAUNCH — ' + r.name) + '</div>' +
+      '<div class="mkt-save-h">' + esc((launchMode === 'routine' ? '◷ MAKE ROUTINE — ' : '▸ LAUNCH — ') + r.name) + '</div>' +
       '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
       (fields || '<p class="mkt-hint">this recipe needs no setup — just launch it.</p>') +
-      '<p class="mkt-launch-note">▸ opens a fresh workstream and sets <b>' + esc(who) + '</b> to work on it.</p>' +
-      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-launch">▸ LAUNCH RECIPE</button></div></div>';
+      routinePanel +
+      '<p class="mkt-launch-note">' + modeNote + '</p>' +
+      acts + '</div>';
+  }
+  // gather + validate the param values from the launch form; returns { values } or null (with UI feedback) if a
+  // required field is blank. Shared by RUN NOW and MAKE ROUTINE (both fill the same params, once).
+  function collectLaunchValues(stage, r) {
+    const values = {};
+    stage.querySelectorAll('.mkt-p-in').forEach(inp => { values[inp.dataset.key] = inp.value; });
+    const missing = Recipes.requiredMissing(r, values);
+    if (missing.length) {
+      sfx('bad');
+      missing.forEach(k => { const f = stage.querySelector('.mkt-p-in[data-key="' + k + '"]'); if (f) f.classList.add('mkt-bad'); });
+      const f0 = stage.querySelector('.mkt-p-in[data-key="' + missing[0] + '"]'); if (f0) f0.focus();
+      note('fill in: ' + missing.join(', '), 'bad'); return null;
+    }
+    return values;
   }
   function wireLaunchForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; launchId = null; renderStage(); });
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; launchId = null; launchMode = 'run'; renderStage(); });
     stage.querySelectorAll('.mkt-p-in').forEach(inp => inp.addEventListener('input', () => inp.classList.remove('mkt-bad')));
+
+    // RUN NOW (from run mode) — the existing path, unchanged.
     const go = stage.querySelector('.mkt-do-launch');
     if (go) go.addEventListener('click', () => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
       if (!r) { view = 'grid'; launchId = null; renderStage(); return; }
-      const values = {};
-      stage.querySelectorAll('.mkt-p-in').forEach(inp => { values[inp.dataset.key] = inp.value; });
-      const missing = Recipes.requiredMissing(r, values);
-      if (missing.length) {
-        sfx('bad');
-        missing.forEach(k => { const f = stage.querySelector('.mkt-p-in[data-key="' + k + '"]'); if (f) f.classList.add('mkt-bad'); });
-        const f0 = stage.querySelector('.mkt-p-in[data-key="' + missing[0] + '"]'); if (f0) f0.focus();
-        note('fill in: ' + missing.join(', '), 'bad'); return;
-      }
-      launchId = null; launchRecipeNow(r, values);
+      const values = collectLaunchValues(stage, r); if (!values) return;
+      launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
     });
+    // MAKE ROUTINE — reveal the cadence panel (default to the recipe's suggested cadence, else morning).
+    const mkRoutine = stage.querySelector('.mkt-do-makeroutine');
+    if (mkRoutine) mkRoutine.addEventListener('click', () => {
+      const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
+      // validate the params up front so scheduling can't proceed with a blank required fill-in.
+      if (!collectLaunchValues(stage, r)) return;
+      launchMode = 'routine';
+      launchCadence = (r.cadence && cadenceOpt(r.cadence)) ? r.cadence : 'morning';
+      loadCronJobs().then(() => { if (view === 'launch') renderStage(); });   // refresh armed-state note
+      sfx('click'); renderStage();
+    });
+    // RUN NOW INSTEAD (from routine mode) — flip back and run.
+    const runAlt = stage.querySelector('.mkt-launch-run-alt');
+    if (runAlt) runAlt.addEventListener('click', () => {
+      const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
+      const values = collectLaunchValues(stage, r); if (!values) return;
+      launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
+    });
+
+    // cadence picker + custom-schedule reveal + a live preview of the next fires (via /api/cron/preview).
+    const cadSel = stage.querySelector('#mkt-l-cad');
+    const customWrap = stage.querySelector('#mkt-l-custom-wrap'), customIn = stage.querySelector('#mkt-l-custom'), pv = stage.querySelector('#mkt-l-pv');
+    let pvTimer = null;
+    const paintSchedPreview = () => {
+      if (!pv) return;
+      const sched = scheduleForLaunchCadence(customIn && customIn.value);
+      if (!sched) { pv.textContent = ''; return; }
+      clearTimeout(pvTimer);
+      pvTimer = setTimeout(() => {
+        fetch('/api/cron/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: sched }) })
+          .then(r => r.ok ? r.json() : null).then(d => {
+            if (!pv) return;
+            if (d && d.ok) pv.textContent = '✓ ' + (d.display || sched);
+            else pv.innerHTML = '<span class="mkt-r-warn-inline">' + esc((d && d.error) || 'unrecognized schedule') + '</span>';
+          }).catch(() => {});
+      }, 250);
+    };
+    if (cadSel) cadSel.addEventListener('change', () => {
+      launchCadence = cadSel.value || 'morning';
+      if (customWrap) customWrap.hidden = (launchCadence !== 'custom');
+      sfx('click'); paintSchedPreview();
+    });
+    if (customIn) customIn.addEventListener('input', paintSchedPreview);
+    if (launchMode === 'routine') paintSchedPreview();
+
+    // SCHEDULE IT — fill the params ONCE, convert cadence → schedule, POST /api/cron with meta.recipeId.
+    const doRoutine = stage.querySelector('.mkt-do-routine');
+    if (doRoutine) doRoutine.addEventListener('click', () => {
+      const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
+      const values = collectLaunchValues(stage, r); if (!values) return;
+      const schedule = scheduleForLaunchCadence(customIn && customIn.value);
+      if (!schedule) { sfx('bad'); note('pick a cadence (or type a custom schedule)', 'bad'); if (customIn) customIn.focus(); return; }
+      makeRoutine(r, values, schedule);
+    });
+
     const first = stage.querySelector('.mkt-p-in'); if (first) first.focus();
   }
+  // POST /api/cron for MAKE ROUTINE. The filled directive is the routine's prompt (params filled ONCE, now); the
+  // meta.recipeId stamps provenance so the ROUTINES console + the recipe dossier can both show the link. The agentId
+  // targets the current run's agent (ctx.agentId) if the host handed one, else the default 'agent'.
+  function makeRoutine(r, values, schedule) {
+    const prompt = Recipes.fillTask(r, values);
+    if (!prompt) { sfx('bad'); note('nothing to schedule — the directive is empty', 'bad'); return; }
+    const agentId = (ctx && ctx.agentId) || 'agent';
+    const body = {
+      name: r.name, prompt, schedule, agentId,
+      enabled: true, deliver: 'local', repeat: { times: null },
+      meta: { recipeId: r.id }
+    };
+    const btn = root && root.querySelector('.mkt-do-routine'); if (btn) { btn.disabled = true; btn.textContent = '… scheduling'; }
+    fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(res => res.json().catch(() => ({})).then(d => ({ ok: res.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok || (d && d.error)) { sfx('bad'); note((d && d.error) || 'could not schedule the routine', 'bad'); if (btn) { btn.disabled = false; btn.textContent = '◷ SCHEDULE IT'; } return; }
+        cronJobs = null;   // invalidate the cache so the dossier's live-routine badge refreshes
+        sfx('click');
+        note('routine scheduled: ' + r.name + ' — ' + cadenceLabel(launchCadence === 'custom' ? null : launchCadence).replace('one-shot', 'on your schedule') + '. find it in ROUTINES.', 'good');
+        launchId = null; launchMode = 'run'; close();
+      })
+      .catch(() => { sfx('bad'); note('could not reach the scheduler', 'bad'); if (btn) { btn.disabled = false; btn.textContent = '◷ SCHEDULE IT'; } });
+  }
 
-  /* ---------- author / edit a mission ---------- */
+  /* ---------- the unified recipe editor (R2) ----------
+     ONE editor component, three entry points: a blank CREATE (＋ SAVE A RECIPE), a mint REVIEW (from a SUGGESTED
+     card), and a TWEAK/fork or EDIT (from a dossier). Every path seeds the shared editor state via enterRecipeEditor
+     so the form opens fully populated — name/emoji/params/task/gear/cadence/category. Save mints a custom recipe;
+     a fork carries source:'fork' + forkedFrom. Builtins are never mutated (a TWEAK forks; only a custom EDITs in place). */
+
+  // seed the editor's working state from a recipe (or a plain draft), then switch to the editor view. `mode`:
+  //   'create' — blank/new custom;  'edit' — upsert an existing custom (editingRecipeId set);
+  //   'fork'   — a NEW custom pre-filled from `seed` (a Recipes.forkFrom draft; editingRecipeId stays null).
+  // `seed` is the recipe/draft to prefill from (null for a truly blank create).
+  function enterRecipeEditor(seed, mode, editId) {
+    seed = seed || {};
+    editingRecipeId = (mode === 'edit') ? (editId || null) : null;
+    editForkedFrom = (mode === 'fork') ? (seed.forkedFrom || null) : (seed.forkedFrom || null);
+    editGear = Array.isArray(seed.gear) ? seed.gear.slice() : [];
+    editCadence = seed.cadence || null;
+    editCategory = seed.category || 'general';
+    // params: plain, editable copies ({key,label,placeholder,required}). A blank create starts with none — the
+    // author writes {tokens} and the param rows are derived on save (paramsFromTemplate) if they leave them empty.
+    editParams = (Array.isArray(seed.params) ? seed.params : []).map(p => ({
+      key: p.key || '', label: p.label || '', placeholder: p.placeholder || '', required: p.required !== false
+    }));
+    view = 'recipesave'; renderStage();
+  }
+
   function recipeTokenHint(task) {
     if (!hasRecipes()) return '';
     const ps = Recipes.paramsFromTemplate(task);
     if (!ps.length) return '<span class="mkt-r-tok-none">◷ one-tap recipe — no fill-ins</span>';
     return '<span class="mkt-r-tok-lbl">asks for</span> ' + ps.map(p => '<span class="mkt-r-tok">' + esc(p.label) + '</span>').join(' ');
   }
+  function gearPickHTML() {
+    return RECIPE_GEAR_PICK.map(t => {
+      const on = editGear.indexOf(t) >= 0;
+      return '<button type="button" class="mkt-chip pick' + (on ? ' sel' : '') + '" data-gear="' + esc(t) + '" ' +
+        'title="' + esc(capGrant(t)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(kitPropLabel(t)) + '</button>';
+    }).join('');
+  }
+  function catSelectHTML() {
+    return RECIPE_CATEGORIES.map(c => '<option value="' + esc(c) + '"' + (editCategory === c ? ' selected' : '') + '>' + esc(CAT_LABEL[c] || c) + '</option>').join('');
+  }
+  function cadSelectHTML() {
+    let html = '<option value=""' + (!editCadence ? ' selected' : '') + '>one-shot — no suggested cadence</option>';
+    html += CADENCE_OPTS.map(c => '<option value="' + esc(c.id) + '"' + (editCadence === c.id ? ' selected' : '') + '>' + esc(c.label) + '</option>').join('');
+    return html;
+  }
+  // one editable param row: key + label + placeholder + required toggle + remove. Keys are the {tokens} in the
+  // directive; the live preview keys off them. An empty grid means "derive from the template on save".
+  function paramRowHTML(p, i) {
+    return '<div class="mkt-r-prow" data-i="' + i + '">' +
+      '<input class="mkt-in mkt-r-pkey" data-i="' + i + '" maxlength="24" value="' + esc(p.key || '') + '" placeholder="key (e.g. topic)" aria-label="param key">' +
+      '<input class="mkt-in mkt-r-plabel" data-i="' + i + '" maxlength="32" value="' + esc(p.label || '') + '" placeholder="label (optional)" aria-label="param label">' +
+      '<input class="mkt-in mkt-r-pph" data-i="' + i + '" maxlength="48" value="' + esc(p.placeholder || '') + '" placeholder="hint (optional)" aria-label="param placeholder">' +
+      '<label class="mkt-r-preq" title="required at launch"><input type="checkbox" class="mkt-r-preq-cb" data-i="' + i + '"' + (p.required ? ' checked' : '') + '> req</label>' +
+      '<button type="button" class="bb xs danger mkt-r-prm" data-i="' + i + '" aria-label="remove param">✕</button>' +
+      '</div>';
+  }
+  function paramsGridHTML() {
+    const rows = editParams.map(paramRowHTML).join('');
+    return '<div class="mkt-r-params" id="mkt-r-params">' + rows + '</div>' +
+      '<button type="button" class="bb xs mkt-r-padd">＋ ADD FILL-IN</button>' +
+      '<span class="mkt-hint mkt-r-phint"> — or leave empty and STARNET derives them from the {tokens} in your directive.</span>';
+  }
   function recipeSaveFormHTML() {
     const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
     const minting = !editing && !!pendingMintTemplate;
-    const d = editing || (minting
-      ? { emoji: '✦', name: pendingMintTemplate.replace(/\{[^}]*\}/g, '').replace(/\s+/g, ' ').trim().slice(0, 28), tagline: '', task: pendingMintTemplate }
-      : { emoji: '✦', name: '', tagline: '', task: '' });
-    const title = editing ? 'EDIT RECIPE' : minting ? 'SAVE THIS AS A RECIPE' : 'SAVE A RECIPE';
-    const intro = minting
+    const forking = !editing && !!editForkedFrom;
+    const parent = forking && hasRecipes() ? Recipes.get(editForkedFrom) : null;
+    const d = editing || { emoji: '✦', name: '', tagline: '', task: '' };
+    const title = editing ? 'EDIT RECIPE' : forking ? 'TWEAK RECIPE' : minting ? 'SAVE THIS AS A RECIPE' : 'SAVE A RECIPE';
+    const intro = forking
+      ? 'a copy of <b>' + esc((parent && parent.name) || 'the recipe') + '</b> — yours to change. adjust the wording, the fill-ins, the gear or cadence, then save it as your own. the original stays put.'
+      : minting
       ? 'you’ve done this a few times — saving it makes it a one-tap recipe you own. Tweak the wording, wrap any blanks in <b>{braces}</b>, then save.'
       : 'write the directive your agent should run. Wrap each blank in <b>{braces}</b> — “Brief me on <b>{topic}</b>” — and it becomes a fill-in at launch.';
+    // when the form is (re)rendered we read the CURRENT working state (editGear/editCadence/... survive across
+    // re-renders); name/emoji/tagline/task come from the DOM on save, but seed from `d` here on first paint.
+    // For a fork/mint the seed came through enterRecipeEditor; for edit, from `d`. We keep the name/task in the
+    // inputs (not editParams) — editParams is only the fill-in grid.
+    const seedName = forking && parent ? ((parent.name || 'Recipe') + ' (my version)') : (d.name || '');
+    const seedEmoji = (forking && parent ? parent.emoji : d.emoji) || '✦';
+    const seedTag = forking && parent ? (parent.tagline || '') : (d.tagline || '');
+    const seedTask = editing ? (d.task || '')
+      : forking && parent ? (parent.task || '')
+      : minting ? pendingMintTemplate : (d.task || '');
     return '<div class="mkt-save mkt-recipe-form">' +
       '<div class="mkt-save-h">' + esc(title) + '</div>' +
       '<p class="mkt-hint">' + intro + '</p>' +
-      '<div class="mkt-save-row"><label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-r-emoji" maxlength="2" value="' + esc(d.emoji || '✦') + '"></label>' +
-        '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-r-name" maxlength="28" value="' + esc(d.name || '') + '" placeholder="e.g. Morning Standup"></label></div>' +
-      '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-r-tag" maxlength="48" value="' + esc(d.tagline || '') + '" placeholder="one line — what it’s for"></label>' +
-      '<label class="mkt-lbl">DIRECTIVE TEMPLATE<textarea class="mkt-in mkt-r-task" id="mkt-r-task" rows="4" placeholder="e.g. Summarize {project} progress since {since} and flag blockers.">' + esc(d.task || '') + '</textarea></label>' +
+      '<div class="mkt-save-row"><label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-r-emoji" maxlength="2" value="' + esc(seedEmoji) + '"></label>' +
+        '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-r-name" maxlength="40" value="' + esc(seedName) + '" placeholder="e.g. Morning Standup"></label></div>' +
+      '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-r-tag" maxlength="48" value="' + esc(seedTag) + '" placeholder="one line — what it’s for"></label>' +
+      '<label class="mkt-lbl">DIRECTIVE TEMPLATE<textarea class="mkt-in mkt-r-task" id="mkt-r-task" rows="4" placeholder="e.g. Summarize {project} progress since {since} and flag blockers.">' + esc(seedTask || '') + '</textarea></label>' +
       '<div class="mkt-r-tokens" id="mkt-r-tokens"></div>' +
+      '<label class="mkt-lbl">FILL-INS <span class="mkt-lbl-hint">— the blanks filled at launch</span></label>' +
+      paramsGridHTML() +
+      '<label class="mkt-lbl">LIVE PREVIEW <span class="mkt-lbl-hint">— what your agent receives</span></label>' +
+      '<pre class="mkt-r-preview" id="mkt-r-preview"></pre>' +
+      '<label class="mkt-lbl">GEAR IT DRAWS ON <span class="mkt-lbl-hint">— advisory; a WANT badge if the station lacks it, never a lock</span></label>' +
+      '<div class="mkt-chips" id="mkt-r-gear">' + gearPickHTML() + '</div>' +
+      '<div class="mkt-save-row">' +
+        '<label class="mkt-lbl mkt-grow">CATEGORY<select class="mkt-in" id="mkt-r-cat">' + catSelectHTML() + '</select></label>' +
+        '<label class="mkt-lbl mkt-grow">SUGGESTED CADENCE<select class="mkt-in" id="mkt-r-cad">' + cadSelectHTML() + '</select></label>' +
+      '</div>' +
       '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button>' +
-        '<button class="bb sm mkt-do-recipe-save">' + (editing ? '✓ SAVE CHANGES' : '✓ SAVE RECIPE') + '</button></div></div>';
+        '<button class="bb sm mkt-do-recipe-save">' + (editing ? '✓ SAVE CHANGES' : forking ? '✓ SAVE MY VERSION' : '✓ SAVE RECIPE') + '</button></div></div>';
   }
   function wireRecipeSaveForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
-    const taskIn = stage.querySelector('#mkt-r-task'), tokens = stage.querySelector('#mkt-r-tokens');
-    const paint = () => { if (tokens && taskIn) tokens.innerHTML = recipeTokenHint(taskIn.value); };
-    if (taskIn) taskIn.addEventListener('input', paint); paint();
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; editForkedFrom = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
+    const taskIn = stage.querySelector('#mkt-r-task'), tokens = stage.querySelector('#mkt-r-tokens'), preview = stage.querySelector('#mkt-r-preview');
+    // read the fill-in grid back into editParams (keys/labels/placeholder/required) from the live inputs.
+    const syncParamsFromDOM = () => {
+      stage.querySelectorAll('.mkt-r-prow').forEach(row => {
+        const i = +row.dataset.i; if (!editParams[i]) return;
+        const k = row.querySelector('.mkt-r-pkey'), l = row.querySelector('.mkt-r-plabel'), ph = row.querySelector('.mkt-r-pph'), rq = row.querySelector('.mkt-r-preq-cb');
+        if (k) editParams[i].key = (k.value || '').trim();
+        if (l) editParams[i].label = (l.value || '').trim();
+        if (ph) editParams[i].placeholder = (ph.value || '').trim();
+        if (rq) editParams[i].required = !!rq.checked;
+      });
+    };
+    // build the effective recipe for previewing: explicit fill-in rows if any have a key, else derive from tokens.
+    const effectiveParams = (task) => {
+      const explicit = editParams.filter(p => p.key);
+      if (explicit.length) return explicit.map(p => ({ key: p.key, label: p.label || p.key, placeholder: p.placeholder, required: p.required }));
+      return Recipes.paramsFromTemplate(task);
+    };
+    const paintPreview = () => {
+      if (!preview || !taskIn) return;
+      const task = taskIn.value || '';
+      // preview through the REAL fillTask primitive against a throwaway recipe shape (never persisted).
+      const draft = Recipes.draft({ task: task, params: effectiveParams(task) });
+      const vals = {};
+      (draft.params || []).forEach(p => { if (p.required) vals[p.key] = '[' + (p.label || p.key) + ']'; });
+      const filled = Recipes.fillTask(draft, vals);
+      preview.textContent = filled || '(write a directive above)';
+    };
+    const paintTokens = () => { if (tokens && taskIn) tokens.innerHTML = recipeTokenHint(taskIn.value); };
+    const repaint = () => { paintTokens(); paintPreview(); };
+    if (taskIn) taskIn.addEventListener('input', repaint);
+
+    // param grid: add / remove rows, and re-read on any edit so the preview tracks.
+    const grid = stage.querySelector('#mkt-r-params');
+    const rerenderGrid = () => {
+      if (!grid) return;
+      grid.innerHTML = editParams.map(paramRowHTML).join('');
+      wireGridRows();
+      repaint();
+    };
+    const wireGridRows = () => {
+      if (!grid) return;
+      grid.querySelectorAll('.mkt-r-prm').forEach(b => b.addEventListener('click', () => {
+        syncParamsFromDOM(); editParams.splice(+b.dataset.i, 1); sfx('click'); rerenderGrid();
+      }));
+      grid.querySelectorAll('.mkt-r-pkey, .mkt-r-plabel, .mkt-r-pph').forEach(inp => inp.addEventListener('input', () => { syncParamsFromDOM(); paintPreview(); }));
+      grid.querySelectorAll('.mkt-r-preq-cb').forEach(cb => cb.addEventListener('change', () => { syncParamsFromDOM(); paintPreview(); }));
+    };
+    wireGridRows();
+    const padd = stage.querySelector('.mkt-r-padd');
+    if (padd) padd.addEventListener('click', () => { syncParamsFromDOM(); editParams.push({ key: '', label: '', placeholder: '', required: true }); sfx('click'); rerenderGrid(); });
+
+    // gear chips (toggle in/out of editGear).
+    stage.querySelectorAll('#mkt-r-gear .mkt-chip.pick').forEach(b => b.addEventListener('click', () => {
+      const t = b.dataset.gear, i = editGear.indexOf(t);
+      if (i >= 0) editGear.splice(i, 1); else editGear.push(t);
+      const on = editGear.indexOf(t) >= 0;
+      b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); sfx('click');
+    }));
+    const catSel = stage.querySelector('#mkt-r-cat');
+    if (catSel) catSel.addEventListener('change', () => { editCategory = catSel.value || 'general'; });
+    const cadSel = stage.querySelector('#mkt-r-cad');
+    if (cadSel) cadSel.addEventListener('change', () => { editCadence = cadSel.value || null; });
+
+    repaint();
+
     const save = stage.querySelector('.mkt-do-recipe-save');
     if (save) save.addEventListener('click', () => {
       const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
@@ -883,12 +1263,21 @@ const Marketplace = (() => {
       const task = (stage.querySelector('#mkt-r-task').value || '').trim();
       if (!name) { sfx('bad'); note('give your recipe a name', 'bad'); stage.querySelector('#mkt-r-name').focus(); return; }
       if (!task) { sfx('bad'); note('write the directive your agent should run', 'bad'); stage.querySelector('#mkt-r-task').focus(); return; }
-      const rec = { name, emoji: (stage.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦', tagline: (stage.querySelector('#mkt-r-tag').value || '').trim(), task };
+      syncParamsFromDOM();
+      const explicit = editParams.filter(p => p.key).map(p => ({ key: p.key, label: p.label || p.key, placeholder: p.placeholder, required: p.required }));
+      const rec = {
+        name, emoji: (stage.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦',
+        tagline: (stage.querySelector('#mkt-r-tag').value || '').trim(), task,
+        gear: editGear.slice(), cadence: editCadence, category: editCategory,
+        params: explicit   // empty → normCustom derives from the template tokens
+      };
+      // provenance: an EDIT keeps its id (and its existing source); a FORK stamps source:'fork' + forkedFrom.
       if (editing) rec.id = editing.id;
+      else if (editForkedFrom) { rec.source = 'fork'; rec.forkedFrom = editForkedFrom; }
       try {
         const saved = Recipes.saveCustom(rec);
         if (pendingMintKey && mintApi()) MintStore.markMinted(pendingMintKey);
-        pendingMintKey = null; pendingMintTemplate = null;
+        pendingMintKey = null; pendingMintTemplate = null; editForkedFrom = null;
         focusRecipe = saved.id;
         sfx('click'); note((editing ? 'updated' : 'saved') + ' recipe: ' + saved.name, 'good');
         editingRecipeId = null; view = 'grid'; renderStage();

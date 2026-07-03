@@ -29,7 +29,8 @@
        state:'scheduled'|'paused'|'completed'|'error', repeat:{times,completed},
        createdAt, nextRunAt, lastRunAt, lastRunId, lastStatus, lastError, lastReason, retryCount,
        fireClaim, lastFireAttemptAt,                                   // G4.5: one-shot at-most-once-within-window claim
-       skills, script, workdir, contextFrom }                         // last row = record-the-field, defer-the-consumer
+       skills, script, workdir, contextFrom,                          // record-the-field, defer-the-consumer
+       meta }                                                         // ADDITIVE provenance bag (e.g. {recipeId}); null when absent
 
    G4.5 — ONE-SHOT FIRE-CLAIM (at-most-once-within-window). A recurring job is protected from a
    crash-restart double-fire by advance-before-run (planTick persists the ADVANCED nextRunAt before the
@@ -115,8 +116,22 @@
       skills: Array.isArray(spec.skills) ? spec.skills.slice() : [],
       script: spec.script != null ? String(spec.script) : null,
       workdir: spec.workdir != null ? String(spec.workdir) : null,
-      contextFrom: Array.isArray(spec.contextFrom) ? spec.contextFrom.slice() : null
+      contextFrom: Array.isArray(spec.contextFrom) ? spec.contextFrom.slice() : null,
+      // ADDITIVE provenance (Recipe Marketplace R3): a sibling `meta` bag for caller-supplied provenance, e.g.
+      // { recipeId } stamped by MAKE ROUTINE so the ROUTINES console + the recipe dossier can show the link. Old
+      // jobs with no `meta` load as null and every consumer tolerates its absence — this NEVER breaks an existing
+      // job. Normalized to a plain shallow object (or null); the driver/schedule math never reads it.
+      meta: normMeta(spec.meta)
     };
+  }
+  // normalize a caller-supplied meta bag: keep it only if it is a plain object, shallow-cloned; else null. This is
+  // pure provenance (no runtime behavior keys), so we don't validate its shape beyond "plain object" — a recipeId
+  // that isn't a string just won't resolve in the UI (a no-op), never a crash.
+  function normMeta(meta) {
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+    const out = {};
+    for (const k of Object.keys(meta)) { const v = meta[k]; if (v != null && typeof v !== 'function') out[k] = v; }
+    return Object.keys(out).length ? out : null;
   }
 
   function createJob(jobs, spec, ctx) {

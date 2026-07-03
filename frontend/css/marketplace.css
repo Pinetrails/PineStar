@@ -269,6 +269,42 @@
 .mkt-r-tok { color: var(--ink); background: var(--ph); border-radius: 2px; padding: 1px 7px; text-shadow: none; }
 .mkt-r-tok-none { color: var(--ph-dim); font-style: italic; }
 
+/* ---- recipe editor R2: fill-in rows, live preview, cadence/category selects ---- */
+.mkt-r-params { display: flex; flex-direction: column; gap: 5px; margin-bottom: 6px; }
+.mkt-r-prow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mkt-r-prow .mkt-r-pkey { flex: 0 0 26%; min-width: 90px; }
+.mkt-r-prow .mkt-r-plabel { flex: 1 1 22%; min-width: 90px; }
+.mkt-r-prow .mkt-r-pph { flex: 1 1 30%; min-width: 100px; }
+.mkt-r-preq { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; letter-spacing: .5px;
+  color: var(--ph-dim); text-transform: uppercase; white-space: nowrap; }
+.mkt-r-phint { font-size: 10.5px; }
+.mkt-recipe-form select.mkt-in { font-family: inherit; }
+.mkt-r-preview { white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,.28); border: 1px solid var(--ph-line, rgba(120,200,170,.25));
+  border-radius: 5px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5; color: var(--ph-bright); max-height: 160px; overflow: auto; margin-bottom: 6px; }
+
+/* ---- recipe dossier R2/R3: fork provenance, cadence hint, live-routine badge, gear WANT ---- */
+.mkt-r-fork { font-size: 11.5px; color: var(--ph-dim); letter-spacing: .3px; margin: 2px 0 6px; }
+.mkt-r-fork b { color: var(--ph-bright); }
+.mkt-r-cadhint { font-size: 11.5px; color: var(--ph-dim); letter-spacing: .3px; margin: 2px 0 6px; }
+.mkt-r-cadhint b { color: var(--gold); }
+.mkt-r-live { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: .3px; color: var(--gold);
+  background: rgba(217,168,90,.09); border: 1px solid rgba(217,168,90,.35); border-radius: 5px; padding: 6px 10px; margin: 4px 0 8px; }
+.mkt-r-live-dot { animation: mktPulse 2s ease-in-out infinite; }
+@keyframes mktPulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+/* ---- launch pane R3: MAKE ROUTINE cadence panel + unattended-run warning ---- */
+.mkt-r-routine { border: 1px solid var(--ph-line, rgba(120,200,170,.22)); border-radius: 6px; padding: 10px 12px; margin: 6px 0; background: rgba(0,0,0,.14); }
+.mkt-r-routine .mkt-l-custom[hidden] { display: none; }
+.mkt-r-pv { font-size: 11.5px; color: var(--ph-dim); min-height: 16px; margin-top: 4px; }
+.mkt-r-warn { font-size: 11.5px; line-height: 1.5; color: var(--gold); background: rgba(217,168,90,.08);
+  border-left: 3px solid var(--gold); border-radius: 3px; padding: 7px 10px; margin: 6px 0 0; }
+.mkt-r-warn.dim { color: var(--ph-dim); border-left-color: var(--ph-dim); background: rgba(0,0,0,.14); }
+.mkt-r-warn b { color: var(--ph-bright); }
+.mkt-r-warn-inline { color: var(--bad); }
+
+/* ---- ROUTINES console: "from recipe" provenance chip ---- */
+.mc-from-recipe { font-size: 10px; letter-spacing: .5px; color: var(--ph-bright); opacity: .85; white-space: nowrap; }
+
 /* ---- visible keyboard focus (scoped to the bay) ---- */
 .mkt .bb:focus-visible, .mkt-x:focus-visible, .mkt-card:focus-visible, .mkt-adopt input:focus-visible {
   outline: 2px solid var(--ph); outline-offset: 2px; box-shadow: 0 0 9px var(--ph-glow2); }

@@ -197,4 +197,73 @@ A.eq(d.name, 'My Mission', 'draft honors a provided name');
 A.eq(d.task, 'Do the thing.', 'draft carries the task');
 A.ok(Array.isArray(d.params), 'draft has a params array');
 
+/* ---------- R1: schema v2 — gear / skills / cadence / category / source / forkedFrom ---------- */
+// every built-in carries the v2 fields, normalized + frozen. gear/skills are frozen arrays of known values;
+// cadence is a valid id or null; category is one of the known buckets; source is 'builtin'; forkedFrom is null.
+for (const b of builtins) {
+  A.ok(Array.isArray(b.gear), b.id + ' has a gear array');
+  A.ok(b.gear.every(g => R.GEAR_TYPES.indexOf(g) >= 0), b.id + ' gear entries are known capability objectTypes');
+  A.throws(() => { b.gear.push('dish'); }, b.id + ' gear array is frozen');
+  A.ok(Array.isArray(b.skills), b.id + ' has a skills array');
+  A.ok(b.cadence === null || R.CADENCES.indexOf(b.cadence) >= 0, b.id + ' cadence is a valid id or null');
+  A.ok(R.CATEGORIES.indexOf(b.category) >= 0, b.id + ' category is a known browse bucket');
+  A.eq(b.source, 'builtin', b.id + ' source is builtin');
+  A.eq(b.forkedFrom, null, b.id + ' forkedFrom is null (a built-in is not a fork)');
+}
+// the honest values the plan calls out: morning-brief draws on the WEB (dish), suggests 'morning', browses under research.
+const mbr = R.get('morning-brief');
+A.ok(mbr.gear.indexOf('dish') >= 0, 'morning-brief gear includes dish (the WEB)');
+A.eq(mbr.cadence, 'morning', 'morning-brief suggests the morning cadence');
+A.eq(mbr.category, 'research', 'morning-brief browses under research');
+// a code recipe wants FILES; deep-research is one-shot by nature (no suggested cadence).
+A.ok(R.get('code-review').gear.indexOf('cabinet') >= 0, 'code-review gear includes cabinet (FILES)');
+A.eq(R.get('deep-research').cadence, null, 'deep-research is one-shot by nature (no cadence)');
+
+// gear normalization drops unknown/garbage objectTypes; a hand-authored custom keeps only real caps.
+const geared = R.saveCustom({ name: 'Geared', task: 'Do {x}.', gear: ['dish', 'bogus', 'cabinet', 'dish'] });
+A.eq(geared.gear, ['dish', 'cabinet'], 'gear drops unknown types and de-dups (dish, cabinet)');
+A.eq(geared.source, 'custom', 'a hand-authored save defaults to source:custom');
+A.eq(geared.forkedFrom, null, 'a hand-authored save has no forkedFrom');
+R.removeCustom(geared.id);
+
+// a custom with no explicit category derives one from its dominant lane (a code-tagged task → code bucket).
+const codey = R.saveCustom({ name: 'Codey', task: 'Fix the bug in {file} and verify the code compiles.' });
+A.ok(['code', 'research', 'general'].indexOf(codey.category) >= 0, 'a categoryless custom derives a browse bucket from its tags: ' + codey.category);
+R.removeCustom(codey.id);
+
+// an explicit cadence/category on a custom is honored (and validated).
+const routiney = R.saveCustom({ name: 'Routiney', task: 'Brief me on {topic}.', cadence: 'morning', category: 'research' });
+A.eq(routiney.cadence, 'morning', 'an explicit valid cadence is kept');
+A.eq(routiney.category, 'research', 'an explicit valid category is kept');
+const badcad = R.saveCustom({ name: 'BadCad', task: 'Do {x}.', cadence: 'yearly', category: 'nonsense' });
+A.eq(badcad.cadence, null, 'an unknown cadence id normalizes to null (never an unschedulable id)');
+A.eq(badcad.category, 'general', 'an unknown category normalizes to the general bucket');
+R.removeCustom(routiney.id); R.removeCustom(badcad.id);
+
+/* ---------- R2: forkFrom() — TWEAK mints a fork prefilled from any recipe, original untouched ---------- */
+A.eq(R.forkFrom('no-such-recipe'), null, 'forkFrom of an unknown id is null');
+const forkDraft = R.forkFrom('morning-brief');
+A.ok(forkDraft && forkDraft.source === 'fork', 'forkFrom stamps source:fork');
+A.eq(forkDraft.forkedFrom, 'morning-brief', 'forkFrom records the parent id');
+A.ok(forkDraft.task === mbr.task, 'the fork copies the parent task template verbatim');
+A.ok(Array.isArray(forkDraft.gear) && forkDraft.gear.indexOf('dish') >= 0, 'the fork copies the parent gear');
+A.eq(forkDraft.cadence, 'morning', 'the fork copies the parent suggested cadence');
+A.ok(!forkDraft.id, 'a fork draft has no id (saveCustom mints a fresh one — the original is never overwritten)');
+// saving the fork mints a NEW custom and leaves the built-in intact.
+const savedFork = R.saveCustom(forkDraft);
+A.ok(savedFork.id.indexOf('custom-recipe-') === 0, 'a saved fork gets a fresh custom id: ' + savedFork.id);
+A.eq(savedFork.source, 'fork', 'a saved fork keeps source:fork');
+A.eq(savedFork.forkedFrom, 'morning-brief', 'a saved fork keeps its parent id');
+A.eq(R.get('morning-brief').custom, false, 'the forked built-in is untouched (still a built-in)');
+A.ok(R.fillTask(savedFork.id, { topic: 'X' }).length > 0, 'the fork launches through the same fillTask primitive');
+R.removeCustom(savedFork.id);
+
+/* ---------- R3: impliesOutbound() — the soft unattended-run warning heuristic ---------- */
+A.ok(R.impliesOutbound('draft-reply'), 'draft-reply implies outbound (it drafts a reply)');
+A.ok(!R.impliesOutbound('summarize'), 'summarize does not imply an outbound action');
+A.ok(!R.impliesOutbound('no-such-recipe'), 'impliesOutbound of an unknown id is false');
+const sendy = R.saveCustom({ name: 'Sendy', task: 'Post the update to the channel every morning.' });
+A.ok(R.impliesOutbound(sendy.id), 'a task that says "post" implies outbound');
+R.removeCustom(sendy.id);
+
 A.report('recipes');

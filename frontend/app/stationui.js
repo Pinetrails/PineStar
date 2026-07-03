@@ -3510,8 +3510,17 @@ const StationUI = (() => {
       const on = j.enabled;
       const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>' : '<span class="dim">○ paused</span>';
       const next = on && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
+      // R3 provenance: a routine minted from a recipe (meta.recipeId) shows "from recipe: <name>". Resolve the live
+      // recipe name when we can; fall back to the id (never lies — a deleted recipe still shows its id). Tolerates
+      // an absent meta (every pre-R3 job) — no badge then.
+      const recipeId = j.meta && j.meta.recipeId;
+      let fromRecipe = '';
+      if (recipeId) {
+        const rec = (typeof Recipes !== 'undefined' && Recipes.get) ? Recipes.get(recipeId) : null;
+        fromRecipe = ' <span class="mc-from-recipe" title="scheduled from a recipe">❒ from recipe: ' + esc(rec ? rec.name : recipeId) + '</span>';
+      }
       return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '">' +
-        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + '</div>' +
+        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
         '<div class="mc-acts">' +

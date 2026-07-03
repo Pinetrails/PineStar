@@ -396,6 +396,9 @@ const App = (() => {
       mode: 'deploy',
       tab: (startTab === 'recipes') ? 'recipes' : 'agents',   // the bay opens on this tab (RECIPES = the mission library)
       agentName: agent.name,
+      // R3 MAKE ROUTINE targets the CURRENT run's agent so a scheduled recipe fires as the same agent the
+      // Commander is working with. Falls back to 'agent' (the default cron agentId) if no active stream.
+      agentId: ((typeof Workstreams !== 'undefined' && Workstreams.active && Workstreams.active()) || {}).agentId || 'agent',
       currentSpecialtyId: agent.specialtyId || null,   // lets the bay flag which card is already DEPLOYED
       notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
       draftFromAgent: () => (typeof Specialties !== 'undefined') ? Specialties.fromAgent(agent) : null,

@@ -400,6 +400,8 @@
 <script src="app/personas.js"></script>
 <script src="/shared/specialties.js"></script><!-- Class Loadouts S1: the SHARED specialty catalog (loadout data) — MUST load before specialties.js, which wraps it (served via the /shared/*.js allowlist, jailed to shared/) -->
 <script src="app/specialties.js"></script>
+<script src="app/recipe-catalog/core.js"></script><!-- Recipe Marketplace R1: the DATA catalog of built-in recipes — MUST load before recipe-catalog/index.js (persona files register here too) -->
+<script src="app/recipe-catalog/index.js"></script><!-- aggregates every recipe-catalog module into one array — MUST load before recipes.js, which consumes it -->
 <script src="app/recipes.js"></script>
 <script src="app/classicons.js"></script>
 <script src="app/modeldock.js"></script>
