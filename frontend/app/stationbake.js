@@ -30,7 +30,7 @@ const StationBake = (() => {
        skirt  = hull extrusion depth below the station silhouette (the south wall seen outside)
        side   = width of the e/w wall-top band beyond the floor edge
        capH   = thickness of the lit cap that crowns a tall wall */
-  const WALL = { up: 10, corUp: 0, skirt: 32, side: 12, capH: 3 };
+  const WALL = { up: 9, corUp: 0, skirt: 32, side: 12, capH: 3 };
 
   /* live-tunable lighting — the CRT LAB (crtlab.js, dev-gated) writes these and calls
      World.rebake() to re-run the bake. These ARE the shipped defaults.
@@ -48,7 +48,7 @@ const StationBake = (() => {
                     e/w wall-base shade so every wall foot sits in a little shadow.
        sheen      = strength of the faint vertical reflection streak baked on the floor under
                     each ceiling-light pool (polished deck read; 0 = off). */
-  const DEPTH = { wallShadow: 0.28, sheen: 0.22 };
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14 };
 
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
