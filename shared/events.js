@@ -114,6 +114,17 @@
       jobId: str, runId: str, outcome: { enum: ['ok', 'failed', 'silent'] }, reason: str
     }),
 
+    // ---- away workshop (an agent builds a reviewable deliverable in its own jail while the Commander is away) ----
+    // a workshop shift completed with a VALIDATED manifest (files proven to exist on disk). manifest is the
+    // deliverable.json body (see docs/AWAY_WORKSHOP_PLAN.md §4) — carried as an opaque object so a manifest-schema
+    // bump never re-freezes the bus contract. Emitted ONLY after validation; an invalid/missing manifest emits nothing.
+    'workshop.built': obj(['agentId', 'runId', 'manifest'], { agentId: str, runId: str, manifest: any }),
+    // the Commander decided a pending deliverable: keep (copied out to destPath under normal interactive consent),
+    // discard (run dir wiped + backlogId denylisted so it isn't silently retried), or later (dismissed only).
+    'workshop.decided': obj(['agentId', 'runId', 'decision'], {
+      agentId: str, runId: str, decision: { enum: ['keep', 'discard', 'later'] }, destPath: str
+    }),
+
     // ---- execution spine: checkpoints · shell · verification (producers in the exec-spine modules) ----
     // a shadow-git workspace snapshot was taken before a mutating turn (the rollback net). files/bytes = snapshot size.
     'checkpoint.created': obj(['agentId', 'runId', 'turn', 'snapshotId'], {
