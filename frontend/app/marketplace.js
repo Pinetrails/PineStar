@@ -318,7 +318,10 @@ const Marketplace = (() => {
     return html;
   }
 
-  // SUMMON-only: pick the new agent's APPEARANCE (its own choice — independent of class).
+  // SUMMON-only: pick the new agent's APPEARANCE (its own choice — independent of class). A LIVE preview
+  // STAGE (shared SkinStage) plays the picked/hovered skin's real walk cycle big enough to actually read —
+  // a 40px still of a chunky sprite is unidentifiable. The picker wells are large + smooth-downscaled so the
+  // Commander can judge a skin at a glance; the selected well carries the bracket-ring active treatment.
   function summonSkinBarHTML() {
     if (!(ctx && ctx.mode === 'pick' && ctx.summon) || typeof DATA === 'undefined' || !DATA.SKINS) return '';
     if (!pickedSummonSkin || !DATA.SKINS[pickedSummonSkin]) pickedSummonSkin = DATA.DEFAULT_SKIN;
@@ -328,8 +331,17 @@ const Marketplace = (() => {
         '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '">' +
         '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
     }).join('');
+    // the live stage: SkinStage.mount binds these two ids in wireRoster and plays the picked skin's walk cycle.
+    const stage =
+      '<figure class="mkt-skin-stage">' +
+        '<div class="mkt-skin-stage-frame"><img id="mkt-skin-stage-img" alt="" draggable="false"></div>' +
+        '<figcaption class="mkt-skin-stage-name" id="mkt-skin-stage-name"></figcaption>' +
+      '</figure>';
     return '<div class="mkt-skinbar"><label class="mkt-skinlabel">APPEARANCE <span class="mkt-hint">— the character this agent wears (your call, any class)</span></label>' +
-      '<div class="skin-picker" id="mkt-skin-picker">' + thumbs + '</div></div>';
+      '<div class="mkt-skin-section">' +
+        '<div class="skin-picker" id="mkt-skin-picker">' + thumbs + '</div>' +
+        stage +
+      '</div></div>';
   }
 
   // SUMMON-only: choose the new agent's MODEL (optional — blank inherits the orchestrator's). Reuses the shared
@@ -344,11 +356,11 @@ const Marketplace = (() => {
   }
 
   /* ---------- the class card (coin seal in the roster) ---------- */
-  function cardHTML(s) {
+  function cardHTML(s, i) {
     const deploy = !ctx || ctx.mode !== 'pick';
     const here = deploy && ctx && ctx.currentSpecialtyId === s.id;
     const sel = (focusAgent === s.id);
-    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
+    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + ';--ci:' + (i || 0) + '">' +
       sealHTML(s, true) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(s.name) +
@@ -360,11 +372,11 @@ const Marketplace = (() => {
       '</div>' +
     '</button>';
   }
-  function recipeCardHTML(r) {
+  function recipeCardHTML(r, i) {
     const sel = (focusRecipe === r.id);
     const n = (r.params || []).length;
     const setup = n ? ('▤ ' + n + ' input' + (n === 1 ? '' : 's')) : '◷ no setup';
-    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + ';--ci:' + (i || 0) + '">' +
       sealHTML(r, true) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
@@ -644,11 +656,23 @@ const Marketplace = (() => {
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); view = 'recipesave'; editingRecipeId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
 
     const skinWrap = stage.querySelector('#mkt-skin-picker');
-    if (skinWrap) skinWrap.querySelectorAll('.skin-thumb').forEach(b => b.addEventListener('click', () => {
-      pickedSummonSkin = b.dataset.skin;
-      skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
-      b.classList.add('sel'); sfx('click');
-    }));
+    if (skinWrap) {
+      skinWrap.querySelectorAll('.skin-thumb').forEach(b => {
+        b.addEventListener('click', () => {
+          pickedSummonSkin = b.dataset.skin;
+          skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
+          b.classList.add('sel'); sfx('click');
+          if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin);
+        });
+        // hover scrubs the live stage so you can compare without committing; leaving snaps back to the pick
+        b.addEventListener('mouseenter', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(b.dataset.skin); });
+      });
+      skinWrap.addEventListener('mouseleave', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin); });
+      // bind the live preview stage to the picked skin (the modal is the only stage visible while it's open)
+      const stageImg = stage.querySelector('#mkt-skin-stage-img');
+      const stageName = stage.querySelector('#mkt-skin-stage-name');
+      if (stageImg && typeof SkinStage !== 'undefined') SkinStage.mount(stageImg, stageName, pickedSummonSkin);
+    }
 
     // SUMMON model picker: fill the catalog async, then track the choice ('' model → inherit the orchestrator's).
     const modelWrap = stage.querySelector('#mkt-model-pick');

@@ -1002,13 +1002,9 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
 }
 .skin-stage-name { color: var(--ph-bright); letter-spacing: 1px; font-size: 14px; text-align: center; }
 
-/* SUMMON skin bar inside the Recruitment Bay (reuses .skin-section/.skin-picker/.skin-thumb/.skin-stage above) */
-.mkt-skinbar { margin: 8px 0 10px; padding: 8px 10px; border: 1px solid var(--ph-dim); background: var(--panel2); }
-.mkt-skinlabel { display: block; color: var(--ph); letter-spacing: 1px; font-size: 14px; margin-bottom: 6px; }
-.mkt-skin-section { gap: 10px; }
-.mkt-skin-section .skin-picker { max-height: 116px; overflow-y: auto; }   /* a touch shorter than the stage */
-.mkt-skin-section .skin-stage { flex: 0 0 100px; }                        /* the modal is tighter than the create panel */
-.mkt-skin-section .skin-stage-frame { width: 100px; height: 100px; }
+/* NOTE: the Recruitment Bay's SUMMON skin bar (.mkt-skinbar / .mkt-skin-section / .mkt-skin-stage) is styled
+   in marketplace.css — a self-contained bespoke picker with its own large wells + live SkinStage preview.
+   The earlier orphan .mkt-skin-section rules that used to sit here (never emitted by any JS) were removed. */
 
 /* VOICE & MANNER — grounded archetype cards + a live preview of how the picked voice sounds.
    auto-fit/minmax self-collapses to one column on a narrow panel so the quoted cardLine never crushes. */
