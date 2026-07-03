@@ -532,7 +532,7 @@ const Voice = (() => {
     setStatus(convoMode ? 'voice mode — listening…' : 'listening…');
     if (typeof SFX !== 'undefined') SFX.open();
     sttProvider.start({
-      onInterim: t => { if (inputEl) inputEl.value = t; },
+      onInterim: t => { if (inputEl) { inputEl.value = t; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); } },   // grow the composer as dictation streams in
       onFinal: text => { submitTranscript(text); },
       onError: msg => {
         // a DENIED mic is a hard stop, not a recoverable hiccup: don't silently retry/re-arm into a mic
@@ -569,7 +569,7 @@ const Voice = (() => {
   function submitTranscript(text) {
     if (discarding) return;   // teardown in progress — drop the buffered transcript, never send it
     const t = String(text || '').trim();
-    if (inputEl) inputEl.value = '';
+    if (inputEl) { inputEl.value = ''; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); }
     if (!t) return;   // heard nothing — endListening() handles the hands-free retry
     // spoken exit: leave voice mode by voice. Loosened so STT variants land ("stop the voice mode",
     // "turn off voice mode please") while still needing an explicit verb + the word "voice".

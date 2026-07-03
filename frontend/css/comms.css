@@ -279,3 +279,42 @@
 @media (prefers-reduced-motion: reduce) {
   .cmsg.broadcast .bc-line { animation: none !important; letter-spacing: 2.5px; }
 }
+
+/* ============================================================
+   7 · COMPOSER — the message input is a full-width, auto-growing
+   textarea on its OWN line, with the control cluster (interrupt ·
+   model dock · voice · mic) on a second line beneath. This retires
+   the old single-line <input>, which — sharing one row with the
+   model dock + voice/mic chips — collapsed to a few characters on a
+   narrow COMMS panel and, being single-line, could NEVER reveal a
+   long message. The textarea wraps and grows with the message
+   (chat.js sets its height; max-height here caps it, then it
+   scrolls), so the whole message stays visible while typing at ANY
+   panel width. Theme/sizing tokens only.
+   ============================================================ */
+#chat-inputrow { flex-direction: column; align-items: stretch; gap: 7px; }
+
+/* EDIT LINE — the pulsing ">" prompt + the growing textarea. Bottom-aligned so the prompt rides
+   the last line as the box grows (terminal register: the caret line is where the prompt sits). */
+.chat-editline { display: flex; align-items: flex-end; gap: 7px; min-width: 0; }
+.chat-editline .prompt { flex: 0 0 auto; }
+
+/* the textarea itself spans the panel, wraps, and is height-managed by chat.js up to max-height,
+   then scrolls. resize:none — the auto-grow owns the height, not a drag handle. Long unbroken
+   tokens (URLs) wrap instead of forcing a horizontal scroll. */
+#chat-input {
+  flex: 1 1 auto; width: 100%; min-width: 0; box-sizing: border-box;
+  resize: none; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  min-height: 32px; max-height: 168px; line-height: 1.45; padding: 6px 7px;
+  font-family: inherit; font-size: 16px;
+}
+/* keep the phosphor scrollbar language when the composer caps out and scrolls */
+#chat-input::-webkit-scrollbar { width: 8px; }
+#chat-input::-webkit-scrollbar-thumb { background: var(--ph-faint); border-radius: 4px; }
+#chat-input::-webkit-scrollbar-thumb:hover { background: var(--ph-dim); }
+
+/* CONTROL CLUSTER — the model dock hugs the left; voice/voice-mode/mic are pushed to the right edge.
+   The model-dock popover stays absolutely positioned against #chat-inputrow (still position:relative),
+   so it keeps floating above the whole composer — this wrapper is a static parent and doesn't reparent it. */
+.chat-tools { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.chat-tools #voice-toggle { margin-left: auto; }

@@ -314,6 +314,7 @@ const Chat = (() => {
       });
     }
     input.value = '';
+    autoGrowInput();   // COMPOSER: settle the textarea at its resting one-line height
     warmSlashCatalog();
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
@@ -331,11 +332,11 @@ const Chat = (() => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSlash(); return; }
         // any other key falls through to normal typing → the 'input' listener re-filters the palette
       }
-      if (e.key === 'Enter' && !e.isComposing) {
+      if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) {   // Shift+Enter falls through → newline in the textarea
         e.preventDefault();
         const t = input.value.trim();
         if (!t) return;
-        input.value = ''; closeSlash();
+        input.value = ''; closeSlash(); autoGrowInput();   // COMPOSER: collapse back to one line after a send
         if (isBusy()) enqueue(t); else send(t);   // TYPE-AHEAD: queue a follow-up rather than dropping it while the stream is busy
       } else if (e.key === 'Escape' && isBusy()) {
         e.preventDefault(); e.stopPropagation();   // INTERRUPT: beat navdock's global Esc-closes-menus while a run is live
@@ -343,8 +344,23 @@ const Chat = (() => {
       }
     };
     // SLASH PALETTE: a leading "/" opens the command menu and filters it live as you type past it.
-    input.addEventListener('input', () => { warmChat(); const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });
+    input.addEventListener('input', () => { autoGrowInput(); warmChat(); const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });
     const stopBtn = el('chat-stop'); if (stopBtn) stopBtn.onclick = stopActive;
+  }
+
+  // COMPOSER auto-grow: the message field is a <textarea>, so keep its rendered height matched to its
+  // content — one line at rest, growing with the message up to comms.css's max-height, then it scrolls.
+  // This is what lets the Commander SEE a whole long message being typed at any COMMS width (the old
+  // single-line <input> could only ever show a sliver). Called on every edit (typed, dictated, or
+  // programmatically filled) and after a send resets the box. Cheap: height:'auto' lets scrollHeight
+  // report the true wrapped content height before we pin it.
+  function autoGrowInput() {
+    if (!input) return;
+    input.style.height = 'auto';
+    // An EMPTY box rests at the CSS one-line min-height. We must NOT pin it to scrollHeight when empty:
+    // a long placeholder wraps to 2 lines on a narrow panel, and its wrapped height would puff the
+    // resting box up. Only a real value grows the box.
+    if (input.value) input.style.height = input.scrollHeight + 'px';
   }
 
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
@@ -2761,6 +2777,7 @@ const Chat = (() => {
     input.value = directive; input.focus();
     const m = /\{[^}]+\}/.exec(directive);   // select the first remaining blank to type over (else cursor at end)
     try { if (m) input.setSelectionRange(m.index, m.index + m[0].length); else input.setSelectionRange(directive.length, directive.length); } catch (_) {}
+    autoGrowInput();   // COMPOSER: a filled recipe directive can be multi-line — grow to show it
   }
   function normalizeSlashCommand(raw, source) {
     const c = raw || {};
@@ -2839,6 +2856,7 @@ const Chat = (() => {
       const m = /\{[^}]+\}/.exec(directive);
       try { if (m) input.setSelectionRange(m.index, m.index + m[0].length); else input.setSelectionRange(directive.length, directive.length); } catch (_) {}
     }
+    autoGrowInput();   // COMPOSER: match the box to the inserted directive's height
     return true;
   }
   function applySlashDirective(directive) {
@@ -2866,7 +2884,7 @@ const Chat = (() => {
   async function runSlash(item) {
     if (!item) { closeSlash(); return; }
     const rawInput = input ? input.value : '';
-    input.value = ''; closeSlash();   // consume the "/query"; a recipe's run() then refills the input
+    input.value = ''; closeSlash(); autoGrowInput();   // consume the "/query"; a recipe's run() then refills the input
     if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
     if (item.serverBacked && await dispatchSlash(item, rawInput)) return;
     try { item.run(); } catch (_) {}
@@ -3257,6 +3275,7 @@ const Chat = (() => {
     else input.value = add;
     input.focus();
     try { const n = input.value.length; input.setSelectionRange(n, n); } catch (_) {}
+    autoGrowInput();   // COMPOSER: appended facets can push the message to multiple lines — grow to fit
   }
   // a row of tappable suggestion pills in COMMS; picking one (or typing) is an answer. onPick gets the item.
   function clearChoices() {
@@ -3318,5 +3337,5 @@ const Chat = (() => {
   // advice stores (pitchstore) to gate on a real task and to name the run that just finished. Never mutated outside.
   function runMeta(id) { return (id && RUN_META.has(id)) ? RUN_META.get(id) : null; }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, awayDigest, awayReview };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, awayDigest, awayReview };
 })();
