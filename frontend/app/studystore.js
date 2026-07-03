@@ -24,7 +24,8 @@
 'use strict';
 const StudyStore = (() => {
   const KEY = 'starnet.study.v1';
-  const SESSION_CAP = 3;        // at most this many study proposals SHOWN per session (anti-nag, mission constraint)
+  const SESSION_CAP = 1;        // at most ONE study proposal SHOWN per session (beat-fat trim 2026-07-03: was 3 —
+                                // a belief-update card every few runs read as "the system guessing about me")
   const IGNORE_LIMIT = 2;       // ignore a proposed belief this many times → stop proposing it (stop-forever)
   const DECLINED_CAP = 200;     // permanent studyDeclined denylist (FIFO) fed into the engine's dedup
   const RESOLVED_CAP = 300;     // decided-proposal fingerprints (FIFO) — a kept/edited belief never re-offers

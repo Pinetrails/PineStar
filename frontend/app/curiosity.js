@@ -21,6 +21,9 @@
 
   const CAP = 1;        // at most one curiosity nudge per session (the rest of "getting to know you" is the opt-in interview)
   const ASK_LIMIT = 2;  // after this many asked-and-ignored sessions, stop raising a dimension FOR GOOD (anti-loop)
+  const MIN_WORK = 3;   // WORK-EARNED gate (beat-fat trim, 2026-07-03): the station must complete this many REAL
+                        // task-runs in a session before it has earned the right to ask a get-to-know-you question.
+                        // An unearned ask is exactly the "fake and unprompted" texture the Commander flagged.
 
   // the persisted shape: which dimensions the Commander has waved off (dismissed → never again), and how many
   // times each blank dimension has been ASKED-and-ignored (asked → stop after ASK_LIMIT, so silence ends the loop).
@@ -40,6 +43,9 @@
   //   count     — how many nudges already shown THIS session
   //   cap       — the per-session ceiling (defaults to CAP)
   //   askLimit  — the stop-forever ceiling on unanswered asks (defaults to ASK_LIMIT)
+  //   work      — completed task-runs THIS session; below minWork the ask is unearned → quiet.
+  //               Absent/non-finite = unknown caller (fail-open, no gate) — the live store always passes it.
+  //   minWork   — the earned-ask floor (defaults to MIN_WORK)
   function pick(opts) {
     opts = opts || {};
     const blank = Array.isArray(opts.blank) ? opts.blank : [];
@@ -48,6 +54,8 @@
     const count = Number.isFinite(opts.count) ? opts.count : 0;
     const cap = Number.isFinite(opts.cap) ? opts.cap : CAP;
     const askLimit = Number.isFinite(opts.askLimit) ? opts.askLimit : ASK_LIMIT;
+    const minWork = Number.isFinite(opts.minWork) ? opts.minWork : MIN_WORK;
+    if (Number.isFinite(opts.work) && opts.work < minWork) return null;   // ask not yet earned by real work
     if (count >= cap) return null;            // budget spent for this session — stay quiet
     for (const dim of blank) if (!exhausted(dim, dismissed, asked, askLimit)) return dim;   // first still-live dimension
     return null;                              // nothing left worth asking
@@ -67,5 +75,5 @@
     return s;
   }
 
-  return { fresh, pick, hydrate, exhausted, CAP, ASK_LIMIT };
+  return { fresh, pick, hydrate, exhausted, CAP, ASK_LIMIT, MIN_WORK };
 });

@@ -1858,6 +1858,13 @@ const Chat = (() => {
         // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.
         const meta = runId ? runMeta(runId) : null;
         if (meta && !meta.isTask) return;
+        // WORK-EARNED ASK FLOOR (beat-fat trim, 2026-07-03): a real task-run banks toward the session's ask
+        // budget, and NO gentle unsolicited beat (suggestion / seed / curiosity) fires until the station has
+        // completed Curiosity.MIN_WORK task-runs this session. The first thing a fresh session shows the
+        // Commander must be WORK, never an idea/question that reads as pre-generated. Rate-the-work above is
+        // exempt (it's about the run itself, not an unsolicited ask); study/arc/trust have their own arbiter.
+        if (typeof CuriosityStore !== 'undefined' && CuriosityStore.noteWork) CuriosityStore.noteWork();
+        if (typeof CuriosityStore !== 'undefined' && CuriosityStore.earned && !CuriosityStore.earned()) return;
         // ONGOING SUGGESTION (Slice 3): if the station has learned something new and an idea is due, it takes this
         // ONE post-run beat — gently — and curiosity stands down for the run (the agent never stacks an idea AND a
         // question on the same task). Shares this slot's guards (busy/interview/onboarding/intake/turn-in) for free.

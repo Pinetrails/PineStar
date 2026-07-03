@@ -26,6 +26,37 @@ A.eq(C.CAP, 1, 'the default cap is one nudge per session (anti-nag)');
 A.eq(C.pick({}), null, 'no options → quiet, never throws');
 A.eq(C.pick({ blank: null, dismissed: null }), null, 'malformed inputs → quiet, never throws');
 
+/* ---------- WORK-EARNED ask floor (beat-fat trim 2026-07-03): no get-to-know-you question until the
+   station has completed MIN_WORK real task-runs this session — an unearned ask reads as pre-generated ---------- */
+A.eq(C.MIN_WORK, 3, 'the earned-ask floor is three task-runs per session');
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 0, cap: 1, work: 0 }), null, 'zero work done → the ask is unearned (quiet)');
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 0, cap: 1, work: 2 }), null, 'under the work floor → still quiet');
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 0, cap: 1, work: 3 }), 'identity', 'at the work floor → the ask is earned');
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 0, cap: 1, work: 9 }), 'identity', 'past the floor → asks normally');
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 0, cap: 1, work: 1, minWork: 1 }), 'identity', 'minWork is configurable');
+// absent/non-finite work = unknown caller → fail-open (no gate); the live store always passes a real counter
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 0, cap: 1 }), 'identity', 'absent work → no gate (fail-open for pure callers)');
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 0, cap: 1, work: 'x' }), 'identity', 'non-finite work → no gate (never throws)');
+// the earned floor composes with, never replaces, the other silences
+A.eq(C.pick({ blank: ['identity'], dismissed: {}, count: 1, cap: 1, work: 5 }), null, 'earned work does not override the session cap');
+A.eq(C.pick({ blank: [], dismissed: {}, count: 0, cap: 1, work: 5 }), null, 'earned work does not conjure a question when nothing is blank');
+
+/* ---------- source-lock: the live wiring actually passes/banks the work counter, and the whole gentle
+   post-run chain (suggestion → seed → curiosity) stands down until the ask is earned ---------- */
+{
+  const fsw = require('fs'), pathw = require('path');
+  const storeSrc = fsw.readFileSync(pathw.join(__dirname, '../frontend/app/curiositystore.js'), 'utf8');
+  A.ok(/function noteWork/.test(storeSrc) && /workCount\+\+/.test(storeSrc), 'CuriosityStore.noteWork banks a completed task-run');
+  A.ok(/work:\s*workCount/.test(storeSrc), 'CuriosityStore.consider passes the live work counter into pick()');
+  A.ok(/function earned/.test(storeSrc), 'CuriosityStore.earned exposes the floor to the beat chain');
+  const chatSrcW = fsw.readFileSync(pathw.join(__dirname, '../frontend/app/chat.js'), 'utf8');
+  const iGate = chatSrcW.indexOf('CuriosityStore.earned && !CuriosityStore.earned()');
+  const iSuggestW = chatSrcW.indexOf('SuggestStore.willSuggest()');
+  A.ok(iGate > 0, 'chat.js gates the gentle post-run chain on the earned-work floor');
+  A.ok(iSuggestW > iGate, 'the earn gate sits BEFORE the suggestion beat — no unsolicited idea until work earned it');
+  A.ok(chatSrcW.indexOf('CuriosityStore.noteWork()') > 0 && chatSrcW.indexOf('CuriosityStore.noteWork()') < iGate, 'a task-run banks work before the gate reads it');
+}
+
 /* ---------- stop-forever after ASK_LIMIT ignored asks (the "same question over and over" fix) ---------- */
 A.eq(C.ASK_LIMIT, 2, 'the stop-forever ceiling is two unanswered asks');
 A.eq(C.pick({ blank: ['identity'], dismissed: {}, asked: { identity: 1 }, count: 0, cap: 1 }), 'identity', 'still asks at one prior unanswered ask (under the limit)');

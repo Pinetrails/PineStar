@@ -13,6 +13,7 @@ const CuriosityStore = (() => {
   const KEY = 'starnet.curiosity.v1';
   let state = null;
   let sessionCount = 0;
+  let workCount = 0;    // completed TASK-runs this session (in-memory) — the earned-ask floor (Curiosity.MIN_WORK)
 
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
@@ -21,14 +22,21 @@ const CuriosityStore = (() => {
   function init() {
     state = (typeof Curiosity !== 'undefined') ? Curiosity.hydrate(load()) : { v: 1, dismissed: {}, asked: {} };
     sessionCount = 0;   // a fresh session gets its one nudge back
+    workCount = 0;      // …but must EARN it again with real task-runs (Curiosity.MIN_WORK)
   }
+
+  // one completed TASK-run (chat's isTask gate already filtered chatter) — earns toward the ask floor.
+  function noteWork() { workCount++; }
+  // has this session done enough real work for ANY gentle unsolicited ask (suggestion/seed/curiosity)?
+  // Fail-open if the pure engine is missing — never brick the beat chain on a load-order hiccup.
+  function earned() { return typeof Curiosity === 'undefined' || !Number.isFinite(Curiosity.MIN_WORK) || workCount >= Curiosity.MIN_WORK; }
 
   // the dimension to gently ask about now, or null. Reads the dossier's still-blank dimensions live.
   function consider() {
     if (!ready()) return null;
     const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
     if (!sum) return null;
-    return Curiosity.pick({ blank: sum.blank, dismissed: state.dismissed, asked: state.asked, count: sessionCount, cap: Curiosity.CAP });
+    return Curiosity.pick({ blank: sum.blank, dismissed: state.dismissed, asked: state.asked, count: sessionCount, cap: Curiosity.CAP, work: workCount, minWork: Curiosity.MIN_WORK });
   }
 
   // spend this session's budget AND durably tally the ask on this dimension (called whether or not the Commander
@@ -64,7 +72,7 @@ const CuriosityStore = (() => {
 
   // S2: a NEW AGENT starts with no waved-off dimensions. Drop the self-persisted key so the next init()
   // hydrates clean (Save.clear() only wipes starnet.save — this store persists to its own key).
-  function reset() { state = null; sessionCount = 0; try { localStorage.removeItem(KEY); } catch (_) {} }
+  function reset() { state = null; sessionCount = 0; workCount = 0; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, consider, markShown, markDismissed, markAnswered, statusOf, reEnable, reset };
+  return { init, consider, noteWork, earned, markShown, markDismissed, markAnswered, statusOf, reEnable, reset };
 })();

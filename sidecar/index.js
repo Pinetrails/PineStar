@@ -785,7 +785,9 @@ const REFLECT_TIMEOUT_MS = 30000;
 const PROPOSALS_CAP = 64;
 const DECLINED_CAP = 200;   // permanent per-agent reject-list of Discarded proposals (FIFO) fed into reflection dedup
 const REFLECT_COOLDOWN_MS = 180000;    // batch rapid-fire runs: at most one turn-in beat per agent per few minutes (default)
-const STUDY_COOLDOWN_MS = 600000;      // GROWTH Tier 1: the STUDY (dossier Phase B) gate — RARER than reflection (default 10m)
+const STUDY_COOLDOWN_MS = 1800000;     // GROWTH Tier 1: the STUDY (dossier Phase B) gate — RARER than reflection
+                                       // (default 30m; was 10m — beat-fat trim 2026-07-03). Still user-tunable
+                                       // live via memoryConfig.studyCooldownMs (P1-10 MEMORY controls).
 const STUDY_TIMEOUT_MS = 30000;
 /* ---- P1-10 MEMORY controls: user-facing knobs on the reflection ("turn-in") loop, persisted + HONORED live at
    the reflect gate below (not decorative). `reflectEnabled` (default on) master-switches whether a completed run
