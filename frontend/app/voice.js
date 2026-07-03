@@ -230,6 +230,59 @@ const Voice = (() => {
 
   let currentAudio = null;
   function stopAudio() { if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; } }
+
+  /* ---- "transmission" color on neural playback -------------------------------------------------
+     A subtle atmosphere pass so the crew sounds like a voice coming over the station's comms, not a
+     browser <audio> tag. SUBTLE by design — the voice stays fully intelligible; this is seasoning, not a
+     walkie-talkie gimmick. Chain: highpass ~120Hz + lowpass ~7kHz (band-limit to a comms channel) →
+     a whisper of WaveShaper saturation → a very low-mix ~90ms slapback echo → out. One shared AudioContext,
+     created lazily on the first neural play (after a gesture) and reused. Fully guarded: any failure (no
+     WebAudio, a browser that won't route a blob through MediaElementSource) falls back to plain <audio>. */
+  const TRANSMISSION_FX = true;   // module toggle — set false to ship the neural voice dry
+  let fxCtx = null, fxIn = null, fxReady = false, fxBroken = false;
+  // a mild tanh-ish curve → gentle harmonic warmth, NOT distortion. `k` small = barely-there.
+  function makeSaturationCurve(k) {
+    const n = 1024, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.tanh(k * x) / Math.tanh(k); }
+    return curve;
+  }
+  function ensureFxGraph() {
+    if (fxReady || fxBroken) return fxReady;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) { fxBroken = true; return false; }
+      fxCtx = new AC();
+      // input node every source connects to → the processing chain → destination.
+      fxIn = fxCtx.createGain();
+      const hp = fxCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 120;
+      const lp = fxCtx.createBiquadFilter(); lp.type = 'lowpass';  lp.frequency.value = 7000;
+      const sat = fxCtx.createWaveShaper(); sat.curve = makeSaturationCurve(1.6); sat.oversample = '2x';
+      const drive = fxCtx.createGain(); drive.gain.value = 0.9;   // trim the tiny level bump saturation adds
+      // slapback: a short delayed, low-gain copy summed back in — a hair of "room on the channel".
+      const delay = fxCtx.createDelay(0.5); delay.delayTime.value = 0.09;
+      const echo = fxCtx.createGain(); echo.gain.value = 0.10;    // whisper-low mix
+      const out = fxCtx.createGain(); out.gain.value = 1.0;
+      fxIn.connect(hp); hp.connect(lp); lp.connect(sat); sat.connect(drive);
+      drive.connect(out);                 // dry (processed) path
+      drive.connect(delay); delay.connect(echo); echo.connect(out);   // slapback path
+      out.connect(fxCtx.destination);
+      fxReady = true;
+      return true;
+    } catch (_) { fxBroken = true; try { if (fxCtx) fxCtx.close(); } catch (__) {} fxCtx = null; fxIn = null; return false; }
+  }
+  // route an <audio> element through the FX graph. Returns true if wired; false → caller plays it dry.
+  // Each element gets ONE MediaElementSource (creating a second on the same element throws), tracked via _fxSrc.
+  function routeThroughFx(a) {
+    if (!TRANSMISSION_FX) return false;
+    if (!ensureFxGraph()) return false;
+    try {
+      if (fxCtx.state === 'suspended') { try { fxCtx.resume(); } catch (_) {} }
+      if (!a._fxSrc) a._fxSrc = fxCtx.createMediaElementSource(a);
+      a._fxSrc.connect(fxIn);
+      return true;
+    } catch (_) { return false; }   // routing failed → dry playback (the element still outputs normally)
+  }
+
   // play an audio blob (mp3/wav), wiring start/end into the same speaking-state + loop hooks as the
   // browser path. playbackRate gives the per-personality pacing (Gemini TTS takes no speed param).
   function playBlob(blob, onEnd, volume, onFail, rate) {
@@ -242,6 +295,11 @@ const Voice = (() => {
       a = new Audio(url); currentAudio = a;
       a.volume = (volume == null ? 1 : volume);
       if (rate && rate > 0) a.playbackRate = Math.max(0.5, Math.min(2, rate));
+      // add the station "transmission" color (guarded; dry playback if WebAudio routing fails). When routed
+      // through WebAudio, crossOrigin must be set before load for some engines — the blob is same-origin so
+      // this is a no-op, but harmless. Routing an element captures its output into the graph → the element's
+      // own output goes silent, so ONLY route when the graph actually wires up.
+      routeThroughFx(a);
       a.onplay = () => onSpeakStart();
       a.onended = endOk;
       // a decode/format error on the neural blob is exactly the "try the browser voice" case — route
