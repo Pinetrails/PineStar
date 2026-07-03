@@ -84,7 +84,7 @@ in-place-swap recipe). macOS build explicitly deferred until Windows distributio
 
 ## P2 — G5 Spectacle: the growth engine's first surface  ·  the moat item
 
-### P2.1 — Postcard export  ·  STATUS: OPEN (earmarked "next session" in ship-readiness known-non-blockers)
+### P2.1 — Postcard export  ·  STATUS: ✅ DONE 2026-07-03 (trunk `26669c4`) — ⎙ postcard button on the recap card (never claims the beat slot); in-page canvas composite of live #stage + VT323/phosphor overlay → PNG; every number a fold of real telemetry (Xp.compute + PrideStore), unprovable stats omitted (notably: NO per-run XP delta — XP only mints from user feedback, not run events); live-verified via scripts/verify-postcard.mjs; 42-assertion honesty test in test:fast
 The GTM thesis says watchability = growth. Zero shareable surface exists today. Slice 1:
 a **postcard** — one keypress/button on a completed run captures a styled frame (station
 scene + run summary + trophy/XP delta) to PNG the user can drag anywhere. Reuse the capture
