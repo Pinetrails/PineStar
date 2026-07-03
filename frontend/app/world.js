@@ -46,6 +46,9 @@ const World = (() => {
   let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
   let kindleArmed = false, kindleP = 0, kindleHolding = false, kindlePeak = 0, kindleDone = null;   // THE KINDLING: the user HOLDS to wake the dormant mind; their attention fills kindleP (0..1) → ignition
   const stars = [];
+  // Slice 4 — parallax starfield bands [far, mid, near]: px/sec scroll rate + brightness scale.
+  // Far is slow + dim (distant void), near drifts + reads brighter. Original single layer was 8px/s.
+  const STAR_SPD = [3, 8, 15], STAR_DIM = [0.55, 0.8, 1.0];
 
   /* reduced-motion (the warroom honesty floor): heavy motion — pulses/blinks — goes steady when the OS
      asks for less motion. Live-read so a runtime setting change is honored without a reload. */
@@ -651,7 +654,14 @@ const World = (() => {
 
   function init(canvas) {
     cv = canvas; ctx = cv.getContext('2d');
-    if (!stars.length) for (let i = 0; i < 90; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
+    // Slice 4 — PARALLAX STARFIELD: 3 depth bands give the void real depth. `band` 0=far (dim,
+    // slow, tiny), 1=mid, 2=near (brighter, faster, occasionally 2px). Density kept ~the same
+    // overall (90 stars split ~40/32/18). Per-band scroll rate + brightness read in frame().
+    if (!stars.length) for (let i = 0; i < 90; i++) {
+      const band = i < 40 ? 0 : (i < 72 ? 1 : 2);
+      const r = band === 2 ? (Math.random() < 0.6 ? 1 : 2) : 1;
+      stars.push({ x: Math.random(), y: Math.random(), r, ph: Math.random() * 10, band });
+    }
     resize();
     try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
     // bind the input/visibility handlers + SSE bridge ONCE — init() re-runs on every NEW AGENT (same canvas
@@ -2971,10 +2981,14 @@ const World = (() => {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height);
+    // Slice 4 — parallax: each depth band scrolls at its own rate and sits at its own brightness,
+    // so the void reads with real depth (far band barely creeps + dim, near band drifts + brighter).
+    const SPD = STAR_SPD, DIM = STAR_DIM;
     for (const s of stars) {
-      const tw = 0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph));
-      ctx.fillStyle = 'rgba(180,200,230,' + tw + ')';
-      ctx.fillRect((s.x * cv.width + now / 1000 * 8) % cv.width, s.y * cv.height, s.r, s.r);
+      const band = s.band || 0;
+      const tw = (0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph))) * DIM[band];
+      ctx.fillStyle = 'rgba(180,200,230,' + tw.toFixed(3) + ')';
+      ctx.fillRect((s.x * cv.width + now / 1000 * SPD[band]) % cv.width, s.y * cv.height, s.r, s.r);
     }
 
     if (!cache) { if (running) raf = requestAnimationFrame(frame); return; }
