@@ -418,6 +418,7 @@ const Build = (() => {
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
     root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const dismiss = () => { markSeen(); if (g.parentNode) g.parentNode.removeChild(g); };
     g.querySelector('#refit-guide-go').onclick = dismiss;
     g.addEventListener('click', e => { if (e.target === g) dismiss(); });
@@ -443,23 +444,29 @@ const Build = (() => {
         ${isPc
           ? '<ul><li>This computer becomes the chosen agent\'s <b>dedicated PC</b> — its compute.</li><li><b>Every agent needs its own PC</b>; roommates can share one room, not one computer.</li></ul>'
           : '<ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li><li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>'}
-        ${agents.length ? '<div class="refit-bay-agents" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">' + rows + '</div>' : ''}
-        <input id="bay-aid" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}"
-          style="width:100%;box-sizing:border-box;margin:6px 0;padding:5px 7px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;border-radius:3px" />
-        <div style="display:flex;gap:6px;margin-top:6px">
+        <div class="refit-form">
+        ${agents.length ? '<div class="refit-sec">YOUR AGENTS</div><div class="refit-agents refit-bay-agents">' + rows + '</div>' : ''}
+        <div class="refit-sec">AGENT ID</div>
+        <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}" />
+        <div class="refit-error" id="bay-err">unknown agent — check the id</div>
+        <div class="refit-actions">
           <button type="button" class="btn-sm refit-primary" id="bay-ok">▸ ASSIGN</button>
           <button type="button" class="btn-sm" id="bay-clear">UNBIND</button>
           <button type="button" class="btn-sm" id="bay-cancel">CANCEL</button>
         </div>
+        </div>
       </div>`;
     root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const input = g.querySelector('#bay-aid');
+    const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
-    g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
+    g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; clearErr(); });
+    input.addEventListener('input', clearErr);
     g.querySelector('#bay-ok').onclick = () => {
       const res = station.assignPropAgent(bayId, input.value.trim());
       if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? (noun + ' → ' + res.agentId) : (noun + ' unbound'), true); closeP(); }
-      else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
+      else { input.classList.add('is-error'); sfx('bad'); }
     };
     g.querySelector('#bay-clear').onclick = () => { station.assignPropAgent(bayId, ''); sfx('click'); flashTip(ev, noun + ' unbound', true); closeP(); };
     g.querySelector('#bay-cancel').onclick = closeP;
@@ -484,25 +491,31 @@ const Build = (() => {
         <h3>▮ ASSIGN AGENT TO WORKSTATION</h3>
         <ul><li>The assigned agent <b>walks here and sits to work</b> whenever it gets a task.</li>
         <li>Just pick one of your active agents — its model/host was set when it was created.</li></ul>
+        <div class="refit-form">
         ${agents.length
-          ? '<div class="refit-bay-agents" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">' + rows + '</div>'
-          : '<div style="color:#ffd34a;font:11px monospace;margin:6px 0">No active agents yet — summon one first, or type an id below.</div>'}
-        <input id="ws-aid" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}"
-          style="width:100%;box-sizing:border-box;margin:6px 0;padding:5px 7px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;border-radius:3px" />
-        <div style="display:flex;gap:6px;margin-top:6px">
+          ? '<div class="refit-sec">YOUR AGENTS</div><div class="refit-agents refit-bay-agents">' + rows + '</div>'
+          : '<div class="refit-note">No active agents yet — summon one first, or type an id below.</div>'}
+        <div class="refit-sec">AGENT ID</div>
+        <input id="ws-aid" class="refit-input" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}" />
+        <div class="refit-error" id="ws-err">unknown agent — check the id</div>
+        <div class="refit-actions">
           <button type="button" class="btn-sm refit-primary" id="ws-ok">▸ ASSIGN</button>
           <button type="button" class="btn-sm" id="ws-clear">UNASSIGN</button>
           <button type="button" class="btn-sm" id="ws-cancel">CANCEL</button>
         </div>
+        </div>
       </div>`;
     root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const input = g.querySelector('#ws-aid');
+    const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
-    g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; input.style.borderColor = '#2a3a32'; });
+    g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; clearErr(); });
+    input.addEventListener('input', clearErr);
     g.querySelector('#ws-ok').onclick = () => {
       const res = station.assignPropAgent(propId, input.value.trim());
       if (res && res.ok) { sfx('click'); flashTip(ev, res.agentId ? ('workstation → ' + res.agentId) : 'workstation cleared', true); closeP(); }
-      else { input.style.borderColor = '#ff6a5a'; sfx('bad'); }
+      else { input.classList.add('is-error'); sfx('bad'); }
     };
     g.querySelector('#ws-clear').onclick = () => { station.assignPropAgent(propId, ''); sfx('click'); flashTip(ev, 'workstation cleared', true); closeP(); };
     g.querySelector('#ws-cancel').onclick = closeP;
@@ -534,10 +547,11 @@ const Build = (() => {
       const k = Math.max(2, p.bufferSize | 0 || 2);
       g.innerHTML = '<div class="refit-guide-card"><h3>▮ MERGER</h3>'
         + '<ul><li>Buffers <b>K</b> inbound boxes, then emits ONE combined box (a map-reduce barrier).</li></ul>'
-        + '<label style="display:block;margin:6px 0;font:11px monospace;color:#cfe">combine K = '
-        + '<input id="mrg-k" type="number" min="2" max="9" value="' + k + '" style="width:48px;margin-left:6px;background:#0b0f0d;border:1px solid #2a3a32;color:#cfe;font:11px monospace;padding:3px"/></label>'
-        + '<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SET</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
+        + '<label class="refit-field">combine K = '
+        + '<input id="mrg-k" class="refit-num" type="number" min="2" max="9" value="' + k + '"/></label>'
+        + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SET</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
       root.appendChild(g);
+      requestAnimationFrame(() => g.classList.add('refit-swap'));
       g.querySelector('#j-ok').onclick = () => {
         const v = Math.max(2, Math.min(9, parseInt(g.querySelector('#mrg-k').value, 10) || 2));
         const res = station.configureJunction(propId, { bufferSize: v });
@@ -551,24 +565,23 @@ const Build = (() => {
       const ROWS = [['code', 'CODE'], ['research', 'RESEARCH'], ['__def__', 'EVERYTHING ELSE']];
       const rowHtml = ROWS.map(([tag, label]) => {
         const btns = lanes.length
-          ? lanes.map(d => '<button type="button" class="bb sm lane-btn" data-tag="' + tag + '" data-dir="' + d + '"'
-              + (selOf(tag) === d ? ' style="background:#2a4a3a;border-color:#5ad1b3"' : '') + '>' + J_ARROW[d] + '</button>').join('')
-          : '<span style="color:#ff8a5a;font:10px monospace">lay belts OUT of this filter first</span>';
-        return '<div style="display:flex;align-items:center;gap:5px;margin:3px 0"><span style="width:104px;font:10px monospace;color:#9fb">' + label + ' →</span>' + btns + '</div>';
+          ? lanes.map(d => '<button type="button" class="bb sm lane-btn' + (selOf(tag) === d ? ' sel' : '') + '" data-tag="' + tag + '" data-dir="' + d + '">' + J_ARROW[d] + '</button>').join('')
+          : '<span class="refit-note bad">lay belts OUT of this filter first</span>';
+        return '<div class="refit-route-row"><span class="refit-route-lbl">' + label + ' →</span>' + btns + '</div>';
       }).join('');
       g.innerHTML = '<div class="refit-guide-card"><h3>▮ FILTER — route by content</h3>'
         + '<ul><li>Each <b>kind</b> of work routes to the out-lane you pick; the rest take <b>EVERYTHING ELSE</b>.</li>'
         + '<li>Put a <b>BAY</b> on a lane to send that work to a specific agent.</li></ul>'
         + '<div class="refit-filter-rows">' + rowHtml + '</div>'
-        + '<div style="display:flex;gap:6px;margin-top:8px"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SAVE ROUTES</button><button type="button" class="btn-sm" id="j-clear">CLEAR</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
+        + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SAVE ROUTES</button><button type="button" class="btn-sm" id="j-clear">CLEAR</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
       root.appendChild(g);
+      requestAnimationFrame(() => g.classList.add('refit-swap'));
       g.querySelectorAll('.lane-btn').forEach(b => b.onclick = () => {
         const tag = b.dataset.tag, dir = b.dataset.dir;
         if (tag === '__def__') cur.def = (cur.def === dir) ? null : dir;
         else if (cur.routes[tag] === dir) delete cur.routes[tag]; else cur.routes[tag] = dir;
         g.querySelectorAll('.lane-btn[data-tag="' + tag + '"]').forEach(x => {
-          const on = selOf(tag) === x.dataset.dir;
-          x.style.background = on ? '#2a4a3a' : ''; x.style.borderColor = on ? '#5ad1b3' : '';
+          x.classList.toggle('sel', selOf(tag) === x.dataset.dir);
         });
       });
       g.querySelector('#j-ok').onclick = () => {
@@ -595,10 +608,12 @@ const Build = (() => {
       + '<ul><li>This gateway grants its bay\'s agent the <b>live tools</b> of ONE configured connector.</li>'
       + '<li>Bind it below — the portal then rides that server\'s state and pulses when its tools fire.</li></ul>'
       + '<div class="refit-conn-rows" id="c-rows">loading…</div>'
-      + '<div style="display:flex;gap:6px;margin-top:8px"><button type="button" class="btn-sm" id="c-unbind">✕ UNBIND</button><button type="button" class="btn-sm" id="c-cancel">CANCEL</button></div></div>';
+      + '<div class="refit-actions"><button type="button" class="btn-sm" id="c-unbind">✕ UNBIND</button><button type="button" class="btn-sm" id="c-cancel">CANCEL</button></div></div>';
     root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const rowsEl = g.querySelector('#c-rows');
-    const STATE_COL = { connected: '#41ff8a', ready: '#41ff8a', up: '#41ff8a', warming: '#ffd34a', offline: '#ffd34a', down: '#ffd34a', error: '#ff4a3d' };
+    // semantic state → dot class (theme vars, no inline hex): up=ok · warming/offline=warn · error=bad
+    const STATE_CLASS = { connected: 'ok', ready: 'ok', up: 'ok', warming: 'warn', offline: 'warn', down: 'warn', error: 'bad' };
     const bind = (id, label) => { const res = station.bindConnector(propId, id); if (res && res.ok) { sfx('click'); flashTip(ev, 'bound → ' + (label || id), true); closeP(); } else sfx('bad'); };
     g.querySelector('#c-unbind').onclick = () => { station.bindConnector(propId, ''); sfx('click'); flashTip(ev, 'portal unbound', true); closeP(); };
     g.querySelector('#c-cancel').onclick = closeP;
@@ -608,10 +623,10 @@ const Build = (() => {
       const list = (j && j.connectors) || [];
       if (!list.length) { rowsEl.innerHTML = '<div class="refit-conn-note">No MCP servers yet — add one in the <b>⇄ CONNECTORS</b> panel (bottom bar), then bind it here.</div>'; return; }
       rowsEl.innerHTML = list.map(c => {
-        const sel = (c.id === p.connectorId), col = STATE_COL[c.state] || '#7a8a80';
+        const sel = (c.id === p.connectorId), scls = STATE_CLASS[c.state] || '';
         const meta = c.toolCount ? (c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's')) : (c.state || 'idle');
         return '<button type="button" class="bb sm conn-row' + (sel ? ' active' : '') + '" data-id="' + esc(c.id) + '" data-label="' + esc(c.label || c.id) + '">'
-          + '<span class="conn-dot" style="color:' + col + '">●</span> ' + esc(c.label || c.id)
+          + '<span class="conn-dot' + (scls ? ' ' + scls : '') + '">●</span> ' + esc(c.label || c.id)
           + ' <span class="conn-meta">' + esc(meta) + '</span></button>';
       }).join('');
       rowsEl.querySelectorAll('.conn-row').forEach(b => b.onclick = () => bind(b.dataset.id, b.dataset.label));
@@ -666,12 +681,13 @@ const Build = (() => {
         <li><b>OPEN</b> = connected to the trunk hub · <b>JAMMED</b> = a merge conflict (sealed).</li>
         <li>A spatial seal — it doesn’t change what the agent’s run can do; its tools &amp; permissions come from its BAY.</li>
         ${isTrunk ? '<li><b>This is the trunk room</b> — it never seals (the integration hub).</li>' : ''}</ul>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${rows}</div>
-        <div style="display:flex;gap:6px;margin-top:6px">
+        <div class="refit-agents">${rows}</div>
+        <div class="refit-actions">
           <button type="button" class="btn-sm" id="door-cancel">CANCEL</button>
         </div>
       </div>`;
     root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
     g.querySelectorAll('.door-state').forEach(b => b.onclick = () => {
       const res = station.setDoorState(propId, b.dataset.st);
