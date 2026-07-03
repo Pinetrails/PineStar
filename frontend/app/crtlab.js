@@ -10,12 +10,13 @@
 (function () {
   if (!/[?&]crtlab\b/.test(location.search)) return;
 
-  const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
+  const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13, dust: 0.5, aberr: 0.35, grain: 0.06 };
   const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
   const WALL_DEFAULTS = { up: 10, corUp: 0, skirt: 32, side: 12 };
+  const DEPTH_DEFAULTS = { wallShadow: 0.28, sheen: 0.22 };
 
   const PRESETS = {
-    'Clean (off)':     { crt: { scan: 0, fade: 0 } },
+    'Clean (off)':     { crt: { scan: 0, fade: 0, dust: 0, aberr: 0, grain: 0 } },
     'Soft fade':       { crt: { scan: 0.06, pitch: 2, fade: 1.0 } },
     'Faded film':      { crt: { scan: 0.05, pitch: 2, fade: 2.0 } },
     'Subtle lines':    { crt: { scan: 0.16, pitch: 2.5, fade: 0.6 } },
@@ -23,9 +24,10 @@
     'Bright room':     { light: { ambient: 0.52, pool: 0.9, floor: 0.2 } },
     'Balanced':        { light: { ambient: 0.66, pool: 0.95, floor: 0.22 } },
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
-    'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 } },
+    'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 }, depth: { wallShadow: 0, sheen: 0 } },
     'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 12 } },
     'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 9 } },
+    'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.06 }, depth: { wallShadow: 0.28, sheen: 0.22 } },
   };
 
   // World/StationBake are top-level `const`s (global lexical bindings, NOT window props), so
@@ -35,6 +37,7 @@
   const crt = () => (W() && W().crt) || {};
   const light = () => (SB() && SB().LIGHT) || {};
   const wall = () => (SB() && SB().WALL) || {};
+  const depth = () => (SB() && SB().DEPTH) || {};
 
   let rebakeT = 0;
   function scheduleRebake() {
@@ -89,7 +92,7 @@
   let sliders = [];
   let readout;
   function syncReadout() {
-    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)), wall: pick(wall(), Object.keys(WALL_DEFAULTS)) }, null, 0);
+    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)), wall: pick(wall(), Object.keys(WALL_DEFAULTS)), depth: pick(depth(), Object.keys(DEPTH_DEFAULTS)) }, null, 0);
   }
   function pick(o, keys) { const r = {}; for (const k of keys) if (o[k] != null) r[k] = +(+o[k]).toFixed(3); return r; }
   function syncAll() { sliders.forEach(s => s._sync && s._sync()); syncReadout(); }
@@ -98,6 +101,7 @@
     if (p.crt) Object.assign(crt(), p.crt);
     if (p.light) { Object.assign(light(), p.light); scheduleRebake(); }
     if (p.wall) { Object.assign(wall(), p.wall); scheduleRebake(); }
+    if (p.depth) { Object.assign(depth(), p.depth); scheduleRebake(); }
     syncAll();
   }
 
@@ -136,6 +140,13 @@
     sliders.push(buildSlider(body, crt, 'fade', 0, 3, 0.05));
     sliders.push(buildSlider(body, crt, 'glow', 0, 0.4, 0.01));
     sliders.push(buildSlider(body, crt, 'curve', 0, 0.4, 0.01));   // barrel-curve the whole feed (0 = flat)
+    sliders.push(buildSlider(body, crt, 'dust', 0, 1, 0.05));      // dust motes drifting in the light pools
+    sliders.push(buildSlider(body, crt, 'aberr', 0, 1, 0.05));     // chromatic aberration at the bowed edges (GPU path)
+    sliders.push(buildSlider(body, crt, 'grain', 0, 0.25, 0.01));  // film grain over the warped feed
+
+    section(body, 'DEPTH FX (re-bakes)');
+    sliders.push(buildSlider(body, depth, 'wallShadow', 0, 0.5, 0.01, scheduleRebake)); // wall-cast floor shadow
+    sliders.push(buildSlider(body, depth, 'sheen', 0, 0.6, 0.01, scheduleRebake));      // floor gloss under light pools
 
     section(body, 'LIGHTING (re-bakes)');
     sliders.push(buildSlider(body, light, 'ambient', 0.3, 0.92, 0.01, scheduleRebake));
@@ -168,7 +179,7 @@
       navigator.clipboard && navigator.clipboard.writeText(txt).then(
         () => flash('copied ✓'), () => { readout.select(); flash('select+copy'); });
     }, true);
-    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(light(), LIGHT_DEFAULTS); Object.assign(wall(), WALL_DEFAULTS); scheduleRebake(); syncAll(); });
+    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(light(), LIGHT_DEFAULTS); Object.assign(wall(), WALL_DEFAULTS); Object.assign(depth(), DEPTH_DEFAULTS); scheduleRebake(); syncAll(); });
     body.appendChild(actions);
 
     const note = document.createElement('div');

@@ -29,11 +29,12 @@ const World = (() => {
   // live-tunable CRT knobs — drawCRT/drawGlows read these every frame so the dev CRT LAB
   // (crtlab.js, dev-gated) can tune them live. These ARE the shipped defaults: bold scanlines,
   // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
-  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13 };
+  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.13, dust: 0.5, aberr: 0.35, grain: 0.06 };
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
-  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
+  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
+  let _grainCv = null, _grainPat = null;   // cached film-grain noise tile + pattern — see grainPattern()/drawCRT()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -46,6 +47,9 @@ const World = (() => {
   let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
   let kindleArmed = false, kindleP = 0, kindleHolding = false, kindlePeak = 0, kindleDone = null;   // THE KINDLING: the user HOLDS to wake the dormant mind; their attention fills kindleP (0..1) → ignition
   const stars = [];
+  // Slice 4 — parallax starfield bands [far, mid, near]: px/sec scroll rate + brightness scale.
+  // Far is slow + dim (distant void), near drifts + reads brighter. Original single layer was 8px/s.
+  const STAR_SPD = [3, 8, 15], STAR_DIM = [0.55, 0.8, 1.0];
 
   /* reduced-motion (the warroom honesty floor): heavy motion — pulses/blinks — goes steady when the OS
      asks for less motion. Live-read so a runtime setting change is honored without a reload. */
@@ -651,7 +655,14 @@ const World = (() => {
 
   function init(canvas) {
     cv = canvas; ctx = cv.getContext('2d');
-    if (!stars.length) for (let i = 0; i < 90; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
+    // Slice 4 — PARALLAX STARFIELD: 3 depth bands give the void real depth. `band` 0=far (dim,
+    // slow, tiny), 1=mid, 2=near (brighter, faster, occasionally 2px). Density kept ~the same
+    // overall (90 stars split ~40/32/18). Per-band scroll rate + brightness read in frame().
+    if (!stars.length) for (let i = 0; i < 90; i++) {
+      const band = i < 40 ? 0 : (i < 72 ? 1 : 2);
+      const r = band === 2 ? (Math.random() < 0.6 ? 1 : 2) : 1;
+      stars.push({ x: Math.random(), y: Math.random(), r, ph: Math.random() * 10, band });
+    }
     resize();
     try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
     // bind the input/visibility handlers + SSE bridge ONCE — init() re-runs on every NEW AGENT (same canvas
@@ -2971,10 +2982,14 @@ const World = (() => {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height);
+    // Slice 4 — parallax: each depth band scrolls at its own rate and sits at its own brightness,
+    // so the void reads with real depth (far band barely creeps + dim, near band drifts + brighter).
+    const SPD = STAR_SPD, DIM = STAR_DIM;
     for (const s of stars) {
-      const tw = 0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph));
-      ctx.fillStyle = 'rgba(180,200,230,' + tw + ')';
-      ctx.fillRect((s.x * cv.width + now / 1000 * 8) % cv.width, s.y * cv.height, s.r, s.r);
+      const band = s.band || 0;
+      const tw = (0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph))) * DIM[band];
+      ctx.fillStyle = 'rgba(180,200,230,' + tw.toFixed(3) + ')';
+      ctx.fillRect((s.x * cv.width + now / 1000 * SPD[band]) % cv.width, s.y * cv.height, s.r, s.r);
     }
 
     if (!cache) { if (running) raf = requestAnimationFrame(frame); return; }
@@ -3050,6 +3065,7 @@ const World = (() => {
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
+    drawDust(now);   // Slice 3: tiny motes drifting through the light pools (world-space, additive, over the glows)
     drawDeskFlashes(now);   // G0.4/G0.8: red distress strobe over a desk whose run just died (additive, with the glows)
     drawAwakenLight(now);   // the soul kindling: ignition spark + a growing halo + motes (world-space additive, awakening only)
     // the AWAKENING veil — now a SPOTLIGHT on the newborn (center light, corners dark) that warms cold->dawn,
@@ -3130,7 +3146,36 @@ const World = (() => {
       ctx.fillStyle = 'rgba(' + Math.round(11 * CRT.fade) + ',' + Math.round(12 * CRT.fade) + ',' + Math.round(15 * CRT.fade) + ',1)';
       ctx.fillRect(0, 0, W, H);
     }
+    if (CRT.grain > 0.001) {                          // FILM GRAIN — one cached noise tile, jittered per frame (CRT.grain)
+      // 'overlay' around mid-gray so grain modulates without lifting black levels; the tile is built
+      // ONCE and only its pattern offset changes each frame (a whole-number jitter derived from `now`,
+      // quantized to ~15fps so it reads as phosphor noise, not smooth scrolling texture).
+      const fi = Math.floor(now / 66);
+      const jx = (fi * 53) % 128, jy = (fi * 97) % 128;
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.globalAlpha = Math.min(0.25, CRT.grain);
+      ctx.translate(jx, jy);
+      ctx.fillStyle = grainPattern();
+      ctx.fillRect(-jx, -jy, W, H);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+    }
     ctx.globalCompositeOperation = 'source-over';
+  }
+  // Cached 128px mid-gray noise tile for the film grain — built once, reused forever (only the
+  // draw offset animates). Mid-gray (128) is the 'overlay' neutral, so ±spread is pure texture.
+  function grainPattern() {
+    if (_grainPat) return _grainPat;
+    const S = 128;
+    _grainCv = document.createElement('canvas'); _grainCv.width = S; _grainCv.height = S;
+    const gctx = _grainCv.getContext('2d'), id = gctx.createImageData(S, S);
+    for (let i = 0; i < S * S; i++) {
+      const v = 128 + Math.round((Math.random() - 0.5) * 110);
+      id.data[i * 4] = v; id.data[i * 4 + 1] = v; id.data[i * 4 + 2] = v; id.data[i * 4 + 3] = 255;
+    }
+    gctx.putImageData(id, 0, 0);
+    _grainPat = ctx.createPattern(_grainCv, 'repeat');
+    return _grainPat;
   }
 
   // ---- BARREL CURVE — bows the whole feed like a CRT tube --------------------------------------
@@ -3181,13 +3226,25 @@ const World = (() => {
       if (!_gl) throw new Error('no webgl');
       const gl = _gl;
       const vs = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos*0.5+0.5; gl_Position = vec4(aPos,0.0,1.0); }';
-      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK;\n' +
+      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK; uniform float uAberr;\n' +
         'void main(){\n' +
         '  vec2 n = (vUv-0.5)*2.0; float ro = length(n); float rs = ro;\n' +
         '  for(int i=0;i<6;i++){ float g = rs*(1.0-uK*rs*rs)-ro; float dg = 1.0-3.0*uK*rs*rs; rs = rs - g/dg; }\n' +
         '  float scale = ro>1e-5 ? rs/ro : 1.0; vec2 sUv = n*scale*0.5+0.5;\n' +
         '  if(sUv.x<0.0||sUv.x>1.0||sUv.y<0.0||sUv.y>1.0){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }\n' +
-        '  vec3 col = texture2D(uTex, sUv).rgb; float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
+        // CHROMATIC ABERRATION (Slice 5a): fringe the channels along the radial direction, offset ∝ curve·r²,
+        // so edges split R/B and the center stays clean. uAberr scales the whole effect (0 = none).
+        '  vec3 col;\n' +
+        '  if(uAberr>0.0001){\n' +
+        '    vec2 dir = ro>1e-5 ? n/ro : vec2(0.0);\n' +
+        '    float amt = uAberr * (0.008 + uK*0.06) * ro*ro;\n' +   // grows toward the bowed edges
+        '    vec2 offs = dir * amt;\n' +
+        '    float r = texture2D(uTex, sUv + offs).r;\n' +
+        '    float gg = texture2D(uTex, sUv).g;\n' +
+        '    float b = texture2D(uTex, sUv - offs).b;\n' +
+        '    col = vec3(r, gg, b);\n' +
+        '  } else { col = texture2D(uTex, sUv).rgb; }\n' +
+        '  float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
         '  gl_FragColor = vec4(col*vig, 1.0);\n' +
         '}';
       const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -3207,7 +3264,7 @@ const World = (() => {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is top; flip so texcoords line up right-side-up
       gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
-      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glProg = prog; _glReady = true;
+      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glAberrLoc = gl.getUniformLocation(prog, 'uAberr'); _glProg = prog; _glReady = true;
       return true;
     } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
   }
@@ -3220,6 +3277,7 @@ const World = (() => {
       gl.bindTexture(gl.TEXTURE_2D, _glTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);   // upload the composited frame
       gl.uniform1f(_glKLoc, k);
+      if (_glAberrLoc) gl.uniform1f(_glAberrLoc, Math.max(0, CRT.aberr || 0));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
@@ -3256,6 +3314,36 @@ const World = (() => {
       const g = ctx.createRadialGradient(f.x, f.y, 1, f.x, f.y, f.r * 0.7);
       g.addColorStop(0, 'rgba(240,230,206,' + a + ')'); g.addColorStop(1, 'rgba(240,230,206,0)');
       ctx.fillStyle = g; ctx.fillRect(f.x - f.r * 0.7, f.y - f.r * 0.7, f.r * 1.4, f.r * 1.4);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Slice 3 — DUST MOTES. Tiny specks drifting slowly THROUGH the baked light pools (only there — a mote
+  // is only visible where light catches it). Purely cosmetic atmosphere; never encodes agent/run state.
+  // Deterministic from `now` + each fixture's position seed (no state array, no per-frame allocation —
+  // the awakening-motes idiom at drawAwakenLight). ~2-3 motes per fixture, additive, each breathing its
+  // alpha 0→~0.35→0 over a long period with a gentle sinusoidal drift confined to the pool radius.
+  // Steady (motes hidden) under prefers-reduced-motion; CRT.dust scales/zeroes the whole effect.
+  function drawDust(now) {
+    if (!cache || !cache.flickers || CRT.dust <= 0.001 || reduceMotion()) return;
+    ctx.globalCompositeOperation = 'lighter';
+    const amp = CRT.dust;
+    for (const f of cache.flickers) {
+      const per = 3;                                   // 2-3 motes per fixture
+      const R = f.r * 0.5;                             // keep motes inside the visible pool
+      for (let k = 0; k < per; k++) {
+        const seed = (f.x * 0.11 + f.y * 0.07) + k * 2.399;
+        // slow, long-period drift — each mote traces a lazy Lissajous within the pool
+        const dx = Math.sin(now / (5200 + k * 900) + seed) * R * 0.7;
+        const dy = Math.cos(now / (6100 + k * 700) + seed * 1.7) * R * 0.5;
+        // alpha breathes 0 → ~0.35 → 0 over a long, per-mote period (fully off part of the cycle)
+        const br = 0.5 + 0.5 * Math.sin(now / (3400 + k * 600) + seed * 2.3);
+        const a = amp * 0.35 * br * br;               // squared → longer dark valleys, brief glints
+        if (a < 0.01) continue;
+        const mx = f.x + dx, my = f.y + dy;
+        ctx.fillStyle = 'rgba(246,240,220,' + a.toFixed(3) + ')';
+        ctx.fillRect(mx - 0.5, my - 0.5, 1.2, 1.2);   // ~1px speck
+      }
     }
     ctx.globalCompositeOperation = 'source-over';
   }

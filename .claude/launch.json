@@ -192,6 +192,14 @@
       "port": 8813,
       "autoPort": false,
       "env": { "SKYNET_PORT": "8813", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+    },
+    {
+      "name": "env-depth-fx-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/env-depth-fx/dev/seed.js", "--keep"],
+      "port": 8127,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8127", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
     }
   ]
 }

@@ -40,6 +40,16 @@ const StationBake = (() => {
        floor    = warmth of the additive light pool painted on the floor */
   const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
 
+  /* live-tunable DEPTH FX — the CRT LAB writes these and re-bakes (same contract as LIGHT/WALL).
+     Pure top-down 2D cosmetics that make the deck read a touch more 3D — never imply agent/run
+     state. Baked once at bake-time, so free at runtime.
+       wallShadow = strength of the soft south-cast shadow the standing north wall throws onto
+                    the floor at its base (0 = off, matches the pre-depth look), and the extra
+                    e/w wall-base shade so every wall foot sits in a little shadow.
+       sheen      = strength of the faint vertical reflection streak baked on the floor under
+                    each ceiling-light pool (polished deck read; 0 = off). */
+  const DEPTH = { wallShadow: 0.28, sheen: 0.22 };
+
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
     tr: { cx: 0, cy: 1, a0: 1.5 * Math.PI, a1: 2 * Math.PI },
@@ -154,6 +164,7 @@ const StationBake = (() => {
   }
 
   function bakeEdgeAO(b) {
+    // base edge AO — the short shade band hugging every wall foot (verbatim legacy look)
     b.fillStyle = 'rgba(0,0,0,0.25)';
     for (const e of edges) {
       if (e.door) continue;
@@ -162,6 +173,49 @@ const StationBake = (() => {
       else if (e.side === 's') b.fillRect(X, Y + T - ds, T, ds);
       else if (e.side === 'w') b.fillRect(X, Y, ds, T);
       else b.fillRect(X + T - ds, Y, ds, T);
+    }
+    bakeWallCastShadow(b);
+  }
+
+  /* the big 3D cue: the STANDING north wall shades the floor at its base, as if the ceiling light
+     rakes over it. A soft vertical gradient cast SOUTH (down-screen) from each north wall's floor
+     seam, plus a touch more shade at the e/w wall feet so every wall foot sits in shadow. Cool-black
+     to match the existing edge AO tone. Baked onto the floor at the same stage as edge AO, INSIDE the
+     floor footprint only (never onto the hull skirt, which the ambient mask deliberately excludes). */
+  function bakeWallCastShadow(b) {
+    const s = Math.max(0, DEPTH.wallShadow);
+    if (s <= 0.001) return;
+    // Painted as STEPPED opaque-alpha bands (hard 1px transitions), not a smooth gradient — this
+    // matches the station's own pixel idiom (see bakeRoomFloor / bakeTallNorthFace: no low-alpha
+    // washes) AND keeps the bake portable to the headless canvas mock (no createLinearGradient).
+    // Cool-black to sit with the existing edge AO tone. Alpha falls off south of the seam.
+    const cool = a => 'rgba(6,7,10,' + a.toFixed(3) + ')';
+    for (const e of edges) {
+      if (e.door) continue;
+      const X = e.x * T, Y = e.y * T;
+      if (e.side === 'n') {
+        // the floor seam of a tall north face sits inFace px below the tile top; the legacy short
+        // wall (up:0) contacts the floor at the same inFace line, so seed the cast there either way.
+        const inFace = e.room ? NFACE : 5;
+        const seam = Y + inFace;
+        const h = e.room ? 14 : 8;                       // rooms throw a taller floor shadow than corridors
+        // 4 bands easing 1 → 0 in alpha over the shadow height (raised-cosine-ish falloff, discretized)
+        const bands = 4, prof = [1, 0.62, 0.34, 0.14];
+        const bh = Math.max(1, Math.round(h / bands));
+        for (let i = 0; i < bands; i++) {
+          const a = s * 0.92 * prof[i]; if (a < 0.004) continue;
+          b.fillStyle = cool(a); b.fillRect(X, seam + i * bh, T, bh);
+        }
+      } else if (e.side === 'w') {
+        // deepen the west wall foot: two inward bands so the wall base reads shaded (steps in x)
+        const w = e.room ? 6 : 4, bw = Math.max(1, Math.round(w / 2));
+        b.fillStyle = cool(s * 0.5); b.fillRect(X, Y, bw, T);
+        b.fillStyle = cool(s * 0.22); b.fillRect(X + bw, Y, w - bw, T);
+      } else if (e.side === 'e') {
+        const w = e.room ? 6 : 4, bw = Math.max(1, Math.round(w / 2));
+        b.fillStyle = cool(s * 0.5); b.fillRect(X + T - bw, Y, bw, T);
+        b.fillStyle = cool(s * 0.22); b.fillRect(X + T - w, Y, w - bw, T);
+      }
     }
   }
 
@@ -287,6 +341,31 @@ const StationBake = (() => {
     else { b.fillStyle = track; b.fillRect(X + T - 1, Y, 2, T); b.fillStyle = lip; b.fillRect(X + T - 1, Y, 1, T); }
   }
 
+  /* a vertical reflection streak on the polished deck under a ceiling light. `cx,cy` = streak
+     centre, `w` ≈ its half-width. Rendered as a warm-neutral radial gradient painted into a
+     TALL-NARROW rect (height ≈ 2.6×width) so the round falloff is clipped into a vertical lens —
+     reads as a glossy floor highlight, not fog. Caller supplies the 'lighter' composite. Uses only
+     createRadialGradient + fillRect (portable to the headless canvas mock; no scale/ellipse). */
+  function bakeSheen(b, cx, cy, w) {
+    const s = Math.max(0, DEPTH.sheen);
+    if (s <= 0.001 || w < 2) return;
+    const halfW = Math.max(2, w);
+    // Build the vertical lens from THREE stacked circular radial dabs (top / mid / bright core),
+    // spanning ≈2.6×width tall — no scale()/ellipse() so it bakes identically in the headless mock.
+    const a0 = s * 0.5;
+    const dab = (dy, rad, a) => {
+      if (a < 0.004) return;
+      const g = b.createRadialGradient(cx, cy + dy, 0.5, cx, cy + dy, rad);
+      g.addColorStop(0, 'rgba(252,244,224,' + a.toFixed(3) + ')');
+      g.addColorStop(0.6, 'rgba(252,244,224,' + (a * 0.3).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(252,244,224,0)');
+      b.fillStyle = g; b.fillRect(cx - rad, cy + dy - rad, rad * 2, rad * 2);
+    };
+    dab(0, halfW, a0);                       // bright core
+    dab(-halfW * 1.1, halfW * 0.72, a0 * 0.55);  // upper taper
+    dab(halfW * 1.1, halfW * 0.72, a0 * 0.55);   // lower taper
+  }
+
   function bakeRoomLighting(b) {
     b.globalCompositeOperation = 'lighter';
     for (const r of G.allRects) {
@@ -299,8 +378,16 @@ const StationBake = (() => {
         const gw = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
         gw.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')'); gw.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')'); gw.addColorStop(1, 'rgba(250,236,206,0)');
         b.fillStyle = gw; b.fillRect(Math.max(X, lx - rad * 0.7), Y, Math.min(rad * 1.4, RW), Math.min(rad * 1.2, RH));
+        // FLOOR SHEEN (Slice 2): a faint vertical reflection streak on the deck below the pool, as if
+        // the polished plating catches the ceiling light. Narrow (≈40% pool width), taller than wide,
+        // additive + very low alpha, warm-neutral like the pool. Drawn under the same 'lighter' pass.
+        bakeSheen(b, lx, ly + T * 0.9, rad * 0.34);
         lampPos.push({ x: lx, y: ly, r: rad * 1.4 });
       }
+    }
+    // tiny sheen under each doorway light spill (the threshold catches a little floor gloss too)
+    for (const [x1, y1, x2, y2] of (G.doorDefs || [])) {
+      bakeSheen(b, (x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T + T * 0.4, T * 0.4);
     }
     b.globalCompositeOperation = 'source-over';
     for (const r of G.allRects) {
@@ -724,7 +811,7 @@ const StationBake = (() => {
     else if (baked && baked.lightCv) ctx.drawImage(baked.lightCv, ox, oy);
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX, LIGHT, WALL };
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX, LIGHT, WALL, DEPTH };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;
