@@ -94,6 +94,7 @@ const configExport = require('./configexport.js');   // P1-7: station backup —
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
+const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -620,6 +621,19 @@ const notebookStore = makeMemoryStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : (String(key).indexOf('declined:') === 0 ? 'declined' : 'notebook')),
   warn: (...args) => console.warn.apply(console, args)
 });
+
+// AWAY WORKSHOP — per-agent durable state for "Build things while I'm away": the Commander's recorded grant,
+// the build backlog, and the permanent discarded-backlogId denylist. A sibling of the notebooks (WORKSPACES/
+// <aid>.workshop.json), OUTSIDE the agent's fs jail so its own fs.* tools can neither read nor corrupt it. Same
+// durable+recovery discipline as notebookStore. workshopOf(agentId) is the pure predicate the consent broker
+// consults (W1): an autonomous, jail-scoped WRITE clears the cache tier ONLY for a granted agent.
+const workshopStore = makeWorkshopStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[workshop] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'workshop'),
+  warn: (...args) => console.warn.apply(console, args)
+});
+function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
 
 // PHASE C — the station-wide Commander dossier block (what the station knows about the user), pushed by the
 // browser (POST /api/dossier) and folded into server-composed autonomous personas (cron) so an unattended
@@ -3288,6 +3302,10 @@ async function runOnce(o) {
     bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
     networkOf: (call) => !!resolved.networkCaps[call.name],
+    // AWAY WORKSHOP (W1): the Commander's recorded per-agent grant. The broker only consults it for an autonomous
+    // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
+    // live store each check keeps it honest (a toggle flip takes effect on the very next tool call, no restart).
+    workshop: (call, tool) => workshopOf(agentId),
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)

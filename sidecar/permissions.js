@@ -65,6 +65,28 @@
     const surface = opts.surface || 'autonomous';
     const prompt = typeof opts.prompt === 'function' ? opts.prompt : null;                     // (call,tool) -> Promise<decision>
     const grantsBlanket = opts.grantsBlanket instanceof Set ? opts.grantsBlanket : null;       // full-access wildcard store ('*')
+    // AWAY WORKSHOP (W1): an injected predicate — the Commander's recorded "build things while I'm away" grant for
+    // THIS agent. When present and true, an AUTONOMOUS run may WRITE, but ONLY inside its own jail: the tool must be
+    // a jail-scoped capability (cabinet = files, notebook = memory). This is a per-agent recorded consent, wired in
+    // index.js (workshopOf), NOT a self-approval — the exec lockout below is UNTOUCHED, so an away run still can
+    // never run a command. Pure: like hardline/networkOf, all state comes from the injected function. Default: none.
+    const workshop = typeof opts.workshop === 'function' ? opts.workshop : null;
+    // the jail-scoped capabilities the workshop grant may unlock a WRITE for (never execute, never a non-jail tool).
+    // The plan calls these "cabinet | notebook"; in the live tool registry the FILE capability is `cabinet`
+    // (sidecar/tools/builtin/fs.js — fs.write/append/edit/patch, realpath-jailed to workspaces/<agentId>/) and the
+    // memory/notebook capability is `memory` (notebook.write, persisted to the agent's OWN sibling KV store). Both
+    // are per-agent-scoped, so both are safe to unlock for a granted away run; the injected `workshop` predicate is
+    // the recorded consent. Overridable via opts.workshopCaps for tests / a future capability rename.
+    const JAIL_WRITE_CAPS = (opts.workshopCaps && typeof opts.workshopCaps === 'object')
+      ? opts.workshopCaps : { cabinet: true, memory: true };
+    function workshopWritable(call, tool) {
+      if (!workshop) return false;
+      if (surface !== 'autonomous') return false;               // interactive already asks a live human
+      if (scopeOf(tool) !== 'write') return false;              // ONLY write; read auto-allows, execute stays locked
+      const cap = tool && tool.capability;
+      if (!JAIL_WRITE_CAPS[cap]) return false;                  // must be a jail-scoped capability (files/memory)
+      try { return workshop(call, tool) === true; } catch (_) { return false; }
+    }
 
     function sessionSet(create) {
       let s = grantsSession.get(sessionKey);
@@ -90,6 +112,13 @@
       // a permanent `always` grant a human gave once does NOT silently enable cron/headless command execution.
       // Frozen FULL_ACCESS (tier 2 above) remains the sole, deliberate machine-wide exception.
       if (surface === 'autonomous' && scope === 'execute') return { allow: false, scope: scope, reason: SILENCE };
+      // 2.6 AWAY WORKSHOP — an autonomous, jail-scoped WRITE by an agent the Commander granted "build things while
+      // I'm away" is allowed. Sits ABOVE the cache tier (so it doesn't need a pre-seeded danger key) but BELOW the
+      // exec lockout (execute is filtered out in workshopWritable, so this NEVER reaches shell) and BELOW the
+      // hardline floor (tier 1, checked first — .env/.git stay unwritable). The fs-jail (realpath-scoped to
+      // workspaces/<agentId>/) is the real boundary; this only clears the "silence is not consent" default-deny
+      // for exactly cabinet:write / notebook:write on a granted agent. No grant → the tiers below run unchanged.
+      if (workshopWritable(call, tool)) return { allow: true, scope: scope, reason: 'workshop grant — build things while away' };
       // 3. CACHE — a prior session/permanent grant for this danger class.
       if (granted(dangerKey(tool))) return { allow: true, scope: scope, reason: 'previously granted' };
       // 4. RESOLVE.
