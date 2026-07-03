@@ -66,7 +66,7 @@ const codexTokenStore = require('./providers/codex-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
-const { reflect, reflectSalient, recordFromProposal, feedbackFor } = require('./reflect.js');
+const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
@@ -856,8 +856,33 @@ async function runReflection(o) {
       // arm the cooldown ONLY when a beat actually fires — so a trivial/floored/all-deduped run (zero proposals)
       // never spends the window and blocks a following substantive run's turn-in (honours "always confirm").
       lastReflectAt.set(agentId, Date.now());
-      stashProposals(agentId, runId, proposals.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' })));
-      for (const p of proposals) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
+      // SILENT-SAVE UX: split the batch. NORMAL proposals auto-save immediately (no confirmation) via the ONE
+      // write path — a passive "◈ remembered" receipt in COMMS, one-tap ✕ to veto. HIGH-STAKES proposals
+      // (credentials / PII / standing instructions) are NOT auto-saved — they still stash + emit memory.proposed
+      // so the old Keep/Edit/Discard confirm deck fires for just those (rare-confirm).
+      const highStakesProps = [], normalProps = [];
+      for (const p of proposals) (highStakes(p.content) ? highStakesProps : normalProps).push(p);
+
+      // auto-save the normal ones. Silent save = NEUTRAL trust (trustDelta 0): there was no user validation to
+      // reward (the +2 keep bonus was the Commander confirming). Skills go to the skill library as before.
+      const saved = [];
+      for (const p of normalProps) {
+        try {
+          const w = await writeMemoryRecord(agentId, p, { runId, trustDelta: 0, source: 'reflection' });
+          if (w.ok) saved.push({ id: w.id, kind: w.kind, content: p.content, scope: p.scope || 'global', saved: true });
+        } catch (_) {}   // one failed write never sinks the batch
+      }
+      // stash ONE batch (mixed: saved receipts carry saved:true + a real record id; high-stakes carry the pending
+      // prop_N id). The frontend fetches it via /api/memory/proposals — renders a passive receipt for saved:true
+      // items and the Keep/Edit/Discard confirm deck for the rest. A single stash per runId (a second stashProposals
+      // for the same runId would OVERWRITE the first — so merge here).
+      const pending = highStakesProps.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' }));
+      const combined = saved.concat(pending);
+      if (combined.length) stashProposals(agentId, runId, combined);
+      // memory.write already emitted per-record inside writeMemoryRecord — that is the receipt TRIGGER. Auto-saved
+      // items get NO memory.proposed (they must NOT claim the one-beat slot — study/arc/trust stay free). Only the
+      // high-stakes ones emit memory.proposed so the confirm deck fires for just those (and claims the slot).
+      for (const p of highStakesProps) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
     }
   } catch (e) { console.warn('[cortex] reflection failed:', (e && e.message) || e); }
   finally {
@@ -4666,6 +4691,59 @@ function skillNameFromReflection(content) {
   return first.replace(/[<>:"|?*\\/]/g, ' ').replace(/\s+/g, ' ').slice(0, 70) || 'Learned skill';
 }
 
+// THE ONE MEMORY WRITE PATH (silent-save UX). A proposal reaches the notebook (or the skill library) via EXACTLY
+// this helper — whether the Commander clicked Keep/Edit on the confirm deck OR reflection auto-saved it silently.
+// It writes under the per-agent lock (re-reading so a concurrent memory.write isn't clobbered), mints the id, seeds
+// trust from `trustDelta` (the keep/edit bonus for a user-confirmed record; 0 for a silent auto-save — there was no
+// user validation to reward), and emits the frozen memory.write / deliverable SSE rungs. It does NOT emit
+// memory.feedback — the caller owns that (the semantics differ: keep=+2, edit=+1, silent auto-save=none). Returns
+// { ok, id, kind, skill? } or { ok:false, error }. `opts.source` labels a skill's provenance ('reflection').
+async function writeMemoryRecord(agentId, prop, opts) {
+  opts = opts || {};
+  const content = String(opts.content != null ? opts.content : (prop && prop.content) || '').trim();
+  if (!content) return { ok: false, error: 'a kept memory cannot be empty' };
+  const runId = opts.runId || (prop && prop.sourceRunId) || '';
+  const trustDelta = Number(opts.trustDelta) || 0;
+  // skill-builder-gap: a proposal tagged kind:'skill' becomes a saved skill package, not a notebook note.
+  if (prop && prop.kind === 'skill') {
+    const skillName = String(opts.skillName || skillNameFromReflection(content)).trim();
+    const skillBody = String(opts.skillBody || content).trim();
+    const summary = String(opts.summary || content).trim();
+    const r = skillStore.write({ agentId, name: skillName, summary, body: skillBody, createdBy: opts.source || 'reflection', sourceRunId: runId || (prop && prop.sourceRunId) });
+    if (!r.ok) return { ok: false, error: r.error || 'could not save skill' };
+    chanEmit('deliverable', { id: r.skill.id, agentId, kind: 'skill', title: r.skill.name });
+    return { ok: true, id: r.skill.id, kind: 'skill', skill: r.skill };
+  }
+  // P1: write the notebook record under the per-agent lock, RE-READING the list so the id (positional) is minted
+  // against the current notebook and a concurrent run's memory.write isn't clobbered by this whole-array set.
+  let writtenId = null, rec = null;
+  await notebookStore.update('notebook:' + agentId, (stored) => {
+    const list = Array.isArray(stored) ? stored : [];
+    writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
+    rec = recordFromProposal(prop || {}, { now: Date.now(), runId: runId || (prop && prop.sourceRunId), id: writtenId, content });
+    if (trustDelta) rec.trust = memcore.nextTrust(rec.trust, trustDelta);   // M-mem.6: keep/edit seeds real trust; silent auto-save leaves it neutral
+    list.push(rec);
+    return list;
+  });
+  chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
+  return { ok: true, id: writtenId, kind: rec.kind };
+}
+
+// §5.6 "discard/veto = never again": append the rejected belief text to the permanent per-agent declined list
+// (capped FIFO) so reflection's dedup suppresses it forever. Idempotent (no dup entries). A failed write never
+// fails the caller (the reject-list is best-effort observability; the negative feedback still calibrates trust).
+async function appendDeclined(agentId, text) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  try {
+    await notebookStore.update('declined:' + agentId, (stored) => {
+      const list = Array.isArray(stored) ? stored.slice() : [];
+      if (list.indexOf(t) < 0) { list.push(t); while (list.length > DECLINED_CAP) list.shift(); }
+      return list;
+    });
+  } catch (_) {}
+}
+
 async function handleMemoryTurnin(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
@@ -4675,7 +4753,33 @@ async function handleMemoryTurnin(req, res) {
   const id = String(body.id || '');
   const verdict = String(body.verdict || '');
   const fb = feedbackFor(verdict);
-  if (!fb) return json(400, { error: 'verdict must be keep, edit, or discard' });
+  if (!fb) return json(400, { error: 'verdict must be keep, edit, discard, or veto' });
+
+  // VETO (silent-save UX): the memory was ALREADY auto-saved; this UNDOES it. It targets a SAVED record id (a
+  // notebook id, or a skill id when kind:'skill'), NOT a pending proposal — so it does not touch proposalsByRun.
+  // Idempotent: a record already gone is a harmless ok:true no-op. The undone text joins the permanent denylist
+  // (never re-proposed); Memory Core Restore is the undo-for-the-undo.
+  if (verdict === 'veto') {
+    if (!id) return json(400, { error: 'veto needs the saved record id' });
+    const text = String(body.content || '').trim();
+    if (String(body.kind || '') === 'skill') {
+      const r = skillStore.manage({ agentId, action: 'archive', id });   // soft-delete (archive) = "delete the skill"
+      if (!r.ok && !/no such skill/i.test(String(r.error || ''))) return json(400, { error: r.error || 'could not undo skill' });
+    } else {
+      // remove the notebook record under the per-agent lock (re-read so a concurrent write isn't clobbered).
+      let found = false;
+      await notebookStore.update('notebook:' + agentId, (stored) => {
+        const r = memcore.applyForget(Array.isArray(stored) ? stored : [], id);
+        found = r.found;
+        return found ? r.records : undefined;   // no write when the record is already gone (idempotent)
+      });
+      if (found) chanEmit('memory.forget', { agentId, id });
+    }
+    await appendDeclined(agentId, text);   // the undone belief is never proposed again
+    chanEmit('memory.feedback', { agentId, id, delta: fb.delta, reason: fb.reason });   // -1, reason 'vetoed'
+    return json(200, { ok: true, verdict, id });
+  }
+
   const batch = proposalsByRun.get(runId);
   const prop = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
   if (!prop) return json(404, { error: 'no such proposal (it may have expired)' });
@@ -4683,50 +4787,24 @@ async function handleMemoryTurnin(req, res) {
   batch.proposals = batch.proposals.filter(p => p.id !== id);
   if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }
 
-  let writtenId = null;
   if (verdict === 'discard') {
     // §5.6 "discard = never again": no NOTEBOOK record is written, but the rejected text IS recorded to the
-    // permanent per-agent declined list (capped FIFO) so reflection's dedup suppresses it forever — without this,
-    // the same low-value proposal re-surfaces on the next run. The negative feedback still calibrates confidence.
-    try {
-      await notebookStore.update('declined:' + agentId, (stored) => {
-        const list = Array.isArray(stored) ? stored.slice() : [];
-        const text = String(prop.content || '').trim();
-        if (text && list.indexOf(text) < 0) { list.push(text); while (list.length > DECLINED_CAP) list.shift(); }
-        return list;
-      });
-    } catch (_) {}   // a failed reject-list write must never fail the turn-in
+    // permanent per-agent declined list so reflection's dedup suppresses it forever. Negative feedback calibrates confidence.
+    await appendDeclined(agentId, prop.content);
     chanEmit('memory.feedback', { agentId, id: prop.id, delta: fb.delta, reason: fb.reason });
     return json(200, { ok: true, verdict, id: null });
   }
+  // keep/edit -> commit a real §5.2 record via the ONE write path (shared with silent auto-save). The keep/edit
+  // verdict seeds real trust (fb.delta); a skill proposal becomes a saved skill instead of a note.
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
-  if (!content) return json(400, { error: 'a kept memory cannot be empty' });
-  // skill-builder-gap: a reflection proposal tagged kind:'skill' is turned into a saved skill package
-  // (the runtime skill-building loop) instead of a notebook note. Returns early — no notebook write.
-  if (prop.kind === 'skill') {
-    const skillName = String(body.skillName || body.name || skillNameFromReflection(content)).trim();
-    const skillBody = String(body.skillBody || body.body || content).trim();
-    const summary = String(body.summary || content).trim();
-    const r = skillStore.write({ agentId, name: skillName, summary, body: skillBody, createdBy: 'reflection', sourceRunId: runId || prop.sourceRunId });
-    if (!r.ok) return json(400, { error: r.error || 'could not save skill' });
-    chanEmit('deliverable', { id: r.skill.id, agentId, kind: 'skill', title: r.skill.name });
-    chanEmit('memory.feedback', { agentId, id: prop.id, delta: fb.delta, reason: fb.reason });
-    return json(200, { ok: true, verdict, id: r.skill.id, kind: 'skill' });
-  }
-  // P1: write the kept record under the per-agent lock, RE-READING the list so the id (positional) is minted
-  // against the current notebook and a concurrent run's memory.write isn't clobbered by this whole-array set.
-  let rec = null;
-  await notebookStore.update('notebook:' + agentId, (stored) => {
-    const list = Array.isArray(stored) ? stored : [];
-    writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
-    rec = recordFromProposal(prop, { now: Date.now(), runId: runId || prop.sourceRunId, id: writtenId, content });
-    rec.trust = memcore.nextTrust(rec.trust, fb.delta);   // M-mem.6: the keep/edit verdict seeds real trust (a reduction, not 0)
-    list.push(rec);
-    return list;
+  const w = await writeMemoryRecord(agentId, prop, {
+    content, runId, trustDelta: fb.delta,
+    skillName: body.skillName || body.name, skillBody: body.skillBody || body.body, summary: body.summary
   });
-  chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
+  if (!w.ok) return json(400, { error: w.error || 'could not save that memory' });
+  const writtenId = w.id;
   chanEmit('memory.feedback', { agentId, id: writtenId, delta: fb.delta, reason: fb.reason });
-  json(200, { ok: true, verdict, id: writtenId, kind: rec.kind });
+  json(200, { ok: true, verdict, id: writtenId, kind: w.kind });
 }
 
 // POST /api/memory/reset { agent } — wipe a hero's SERVER-SIDE memory on new-hero commission, so a fresh Commander
