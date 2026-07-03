@@ -412,6 +412,47 @@ A.ok(/reasoningEffort:\s*buildEffort/.test(createSeg), 'CREATE folds the picked 
   S.removeCustom(saved.id); S.removeCustom(bad.id);
 }
 
+/* ---------- S3b'. CUSTOM EDIT: the SAME builder edits a custom class, prefilled, and round-trips the loadout ----------
+   A custom class is a full loadout, so editing one must expose the SAME three pickers (kit/skills/effort) — not the
+   rename-only save form. We source-lock that the EDIT button routes an existing custom into the builder with the
+   loadout state prefilled from the saved spec, and functionally prove an edit round-trips a NEW loadout through the
+   real Specialties store while keeping the SAME record id (an upsert, not a new class). */
+// the EDIT button (only rendered for s.custom) prefills the builder's loadout state from the spec and opens `build`.
+const editWireSeg = mkt.slice(mkt.indexOf("const edit = sc.querySelector('.mkt-edit')"), mkt.indexOf("const rEdit = sc.querySelector"));
+A.ok(/editingId = edit\.dataset\.id/.test(editWireSeg), 'EDIT records which custom class is being edited (editingId)');
+A.ok(/buildKit = \(s && Array\.isArray\(s\.kit\)\) \? s\.kit\.slice\(\) : \[\]/.test(editWireSeg), 'EDIT prefills the kit picker from the saved spec');
+A.ok(/buildSkills = \(s && Array\.isArray\(s\.skills\)\) \? s\.skills\.slice\(\) : \[\]/.test(editWireSeg), 'EDIT prefills the skill picker from the saved spec');
+A.ok(/buildEffort = \(s && s\.reasoningEffort\) \|\| null/.test(editWireSeg), 'EDIT prefills the effort selector from the saved spec');
+A.ok(/view = 'build'/.test(editWireSeg), 'EDIT opens the builder form (with the loadout pickers), not the rename-only save form');
+// the builder form is edit-aware: it prefills name/emoji/tagline/purpose/manual from the spec and re-labels the CTA.
+const bfhSeg = mkt.slice(mkt.indexOf('function buildFormHTML('), mkt.indexOf('const KIT_PICKABLE'));
+A.ok(/const editing = editingId \? Specialties\.get\(editingId\) : null/.test(bfhSeg), 'buildFormHTML resolves the class being edited');
+A.ok(/EDIT CUSTOM CLASS/.test(bfhSeg), 'the builder titles itself EDIT CUSTOM CLASS when editing');
+A.ok(/SAVE CHANGES/.test(bfhSeg), 'the edit CTA reads SAVE CHANGES (not CREATE CLASS)');
+A.ok(/value="' \+ esc\(d\.name \|\| ''\)/.test(bfhSeg) && /value="' \+ esc\(d\.tagline \|\| ''\)/.test(bfhSeg), 'the builder prefills name + tagline from the spec');
+A.ok(/esc\(d\.purpose \|\| ''\)/.test(bfhSeg) && /esc\(d\.manual \|\| ''\)/.test(bfhSeg), 'the builder prefills purpose + standing orders from the spec');
+// HONESTY: the edit copy states editing does NOT retroactively mutate already-summoned agents (they own their loadout).
+A.ok(/already-summoned agents keep the loadout they were given/.test(bfhSeg), 'the edit copy is honest: editing a class does not mutate already-summoned agents');
+// the CREATE/SAVE handler upserts by id when editing (same record) and preserves non-authored carried fields.
+A.ok(/if \(editing\) spec\.id = editing\.id/.test(createSeg), 'SAVE CHANGES upserts the SAME record id when editing (not a new class)');
+A.ok(/Object\.assign\(\{\}, editing \|\| \{\}/.test(createSeg), 'editing starts from the saved record so carried fields (persona/tags/starters) survive');
+// FUNCTIONAL round-trip: create a custom, then edit it to a NEW loadout — the store keeps the id and swaps the loadout.
+{
+  const created = S.saveCustom({ name: 'Edit QA', purpose: 'seed', kit: ['dish'], skills: ['web-research'], reasoningEffort: 'low' });
+  const id = created.id;
+  // an edit is saveCustom with the SAME id and a new loadout (exactly what the builder's SAVE CHANGES sends).
+  const edited = S.saveCustom({ id, name: 'Edit QA', purpose: 'seed', kit: ['cabinet', 'notebook'], skills: ['deep-research'], reasoningEffort: 'high' });
+  A.eq(edited.id, id, 'editing keeps the SAME record id (an upsert, not a new class)');
+  A.eq(S.customs().filter(c => c.id === id).length, 1, 'editing does not duplicate the class in the store');
+  A.ok(edited.kit.indexOf('cabinet') >= 0 && edited.kit.indexOf('notebook') >= 0 && edited.kit.indexOf('dish') < 0, 'the edited kit replaced the original (dish gone, cabinet+notebook in)');
+  A.ok(edited.skills.indexOf('deep-research') >= 0 && edited.skills.indexOf('web-research') < 0, 'the edited skill package replaced the original');
+  A.eq(edited.reasoningEffort, 'high', 'the edited reasoning effort round-trips');
+  // and it survives a reload from the store shape
+  const round = S.get(id);
+  A.ok(round && round.kit.length === 2 && round.reasoningEffort === 'high' && round.skills[0] === 'deep-research', 'the edited loadout persists on the saved record');
+  S.removeCustom(id);
+}
+
 /* ---------- S3c. TIER->MODEL: settings persist the map + resolveTierModel consults it ---------- */
 // the seam is now filled: resolveTierModel reads a persisted tier->model map (a pinned tier wins; else base model).
 A.ok(/TIER_MODELS_KEY = 'starnet\.tierModels\.v1'/.test(app), 'app.js defines the tier->model store key');

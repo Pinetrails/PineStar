@@ -690,7 +690,18 @@ const Marketplace = (() => {
       else launchRecipeNow(r, {});
     });
     const edit = sc.querySelector('.mkt-edit');
-    if (edit) edit.addEventListener('click', () => { editingId = edit.dataset.id; sfx('click'); view = 'save'; renderStage(); });
+    if (edit) edit.addEventListener('click', () => {
+      editingId = edit.dataset.id; sfx('click');
+      // A custom class is a full loadout — edit it in the same builder form (so kit/skills/effort are editable),
+      // prefilling every picker from the saved spec. (Only customs carry an EDIT button; built-ins stay frozen.)
+      const s = Specialties.get(editingId);
+      buildAccent = (s && s.accent) || '#ffaa33';
+      buildModel = (s && s.model) || 'balanced';
+      buildKit = (s && Array.isArray(s.kit)) ? s.kit.slice() : [];
+      buildSkills = (s && Array.isArray(s.skills)) ? s.skills.slice() : [];
+      buildEffort = (s && s.reasoningEffort) || null;
+      view = 'build'; renderStage();
+    });
     const rEdit = sc.querySelector('.mkt-recipe-edit');
     if (rEdit) rEdit.addEventListener('click', () => { editingRecipeId = rEdit.dataset.id; pendingMintKey = null; pendingMintTemplate = null; sfx('click'); view = 'recipesave'; renderStage(); });
     const del = sc.querySelector('.mkt-del');
@@ -912,18 +923,25 @@ const Marketplace = (() => {
      from the text, so the new class ranks in the feed and deploys/recruits like any built-in). */
   const BUILD_ACCENTS = ['#ffaa33', '#7bc88a', '#6fa8bf', '#b790c0', '#cf8a7d', '#88b6c4', '#ffd34a', '#6fbcc0', '#9fc0c4'];
   function buildFormHTML() {
+    // Custom classes are edited in THIS builder (via editingId) so their loadout pickers are reachable; a fresh
+    // ＋ build has no editingId. Every field prefills from the spec being edited. (Built-ins are frozen — no edit.)
+    const editing = editingId ? Specialties.get(editingId) : null;
+    const d = editing || { emoji: '✦', name: '', tagline: '', purpose: '', manual: '' };
     const sw = BUILD_ACCENTS.map(c => '<button type="button" class="mkt-sw' + (c === buildAccent ? ' sel' : '') +
       '" data-acc="' + c + '" style="background:' + c + '" aria-label="accent ' + c + '"></button>').join('');
     const seg = (m, l) => '<button type="button" class="mkt-seg' + (buildModel === m ? ' sel' : '') + '" data-model="' + m + '">' + l + '</button>';
+    const previewEmoji = (d.emoji || '✦').trim() || '✦';
     return '<div class="mkt-save mkt-build-form">' +
-      '<div class="mkt-save-h">BUILD A CUSTOM CLASS</div>' +
-      '<p class="mkt-hint">define your own class — its job, its standing orders, its look. it joins <b>YOUR SPECIALISTS</b>, ready to deploy or summon.</p>' +
+      '<div class="mkt-save-h">' + (editing ? 'EDIT CUSTOM CLASS' : 'BUILD A CUSTOM CLASS') + '</div>' +
+      '<p class="mkt-hint">' + (editing
+        ? 'retune this class — its job, standing orders, look, and loadout. changes apply to agents <b>summoned from here on</b>; already-summoned agents keep the loadout they were given.'
+        : 'define your own class — its job, its standing orders, its look. it joins <b>YOUR SPECIALISTS</b>, ready to deploy or summon.') + '</p>' +
       '<div class="mkt-build-preview"><div class="mkt-coin" id="mkt-build-coin" style="--accent:' + esc(buildAccent) + '">' +
-        '<span class="mkt-coin-emoji" id="mkt-build-emoji">✦</span></div><span class="mkt-hint">live preview — your class seal</span></div>' +
-      '<div class="mkt-save-row"><label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-b-emoji" maxlength="2" value="✦"></label>' +
-        '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-b-name" maxlength="28" placeholder="e.g. Growth Hacker"></label></div>' +
+        '<span class="mkt-coin-emoji" id="mkt-build-emoji">' + esc(previewEmoji) + '</span></div><span class="mkt-hint">live preview — your class seal</span></div>' +
+      '<div class="mkt-save-row"><label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-b-emoji" maxlength="2" value="' + esc(previewEmoji) + '"></label>' +
+        '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-b-name" maxlength="28" value="' + esc(d.name || '') + '" placeholder="e.g. Growth Hacker"></label></div>' +
       '<label class="mkt-lbl">ACCENT</label><div class="mkt-swatches" id="mkt-b-acc">' + sw + '</div>' +
-      '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-b-tag" maxlength="48" placeholder="one line — what it’s for"></label>' +
+      '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-b-tag" maxlength="48" value="' + esc(d.tagline || '') + '" placeholder="one line — what it’s for"></label>' +
       '<label class="mkt-lbl">CLEARANCE</label><div class="mkt-segs" id="mkt-b-model">' +
         seg('reasoning', '◆◆◆ DEEP') + seg('balanced', '◆◆ BALANCED') + seg('fast', '◆ FAST') + '</div>' +
       // EFFORT — the reasoning effort applied at summon (independent of the clearance tier/model).
@@ -936,9 +954,9 @@ const Marketplace = (() => {
       // SKILL PACKAGE — bundled recipes enabled for this class (from the live /api/skills catalog, filled async).
       '<label class="mkt-lbl">SKILL PACKAGE <span class="mkt-lbl-hint">— recipes it follows when a task matches</span></label>' +
       '<div class="mkt-chips" id="mkt-b-skills"><span class="mkt-hint mkt-chips-loading">loading the skill library…</span></div>' +
-      '<label class="mkt-lbl">PURPOSE<textarea class="mkt-in mkt-b-area" id="mkt-b-purpose" rows="3" placeholder="what this class is FOR — its job, in its own words."></textarea></label>' +
-      '<label class="mkt-lbl">STANDING ORDERS<textarea class="mkt-in mkt-b-area" id="mkt-b-manual" rows="4" placeholder="- the rules it always follows\n- one per line"></textarea></label>' +
-      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-build">✓ CREATE CLASS</button></div></div>';
+      '<label class="mkt-lbl">PURPOSE<textarea class="mkt-in mkt-b-area" id="mkt-b-purpose" rows="3" placeholder="what this class is FOR — its job, in its own words.">' + esc(d.purpose || '') + '</textarea></label>' +
+      '<label class="mkt-lbl">STANDING ORDERS<textarea class="mkt-in mkt-b-area" id="mkt-b-manual" rows="4" placeholder="- the rules it always follows\n- one per line">' + esc(d.manual || '') + '</textarea></label>' +
+      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button><button class="bb sm mkt-do-build">' + (editing ? '✓ SAVE CHANGES' : '✓ CREATE CLASS') + '</button></div></div>';
   }
   // the pickable kit objectTypes — the auto-requisitionable capabilities (computer/connector are per-agent
   // manual-bind, per-agent bound props, never shared station gear a class draws on). Labels from the live source.
@@ -953,7 +971,7 @@ const Marketplace = (() => {
   const effSeg = (e, l) => '<button type="button" class="mkt-seg' + ((buildEffort === e || (e === null && !buildEffort)) ? ' sel' : '') + '" data-effort="' + (e == null ? '' : e) + '">' + l + '</button>';
   function wireBuildForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; renderStage(); });
+    if (back) back.addEventListener('click', () => { sfx('click'); editingId = null; view = 'grid'; renderStage(); });
     // live seal preview: icon + accent
     const emojiIn = stage.querySelector('#mkt-b-emoji'), coinEmoji = stage.querySelector('#mkt-build-emoji'), coin = stage.querySelector('#mkt-build-coin');
     if (emojiIn) emojiIn.addEventListener('input', () => { if (coinEmoji) coinEmoji.textContent = (emojiIn.value || '✦').trim() || '✦'; });
@@ -999,9 +1017,13 @@ const Marketplace = (() => {
     });
     const create = stage.querySelector('.mkt-do-build');
     if (create) create.addEventListener('click', () => {
+      // editingId set => upserting an existing custom class through the SAME store path (saveCustom keeps the id).
+      const editing = editingId ? Specialties.get(editingId) : null;
       const name = (stage.querySelector('#mkt-b-name').value || '').trim();
       if (!name) { sfx('bad'); note('give your class a name', 'bad'); stage.querySelector('#mkt-b-name').focus(); return; }
-      const spec = {
+      // when editing, start from the saved record so non-authored carried fields (persona, tags, starters, blurb)
+      // survive the round-trip; the form fields below overwrite what the builder exposes.
+      const spec = Object.assign({}, editing || {}, {
         name,
         emoji: (stage.querySelector('#mkt-b-emoji').value || '✦').trim() || '✦',
         accent: buildAccent, model: buildModel,
@@ -1011,11 +1033,15 @@ const Marketplace = (() => {
         // LOADOUT (Class Loadouts S3): the picked kit/skills/effort round-trip into the saved custom spec
         // (Specialties.normCustom normalizes + freezes them) so a user class is a full loadout, applied at summon.
         kit: buildKit.slice(), skills: buildSkills.slice(), reasoningEffort: buildEffort
-      };
+      });
+      // keep the id (and any non-editable carried fields, e.g. persona/tags/starters) when editing, so the edit
+      // is an upsert of the SAME record rather than a new class. Editing does not touch already-summoned agents —
+      // they own their loadout on their roster record (applyLoadout snapshots it at summon).
+      if (editing) spec.id = editing.id;
       try {
         const saved = Specialties.saveCustom(spec);
-        focusAgent = saved.id; view = 'grid';
-        sfx('click'); note('created class: ' + saved.name, 'good');
+        focusAgent = saved.id; editingId = null; view = 'grid';
+        sfx('click'); note((editing ? 'updated class: ' : 'created class: ') + saved.name, 'good');
         renderStage();
       } catch (e) { sfx('bad'); note((e && e.message) || 'could not save', 'bad'); }
     });
