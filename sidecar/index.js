@@ -2529,7 +2529,8 @@ function handleCronArm(req, res) {
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
-// POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, provider?, deliver?, enabled?, repeat? }
+// POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, provider?, deliver?, enabled?, repeat?, meta? }
+//   meta (R3): an optional provenance bag, e.g. { recipeId } stamped by the recipe MAKE-ROUTINE flow. Additive.
 function handleCronCreate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   readBody(req, 1 << 16).then(raw => {
@@ -2543,7 +2544,10 @@ function handleCronCreate(req, res) {
       withCronWrite(jobs => cronStore.createJob(jobs, {
         id: id, name: body.name, prompt: body.prompt, schedule: schedule,
         agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
-        enabled: body.enabled, repeat: body.repeat
+        enabled: body.enabled, repeat: body.repeat,
+        // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
+        // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
+        meta: body.meta
       }, { id: id, now: Date.now() }));
     } catch (e) { return json(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
     json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });

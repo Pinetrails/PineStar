@@ -217,4 +217,41 @@ const iso = cron._internals.iso;
   A.eq(cron.planTick(jobs, c.now()).fire.length, 1, 'fires again at the next period');
 }
 
+// ---- 16. R3 provenance: meta.recipeId round-trips through create -> update -> markRun -> envelope ----
+{
+  // create with a meta bag: it is normalized to a plain object and carried on the record.
+  let jobs = store.createJob([], {
+    id: 'prov1', name: 'from a recipe', schedule: cron.parseSchedule('0 9 * * *', Date.parse('2026-06-19T08:00:00Z')),
+    meta: { recipeId: 'morning-brief', extra: 'kept' }
+  }, { now: Date.parse('2026-06-19T08:00:00Z') });
+  A.eq(store.getJob(jobs, 'prov1').meta.recipeId, 'morning-brief', 'meta.recipeId is carried onto the created job');
+  A.eq(store.getJob(jobs, 'prov1').meta.extra, 'kept', 'other meta keys are preserved (shallow clone)');
+
+  // a job with NO meta loads as null (never breaks an existing/pre-R3 job).
+  const noMeta = store.createJob([], { id: 'nom', schedule: null }, { now: T0 });
+  A.eq(store.getJob(noMeta, 'nom').meta, null, 'a job with no meta -> meta:null (tolerated absence)');
+
+  // garbage meta is rejected to null (not an object / an array / empty).
+  A.eq(store.makeJob({ id: 'g1', meta: 'nope' }, { now: T0 }).meta, null, 'a string meta -> null');
+  A.eq(store.makeJob({ id: 'g2', meta: [1, 2] }, { now: T0 }).meta, null, 'an array meta -> null');
+  A.eq(store.makeJob({ id: 'g3', meta: {} }, { now: T0 }).meta, null, 'an empty meta object -> null');
+
+  // meta survives an editable-field update (updateJob copies the record; meta is not an editable field but persists).
+  jobs = store.updateJob(jobs, 'prov1', { name: 'renamed' }, { now: T0 });
+  A.eq(store.getJob(jobs, 'prov1').meta.recipeId, 'morning-brief', 'meta survives an updateJob (name edit)');
+
+  // meta survives a markRun settlement.
+  jobs = store.markRun(jobs, 'prov1', { runId: 'r', status: 'ok', reason: 'done' }, { now: Date.parse('2026-06-19T09:00:00Z') });
+  A.eq(store.getJob(jobs, 'prov1').meta.recipeId, 'morning-brief', 'meta survives a markRun');
+
+  // meta survives a persist round-trip (toEnvelope -> JSON -> loadEnvelope).
+  const round = store.loadEnvelope(JSON.parse(JSON.stringify(store.toEnvelope(jobs))));
+  const back = round.jobs.find(j => j.id === 'prov1');
+  A.eq(back.meta.recipeId, 'morning-brief', 'meta.recipeId round-trips through the persistence envelope');
+
+  // a legacy record with a meta field already on disk loads intact (loadEnvelope keeps well-formed rows verbatim).
+  const legacy = store.loadEnvelope({ version: 1, jobs: [{ id: 'legacy', meta: { recipeId: 'x' } }] });
+  A.eq(legacy.jobs[0].meta.recipeId, 'x', 'an on-disk record carrying meta loads intact');
+}
+
 A.report('cron-store');
