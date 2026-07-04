@@ -1968,6 +1968,8 @@ const StationUI = (() => {
           const provider = b.dataset.provider || activeProv();
           if (h.setKey) h.setKey(v, provider);
           notify('connected ' + provName(provider) + ' API key', 'good');
+          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
+          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
           rerender('settings');
           return;
         }
@@ -1982,9 +1984,11 @@ const StationUI = (() => {
           if (!v) { sfx('bad'); return; }
           if (h.setKey) h.setKey(v, row.provider);
           notify('updated ' + provName(row.provider) + ' API key', 'good');
+          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
+          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
           rerender('settings');
         } else if (act === 'rm') {
-          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); sfx('bad'); rerender('settings'); return; }
+          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
           // Arm: make the destructive state impossible to miss — filled --bad button + pulse, red hairline on the row,
           // and an inline "click again to confirm" hint. Disarms after 5s, restoring the calm state.
           const rowEl = b.closest('.key-row');

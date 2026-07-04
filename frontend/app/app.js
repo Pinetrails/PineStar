@@ -4,6 +4,8 @@
 
 const App = (() => {
   const el = id => document.getElementById(id);
+  // HTML-escape for the rare spot we build a connect message with a link (provider label + signup URL).
+  const esc = s => { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; };
   // CRT-muted crew suit tints — distinct per crew member but passed through the amber-phosphor grade (no pure neons). Last entry stays gold to match ORCH_COLOR.
   const SUITS = ['#6fb3bf', '#7bc88a', '#d99a5a', '#a888c0', '#cf7d96', '#ffd34a'];
 
@@ -378,6 +380,33 @@ const App = (() => {
     if (p === 'custom') return 'optional API key for this endpoint';
     return 'sk-or-...  -  openrouter.ai/keys';
   }
+  // Where a NEW user actually GETS a key for this provider — the same destinations the key placeholder
+  // hints at, as real URLs so a cold-start message can link them. openrouter.ai/keys is the default.
+  function providerSignupUrl(provider) {
+    const p = normalizeProviderId(provider);
+    const map = {
+      openai: 'https://platform.openai.com/api-keys',
+      anthropic: 'https://console.anthropic.com/settings/keys',
+      gemini: 'https://aistudio.google.com/app/apikey',
+      xai: 'https://console.x.ai',
+      groq: 'https://console.groq.com/keys',
+      mistral: 'https://console.mistral.ai/api-keys',
+      deepseek: 'https://platform.deepseek.com/api_keys',
+      together: 'https://api.together.ai/settings/api-keys',
+      fireworks: 'https://fireworks.ai/account/api-keys',
+      perplexity: 'https://www.perplexity.ai/settings/api',
+      cerebras: 'https://cloud.cerebras.ai',
+      openrouter: 'https://openrouter.ai/keys'
+    };
+    return map[p] || 'https://openrouter.ai/keys';
+  }
+  // A sensible default model slug per provider so a cold-start "no model" bounce can SUGGEST one instead of
+  // stranding the user on an empty required field. Reuses the curated FALLBACK_MODELS lineup (first = best pick).
+  function defaultModelFor(provider) {
+    const p = normalizeProviderId(provider);
+    const list = FALLBACK_MODELS[p] || FALLBACK_MODELS.openrouter;
+    return (list && list[0]) || 'anthropic/claude-sonnet-4.6';
+  }
   function applyQuickModel(sel) {
     if (!agent || !sel) return;
     const model = String(sel.model || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '') || '').trim();
@@ -397,6 +426,7 @@ const App = (() => {
     persist();
     if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
     if (typeof Chat !== 'undefined' && Chat.refreshIdBar) Chat.refreshIdBar();   // keep the COMMS header model readout in sync with the footer dock change
+    if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();   // a provider switch can change key state — keep the keyless-brain banner honest
     if (typeof StationUI !== 'undefined' && StationUI.notify) {
       const msg = sel.reason === 'effort'
         ? 'REASONING: ' + effortLabel(effort)
@@ -1371,7 +1401,18 @@ const App = (() => {
     const model = el('in-model').value.trim();
     const name = (el('in-name').value.trim() || 'AGENT').toUpperCase().slice(0, 18);   // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too)
     const msg = el('connect-msg'); msg.className = 'msg';
-    if (!model) { msg.textContent = 'choose or type a model slug.'; return; }
+    if (!model) {
+      // COLD-START: never strand a beginner on an empty required field. Pre-fill a sensible default for the
+      // chosen provider (Codex discovers its own lineup, so leave that path to its own picker) and say so.
+      if (pickedProvider !== 'codex') {
+        const def = defaultModelFor(pickedProvider);
+        const inp = el('in-model'); if (inp && def) { inp.value = def; updateHint(); }
+        msg.textContent = 'pick a model — suggested ' + (def || 'a default') + '. edit it above, then WAKE.';
+      } else {
+        msg.textContent = 'choose or type a model slug.';
+      }
+      return;
+    }
     if (pickedProvider === 'codex') {
       if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return; }
       Harness.setModel(model); Harness.setProv('codex');
@@ -1383,7 +1424,15 @@ const App = (() => {
         if (Harness.setBaseUrl) await Harness.setBaseUrl(baseUrl, pickedProvider);
       }
       const configured = !!(Harness.configured && Harness.configured(pickedProvider));
-      if (providerNeedsKey(pickedProvider) && !key && !configured) { msg.textContent = 'enter your ' + providerLabel(pickedProvider) + ' API key.'; return; }
+      if (providerNeedsKey(pickedProvider) && !key && !configured) {
+        // COLD-START guidance: a new user has no key AND no idea where to get one. Name the provider and link
+        // the exact page that mints a key (from providerSignupUrl — same destinations the placeholder hints at).
+        const url = providerSignupUrl(pickedProvider);
+        const host = String(url).replace(/^https?:\/\//, '').replace(/\/$/, '');
+        msg.innerHTML = 'enter your ' + esc(providerLabel(pickedProvider)) + ' API key — get one at '
+          + '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" class="connect-link">' + esc(host) + '</a>.';
+        return;
+      }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
       if (key) await Harness.setKey(key, pickedProvider);
@@ -1825,12 +1874,16 @@ const App = (() => {
         specialty: opts.specialty || null,                   // (reserved) a pre-specced wake skips re-asking the mission; the orchestrator authors it live
         commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
         getSystem: () => agent ? agent.systemPrompt : '',    // Interview 2.0: the generated beats (wakemind.js) reason on the LIVE prompt (persona + dossier already folded in)
-        done: () => { if (agent) agent.onboarded = true; persist(); },   // the awakening landed — mark onboarded so a later refresh resumes into the game, not back into the ceremony
+        done: () => { if (agent) agent.onboarded = true; persist(); if (typeof KeyCTA !== 'undefined' && KeyCTA.arm) KeyCTA.arm(); },   // the awakening landed — mark onboarded so a later refresh resumes into the game, not back into the ceremony; arm the keyless-brain CTA (shows only if no key is truly stored)
         notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
         // FIRST COMMAND — once the awakening lands, the agent itself teaches the Commander the one real loop (tutorial.js)
         taught: () => { if (typeof Tutorial !== 'undefined' && Tutorial.firstCommand) Tutorial.firstCommand({ name: agent.name }); }
       });
     }
+    // A returning (already-onboarded) hero skips the awakening, so its `done` callback never re-fires — arm the
+    // keyless-brain CTA here so a station saved without a key still surfaces the honest "add a key" banner on boot.
+    // (It's a pure state projection: it stays hidden when a key IS stored.) The awakening path arms it in `done`.
+    if (!opts.awaitingPurpose && typeof KeyCTA !== 'undefined' && KeyCTA.arm) KeyCTA.arm();
     // P3: arm the first-steps briefing's bus ticks; re-offer the checklist to a returning user mid-progress
     if (typeof Tutorial !== 'undefined' && Tutorial.onEnterGame) Tutorial.onEnterGame();
     // G1c: the deferred BUILD-dock glow — a soft standing hint on the BUILD dock while a station quest is open
