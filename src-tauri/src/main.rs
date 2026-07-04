@@ -39,6 +39,13 @@ const KEYCHAIN_PROVIDERS: [&str; 13] = [
     "cerebras",
     "custom",
 ];
+// Channel bot tokens live in the keychain under account "channel:<id>" and inject into the sidecar env at spawn
+// as SKYNET_<ID>_TOKEN — the SAME posture as provider API keys above. (id, env_name) drives both spawn injection
+// and the store/has commands. Adding a channel is one row here.
+const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2] = [
+    ("telegram", "SKYNET_TELEGRAM_TOKEN"),
+    ("discord", "SKYNET_DISCORD_TOKEN"),
+];
 const SIDECAR_PROVIDER_KEY_ENVS: [(&str, &str); 12] = [
     ("openai", "SKYNET_OPENAI_API_KEY"),
     ("anthropic", "SKYNET_ANTHROPIC_API_KEY"),
@@ -454,6 +461,71 @@ fn read_key_for(provider: &str) -> Option<String> {
         .filter(|k| !k.trim().is_empty())
 }
 
+// ---- channel bot tokens (keychain account "channel:<id>") ----
+
+/// Only the channels we actually inject (defends the keychain account namespace).
+fn is_known_channel(channel: &str) -> bool {
+    SIDECAR_CHANNEL_TOKEN_ENVS
+        .iter()
+        .any(|(id, _)| *id == channel)
+}
+
+fn channel_keychain_entry(channel: &str) -> keyring::Result<keyring::Entry> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, format!("channel:{channel}").as_str())
+}
+
+/// The stored bot token for a channel, or None if unset/empty.
+fn read_channel_token(channel: &str) -> Option<String> {
+    channel_keychain_entry(channel)
+        .ok()
+        .and_then(|e| e.get_password().ok())
+        .filter(|t| !t.trim().is_empty())
+}
+
+/// Import any plaintext channel bot tokens from a legacy secrets.json into the keychain, then rewrite the file
+/// WITHOUT the tokens (keeping every non-secret field). One-time migration for a desktop build that upgraded from
+/// a plaintext-token world; a no-op when there are no plaintext tokens. Best-effort — a failure here never blocks
+/// startup (the sidecar's own runtime layer keeps the session honest either way).
+fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {
+    let file = workspaces.join("channels").join("secrets.json");
+    let raw = match std::fs::read_to_string(&file) {
+        Ok(s) => s,
+        Err(_) => return, // no file -> nothing to migrate
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return, // corrupt -> leave it for the sidecar's resilient loader/.bak
+    };
+    let mut changed = false;
+    for (channel, _) in SIDECAR_CHANNEL_TOKEN_ENVS {
+        let token = json
+            .get(channel)
+            .and_then(|rec| rec.get("token"))
+            .and_then(|t| t.as_str())
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string);
+        if let Some(token) = token {
+            // Only store into the keychain if it doesn't already hold this channel's token (idempotent re-runs).
+            if read_channel_token(channel).is_none() {
+                if let Ok(entry) = channel_keychain_entry(channel) {
+                    let _ = entry.set_password(&token);
+                }
+            }
+            // Strip the plaintext token from the on-disk record regardless (the keychain is now the home).
+            if let Some(rec) = json.get_mut(channel).and_then(|r| r.as_object_mut()) {
+                rec.remove("token");
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        if let Ok(serialized) = serde_json::to_string(&json) {
+            let _ = std::fs::write(&file, serialized);
+        }
+    }
+}
+
 // ---- sidecar ----
 
 /// Reserve an unused loopback port, then release it so the sidecar can bind it.
@@ -553,6 +625,12 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     for (provider, env_name) in SIDECAR_PROVIDER_KEY_ENVS {
         if let Some(key) = read_key_for(provider) {
             cmd.env(env_name, key);
+        }
+    }
+    // Channel bot tokens (Telegram/Discord) inject the same way — keychain -> env -> sidecar runtime layer.
+    for (channel, env_name) in SIDECAR_CHANNEL_TOKEN_ENVS {
+        if let Some(token) = read_channel_token(channel) {
+            cmd.env(env_name, token);
         }
     }
     #[cfg(windows)]
@@ -711,6 +789,35 @@ fn push_key(state: &AppState, key: &str) {
     push_provider_config(state, "openrouter", Some(key), None);
 }
 
+/// Push a channel bot token to the already-running sidecar (no restart), authenticated by the per-launch IPC
+/// token — mirrors push_provider_config. An empty token clears it on the sidecar.
+fn push_channel_token(state: &AppState, channel: &str, token: &str) {
+    use std::io::{Read, Write};
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "channel".to_string(),
+        serde_json::Value::String(channel.to_string()),
+    );
+    payload.insert(
+        "token".to_string(),
+        serde_json::Value::String(token.trim().to_string()),
+    );
+    let body = serde_json::Value::Object(payload).to_string();
+    let head = format!(
+        "POST /api/channels/token HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        state.ipc_token,
+        body.as_bytes().len()
+    );
+    if let Ok(mut s) = TcpStream::connect(("127.0.0.1", state.port)) {
+        let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
+        let _ = s.write_all(head.as_bytes());
+        let _ = s.write_all(body.as_bytes());
+        let _ = s.flush();
+        let mut buf = [0u8; 64];
+        let _ = s.read(&mut buf); // wait for the 200 ack before returning
+    }
+}
+
 // ---- Tauri commands (called from the frontend Harness seam) ----
 
 /// Store (or, for an empty value, clear) the BYOK key in the OS keychain, then push it
@@ -789,6 +896,36 @@ fn harness_clear_key(state: State<AppState>) -> Result<(), String> {
     }
     push_key(&state, "");
     Ok(())
+}
+
+/// Store (or, for an empty value, clear) a channel bot token in the OS keychain, then push it to the running
+/// sidecar — no restart, so the current page is never disrupted. The token never returns to the WebView.
+#[tauri::command]
+fn harness_store_channel_token(
+    channel: String,
+    token: String,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let channel = channel.trim().to_ascii_lowercase();
+    if !is_known_channel(&channel) {
+        return Err(format!("unknown channel: {channel}"));
+    }
+    let entry = channel_keychain_entry(&channel).map_err(|e| e.to_string())?;
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        let _ = entry.delete_credential();
+    } else {
+        entry.set_password(trimmed).map_err(|e| e.to_string())?;
+    }
+    push_channel_token(&state, &channel, trimmed);
+    Ok(())
+}
+
+/// Whether a channel bot token is configured in the keychain — never returns the value itself.
+#[tauri::command]
+fn harness_has_channel_token(channel: String) -> bool {
+    let channel = channel.trim().to_ascii_lowercase();
+    is_known_channel(&channel) && read_channel_token(&channel).is_some()
 }
 
 /// Open an OAuth/device-auth URL in the user's default system browser.
@@ -972,6 +1109,8 @@ fn main() {
             harness_has_provider_key,
             harness_provider_key_status,
             harness_clear_key,
+            harness_store_channel_token,
+            harness_has_channel_token,
             open_external_url,
             starnet_toggle_fullscreen,
             starnet_set_keep_awake,
@@ -1005,6 +1144,9 @@ fn main() {
                     port
                 ),
             );
+            // One-time: lift any plaintext channel bot tokens into the keychain and strip them from the file,
+            // BEFORE spawning the sidecar so the injected SKYNET_<ID>_TOKEN env reflects the migrated tokens.
+            migrate_channel_tokens_from_plaintext(&workspaces);
             let state = AppState {
                 port,
                 ipc_token,
