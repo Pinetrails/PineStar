@@ -393,6 +393,16 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .recap-copy:hover { color: var(--ph-bright); opacity: 1; }
 
+/* OPEN-FOLDER affordance on a file deliverable (Theme 4 — outputs are findable). Quiet inline
+   control reusing the phosphor language; desktop reveals the folder, browser copies the path. */
+.deliverable-folder {
+  font: inherit; font-size: 11px; letter-spacing: .3px; cursor: pointer;
+  color: var(--ph-dim); background: transparent;
+  border: 1px solid rgba(var(--ph-bright-rgb), .28); border-radius: 3px;
+  margin-left: 8px; padding: 0 6px; opacity: .85; white-space: nowrap;
+}
+.deliverable-folder:hover { color: var(--ph-bright); border-color: rgba(var(--ph-bright-rgb), .55); opacity: 1; }
+
 /* G5 SPECTACLE — the shareable POSTCARD button on the recap card. Premium-chrome language: phosphor
    border, VT323-ish inherit, hover bloom. Not a beat, not an ask — a quiet "keep this" affordance. */
 .recap-postcard {

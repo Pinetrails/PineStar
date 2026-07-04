@@ -743,6 +743,59 @@ const Chat = (() => {
       fileBlobUrl(title, agentId).then(u => { try { window.open(u, '_blank', 'noopener'); } catch (_) {} }).catch(() => {});
     });
   }
+
+  // ── "OPEN FOLDER" AFFORDANCE (Theme 4: outputs are findable) ──────────────────────────────────
+  // A deliverable landed on disk in the agent's workspace; a beginner needs to be able to FIND it.
+  // The absolute per-agent dir comes from the additive /api/workspace/dir route (the frontend otherwise
+  // only knows the relative filename). On desktop we try a native reveal-in-folder command IF the shell
+  // ever exposes one (starnet_reveal_path), and ALWAYS fall back to copying the real path; in the browser
+  // there is no filesystem to open, so the button copies the path. Truthful: the button does exactly what
+  // its label says — it never claims to open a folder it can't.
+  const _wsDirCache = new Map();   // agentId -> Promise<absolute dir | ''>
+  function workspaceDir(agentId) {
+    const aid = agentId || 'agent';
+    if (_wsDirCache.has(aid)) return _wsDirCache.get(aid);
+    const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+    const p = fetch('/api/workspace/dir?agent=' + encodeURIComponent(aid) + (tok ? '&token=' + encodeURIComponent(tok) : ''), { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null).then(j => (j && j.dir) ? String(j.dir) : '').catch(() => '');
+    _wsDirCache.set(aid, p);
+    return p;
+  }
+  function tauriCore() {
+    return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
+  }
+  // Build a small "📁 folder" control. `relPath` (optional) is the deliverable's own path so a future
+  // native reveal can select the file; today it reveals/copies the containing workspace dir.
+  function folderButton(agentId, relPath) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'deliverable-folder';
+    b.textContent = '📁 folder';
+    const desktop = !!tauriCore();
+    b.title = desktop ? 'reveal this deliverable’s folder on disk' : 'copy the folder path on disk';
+    let dirP = null;
+    b.addEventListener('click', () => {
+      if (!dirP) dirP = workspaceDir(agentId);
+      dirP.then(dir => {
+        if (!dir) { b.textContent = '📁 no path'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400); return; }
+        const core = tauriCore();
+        if (core && core.invoke) {
+          // native reveal IF the shell exposes it; otherwise fall through to copy (never a silent no-op)
+          Promise.resolve(core.invoke('starnet_reveal_path', { path: dir })).then(() => {
+            b.textContent = '📁 opened'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400);
+          }).catch(() => copyPathFeedback(b, dir));
+        } else {
+          copyPathFeedback(b, dir);
+        }
+      });
+    });
+    return b;
+  }
+  function copyPathFeedback(btn, dir) {
+    copyText(dir).then(ok => {
+      btn.textContent = ok ? '📁 path copied' : '📁 ' + dir;
+      setTimeout(() => { btn.textContent = '📁 folder'; }, 1600);
+    });
+  }
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
@@ -752,6 +805,7 @@ const Chat = (() => {
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
     r.body.appendChild(a);
+    r.body.appendChild(folderButton(agentId, title));             // Theme 4: make the file findable on disk
     autoscroll();
   }
   // an image the agent generated (image_generate / the `studio` capability) — render it INLINE as a small
@@ -844,12 +898,14 @@ const Chat = (() => {
     link.title = path;
     d.appendChild(link);
     if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
-    // reveal the path: click-to-copy of the workspace path (no shell-open pattern exists in this frontend —
-    // per the design contract we don't invent new Tauri permissions for it).
+    // click-to-copy of the deliverable's own (relative) path — kept for quick reference.
     const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
     cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
     cp.onclick = () => copyText(path).then(ok => { if (!ok) return; cp.textContent = '✓'; setTimeout(() => { cp.textContent = '⧉'; }, 1100); });
     d.appendChild(cp);
+    // Theme 4: an "open folder" affordance that resolves the REAL absolute workspace dir on disk
+    // (desktop reveals if the shell supports it; browser copies the path) so the file is findable.
+    if (a.kind !== 'message') d.appendChild(folderButton(agentId, path));
     return d;
   }
   const RECAP_MAX_ROWS = 12;   // a monster run lists the first dozen + a "+N more" note (the RUNS panel has the rest)

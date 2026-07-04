@@ -2053,6 +2053,11 @@ const server = http.createServer((req, res) => {
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
   if (req.method === 'GET' && req.url === '/api/limits') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); }
   if ((req.method === 'GET' || req.method === 'HEAD') && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  // ADDITIVE (Lane B / ux-run-truth): the absolute per-agent workspace directory, so the COMMS
+  // "open folder" affordance on a file deliverable can show the Commander the REAL path on disk
+  // where their output landed (the frontend otherwise only knows the relative filename). Read-only,
+  // jailed via resolveInside (same proof the /api/file route uses); never lists or exposes contents.
+  if (req.method === 'GET' && req.url.indexOf('/api/workspace/dir') === 0) return serveWorkspaceDir(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
@@ -5047,6 +5052,26 @@ function parseRange(header, size) {
   }
   if (!(start >= 0) || start > end || start >= size) return { unsatisfiable: true };
   return { start, end };
+}
+
+// GET /api/workspace/dir?agent=<id> — the ABSOLUTE per-agent workspace directory on disk. Read-only,
+// jailed by the same resolveInside proof /api/file uses (rel=''), so it can only ever return a path
+// under WORKSPACES/<agentId>/ and never lists or reveals file contents. The COMMS "open folder"
+// affordance reads this so a beginner can find where a deliverable actually landed. ADDITIVE (Lane B).
+async function serveWorkspaceDir(req, res) {
+  let dir;
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    const r = await fsJail.resolveInside(agent, '');   // '' → the agent's own workspace root; throws on bad agentId
+    dir = r.abs;
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (/escape|illegal|bad agentId/.test(msg)) { res.writeHead(403); return res.end('forbidden'); }
+    res.writeHead(404); return res.end('not found');
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  return res.end(JSON.stringify({ dir: dir }));
 }
 
 // GET /api/file?agent=<id>&path=<rel> — read-only view of a file the agent produced, jailed to its
