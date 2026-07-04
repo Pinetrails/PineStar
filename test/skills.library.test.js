@@ -178,4 +178,22 @@ const { makeSkillPrefs } = require('../sidecar/skills/prefs.js');
   A.ok(!p.set('', true).ok, 'a blank slug is refused');
 }
 
+// ---- I2. prefs COMPACTION: rewrite keeps one line per slug (latest choice); boot after compaction is intact ----
+{
+  function rwIo() { let lines = []; return { get lines() { return lines; }, readAll() { return lines.slice(); }, append(e) { lines.push(e); }, rewrite(entries) { lines = entries.slice(); } }; }
+  let clk = 1; const clock = { now: () => clk };
+  const io = rwIo();
+  let p = makeSkillPrefs({ io, clock });
+  for (let i = 0; i < 8; i++) { clk = i; p.set('humanizer', i % 2 === 0); }   // toggle the SAME slug many times
+  p.set('tdd', true);
+  A.ok(io.lines.length >= 9, 'many appends accumulated');
+  const r = p.compact();
+  A.ok(r.ok, 'prefs compaction ran');
+  A.eq(io.lines.length, 2, 'compacted to one line per distinct slug');
+  p = makeSkillPrefs({ io, clock });   // boot after compaction
+  A.eq(p.overrides()['humanizer'], false, 'the LATEST humanizer choice survived compaction (last set was i=7, odd -> false)');
+  A.eq(p.overrides()['tdd'], true, 'the tdd choice survived');
+  A.eq(p.count(), 2, 'boot after compaction sees both distinct slugs');
+}
+
 A.report('skills.library.test');

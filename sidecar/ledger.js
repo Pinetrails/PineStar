@@ -38,6 +38,15 @@
     // in-memory mirror of the on-disk log, loaded once. Append keeps it and disk in lockstep so
     // queries are O(n) over RAM, never a re-read per question. A corrupt/missing file -> empty (fail-open;
     // a budget can't read what was never written, so it degrades to "unspent", never crashes a run).
+    //
+    // DELIBERATELY NOT RAM-TRIMMED (unlike runstore/transcript): every query here AGGREGATES over the full
+    // `rows` — totalUsd()/usdForDay()/usdSince()/usdForAgent() sum arbitrary-ts predicate windows, and budget.js
+    // governs day/global spend pools off these sums. Splicing the oldest rows would silently UNDER-COUNT spend
+    // and hand a capped Commander unintended headroom — the exact "app lies about state" failure this hardening
+    // exists to prevent. The boot load is already bounded (readBoundedJsonl caps it at ~LOG_MAX_BYTES of the
+    // newest lines), and in-process growth over a single session is far below that cap, so RAM stays bounded
+    // WITHOUT trimming. If lifetime-accurate totals past the boot cap are ever needed, keep running totals on a
+    // rolled segment — do NOT trim these rows. (Documented in the Phase-5 report + docs/PERSISTENCE_HARDENING.md.)
     let rows = [];
     try { const raw = io.readAll(); if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object'); }
     catch (e) { rows = []; }

@@ -8,11 +8,17 @@
 */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  let dw = null;
+  try { dw = typeof require === 'function' ? require('./durable-write.js') : (root.SK && root.SK.durableWrite); } catch (_) {}
+  const api = factory(dw && dw.writeFileDurable);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { (root.SK = root.SK || {}).subagents = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (writeFileDurableInjected) {
   'use strict';
+
+  // durable single-file replace (fsync-before-rename); degrades to writeFileSync+rename for a test fs w/o fsync.
+  const writeFileDurable = typeof writeFileDurableInjected === 'function' ? writeFileDurableInjected
+    : function (deps, file, data) { const f = deps.fs; const tmp = file + '.' + (typeof process !== 'undefined' ? process.pid : 'p') + '.tmp'; f.writeFileSync(tmp, data); f.renameSync(tmp, file); };
 
   const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
   const TERMINAL = { done: 1, error: 1, refused: 1, interrupted: 1, stale: 1 };
@@ -61,11 +67,12 @@
       try {
         const dir = P.dirname(file);
         fs.mkdirSync(dir, { recursive: true });
-        const tmp = file + '.' + (typeof process !== 'undefined' ? process.pid : 'p') + '.tmp';
         const body = { version: 1, records: records.slice(-keep) };
-        fs.writeFileSync(tmp, JSON.stringify(body));
-        fs.renameSync(tmp, file);
-      } catch (_) {}
+        // durable (fsync-before-rename) so a hard kill can't leave the registry zero-length; a persistence
+        // failure is now surfaced (loud warn) instead of silently swallowed — the registry drives resume/stale
+        // marking, so a write we can't complete is worth knowing about.
+        writeFileDurable({ fs: fs, path: P }, file, JSON.stringify(body));
+      } catch (e) { try { console.warn('[subagents] registry save failed:', (e && e.message) || e); } catch (_) {} }
     }
     function findIndex(id) { return records.findIndex(r => r && r.id === id); }
     function get(id) {

@@ -78,6 +78,48 @@ function runGit(args, opts) {
     // ---- 8. prune keeps the cap (keep:5) ----
     for (let i = 0; i < 8; i++) { write('report.md', 'rev ' + i + '\n'); await store.snapshot(aid, { runId: 'r1', turn: 10 + i, label: 'fs.write' }); }
     A.ok(store.list(aid).snapshots.length <= 5, 'index pruned to the keep cap');
+
+    // ---- 9. index durability: a .bak snapshot is written; a torn (zero-length) index recovers sync from .bak ----
+    const idxFile = path.join(root, '.checkpoints', aid, 'index.json');
+    A.ok(fs.existsSync(idxFile + '.bak'), 'saveIndex wrote a .bak last-known-good snapshot');
+    const beforeTorn = store.list(aid).snapshots.length;
+    fs.writeFileSync(idxFile, '');                                    // simulate a torn index write
+    A.eq(store.list(aid).snapshots.length, beforeTorn, 'a torn (zero-length) index recovers from .bak (sync list)');
+
+    // ---- 10. REBUILD from git: wipe BOTH index.json and its .bak; the commits are the truth ----
+    fs.rmSync(idxFile, { force: true });
+    fs.rmSync(idxFile + '.bak', { force: true });
+    A.eq(store.list(aid).snapshots.length, 0, 'with index + .bak gone, the sync list is empty (git not consulted)');
+    const rebuilt = await store.listResilient(aid);                  // async path rebuilds from git log
+    A.ok(rebuilt.snapshots.length >= 5, 'listResilient rebuilt the index from the shadow-git commits');
+    A.ok(rebuilt.snapshots.every(s => store.isValidId(s.id)), 'every rebuilt record has a valid git-oid id');
+    A.ok(fs.existsSync(idxFile), 'the rebuilt index was re-persisted for fast subsequent reads');
+    A.eq(store.list(aid).snapshots.length, rebuilt.snapshots.length, 'a subsequent sync list sees the re-persisted rebuild');
+    // and a per-id restore works again off the rebuilt index (the commit is real)
+    const targetId = rebuilt.snapshots[rebuilt.snapshots.length - 1].id;
+    A.ok(await store.restore(aid, targetId), 'restore works against a rebuilt-from-git index');
+
+    // ---- 11. SIZE CEILING: a tiny threshold forces a sweep; the repo shrinks and stays restorable ----
+    const aid2 = 'sz';
+    const wt2 = path.join(root, aid2);
+    fs.mkdirSync(wt2, { recursive: true });
+    // 1-byte ceiling => any repo trips it. A store dedicated to this agent with the tiny cap.
+    const tiny = makeCheckpointStore({ fs, pathMod: path, root, runGit, clock, keep: 5, maxRepoBytes: 1 });
+    for (let i = 0; i < 4; i++) { fs.writeFileSync(path.join(wt2, 'f.txt'), 'v' + i + '\n'.repeat(1000)); await tiny.snapshot(aid2, { runId: 'r', turn: i, label: 'fs.write' }); }
+    const gitDir2 = path.join(root, '.checkpoints', aid2, 'git');
+    A.ok(fs.existsSync(path.join(gitDir2, 'HEAD')), 'repo still present after ceiling sweeps');
+    // the last snapshot (post-sweep) is in the index and restorable — the store stays functional under the ceiling
+    const idx2 = tiny.list(aid2);
+    A.ok(idx2.snapshots.length >= 1, 'index still holds at least the post-sweep baseline');
+    const last2 = idx2.snapshots[idx2.snapshots.length - 1].id;
+    A.ok(await tiny.restore(aid2, last2), 'restore works after a size-ceiling re-init');
+    // an explicit enforce call reports it swept (repo is > 1 byte)
+    const rep = await tiny.enforceSizeCeiling(aid2);
+    A.ok(rep.swept, 'enforceSizeCeiling reports a sweep when over the ceiling');
+    // a huge ceiling is a no-op
+    const big = makeCheckpointStore({ fs, pathMod: path, root, runGit, clock, keep: 5, maxRepoBytes: 1 << 30 });
+    const rep2 = await big.enforceSizeCeiling(aid2);
+    A.eq(rep2.swept, false, 'a repo under the ceiling is left untouched (no sweep)');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }

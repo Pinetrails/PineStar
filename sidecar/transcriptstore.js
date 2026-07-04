@@ -43,11 +43,33 @@
     const clock = opts.clock || { now() { return 0; } };
     const redact = typeof opts.redact === 'function' ? opts.redact : (s) => s;
     const cap = num(opts.limit) || DEFAULT_LIMIT;
+    // PER-STREAM RAM ceiling: history()/reconstruct() read at most `cap` (≤400) turns of ONE stream. Keep ~3x
+    // headroom per stream so one chatty workstream can't evict another stream's turns below its own query
+    // horizon (the fairness the plan calls for). Bound is PER streamId, not global, so N idle streams keep their
+    // recent history while a firehose stream self-trims. Disk keeps the full append-only log (bounded at boot).
+    const ramPerStream = num(opts.ramPerStream) > 0 ? num(opts.ramPerStream) : Math.max(cap * 3, 1200);
 
     // in-memory mirror loaded once; append keeps RAM + disk in lockstep so history() is O(n) over RAM.
     let rows = [];
     try { const raw = io.readAll(); if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object'); }
     catch (e) { rows = []; }
+    // trim the boot load per-stream too, so a huge bounded-boot load of one stream can't start us over the cap.
+    trimStreamRam();   // no arg => sweep every over-cap stream once
+
+    // drop the OLDEST rows of `streamId` when that stream exceeds ramPerStream. Splices only that stream's rows,
+    // so other streams are untouched (per-stream fairness). Called after each append for the appended stream; the
+    // boot-time call (streamId undefined) sweeps every over-cap stream once.
+    function trimStreamRam(streamId) {
+      const streams = streamId == null ? Array.from(new Set(rows.map(r => r.streamId))) : [streamId];
+      for (const sid of streams) {
+        const idxs = [];
+        for (let i = 0; i < rows.length; i++) if (rows[i].streamId === sid) idxs.push(i);
+        const over = idxs.length - ramPerStream;
+        if (over <= 0) continue;
+        const drop = new Set(idxs.slice(0, over));   // the oldest `over` rows of this stream
+        rows = rows.filter((_, i) => !drop.has(i));
+      }
+    }
 
     // a bad/missing streamId collapses to 'global' — exactly index.js's rule (bad streamId -> the global stream).
     function normStream(v) { const s = str(v); return SID_RE.test(s) ? s : 'global'; }
@@ -95,6 +117,7 @@
       }
       if (e.toolCallId != null) { const id = str(e.toolCallId).slice(0, 200); if (id) entry.toolCallId = id; }
       rows.push(entry);
+      trimStreamRam(entry.streamId);   // bound THIS stream's RAM only (per-stream fairness; disk keeps full log)
       try { io.append(entry); } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
       return entry;
     }

@@ -137,4 +137,19 @@ const clock = { now: () => clk };
   A.eq(s.list('a').map(r => r.runId), ['new1', 'old2', 'old1'], 'mixed old/new history lists together');
 }
 
+// ---- RAM mirror trim: the in-process rows array is bounded; disk keeps the full log; recent list unaffected ----
+{
+  const io = memIo();
+  const s = makeRunStore({ io, clock, ramMax: 50 });   // tiny cap for the test
+  for (let i = 0; i < 200; i++) s.record({ runId: 'r' + i, agentId: 'a', reason: 'done', usd: 1, title: 't' + i });
+  A.eq(s.count(), 50, 'RAM mirror is bounded to ramMax (oldest spliced off)');
+  A.eq(io.lines.length, 200, 'disk kept EVERY appended row (only RAM was trimmed)');
+  const recent = s.list('a', { limit: 10 });
+  A.eq(recent[0].runId, 'r199', 'newest run still listed after trimming');
+  A.eq(recent[9].runId, 'r190', 'the last 10 are intact');
+  const s2 = makeRunStore({ io, clock, ramMax: 50 });
+  A.eq(s2.count(), 50, 'a boot load over the cap is trimmed at construction too');
+  A.eq(s2.list('a', { limit: 1 })[0].runId, 'r199', 'the trimmed boot load keeps the NEWEST rows');
+}
+
 A.report('runstore.test');
