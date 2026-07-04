@@ -61,26 +61,57 @@
     //                                     are probably FINE, freshness UNKNOWN — do NOT clobber (conservative)
     //   { status: 'corrupt', err }     — present + read but the bytes don't parse: unrecoverable garbage, safe to
     //                                     overwrite (a corrupt save is already lost — preserves prior product behavior)
-    function readTagged(file) {
+    function readTaggedRaw(file) {
       let raw;
       try { raw = fs.readFileSync(file, 'utf8'); }
       catch (e) {
         if (e && e.code === 'ENOENT') return { status: 'absent' };
         return { status: 'unreadable', err: e };   // present but locked/EACCES/etc. — NOT absent, bytes intact
       }
+      // a zero-length main is a TORN write (crash between temp-open and rename, or an interrupted legacy write):
+      // treat it like corrupt so the .bak recovery path below kicks in rather than loading empty.
+      if (raw == null || String(raw).length === 0) return { status: 'corrupt', err: new Error('zero-length save file') };
       try { return { status: 'ok', wrapper: JSON.parse(raw) }; }
       catch (e) { return { status: 'corrupt', err: e }; }   // present + read but garbage — recoverable-over
     }
+    // quarantine a corrupt main aside (rename to <file>.corrupt-<seq>) so it's preserved for forensics but no
+    // longer blocks the store, then recover from <file>.bak if it holds a clean prior save. Best-effort + loud.
+    function quarantine(file, why) {
+      try {
+        const dead = file + '.corrupt-' + (++tmpSeq);
+        try { if (typeof fs.unlinkSync === 'function') fs.unlinkSync(dead); } catch (_) {}   // clear any stale target (Windows rename-onto fails)
+        fs.renameSync(file, dead);
+        try { console.warn('[savestore] quarantined corrupt save ' + file + ' -> ' + dead + ' (' + why + ')'); } catch (_) {}
+      } catch (_) { /* couldn't move it (locked/gone) — leave it; recovery below still tries .bak */ }
+    }
+    // RESILIENT tagged read: main first; on a corrupt/torn main, quarantine it and recover from <file>.bak. An
+    // 'unreadable' main is NOT quarantined (bytes are fine, just locked) — surfaced as-is so the caller stays
+    // conservative. Adds status 'recovered' (main was bad, .bak was clean -> the .bak value is authoritative).
+    function readTagged(file) {
+      const m = readTaggedRaw(file);
+      if (m.status === 'ok') return m;
+      if (m.status === 'unreadable') return m;   // locked/EBUSY: don't roll back to a possibly-stale .bak
+      // main is absent OR corrupt/torn — try the last-known-good .bak.
+      const b = readTaggedRaw(file + '.bak');
+      if (b.status === 'ok') {
+        if (m.status === 'corrupt') quarantine(file, 'main unparseable; recovered from .bak');
+        return { status: 'recovered', wrapper: b.wrapper, err: m.err };
+      }
+      // no usable .bak. A genuinely-absent main with no .bak is just a new agent (absent). A corrupt main with
+      // no clean .bak is unrecoverable — quarantine it so the next write starts fresh (preserves prior "corrupt
+      // save is already lost" product behavior) and report corrupt.
+      if (m.status === 'corrupt') { quarantine(file, 'main unparseable and no usable .bak'); }
+      return m.status === 'absent' ? { status: 'absent' } : { status: 'corrupt', err: m.err };
+    }
     // back-compat convenience: the parsed wrapper, or undefined when absent/unreadable/corrupt.
-    function readWrapper(file) { const r = readTagged(file); return r.status === 'ok' ? r.wrapper : undefined; }
+    // 'recovered' (from .bak) is a usable value, so it returns the wrapper too.
+    function readWrapper(file) { const r = readTagged(file); return (r.status === 'ok' || r.status === 'recovered') ? r.wrapper : undefined; }
     // atomic temp+rename, with the temp file fsync'd before the rename so the DURABLE store of record actually
     // survives a hard power loss (the ledger/runs siblings fsync their appends; this is the same guarantee). The
     // fsync is capability-guarded: the real node:fs supplies openSync/writeSync/fsyncSync, while the in-memory
     // test fs (writeFileSync/renameSync only) falls back to the plain path — keeps the store deterministic + testable.
-    function writeAtomic(file, value) {
-      ensureRoot();
+    function writeDurable(file, data) {
       const tmp = file + '.' + (++tmpSeq) + '.tmp';
-      const data = JSON.stringify(value);
       if (typeof fs.openSync === 'function' && typeof fs.fsyncSync === 'function' && typeof fs.writeSync === 'function') {
         let fd = null;
         try { fd = fs.openSync(tmp, 'w'); fs.writeSync(fd, data); fs.fsyncSync(fd); }
@@ -89,6 +120,18 @@
         fs.writeFileSync(tmp, data);   // test/in-memory fs: no fsync available, plain write
       }
       fs.renameSync(tmp, file);   // atomic replace
+    }
+    function writeAtomic(file, value) {
+      ensureRoot();
+      // LAST-KNOWN-GOOD snapshot: before overwriting main, copy the CURRENT clean main to <file>.bak (durably)
+      // so a torn replace of main can be recovered from the prior committed save. A main that is itself corrupt/
+      // torn is NOT copied (never clobber a possibly-good .bak with garbage). Best-effort — a .bak failure must
+      // never block the real save.
+      try {
+        const cur = fs.readFileSync(file, 'utf8');
+        if (cur && String(cur).length) { try { JSON.parse(cur); writeDurable(file + '.bak', cur); } catch (_) {} }
+      } catch (_) { /* no current main (first write) — nothing to back up */ }
+      writeDurable(file, JSON.stringify(value));   // atomic + durable replace of main
     }
 
     return {
@@ -117,7 +160,9 @@
           try { console.warn('[savestore] refusing save for ' + String(agentId) + ' — existing record is unreadable (' + ((prevRead.err && prevRead.err.code) || 'EUNKNOWN') + '); not clobbering a possibly-newer save'); } catch (_) {}
           return { ok: false, stale: true, unreadable: true, updatedAt: 0 };
         }
-        const prev = prevRead.status === 'ok' ? prevRead.wrapper : undefined;
+        // a prior read cleanly ('ok') OR recovered from .bak ('recovered') is an authoritative prior for the
+        // anti-clobber freshness gate — a torn main whose .bak we restored must still not be regressed.
+        const prev = (prevRead.status === 'ok' || prevRead.status === 'recovered') ? prevRead.wrapper : undefined;
         const prevUpdated = prev && typeof prev === 'object' ? num(prev.updatedAt) : 0;
         const incomingUpdated = num(doc.updatedAt);
         if (prev && incomingUpdated < prevUpdated) return { ok: false, stale: true, updatedAt: prevUpdated };
