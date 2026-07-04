@@ -4661,7 +4661,11 @@ function handleProviders(req, res) {
     return Object.assign({}, p, { configured: providerHasCredential(p.id, key, baseUrl), currentBaseUrl: baseUrl || '' });
   });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ providers }));
+  // keychainMode: TRUE only under the real desktop shell, where BYOK keys live in the OS keychain (seeded via env
+  // at spawn, updated live through /api/key) rather than the browser's local store. The Settings key-save
+  // confirmation reads this so it names the ACTUAL store honestly (keychain vs this browser) — never claims
+  // keychain when the key is in fact held in the browser (truthful-telemetry law).
+  res.end(JSON.stringify({ providers, keychainMode: DESKTOP_SHELL }));
 }
 
 async function listModelsForProvider(providerId, opts) {
