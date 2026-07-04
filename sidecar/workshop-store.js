@@ -123,21 +123,51 @@ function makeWorkshopStore(deps) {
     }).then(() => out);
   }
 
+  // ZOMBIE-CLAIM RECLAIM: a shift that crashed (sidecar killed mid-build) leaves an item stamped with a
+  // buildingRunId whose run is no longer live. Without a sweep that item is skipped by claimNext FOREVER (it
+  // looks perpetually in-flight), silently muting the whole backlog for that agent. `isRunLive(runId)` is the
+  // honest liveness source injected by the host (the runs map): a buildingRunId that is NOT live is a zombie ->
+  // clear the stamp so the item is claimable again. Mirrors the cron zombie fire-claim reclaim (cron.js G4.5).
+  // isRunLive absent/undefined -> conservative no-op (nothing is treated as a zombie), so this is inert unless wired.
+  function reapZombieClaims(rec, isRunLive) {
+    if (typeof isRunLive !== 'function') return false;
+    let changed = false;
+    for (const b of rec.backlog) {
+      if (b.buildingRunId && !b.builtRunId && !isRunLive(b.buildingRunId)) { delete b.buildingRunId; changed = true; }
+    }
+    return changed;
+  }
+
   // pop the TOP un-built backlog item for a shift. Returns the item (leaving it in the backlog, stamped with the
   // runId that is building it) or null when the queue is empty. Stamping in-flight lets a completed build map its
   // manifest back to the backlogId and lets the driver skip an item already being built. PARKED items (attempts
   // >= MAX_BUILD_ATTEMPTS after failed builds) are never re-claimed — without this cap a permanently-failing item
-  // would be silently retried every shift forever (an invisible token leak).
-  function claimNext(agentId, runId) {
+  // would be silently retried every shift forever (an invisible token leak). isRunLive (optional) reaps any
+  // zombie claim (a buildingRunId whose run is dead) in the SAME locked update before choosing the next item.
+  function claimNext(agentId, runId, isRunLive) {
     let claimed = null;
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
+      const reaped = reapZombieClaims(rec, isRunLive);
       const next = rec.backlog.find(b => !b.buildingRunId && !b.builtRunId && !(Number(b.attempts) >= MAX_BUILD_ATTEMPTS));
-      if (!next) { claimed = null; return undefined; }   // no change, no write
+      if (!next) { claimed = null; return reaped ? rec : undefined; }   // persist a reap even when nothing is claimable
       next.buildingRunId = String(runId || '');
       claimed = next;
       return rec;
     }).then(() => claimed);
+  }
+
+  // boot sweep: clear every zombie claim for an agent (a buildingRunId whose run is not live) so a crash mid-shift
+  // never wedges the backlog. Returns the count of items un-stuck. Host calls this at boot for each granted agent.
+  function sweepStaleClaims(agentId, isRunLive) {
+    let n = 0;
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      for (const b of rec.backlog) {
+        if (b.buildingRunId && !b.builtRunId && (typeof isRunLive !== 'function' || !isRunLive(b.buildingRunId))) { delete b.buildingRunId; n++; }
+      }
+      return n ? rec : undefined;
+    }).then(() => n);
   }
 
   // mark a claimed item BUILT (a valid manifest landed) — records the runId so the return-card finds the dir.
@@ -212,7 +242,7 @@ function makeWorkshopStore(deps) {
 
   return {
     read, hasGrant, setGrant, backlogOf, isDenied,
-    queue, claimNext, markBuilt, releaseClaim, discard, complete, itemForRun,
+    queue, claimNext, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, itemForRun,
     _durable: durable
   };
 }

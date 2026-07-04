@@ -697,6 +697,10 @@ const workshopStore = makeWorkshopStore({
   warn: (...args) => console.warn.apply(console, args)
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+// honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
+// `runs` map AND not aborted. A crashed shift leaves a buildingRunId whose controller is gone -> not live -> reaped.
+// (`runs` is declared below at module scope; this closure reads it lazily so hoisting is a non-issue.)
+function isRunLive(runId) { const ac = runs.get(String(runId || '')); return !!(ac && !(ac.signal && ac.signal.aborted)); }
 
 /* W6 MINT LEDGER — the server-side authority that stops an agent re-creating a routine it already made (Andrew,
    2026-07-03: an idle agent minted TWO near-identical "ULTRON daily operating loop" routines). The pure gate +
@@ -2163,6 +2167,16 @@ server.listen(PORT, '127.0.0.1', () => {
   try {
     if (cronArmed) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
+  // WORKSHOP zombie-claim boot sweep: a shift that crashed mid-build leaves an item stamped buildingRunId; at
+  // boot NO run is live, so any such stamp is a zombie that would mute the agent's backlog forever. Clear them
+  // (isRunLive is all-false at boot) so the next shift can claim again. Best-effort, fire-and-forget per agent.
+  try {
+    const files = fs.readdirSync(WORKSPACES).filter(f => /^[A-Za-z0-9_-]{1,40}\.workshop\.json$/.test(f));
+    for (const f of files) {
+      const aid = f.replace(/\.workshop\.json$/, '');
+      workshopStore.sweepStaleClaims(aid, isRunLive).then(n => { if (n) console.warn('[workshop] boot sweep un-stuck ' + n + ' zombie claim(s) for ' + aid + ' (crashed mid-shift)'); }).catch(() => {});
+    }
+  } catch (e) { console.warn('[workshop] boot sweep failed:', (e && e.message) || e); }
 });
 
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
@@ -3090,7 +3104,9 @@ async function runWorkshopShift(agentId, opts) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { fired: false, reason: 'bad-agent' };
   if (!workshopOf(id)) return { fired: false, reason: 'not-granted' };   // grant revoked between arm and fire
   const runId = o.runId || crypto.randomUUID();
-  const item = await workshopStore.claimNext(id, runId);
+  // pass isRunLive so a zombie claim (a buildingRunId left by a crashed shift) is reaped in the SAME locked
+  // claim, freeing an item that would otherwise look perpetually in-flight and mute this agent's backlog forever.
+  const item = await workshopStore.claimNext(id, runId, isRunLive);
   if (!item) return { fired: false, reason: 'empty-backlog' };           // nothing to build → silent no-op
 
   const model = cronModelFor({ agentId: id });
