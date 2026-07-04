@@ -28,6 +28,7 @@ const App = (() => {
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
   let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
+  let pendingWorkSignal = null;   // a saved capability-usage histogram slice awaiting WorkSignalStore.init() in enterGame()
   let pendingDossier = null;      // a saved Commander-dossier slice awaiting DossierStore.init() in enterGame()
 
   function show(id) {
@@ -784,9 +785,10 @@ const App = (() => {
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
     const reasoningEffort = (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : undefined;
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
+    const worksignal = (typeof WorkSignalStore !== 'undefined') ? WorkSignalStore.serialize() : undefined;   // the capability-usage histogram (adaptive recruitment)
     const roster = liveAgents();
     const dossier = (typeof DossierStore !== 'undefined') ? DossierStore.serialize() : undefined;   // the station-wide Commander model
-    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, dossier }, Workstreams.serialize()));
+    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, worksignal, dossier }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
@@ -1502,6 +1504,7 @@ const App = (() => {
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
+    pendingWorkSignal = saved.worksignal || null;   // restore the capability-usage histogram (adaptive recruitment)
     pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
     // gate the awakening on the explicit onboarded flag (new saves), falling back to the old !purpose heuristic
     // for pre-flag saves. This fixes the strand where a refresh AFTER the first (purpose) answer — which persists
@@ -1578,6 +1581,24 @@ const App = (() => {
         const sp = Specialties.get(agent.specialtyId);
         if (sp) ProfileStore.seed(Classify.getTag((sp.purpose || '') + ' ' + (sp.tagline || '')));
       }
+    }
+    // ADAPTIVE RECRUITMENT: the capability-usage histogram — folds the LANE (dish/cabinet/workbench/…) of each
+    // real hero tool fire, plus the run's interest tag, into a decayed per-lane read (worksignal.js engine). Shares
+    // the profile's learning-enabled flag (one glass-box switch governs both) so PAUSE stops all local learning at
+    // once. getRunTag resolves the run's interest tag from RUN_META (else the active workstream title).
+    if (typeof WorkSignalStore !== 'undefined') {
+      WorkSignalStore.init({
+        signal: pendingWorkSignal, persist: persist,
+        learningOn: () => (typeof ProfileStore !== 'undefined' && ProfileStore.enabled) ? ProfileStore.enabled() : true,
+        getRunTag: (runId) => {
+          if (typeof Classify === 'undefined' || !Classify.getTag) return null;
+          let title = '';
+          try { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) title = m.title; } catch (_) {}
+          if (!title) { try { const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; title = ws ? (ws.title || '') : ''; } catch (_) {} }
+          return title ? Classify.getTag(title) : null;
+        }
+      });
+      pendingWorkSignal = null;
     }
     // AUTO-MINT: watch for recurring task shapes so the bay can propose saving them as one-tap missions. Self-
     // persists to its own localStorage key (rides the backup prefix), so init just hydrates from there. One learning
@@ -1660,6 +1681,53 @@ const App = (() => {
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
+    // ADAPTIVE RECRUITMENT — PROSPECT GENERATOR (Slice 4): as the station learns the Commander, it DRAFTS bespoke
+    // new agent specs the 17-class catalog doesn't contain, staged in the bay for the Commander to confirm (never
+    // auto-saved). Reason-only model call (like the ongoing suggestion), growth+cooldown+warm gated, once/session,
+    // silent on failure. capabilityKeys/skillSlugs are the REAL allowed sets so a draft can never claim gear that
+    // doesn't exist; getTopRecommendation feeds the recruiter's best existing-class pick so the draft avoids
+    // duplicating it (reply NONE if a class already serves the gap).
+    if (typeof ProspectStore !== 'undefined') {
+      // the real installed skill slugs (fetched once, best-effort) — a prospect's SKILLS must come from this set.
+      let skillSlugs = [];
+      try { fetch('/api/skills').then(r => r.ok ? r.json() : { skills: [] }).then(d => { skillSlugs = ((d && d.skills) || []).map(s => s && s.slug).filter(Boolean); }).catch(() => {}); } catch (_) {}
+      const worksignalSummaryText = () => {
+        try {
+          const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
+          if (!s || !s.dominant) return '';
+          const lanes = Object.keys(s.laneTags || {}).map(l => l + ' (' + s.laneTags[l] + ')').join(', ');
+          return 'dominant lane: ' + s.dominant + '; ' + s.samples + ' tool-samples; lanes worked: ' + (lanes || s.dominant);
+        } catch (_) { return ''; }
+      };
+      // warmth 0..1 = how far past the calibration floor the histogram is (the recruiter's warm read, as a number).
+      const warmthNow = () => {
+        try {
+          const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
+          if (!s || s.calibrating) return 0;
+          const floor = (typeof WorkSignal !== 'undefined' && WorkSignal.CALIBRATING_N) ? WorkSignal.CALIBRATING_N : 5;
+          return Math.min(1, (s.samples || 0) / (floor * 4));
+        } catch (_) { return 0; }
+      };
+      ProspectStore.init({
+        now: () => Date.now(),
+        chat: (o) => (typeof Harness !== 'undefined' && Harness.chat) ? Harness.chat(o) : Promise.resolve({ error: 'no-harness' }),
+        getSystem: () => agent ? agent.systemPrompt : '',
+        getDossierBlock: () => (typeof DossierStore !== 'undefined' && DossierStore.composeBlock) ? (DossierStore.composeBlock() || '') : '',
+        getWorksignalSummary: worksignalSummaryText,
+        getWarmth: warmthNow,
+        getFamiliarity: () => { try { const s = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null; return s && Number.isFinite(s.familiarity) ? s.familiarity : null; } catch (_) { return null; } },
+        getRosterClasses: () => liveAgents().map(a => { const sp = a.specialtyId && typeof Specialties !== 'undefined' ? Specialties.get(a.specialtyId) : null; return { name: (sp && sp.name) || a.name, tags: (sp && sp.tags) || {} }; }),
+        getCatalogSummary: () => {
+          if (typeof Specialties === 'undefined') return [];
+          const all = (Specialties.builtins() || []).concat(Specialties.customs ? (Specialties.customs() || []) : []);
+          return all.map(s => ({ id: s.id, name: s.name, tagline: s.tagline, tags: s.tags || {} }));
+        },
+        // the REAL capability keys a kit may use — the same pickable set the custom builder exposes, plus connector.
+        getCapabilityKeys: () => ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'connector'],
+        getSkillSlugs: () => skillSlugs.slice(),
+        getTopRecommendation: () => { try { const t = (typeof RecruiterStore !== 'undefined' && RecruiterStore.topPick) ? RecruiterStore.topPick() : null; return t ? t.classId : ''; } catch (_) { return ''; } }
+      });
+    }
     // G3a CONFIDENCE NARRATIVE: two fire-once spoken moments in the hero's reliability arc (calibration
     // complete + TRUSTED). Init AFTER XpStore so its memory.feedback hook sees an already-folded meter.
     if (typeof ConfBeats !== 'undefined') ConfBeats.init({ getStats: () => { const a = agents.get('agent'); return a ? a.stats : null; } });
@@ -2271,5 +2339,6 @@ const App = (() => {
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
+    openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     applyConfig: applyAgentConfig };
 })();

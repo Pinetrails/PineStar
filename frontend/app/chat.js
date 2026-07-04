@@ -61,6 +61,7 @@ const Chat = (() => {
   let trustRunsSeen = new Set();// GROWTH Tier 3: runIds already trust-offered (agent.run.end can re-fire; offer once per run)
   let activeTrust = null;       // GROWTH Tier 3: the single visible trust offer card { node, offer, decided }
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
+  let recruitShown = false;     // adaptive recruitment: the ONE recruit beat is offered at most once per session (in-memory, resets each app run)
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
@@ -2005,6 +2006,29 @@ const Chat = (() => {
     return { row: r.d, choiceRow: choiceRow };
   }
 
+  // ADAPTIVE RECRUITMENT beat: propose the single NEW teammate the Commander's real workflow points to, ONCE per
+  // session, through the shared gentle nudge (so it rides the same one-beat-at-a-time lifecycle + vanish()). The
+  // WHY is the exact same honest, counter-derived line the bay's CURATED shelf shows (both read RecruiterStore) —
+  // so the beat and the shelf can never disagree. Accepting deep-links into the recruitment bay's summon flow.
+  // Returns true iff a beat was actually shown (so the caller can claim the slot). Never fabricates: a cold/thin
+  // signal → RecruiterStore.topPick() is null → this is a no-op and the chain falls through to curiosity.
+  function maybeRecruit() {
+    if (recruitShown) return false;                                        // one recruit offer per session (anti-nag)
+    if (typeof RecruiterStore === 'undefined' || !RecruiterStore.topPick) return false;
+    if (typeof App === 'undefined' || !App.openSummonBay) return false;    // no deep-link target → don't offer
+    let pick = null; try { pick = RecruiterStore.topPick(); } catch (_) { return false; }
+    if (!pick || !pick.spec) return false;                                 // not warm / nobody to recommend honestly
+    const name = pick.spec.name || pick.classId;
+    // the line: name the class + its honest, real-counter why. Lower-cased why joins mid-sentence cleanly.
+    const line = '✦ your crew could use a ' + name + ' — ' + String(pick.why || '').replace(/^./, c => c.toLowerCase());
+    recruitShown = true;                                                   // spend the session's single recruit offer (even on dismiss — never re-ask this session)
+    if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // same soft chime as the idea beat
+    nudge(line, [{ label: 'meet them', value: 'go' }, { label: 'not now', value: 'no', skip: true }], choice => {
+      if (choice && choice.value === 'go') { try { App.openSummonBay(); } catch (_) {} }
+    });
+    return true;
+  }
+
   /* A2 — THE SKILL ASIDE. When the quiet background review distills a completed run into a saved skill it fires
      the EXISTING `deliverable` (kind:'skill') event (see skillreview.makeReviewObserver). Here we surface ONE
      gentle, NON-interactive gold-inset aside — "◈ <agent> distilled this run into skill: <name>" — so the
@@ -2104,6 +2128,12 @@ const Chat = (() => {
         // SELF-GROWING SEED (Slice 5): if a recurring pattern is ripe, the agent offers to author it as a one-tap
         // seed — takes this one beat (after a suggestion, before curiosity) so it never stacks two asks on a task.
         if (typeof SeedStore !== 'undefined' && SeedStore.willPropose && SeedStore.propose && SeedStore.willPropose()) { SeedStore.propose(); return; }
+        // ADAPTIVE RECRUITMENT: once the station has a WARM read of the Commander's real workflow and it points to a
+        // NEW teammate the crew doesn't have, offer ONCE — through THIS single post-run beat, sharing every guard
+        // above (work-earned floor, busy/interview/turn-in, one-beat-at-a-time). Never a parallel nag channel: it
+        // competes for the same slot and only takes it when the suggestion/seed didn't. Accepting deep-links into
+        // the recruitment bay's summon flow. At most once per session.
+        if (maybeRecruit()) return;
         if (typeof CuriosityStore === 'undefined') return;
         const dim = CuriosityStore.consider();
         if (!dim) return;

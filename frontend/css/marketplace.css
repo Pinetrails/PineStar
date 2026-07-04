@@ -340,6 +340,13 @@
 /* ---- "RECOMMENDED FOR YOU" / "SUGGESTED" shelves (affinity-ranked, pinned above the catalog) ---- */
 .mkt-sect-h.mkt-rec-sect { color: var(--ink); background: var(--gold); }
 .mkt-sect-h.mkt-suggest-sect { color: var(--ink); background: var(--gold); }
+/* CURATED FOR YOUR WORKFLOW — the earned adaptive-recruitment shelf. The strongest gold read on the surface (it
+   only ever appears once the station has a warm read of real work), lifted by a phosphor-gold glow so it stands
+   apart from the affinity RECOMMENDED shelf. Accent uses the --gold-rgb triplet, never a literal amber. */
+.mkt-sect-h.mkt-curated-sect { box-shadow: 0 0 12px rgba(var(--gold-rgb), .45); }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec { border-color: rgba(var(--gold-rgb), .55); }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(90deg, var(--gold), transparent 80%); opacity: .9; }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec:hover { border-color: var(--gold); box-shadow: 0 0 15px rgba(var(--gold-rgb), .5); }
 .mkt-rec-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 4px; }
 .mkt-rec { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 10px; border-radius: 8px; background: var(--panel2);
   border: 1px solid var(--ph-dim); cursor: pointer; text-align: left; font-family: inherit;
@@ -360,6 +367,18 @@
 .mkt-suggest-acts { display: flex; align-items: center; gap: 7px; margin-top: auto; }
 .mkt-suggest-review { color: var(--ink) !important; background: var(--gold) !important; border-color: var(--gold) !important; text-shadow: none !important; flex: 1 1 auto; }
 .mkt-suggest-dismiss { flex: 0 0 auto; }
+
+/* PROSPECTS — bespoke roles the station DRAFTED from real work (Slice 4). Honest draft treatment: a dashed gold
+   border (it's not a finished catalog card) + a provenance note. Accent via the --gold-rgb triplet, never amber. */
+.mkt-sect-h.mkt-prospect-sect { color: var(--ink); background: var(--gold); }
+.mkt-prospect { border: 1px dashed rgba(var(--gold-rgb), .6); }
+.mkt-prospect::before { background: linear-gradient(90deg, var(--gold), transparent 80%); opacity: .7; }
+.mkt-prospect:hover { border-color: var(--gold); box-shadow: 0 0 13px rgba(var(--gold-rgb), .4); }
+.mkt-prospect-glyph { color: var(--gold); font-size: 18px; flex: 0 0 auto; filter: drop-shadow(0 0 7px rgba(var(--gold-rgb), .55)); }
+.mkt-prospect-prov { font-size: 10px; letter-spacing: .3px; color: var(--ph-dim); opacity: .9; }
+.mkt-prospect-acts { display: flex; align-items: center; gap: 7px; margin-top: auto; }
+.mkt-prospect-open { color: var(--ink) !important; background: var(--gold) !important; border-color: var(--gold) !important; text-shadow: none !important; flex: 1 1 auto; }
+.mkt-prospect-dismiss { flex: 0 0 auto; }
 
 /* ---- R6: the "FOR YOU" discovery row (dossier-interest + goal-text ranked; honest category-spread fallback) ----
    Phosphor-headed (not gold) so it reads as distinct from the affinity SUGGESTED/RECOMMENDED shelves. Each card's

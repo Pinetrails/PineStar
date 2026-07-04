@@ -1,0 +1,153 @@
+/* STARNET — recruiter.js : the PURE adaptive-recruitment matcher (the "which teammate to recruit NEXT" brain).
+
+   Given what the Commander ACTUALLY does (the worksignal capability histogram), what they're interested in (the
+   profile affinity vector), what they've told the station (the dossier goals/pain/ambition beliefs), and who's
+   already on the crew (the roster), rank the catalog classes NOT yet rostered and return the single best NEW hire
+   with an HONEST, counter-derived reason.
+
+   TRUTHFUL TELEMETRY LAW (non-negotiable): every `why` string is derived from a REAL persisted counter — the
+   dominant capability lane the Commander's work leaned on, or the matched goal/pain text. Confidence reflects
+   evidence VOLUME; below the warm threshold (the shared CALIBRATING_N sample floor) recommend() returns an EMPTY
+   list so the UI falls back to the honest cold-start lineup. Never fabricate a reason, never pad the list.
+
+   PURE + deterministic: no Date.now / Math.random (the clock is injected as `now`); given the same inputs it
+   returns the same ranked list in the same order. A `Recruiter` global in the browser, module.exports under node.
+   It leans on the pure WorkSignal engine (LANES + laneWeight + laneTag) to read the histogram — the ONE source of
+   the capability vocabulary, so the matcher can never drift from what the store records. */
+'use strict';
+(function (root, factory) {
+  const WS = (typeof module !== 'undefined' && module.exports) ? require('./worksignal.js') : root.WorkSignal;
+  const api = factory(WS);
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else { root.Recruiter = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (WorkSignal) {
+  'use strict';
+
+  // scoring weights (one place to retune the blend). kit-affinity is the CORE new signal; coverage-gap is the
+  // "you do this work and nobody covers it" boost; dossier + profile are supporting priors.
+  const W_KIT = 4;        // overlap of the class kit with the capability histogram (dominant term)
+  const W_GAP = 3;        // the class covers a high-volume lane whose dominant tag no rostered class shares
+  const W_DOSSIER = 2;    // keyword match of blurb/tags against goals+pain+ambition belief texts
+  const W_PROFILE = 1;    // profile interest affinity — a mild prior
+
+  const CAL_N = (WorkSignal && WorkSignal.CALIBRATING_N) || 5;   // the shared warm threshold (>=5 tool samples)
+  const LANES = (WorkSignal && WorkSignal.LANES) || [];
+
+  // the plain-English power word for a capability lane — for the honest "your work used the WEB" reason. Mirrors
+  // worldmodel's CAP_LABEL (kept here so the pure matcher has no DOM/worldmodel dependency); a lane with no power
+  // word falls back to its own name.
+  const LANE_WORD = {
+    dish: 'web research', cabinet: 'the files', notebook: 'memory', workbench: 'the terminal',
+    studio: 'image work', connector: 'live tools', computer: 'compute', orchestrator: 'delegation', jukebox: 'music control'
+  };
+  function laneWord(lane) { return LANE_WORD[lane] || String(lane || '').toLowerCase(); }
+
+  // tokenize belief/goal text the same way marketplace.specGoalScore does (words >=3 chars, deduped).
+  function keywordHits(cls, text) {
+    if (!cls || !text) return 0;
+    const words = String(text).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    if (!words.length) return 0;
+    const seen = {}; let hits = 0;
+    const hay = ((cls.name || '') + ' ' + (cls.tagline || '') + ' ' + (cls.blurb || '') + ' ' + Object.keys(cls.tags || {}).join(' ')).toLowerCase();
+    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits++; }
+    return hits;
+  }
+
+  // the dominant interest tag of a class (its heaviest kit-agnostic tag weight) — for the coverage-gap test.
+  function classDominantTag(cls) {
+    let best = null, bv = 0; const t = (cls && cls.tags) || {};
+    for (const k in t) { const v = Number(t[k]); if (isFinite(v) && v > bv) { bv = v; best = k; } }
+    return best;
+  }
+
+  // recommend(): the whole matcher. Returns { warm:boolean, items:[{ classId, why, confidence, evidence }] }.
+  // opts = { worksignal (raw histogram model), profile ({score,explain} or null), dossier ({goals,pain,ambition}
+  //          belief-text arrays), roster (occupied specialtyIds []), catalog (Specialties.builtins() []), now }.
+  function recommend(opts) {
+    opts = opts || {};
+    const now = Number.isFinite(opts.now) ? opts.now : 0;
+    const sig = opts.worksignal || null;
+    const catalog = Array.isArray(opts.catalog) ? opts.catalog : [];
+    const rostered = new Set((opts.roster || []).filter(Boolean));
+
+    // WARM GATE: below the shared sample floor the histogram hasn't earned a read — return empty so the bay falls
+    // back to the honest cold-start lineup (never a fabricated "curated" pick).
+    const samples = (sig && Number.isFinite(sig.total)) ? sig.total : 0;
+    if (!WorkSignal || samples < CAL_N) return { warm: false, items: [] };
+
+    // the capability vector + the dominant lane of the Commander's real work.
+    const summ = WorkSignal.summary(sig, now);
+    const dominantLane = summ.dominant;
+
+    // which interest tags are ALREADY covered by a rostered class (for the coverage-gap boost).
+    const coveredTags = new Set();
+    for (const cls of catalog) { if (rostered.has(cls.id)) { const t = classDominantTag(cls); if (t) coveredTags.add(t); } }
+
+    // dossier belief text (goals + pain + ambition) — the Commander's stated direction.
+    const dossierText = [].concat(opts.dossier && opts.dossier.goals || [], opts.dossier && opts.dossier.pain || [], opts.dossier && opts.dossier.ambition || []).filter(Boolean).join(' ');
+
+    const scored = [];
+    catalog.forEach((cls, idx) => {
+      if (!cls || rostered.has(cls.id)) return;   // never recommend a class already on the roster
+      const kit = Array.isArray(cls.kit) ? cls.kit : [];
+
+      // (a) KIT-AFFINITY — how much of the Commander's real work lands in the lanes this class's kit covers. The
+      // heaviest single kit lane is the honest "reason" anchor.
+      let kitAff = 0, bestLane = null, bestLaneW = 0;
+      for (const lane of kit) {
+        const w = WorkSignal.laneWeight(sig, lane, now);
+        kitAff += w;
+        if (w > bestLaneW) { bestLaneW = w; bestLane = lane; }
+      }
+
+      // (b) COVERAGE GAP — this class's dominant tag matches the tag of high-volume work AND no rostered class
+      // already covers that tag. Uses the lane the Commander works in most and the tag they do there.
+      const cTag = classDominantTag(cls);
+      const domLaneTag = dominantLane ? WorkSignal.laneTag(sig, dominantLane, now) : null;
+      const coversGap = !!(cTag && kitAff > 0 && !coveredTags.has(cTag) &&
+        (cTag === domLaneTag || (dominantLane && kit.indexOf(dominantLane) >= 0)));
+      const gap = coversGap ? 1 : 0;
+
+      // (c) DOSSIER match — keyword overlap of blurb/tags with goals+pain+ambition text.
+      const dossierHits = keywordHits(cls, dossierText);
+
+      // (d) PROFILE affinity — a mild interest prior (0..1), only when a profile scorer is supplied.
+      const profAff = (opts.profile && typeof opts.profile.score === 'function') ? (Number(opts.profile.score(cls.tags || {})) || 0) : 0;
+
+      const v = kitAff * W_KIT + gap * W_GAP + Math.min(dossierHits, 3) * W_DOSSIER + profAff * W_PROFILE;
+      // (only classes the Commander's work actually TOUCHES are eligible — a zero-kit-affinity class has no honest
+      // workflow reason to be "curated", so it never surfaces even if the dossier keyword-matches.)
+      if (kitAff <= 0) return;
+
+      // the honest WHY — anchored on the heaviest lane this class's kit covers (a real persisted counter), plus the
+      // coverage-gap phrasing when it applies. Never fabricated.
+      let why;
+      const word = laneWord(bestLane);
+      if (coversGap && domLaneTag) {
+        why = 'most of your recent work used ' + word + ' and no one on the crew covers ' + tagWord(cTag);
+      } else {
+        why = 'your recent work leaned on ' + word + ' — ' + (cls.tagline || cls.name).toLowerCase();
+      }
+
+      // confidence reflects EVIDENCE VOLUME: the share of the Commander's work this class's kit captures, lifted
+      // toward 1 as the sample count clears the floor. Honest 0..1 — never a fabricated high number on thin data.
+      const share = clamp01(kitAff);                                    // 0..1 (the vector is normalized)
+      const volume = clamp01(samples / (CAL_N * 4));                    // ramps to 1 at ~4x the floor
+      const confidence = clamp01(0.35 + 0.5 * share * (0.5 + 0.5 * volume));
+
+      scored.push({ classId: cls.id, why, confidence,
+        evidence: { kitAffinity: round(kitAff), dominantLane, bestLane, coversGap, dossierHits, profileAffinity: round(profAff), samples },
+        _v: v, _idx: idx });
+    });
+
+    scored.sort((a, b) => (b._v - a._v) || (a._idx - b._idx));   // deterministic: score desc, catalog order tie-break
+    const items = scored.slice(0, 3).map(x => ({ classId: x.classId, why: x.why, confidence: round(x.confidence), evidence: x.evidence }));
+    return { warm: true, items };
+  }
+
+  function tagWord(tag) { return tag === 'code' ? 'that engineering work' : tag === 'research' ? 'that research work' : 'that work'; }
+  function clamp01(n) { return n < 0 ? 0 : n > 1 ? 1 : n; }
+  function round(n) { return Math.round((Number(n) || 0) * 1000) / 1000; }
+
+  return { recommend, _keywordHits: keywordHits, _classDominantTag: classDominantTag, W_KIT, W_GAP, W_DOSSIER, W_PROFILE };
+});
