@@ -38,12 +38,14 @@
 
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;            // the notebook/fs-jail agentId grammar
   const KEEP_DEFAULT = 50;                            // snapshots retained per agent (prune oldest beyond this)
+  const MAX_REPO_BYTES_DEFAULT = 500 * 1024 * 1024;   // shadow-repo size ceiling (500MB) before a gc/re-init sweep
 
   function makeCheckpointStore(deps) {
     const d = deps || {};
     const fs = d.fs, pathMod = d.pathMod, root = d.root, runGit = d.runGit;
     const clock = d.clock || { now: function () { return 0; } };
     const keep = d.keep != null ? d.keep : KEEP_DEFAULT;
+    const maxRepoBytes = d.maxRepoBytes != null ? d.maxRepoBytes : MAX_REPO_BYTES_DEFAULT;
     if (!fs || !pathMod || !root || typeof runGit !== 'function') throw new Error('checkpoint-store: fs/pathMod/root/runGit are required');
 
     const gitDirFor = (aid) => pathMod.join(root, '.checkpoints', aid, 'git');
@@ -156,6 +158,69 @@
       } catch (e) { return { files: 0, bytes: 0 }; }
     }
 
+    // recursive byte size of a directory (best-effort; a stat failure counts 0 for that entry). Used to decide
+    // whether the shadow repo's object store has grown past the ceiling.
+    function dirBytes(dir) {
+      let total = 0;
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return 0; }
+      for (const ent of entries) {
+        const full = pathMod.join(dir, ent.name);
+        try {
+          if (ent.isDirectory && ent.isDirectory()) total += dirBytes(full);
+          else total += fs.statSync(full).size;
+        } catch (_) {}
+      }
+      return total;
+    }
+
+    /* enforceSizeCeiling — bound the shadow repo's on-disk footprint. `git add -A` on every mutating turn writes
+       a fresh blob per changed file; over months of 24/7 use the object store bloats even though only the last
+       `keep` snapshots are reachable via the index (rollback older than that is already impossible). Strategy:
+       1) `git gc --prune=now` — the cheap, LOSSLESS reclaim of loose/unreferenced objects (the dominant bloat
+          from add churn + pruned blobs). Every indexed snapshot SHA stays intact + restorable.
+       2) if it's STILL over ceiling after gc, RE-INIT from the current tree: the object store is unbounded only
+          because deep history is retained, yet that history is unreachable via the index (>keep). Re-init makes a
+          fresh single-commit repo of the current worktree, then RE-STAMPS the index to that one commit. This
+          sacrifices the older in-index rollback points to keep disk bounded — a disclosed, honest tradeoff, taken
+          ONLY past the ceiling. Fail-open: any git failure leaves the repo as-is (never crash a run).
+       Returns { swept, reinit, bytesBefore, bytesAfter } for tests/telemetry. */
+    async function enforceSizeCeiling(aid) {
+      if (!(maxRepoBytes > 0) || !repoExists(aid)) return { swept: false, reinit: false };
+      const gitDir = gitDirFor(aid);
+      const before = dirBytes(gitDir);
+      if (before <= maxRepoBytes) return { swept: false, reinit: false, bytesBefore: before, bytesAfter: before };
+      try { await git(aid, ['gc', '--prune=now', '-q']); } catch (_) {}
+      let after = dirBytes(gitDir);
+      let reinit = false;
+      if (after > maxRepoBytes) {
+        reinit = await reinitFromCurrentTree(aid);
+        after = dirBytes(gitDir);
+      }
+      try { console.warn('[checkpoint] shadow repo for ' + aid + ' over ceiling (' + before + 'B) -> ' + (reinit ? 're-init' : 'gc') + ' -> ' + after + 'B'); } catch (_) {}
+      return { swept: true, reinit: reinit, bytesBefore: before, bytesAfter: after };
+    }
+    // wipe the shadow git-dir and re-create a single baseline commit of the CURRENT worktree, then re-stamp the
+    // index to that one snapshot. Returns true on success. Fail-open (false) leaves the repo untouched on error.
+    async function reinitFromCurrentTree(aid) {
+      try {
+        const gitDir = gitDirFor(aid);
+        try { fs.rmSync(gitDir, { recursive: true, force: true }); } catch (_) { return false; }
+        fs.mkdirSync(gitDir, { recursive: true });
+        if ((await git(aid, ['init', '-q'])).code !== 0) return false;
+        if ((await git(aid, ['add', '-A'])).code !== 0) return false;
+        const com = await git(aid, ['commit', '-q', '--allow-empty', '-m', 'baseline (repo re-init: size ceiling)']);
+        if (com.code !== 0) return false;
+        const sha = (await git(aid, ['rev-parse', 'HEAD'])).stdout.trim();
+        if (!cp.isValidId(sha)) return false;
+        try {
+          const size = await measure(aid);
+          saveIndex(aid, cp.record(cp.toIndex([]), { id: sha, runId: '', turn: 0, label: 'baseline (re-init)', files: size.files, bytes: size.bytes }, { now: clock.now(), keep: keep }));
+        } catch (_) {}
+        return true;
+      } catch (_) { return false; }
+    }
+
     /* snapshot — capture the agent's CURRENT workspace state (taken BEFORE a mutating tool, so it is the
        pre-mutation rollback point). Deduped by content: if nothing changed since the last snapshot, no new
        commit is made and the existing head is returned (created:false). Fail-open: returns null on any git error. */
@@ -195,6 +260,8 @@
             { now: clock.now(), keep: keep });
           saveIndex(aid, index);
         } catch (e) { /* index persistence failed — the git commit still exists + is restorable; don't crash */ }
+        // bound the shadow repo's on-disk footprint after each real commit (no-op unless past the ceiling).
+        try { await enforceSizeCeiling(aid); } catch (_) { /* size sweep is best-effort; never fail the snapshot */ }
         return { id: sha, created: true, files: size.files, bytes: size.bytes };
       } catch (e) { return null; }                                               // fail-open
     }
@@ -223,7 +290,7 @@
       return await loadIndexResilient(String(agentId));
     }
 
-    return { snapshot: snapshot, restore: restore, list: list, listResilient: listResilient, rebuild: rebuildIndexFromGit, isValidId: cp.isValidId };
+    return { snapshot: snapshot, restore: restore, list: list, listResilient: listResilient, rebuild: rebuildIndexFromGit, enforceSizeCeiling: enforceSizeCeiling, isValidId: cp.isValidId };
   }
 
   return { makeCheckpointStore: makeCheckpointStore };

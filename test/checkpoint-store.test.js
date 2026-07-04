@@ -98,6 +98,28 @@ function runGit(args, opts) {
     // and a per-id restore works again off the rebuilt index (the commit is real)
     const targetId = rebuilt.snapshots[rebuilt.snapshots.length - 1].id;
     A.ok(await store.restore(aid, targetId), 'restore works against a rebuilt-from-git index');
+
+    // ---- 11. SIZE CEILING: a tiny threshold forces a sweep; the repo shrinks and stays restorable ----
+    const aid2 = 'sz';
+    const wt2 = path.join(root, aid2);
+    fs.mkdirSync(wt2, { recursive: true });
+    // 1-byte ceiling => any repo trips it. A store dedicated to this agent with the tiny cap.
+    const tiny = makeCheckpointStore({ fs, pathMod: path, root, runGit, clock, keep: 5, maxRepoBytes: 1 });
+    for (let i = 0; i < 4; i++) { fs.writeFileSync(path.join(wt2, 'f.txt'), 'v' + i + '\n'.repeat(1000)); await tiny.snapshot(aid2, { runId: 'r', turn: i, label: 'fs.write' }); }
+    const gitDir2 = path.join(root, '.checkpoints', aid2, 'git');
+    A.ok(fs.existsSync(path.join(gitDir2, 'HEAD')), 'repo still present after ceiling sweeps');
+    // the last snapshot (post-sweep) is in the index and restorable — the store stays functional under the ceiling
+    const idx2 = tiny.list(aid2);
+    A.ok(idx2.snapshots.length >= 1, 'index still holds at least the post-sweep baseline');
+    const last2 = idx2.snapshots[idx2.snapshots.length - 1].id;
+    A.ok(await tiny.restore(aid2, last2), 'restore works after a size-ceiling re-init');
+    // an explicit enforce call reports it swept (repo is > 1 byte)
+    const rep = await tiny.enforceSizeCeiling(aid2);
+    A.ok(rep.swept, 'enforceSizeCeiling reports a sweep when over the ceiling');
+    // a huge ceiling is a no-op
+    const big = makeCheckpointStore({ fs, pathMod: path, root, runGit, clock, keep: 5, maxRepoBytes: 1 << 30 });
+    const rep2 = await big.enforceSizeCeiling(aid2);
+    A.eq(rep2.swept, false, 'a repo under the ceiling is left untouched (no sweep)');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }
