@@ -89,6 +89,32 @@ const envelope = (over) => Object.assign({ schema: 'starnet.save', version: 3, u
   A.eq(s.load('agent').agent.name, 'NEWER', 'newer write applied');
 }
 
+// ---- E2. WINDOWS ERRNO: a present-but-LOCKED prior save is NOT clobbered (unreadable != absent) ----
+// Regression armor: a non-ENOENT read error must not be conflated with "no file", or a stale tab's save would
+// overwrite a newer record we merely failed to read. A genuinely corrupt (parsed-garbage) file still recovers.
+{
+  const fs = memFs();
+  const s = mk(fs);
+  const file = pathMod.join(ROOT, 'agent.save.json');
+  s.save('agent', envelope({ updatedAt: 900, agent: { id: 'agent', name: 'NEWEST' } }));   // a good, recent save on disk
+  // lock the record: every read of the main file throws EBUSY (a Windows file lock)
+  const realRead = fs.readFileSync.bind(fs);
+  fs.readFileSync = (p) => { if (p === file) { const e = new Error('EBUSY'); e.code = 'EBUSY'; throw e; } return realRead(p); };
+
+  const r = s.save('agent', envelope({ updatedAt: 100, agent: { id: 'agent', name: 'STALE' } }));
+  A.eq(r.ok, false, 'a save is REFUSED while the prior record is unreadable (not clobbered)');
+  A.eq(r.unreadable, true, 'the refusal is flagged unreadable (distinct from a normal stale-updatedAt refusal)');
+
+  // the record is intact once the lock clears — the STALE write never landed
+  fs.readFileSync = realRead;
+  A.eq(s.load('agent').agent.name, 'NEWEST', 'the locked record survived intact (no from-empty wipe)');
+
+  // contrast: a genuinely CORRUPT (readable-but-garbage) prior is still safe to recover over (product behavior)
+  fs.files.set(file, '{ garbage not json');
+  A.eq(s.save('agent', envelope({ updatedAt: 5, agent: { id: 'agent', name: 'FRESH' } })).ok, true, 'a corrupt (parsed-garbage) prior still recovers over');
+  A.eq(s.load('agent').agent.name, 'FRESH', 'the recovered-over save loads');
+}
+
 // ---- F. a doc with no updatedAt is treated as time 0 (first write lands; later real saves supersede it) ----
 {
   const fs = memFs();
