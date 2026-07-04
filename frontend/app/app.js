@@ -26,6 +26,7 @@ const App = (() => {
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
   let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
+  let pendingWorkSignal = null;   // a saved capability-usage histogram slice awaiting WorkSignalStore.init() in enterGame()
   let pendingDossier = null;      // a saved Commander-dossier slice awaiting DossierStore.init() in enterGame()
 
   function show(id) {
@@ -754,9 +755,10 @@ const App = (() => {
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
     const reasoningEffort = (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : undefined;
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
+    const worksignal = (typeof WorkSignalStore !== 'undefined') ? WorkSignalStore.serialize() : undefined;   // the capability-usage histogram (adaptive recruitment)
     const roster = liveAgents();
     const dossier = (typeof DossierStore !== 'undefined') ? DossierStore.serialize() : undefined;   // the station-wide Commander model
-    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, dossier }, Workstreams.serialize()));
+    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, worksignal, dossier }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
@@ -1453,6 +1455,7 @@ const App = (() => {
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
+    pendingWorkSignal = saved.worksignal || null;   // restore the capability-usage histogram (adaptive recruitment)
     pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
     // gate the awakening on the explicit onboarded flag (new saves), falling back to the old !purpose heuristic
     // for pre-flag saves. This fixes the strand where a refresh AFTER the first (purpose) answer — which persists
@@ -1529,6 +1532,24 @@ const App = (() => {
         const sp = Specialties.get(agent.specialtyId);
         if (sp) ProfileStore.seed(Classify.getTag((sp.purpose || '') + ' ' + (sp.tagline || '')));
       }
+    }
+    // ADAPTIVE RECRUITMENT: the capability-usage histogram — folds the LANE (dish/cabinet/workbench/…) of each
+    // real hero tool fire, plus the run's interest tag, into a decayed per-lane read (worksignal.js engine). Shares
+    // the profile's learning-enabled flag (one glass-box switch governs both) so PAUSE stops all local learning at
+    // once. getRunTag resolves the run's interest tag from RUN_META (else the active workstream title).
+    if (typeof WorkSignalStore !== 'undefined') {
+      WorkSignalStore.init({
+        signal: pendingWorkSignal, persist: persist,
+        learningOn: () => (typeof ProfileStore !== 'undefined' && ProfileStore.enabled) ? ProfileStore.enabled() : true,
+        getRunTag: (runId) => {
+          if (typeof Classify === 'undefined' || !Classify.getTag) return null;
+          let title = '';
+          try { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) title = m.title; } catch (_) {}
+          if (!title) { try { const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; title = ws ? (ws.title || '') : ''; } catch (_) {} }
+          return title ? Classify.getTag(title) : null;
+        }
+      });
+      pendingWorkSignal = null;
     }
     // AUTO-MINT: watch for recurring task shapes so the bay can propose saving them as one-tap missions. Self-
     // persists to its own localStorage key (rides the backup prefix), so init just hydrates from there. One learning
