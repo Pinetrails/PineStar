@@ -149,7 +149,7 @@ const WorkshopStore = (() => {
   // decide a return card. decision: 'keep' (destPath required) | 'later' | 'discard'.
   // keep → copy the run dir's files to destPath; discard → wipe the run dir + denylist the backlog item;
   // later → just dismiss (server keeps it pending). Returns { ok, destPath?, error? }. Never throws.
-  async function decide(agentId, runId, decision, destPath) {
+  async function decide(agentId, runId, decision, destPath, extra) {
     if (!ready()) state = hydrate(load());
     // record locally FIRST so a poll race can't re-show a card the Commander just acted on.
     if (decision === 'later') { state.later[runId] = true; }
@@ -157,10 +157,12 @@ const WorkshopStore = (() => {
     save();
     const body = { agentId: agentId || 'agent', runId: runId, decision: decision };
     if (decision === 'keep' && destPath) body.destPath = destPath;
+    // W7 (f): keep with open:true asks the sidecar to shell-open the destination folder after a successful copy.
+    if (decision === 'keep' && extra && extra.open === true) body.open = true;
     try {
       const r = await fetch('/api/workshop/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => null);
-      if (r.ok && j && j.ok !== false) return { ok: true, destPath: (j && j.destPath) || body.destPath };
+      if (r.ok && j && j.ok !== false) return { ok: true, destPath: (j && j.destPath) || body.destPath, opened: !!(j && j.opened) };
       return { ok: false, error: (j && j.error) || 'could not save your decision' };
     } catch (_) { return { ok: false, error: 'decision failed to reach the station' }; }
   }
@@ -180,6 +182,31 @@ const WorkshopStore = (() => {
     } catch (_) { return ''; }
   }
 
+  // W7 — the URL that RUNS a workshop file in a browser tab, served from the jailed read-only /workshop-run/ static
+  // route. A tab navigation (window.open) can't send the token header, so it rides ?token= exactly like /api/file.
+  // The per-launch token is injected synchronously into the page (window.__STARNET_API_TOKEN__), so read it directly
+  // (Harness.apiToken() is a promise — not usable in a sync href). Returns '' if the token isn't present yet.
+  function runUrl(agentId, runId, relPath) {
+    const tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
+    if (!tok) return '';
+    const parts = String(relPath || '').split('/').map(encodeURIComponent).join('/');
+    return '/workshop-run/' + encodeURIComponent(agentId || 'agent') + '/' + encodeURIComponent(runId) + '/' + parts
+      + '?token=' + encodeURIComponent(tok);
+  }
+
+  // W7 — shell-open a NON-web deliverable file with the OS default app (POST /api/workshop/open). Interactive-only
+  // by definition (the Commander clicked the file row). Returns { ok, error? }; never throws. The hardened
+  // window.fetch attaches the token header to /api/ URLs, so no manual token here.
+  async function openFile(agentId, runId, relPath) {
+    try {
+      const r = await fetch('/api/workshop/open', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: agentId || 'agent', runId: runId, path: relPath }) });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j && j.ok) return { ok: true };
+      return { ok: false, error: (j && (j.error || j.message)) || 'could not open that file' };
+    } catch (_) { return { ok: false, error: 'could not reach the station' }; }
+  }
+
   // the sensible default Keep destination (the Commander's Desktop, when the desktop shell knows it).
   function desktopDefault() { try { return deps.desktopDefault ? (deps.desktopDefault() || '') : ''; } catch (_) { return ''; } }
 
@@ -192,10 +219,13 @@ const WorkshopStore = (() => {
     fired = true;
     const m = pending[0];
     if (state.seen.indexOf(m.runId) === -1) { state.seen.push(m.runId); save(); }   // shown once this session
+    const aid = m.agentId || 'agent';
     Chat.workshopReturn(m, {
       readFile: readFile,
       desktopDefault: desktopDefault(),
-      onDecide: (decision, destPath) => decide(m.agentId || 'agent', m.runId, decision, destPath)
+      runUrl: (relPath) => runUrl(aid, m.runId, relPath),          // W7: URL that RUNS a web file in a tab
+      openFile: (relPath) => openFile(aid, m.runId, relPath),      // W7: shell-open a non-web file (OS default app)
+      onDecide: (decision, destPath, extra) => decide(aid, m.runId, decision, destPath, extra)
     });
   }
 
@@ -210,7 +240,7 @@ const WorkshopStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, readFile, desktopDefault, fetchPending, reset, queueConfirmLine, grantOf, openGrant, _hydrate: hydrate };
+  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, reset, queueConfirmLine, grantOf, openGrant, _hydrate: hydrate };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };

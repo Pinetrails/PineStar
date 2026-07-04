@@ -518,10 +518,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-summary .ws-v { display:block; color:var(--ph-bright); }
 .ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
 .ws-flist { display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
-.ws-file { text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
+.ws-filerow { display:flex; align-items:center; gap:6px; }
+.ws-file { flex:1 1 auto; text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
   font-family:inherit; font-size:12px; padding:2px 5px; cursor:pointer; overflow-wrap:anywhere; }
 .ws-file:hover { border-color:var(--ph-glow2); color:var(--ph-bright); }
 .ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(var(--gold-rgb),.06); }
+/* W7: "view source" is the demoted, opt-in code reader — small and dim beside the primary open action. */
+.ws-viewsrc { flex:0 0 auto; background:none; border:none; color:var(--ph-glow2); font-family:inherit;
+  font-size:10px; letter-spacing:.5px; padding:2px 4px; cursor:pointer; opacity:.75; }
+.ws-viewsrc:hover { color:var(--ph-bright); opacity:1; text-decoration:underline; }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
   border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
   overflow-wrap:anywhere; }
