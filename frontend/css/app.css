@@ -528,6 +528,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-acts { margin-top:8px; gap:6px 8px; }
 .ws-keep { display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap; }
 .ws-path { width:220px; max-width:100%; }
+.ws-pathhint { flex-basis:100%; font-size:11px; color:var(--ph-dim); letter-spacing:.2px; }
+.ws-pick { white-space:nowrap; }
+/* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
+.ws-verdetail { margin-top:6px; }
+.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
+.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.ws-vcmd .ws-vmark { flex:0 0 auto; }
+.ws-vcmd.ok  .ws-vmark { color:var(--gold); }
+.ws-vcmd.bad .ws-vmark { color:var(--bad); }
+.ws-vcmdtext { color:var(--ph-bright); font-family:inherit; }
+.ws-vexit { color:var(--bad); font-size:11px; }
 
 /* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a

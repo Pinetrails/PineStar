@@ -1341,15 +1341,25 @@ const Chat = (() => {
     title.textContent = '◈ while you were away — ' + who + ' built: ' + String(m.title || 'a deliverable');
     r.body.appendChild(title);
 
-    // HONEST verification line — proves off the manifest ONLY.
+    // HONEST verification line — proves off the manifest ONLY. Three truthful states:
+    //   1. the manifest recorded verify commands  → "tested — N of M passed" (+ per-command detail in the pane)
+    //   2. the agent flagged things a human must check (notVerified) → say so, don't imply failure
+    //   3. neither                                → "built — no test commands were defined"
+    // NOTE: today's workshop agent cannot run commands (it is told so in workshopPrompt), so a real manifest
+    // carries no verified.commands — the notVerified path is the common case. State 1 is future-proofing for
+    // when a shift can run tests; it never fabricates a result the manifest doesn't hold.
     const ver = document.createElement('span'); ver.className = 'ws-verline';
-    const vcmds = (m.verified && Array.isArray(m.verified.commands)) ? m.verified.commands : null;
+    const vcmds = (m.verified && Array.isArray(m.verified.commands)) ? m.verified.commands.filter(c => c && c.cmd) : null;
+    const notVer = Array.isArray(m.notVerified) ? m.notVerified.filter(Boolean) : [];
     if (vcmds && vcmds.length) {
-      const passed = vcmds.filter(c => c && Number(c.exit) === 0).length;
+      const passed = vcmds.filter(c => Number(c.exit) === 0).length;
       ver.textContent = 'tested — ' + passed + ' of ' + vcmds.length + ' command' + (vcmds.length > 1 ? 's' : '') + ' passed';
-      if (passed === vcmds.length) ver.classList.add('ok');
+      ver.classList.add(passed === vcmds.length ? 'ok' : 'dim');
+    } else if (notVer.length) {
+      ver.textContent = 'built — the agent couldn’t test here; ' + notVer.length + ' thing' + (notVer.length > 1 ? 's' : '') + ' for you to check';
+      ver.classList.add('dim');
     } else {
-      ver.textContent = 'built, not yet tested';
+      ver.textContent = 'built — no test commands were defined';
       ver.classList.add('dim');
     }
     r.body.appendChild(ver);
@@ -1393,6 +1403,22 @@ const Chat = (() => {
       mkLine('what', m.summary || '');
       mkLine('how to use', m.howToUse || '');
       if (Array.isArray(m.notVerified) && m.notVerified.length) mkLine('not verified', m.notVerified.join('; '));
+      // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
+      // (renders only when the manifest actually recorded them — never invents a command or a result).
+      if (vcmds && vcmds.length) {
+        const vd = document.createElement('div'); vd.className = 'ws-verdetail';
+        const vh = document.createElement('div'); vh.className = 'ws-k'; vh.textContent = 'verification'; vd.appendChild(vh);
+        vcmds.forEach(c => {
+          const ok = Number(c.exit) === 0;
+          const line = document.createElement('div'); line.className = 'ws-vcmd ' + (ok ? 'ok' : 'bad');
+          const mark = document.createElement('span'); mark.className = 'ws-vmark'; mark.textContent = ok ? '✓' : '✕';
+          const cmd = document.createElement('code'); cmd.className = 'ws-vcmdtext'; cmd.textContent = String(c.cmd);
+          line.appendChild(mark); line.appendChild(cmd);
+          if (!ok && c.exit != null) { const ex = document.createElement('span'); ex.className = 'ws-vexit'; ex.textContent = 'exit ' + c.exit; line.appendChild(ex); }
+          vd.appendChild(line);
+        });
+        sum.appendChild(vd);
+      }
       pane.appendChild(sum);
 
       // ── pane 2: jailed file browser ──
@@ -1423,12 +1449,44 @@ const Chat = (() => {
 
       // ── three actions, one row ──
       const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
-      // KEEP — a simple path input (default = the Commander's Desktop) then decide keep.
+      // KEEP — pick a destination folder. On desktop we offer a native folder picker (Tauri) IF the shell
+      // exposes one, and ALWAYS keep the typed path as a fallback with INLINE validation (does the folder
+      // exist? — asked of the sidecar) so a bad path is caught before Keep instead of failing silently.
       const keepWrap = document.createElement('span'); keepWrap.className = 'ws-keep';
       const path = document.createElement('input'); path.className = 'turnin-edit ws-path'; path.type = 'text';
       path.placeholder = 'folder to copy into'; path.value = opts.desktopDefault || '';
       path.setAttribute('aria-label', 'Destination folder to keep the deliverable in');
+      const hint = document.createElement('span'); hint.className = 'ws-pathhint'; hint.hidden = true;
       const keepBtn = document.createElement('button'); keepBtn.className = 'consent-btn'; keepBtn.textContent = 'Keep';
+
+      // inline validation: debounced dirstat; a nonexistent/typo'd folder shows a quiet warning (never blocks —
+      // keep still creates the folder, but the Commander sees the truth about their path first).
+      let validateTimer = null;
+      function validatePath() {
+        const dest = String(path.value || '').trim();
+        if (!dest) { hint.hidden = true; return; }
+        fetch('/api/fs/dirstat?path=' + encodeURIComponent(dest), { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null).then(j => {
+            if (!j) { hint.hidden = true; return; }
+            if (j.exists && j.isDir) { hint.hidden = true; }
+            else if (j.exists && !j.isDir) { hint.hidden = false; hint.textContent = '⚠ that path is a file, not a folder'; }
+            else { hint.hidden = false; hint.textContent = '⚠ that folder doesn’t exist yet — it will be created'; }
+          }).catch(() => { hint.hidden = true; });
+      }
+      path.addEventListener('input', () => { if (validateTimer) clearTimeout(validateTimer); validateTimer = setTimeout(validatePath, 400); });
+
+      const core = tauriCore();
+      let pickBtn = null;
+      if (core && core.invoke) {
+        pickBtn = document.createElement('button'); pickBtn.className = 'consent-btn ws-pick'; pickBtn.textContent = '📁 choose…';
+        pickBtn.title = 'pick a folder';
+        pickBtn.onclick = () => {
+          Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => {
+            if (dir) { path.value = String(dir); validatePath(); }
+          }).catch(() => { /* shell has no picker yet — the typed path is the fallback */ path.focus(); });
+        };
+      }
+
       keepBtn.onclick = async () => {
         const dest = String(path.value || '').trim();
         if (!dest) { path.focus(); return; }
@@ -1437,7 +1495,7 @@ const Chat = (() => {
         if (res && res.ok) settle('✓ kept — files copied to ' + (res.destPath || dest), false);
         else { keepBtn.disabled = false; keepBtn.textContent = 'Keep'; localLine('Could not keep this: ' + ((res && res.error) || 'the station refused the copy') + '.'); }
       };
-      keepWrap.appendChild(path); keepWrap.appendChild(keepBtn);
+      keepWrap.appendChild(path); if (pickBtn) keepWrap.appendChild(pickBtn); keepWrap.appendChild(keepBtn); keepWrap.appendChild(hint);
       acts.appendChild(keepWrap);
 
       // LATER — dismiss; the card may return next session (no confirm).

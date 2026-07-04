@@ -2042,6 +2042,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  // ADDITIVE (Lane B / ux-run-truth): read-only stat of a user-chosen KEEP destination folder, so the return
+  // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
+  // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
@@ -5072,6 +5076,20 @@ async function serveWorkspaceDir(req, res) {
   }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   return res.end(JSON.stringify({ dir: dir }));
+}
+
+// GET /api/fs/dirstat?path=<abs> — read-only existence/type check of a user-chosen KEEP destination folder.
+// Only stats the exact path (no listing, no traversal). Returns { exists, isDir }. ADDITIVE (Lane B): lets the
+// workshop return card validate a typed Keep path inline rather than failing silently at copy time.
+async function handleDirStat(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let p;
+  try { p = new URL(req.url, 'http://127.0.0.1').searchParams.get('path') || ''; } catch (_) { p = ''; }
+  p = String(p).trim();
+  if (!p || !path.isAbsolute(p)) return json(200, { exists: false, isDir: false, reason: 'not-absolute' });
+  let st;
+  try { st = await fsp.stat(p); } catch (_) { return json(200, { exists: false, isDir: false }); }
+  return json(200, { exists: true, isDir: !!(st && st.isDirectory()) });
 }
 
 // GET /api/file?agent=<id>&path=<rel> — read-only view of a file the agent produced, jailed to its
