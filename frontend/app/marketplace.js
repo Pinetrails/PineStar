@@ -377,10 +377,14 @@ const Marketplace = (() => {
     html += summonModelBarHTML();
     html += glassHTML();
     html += recShelfHTML();
-    const builtins = filt(Specialties.builtins());
+    const allBuiltins = Specialties.builtins();
+    const builtins = filt(allBuiltins);
     const customs = filt(Specialties.customs());
     html += '<div class="mkt-sect-h">▮ CLASS ROSTER</div>';
-    html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
+    // truthful telemetry: an EMPTY catalog means the shared catalog script failed to load (a wiring
+    // fault), not "no matches" — say so loudly instead of rendering a quietly blank roster.
+    if (!allBuiltins.length) html += '<div class="mkt-empty">⚠ the class catalog failed to load (shared/specialties.js unreachable) — the built-in roster is unavailable. Restart the app; if it persists, this build is mis-wired.</div>';
+    else html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no classes match your filter.</div>';
     // the build tile (＋) is always available at the bottom — author a brand-new class however you want
     const buildTile = '<button class="mkt-build" type="button" aria-label="build a custom class">' +
