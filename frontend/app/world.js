@@ -3016,8 +3016,10 @@ const World = (() => {
     ctx.shadowBlur = 0; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
 
+  let linkStaleDim = false;   // E1: set once per frame — dims the live-telemetry draws when the SSE bridge is down
   function frameBody(now) {
     const dt = Math.min(64, now - last); last = now; fnow = now;
+    linkStaleDim = linkDown(now);   // recompute the honest link state before any telemetry is drawn this frame
     if (wakeDark !== wakeDarkTarget) { wakeDark += (wakeDarkTarget - wakeDark) * Math.min(1, dt / 260); if (Math.abs(wakeDark - wakeDarkTarget) < 0.002) wakeDark = wakeDarkTarget; }
     if (kindleArmed) {   // THE KINDLING: the user's hold fills the spark; release lets it ebb; full → ignite
       kindleP = kindleHolding ? Math.min(1, kindleP + dt / 1500) : Math.max(0, kindleP - dt / 900);
@@ -3160,6 +3162,7 @@ const World = (() => {
     if (hoverAgent && !hoverAgent.unplaced) drawNameplate(now, hoverAgent);
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
     drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
+    if (linkStaleDim) drawLinkDown(now);   // E1: honest "the live telemetry is not live" marker in the chrome
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
     drawCurve(now); // barrel-warp the whole feed IN-CANVAS — the original (dot-matrix-era) curve, no dots
     drawCRT(now);   // scanlines + fade, painted in-canvas at device-px OVER the warped feed (no moiré)
@@ -3703,6 +3706,8 @@ const World = (() => {
   const RUN_FONT = "7px 'VT323','Courier New',monospace";
   function drawRunClocks(now) {
     if (!runStartByAgent.size) return;
+    ctx.save();
+    if (linkStaleDim) ctx.globalAlpha = 0.3;   // E1: link down → these clocks are last-known, not live; dim them
     for (const [aid, t0] of runStartByAgent) {
       const b = bodyForAgent(aid);
       if (!b || b.unplaced) continue;
@@ -3725,6 +3730,7 @@ const World = (() => {
       ctx.fillText(label, ax, ay);
       ctx.restore();
     }
+    ctx.restore();   // E1: close the link-stale dim wrapper
   }
 
   /* ---------- the DESK WORK-GLYPH (stage ticker STRETCH): a tiny "▸ TOOL" tag at a desk while that agent has
@@ -4075,6 +4081,27 @@ const World = (() => {
   // from the title screen. Hoisted here so pauseBridge() (on disconnect) can release them and resumeBridge()
   // (on re-entry) can re-arm them. The U.bus.on(...) subscriptions stay put (idempotent under `bridged`).
   let chanES = null, connPollTimer = null, connPollFn = null, connOpenFn = null, bridgePaused = false;
+  // LINK-DOWN HONESTY (Lane E1): the live station telemetry (queue gauges, run clocks) is only truthful while
+  // the SSE bridge is actually delivering events. Track the last DATA event's wall-clock and the socket's
+  // readyState so a dead/stalled link renders an honest degraded state instead of freezing the last-known truth.
+  // The server sends a keep-alive COMMENT (`: ka`) every 25s (see index.js handleChannelEvents) — comment lines
+  // do NOT surface to EventSource.onmessage, so a healthy-but-quiet stream can legitimately look silent for up to
+  // 25s. LINK_STALE_MS sits comfortably above that so a quiet stream is never mislabelled down; the readyState
+  // check is the primary, fast signal (a truly dropped socket flips to CONNECTING/CLOSED within the retry window).
+  let lastSseEventAt = 0;              // performance.now() of the last DATA frame actually received over chanES
+  const LINK_STALE_MS = 40000;         // 40s: keep-alive is 25s; only flag stale well beyond one missed keep-alive
+  // link is DOWN when the bridge is meant to be live (not deliberately paused to the title screen) and EITHER the
+  // socket is not OPEN, OR it has gone stale (no data for > LINK_STALE_MS AND not currently OPEN). Never "down"
+  // when bridgePaused (the user disconnected on purpose) or before the bridge was ever opened (no chanES yet AND
+  // never stamped) — an un-opened bridge shows nothing rather than a false alarm.
+  function linkDown(now) {
+    if (bridgePaused) return false;                                   // deliberately disconnected — not a fault
+    if (!bridged) return false;                                       // bridge never set up yet (pre-entry)
+    const open = !!(chanES && typeof EventSource !== 'undefined' && chanES.readyState === EventSource.OPEN);
+    if (!open) return true;                                           // socket missing / connecting / closed → down
+    if (lastSseEventAt && (now - lastSseEventAt) > LINK_STALE_MS) return true;   // half-open: bytes stopped flowing
+    return false;
+  }
   function pauseBridge() {
     bridgePaused = true;
     if (connPollTimer) { clearInterval(connPollTimer); connPollTimer = null; }
@@ -4773,8 +4800,8 @@ const World = (() => {
         const _tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? encodeURIComponent(String(window.__STARNET_API_TOKEN__)) : '';
         chanES = new EventSource(_base + '/api/channels/events' + (_tok ? ('?token=' + _tok) : ''));
       } catch (_) { return; }
-      chanES.onopen = () => { backoff = 1000; };
-      chanES.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
+      chanES.onopen = () => { backoff = 1000; lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; };
+      chanES.onmessage = ev => { lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
       chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
     };
     connOpenFn = open;
@@ -4792,12 +4819,38 @@ const World = (() => {
     if (depth <= 0) return;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    ctx.save();
+    if (linkStaleDim) ctx.globalAlpha = 0.3;   // E1: link down → this depth is last-known, not live; dim it
     const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 88, bh = 16;
     const x = W - bw - pad, y = H - bh - pad;
     ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
     ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
+    ctx.restore();
+  }
+
+  /* LINK DOWN marker (E1) — the honest "the live station telemetry has gone dark" chrome tag. Screen-space,
+     top-center in the canvas chrome (never over a desk), VT323 + red phosphor bloom + a slow breathing blink so
+     it reads as a live fault, not a frozen label. A glance, never a window (hover law). Only drawn while the SSE
+     bridge is genuinely down (linkStaleDim) — clears itself the frame the link recovers. */
+  const LINK_FONT = "13px 'VT323','Courier New',monospace";
+  function drawLinkDown(now) {
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const W = cv.width / dpr;
+    const pulse = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(now / 300));   // slow breathing so it never looks stuck
+    const label = '⚠ LINK DOWN';
+    ctx.save();
+    ctx.font = LINK_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const tw = ctx.measureText(label).width, cx = Math.round(W / 2), y = 6, padX = 6, padY = 3;
+    ctx.fillStyle = 'rgba(20,6,4,0.82)'; ctx.fillRect(cx - tw / 2 - padX, y - padY, tw + padX * 2, 18);
+    ctx.strokeStyle = 'rgba(255,80,60,0.55)'; ctx.lineWidth = 1;
+    ctx.strokeRect(cx - tw / 2 - padX + 0.5, y - padY + 0.5, tw + padX * 2 - 1, 17);
+    ctx.shadowColor = 'rgba(255,80,60,0.9)'; ctx.shadowBlur = 6 * dpr;
+    ctx.globalAlpha = pulse; ctx.fillStyle = '#ff6a4c';
+    ctx.fillText(label, cx, y);
+    ctx.restore();
   }
 
   /* THE JAM — the live backlog made PHYSICAL: park N amber "waiting" crates climbing off the INTAKE so
@@ -4811,11 +4864,14 @@ const World = (() => {
     const MAXVIS = 6, shown = Math.min(depth, MAXVIS);
     const cx = (intake.x + (intake.w || 1) / 2) * T;       // centered on the intake footprint
     const top = intake.y * T - 3;                          // crates climb upward off the intake's top edge
+    ctx.save();
+    if (linkStaleDim) ctx.globalAlpha = 0.3;   // E1: link down → this jam length is last-known, not live; dim it
     for (let i = 0; i < shown; i++) drawWaitCrate(cx, top - i * 6 + Math.sin(now / 360 + i * 0.7) * 0.6);   // gentle idle bob
     if (depth > MAXVIS) {
       ctx.fillStyle = '#e8c860'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('+' + (depth - MAXVIS), cx, top - shown * 6 - 3);
     }
+    ctx.restore();
   }
   // one parked amber crate (waiting ore) — matches the riding-box silhouette/palette
   function drawWaitCrate(cx, cy) {
@@ -4877,7 +4933,7 @@ const World = (() => {
       if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
     // TEST/DEBUG ONLY — the D3 border-meeting pure geometry (sharedEdge/borderTileFor), exposed read-only for the
     // DEV harness. No world state touched (both are pure; borderTileFor takes an injected walkable predicate).
     // The headless coverage lives in test/social-border.test.js (extracts the D3-PURE-GEOMETRY block from source).
