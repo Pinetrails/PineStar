@@ -1,5 +1,5 @@
 /* sidecar/tools/builtin/patchparse.js - V4A-style patch parser.
-   Parses a conservative subset of the Codex/Hermes patch format. It is pure
+   Parses a conservative subset of the Codex patch format (as used by the reference harness). It is pure
    and returns structured errors instead of throwing so fs.patch can validate
    every operation before touching disk. */
 'use strict';

@@ -1,6 +1,6 @@
 /* sidecar/ledger.js — the append-only spend logbook. One immutable line per finished run
    ({ runId, agentId, turns, usd, tokens, ts }), so cumulative spend survives restarts and can
-   be questioned across runs/agents/days. This is the missing "cron spend ledger" Hermes never
+   be questioned across runs/agents/days. This is the missing "cron spend ledger" the reference harness never
    had (parity study, hole #1) and the substrate budget.js governs over.
 
    PURE given its injected edges: `io` (the disk adapter — readAll/append, provided by the Node

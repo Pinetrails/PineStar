@@ -4,7 +4,6 @@ slug: python-debugger
 description: Step through Python with pdb and debugpy — breakpoints, scope inspection, and post-mortem on the crash site.
 category: Engineering
 requires: [workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---
@@ -46,4 +45,4 @@ Then attach a DAP client. Use for a daemon/gateway you can't restart.
 ## Method
 Break at the seam where the value first looks wrong, not the crash line. Print the suspects, step forward, and stop at the first line where reality diverges from your expectation — that's the bug.
 
-*Ported from Hermes Agent (MIT). Needs the WORKBENCH object to run python under a debugger.*
+*Needs the WORKBENCH object to run python under a debugger.*

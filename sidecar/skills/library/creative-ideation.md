@@ -4,7 +4,6 @@ slug: creative-ideation
 description: Generate specific, non-obvious ideas by routing to a named creative method instead of listing the first thing that comes to mind.
 category: Creative
 requires: []
-author: SHL0MS, ported via Hermes Agent
 license: MIT
 default: false
 ---
@@ -30,4 +29,4 @@ Any open-ended generative ask — "help me make/build/write something", "I'm stu
 
 For high-slop terrain (AI ideas, startup ideas, habit trackers, productivity apps) refuse the first FIVE ideas and force a provocation method.
 
-*Ported from SHL0MS's creative-ideation (MIT) via Hermes Agent. Pure reasoning — needs no workstation objects.*
+*Pure reasoning — needs no workstation objects.*

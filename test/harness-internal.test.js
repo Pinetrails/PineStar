@@ -70,7 +70,7 @@ A.ok(/const\s+canResume\s*=[\s\S]{0,400}if\s*\(\s*canResume\s*\)\s*\{[\s\S]{0,26
 A.ok(/AbortController\(\)[\s\S]{0,160}setTimeout\([\s\S]{0,80}\.abort\(\)/.test(src), 'fetchModelCatalog arms an AbortController timeout');
 A.ok(/fetch\(url,\s*\{\s*cache:\s*'no-store',\s*signal:/.test(src), 'the catalog fetch passes the abort signal');
 
-// Hermes-style work discipline: task runs should push the model into a stable build loop instead of repeated
+// Work discipline: task runs should push the model into a stable build loop instead of repeated
 // failed path guesses, shell-quoted source rewrites, or syntax-only verification.
 A.ok(/const\s+workDisciplineNote\s*=/.test(sidecar), 'sidecar builds a dedicated work-discipline prompt block');
 A.ok(/anchor shell_exec\.cwd to that exact folder/.test(sidecar), 'work discipline anchors shell cwd before project commands');

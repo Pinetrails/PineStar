@@ -4,7 +4,6 @@ slug: codebase-inspection
 description: Measure a repo — lines of code, language breakdown, and code-vs-comment ratios — with pygount.
 category: Engineering
 requires: [workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---
@@ -34,4 +33,4 @@ pygount --format=summary \
 ## Reading it
 The summary gives, per language: file count, code lines, documentation (comment) lines, empty lines. A very low doc:code ratio flags under-documented code; a very high one can flag generated or boilerplate-heavy files. Report the totals plus the 3-4 dominant languages — that's the "shape" of the repo.
 
-*Ported from Hermes Agent (MIT). Needs the WORKBENCH object to run pygount in the workspace.*
+*Needs the WORKBENCH object to run pygount in the workspace.*

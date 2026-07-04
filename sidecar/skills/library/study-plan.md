@@ -4,7 +4,6 @@ slug: study-plan
 description: Build a milestone study plan from the learner's real level to a concrete goal.
 category: Planning
 requires: [dish, cabinet]
-author: Hermes Agent
 license: MIT
 default: false
 ---

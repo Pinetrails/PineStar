@@ -3253,7 +3253,7 @@ const StationUI = (() => {
      become real agent tools, gated by the same consent prompt as everything else. The server URL +
      optional bearer token are stored by the sidecar (never displayed) via /api/connectors. */
   function buildConnectors(body) {
-    // CONSOLE MODE: TOOLSETS & CONNECTORS. TOOLSETS (first) is the Hermes-style organized surface — one CRT
+    // CONSOLE MODE: TOOLSETS & CONNECTORS. TOOLSETS (first) is the standard organized surface — one CRT
     // pill-switch row per capId FAMILY (web, files, workbench, delegation, studio, memory, jukebox), each a
     // kill-switch layered on object=capability (available = object placed AND toolset enabled). The JUKEBOX row
     // is where Spotify now lives (the connect flow is hosted inline, all sp-* ids intact). MCP CONNECTORS (second)

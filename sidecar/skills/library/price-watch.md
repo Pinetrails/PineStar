@@ -4,7 +4,6 @@ slug: price-watch
 description: Fetch live like-for-like prices, compare the true total, and say buy or wait.
 category: Research
 requires: [dish, cabinet]
-author: Hermes Agent
 license: MIT
 default: false
 ---

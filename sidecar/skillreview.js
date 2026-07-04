@@ -1,7 +1,7 @@
 /* sidecar/skillreview.js - background skill review loop helpers.
 
    This is intentionally small and conservative. The sidecar decides whether a
-   completed run was substantial enough to review, builds a Hermes-style prompt,
+   completed run was substantial enough to review, builds a review prompt,
    and index.js runs a quiet tool-restricted agent loop with only skill tools.
 */
 'use strict';

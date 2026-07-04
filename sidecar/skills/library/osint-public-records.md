@@ -4,7 +4,6 @@ slug: osint-public-records
 description: Cross-reference public records — corporate filings, contracts, lobbying, sanctions, courts, archives — into an evidence chain with explicit confidence.
 category: Research
 requires: [dish]
-author: Hermes Agent (adapted from ShinMegamiBoson/OpenPlanter)
 license: MIT
 default: false
 ---
@@ -36,4 +35,4 @@ Use for "follow the money", corporate due diligence, sanctions screening, litiga
 - **Confidence is mandatory** on every link — an OSINT report without confidence levels misleads.
 - **Cite the URL and date** for every fact; archive volatile pages via Wayback.
 
-*Adapted from ShinMegamiBoson/OpenPlanter (MIT) via Hermes Agent. Needs the DISH (web) object to fetch public records.*
+*Needs the DISH (web) object to fetch public records.*

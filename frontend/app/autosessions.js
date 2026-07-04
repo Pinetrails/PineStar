@@ -6,7 +6,7 @@
    toast but can never READ what the routine actually produced. There was no session, no thread,
    no output. This module makes an unattended run appear as a real workstream the instant it fires
    (rail row, marked busy) and folds its durable transcript into that session when it completes —
-   Claude-Code / Hermes session-list parity.
+   Claude-Code / reference-harness session-list parity.
 
    HOW IT WORKS (no new events; the contract is OWNED). The sidecar now runs every cron fire under
    a PER-RUN stream id 'cron-<runId>' (cron-driver.js), so its dialogue persists durably via the

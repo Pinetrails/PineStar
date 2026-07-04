@@ -4,7 +4,6 @@ slug: systematic-debugging
 description: Find the root cause with a tight red→green feedback loop before attempting any fix.
 category: Engineering
 requires: [workbench]
-author: Hermes Agent (adapted from obra/superpowers)
 license: MIT
 default: false
 ---
@@ -28,4 +27,4 @@ Ways to build the loop, roughly in order: a failing test at the seam that reache
 3. **Fix the cause, not the symptom.** Make the smallest change that turns the loop green. If you're swallowing an error, adding a retry, or special-casing a value, stop — that's a symptom patch, not a root-cause fix.
 4. **Verify.** Loop goes green, then run the FULL suite to prove no regression. Keep the loop as a regression test.
 
-*Adapted from obra/superpowers via Hermes Agent (MIT). Needs the WORKBENCH object to run the loop.*
+*Needs the WORKBENCH object to run the loop.*

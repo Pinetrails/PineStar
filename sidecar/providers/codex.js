@@ -31,7 +31,7 @@
   // The ChatGPT-account Codex backend exposes its OWN model list (DIFFERENT from the public OpenAI API
   // catalog) and the lineup drifts — slugs like gpt-5.1-codex* that the Codex CLI's public catalog still
   // lists are 400-rejected by the OAuth backend ("model is not supported when using Codex with a ChatGPT
-  // account"). So the real list is DISCOVERED live (listModels -> GET /models, Hermes codex_models.py); this
+  // account"). So the real list is DISCOVERED live (listModels -> GET /models, per the reference harness' codex model discovery); this
   // static list is only the OFFLINE FALLBACK (curated to the slugs verified accepted as of 2026-05/06). All
   // Codex models are tool-capable; a subscription is flat-rate, so per-token price is null (cost = $0).
   const CLIENT_VERSION = '1.0.0';   // chatgpt.com/backend-api/codex/models?client_version=…
@@ -350,7 +350,7 @@
     // The ACCOUNT's real model list — what the Codex backend will actually accept (the whole point: a slug
     // missing here is the one that 400s). GET /models with the bearer token; entries are { slug, visibility,
     // priority, … }. Skip hidden ones, sort by priority (the backend's recommended order), fall back to the
-    // curated STATIC_MODELS when offline / no token. Mirrors Hermes codex_models._fetch_models_from_api.
+    // curated STATIC_MODELS when offline / no token. Mirrors the reference harness' codex model-fetch flow.
     async function listModels() {
       try {
         const res = await doFetch(baseUrl + '/models?client_version=' + CLIENT_VERSION, {

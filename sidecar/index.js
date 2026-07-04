@@ -115,7 +115,7 @@ const Recipes = require('../frontend/app/recipes.js');     // built-in mission r
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
-const { makeEnvironmentManager } = require('./environment.js');     // Hermes-style execution backend boundary
+const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
@@ -541,7 +541,7 @@ function wrapEmitDiag(emitFn) {
 // the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
 // authoritative, append-only record covering EVERY surface, including headless cron/Telegram/delegated runs
 // that have no browser ws.history (the interactive browser conversation already persists durably via the
-// save-envelope mirror in cloudsave.js/savestore.js). Hermes keeps a SQLite transcript for all surfaces; this
+// save-envelope mirror in cloudsave.js/savestore.js). The reference harness keeps a SQLite transcript for all surfaces; this
 // closes that gap for the headless paths + gives an autopsy/replay substrate. Content is redacted on write.
 const TRANSCRIPT_FILE = path.join(WORKSPACES, 'transcript.jsonl');
 const transcriptIo = {
@@ -1272,7 +1272,7 @@ async function runSkillCurator(o) {
 
 /* ---- consent (P1.5): the four-tier broker's host-side state ----
    Full Access is FROZEN at boot: a tool or model output cannot flip it at runtime — closes the
-   prompt-injection escalation path (mirrors Hermes' import-frozen YOLO flag). */
+   prompt-injection escalation path (mirrors the reference harness's import-frozen YOLO flag). */
 const FULL_ACCESS = /^(1|true|yes|on)$/i.test(String(ENV('FULL_ACCESS') || '').trim());
 // permanent allowlist of danger-class keys (capability:scope) the user has blessed forever. Lives BESIDE
 // the notebook store (sibling of the fs jail) so the agent's own fs.* tools can neither read nor rewrite it.
@@ -1552,7 +1552,7 @@ const connectors = makeConnectorManager({
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
-/* ---- TOOLSETS kill-switch store (the Hermes-style "toolsets" surface): a per-capId-FAMILY on/off flag
+/* ---- TOOLSETS kill-switch store (the reference harness's "toolsets" surface): a per-capId-FAMILY on/off flag
    layered on top of object=capability. available = the granting object is placed AND the toolset is enabled.
    Default = enabled for every family; we only PERSIST the ones a user explicitly turned OFF (a sparse
    { capId:false } map), so a fresh install is byte-identical to no file and adding a new family never needs a
@@ -3190,7 +3190,7 @@ function handleCronRemove(req, res) {
 }
 
 // POST /api/cron/preview — validate a schedule string + return the next up-to-5 fire times (the injected clock,
-// never bare Date.now in the math). Net-new GUI value Hermes lacks entirely. A tz-less cron schedule previews
+// never bare Date.now in the math). Net-new GUI value the reference harness lacks entirely. A tz-less cron schedule previews
 // (and fires) on the host's LOCAL wall-clock (CRON_HOST_TZ); the response carries the resolved tz + a
 // human-readable LOCAL time per fire (e.g. "9:00 AM EDT") so the GUI shows when a routine actually runs (G4.1).
 // body: { schedule:<string>, tz?:<IANA string> }
@@ -3222,7 +3222,7 @@ function handleCronPreview(req, res) {
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
-/* POST /api/cron/run — run a routine NOW, streamed as NDJSON exactly like /api/run (strictly better than Hermes,
+/* POST /api/cron/run — run a routine NOW, streamed as NDJSON exactly like /api/run (strictly better than the reference harness,
    whose `cron run` only nudges next_run_at). The manual fire uses the SAME autonomous posture the scheduled fire
    will (surface:'autonomous', trigger:'schedule') so "test it now" exercises the real unattended path, and it
    records the outcome into the job's last-run record + emits cron.fire/cron.result to the HUD. body: { id } */
@@ -5388,7 +5388,7 @@ const MIME = {
   '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8', '.log': 'text/plain; charset=utf-8',
   // media types so an agent-produced clip serves with the right content-type and the chat can <video>/<audio> it.
   // Webp/jpeg already covered above (image set). mkv/avi stream fine but most browsers can't decode them — the
-  // COMMS player falls back to an "open" link in that case, mirroring Hermes's OpenMediaButton.
+  // COMMS player falls back to an "open" link in that case, mirroring the reference harness's OpenMediaButton.
   '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
   '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
@@ -5406,7 +5406,7 @@ function isActiveDeliverable(abs) {
 // parse a single-range `Range: bytes=a-b` header against a known size. Returns { start, end } (inclusive,
 // clamped) or null when there's no/blank range, or { unsatisfiable: true } when the range can't be served
 // (so the caller can answer 416). We honor only the first range — enough for <video>/<audio> seeking, which
-// is exactly what FileResponse / Electron's net stack give Hermes for free.
+// is exactly what FileResponse / Electron's net stack give the reference harness for free.
 function parseRange(header, size) {
   if (!header) return null;
   const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
@@ -5462,7 +5462,7 @@ async function handleDirStat(req, res) {
 // workspace (resolveInside proves the path can't escape WORKSPACES/<agentId>/). Lets the user OPEN a
 // deliverable from the app instead of digging through the filesystem. Served inline, never as an attachment.
 // STREAMS the bytes (createReadStream, never the whole file in memory) and honors HTTP Range so the COMMS
-// <video>/<audio> elements can seek — the Node analogue of Starlette's FileResponse in the Hermes gateway.
+// <video>/<audio> elements can seek — the Node analogue of Starlette's FileResponse in the reference gateway.
 async function serveWorkspaceFile(req, res) {
   let abs;
   try {

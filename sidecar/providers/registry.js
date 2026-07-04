@@ -1,4 +1,4 @@
-/* sidecar/providers/registry.js - Hermes-style provider profiles.
+/* sidecar/providers/registry.js - provider profiles, following the reference harness.
    Profiles are metadata only: adapters still implement the LLMProvider stream seam.
    This keeps provider discovery, auth shape, defaults, aliases, model endpoints, and UI
    labels in one place instead of spreading hardcoded provider ids through the host. */

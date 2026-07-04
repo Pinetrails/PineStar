@@ -1,7 +1,7 @@
 /* sidecar/tools/builtin/recall.js — the recall_conversation tool (H1.3).
 
-   The Hermes parity gap: Hermes exposes search_messages (BM25 FTS5) to the agent ITSELF so it can pull
-   weeks-old dialogue back into context on demand. StarNet already writes a durable per-workstream transcript
+   The parity gap vs the reference harness: it exposes a message-search tool (BM25 FTS5) to the agent ITSELF so
+   it can pull weeks-old dialogue back into context on demand. StarNet already writes a durable per-workstream transcript
    (transcriptstore.js) and has BM25 recall — but only over the curated NOTEBOOK, never the conversation. This
    tool closes that: the agent searches its OWN past dialogue in the active workstream by keyword and gets the
    most relevant earlier messages back.

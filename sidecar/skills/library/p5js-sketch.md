@@ -4,7 +4,6 @@ slug: p5js-sketch
 description: Build browser-based generative art, data viz, and interactive sketches as a single self-contained p5.js HTML file.
 category: Creative
 requires: [cabinet]
-author: Hermes Agent
 license: MIT
 default: false
 ---
@@ -36,4 +35,4 @@ Add `p5.sound.min.js` only for audio. Use WEBGL mode in `createCanvas(w,h,WEBGL)
 4. fs.write it (`sketch-<name>.html`), tell the Commander to open it and resize the window to test responsiveness.
 5. Wire an export key (e.g. `if (key==='s') saveCanvas('art','png')`).
 
-*Ported from Hermes Agent (MIT). Needs the CABINET (write files) object to save the sketch.*
+*Needs the CABINET (write files) object to save the sketch.*

@@ -1,6 +1,6 @@
 /* sidecar/environment.js - runtime execution backends.
 
-   Hermes' terminal layer is built around an environment boundary: the tool asks an
+   The reference harness' terminal layer is built around an environment boundary: the tool asks an
    environment to execute, while the environment decides whether that means host
    shell, Docker, SSH, or a cloud sandbox. StarNet's first parity step is the same
    seam. This module keeps the local backend behavior-compatible, and adds a

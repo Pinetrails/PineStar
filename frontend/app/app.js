@@ -143,20 +143,20 @@ const App = (() => {
   }
   // an always-appended SYSTEM truth: what the agent ACTUALLY runs on. Mirrors approvalClause — derived fresh each
   // compose, never stored in the editable identity.md (so it can't be edited away and never drifts stale). Fixes the
-  // "I'm a Hermes agent" misread AND the sibling "I'm a Skynet agent" one: when the agent introspects (env/pwd) it may
-  // still meet two legacy names — "Skynet" (the project's former name; renamed to StarNet, but some paths/env survive as
-  // back-compat aliases) and "Hermes" (the open-source harness StarNet's backend was ported from). Without this grounding
-  // it guesses one of those. Truthful-telemetry law: state only what's true (StarNet harness, Commander's own model), don't guess.
+  // "I'm a <legacy-name> agent" misread: when the agent introspects (env/pwd) it may meet the project's former name
+  // "Skynet" (renamed to StarNet, but some paths/env survive as back-compat aliases) or scattered references to the
+  // earlier open-source runtimes the harness was built on. Without this grounding it guesses one of those. Truthful-
+  // telemetry law: state only what's true (StarNet harness, Commander's own model), don't guess.
   function foundationClause() {
     return '\n\nYOUR FOUNDATION: You run on the StarNet harness — a local-first agent runtime on the Commander\'s own '
       + 'machine, not a hosted service. Your reasoning comes from whichever model the Commander has connected through '
-      + 'their own API key or account. As you look around your environment you may still meet two legacy names, and '
-      + 'neither changes what you are: (1) StarNet was previously called "Skynet" — it has been renamed, but some file '
+      + 'their own API key or account. As you look around your environment you may meet names that are not you, and '
+      + 'none of them change what you are: StarNet was previously called "Skynet" — it has been renamed, but some file '
       + 'paths, environment variables, and config keys may still carry the old "Skynet"/"SKYNET_" name as a back-compat '
-      + 'alias. (2) StarNet\'s harness was built by porting parts of the open-source Hermes agent harness, so some code, '
-      + 'comments, and tool names mention "Hermes". You are a StarNet agent on the StarNet harness — not a Skynet agent '
-      + 'and not a Hermes agent. Do not guess at your own foundation from ambiguous signals in the environment; report '
-      + 'only what you can actually verify, and say plainly when you are not sure.';
+      + 'alias; and because the harness was assembled from and built on earlier open-source agent runtimes, some code, '
+      + 'comments, or tool names may reference other projects. You are a StarNet agent on the StarNet harness — not a '
+      + 'Skynet agent, and not whatever those internal references happen to name. Do not guess at your own foundation '
+      + 'from ambiguous signals in the environment; report only what you can actually verify, and say plainly when you are not sure.';
   }
   // the orchestrator's CREW POSTURE — derived fresh each compose like approvalClause/foundationClause, never
   // stored in the editable identity.md (so it can't be edited away and never freezes stale). States only what
@@ -187,7 +187,7 @@ const App = (() => {
     // live roster truth, so it must land before anything else colours the prompt. '' for non-orchestrators.
     p += rosterClause(a);
     // FOUNDATION sits right after identity (before personality) — a constant system truth that grounds "what you are"
-    // so the agent never mistakes StarNet's Hermes-derived internals for being a Hermes agent. Kept out of the docs.
+    // so the agent never mistakes StarNet's internal lineage for being some other agent. Kept out of the docs.
     p += foundationClause();
     // personality sits AFTER identity (keeps the REAL-tools clause) and BEFORE purpose, so it colours the
     // agent's tone without ever displacing capability or the mission. Personas.compose folds the chosen
@@ -971,8 +971,8 @@ const App = (() => {
   }
 
   /* ---------- recommended-model quick picks (OpenRouter) ----------
-     One-tap slugs for newcomers who don't know what to type — directly serves the "easier than Hermes
-     for beginners" moat. These are SUGGESTIONS, not a claim of availability: a chip only prefills
+     One-tap slugs for newcomers who don't know what to type — directly serves the "easier than a bare
+     coding-agent CLI for beginners" moat. These are SUGGESTIONS, not a claim of availability: a chip only prefills
      #in-model, which the live catalog (updateHint → priceOf) then prices or flags. The slugs match the
      curated FALLBACK list loadModels() already ships, so nothing new is fabricated. Codex hides them —
      its menu is discovered live per-account (loadCodexModels), so a static list there could mislead. */

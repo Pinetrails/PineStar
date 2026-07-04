@@ -1,7 +1,7 @@
 /* sidecar/credpool.js — credential pool ordering + cooldown for provider key rotation (P0.2).
 
    A single API key is a single point of failure: one 429 / quota-exhaustion / revoked-auth on it stalls the
-   agent until a human intervenes. A Hermes-class daily-driver rotates to the next key and keeps going. The
+   agent until a human intervenes. A production-class daily-driver rotates to the next key and keeps going. The
    loop ALREADY consumes errorClass's `shouldRotateCredential` (auth/billing/rate_limit) to advance its
    fallback chain (loop.js) — but today every chain entry reuses the SAME key, so there is nothing to rotate
    TO. This module is the missing half: it turns a primary key + a pool of alternates into an ORDERED, deduped

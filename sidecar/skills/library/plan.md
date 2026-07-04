@@ -4,7 +4,6 @@ slug: plan
 description: Think through the approach and write a short plan before writing any code.
 category: Planning
 requires: []
-author: Hermes Agent (adapted from obra/superpowers)
 license: MIT
 default: true
 ---
@@ -29,5 +28,3 @@ Anything that spans more than one file or a handful of lines, anything with unkn
 - **Name the verification.** Every plan ends by saying how you'll prove it works (a test, a command, a visible result).
 
 If you have a notebook/todo capability, record the steps as a todo list and check them off as you go.
-
-*Adapted from obra/superpowers via Hermes Agent (MIT).*

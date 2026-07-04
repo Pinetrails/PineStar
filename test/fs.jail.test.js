@@ -141,7 +141,7 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     await rejects(searchTool.run({ query: 'x', path: '../other' }, ctx), 'search cannot escape the workspace jail');
   }
 
-  // ---- fs.search v2 (Hermes-parity): targets, output modes, file_glob, context, densify, paging, redact ----
+  // ---- fs.search v2 (parity with the reference harness): targets, output modes, file_glob, context, densify, paging, redact ----
   {
     const SX = path.join(ROOT, 'sx');
     await fsp.mkdir(path.join(SX, 'lib'), { recursive: true });

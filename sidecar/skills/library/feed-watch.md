@@ -4,7 +4,6 @@ slug: feed-watch
 description: Watch a source for change against a baseline and alert only when it crosses the bar.
 category: Research
 requires: [dish]
-author: Hermes Agent
 license: MIT
 default: false
 ---

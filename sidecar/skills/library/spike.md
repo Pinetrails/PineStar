@@ -4,7 +4,6 @@ slug: spike
 description: Throwaway experiments to validate an idea before you commit to a real build — decompose, research, build, verdict.
 category: Engineering
 requires: [workbench]
-author: Hermes Agent (adapted from gsd-build/get-shit-done)
 license: MIT
 default: false
 ---
@@ -38,4 +37,4 @@ One standalone directory per spike (`spikes/001-<name>/`). Smallest thing that a
 ### 5. Verdict
 Per spike, write the Given/When/Then result: **PASS / FAIL / PARTIAL**, the observed evidence, and what it means for the real build. Then delete the spike code (keep only the verdict). A spike that taught you the idea won't work is a *success*.
 
-*Adapted from gsd-build/get-shit-done via Hermes Agent (MIT). Needs the WORKBENCH object to build and run experiments.*
+*Needs the WORKBENCH object to build and run experiments.*

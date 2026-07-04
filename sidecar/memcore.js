@@ -13,7 +13,7 @@
   'use strict';
 
   const TRUST_STEP = 0.15;   // each signed memory.feedback delta nudges trust by delta*step, clamped to [0,1]
-  const TRUST_HALFLIFE_MS = 2592e6;   // 30d: an UNREINFORCED endorsement decays to half its weight (Hermes-parity trust decay)
+  const TRUST_HALFLIFE_MS = 2592e6;   // 30d: an UNREINFORCED endorsement decays to half its weight (parity with the reference harness' trust decay)
   const clamp01 = x => (x < 0 ? 0 : x > 1 ? 1 : x);
 
   // fold ONE memory.feedback delta into a record's [0,1] trust. Honest: a clamped sum of the REAL deltas
@@ -27,7 +27,7 @@
 
   // decayTrust(stored, lastReinforcedAt, now, halfLifeMs) -> [0,1] : the effective trust at `now`. A record's
   // EARNED trust fades toward 0 the longer it goes without re-endorsement — so a single stale "keep" from months
-  // ago no longer props a memory up forever (Hermes filters low-trust facts from recall; we de-weight them, never
+  // ago no longer props a memory up forever (the reference harness filters low-trust facts from recall; we de-weight them, never
   // silently drop them — pinned/relevance still win, so this only shifts ties). PURE: `now` is injected, no decay
   // when the reinforcement time is unknown/in the future (returns the raw value). This is the canonical fade math;
   // context.rank() mirrors it inline for the recall score — keep the two in sync.
@@ -40,7 +40,7 @@
     return clamp01(t * Math.pow(0.5, (n - ref) / hl));
   }
 
-  // ---- near-duplicate detection (Hermes-parity: Jaccard token overlap, dependency-free) ----
+  // ---- near-duplicate detection (parity with the reference harness: Jaccard token overlap, dependency-free) ----
   // catches PARAPHRASE dupes that exact-text equality misses ("the user prefers npm start" vs "prefers npm start
   // over serve"), so reflection doesn't clutter the turn-in beat and the panel can flag redundant beliefs.
   const SIM_STOP = new Set(('a an the of to in on for and or but is are was were be been it its this that with as at by from your you i we they').split(/\s+/));

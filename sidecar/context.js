@@ -141,7 +141,7 @@
     return out;
   }
 
-  // Output-side fence scrub (Hermes-parity: their StreamingContextScrubber strips the recall fence from the
+  // Output-side fence scrub (parity with the reference harness: its StreamingContextScrubber strips the recall fence from the
   // MODEL's output so it can't forge one). A `<recalled-memory>…</recalled-memory>` block (and a stray opener/
   // closer) is something only WE emit on the prompt boundary — if the model echoes one (prompt-injection, an
   // adversarial paste), scrubbing it before the text is persisted/reflected stops a forged fence laundering
@@ -221,7 +221,7 @@
     return scored.slice(0, k).map(s => s.r);
   }
 
-  // on_pre_compress parity (Hermes injects relevant memory into the compaction summary so insights survive
+  // on_pre_compress parity (the reference harness injects relevant memory into the compaction summary so insights survive
   // when old turns are discarded). PURE helper the host calls right before summarizing the foldable slice:
   // ranks the agent's durable memory against the recent conversation text and renders a compact block to
   // PREPEND to the summarizer's input — so a summary can never silently drop "user prefers X". Returns '' when
@@ -239,7 +239,7 @@
     return rr.text || '';
   }
 
-  // H5.1: the compaction summarizer's system prompt — a STRUCTURED section template (Hermes parity) instead of
+  // H5.1: the compaction summarizer's system prompt — a STRUCTURED section template (parity with the reference harness) instead of
   // free prose, so a folded summary preserves task/goal/decisions/open-questions/next-steps/critical-context in a
   // predictable shape the agent can act on. `prevSummary` true => instruct a MERGE-update of the prior summary
   // (H5.2 iterative merge) rather than a fresh one. Pure string builder — exported so it is unit-testable.

@@ -1,7 +1,7 @@
 /* sidecar/providers/codex-auth.js — the ONLY module that knows the OpenAI Codex OAuth wire.
 
-   Replicates the device-code login OpenAI's own Codex CLI uses (faithful port of Hermes'
-   hermes_cli/auth.py `_codex_device_code_login` / `refresh_codex_oauth_pure`), so a STARNET user can
+   Replicates the device-code login OpenAI's own Codex CLI uses (faithful port of the reference
+   CLI's auth flow `_codex_device_code_login` / `refresh_codex_oauth_pure`), so a STARNET user can
    run agents off a personal ChatGPT subscription instead of paying per-token API. No client secret —
    the Codex CLI's PUBLIC client_id + a PKCE code_verifier minted server-side by the device-auth flow.
 
@@ -24,7 +24,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // ---- literal constants (must match OpenAI's Codex CLI exactly; see Hermes auth.py:96-98) ----
+  // ---- literal constants (must match OpenAI's Codex CLI exactly; see the reference CLI's auth flow) ----
   const CODEX_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';     // Codex CLI's public client
   const CODEX_ISSUER = 'https://auth.openai.com';
   const CODEX_OAUTH_TOKEN_URL = CODEX_ISSUER + '/oauth/token';
@@ -76,7 +76,7 @@
     } catch (e) { return {}; }
   }
   // True when the token is missing/opaque-without-exp is treated as NOT expiring (return false), matching
-  // Hermes: only a present, numeric exp within the skew window forces a refresh. `nowMs` is INJECTED by the
+  // the reference harness: only a present, numeric exp within the skew window forces a refresh. `nowMs` is INJECTED by the
   // caller (the composition root) — when it's absent we fail SAFE (return true => refresh) rather than read
   // an ambient clock here, keeping this backend module deterministic (see test/lint-determinism.js).
   function accessTokenIsExpiring(token, skewSeconds, nowMs) {
@@ -240,7 +240,7 @@
   // an ambient clock in this deterministic backend module. The composition root always passes a real time.
   function isoNow(nowMs) {
     if (typeof nowMs !== 'number') return '';
-    return new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, 'Z');   // …:56Z (drop millis), matching Hermes' format
+    return new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, 'Z');   // …:56Z (drop millis), matching the reference harness' format
   }
 
   return {

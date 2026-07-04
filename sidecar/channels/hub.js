@@ -1,6 +1,6 @@
 /* sidecar/channels/hub.js — the messaging BRIDGE (C5): inbound message -> the run host -> streamed reply back.
 
-   This is the analogue of Hermes's injected `_message_handler`: the ONE seam where a normalized InboundMessage
+   This is the analogue of the reference harness's injected `_message_handler`: the ONE seam where a normalized InboundMessage
    drives the EXISTING run host (runOnce, extracted from handleRun) and the agent's reply is delivered back to
    the platform. The hub knows nothing of the loop/provider/broker internals — it is handed `runOnce`, the
    durable `store`, a `send`, the current `secrets` (OR key+model), and a `classify` (task-vs-talk), all injected.

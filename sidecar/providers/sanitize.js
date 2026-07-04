@@ -1,4 +1,4 @@
-/* sidecar/providers/sanitize.js — tool-call argument repair (Hermes-derived, L2.S1).
+/* sidecar/providers/sanitize.js — tool-call argument repair (derived from the reference harness, L2.S1).
 
    Non-Anthropic models routed via OpenRouter (GLM / Kimi / Qwen / smaller locals) routinely emit
    tool-call argument JSON that is mechanically broken — a trailing comma, an unclosed brace, a raw

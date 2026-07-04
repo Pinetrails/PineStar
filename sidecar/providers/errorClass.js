@@ -1,4 +1,4 @@
-/* sidecar/providers/errorClass.js — API error classification -> failover actions (Hermes-derived, L3.S1).
+/* sidecar/providers/errorClass.js — API error classification -> failover actions (derived from the reference harness, L3.S1).
 
    Today the loop carries a single `err.transient` bit: a 429/5xx retries, everything else is fatal. That
    burns paid attempts on never-succeed failures (402 out-of-credits, 400 malformed) and tells the user

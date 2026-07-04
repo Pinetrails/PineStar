@@ -4,7 +4,7 @@
    lands, an auxiliary JUDGE model is asked "is this goal satisfied by the agent's last response?" and returns
    a one-line JSON verdict {done, reason}. If not done, a CONTINUATION prompt (goal + subgoals + judge reason)
    is auto-queued as the next turn. The loop ends when the judge says done, the continuation budget is spent,
-   a real user message preempts it, or the Commander pauses/clears it. Mirrors Hermes hermes_cli/goals.py, minus
+   a real user message preempts it, or the Commander pauses/clears it. Mirrors the reference CLI's goal loop, minus
    the wait-barrier (StarNet's /goal has no async-process registry to park on).
 
    PURE + node-testable (a `GoalLoop` global in the browser, module.exports under node), mirroring goals.js /
@@ -123,7 +123,7 @@
     opts = opts || {};
     if (!s || (s.status !== 'paused')) return s;
     s.status = 'active'; s.pausedReason = null;
-    if (opts.resetBudget !== false) { s.turnsUsed = 0; s.parseFails = 0; }   // a fresh window on resume (Hermes parity)
+    if (opts.resetBudget !== false) { s.turnsUsed = 0; s.parseFails = 0; }   // a fresh window on resume (reference-harness parity)
     return s;
   }
   function clear(s) { if (s) { s.status = 'cleared'; } return s; }

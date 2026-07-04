@@ -4,7 +4,6 @@ slug: pdf-document-extraction
 description: Pull clean text, tables, and structure out of PDFs and scanned documents — web-first, then local extractors.
 category: Productivity
 requires: [workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---
@@ -36,4 +35,4 @@ If the document is at a URL, `web_fetch("https://.../report.pdf")` often returns
 3. Extract, then clean: strip repeated headers/footers, rejoin hyphenated line breaks, preserve table structure.
 4. Save the extracted text/markdown to the workspace and summarize what you got (page count, whether OCR was needed, any low-confidence pages).
 
-*Ported from Hermes Agent's ocr-and-documents (MIT). Needs the WORKBENCH object to run the extractors (web_fetch alone covers URL-hosted PDFs without it).*
+*Needs the WORKBENCH object to run the extractors (web_fetch alone covers URL-hosted PDFs without it).*

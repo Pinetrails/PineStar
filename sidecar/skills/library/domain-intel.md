@@ -4,7 +4,6 @@ slug: domain-intel
 description: Passive domain reconnaissance — subdomains, SSL certs, WHOIS, DNS, and availability — with Python stdlib, no API keys.
 category: Research
 requires: [workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---
@@ -27,4 +26,4 @@ Use for "what do we know about domain X", subdomain discovery, cert/expiry check
 2. Run each check, collecting structured output (JSON) so results compose.
 3. Report: registrar + key dates, cert issuer + expiry (flag if <30 days), the discovered subdomains, and the DNS record set. Note anything anomalous (wildcard cert, very recent registration, mismatched name servers).
 
-*Ported from Hermes Agent's domain-intel (MIT). Needs the WORKBENCH object to run the Python recon script.*
+*Needs the WORKBENCH object to run the Python recon script.*

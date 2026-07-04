@@ -1,4 +1,4 @@
-/* node test/iteration-budget.test.js — NO-OP TURN REFUND in the iteration budget (Hermes parity, sidecar/loop.js).
+/* node test/iteration-budget.test.js — NO-OP TURN REFUND in the iteration budget (parity with the reference harness, sidecar/loop.js).
    A turn that produces NO tool call AND no NEW assistant content (empty/whitespace text, OR text byte-identical to
    the immediately-prior assistant turn — e.g. a wasted failover/compaction retry) is refunded from the effective
    iteration budget instead of counting against maxIters. Bounded by a HARD FLOOR (limits.refundMax, default 8): past

@@ -789,7 +789,7 @@ const PROPTERM = (() => {
   function agentFile(agId) {
     const a = DATA.AGENT[agId], ag = SIM.S.agents[agId];
     return kv('ROLE', a.role) +
-      kv('HARNESS', a.harness === 'OPENCLAW' ? '<span class="bad">OPENCLAW</span>' : 'HERMES') +
+      kv('HARNESS', a.harness === 'OPENCLAW' ? '<span class="bad">OPENCLAW</span>' : 'STARNET') +
       kv('MODEL', DATA.MODELS[a.model].name) +
       kv('POSITION', presenceOf(agId)) +
       kv('SKILL', Math.round(ag.skill)) + bar(ag.skill) +

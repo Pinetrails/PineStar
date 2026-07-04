@@ -46,7 +46,7 @@ const GAME = (() => {
     'HULL INTEGRITY ................... 100%',
     'LIFE SUPPORT (CREW: 1 HUMAN) ..... OK',
     'OPENCLAW GATEWAY :18789 .......... LIVE',
-    'HERMES HARNESS MESH x16 .......... LIVE',
+    'STARNET HARNESS MESH x16 .......... LIVE',
     'MODEL UPLINKS: GPT 5.5 / OPUS 4.8 / FABLE 5',
     'PRINTIFY API ..................... CONNECTED',
     'FIVERR WEBHOOK ................... LISTENING',

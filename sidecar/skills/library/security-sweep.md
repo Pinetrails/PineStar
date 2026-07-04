@@ -4,7 +4,6 @@ slug: security-sweep
 description: Sweep a tree for secrets, injection, and authz holes — each finding demonstrated and ranked.
 category: Engineering
 requires: [cabinet, workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---

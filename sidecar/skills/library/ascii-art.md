@@ -4,7 +4,6 @@ slug: ascii-art
 description: Make text banners and ASCII art — generated directly, or with figlet/cowsay when a terminal is placed.
 category: Creative
 requires: []
-author: 0xbyt4, ported via Hermes Agent
 license: MIT
 default: false
 ---
@@ -25,4 +24,4 @@ Generate the art yourself. For a banner, draw the letters in a block or slant st
 - Short text (1–8 chars) suits detailed fonts (`doom`, `block`); long text suits compact fonts (`small`, `mini`).
 - Banners read best in a monospace context. With a CABINET (write files) you can drop the result into a `.txt`.
 
-*Ported from Hermes Agent's ascii-art skill (MIT). The figlet/cowsay/curl tools require the WORKBENCH object; without it, the art is generated directly.*
+*The figlet/cowsay/curl tools require the WORKBENCH object; without it, the art is generated directly.*

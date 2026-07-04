@@ -4,7 +4,6 @@ slug: ledger-upkeep
 description: Log entries and reconcile a ledger with computed totals — never eyeball, never force a balance.
 category: Planning
 requires: [cabinet, workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---

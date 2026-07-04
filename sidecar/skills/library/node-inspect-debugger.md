@@ -4,7 +4,6 @@ slug: node-inspect-debugger
 description: Drive Node's V8 inspector for real breakpoints, stepping, and scope inspection when console.log isn't enough.
 category: Engineering
 requires: [workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---
@@ -36,4 +35,4 @@ Launch with `node --inspect-brk=9229 app.js`, then drive the DevTools protocol f
 ## Method
 Set the breakpoint at the seam where the value first goes wrong (not at the crash site). Step forward one frame at a time, printing the suspect values, until the value diverges from what you expect — that line is the bug.
 
-*Ported from Hermes Agent (MIT). Needs the WORKBENCH object to run node and attach the inspector.*
+*Needs the WORKBENCH object to run node and attach the inspector.*
