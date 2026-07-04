@@ -127,3 +127,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-03 agent/byok-coldstart -> trunk (test:fast GREEN): keyless cold-start fixes - key signup links, model prefill, early model-dock no-key warning, post-awakening key CTA banner
 - 2026-07-03 agent/recruiter → 04130ea9 merge(recruiter): adaptive recruitment (worksignal+recruiter+curated shelf/beat+prospects); test:fast GREEN
 - 2026-07-03 agent/public-shell -> trunk (test:fast GREEN, docs-only): PRIVACY.md + TERMS.md + download page + launch checklist, all claims code-verified; open swaps = support email + license decision
+- 2026-07-03 agent/clip-export -> trunk (test:fast GREEN): P2.2 clip export - auto-armed ring buffer + in-page GIF89a encoder + recap-card button, live-verified real GIF, honest overlay (no XP delta)
