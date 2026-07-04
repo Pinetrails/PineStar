@@ -80,7 +80,9 @@ A.ok(/id="comms-agent-model"/.test(html), 'index.html has the COMMS agent model 
 A.ok(/function renderIdBar\(/.test(chat), 'chat.js renders the COMMS agent line');
 A.ok(/App\.agents\(\)/.test(chat), 'the agent line is populated from the LIVE roster (App.agents), not hardcoded');
 A.ok(/activeWs\s*\?\s*\(activeWs\.agentId/.test(chat), 'the selected agent reflects the DISPLAYED workstream\'s agentId');
-A.ok(/function load\(ws\)[\s\S]{0,3000}renderIdBar\(\)/.test(chat), 'load() re-renders the agent line so it follows every stream switch');
+// window widened 3000→3600: load() legitimately grew (it now also re-resolves the speaker `name` from the
+// displayed stream's agent). The invariant is unchanged — renderIdBar() must live INSIDE load().
+A.ok(/function load\(ws\)[\s\S]{0,3600}renderIdBar\(\)/.test(chat), 'load() re-renders the agent line so it follows every stream switch');
 // a change hands off to App.selectAgent (switch/mint a stream bound to that agent) — never rebinds the current convo.
 A.ok(/function wireIdBar\(/.test(chat), 'chat.js wires the selector change once');
 A.ok(/App\.selectAgent\(/.test(chat), 'selecting an agent hands off to App.selectAgent');
