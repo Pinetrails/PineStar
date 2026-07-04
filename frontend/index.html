@@ -385,6 +385,7 @@
 <script src="app/profile.js"></script>
 <script src="app/worksignal.js"></script><!-- pure capability-usage histogram (adaptive recruitment): tool-lane EWMA read + per-lane task-tag volume -->
 <script src="app/recruiter.js"></script><!-- pure adaptive-recruitment matcher: worksignal+profile+dossier+roster → which NEW class to recruit + honest why -->
+<script src="app/prospect.js"></script><!-- pure prospect generator: constrained draft directive + hard-validating parse (station authors bespoke new specs) -->
 <script src="app/dossier.js"></script>
 <script src="app/study.js"></script><!-- GROWTH Tier 1: pure STUDY engine (dossier Phase B) — parse/salience/dedup for work→belief proposals + ratings-taste + archetype classifier -->
 <script src="app/interview.js"></script>
@@ -461,6 +462,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/profilestore.js"></script>
 <script src="app/worksignalstore.js"></script><!-- adaptive-recruitment wiring: agent.tool_call → capability lane (ToolProps/CAP_REGISTRY) → decayed histogram; rides the save envelope, never emits -->
 <script src="app/recruiterstore.js"></script><!-- adaptive-recruitment read surface: joins worksignal+profile+dossier+live roster → the bay's CURATED shelf + the recruit beat -->
+<script src="app/prospectstore.js"></script><!-- prospect generator wiring: growth-gated async mint (reason-only), denylist, staging → the bay's DRAFTED FOR YOU row; never emits -->
 <script src="app/dossierstore.js"></script>
 <script src="app/studystore.js"></script><!-- GROWTH Tier 1: STUDY wiring (dossier Phase B) — fetch belief-update proposals, session cap + denylist, ratings→taste; self-persists (own key), never emits -->
 <script src="app/curiositystore.js"></script>

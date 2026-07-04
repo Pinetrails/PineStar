@@ -1632,6 +1632,53 @@ const App = (() => {
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
+    // ADAPTIVE RECRUITMENT — PROSPECT GENERATOR (Slice 4): as the station learns the Commander, it DRAFTS bespoke
+    // new agent specs the 17-class catalog doesn't contain, staged in the bay for the Commander to confirm (never
+    // auto-saved). Reason-only model call (like the ongoing suggestion), growth+cooldown+warm gated, once/session,
+    // silent on failure. capabilityKeys/skillSlugs are the REAL allowed sets so a draft can never claim gear that
+    // doesn't exist; getTopRecommendation feeds the recruiter's best existing-class pick so the draft avoids
+    // duplicating it (reply NONE if a class already serves the gap).
+    if (typeof ProspectStore !== 'undefined') {
+      // the real installed skill slugs (fetched once, best-effort) — a prospect's SKILLS must come from this set.
+      let skillSlugs = [];
+      try { fetch('/api/skills').then(r => r.ok ? r.json() : { skills: [] }).then(d => { skillSlugs = ((d && d.skills) || []).map(s => s && s.slug).filter(Boolean); }).catch(() => {}); } catch (_) {}
+      const worksignalSummaryText = () => {
+        try {
+          const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
+          if (!s || !s.dominant) return '';
+          const lanes = Object.keys(s.laneTags || {}).map(l => l + ' (' + s.laneTags[l] + ')').join(', ');
+          return 'dominant lane: ' + s.dominant + '; ' + s.samples + ' tool-samples; lanes worked: ' + (lanes || s.dominant);
+        } catch (_) { return ''; }
+      };
+      // warmth 0..1 = how far past the calibration floor the histogram is (the recruiter's warm read, as a number).
+      const warmthNow = () => {
+        try {
+          const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
+          if (!s || s.calibrating) return 0;
+          const floor = (typeof WorkSignal !== 'undefined' && WorkSignal.CALIBRATING_N) ? WorkSignal.CALIBRATING_N : 5;
+          return Math.min(1, (s.samples || 0) / (floor * 4));
+        } catch (_) { return 0; }
+      };
+      ProspectStore.init({
+        now: () => Date.now(),
+        chat: (o) => (typeof Harness !== 'undefined' && Harness.chat) ? Harness.chat(o) : Promise.resolve({ error: 'no-harness' }),
+        getSystem: () => agent ? agent.systemPrompt : '',
+        getDossierBlock: () => (typeof DossierStore !== 'undefined' && DossierStore.composeBlock) ? (DossierStore.composeBlock() || '') : '',
+        getWorksignalSummary: worksignalSummaryText,
+        getWarmth: warmthNow,
+        getFamiliarity: () => { try { const s = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null; return s && Number.isFinite(s.familiarity) ? s.familiarity : null; } catch (_) { return null; } },
+        getRosterClasses: () => liveAgents().map(a => { const sp = a.specialtyId && typeof Specialties !== 'undefined' ? Specialties.get(a.specialtyId) : null; return { name: (sp && sp.name) || a.name, tags: (sp && sp.tags) || {} }; }),
+        getCatalogSummary: () => {
+          if (typeof Specialties === 'undefined') return [];
+          const all = (Specialties.builtins() || []).concat(Specialties.customs ? (Specialties.customs() || []) : []);
+          return all.map(s => ({ id: s.id, name: s.name, tagline: s.tagline, tags: s.tags || {} }));
+        },
+        // the REAL capability keys a kit may use — the same pickable set the custom builder exposes, plus connector.
+        getCapabilityKeys: () => ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'connector'],
+        getSkillSlugs: () => skillSlugs.slice(),
+        getTopRecommendation: () => { try { const t = (typeof RecruiterStore !== 'undefined' && RecruiterStore.topPick) ? RecruiterStore.topPick() : null; return t ? t.classId : ''; } catch (_) { return ''; } }
+      });
+    }
     // G3a CONFIDENCE NARRATIVE: two fire-once spoken moments in the hero's reliability arc (calibration
     // complete + TRUSTED). Init AFTER XpStore so its memory.feedback hook sees an already-folded meter.
     if (typeof ConfBeats !== 'undefined') ConfBeats.init({ getStats: () => { const a = agents.get('agent'); return a ? a.stats : null; } });

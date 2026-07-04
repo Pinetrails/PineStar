@@ -40,6 +40,8 @@ const Marketplace = (() => {
   let query = '';
   let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
   let buildKit = [], buildSkills = [], buildEffort = null;   // the custom-class builder's picked loadout (Class Loadouts S3)
+  let buildDraft = null;            // Slice 4: a station-drafted prospect pre-filling the builder (name/tagline/purpose/manual/emoji)
+  let acceptingProspectId = null;   // Slice 4: the prospect id being reviewed → removed from staging on a successful CREATE
 
   const hasRecipes = () => typeof Recipes !== 'undefined';
   const hasIcons = () => typeof ClassIcons !== 'undefined';
@@ -377,6 +379,7 @@ const Marketplace = (() => {
     html += summonModelBarHTML();
     html += glassHTML();
     html += recShelfHTML();
+    html += prospectShelfHTML();
     const allBuiltins = Specialties.builtins();
     const builtins = filt(allBuiltins);
     const customs = filt(Specialties.customs());
@@ -841,6 +844,31 @@ const Marketplace = (() => {
     return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — the next hire your real work points to</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
+  /* ---------- PROSPECTS: bespoke DRAFTS the station authored from the Commander's real work (Slice 4) ----------
+     Distinct from the curated shelf (which ranks EXISTING classes): a prospect is a brand-new spec the catalog
+     doesn't contain, DRAFTED by the station and awaiting the Commander's confirm (never auto-saved/summoned).
+     Honest labelling: "DRAFTED FOR YOU" + a provenance note. Clicking opens the EXISTING custom-class builder
+     pre-filled with the draft (mirrors the R5 recipeMint seed path); dismiss denylists it. */
+  function prospectShelfHTML() {
+    if (typeof ProspectStore === 'undefined' || !ProspectStore.list) return '';
+    let items = []; try { items = ProspectStore.list() || []; } catch (_) { return ''; }
+    if (!items.length) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-prospect-sect">✦ DRAFTED FOR YOU — new roles the station authored from your work</div>' +
+      '<div class="mkt-rec-rail">' + items.map(prospectCardHTML).join('') + '</div>';
+  }
+  function prospectCardHTML(p) {
+    const d = (p && p.draft) || {};
+    const emoji = d.emoji || '✦';
+    return '<div class="mkt-rec mkt-prospect" data-prospect="' + esc(p.id) + '">' +
+      '<div class="mkt-rec-top"><span class="mkt-prospect-glyph" aria-hidden="true">' + esc(emoji) + '</span>' +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(d.name || 'New specialist') + '</div>' +
+          '<div class="mkt-rec-tag">' + esc(d.tagline || '') + '</div></div></div>' +
+      (p.why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(p.why) + '</div>' : '') +
+      '<div class="mkt-prospect-prov">◇ drafted by the station from your work — review &amp; save to add it</div>' +
+      '<div class="mkt-prospect-acts"><button class="bb sm mkt-prospect-open" data-prospect="' + esc(p.id) + '">▸ REVIEW &amp; SAVE</button>' +
+        '<button class="bb sm mkt-prospect-dismiss" data-prospect="' + esc(p.id) + '" aria-label="dismiss this drafted role" title="not for me">✕</button></div>' +
+    '</div>';
+  }
   /* ---------- R6: the "FOR YOU" row (ranked by dossier interest lanes + goal-text keyword match) ----------
      The plan's discovery-front recommender. Distinct from the profile-affinity "RECOMMENDED FOR YOU" shelf above:
      FOR YOU blends the SAME profile affinity with the Commander's GOALS belief text (keyword-matched into the rank),
@@ -919,7 +947,7 @@ const Marketplace = (() => {
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; renderStage(); });
     const build = stage.querySelector('.mkt-build');
     // editingId cleared: ＋ is always a FRESH class, never a stale upsert (the edit view can be abandoned by closing the window)
-    if (build) build.addEventListener('click', () => { sfx('click'); editingId = null; buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
+    if (build) build.addEventListener('click', () => { sfx('click'); editingId = null; buildDraft = null; acceptingProspectId = null; buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); pendingMintKey = null; pendingMintTemplate = null; enterRecipeEditor(null, 'create'); });
 
@@ -954,6 +982,40 @@ const Marketplace = (() => {
 
     wireGlass(stage);
     wireSuggest(stage);
+    wireProspect(stage);
+  }
+
+  /* ---------- wiring: prospects (station-drafted new classes) ----------
+     REVIEW & SAVE seeds the EXISTING custom-class builder with the draft (kit/skills/text pre-filled) — the
+     Commander reviews, edits, and confirms → a normal custom specialty is saved (summon path unchanged). Accepting
+     removes the prospect from staging (accept, not denylist). Dismiss denylists the fingerprint + re-renders. */
+  function wireProspect(scope) {
+    const sc = scope || root;
+    if (typeof ProspectStore === 'undefined') return;
+    sc.querySelectorAll('.mkt-prospect-open').forEach(b => b.addEventListener('click', () => {
+      const p = ProspectStore.get ? ProspectStore.get(b.dataset.prospect) : null;
+      if (!p || !p.draft) { renderStage(); return; }
+      sfx('click');
+      prefillBuilderFromProspect(p);
+    }));
+    sc.querySelectorAll('.mkt-prospect-dismiss').forEach(b => b.addEventListener('click', () => {
+      if (ProspectStore.dismiss) ProspectStore.dismiss(b.dataset.prospect);
+      sfx('close'); renderStage();
+    }));
+  }
+  // seed the custom-class builder state from a prospect draft, then open it (mirrors the R5 recipeMint pre-fill).
+  // acceptingProspectId is held so a successful CREATE removes the prospect from staging (accept, not dismiss).
+  function prefillBuilderFromProspect(p) {
+    const d = p.draft || {};
+    editingId = null;                                  // a brand-new custom, not an upsert of an existing class
+    buildAccent = d.accent || '#ffaa33';
+    buildModel = (d.model && ['reasoning', 'balanced', 'fast'].indexOf(d.model) >= 0) ? d.model : 'balanced';
+    buildKit = Array.isArray(d.kit) ? d.kit.slice() : [];
+    buildSkills = Array.isArray(d.skills) ? d.skills.slice() : [];
+    buildEffort = d.reasoningEffort || null;
+    buildDraft = { emoji: d.emoji || '✦', name: d.name || '', tagline: d.tagline || '', purpose: d.purpose || '', manual: d.manual || '' };
+    acceptingProspectId = p.id;                        // consumed on a successful save
+    view = 'build'; renderStage();
   }
 
   /* ---------- wiring: dossier (the action button + custom edit/delete) ---------- */
@@ -1578,7 +1640,8 @@ const Marketplace = (() => {
     // Custom classes are edited in THIS builder (via editingId) so their loadout pickers are reachable; a fresh
     // ＋ build has no editingId. Every field prefills from the spec being edited. (Built-ins are frozen — no edit.)
     const editing = editingId ? Specialties.get(editingId) : null;
-    const d = editing || { emoji: '✦', name: '', tagline: '', purpose: '', manual: '' };
+    // a station-drafted prospect (buildDraft) pre-fills the NEW-class form when not editing an existing custom.
+    const d = editing || buildDraft || { emoji: '✦', name: '', tagline: '', purpose: '', manual: '' };
     const sw = BUILD_ACCENTS.map(c => '<button type="button" class="mkt-sw' + (c === buildAccent ? ' sel' : '') +
       '" data-acc="' + c + '" style="background:' + c + '" aria-label="accent ' + c + '"></button>').join('');
     const seg = (m, l) => '<button type="button" class="mkt-seg' + (buildModel === m ? ' sel' : '') + '" data-model="' + m + '">' + l + '</button>';
@@ -1623,7 +1686,7 @@ const Marketplace = (() => {
   const effSeg = (e, l) => '<button type="button" class="mkt-seg' + ((buildEffort === e || (e === null && !buildEffort)) ? ' sel' : '') + '" data-effort="' + (e == null ? '' : e) + '">' + l + '</button>';
   function wireBuildForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); editingId = null; view = 'grid'; renderStage(); });
+    if (back) back.addEventListener('click', () => { sfx('click'); editingId = null; buildDraft = null; acceptingProspectId = null; view = 'grid'; renderStage(); });
     // live seal preview: icon + accent
     const emojiIn = stage.querySelector('#mkt-b-emoji'), coinEmoji = stage.querySelector('#mkt-build-emoji'), coin = stage.querySelector('#mkt-build-coin');
     if (emojiIn) emojiIn.addEventListener('input', () => { if (coinEmoji) coinEmoji.textContent = (emojiIn.value || '✦').trim() || '✦'; });
@@ -1692,6 +1755,9 @@ const Marketplace = (() => {
       if (editing) spec.id = editing.id;
       try {
         const saved = Specialties.saveCustom(spec);
+        // Slice 4: a saved prospect graduates to a real custom class — remove it from staging (accept, not deny).
+        if (acceptingProspectId && typeof ProspectStore !== 'undefined' && ProspectStore.accept) { try { ProspectStore.accept(acceptingProspectId); } catch (_) {} }
+        acceptingProspectId = null; buildDraft = null;
         focusAgent = saved.id; editingId = null; view = 'grid';
         sfx('click'); note((editing ? 'updated class: ' : 'created class: ') + saved.name, 'good');
         renderStage();
@@ -1700,5 +1766,8 @@ const Marketplace = (() => {
     const nameIn = stage.querySelector('#mkt-b-name'); if (nameIn) nameIn.focus();
   }
 
-  return { open, close };
+  // Slice 4: let ProspectStore refresh the open bay when a fresh prospect mints (no-op when the bay is closed or
+  // not on the grid view — never yanks the user out of the editor).
+  function refreshIfOpen() { if (root && view === 'grid') { try { renderStage(); } catch (_) {} } }
+  return { open, close, refreshIfOpen };
 })();
