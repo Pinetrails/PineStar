@@ -327,9 +327,29 @@ const CRON_ROUTINE_NOTE = '\n\n[ROUTINE] This is an unattended scheduled routine
 // The agent's toolset is NOT a host-side constant — it is projected from the objects placed in the
 // agent's room (CAP_REGISTRY: computer/dish/cabinet/notebook). See handleRun's station + resolveTools.
 
-// last-resort nets so a single run's failure never takes the whole host (and all other runs) down.
-process.on('unhandledRejection', e => console.error('unhandledRejection:', (e && e.stack) || e));
-process.on('uncaughtException', e => console.error('uncaughtException:', (e && e.stack) || e));
+// last-resort nets so a single run's failure never takes the whole host (and all other runs) down. Policy
+// (decided): KEEP SERVING (log-and-continue) but SURFACE the degraded state — push the exception into the
+// diagnostics ring so the Commander's diagnostics UI shows it honestly instead of the app looking healthy while
+// something is actually on fire. Rate-limited so a fast-repeating throw can't flood the ring: at most one ring
+// entry per DISTINCT message per window. recordDiagError is a hoisted decl (defined below) + redacts on write.
+const PROC_DIAG_WINDOW_MS = 5 * 60 * 1000;
+const _procDiagSeen = new Map();   // distinct message -> last-surfaced epoch ms (pruned when it grows)
+function surfaceProcessError(kind, e) {
+  const raw = (e && (e.stack || e.message)) || String(e);
+  console.error(kind + ':', raw);
+  try {
+    const msg = kind + ': ' + ((e && e.message) || String(e));   // key the rate-limit on the short message, not the volatile stack
+    const now = Date.now();
+    const last = _procDiagSeen.get(msg) || 0;
+    if (now - last >= PROC_DIAG_WINDOW_MS) {
+      _procDiagSeen.set(msg, now);
+      if (_procDiagSeen.size > 64) { for (const [k, t] of _procDiagSeen) if (now - t >= PROC_DIAG_WINDOW_MS) _procDiagSeen.delete(k); }
+      recordDiagError('process ' + msg);
+    }
+  } catch (_) {}
+}
+process.on('unhandledRejection', e => surfaceProcessError('unhandledRejection', e));
+process.on('uncaughtException', e => surfaceProcessError('uncaughtException', e));
 
 try { fs.mkdirSync(WORKSPACES, { recursive: true }); } catch (e) {}
 
