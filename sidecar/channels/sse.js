@@ -36,6 +36,14 @@ function runTeeView(name, payload) {
   return null;
 }
 
+// Backpressure ceiling: a ZOMBIE client (still connected at TCP but not reading — a suspended laptop, a wedged
+// tab) makes res.write() return false and the kernel/Node buffer the frame in process memory. Left alone that
+// buffer grows without bound for the life of the (never-closing) socket — a slow memory leak the throw-based
+// dead-socket eviction never catches (write() doesn't throw, it just returns false). So once a client's buffered
+// bytes cross this ceiling, we treat it as gone and evict it. 4MB is ~thousands of queued HUD frames — a healthy
+// reader drains far below it; only a truly stuck socket ever gets here.
+const SSE_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
+
 function makeSseHub() {
   const clients = new Set();
 
@@ -46,19 +54,31 @@ function makeSseHub() {
   function remove(res) { return clients.delete(res); }
   function size() { return clients.size; }
 
-  // returns how many clients the event actually reached (dead clients are dropped, not counted).
+  // Hard-evict a backpressured/dead client: drop it from the set, then best-effort end+destroy the socket so the
+  // buffered bytes are released (a plain delete would leave Node still holding the write buffer alive).
+  function evict(res) {
+    clients.delete(res);
+    try { if (typeof res.end === 'function') res.end(); } catch (_) {}
+    try { if (typeof res.destroy === 'function') res.destroy(); } catch (_) {}
+  }
+
+  // returns how many clients the event actually reached (dead/backpressured clients are dropped, not counted).
   function broadcast(name, payload) {
     if (!clients.size) return 0;
     const line = format(name, payload);
     let n = 0;
     for (const res of clients) {
-      try { res.write(line); n++; }
-      catch (_) { clients.delete(res); }   // socket gone → evict so we never grow unbounded
+      let ok;
+      try { ok = res.write(line); n++; }
+      catch (_) { evict(res); continue; }   // socket gone (write threw) → evict so we never grow unbounded
+      // write() returned false → the client isn't draining. Tolerate transient backpressure, but once the
+      // buffered bytes cross the ceiling the client is a zombie: evict it (and don't count it as reached).
+      if (ok === false && Number(res.writableLength) > SSE_MAX_BUFFER_BYTES) { evict(res); n--; }
     }
     return n;
   }
 
-  return { add, remove, size, broadcast, format };
+  return { add, remove, size, broadcast, format, _internals: { SSE_MAX_BUFFER_BYTES } };
 }
 
 module.exports = { makeSseHub, runTeeView };
