@@ -482,6 +482,7 @@ const World = (() => {
     if (!agent || agent.unplaced) return;
     if (awaitPrompt && prompt && awaitPrompt.promptId === prompt.promptId) return;
     awaitPrompt = prompt || { promptId: '' };
+    awaitStampAt = (typeof performance !== 'undefined') ? performance.now() : fnow;   // E2: stamp the await TTL
     awaitArrived = false;
     awaitAnchor = resolveWaitAnchor();
     // seize the body out of the desk pose so tick re-paths it to the anchor (mirrors the summon re-seize)
@@ -3017,9 +3018,11 @@ const World = (() => {
   }
 
   let linkStaleDim = false;   // E1: set once per frame — dims the live-telemetry draws when the SSE bridge is down
+  let lastTtlSweepAt = 0;     // E2: throttle the paired-state TTL sweep to once per second (never per-frame)
   function frameBody(now) {
     const dt = Math.min(64, now - last); last = now; fnow = now;
     linkStaleDim = linkDown(now);   // recompute the honest link state before any telemetry is drawn this frame
+    if (now - lastTtlSweepAt >= 1000) { lastTtlSweepAt = now; try { sweepStaleStates(now); } catch (_) {} }   // E2: degrade any paired state whose end-event was lost
     if (wakeDark !== wakeDarkTarget) { wakeDark += (wakeDarkTarget - wakeDark) * Math.min(1, dt / 260); if (Math.abs(wakeDark - wakeDarkTarget) < 0.002) wakeDark = wakeDarkTarget; }
     if (kindleArmed) {   // THE KINDLING: the user's hold fills the spark; release lets it ebb; full → ignite
       kindleP = kindleHolding ? Math.min(1, kindleP + dt / 1500) : Math.max(0, kindleP - dt / 900);
@@ -4043,6 +4046,90 @@ const World = (() => {
   const deskProg = new Map();        // agentId -> 0..1 (real published fraction only)
   const runStartByAgent = new Map(); // agentId -> performance.now() at agent.run.start
   const deskProgFor = aid => deskProg.has(aid) ? deskProg.get(aid) : null;
+  /* ---------- Lane E2 — paired-state TTLs (the second net under reconnect reconciliation) ----------
+     A run clock / work pose / await-prompt is asserted off a START event and cleared off its matching END event.
+     If the END event is LOST (sidecar crash mid-run, a dropped SSE frame), the frontend would assert "RUN 47:12"
+     forever — the app lying about state. As an independent net, every reinforcing event (run.start/token/tool_call)
+     stamps a last-seen time; a once-per-second sweep degrades any paired state with no reinforcement for its TTL to
+     cleared/unknown rather than asserted-forever. Kept cheap: one Map of timestamps, swept once per second (never
+     per-frame). Reconnect reconciliation (snapshot fetch, below) is the PRIMARY correction; this TTL is the
+     belt-and-suspenders that also covers the no-snapshot-endpoint case. */
+  const runLastSeenByAgent = new Map();          // agentId -> performance.now() of the last reinforcing run event
+  const RUN_TTL_MS = 300000;                     // 5m of NO token/tool/start event ⇒ the run clock degrades to unknown
+  const AWAIT_TTL_MS = 660000;                   // consent max (600s) + grace ⇒ a stuck await clears if its response was lost
+  let awaitStampAt = 0;                           // performance.now() when the current awaitPrompt was last reinforced
+  function stampRun(aid) { if (aid) runLastSeenByAgent.set(aid, (typeof performance !== 'undefined') ? performance.now() : fnow); }
+  /* the once-per-second TTL sweep (E2). Degrades paired states whose reinforcing event was lost:
+       • a run clock with no token/tool/start event for RUN_TTL_MS ⇒ clear runStartByAgent (+ its work pose,
+         glyph, serverLit, and any leftover crew workUntil for that agent) so no eternal RUN clock is asserted.
+       • an awaitPrompt with no reinforcement for AWAIT_TTL_MS (consent-max + grace) ⇒ clearAwait(), since a
+         lost permission.response would otherwise strand the hero at the wait anchor forever.
+     Cheap: iterates only the (usually tiny) live maps, once per second. */
+  function sweepStaleStates(now) {
+    if (runStartByAgent.size) {
+      for (const aid of Array.from(runStartByAgent.keys())) {
+        const seen = runLastSeenByAgent.get(aid) || runStartByAgent.get(aid) || 0;
+        if (now - seen > RUN_TTL_MS) {
+          runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid);
+          glyphByAgent.delete(aid);                       // the in-flight tool glyph is just as stale
+          if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }   // drop an autonomous body out of the working pose
+          const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;  // clear a stuck crew work pose
+        }
+      }
+    }
+    if (awaitPrompt && awaitStampAt && (now - awaitStampAt > AWAIT_TTL_MS)) clearAwait();   // a lost permission.response never strands the hero
+  }
+  /* Lane E2 — reconnect reconciliation (the PRIMARY correction). On every SSE (re)open, ask the sidecar for the
+     authoritative live state and rebuild the paired-state maps to match, CLEARING anything the server no longer
+     reports (a run that ended during the outage, a prompt already answered). Backend endpoint GET /api/state/snapshot
+     is owned by the lifecycle lane and may not exist in this worktree yet — this MUST be 404/failure-tolerant: on any
+     non-OK / malformed response we do nothing and lean on the TTL net above. Shape (best-effort, all fields optional):
+       { activeRuns:[{agentId, startedMsAgo?}], pendingPrompts:[{promptId, agentId}], inflightTools:[{agentId, name, callId}],
+         serverLitAgents:[agentId], queueDepths:{queueId:depth} }  */
+  function reconcileFromSnapshot(snap) {
+    if (!snap || typeof snap !== 'object') return;
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    // ---- active runs: keep/refresh reported ones, DROP any run clock the server no longer knows about ----
+    if (Array.isArray(snap.activeRuns)) {
+      const live = new Set();
+      for (const r of snap.activeRuns) {
+        if (!r || !r.agentId) continue;
+        live.add(r.agentId);
+        const startedAgo = Math.max(0, +r.startedMsAgo || 0);
+        if (!runStartByAgent.has(r.agentId)) runStartByAgent.set(r.agentId, now - startedAgo);
+        stampRun(r.agentId);
+      }
+      for (const aid of Array.from(runStartByAgent.keys())) if (!live.has(aid)) {   // ended during the outage
+        runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid); glyphByAgent.delete(aid);
+        if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }
+        const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;
+      }
+    }
+    // ---- inflight tool glyphs: authoritative rebuild ----
+    if (Array.isArray(snap.inflightTools)) {
+      const liveTool = new Set();
+      for (const t of snap.inflightTools) { if (t && t.agentId && t.name) { glyphByAgent.set(t.agentId, { name: t.name, callId: t.callId || null }); liveTool.add(t.agentId); } }
+      for (const aid of Array.from(glyphByAgent.keys())) if (!liveTool.has(aid)) glyphByAgent.delete(aid);
+    }
+    // ---- serverLit (autonomous run pose): reconcile to the reported set ----
+    if (Array.isArray(snap.serverLitAgents)) {
+      const want = new Set(snap.serverLitAgents.filter(Boolean));
+      for (const aid of Array.from(serverLit)) if (!want.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }
+      for (const aid of want) if (!serverLit.has(aid)) { serverLit.add(aid); setActivityFor(aid, 'task'); }
+    }
+    // ---- pending permission prompt: enter it if the server still has one for the hero, else clear a stale await ----
+    if ('pendingPrompts' in snap) {
+      const prompts = Array.isArray(snap.pendingPrompts) ? snap.pendingPrompts : [];
+      const mine = prompts.find(p => p && (!p.agentId || (agent && p.agentId === agent.id)));
+      if (mine) enterAwait({ promptId: mine.promptId || '', agentId: mine.agentId || (agent && agent.id) });
+      else if (awaitPrompt) clearAwait();   // the prompt was answered during the outage
+    }
+    // ---- delegation window: the server no longer reports an open dispatch we tracked ----
+    if (Array.isArray(snap.activeRuns)) {
+      // if no reported run belongs to the tracked delegate lead, the delegation window is stale
+      if (delegateLead && !snap.activeRuns.some(r => r && r.agentId === delegateLead)) { delegateLead = null; delegateCall = null; }
+    }
+  }
   /* ---------- desk DISTRESS flash (G0.4 capdenied / G0.8 run-error) ----------
      A brief red warning strobe over the acting agent's desk when its run genuinely dies — the floor's
      honest "something just went wrong HERE" beat. Additive light over the entities (drawn with the
@@ -4778,6 +4865,7 @@ const World = (() => {
       const n = p && p.name;
       if (!n) return;
       heatBump(p.agentId, 0.35);                  // G0.3: any real tool fire is activity — stoke the desk heat
+      stampRun(p.agentId);                        // E2: a tool fire reinforces the run TTL
       if (typeof PropSprites === 'undefined') return;   // E6e: prop layer not loaded — heat still stoked, no throw
       if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (unchanged)
         if (!PropSprites.pulseConnector) return;
@@ -4798,12 +4886,12 @@ const World = (() => {
     U.bus.on('verify.result', p => { if (typeof PropSprites !== 'undefined' && PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
     // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat (audio.js already rides this
     // same event for music intensity) — the working screens burn by REAL token flow, never a faked flicker.
-    U.bus.on('agent.token', p => heatBump(p && p.agentId, 0.06));
+    U.bus.on('agent.token', p => { heatBump(p && p.agentId, 0.06); stampRun(p && p.agentId); });   // E2: a token reinforces the run TTL
     // G0.2 RUN CLOCK: elapsed-time bookkeeping keyed to the REAL run lifecycle (a run.error is always
     // followed by run.end reason 'error', so end is the one cleanup point). Internal reason-only runs
     // never reach U.bus (harness.js suppresses their start/end), so no clock ever shows for self-talk.
-    U.bus.on('agent.run.start', p => { if (p && p.agentId) runStartByAgent.set(p.agentId, performance.now()); });
-    U.bus.on('agent.run.end', p => { if (p && p.agentId) runStartByAgent.delete(p.agentId); });
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) { runStartByAgent.set(p.agentId, performance.now()); stampRun(p.agentId); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId) { runStartByAgent.delete(p.agentId); runLastSeenByAgent.delete(p.agentId); } });
     // G0.2 SIM-TASK PROGRESS: store a desk fraction ONLY when a producer publishes a real prog/dur pair
     // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
     U.bus.on('task', t => {
@@ -4826,12 +4914,25 @@ const World = (() => {
         const _tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? encodeURIComponent(String(window.__STARNET_API_TOKEN__)) : '';
         chanES = new EventSource(apiUrl('/api/channels/events') + (_tok ? ('?token=' + _tok) : ''));
       } catch (_) { return; }
-      chanES.onopen = () => { backoff = 1000; lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; };
+      chanES.onopen = () => { backoff = 1000; lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; fetchSnapshot(); };
       chanES.onmessage = ev => { lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
       chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
     };
     connOpenFn = open;
     open();
+  }
+  /* E2: fetch the authoritative live-state snapshot on every SSE (re)open and reconcile the paired-state maps.
+     404/failure-tolerant: the endpoint is owned by the lifecycle lane and may not exist here — any non-OK/throw
+     just falls through to the TTL net. Uses apiUrl() (desktop-origin safe) + the harness fetch monkey-patch adds
+     the auth header for /api/ URLs, matching every other frontend fetch. */
+  function fetchSnapshot() {
+    if (typeof fetch === 'undefined') return;
+    try {
+      fetch(apiUrl('/api/state/snapshot'), { cache: 'no-store' })
+        .then(r => { if (!r.ok) return null; return r.json(); })
+        .then(snap => { if (snap) { try { reconcileFromSnapshot(snap); } catch (_) {} } })
+        .catch(() => {});   // endpoint absent / offline: TTL net covers it
+    } catch (_) {}
   }
   // the live backlog total — FloorStats owns it (tested), with the chanQueues sum as a fallback if
   // FloorStats isn't loaded. Both the numeric gauge and the physical jam read this one source.
@@ -4939,7 +5040,13 @@ const World = (() => {
     cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
   }
 
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge,
+  // E2 verification hooks (dev/test only): seed a run clock, force-age it past the TTL, or drive a reconcile with a
+  // synthetic snapshot — so the paired-state TTL + reconnect reconciliation can be proven without a 5-minute wait or
+  // the real /api/state/snapshot endpoint. Read-only paths (dbg()) already expose ttl counts.
+  const _dbgSeedRun = (aid) => { if (!aid) return; runStartByAgent.set(aid, (typeof performance !== 'undefined') ? performance.now() : fnow); stampRun(aid); };
+  const _dbgAgeRun = (aid, ms) => { const t = runLastSeenByAgent.get(aid); if (t != null) runLastSeenByAgent.set(aid, t - (+ms || 0)); const s = runStartByAgent.get(aid); if (s != null) runStartByAgent.set(aid, s - (+ms || 0)); };
+  const _dbgReconcile = (snap) => { try { reconcileFromSnapshot(snap); } catch (_) {} };
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
@@ -4959,7 +5066,7 @@ const World = (() => {
       if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
     // TEST/DEBUG ONLY — the D3 border-meeting pure geometry (sharedEdge/borderTileFor), exposed read-only for the
     // DEV harness. No world state touched (both are pure; borderTileFor takes an injected walkable predicate).
     // The headless coverage lives in test/social-border.test.js (extracts the D3-PURE-GEOMETRY block from source).
