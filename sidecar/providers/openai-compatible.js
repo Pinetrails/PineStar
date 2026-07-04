@@ -63,7 +63,9 @@
     const baseUrl = cleanBaseUrl(opts.baseUrl);
     const chatPath = cleanPath(opts.chatPath, '/chat/completions');
     const modelsPath = cleanPath(opts.modelsPath, '/models');
-    const includeUsage = opts.includeUsage === true;
+    // Usage reporting defaults ON: streams must report token usage so cost accounting and
+    // context compaction work. Callers may opt out with an explicit includeUsage: false.
+    const includeUsage = opts.includeUsage !== false;
     const defaultContext = Number(opts.defaultContext || 0) || 0;
     let catalog = null;
     let catalogPromise = null;

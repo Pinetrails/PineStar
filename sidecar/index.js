@@ -3990,9 +3990,13 @@ async function runOnce(o) {
   const artifactLedger = makeArtifactCollector();
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
-    const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
-    const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
-    if (n > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical call blocked (loop guard)', summary: 'loop-break' };
+    // LOOP GUARD (mirrors loop.js semantics): key on the FULL argsRaw via a sha1 digest (the old .slice(0,400)
+    // collided two DIFFERENT long payloads sharing a 400-char prefix — a false positive), and count only FAILING
+    // calls — a byte-identical call that keeps SUCCEEDING (e.g. many fs_write to the same path with different
+    // content is a different argsRaw anyway; a legitimately-repeated identical success is not a stuck loop) is
+    // never blocked, and any success RESETS the streak. Only a run stuck repeating the SAME failing call is broken.
+    const sig = c.name + '|' + crypto.createHash('sha1').update(String(c.argsRaw || '')).digest('hex');
+    if ((seen.get(sig) || 0) > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical FAILING call blocked (loop guard)', summary: 'loop-break' };
     // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
     // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
@@ -4016,6 +4020,10 @@ async function runOnce(o) {
       }
       toolBytes += r.content.length;
     }
+    // loop-guard bookkeeping: a FAILING result advances this signature's streak; ANY success clears it (so an
+    // intermittently-failing call that eventually works never trips the guard). Matches loop.js's reset-on-success.
+    if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
+    else seen.delete(sig);
     return r;
   };
 
@@ -4480,13 +4488,16 @@ function handleDiagnostics(req, res) {
 // inflight map). Idempotent. Each run's own finally cleans its maps + auto-denies any open consent prompt; hub
 // runs are marked `superseded` first so their (now stale) partial reply isn't delivered after the kill.
 function handleHalt(req, res) {
-  const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
-  const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
+  const tgInflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
+  const dcInflight = (discord && discord.hub && discord.hub._internals) ? discord.hub._internals.inflight : null;
+  const halted = killAll(runs, tgInflight, dcInflight);   // browser runs + Telegram + Discord hub runs, in one kill (see sidecar/halt.js)
+  let cronAborted = 0;
+  try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted }));
+  res.end(JSON.stringify({ halted, cronAborted }));   // honest counts: run-controllers aborted + cron leases aborted
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
@@ -5017,10 +5028,13 @@ async function handleStt(req, res) {
 }
 
 function readBody(req, max) {
+  // Accumulate raw Buffers and decode ONCE at the end. The old `b += c` did a per-chunk toString(), which
+  // mangles a multi-byte UTF-8 char (emoji, CJK, accented) that happens to be SPLIT across two TCP chunks —
+  // each half decodes to replacement chars. Byte-counting for the cap stays correct (Buffer.length is bytes).
   return new Promise((resolve, reject) => {
-    let b = '', n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else b += c; });
-    req.on('end', () => resolve(b));
+    const chunks = []; let n = 0;
+    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 }

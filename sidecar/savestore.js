@@ -51,11 +51,28 @@
       if (!AID_RE.test(String(agentId))) throw new Error('bad save agentId: ' + agentId);
       return pathMod.join(rootDir, agentId + '.save.json');
     }
-    // reads + parses a save file path. A missing/corrupt file is fail-closed (-> undefined); the agentId
-    // grammar is validated by the caller via saveFile() BEFORE this, so a traversal id throws, never reads.
-    function readWrapper(file) {
-      try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return undefined; }
+    // reads + parses a save file path, returning a TAGGED result so callers can tell a genuinely-absent file
+    // from one that EXISTS but couldn't be READ (locked/EBUSY/EACCES on Windows) versus one that read but has
+    // GARBAGE bytes. The distinction is load-bearing for the anti-clobber gate. The agentId grammar is validated
+    // by the caller via saveFile() BEFORE this.
+    //   { status: 'ok', wrapper }      — read + parsed
+    //   { status: 'absent' }           — ENOENT: no file at all (safe to write a fresh save)
+    //   { status: 'unreadable', err }  — present but a non-ENOENT errno blocked the read (locked/EACCES): bytes
+    //                                     are probably FINE, freshness UNKNOWN — do NOT clobber (conservative)
+    //   { status: 'corrupt', err }     — present + read but the bytes don't parse: unrecoverable garbage, safe to
+    //                                     overwrite (a corrupt save is already lost — preserves prior product behavior)
+    function readTagged(file) {
+      let raw;
+      try { raw = fs.readFileSync(file, 'utf8'); }
+      catch (e) {
+        if (e && e.code === 'ENOENT') return { status: 'absent' };
+        return { status: 'unreadable', err: e };   // present but locked/EACCES/etc. — NOT absent, bytes intact
+      }
+      try { return { status: 'ok', wrapper: JSON.parse(raw) }; }
+      catch (e) { return { status: 'corrupt', err: e }; }   // present + read but garbage — recoverable-over
     }
+    // back-compat convenience: the parsed wrapper, or undefined when absent/unreadable/corrupt.
+    function readWrapper(file) { const r = readTagged(file); return r.status === 'ok' ? r.wrapper : undefined; }
     // atomic temp+rename, with the temp file fsync'd before the rename so the DURABLE store of record actually
     // survives a hard power loss (the ledger/runs siblings fsync their appends; this is the same guarantee). The
     // fsync is capability-guarded: the real node:fs supplies openSync/writeSync/fsyncSync, while the in-memory
@@ -89,7 +106,18 @@
       save(agentId, doc) {
         if (!doc || typeof doc !== 'object') throw new Error('save: a doc object is required');
         const file = saveFile(agentId);   // validates the id (throws on traversal)
-        const prev = readWrapper(file);
+        const prevRead = readTagged(file);
+        // CONSERVATIVE anti-clobber on an UNREADABLE prior: the file EXISTS but a non-ENOENT errno blocked the
+        // read (locked/EBUSY/EACCES), so the bytes are probably a perfectly good — possibly NEWER — save we just
+        // couldn't read this instant. We cannot prove this incoming write isn't a lower-progress overwrite, so we
+        // refuse rather than blow it away (the Windows errno conflation would otherwise treat it as progress=0 and
+        // always accept, silently wiping the record). A genuinely CORRUPT prior (read but garbage) still recovers-
+        // over as before. Report unreadable distinctly so the caller can retry/surface.
+        if (prevRead.status === 'unreadable') {
+          try { console.warn('[savestore] refusing save for ' + String(agentId) + ' — existing record is unreadable (' + ((prevRead.err && prevRead.err.code) || 'EUNKNOWN') + '); not clobbering a possibly-newer save'); } catch (_) {}
+          return { ok: false, stale: true, unreadable: true, updatedAt: 0 };
+        }
+        const prev = prevRead.status === 'ok' ? prevRead.wrapper : undefined;
         const prevUpdated = prev && typeof prev === 'object' ? num(prev.updatedAt) : 0;
         const incomingUpdated = num(doc.updatedAt);
         if (prev && incomingUpdated < prevUpdated) return { ok: false, stale: true, updatedAt: prevUpdated };
@@ -97,7 +125,7 @@
         return { ok: true, updatedAt: incomingUpdated };
       },
 
-      _internals: { saveFile, AID_RE, num }
+      _internals: { saveFile, AID_RE, num, readTagged }
     };
   }
 

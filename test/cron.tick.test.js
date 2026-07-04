@@ -158,6 +158,23 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.ok(s.driver.leases.size === 1 && s.driver.leases.get('j1').runId === s.runs[1].runId, 'a fresh lease tracks the new run');
   }
 
+  // ---- 4b. abortAllLeases (E-STOP hook): aborts every in-flight cron run's controller, returns the count ----
+  {
+    const a = intervalJob('ja', 'every 1m');
+    const b = intervalJob('jb', 'every 1m');
+    const s = setup([a, b], () => new Promise(() => {}));     // never-settling -> leases held
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());                        // both fire; two leases held
+    A.eq(s.driver.leases.size, 2, 'two leases held for the in-flight cron runs');
+    const acs = s.runs.map(r => r.signal);
+    A.ok(acs.every(ac => ac.aborted === false), 'runs not aborted before the E-STOP');
+    const n = s.driver.abortAllLeases();
+    A.eq(n, 2, 'abortAllLeases reports the number of cron runs aborted');
+    A.ok(acs.every(ac => ac.aborted === true), 'every in-flight cron run controller was aborted');
+    // never-settling runs keep their leases; abort() is idempotent so a repeat call is safe (still counts held leases).
+    A.eq(s.driver.abortAllLeases(), 2, 'a repeat E-STOP re-aborts the still-held leases without throwing');
+  }
+
   // ---- 5. BOOT RESUME (within grace): a recurring job whose nextRunAt elapsed while down fires ONE catch-up ----
   {
     // 10m interval => grace = clamp(period/2)=300000 (5m). Persist nextRunAt in the past, then "restart".

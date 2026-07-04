@@ -28,6 +28,19 @@ function fakeAc() { let aborted = false; return { abort() { aborted = true; }, g
   A.ok(h1.superseded && h2.superseded, 'hub runs marked superseded — no stale partial delivered after HALT');
 }
 
+/* ---- MULTIPLE hub maps (Telegram + Discord) are all killed in one call ---- */
+{
+  const a = fakeAc();
+  const tg = { abort: fakeAc(), superseded: false };
+  const dc = { abort: fakeAc(), superseded: false };
+  const n = killAll(new Map([['r1', a]]), new Map([['c1', tg]]), new Map([['c2', dc]]));
+  A.eq(n, 3, 'counts browser + telegram + discord hub runs');
+  A.ok(a.aborted, 'browser run aborted');
+  A.ok(tg.abort.aborted && tg.superseded, 'telegram hub run aborted + superseded');
+  A.ok(dc.abort.aborted && dc.superseded, 'discord hub run aborted + superseded');
+  A.eq(killAll(null, null, null), 0, 'all-null hub maps -> 0, no throw');
+}
+
 /* ---- the E-STOP must be unbreakable: null maps, a throwing abort, a null rec ---- */
 {
   A.eq(killAll(null, null), 0, 'null maps -> 0, no throw');

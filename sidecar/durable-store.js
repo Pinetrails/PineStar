@@ -24,7 +24,7 @@
    (sidecar/index.js) injects the real fs/path and composes these into its notebook/roster/etc. stores.
 
    makeKeyedMutex() -> { run(key, fn) -> Promise, size() }
-   readJsonResilient({ fs }, file) -> { value, status }     status: 'ok'|'recovered'|'absent'|'corrupt'
+   readJsonResilient({ fs }, file) -> { value, status }     status: 'ok'|'recovered'|'absent'|'corrupt'|'unreadable'
    writeJsonResilient({ fs, path, writeDurable? }, file, value) -> void   (throws on a real write failure)
    makeDurableJsonStore({ fs, path, fileFor, writeDurable?, mutex?, onRecover?, onCorrupt? }) ->
        { get(key), set(key,value), update(key,mutator)->Promise, readKey(key), mutex } */
@@ -60,11 +60,20 @@ function makeKeyedMutex() {
      'ok'        — main parsed cleanly.
      'recovered' — main was missing/zero-length/corrupt but .bak parsed cleanly (value is the .bak).
      'absent'    — neither main nor .bak exists (a brand-new key; load empty is correct).
-     'corrupt'   — main is present-but-bad and there is no usable .bak (caller must surface loudly). */
+     'corrupt'   — main is present-but-bad and there is no usable .bak (caller must surface loudly).
+     'unreadable'— main EXISTS but a non-ENOENT errno blocked the read (locked/EBUSY/EACCES). NOT empty, NOT
+                   recovered from .bak (that would roll back live data): surface loudly, fail writes safely. */
 function readOne(fs, file) {
   let raw;
   try { raw = fs.readFileSync(file, 'utf8'); }
-  catch (e) { return { kind: 'absent' }; }                      // ENOENT (or unreadable) -> treat as absent for this file
+  catch (e) {
+    // ONLY a genuinely-missing file is 'absent'. Any OTHER errno (EBUSY/EACCES/EPERM/EMFILE — on Windows a
+    // file held open by antivirus or another process reads as one of these) means the file is present but
+    // UNREADABLE right now. Conflating that with 'absent' is a silent-data-wipe hazard: the caller would
+    // proceed from empty and the next write persists the amnesiac state. Surface it as its own kind.
+    if (e && e.code === 'ENOENT') return { kind: 'absent' };
+    return { kind: 'unreadable', err: e };
+  }
   if (raw == null || String(raw).length === 0) return { kind: 'empty' };   // zero-length = torn write
   try { return { kind: 'ok', value: JSON.parse(raw) }; }
   catch (_) { return { kind: 'corrupt' }; }
@@ -74,6 +83,10 @@ function readJsonResilient(deps, file) {
   const fs = deps.fs;
   const m = readOne(fs, file);
   if (m.kind === 'ok') return { value: m.value, status: 'ok' };
+  // UNREADABLE main (locked/transient errno, file exists): do NOT fall back to .bak — the main is fine, just
+  // momentarily inaccessible, and recovering from a stale .bak would ROLL BACK live data. Surface loudly and
+  // let the caller fail safely; a later read (unlocked) returns the real value. Never treated as empty.
+  if (m.kind === 'unreadable') return { value: undefined, status: 'unreadable', err: m.err };
   const b = readOne(fs, file + '.bak');
   if (b.kind === 'ok') return { value: b.value, status: 'recovered' };
   if (m.kind === 'absent' && b.kind !== 'ok') return { value: undefined, status: 'absent' };
@@ -119,7 +132,9 @@ function makeDurableJsonStore(deps) {
     const file = fileFor(key);
     const r = readJsonResilient({ fs: fs }, file);
     if (r.status === 'recovered') { try { onRecover(key, file, r); } catch (_) {} }
-    else if (r.status === 'corrupt') { try { onCorrupt(key, file, r); } catch (_) {} }
+    // both 'corrupt' (bad bytes, no .bak) and 'unreadable' (present but locked) are LOUD failures the caller
+    // must see — never a silent empty. Route both through the store's onCorrupt-style surface.
+    else if (r.status === 'corrupt' || r.status === 'unreadable') { try { onCorrupt(key, file, r); } catch (_) {} }
     return r;
   }
   function get(key) {
@@ -133,7 +148,17 @@ function makeDurableJsonStore(deps) {
   }
   function update(key, mutator) {
     return mutex.run(key, async function () {
-      const cur = get(key);                 // RE-READ the current committed state INSIDE the lock
+      const r = readKey(key);               // RE-READ the current committed state INSIDE the lock (loud on failure)
+      // FAIL SAFE: if the current value is UNREADABLE (present but locked), refuse the write. Proceeding would
+      // mutate `undefined` and persist an amnesiac state over a file that was actually fine — the exact silent
+      // data-wipe this store exists to prevent. Throw so the caller sees a real failure, not a false success.
+      if (r.status === 'unreadable') {
+        const e = new Error('durable-store: refusing to update key "' + key + '" — current value is unreadable (' + ((r.err && r.err.code) || 'EUNKNOWN') + ')');
+        e.code = 'ESTORE_UNREADABLE';
+        e.cause = r.err;
+        throw e;
+      }
+      const cur = (r.status === 'ok' || r.status === 'recovered') ? r.value : undefined;
       const next = await mutator(cur);      // mutator may be sync or async; the lock is held throughout
       if (next !== undefined) set(key, next);
       return next;
