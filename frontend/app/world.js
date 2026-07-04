@@ -4082,11 +4082,26 @@ const World = (() => {
   /* Lane E2 — reconnect reconciliation (the PRIMARY correction). On every SSE (re)open, ask the sidecar for the
      authoritative live state and rebuild the paired-state maps to match, CLEARING anything the server no longer
      reports (a run that ended during the outage, a prompt already answered). Backend endpoint GET /api/state/snapshot
-     is owned by the lifecycle lane and may not exist in this worktree yet — this MUST be 404/failure-tolerant: on any
-     non-OK / malformed response we do nothing and lean on the TTL net above. Shape (best-effort, all fields optional):
+     MUST be consumed 404/failure-tolerantly: on any non-OK / malformed response we do nothing and lean on the TTL
+     net above. The server's real shape (sidecar handleStateSnapshot) is
+       { ts, runs:[{runId, agentId, startedAt, source}], prompts:[{runId, agentId, promptId}], summons:[], queues:[] }
+     with startedAt in epoch ms — normalizeSnapshot() maps it onto the internal shape below (all fields optional):
        { activeRuns:[{agentId, startedMsAgo?}], pendingPrompts:[{promptId, agentId}], inflightTools:[{agentId, name, callId}],
-         serverLitAgents:[agentId], queueDepths:{queueId:depth} }  */
+         serverLitAgents:[agentId] }  */
+  function normalizeSnapshot(snap) {
+    if (!snap || typeof snap !== 'object' || snap.activeRuns) return snap;   // already internal-shaped (dbg/test paths)
+    if (!Array.isArray(snap.runs) && !Array.isArray(snap.prompts)) return snap;
+    const ts = +snap.ts || 0;
+    const out = Object.assign({}, snap);
+    if (Array.isArray(snap.runs)) out.activeRuns = snap.runs.map(r => r && r.agentId ? {
+      agentId: r.agentId,
+      startedMsAgo: (ts && +r.startedAt) ? Math.max(0, ts - (+r.startedAt)) : 0
+    } : null).filter(Boolean);
+    if (Array.isArray(snap.prompts)) out.pendingPrompts = snap.prompts;
+    return out;
+  }
   function reconcileFromSnapshot(snap) {
+    snap = normalizeSnapshot(snap);
     if (!snap || typeof snap !== 'object') return;
     const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
     // ---- active runs: keep/refresh reported ones, DROP any run clock the server no longer knows about ----
