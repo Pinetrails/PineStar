@@ -10,9 +10,11 @@
 
   const normalizeFinish = provider.normalizeFinish;
   const classifyApiError = errorClass.classifyApiError;
+  const timeouts = provider.timeouts;
   const DEFAULT_BASE = 'https://api.anthropic.com/v1';
   const ANTHROPIC_VERSION = '2023-06-01';
   const RETRY_DELAYS = [400, 1200];
+  const REWARM_MIN_MS = 5 * 60 * 1000;
   const DEFAULT_CONTEXT = 200000;
 
   function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
@@ -171,8 +173,25 @@
     const key = opts.key || '';
     const baseUrl = cleanBaseUrl(opts.baseUrl);
     const defaultContext = Number(opts.defaultContext || DEFAULT_CONTEXT) || DEFAULT_CONTEXT;
+    const clock = (opts.clock && typeof opts.clock.now === 'function') ? opts.clock : null;
     let catalog = null;
     let catalogPromise = null;
+    let catalogRewarmAt = 0;
+    let rewarmKicked = false;
+
+    function maybeRewarmCatalog() {
+      if (catalog && catalog.length) return;
+      if (catalogPromise) return;
+      if (clock) {
+        const now = clock.now();
+        if (now - catalogRewarmAt < REWARM_MIN_MS) return;
+        catalogRewarmAt = now;
+      } else {
+        if (rewarmKicked) return;
+        rewarmKicked = true;
+      }
+      Promise.resolve().then(() => loadCatalog()).catch(() => {});
+    }
 
     function buildBody(req) {
       const converted = messagesToAnthropic(req.messages || []);
@@ -190,11 +209,12 @@
 
     async function* stream(req) {
       req = req || {};
+      maybeRewarmCatalog();
       const body = buildBody(req);
       let res;
       try { res = await requestWithRetry(body, req.signal); }
       catch (e) { if (isAbort(e, req.signal)) return; throw e; }
-      const reader = res.body.getReader();
+      const reader = timeouts.idleGuardedReader(res.body.getReader(), { signal: req.signal });
       const dec = new TextDecoder();
       let buf = '';
       const toolIndexOf = new Map();
@@ -301,7 +321,7 @@
             method: 'POST',
             headers: headerBag(key),
             body: JSON.stringify(body),
-            signal
+            signal: timeouts.connectSignal(signal)
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
@@ -314,9 +334,10 @@
         catch (_) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
         const err = new Error('anthropic http ' + res.status + ' - ' + detail);
         err.status = res.status;
+        err.headers = res.headers;
         const cls = classifyApiError(err, { model: body.model });
         err.transient = cls.retryable;
-        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
+        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }
         throw err;
       }
     }

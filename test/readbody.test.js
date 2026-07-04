@@ -11,7 +11,7 @@ const { EventEmitter } = require('events');
 
 // pull the real readBody() out of sidecar/index.js by its source signature.
 const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
-const m = src.match(/function readBody\(req, max\) \{[\s\S]*?\n\}/);
+const m = src.match(/function readBody\(req, max(?:, res)?\) \{[\s\S]*?\n\}/);
 A.ok(m, 'located the real readBody() source in sidecar/index.js');
 // eslint-disable-next-line no-new-func
 const readBody = new Function('Buffer', m[0] + '\nreturn readBody;')(Buffer);

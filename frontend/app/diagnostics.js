@@ -7,10 +7,15 @@
    The report NEVER contains a key, token, transcript, or prompt — that guarantee lives in the sidecar
    (sidecar/diagnostics.js + the always-on redact()). This file only copies what the sidecar already sanitized.
 
-   ONE constant owns the support destination — SUPPORT_EMAIL — so when Andrew picks the real address it is a
-   single-line swap (support decision, today: email-only for launch).
+   ONE constant owns the support destination — SUPPORT_EMAIL — so when the real address changes it is a
+   single-line swap (support decision, today: email-only for launch). If that constant is ever left unset OR
+   still holds the ANDREW_SUPPORT_EMAIL build placeholder, the app must NOT show a fake/placeholder address:
+   `supportEmail()` normalizes to '' in that case and `hasSupport()` reports false, so every render site
+   (Settings copy, copy-success toast) OMITS the email clause entirely instead of telling a user to write to a
+   placeholder. Truthful-telemetry law: never assert a support address the product can't actually receive at.
 
-   Exposes a `Diag` global: Diag.SUPPORT_EMAIL, Diag.fetchText(), Diag.copy({ notify?, onDone? }). */
+   Exposes a `Diag` global: Diag.SUPPORT_EMAIL, Diag.supportEmail(), Diag.hasSupport(), Diag.fetchText(),
+   Diag.copy({ notify?, onDone? }). */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -20,6 +25,23 @@
   'use strict';
 
   const SUPPORT_EMAIL = 'nonfungiblefunyuns@gmail.com';
+  // The build-time placeholder that means "no support address chosen yet". Kept as a sentinel so an un-swapped
+  // build (or a cleared constant) is treated as "unconfigured" — never rendered literally to a user.
+  const SUPPORT_PLACEHOLDER = 'ANDREW_SUPPORT_EMAIL';
+
+  // Pure normalizer (testable without mutating the const): a raw support value → a plausible address or ''.
+  // '' whenever the value is empty, still the placeholder sentinel, or not a plausible email (an '@' with
+  // non-space text either side). This is the ONE gate that keeps a placeholder/unset value from ever rendering.
+  function normSupport(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s || s === SUPPORT_PLACEHOLDER) return '';
+    return /^[^@\s]+@[^@\s]+$/.test(s) ? s : '';
+  }
+  // The normalized support destination for THIS build, or '' when none is configured. Every render site (Settings
+  // copy, copy toast) calls this so a placeholder/unset value omits the email clause instead of faking one.
+  function supportEmail() { return normSupport(SUPPORT_EMAIL); }
+  // is a real support address configured? (bool — drives whether the email clause renders at all.)
+  function hasSupport() { return supportEmail() !== ''; }
 
   // clipboard write — mirrors chat.js copyText (Clipboard API with a legacy execCommand fallback). Local so this
   // module has no cross-file dependency and works even if chat.js hasn't loaded (e.g. very early boot).
@@ -61,7 +83,11 @@
     return fetchText().then(text => {
       if (!text) { if (wantNotify) notify('could not read diagnostics — is the app still running?', 'warn'); if (opts.onDone) opts.onDone(false, ''); return false; }
       return copyToClipboard(text).then(ok => {
-        if (wantNotify) notify(ok ? 'diagnostics copied — paste it into an email to ' + SUPPORT_EMAIL : 'copy failed — the report is shown below, select it and copy manually', ok ? 'good' : 'warn');
+        // Honest copy: name the support address only when one is actually configured; otherwise just confirm the
+        // copy (no placeholder, no fake address). A user is never told to email an address that can't receive.
+        const dest = supportEmail();
+        const okMsg = dest ? ('diagnostics copied — paste it into an email to ' + dest) : 'diagnostics copied — paste it into a bug report';
+        if (wantNotify) notify(ok ? okMsg : 'copy failed — the report is shown below, select it and copy manually', ok ? 'good' : 'warn');
         if (opts.onDone) opts.onDone(!!ok, text);
         return !!ok;
       });
@@ -123,5 +149,5 @@
     return fetchText().then(paint).catch(() => paint(''));
   }
 
-  return { SUPPORT_EMAIL, fetchText, copy, showBlock, _internals: { copyToClipboard, fallbackCopy } };
+  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, copy, showBlock, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER } };
 });

@@ -87,10 +87,12 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.length, 0, 'no events emitted after a clean cancel');
   }
 
-  // G. a transient 503 is retried, then streams normally (no tokens lost — retry is pre-stream)
+  // G. a transient 503 is retried, then streams normally (no tokens lost — retry is pre-stream).
+  //    Count only /chat/completions POSTs — a cold-catalog run also fires ONE background /models re-warm GET.
   {
     let calls = 0;
-    const flaky = async () => {
+    const flaky = async (url) => {
+      if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 });   // ignore the re-warm /models GET
       calls++;
       if (calls === 1) return new Response('{"error":{"message":"overloaded"}}', { status: 503 });
       return new Response(['data: ' + JSON.stringify({ choices: [{ delta: { content: 'hi' } }] }), 'data: [DONE]', ''].join('\n'),
@@ -102,10 +104,10 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'hi', 'after retry it streams normally');
   }
 
-  // H. a non-transient 400 fails fast with NO retry
+  // H. a non-transient 400 fails fast with NO retry (again counting only the chat POST, not the /models re-warm)
   {
     let calls = 0;
-    const bad = async () => { calls++; return new Response('{"error":{"message":"bad request"}}', { status: 400 }); };
+    const bad = async (url) => { if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 }); calls++; return new Response('{"error":{"message":"bad request"}}', { status: 400 }); };
     const p = makeOpenRouterProvider({ fetch: bad, key: 'k' });
     let threw = false;
     try { await collect(p, { model: 'm', messages: [] }); } catch (e) { threw = /400/.test(e.message); }

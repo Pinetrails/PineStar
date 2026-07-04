@@ -18,6 +18,7 @@
 
   const normalizeFinish = provider.normalizeFinish;
   const classifyApiError = errorClass.classifyApiError;
+  const timeouts = provider.timeouts;
   const BASE = 'https://openrouter.ai/api/v1';
 
   // The OpenRouter /models catalog is key-independent, so it is shared across every per-run
@@ -25,6 +26,13 @@
   // runs without a per-run /models round-trip. Concurrent loads dedupe on CATALOG_PROMISE.
   let CATALOG = null;
   let CATALOG_PROMISE = null;
+  // Catalog re-warm throttle: a boot-time /models failure leaves CATALOG empty, which otherwise stays empty
+  // forever (priceOf/contextLimit degrade silently). Kick a non-blocking re-fetch at run setup, at most once
+  // per REWARM_MIN_MS so a persistently-offline catalog can't hammer /models on every run. Wall time arrives
+  // via the caller-injected clock (determinism law — no ambient Date.now in backend logic); with no clock the
+  // throttle degrades to "at most one kick per provider instance" (instances are per-run -> at most once/run).
+  let CATALOG_REWARM_AT = 0;
+  const REWARM_MIN_MS = 5 * 60 * 1000;
 
   function isAbort(e, signal) {
     // ONLY a real cancellation — never a loose message match, which would mask a genuine provider
@@ -139,8 +147,28 @@
     const baseUrl = opts.baseUrl || BASE;
     const referer = opts.referer || 'http://127.0.0.1';
     const reasoningEffort = normalizeReasoningEffort(opts.reasoningEffort || 'medium');
+    const clock = (opts.clock && typeof opts.clock.now === 'function') ? opts.clock : null;   // injected wall clock (re-warm throttle); absent -> per-instance kick
+    let rewarmKicked = false;   // fallback throttle when no clock: kick at most once per instance (= once per run)
+
+    // Non-blocking catalog re-warm: if the catalog never loaded (empty), kick one throttled listModels() so a
+    // later run prices/compacts correctly. Fire-and-forget — the CURRENT run never waits on it (it uses whatever
+    // is warm, exactly as before). Safe to call every run; the timestamp gate bounds the /models traffic.
+    function maybeRewarmCatalog() {
+      if (CATALOG && CATALOG.length) return;               // already warm
+      if (CATALOG_PROMISE) return;                         // a load is already in flight
+      if (clock) {
+        const now = clock.now();
+        if (now - CATALOG_REWARM_AT < REWARM_MIN_MS) return; // time-throttled across runs
+        CATALOG_REWARM_AT = now;
+      } else {
+        if (rewarmKicked) return;                          // no clock: at most one kick per instance (per run)
+        rewarmKicked = true;
+      }
+      Promise.resolve().then(() => loadCatalog()).catch(() => {});
+    }
 
     async function* stream(req) {
+      maybeRewarmCatalog();
       // usage.include asks OpenRouter to return the real billed `cost` in the final usage chunk (opt-in for
       // streaming). Without it tokens still tally but usd stays 0 unless priceOf(model) resolves — so SPEND
       // reads $0 for any custom/uncatalogued slug. cost.js then takes this authoritative cost over the estimate.
@@ -157,7 +185,9 @@
       let res;
       try { res = await requestWithRetry(body, req.signal); }   // retries transient 429/5xx + network errors BEFORE any token streams
       catch (e) { if (isAbort(e, req.signal)) return; throw e; }  // cancel during the POST/backoff -> end cleanly so the loop reports 'cancelled', not 'error'
-      const reader = res.body.getReader();
+      // idle watchdog: no bytes for SKYNET_PROVIDER_IDLE_MS -> cancel the reader + throw a `timeout` error (a hung
+      // stream must not pin a paid run forever). A user-cancel via req.signal still surfaces as an AbortError below.
+      const reader = timeouts.idleGuardedReader(res.body.getReader(), { signal: req.signal });
       const dec = new TextDecoder();
       let buf = '';
       const started = {};   // index -> true once tool_start has been emitted
@@ -272,7 +302,7 @@
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + (key || ''), 'Content-Type': 'application/json', 'HTTP-Referer': referer, 'X-Title': 'STARNET' },
             body: JSON.stringify(body),
-            signal
+            signal: timeouts.connectSignal(signal)   // caller-cancel + a connect-timeout ceiling on the POST itself
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
@@ -285,9 +315,10 @@
         catch (e) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
         const err = new Error('openrouter http ' + res.status + ' — ' + detail);
         err.status = res.status;
+        err.headers = res.headers;   // H6.1: let classifyApiError read Retry-After / X-RateLimit-Reset off the real response
         const cls = classifyApiError(err, { model: body.model });   // single source of truth for retryability
         err.transient = cls.retryable;                              // keep the field other code reads, now classifier-derived
-        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
+        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }   // honor the server-stated wait, capped at 60s
         throw err;
       }
     }

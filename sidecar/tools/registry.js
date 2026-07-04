@@ -26,16 +26,38 @@
   const okResult = (content, summary) => ({ ok: true, isError: false, content: content, summary: summary || 'ok' });
   const errResult = (content, summary) => ({ ok: false, isError: true, content: content, summary: summary || 'error' });
 
-  function withTimeout(value, ms) {
+  // Race a promise against a timeout. onTimeout (if given) fires BEFORE the reject so the caller can abort the
+  // underlying work — otherwise a timed-out tool keeps running and SPENDING (worst case: a team.dispatch fan-out
+  // whose workers burn tokens long after the lead gave up). The timer is always cleared on settle either way.
+  function withTimeout(value, ms, onTimeout) {
     if (!ms || ms <= 0) return Promise.resolve(value);
     return new Promise((resolve, reject) => {
       let done = false;
-      const timer = setTimeout(() => { if (!done) { done = true; const e = new Error('timeout'); e.__timeout = true; reject(e); } }, ms);
+      const timer = setTimeout(() => {
+        if (!done) {
+          done = true;
+          if (typeof onTimeout === 'function') { try { onTimeout(); } catch (_) {} }   // abort the work BEFORE we reject
+          const e = new Error('timeout'); e.__timeout = true; reject(e);
+        }
+      }, ms);
       Promise.resolve(value).then(
         v => { if (!done) { done = true; clearTimeout(timer); resolve(v); } },
         e => { if (!done) { done = true; clearTimeout(timer); reject(e); } }
       );
     });
+  }
+
+  // Chain a child AbortController to an optional parent signal: the child aborts when the parent aborts OR when
+  // the per-tool timeout fires. Threaded into ctx.signal for the dispatched run() so signal-honoring tools
+  // (team.dispatch → cancel workers, web_* → cancel the fetch, shell/verify → kill the child) actually STOP on
+  // timeout instead of running on. Tools that ignore ctx.signal behave exactly as before (no regression).
+  function childAbort(parent) {
+    const ctrl = new AbortController();
+    if (parent) {
+      if (parent.aborted) { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }
+      else { try { parent.addEventListener('abort', () => { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }, { once: true }); } catch (_) {} }
+    }
+    return ctrl;
   }
 
   function makeRegistry() {
@@ -79,10 +101,14 @@
         if (!c || !c.allow) return errResult('consent denied for ' + call.name + (c && c.reason ? ': ' + c.reason : ''), 'denied');
       }
 
-      // run once, bounded by the per-tool timeout; any throw becomes an isError result
+      // run once, bounded by the per-tool timeout; any throw becomes an isError result. A per-call AbortController
+      // (chained to the run's parent signal) is threaded in as ctx.signal so that on TIMEOUT we abort() the work
+      // before rejecting — a timed-out tool no longer keeps running/spending in the background.
       const timeoutMs = tool.timeoutMs || ctx.timeoutMs || 0;
+      const ac = childAbort(ctx.signal);
+      const runCtx = ac !== ctx.signal ? Object.assign({}, ctx, { signal: ac.signal }) : ctx;
       try {
-        const out = await withTimeout(tool.run(call.args, ctx), timeoutMs);
+        const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
         if (out && typeof out === 'object' && 'content' in out) return okResult(out.content, out.summary);
         return okResult(out == null ? '' : out);
       } catch (e) {

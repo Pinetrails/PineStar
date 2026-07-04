@@ -21,20 +21,31 @@
      list(agentId)                             -> { version, snapshots } */
 'use strict';
 (function (root, factory) {
-  const api = factory(typeof require === 'function' ? require('./checkpoint.js') : (root.SK && root.SK.checkpoint));
+  const cp = typeof require === 'function' ? require('./checkpoint.js') : (root.SK && root.SK.checkpoint);
+  // durable single-file replace (fsync-before-rename); the injected-fs primitive degrades to writeFileSync+rename
+  // for a test/in-memory fs without fsync, so it stays deterministic + testable.
+  let dw = null;
+  try { dw = typeof require === 'function' ? require('./durable-write.js') : (root.SK && root.SK.durableWrite); } catch (_) {}
+  const api = factory(cp, dw && dw.writeFileDurable);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { (root.SK = root.SK || {}).checkpointStore = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (cp) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (cp, writeFileDurableInjected) {
   'use strict';
+
+  // fallback: if durable-write couldn't be loaded (browser bundle), do a plain atomic temp+rename.
+  const writeFileDurable = typeof writeFileDurableInjected === 'function' ? writeFileDurableInjected
+    : function (deps, file, data) { const f = deps.fs; const tmp = file + '.' + (typeof process !== 'undefined' ? process.pid : 'p') + '.tmp'; f.writeFileSync(tmp, data); f.renameSync(tmp, file); };
 
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;            // the notebook/fs-jail agentId grammar
   const KEEP_DEFAULT = 50;                            // snapshots retained per agent (prune oldest beyond this)
+  const MAX_REPO_BYTES_DEFAULT = 500 * 1024 * 1024;   // shadow-repo size ceiling (500MB) before a gc/re-init sweep
 
   function makeCheckpointStore(deps) {
     const d = deps || {};
     const fs = d.fs, pathMod = d.pathMod, root = d.root, runGit = d.runGit;
     const clock = d.clock || { now: function () { return 0; } };
     const keep = d.keep != null ? d.keep : KEEP_DEFAULT;
+    const maxRepoBytes = d.maxRepoBytes != null ? d.maxRepoBytes : MAX_REPO_BYTES_DEFAULT;
     if (!fs || !pathMod || !root || typeof runGit !== 'function') throw new Error('checkpoint-store: fs/pathMod/root/runGit are required');
 
     const gitDirFor = (aid) => pathMod.join(root, '.checkpoints', aid, 'git');
@@ -49,16 +60,91 @@
     }
     const git = (aid, args) => runGit(base(aid).concat(args), { cwd: workTreeFor(aid) });
 
-    function loadIndex(aid) {
-      try { return cp.loadIndex(fs.readFileSync(indexFileFor(aid), 'utf8')); }
-      catch (e) { return cp.toIndex([]); }            // missing/corrupt -> empty (fail-closed)
+    // read the index file into a tagged result so the caller can distinguish a genuinely-empty index (no
+    // snapshots recorded) from a torn/corrupt one that should trigger a git-log rebuild.
+    //   { status:'ok', index }   — parsed to a non-empty index
+    //   { status:'empty' }       — parsed but zero snapshots (or a legitimately empty index)
+    //   { status:'corrupt' }     — file present but unparseable / absent
+    function readIndexRaw(aid) {
+      let raw;
+      try { raw = fs.readFileSync(indexFileFor(aid), 'utf8'); }
+      catch (e) { return { status: 'corrupt' }; }     // absent OR unreadable — try recovery/rebuild
+      if (raw == null || String(raw).length === 0) return { status: 'corrupt' };   // torn write
+      let obj; try { obj = JSON.parse(raw); } catch (e) { return { status: 'corrupt' }; }
+      const idx = cp.loadIndex(obj);
+      return idx.snapshots.length ? { status: 'ok', index: idx } : { status: 'empty', index: idx };
     }
-    function saveIndex(aid, index) {                  // atomic temp+rename; throws on failure (the caller fail-opens)
+    // SYNC load: main index file, else its <file>.bak last-known-good, else empty. Never rebuilds (git is async).
+    // Callers that CAN await use loadIndexResilient below to rebuild from the commit history when both are gone.
+    function loadIndex(aid) {
+      const m = readIndexRaw(aid);
+      if (m.status === 'ok' || m.status === 'empty') return m.index;
+      // main torn/corrupt/absent -> try the .bak snapshot.
+      try {
+        const braw = fs.readFileSync(indexFileFor(aid) + '.bak', 'utf8');
+        if (braw && String(braw).length) { const b = cp.loadIndex(JSON.parse(braw)); if (b.snapshots.length) return b; }
+      } catch (_) {}
+      return cp.toIndex([]);                           // missing/corrupt + no .bak -> empty (fail-closed)
+    }
+    function saveIndex(aid, index) {                  // atomic + durable temp+rename with a .bak snapshot; throws on failure (the caller fail-opens)
       const f = indexFileFor(aid);
       fs.mkdirSync(pathMod.dirname(f), { recursive: true });
-      const tmp = f + '.' + process.pid + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(cp.toIndex(index.snapshots)));
-      fs.renameSync(tmp, f);
+      // snapshot the current clean index to <file>.bak (durably) before overwriting, so a torn replace of the
+      // index can be recovered from the prior committed copy. Best-effort — a .bak failure never blocks the save.
+      try {
+        const cur = fs.readFileSync(f, 'utf8');
+        if (cur && String(cur).length) { try { JSON.parse(cur); writeFileDurable({ fs: fs, path: pathMod }, f + '.bak', cur); } catch (_) {} }
+      } catch (_) {}
+      writeFileDurable({ fs: fs, path: pathMod }, f, JSON.stringify(cp.toIndex(index.snapshots)));
+    }
+
+    // does this agent have a real shadow git repo on disk? (its commits are the ground truth for a rebuild.)
+    function repoExists(aid) {
+      try { return fs.existsSync(pathMod.join(gitDirFor(aid), 'HEAD')); } catch (_) { return false; }
+    }
+    /* rebuildIndexFromGit — the shadow git COMMITS are the truth; the index.json is just a cache of them. When
+       the index is empty/corrupt but the repo has commits, reconstruct the index by walking `git log`. The
+       commit subject is what snapshot() wrote as `label`; runId/turn aren't recoverable from git, so they come
+       back empty/0 (rollback-by-run degrades, but per-id restore + the list view are fully restored). Oldest-
+       first so lineage (parentId defaults to the prior snapshot) threads correctly through cp.record. */
+    async function rebuildIndexFromGit(aid) {
+      if (!repoExists(aid)) return cp.toIndex([]);
+      // %H = full sha, %ct = committer unix seconds, %s = subject (the snapshot label). tab-separated, reverse
+      // so the oldest commit is first (matches append order + parent lineage).
+      const r = await git(aid, ['log', '--reverse', '--format=%H%x09%ct%x09%s']);
+      if (!r || r.code !== 0 || !r.stdout) return cp.toIndex([]);
+      let index = cp.toIndex([]);
+      for (const line of r.stdout.split('\n')) {
+        if (!line.trim()) continue;
+        const tab1 = line.indexOf('\t'); if (tab1 < 0) continue;
+        const tab2 = line.indexOf('\t', tab1 + 1);
+        const sha = line.slice(0, tab1).trim();
+        const ctSec = Number(line.slice(tab1 + 1, tab2 < 0 ? undefined : tab2).trim());
+        const label = tab2 < 0 ? '' : line.slice(tab2 + 1);
+        if (!cp.isValidId(sha)) continue;
+        try {
+          index = cp.record(index, { id: sha, runId: '', turn: 0, label: label, files: 0, bytes: 0 },
+            { now: isFinite(ctSec) ? ctSec * 1000 : clock.now(), keep: keep });
+        } catch (_) { /* skip a record git surfaced that cp rejects */ }
+      }
+      return index;
+    }
+    /* loadIndexResilient — the ASYNC load: the sync index/.bak first, and if BOTH are gone/empty while the
+       shadow repo still holds commits, rebuild the index from git and RE-PERSIST it so subsequent sync reads
+       are fast again. Used by every await-capable caller (snapshot/restore/the list route). */
+    async function loadIndexResilient(aid) {
+      const m = readIndexRaw(aid);
+      if (m.status === 'ok') return m.index;
+      // main empty/corrupt -> try .bak (sync), then git rebuild.
+      const viaBak = loadIndex(aid);                   // consults main + .bak
+      if (viaBak.snapshots.length) return viaBak;
+      const rebuilt = await rebuildIndexFromGit(aid);
+      if (rebuilt.snapshots.length) {
+        try { saveIndex(aid, rebuilt); } catch (_) { /* rebuild still usable in-memory even if re-persist fails */ }
+        try { console.warn('[checkpoint] rebuilt index for ' + aid + ' from ' + rebuilt.snapshots.length + ' shadow-git commits (index.json was empty/corrupt)'); } catch (_) {}
+        return rebuilt;
+      }
+      return m.status === 'empty' ? m.index : cp.toIndex([]);
     }
 
     // best-effort size of the snapshot (cosmetic, for the event) — tracked file count + summed bytes.
@@ -70,6 +156,69 @@
         for (const rel of files) { try { bytes += fs.statSync(pathMod.join(workTreeFor(aid), rel)).size; } catch (_) {} }
         return { files: files.length, bytes: bytes };
       } catch (e) { return { files: 0, bytes: 0 }; }
+    }
+
+    // recursive byte size of a directory (best-effort; a stat failure counts 0 for that entry). Used to decide
+    // whether the shadow repo's object store has grown past the ceiling.
+    function dirBytes(dir) {
+      let total = 0;
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return 0; }
+      for (const ent of entries) {
+        const full = pathMod.join(dir, ent.name);
+        try {
+          if (ent.isDirectory && ent.isDirectory()) total += dirBytes(full);
+          else total += fs.statSync(full).size;
+        } catch (_) {}
+      }
+      return total;
+    }
+
+    /* enforceSizeCeiling — bound the shadow repo's on-disk footprint. `git add -A` on every mutating turn writes
+       a fresh blob per changed file; over months of 24/7 use the object store bloats even though only the last
+       `keep` snapshots are reachable via the index (rollback older than that is already impossible). Strategy:
+       1) `git gc --prune=now` — the cheap, LOSSLESS reclaim of loose/unreferenced objects (the dominant bloat
+          from add churn + pruned blobs). Every indexed snapshot SHA stays intact + restorable.
+       2) if it's STILL over ceiling after gc, RE-INIT from the current tree: the object store is unbounded only
+          because deep history is retained, yet that history is unreachable via the index (>keep). Re-init makes a
+          fresh single-commit repo of the current worktree, then RE-STAMPS the index to that one commit. This
+          sacrifices the older in-index rollback points to keep disk bounded — a disclosed, honest tradeoff, taken
+          ONLY past the ceiling. Fail-open: any git failure leaves the repo as-is (never crash a run).
+       Returns { swept, reinit, bytesBefore, bytesAfter } for tests/telemetry. */
+    async function enforceSizeCeiling(aid) {
+      if (!(maxRepoBytes > 0) || !repoExists(aid)) return { swept: false, reinit: false };
+      const gitDir = gitDirFor(aid);
+      const before = dirBytes(gitDir);
+      if (before <= maxRepoBytes) return { swept: false, reinit: false, bytesBefore: before, bytesAfter: before };
+      try { await git(aid, ['gc', '--prune=now', '-q']); } catch (_) {}
+      let after = dirBytes(gitDir);
+      let reinit = false;
+      if (after > maxRepoBytes) {
+        reinit = await reinitFromCurrentTree(aid);
+        after = dirBytes(gitDir);
+      }
+      try { console.warn('[checkpoint] shadow repo for ' + aid + ' over ceiling (' + before + 'B) -> ' + (reinit ? 're-init' : 'gc') + ' -> ' + after + 'B'); } catch (_) {}
+      return { swept: true, reinit: reinit, bytesBefore: before, bytesAfter: after };
+    }
+    // wipe the shadow git-dir and re-create a single baseline commit of the CURRENT worktree, then re-stamp the
+    // index to that one snapshot. Returns true on success. Fail-open (false) leaves the repo untouched on error.
+    async function reinitFromCurrentTree(aid) {
+      try {
+        const gitDir = gitDirFor(aid);
+        try { fs.rmSync(gitDir, { recursive: true, force: true }); } catch (_) { return false; }
+        fs.mkdirSync(gitDir, { recursive: true });
+        if ((await git(aid, ['init', '-q'])).code !== 0) return false;
+        if ((await git(aid, ['add', '-A'])).code !== 0) return false;
+        const com = await git(aid, ['commit', '-q', '--allow-empty', '-m', 'baseline (repo re-init: size ceiling)']);
+        if (com.code !== 0) return false;
+        const sha = (await git(aid, ['rev-parse', 'HEAD'])).stdout.trim();
+        if (!cp.isValidId(sha)) return false;
+        try {
+          const size = await measure(aid);
+          saveIndex(aid, cp.record(cp.toIndex([]), { id: sha, runId: '', turn: 0, label: 'baseline (re-init)', files: size.files, bytes: size.bytes }, { now: clock.now(), keep: keep }));
+        } catch (_) {}
+        return true;
+      } catch (_) { return false; }
     }
 
     /* snapshot — capture the agent's CURRENT workspace state (taken BEFORE a mutating tool, so it is the
@@ -111,6 +260,8 @@
             { now: clock.now(), keep: keep });
           saveIndex(aid, index);
         } catch (e) { /* index persistence failed — the git commit still exists + is restorable; don't crash */ }
+        // bound the shadow repo's on-disk footprint after each real commit (no-op unless past the ceiling).
+        try { await enforceSizeCeiling(aid); } catch (_) { /* size sweep is best-effort; never fail the snapshot */ }
         return { id: sha, created: true, files: size.files, bytes: size.bytes };
       } catch (e) { return null; }                                               // fail-open
     }
@@ -120,7 +271,9 @@
     async function restore(agentId, snapshotId) {
       if (!AID_RE.test(String(agentId || '')) || !cp.isValidId(String(snapshotId || ''))) return false;
       const aid = String(agentId), sha = String(snapshotId);
-      if (!cp.findById(loadIndex(aid), sha)) return false;                        // refuse an id we didn't record
+      // resilient load: if index.json was wiped but the commit still exists, a git-log rebuild re-admits it so
+      // a rollback target survives an index loss (the commits are the truth).
+      if (!cp.findById(await loadIndexResilient(aid), sha)) return false;         // refuse an id we didn't record
       try {
         const reset = await git(aid, ['reset', '--hard', '-q', sha]);
         if (reset.code !== 0) return false;
@@ -130,8 +283,14 @@
     }
 
     function list(agentId) { return AID_RE.test(String(agentId || '')) ? loadIndex(String(agentId)) : cp.toIndex([]); }
+    // async list that rebuilds from the shadow git commits when the index.json is empty/corrupt but the repo
+    // has history — so the "rewind" UI repopulates after an index loss. The route awaits this.
+    async function listResilient(agentId) {
+      if (!AID_RE.test(String(agentId || ''))) return cp.toIndex([]);
+      return await loadIndexResilient(String(agentId));
+    }
 
-    return { snapshot: snapshot, restore: restore, list: list, isValidId: cp.isValidId };
+    return { snapshot: snapshot, restore: restore, list: list, listResilient: listResilient, rebuild: rebuildIndexFromGit, enforceSizeCeiling: enforceSizeCeiling, isValidId: cp.isValidId };
   }
 
   return { makeCheckpointStore: makeCheckpointStore };

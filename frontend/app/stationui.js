@@ -30,7 +30,7 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -60,7 +60,6 @@ const StationUI = (() => {
     document.body.classList.toggle('no-scan', !s.scanlines);
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
-    if (typeof MUSIC === 'object') MUSIC.on = (s.music !== false);   // default-on adaptive score; arms on first gesture
     syncKeepAwake(!!s.keepComputerAwake);
   }
 
@@ -964,13 +963,13 @@ const StationUI = (() => {
     const onBox = $('#mc-reflect-on'), cd = $('#mc-cooldown'), scope = $('#mc-scope'), msg = $('#mc-reflect-msg'), saveBtn = $('#mc-reflect-save');
     if (!onBox || !cd) return;
     const setMsg = (t, ok) => { if (msg) { msg.textContent = t || ''; msg.className = 'msg' + (ok ? ' ok' : ''); } };
-    fetch('/api/memory/config', { cache: 'no-store' }).then(r => r.json()).then(cfg => {
+    fetch('/api/memory/config', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(cfg => {
       const o = $('#mc-reflect-on'), c = $('#mc-cooldown'), s = $('#mc-scope');
       if (!o || !c) return;   // retabbed mid-fetch
       o.checked = cfg.reflectEnabled !== false;
       c.value = String(Math.round((cfg.reflectCooldownMs != null ? cfg.reflectCooldownMs : 180000) / 60000));
       if (s && cfg.scopeNote) s.textContent = cfg.scopeNote;
-    }).catch(() => {});
+    }).catch(() => { setMsg('could not load reflection settings'); });   // never paint an error body as config
     if (saveBtn && !saveBtn._wired) {
       saveBtn._wired = true;
       saveBtn.addEventListener('click', () => {
@@ -1488,7 +1487,7 @@ const StationUI = (() => {
     // TOOLSET honesty: a family switched OFF in the TOOLSETS console must read as OFF here too, so the two
     // surfaces can't tell different stories. Cheap best-effort: fetch the toolset state and dim matching perks
     // (mapped by the granting objectType == SKILLS[].cap). Never blocks the panel; a fetch miss leaves perks as-is.
-    fetch('/api/toolsets').then(r => r.json()).then(j => {
+    fetch('/api/toolsets').then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       const disabledObjs = {};
       (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
       const perks = body.querySelectorAll('.perk-grid .perk');
@@ -2205,8 +2204,8 @@ const StationUI = (() => {
         spendEl.innerHTML = 'SPENT TODAY <b>' + today + '</b> &nbsp;·&nbsp; LIFETIME <b>' + life + '</b> <span class="dim">(' + runs + ' run' + (runs === 1 ? '' : 's') + ')</span>';
       }
     };
-    const refresh = () => fetch('/api/budget/status', { cache: 'no-store' }).then(r => r.json()).then(paint)
-      .catch(() => { if (spendEl) spendEl.textContent = 'spend unavailable'; });
+    const refresh = () => fetch('/api/budget/status', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(paint)
+      .catch(() => { if (spendEl) spendEl.textContent = 'spend unavailable'; });   // never paint an error body as $0 spend
     refresh();
     if (saveBtn) saveBtn.addEventListener('click', () => {
       const payload = {};
@@ -2287,11 +2286,11 @@ const StationUI = (() => {
       if (st && typeof st.maxEntries === 'number') maxEntries = st.maxEntries;
       paint();
     };
-    fetch('/api/fallback/chain', { cache: 'no-store' }).then(r => r.json()).then(applyStatus)
-      .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });
+    fetch('/api/fallback/chain', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(applyStatus)
+      .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });   // never paint an error body as an empty chain
     // catalog for the ADD picker — the same warmed OpenRouter catalog the model dock uses. Best-effort: an empty
     // catalog just leaves the picker with its placeholder (the chain itself still paints + saves fine).
-    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => r.json()).then(j => {
+    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       if (!addSel || !j || !Array.isArray(j.models)) return;
       const frag = document.createDocumentFragment();
       j.models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
@@ -2354,7 +2353,7 @@ const StationUI = (() => {
     });
     paint();
     // fill the model catalog into all three selects (same warmed catalog the fallback picker uses).
-    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => r.json()).then(j => {
+    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       if (!j || !Array.isArray(j.models)) return;
       const opts = j.models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
       TM_TIERS.forEach(tier => {
@@ -2445,8 +2444,8 @@ const StationUI = (() => {
           .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
       });
     };
-    fetch('/api/runtime/knobs', { cache: 'no-store' }).then(r => r.json()).then(render)
-      .catch(() => { form.innerHTML = '<div class="dim">runtime settings unavailable</div>'; });
+    fetch('/api/runtime/knobs', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(render)
+      .catch(() => { form.innerHTML = '<div class="dim">runtime settings unavailable</div>'; });   // never render an error body as knobs
   }
 
   // P1-7 STATION BACKUP — export/import the whole station config to one JSON file. Export bundles the browser-owned
@@ -2464,7 +2463,10 @@ const StationUI = (() => {
       btn.disabled = true; sfx('click');
       Diag.copy({ notify: false }).then(ok => {
         btn.disabled = false;
-        setMsg(ok ? '✓ copied — paste it into an email to ' + (Diag.SUPPORT_EMAIL || 'support') : 'copy failed — try again', ok);
+        // Name the support address only when one is really configured (Diag.supportEmail() gates out the unset/
+        // placeholder case); otherwise just confirm the copy — never point a user at a fake/placeholder address.
+        const diagDest = (typeof Diag !== 'undefined' && Diag.supportEmail) ? Diag.supportEmail() : '';
+        setMsg(ok ? (diagDest ? ('✓ copied — paste it into an email to ' + diagDest) : '✓ copied — paste it into a bug report') : 'copy failed — try again', ok);
         // Clipboard-failure fallback: if Lane A's on-screen renderer is present, show the report block so the user can
         // select-and-copy it by hand. Defensive: the helper may not exist in this build yet — keep current behavior then.
         // (Orchestrator reconciles the exact API at merge.)
@@ -2485,7 +2487,7 @@ const StationUI = (() => {
     const browserSections = () => {
       const out = { settings: {
         theme: store.settings.theme, scanlines: store.settings.scanlines, flicker: store.settings.flicker,
-        sound: store.settings.sound, music: store.settings.music, keepComputerAwake: store.settings.keepComputerAwake
+        sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
       return out;
@@ -2493,7 +2495,7 @@ const StationUI = (() => {
     if (exportBtn) exportBtn.addEventListener('click', () => {
       setMsg('building export…');
       fetch('/api/config/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sections: browserSections() }) })
-        .then(r => r.json()).then(env => {
+        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(env => {   // never download an error body as a "backup"
           const blob = new Blob([JSON.stringify(env, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -2657,8 +2659,7 @@ const StationUI = (() => {
       '<h4 class="ms-h">DISPLAY</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-scan" ' + (s.scanlines ? 'checked' : '') + '> CRT SCANLINES</label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
-      '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO</label>' +
-      '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>';
+      '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO <span class="dim">— UI &amp; notification sounds</span></label>';
     const secNotifs =
       // NOTIFICATIONS — per-category on/off + a notification sound toggle (P1-8). Each is HONORED at emit time in
       // notify(): a muted category is dropped before it ever reaches the panel/toast (not decorative).
@@ -2693,10 +2694,17 @@ const StationUI = (() => {
       // assembles + sanitizes it (GET /api/diagnostics); this button just fetches + copies. Destination is ONE constant
       // (Diag.SUPPORT_EMAIL) so it's a one-line swap when the support address is picked. Copy stays honest about where it goes.
       '<h4 class="ms-h">DIAGNOSTICS <span class="dim">— for a bug report</span></h4>' +
-      '<p class="set-about">If something breaks, copy a <b>diagnostic readout</b> and paste it into an email to ' +
-        '<b>' + esc((typeof Diag !== 'undefined' && Diag.SUPPORT_EMAIL) ? Diag.SUPPORT_EMAIL : 'nonfungiblefunyuns@gmail.com') + '</b>. ' +
-        'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
-        '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>' +
+      // Name the support address only when Diag reports one is configured; when it's unset/placeholder we omit
+      // the "email to X" clause entirely (no placeholder, no fake address) — the copy button still works.
+      ((function () {
+        const dest = (typeof Diag !== 'undefined' && Diag.supportEmail) ? Diag.supportEmail() : '';
+        const lead = dest
+          ? ('If something breaks, copy a <b>diagnostic readout</b> and paste it into an email to <b>' + esc(dest) + '</b>. ')
+          : 'If something breaks, copy a <b>diagnostic readout</b> and paste it into your bug report. ';
+        return '<p class="set-about">' + lead +
+          'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
+          '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>';
+      })()) +
       '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
@@ -2731,7 +2739,7 @@ const StationUI = (() => {
       host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
     }));
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
-    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
+    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
     const awakeToggle = host.querySelector('#set-awake');
     if (awakeToggle) awakeToggle.addEventListener('change', ev => {
       const desired = !!ev.target.checked;
@@ -3590,10 +3598,19 @@ const StationUI = (() => {
         window.open(j.url, '_blank', 'noopener');
         msgEl.textContent = 'Approve access in the window that opened, then return here — this updates automatically.';
         sfx('click');
-        let n = 0; clearInterval(pollTimer);
+        let n = 0, fails = 0; clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
-          n++; const s = await refreshStatus();
-          if ((s && s.connected) || n > 60) { clearInterval(pollTimer); if (s && s.connected) { msgEl.textContent = '✓ Spotify connected'; notify('Spotify connected', 'good'); sfx('click'); } }
+          // E6d: guard the poll body so a throw can't leak an unhandled rejection AND never stops the timer.
+          // Count consecutive failures toward an EARLY bail so a persistently-broken poll gives up instead of
+          // spinning the full ~120s window; a success resets the streak.
+          n++;
+          let s = null;
+          try { s = await refreshStatus(); fails = 0; }
+          catch (_) { fails++; }
+          if ((s && s.connected) || n > 60 || fails >= 5) {
+            clearInterval(pollTimer);
+            if (s && s.connected) { msgEl.textContent = '✓ Spotify connected'; notify('Spotify connected', 'good'); sfx('click'); }
+          }
         }, 2000);
       } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
     });
@@ -4364,6 +4381,9 @@ const StationUI = (() => {
       b.disabled = true;
       const r = await AJS.acceptPending(b.dataset.pid);
       if (r && r.ok) { sfx('click'); }
+      // ARM-STATE truth: acceptPending reports {disarmed:{text}} when the scheduler that fires this
+      // routine is off — surface it here too (the Dialogue flow already does), never approve-and-silence.
+      if (r && r.ok && r.disarmed && r.disarmed.text) notify(r.disarmed.text, 'warn');
       rerender('quests');
     }));
     body.querySelectorAll('.q-prop-no').forEach(b => b.addEventListener('click', ev => {
@@ -4428,7 +4448,7 @@ const StationUI = (() => {
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
-    messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
+    messaging:['CHANNELS',               buildMessaging, { w: '520px' }],   // dock label = window title (it's Telegram/external channels, not COMMS)
     connectors:['TOOLSETS & CONNECTORS', buildConnectors,{ console: true }],
     routines: ['ROUTINES',               buildRoutines,  { console: true }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],

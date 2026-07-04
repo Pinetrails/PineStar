@@ -31,7 +31,18 @@
     }
     function overrides() { const o = {}; for (const [k, v] of map) o[k] = v; return o; }
 
-    return { set, overrides, get(slug) { return map.get(slug); }, has(slug) { return map.has(slug); }, count() { return map.size; } };
+    /* compact — rewrite the JSONL keeping ONLY the latest choice per slug (`map` already holds exactly that).
+       Bounds a file that a user toggling the same recipe repeatedly would otherwise grow without limit. Needs an
+       io that can atomically replace the whole file (io.rewrite); without it, a no-op (the bounded boot loader
+       still caps memory). Never throws. Returns { ok, kept }. */
+    function compact() {
+      const entries = []; for (const [slug, enabled] of map) entries.push({ slug: slug, enabled: enabled, at: clock.now() });
+      if (!io || typeof io.rewrite !== 'function') return { ok: false, reason: 'io has no rewrite', kept: entries.length };
+      try { io.rewrite(entries); return { ok: true, kept: entries.length }; }
+      catch (e) { return { ok: false, reason: (e && e.message) || 'rewrite failed', kept: entries.length }; }
+    }
+
+    return { set, overrides, compact, get(slug) { return map.get(slug); }, has(slug) { return map.has(slug); }, count() { return map.size; } };
   }
 
   return { makeSkillPrefs };

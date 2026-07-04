@@ -176,13 +176,24 @@
     let spentUsd = 0, turns = 0, spentTokens = 0;
     const unpricedUsage = [];
     let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
+    let lastFinishReason = null;   // the last done-event finishReason ('length'/'content_filter' surfaced at run end)
+    // OPTIONAL injected sleep for bounded mid-stream retry backoff (o.sleep(ms) -> Promise). Absent = retry with
+    // NO wait (keeps the loop deterministic + test-fast); when present it honors the classifier's retryAfterMs.
+    const sleep = (typeof o.sleep === 'function') ? o.sleep : null;
+    // mid-stream retry backoff schedule (same shape as the adapters' pre-stream RETRY_DELAYS).
+    const STREAM_RETRY_DELAYS = [400, 1200];
     function noteUnpriced(modelId, c) {
       if (!c || !c.unpriced) return;
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
     }
     function end(reason) {
       emit('agent.run.end', { agentId, runId, reason, turns, usd: spentUsd });
-      return { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
+      const out = { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
+      // A3: surface WHY the model stopped when it's a truncation/policy stop, ADDITIVELY (the frontend + index.js
+      // gate on reason==='done'; finishReason is an extra field on the return value, never a new run-end reason,
+      // never on the schema-frozen agent.run.end event). Only the non-clean reasons are worth surfacing.
+      if (lastFinishReason === 'length' || lastFinishReason === 'content_filter') out.finishReason = lastFinishReason;
+      return out;
     }
 
     // Fold older history into a summary when the live prompt is past the context manager's threshold, so a long
@@ -295,8 +306,10 @@
       let usage = null, fatal = null;
       let recoveries = 0;
       const maxRecoveries = 1 + fallbacks.length;
+      let retriesUsed = 0;
+      const MAX_STREAM_RETRIES = 2;
       while (true) {
-        acc.text = ''; acc.toolCalls = {}; usage = null;
+        acc.text = ''; acc.toolCalls = {}; usage = null; lastFinishReason = null;
         let streamErr = null;
         try {
           const req = { model, messages, tools, signal, stream: true };
@@ -306,7 +319,8 @@
             else if (ev.type === 'tool_start') { acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '' }; }
             else if (ev.type === 'tool_args') { if (acc.toolCalls[ev.index]) acc.toolCalls[ev.index].args += (ev.chunk || ''); }
             else if (ev.type === 'usage') { usage = ev.usage; if (cost) emit('cost.estimate', Object.assign({ agentId, runId }, cost.estimate(usage, model))); }
-            // 'tool_done' / 'done' need no action here
+            else if (ev.type === 'done') { lastFinishReason = ev.finishReason; }   // A3: remember WHY the turn stopped
+            // 'tool_done' needs no action here
           }
         } catch (e) { streamErr = e; }
         if (!streamErr) break;                       // stream succeeded
@@ -333,10 +347,36 @@
             continue;
           }
         }
-        fatal = cls;                                 // unrecoverable / chain exhausted
+        // A2: bounded SAME-provider retry for a retryable class that has no failover to take (e.g. `timeout`,
+        // transient `unknown`) — or a fallback class whose chain is already exhausted. Without this a hung/idle
+        // stream that the watchdog turned into a `timeout` would kill the run on the first blip. Bounded to
+        // MAX_STREAM_RETRIES so a persistently-failing backend still terminates. Honors the server-stated wait.
+        if (!signal.aborted && cls.retryable && !cls.shouldFallback && retriesUsed < MAX_STREAM_RETRIES) {
+          retriesUsed++;
+          // NOTE: no provider.fallback emit here — a same-provider retry is NOT a failover; emitting it would
+          // inflate the floor's failover counter and lie about a model/credential switch that didn't happen
+          // (truthful-telemetry law). The retry is bounded and its outcome (success or the final error) is what
+          // surfaces observably.
+          if (sleep) { try { await sleep(Math.min(60000, Math.max(STREAM_RETRY_DELAYS[Math.min(retriesUsed - 1, STREAM_RETRY_DELAYS.length - 1)], cls.retryAfterMs || 0))); } catch (_) {} }
+          if (signal.aborted) break;   // a cancel during the backoff ends cleanly below
+          continue;
+        }
+        fatal = cls;                                 // unrecoverable / chain exhausted / retries spent
         break;
       }
       if (fatal) {
+        // A2 reconcile-on-fatal: if usage arrived before the stream failed, RECORD it before ending 'error' so the
+        // ledger/spend reflect tokens the provider will bill — a fatal path must not silently drop billed usage.
+        if (usage && cost) {
+          const partial = cost.reconcile(usage, model);
+          spentUsd += partial.usd || 0;
+          spentTokens += (partial.tokensIn || 0) + (partial.tokensOut || 0);
+          noteUnpriced(model, partial);
+          emit('agent.cost', {
+            agentId, runId, usd: partial.usd || 0, tokensIn: partial.tokensIn || 0, tokensOut: partial.tokensOut || 0,
+            reasoningTokens: partial.reasoningTokens || 0, cachedTokens: partial.cachedTokens || 0, model, reconciled: true
+          });
+        }
         emit('agent.run.error', { agentId, runId, message: fatal.message || 'model call failed', transient: !!fatal.retryable });
         return end('error');
       }

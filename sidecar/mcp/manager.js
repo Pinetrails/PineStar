@@ -41,8 +41,18 @@
     const clock = deps.clock || { now: () => 0 };
     const timeoutMs = deps.timeoutMs || 30000;
     const onEvent = typeof deps.onEvent === 'function' ? deps.onEvent : function () {};
+    // AUTO-RECONNECT deps (injected so the manager stays timer/rng-free for tests + determinism lint). When absent
+    // the reconnect scheduler is INERT (setTimeoutImpl null -> no reconnect armed), so existing callers are unchanged.
+    const setTimeoutImpl = typeof deps.setTimeoutImpl === 'function' ? deps.setTimeoutImpl : null;
+    const clearTimeoutImpl = typeof deps.clearTimeoutImpl === 'function' ? deps.clearTimeoutImpl : function () {};
+    // jitter source: injected random() in [0,1); default is a fixed 0.5 (no Math.random literal here — the host
+    // injects the real rng, keeping this module deterministic under lint).
+    const random = typeof deps.random === 'function' ? deps.random : function () { return 0.5; };
+    const RECONNECT_BASE_MS = Math.max(250, Number(deps.reconnectBaseMs) || 1000);
+    const RECONNECT_MAX_MS = Math.max(RECONNECT_BASE_MS, Number(deps.reconnectMaxMs) || 60000);
+    const RECONNECT_MAX_ATTEMPTS = Math.max(0, deps.reconnectMaxAttempts == null ? 8 : Number(deps.reconnectMaxAttempts));
 
-    const conns = new Map();   // id -> { id, transportKind, url, token, command, args, cwd, env, label, enabled, state, detail, tools[], client, transport, ts }
+    const conns = new Map();   // id -> { id, transportKind, url, token, ..., state, detail, tools[], client, transport, ts, reconnectAttempt, reconnectTimer, connecting }
 
     function normalizeTransport(cfg, prev) {
       const raw = cfg.transport || (prev && prev.transportKind) || (cfg.command || (prev && prev.command) ? 'stdio' : 'http');
@@ -91,11 +101,52 @@
       try { onEvent({ type: 'connector.state', connectorId: c.id, state: state, detail: c.detail, toolCount: (c.tools || []).length }); } catch (e) {}
     }
     function teardown(c) {
+      if (c && c.reconnectTimer != null) { try { clearTimeoutImpl(c.reconnectTimer); } catch (_) {} c.reconnectTimer = null; }
       if (c && c.client) { try { c.client.close('reconfigured'); } catch (e) {} }
       if (c) { c.client = null; c.transport = null; }
     }
 
+    // the connector's ID for THIS live connection — bumped on every (re)connect so a death callback from an OLD
+    // transport (a torn-down connection) is ignored (it can't flip a freshly-reconnected connector back to error).
+    function bumpEpoch(c) { c._epoch = (c._epoch || 0) + 1; return c._epoch; }
+
+    // TRANSPORT DEATH: the stdio child exited / the HTTP endpoint keeps failing. The transport calls this via its
+    // onError hook. Flip the connector to 'error' (honest status — the UI was previously stuck on 'up' forever)
+    // and, if reconnect is wired + within the attempt cap, schedule a bounded-backoff reconnect. Guarded by epoch
+    // so a stale callback from a superseded transport does nothing.
+    function onTransportDeath(c, epoch, reason) {
+      if (!conns.get(c.id) || c._epoch !== epoch) return;      // stale connection or removed connector -> ignore
+      if (c.state === 'error' && c.reconnectTimer != null) return;   // already handling this death
+      c.tools = [];
+      // keep c.transport reference so teardown can close the client; mark not-up.
+      setState(c, 'error', reason || 'connector transport closed');
+      scheduleReconnect(c);
+    }
+
+    function reconnectDelay(c) {
+      const attempt = c.reconnectAttempt || 0;
+      const exp = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, attempt));
+      c.reconnectAttempt = attempt + 1;
+      return Math.floor(exp * (0.5 + 0.5 * random()));         // jitter in [0.5x, 1x]
+    }
+
+    function scheduleReconnect(c) {
+      if (!setTimeoutImpl) return;                              // reconnect not wired -> honest error state only
+      if (!c.enabled) return;                                   // a disabled connector never auto-reconnects
+      if (c.reconnectTimer != null) return;                     // already scheduled
+      if ((c.reconnectAttempt || 0) >= RECONNECT_MAX_ATTEMPTS) { setState(c, 'error', (c.detail || 'connector down') + ' (giving up after ' + RECONNECT_MAX_ATTEMPTS + ' reconnect attempts)'); return; }
+      const delay = reconnectDelay(c);
+      c.reconnectTimer = setTimeoutImpl(function () {
+        c.reconnectTimer = null;
+        if (!conns.get(c.id) || !c.enabled) return;
+        connect(c).catch(() => {});                             // connect() re-arms scheduleReconnect on failure
+      }, delay);
+    }
+
     async function connect(c) {
+      if (c.reconnectTimer != null) { try { clearTimeoutImpl(c.reconnectTimer); } catch (_) {} c.reconnectTimer = null; }
+      if (c.client) { try { c.client.close('reconnect'); } catch (_) {} c.client = null; c.transport = null; }   // close a prior (dead) client before reattaching
+      const epoch = bumpEpoch(c);
       setState(c, 'connecting');
       try {
         const connTimeout = c.timeoutMs || timeoutMs;
@@ -108,17 +159,22 @@
           args: c.args,
           cwd: c.cwd,
           env: c.env,
-          timeoutMs: connTimeout
+          timeoutMs: connTimeout,
+          // DEATH HOOK: the transport reports child-exit / repeated failure here. Bound to THIS epoch so a stale
+          // callback from a torn-down transport can't flip a reconnected connector back to error.
+          onError: (e) => { try { onTransportDeath(c, epoch, (e && e.message) || String(e)); } catch (_) {} }
         });
         c.client = makeClient({ transport: c.transport, timeoutMs: connTimeout });
         await c.client.initialize();
         c.tools = await c.client.listTools() || [];
+        c.reconnectAttempt = 0;                                 // a clean connect resets the backoff ladder
         setState(c, 'up');
         return { ok: true, state: 'up', toolCount: c.tools.length };
       } catch (e) {
         c.tools = [];
         teardown(c);
         setState(c, 'error', (e && e.message) || String(e));
+        scheduleReconnect(c);                                   // a failed (re)connect backs off and retries (bounded)
         return { ok: false, state: 'error', toolCount: 0, error: c.detail };
       }
     }
@@ -143,7 +199,8 @@
         timeoutMs: normalizeTimeout(cfg, prev),
         label: String(cfg.label || (prev && prev.label) || id),
         enabled: cfg.enabled !== false,
-        state: 'down', detail: '', tools: [], client: null, transport: null, ts: clock.now()
+        state: 'down', detail: '', tools: [], client: null, transport: null, ts: clock.now(),
+        reconnectAttempt: 0, reconnectTimer: null, _epoch: 0
       };
       conns.set(id, c);
       if (transportKind === 'http' && !c.url) { setState(c, 'error', 'no server URL configured'); return { ok: false, state: 'error', toolCount: 0, error: c.detail }; }
@@ -197,10 +254,23 @@
     function has(id) { return conns.has(String(id)); }
     function ids() { return Array.from(conns.keys()); }
 
+    // consecutive call failures that flip an HTTP connector to 'error' (its transport reports per-call failures as
+    // JSON-RPC errors, not transport death, so a vanished HTTP endpoint would otherwise stay 'up' forever). stdio
+    // gets death detection from the child-exit hook, so this net is only meaningful for http; 0 disables it.
+    const CALL_FAIL_LIMIT = Math.max(0, deps.callFailLimit == null ? 3 : Number(deps.callFailLimit));
     function call(id, toolName, args) {
       const c = conns.get(String(id));
       if (!c || !c.client || c.state !== 'up') return Promise.reject(new Error('connector "' + id + '" is not connected'));
-      return c.client.callTool(toolName, args || {});
+      const p = c.client.callTool(toolName, args || {});
+      if (c.transportKind !== 'http' || CALL_FAIL_LIMIT <= 0) return p;
+      return p.then(
+        (r) => { c._callFails = 0; return r; },
+        (e) => {
+          c._callFails = (c._callFails || 0) + 1;
+          if (c._callFails >= CALL_FAIL_LIMIT && c.state === 'up') { onTransportDeath(c, c._epoch, 'connector unreachable (' + c._callFails + ' consecutive call failures)'); }
+          throw e;
+        }
+      );
     }
 
     function toolDefsFor(id) {

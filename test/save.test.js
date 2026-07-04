@@ -16,6 +16,7 @@ function memFs() {
     readFileSync(p) { if (!files.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; } return files.get(p); },
     writeFileSync(p, data) { files.set(p, String(data)); events.push(['write', p]); },
     renameSync(a, b) { if (!files.has(a)) { const e = new Error('ENOENT: ' + a); e.code = 'ENOENT'; throw e; } files.set(b, files.get(a)); files.delete(a); events.push(['rename', a, b]); },
+    unlinkSync(p) { files.delete(p); },
     mkdirSync() {}
   };
 }
@@ -154,6 +155,46 @@ const envelope = (over) => Object.assign({ schema: 'starnet.save', version: 3, u
   A.ok(calls.indexOf('fsync') < calls.indexOf('rename'), 'fsync happens BEFORE the rename');
   A.eq(calls.indexOf('writeFileSync'), -1, 'plain writeFileSync NOT used when fsync is available');
   A.eq(s.load('agent').agent.name, 'NOVA', 'durable-path write round-trips');
+}
+
+// ---- I. .bak last-known-good: a torn (zero-length) main recovers from the .bak snapshot ----
+{
+  const fs = memFs();
+  const s = mk(fs);
+  const file = pathMod.join(ROOT, 'agent.save.json');
+  s.save('agent', envelope({ updatedAt: 300, agent: { id: 'agent', name: 'GOOD' } }));   // clean save on disk
+  s.save('agent', envelope({ updatedAt: 400, agent: { id: 'agent', name: 'NEWER' } }));   // a second write snapshots the first to .bak
+  A.ok(fs.files.has(file + '.bak'), 'a .bak snapshot was written before the second save');
+  // simulate a TORN main (crash left it zero-length)
+  fs.files.set(file, '');
+  A.eq(s.load('agent').agent.name, 'GOOD', 'a torn (zero-length) main recovers the prior save from .bak');
+  // and the anti-clobber gate still uses the recovered value: an OLDER write is refused
+  const stale = s.save('agent', envelope({ updatedAt: 100, agent: { id: 'agent', name: 'STALE' } }));
+  A.eq(stale.ok, false, 'a stale write is refused even when the prior value came from .bak recovery');
+}
+
+// ---- J. quarantine: a corrupt main with NO usable .bak is renamed aside so the store recovers ----
+{
+  const fs = memFs();
+  const s = mk(fs);
+  const file = pathMod.join(ROOT, 'agent.save.json');
+  fs.files.set(file, '{ total garbage');   // corrupt, no .bak present
+  A.eq(s.load('agent'), undefined, 'corrupt main with no .bak loads as undefined');
+  A.ok([...fs.files.keys()].some(k => /\.corrupt-\d+$/.test(k)), 'the corrupt main was quarantined (renamed aside), not left in place');
+  A.ok(!fs.files.has(file), 'the corrupt main path is now clear');
+  A.eq(s.save('agent', envelope({ updatedAt: 5 })).ok, true, 'a fresh save lands after quarantine');
+  A.eq(s.load('agent').agent.name, 'NOVA', 'the fresh save loads cleanly');
+}
+
+// ---- K. corrupt main but a CLEAN .bak: recover from .bak AND quarantine the corrupt main ----
+{
+  const fs = memFs();
+  const s = mk(fs);
+  const file = pathMod.join(ROOT, 'agent.save.json');
+  fs.files.set(file + '.bak', JSON.stringify({ version: 1, agentId: 'agent', updatedAt: 700, savedAt: 1, doc: envelope({ updatedAt: 700, agent: { id: 'agent', name: 'FROMBAK' } }) }));
+  fs.files.set(file, '{ corrupt main');
+  A.eq(s.load('agent').agent.name, 'FROMBAK', 'a corrupt main recovers the save from a clean .bak');
+  A.ok([...fs.files.keys()].some(k => /\.corrupt-\d+$/.test(k)), 'the corrupt main was quarantined even though .bak recovered');
 }
 
 A.report('save.test');

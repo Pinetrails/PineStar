@@ -75,19 +75,31 @@
     return a.action;
   }
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  // ASYNC (was CP.spawnSync): a computer.use action drives PowerShell for up to 15s; spawnSync BLOCKED the whole
+  // sidecar event loop for that entire window — /api/health, every other run, and the SSE keep-alives all froze
+  // behind a single mouse move. execFile runs the child off-thread so the host stays responsive. Same argv,
+  // timeout, and windowsHide; the {error,status,stdout,stderr} handling maps onto execFile's (err, stdout, stderr).
   function runPowerShell(script, timeoutMs) {
     const exe = process.env.SystemRoot ? process.env.SystemRoot + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' : 'powershell.exe';
-    const res = CP.spawnSync(exe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-Command', script], {
-      encoding: 'utf8',
-      timeout: timeoutMs || 15000,
-      windowsHide: true
+    return new Promise((resolve, reject) => {
+      CP.execFile(exe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-Command', script], {
+        encoding: 'utf8',
+        timeout: timeoutMs || 15000,
+        windowsHide: true,
+        maxBuffer: 8 * 1024 * 1024   // a screenshot capture returns a JSON blob; keep headroom (spawnSync had no cap)
+      }, (err, stdout, stderr) => {
+        if (err) {
+          // execFile folds a non-zero exit, a spawn failure, and a timeout into err; preserve the old message shape
+          // (prefer stderr, then stdout, then a generic fallback).
+          const msg = (String(stderr || '').trim() || String(stdout || '').trim() || (err && err.message) || 'PowerShell desktop driver failed');
+          return reject(new Error(msg));
+        }
+        resolve(String(stdout || '').trim());
+      });
     });
-    if (res.error) throw res.error;
-    if (res.status !== 0) throw new Error((res.stderr || res.stdout || 'PowerShell desktop driver failed').trim());
-    return String(res.stdout || '').trim();
   }
-  function runPowerShellJson(script, timeoutMs) {
-    const out = runPowerShell(script, timeoutMs);
+  async function runPowerShellJson(script, timeoutMs) {
+    const out = await runPowerShell(script, timeoutMs);
     try { return JSON.parse(out); } catch (e) { throw new Error('desktop driver returned invalid JSON: ' + out.slice(0, 200)); }
   }
   function win32DriverRequested(env) {
@@ -184,35 +196,35 @@ ${body}
         if (a.action === 'screenshot') return 'desktop screenshot requested';
         if (a.action === 'wait') { await sleep(a.durationMs || 500); return 'waited ' + (a.durationMs || 500) + 'ms'; }
         if (a.action === 'move') {
-          runPowerShellJson(mouseScript('[StarNetMouse]::SetCursorPos(' + Math.round(a.x || 0) + ', ' + Math.round(a.y || 0) + ') | Out-Null'));
+          await runPowerShellJson(mouseScript('[StarNetMouse]::SetCursorPos(' + Math.round(a.x || 0) + ', ' + Math.round(a.y || 0) + ') | Out-Null'));
           return 'moved pointer';
         }
         if (a.action === 'click' || a.action === 'double_click') {
           const x = Math.round(a.x || 0), y = Math.round(a.y || 0);
           const click = '[StarNetMouse]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 40; [StarNetMouse]::mouse_event(4,0,0,0,0);';
           const body = '[StarNetMouse]::SetCursorPos(' + x + ', ' + y + ') | Out-Null; ' + click + (a.action === 'double_click' ? ' Start-Sleep -Milliseconds 80; ' + click : '');
-          runPowerShellJson(mouseScript(body));
+          await runPowerShellJson(mouseScript(body));
           return a.action + ' delivered';
         }
         if (a.action === 'scroll') {
           const data = Math.round(Number(a.dy || 0) || Number(a.y || 0) || 0);
-          runPowerShellJson(mouseScript('[StarNetMouse]::mouse_event(2048,0,0,' + data + ',0);'));
+          await runPowerShellJson(mouseScript('[StarNetMouse]::mouse_event(2048,0,0,' + data + ',0);'));
           return 'scroll delivered';
         }
         if (a.action === 'type') {
           // hardBlock (command-like typing) already ran in the tool layer.
-          runPowerShellJson(sendKeysScript(sendKeysEscapeLiteral(a.text || '')));
+          await runPowerShellJson(sendKeysScript(sendKeysEscapeLiteral(a.text || '')));
           return 'typed ' + String(a.text || '').length + ' chars';
         }
         if (a.action === 'key') {
           // hardBlock (destructive key) already ran in the tool layer.
-          runPowerShellJson(sendKeysScript(keyToSendKeys(a.key)));
+          await runPowerShellJson(sendKeysScript(keyToSendKeys(a.key)));
           return 'key ' + a.key + ' delivered';
         }
         if (a.action === 'hotkey') {
           // hardBlock (destructive hotkey) already ran in the tool layer.
           const combo = (a.keys && a.keys.length) ? a.keys : a.key;
-          runPowerShellJson(sendKeysScript(hotkeyToSendKeys(combo)));
+          await runPowerShellJson(sendKeysScript(hotkeyToSendKeys(combo)));
           return 'hotkey ' + ((a.keys || []).join('+') || a.key || '') + ' delivered';
         }
         if (a.action === 'drag') throw new Error('local win32 desktop driver does not yet support drag');

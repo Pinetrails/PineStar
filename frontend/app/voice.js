@@ -229,6 +229,7 @@ const Voice = (() => {
     s = s.replace(/!?\[([^\]]*)\]\(([^)]+)\)/g, '$1');              // [label](url) / ![alt](url) → label
     s = s.replace(/https?:\/\/\S+/g, 'a link');                     // bare URLs
     s = s.replace(/(^|\s)[~.]?[\/\\][\w./\\-]+/g, '$1that file');   // file paths → "that file"
+    s = s.replace(/(^|\s)[A-Za-z]:[\/\\][\w./\\-]+/g, '$1that file'); // Windows drive paths (C:\…) — else TTS spells them out
     s = s.replace(/^#{1,6}\s*/gm, '');                              // headers
     s = s.replace(/^\s*[-*+]\s+/gm, '');                            // bullet markers
     s = s.replace(/^\s*\d+\.\s+/gm, '');                            // numbered-list markers
@@ -258,6 +259,9 @@ const Voice = (() => {
     let cur = '';
     for (const p of parts) {
       let s = p;
+      // an oversize sentence gets hard-sliced straight into `out` — flush the accumulator FIRST or the
+      // preceding sentences would play AFTER this one's head slices (out-of-order speech).
+      if (s.length > max && cur.trim()) { out.push(cur.trim()); cur = ''; }
       while (s.length > max) { out.push(s.slice(0, max).trim()); s = s.slice(max); }
       if ((cur + s).length > max) { if (cur.trim()) out.push(cur.trim()); cur = s; } else cur += s;
     }
@@ -675,7 +679,13 @@ const Voice = (() => {
     HARD_CAP_MS: 30000,      // absolute ceiling on one take
     MIN_MS: 500,             // ignore silence detection for the first moment (let the speaker start)
     CALIBRATE_MS: 300,       // sample ambient level over this window to set the noise floor
-    MARGIN: 0.010            // RMS above (floor+margin) counts as speech
+    MARGIN: 0.010,           // RMS above (floor+margin) counts as speech
+    // the SILENCE_MS cut only arms after a voiced frame — a take where you never speak would otherwise
+    // hold the mic the full HARD_CAP (30s; ~90s of dead air across the hands-free retries). Cut a
+    // never-voiced take here instead (≈ SpeechRecognition's own no-speech give-up). The clip still goes
+    // to /api/stt — VAD miscalibration (e.g. talking during CALIBRATE_MS) must shorten the take, never
+    // silently discard real words.
+    NOSPEECH_MS: 6500
   };
   const recorderProvider = (() => {
     let stream = null, mr = null, chunks = [], ac = null, analyser = null, rafId = null;
@@ -718,6 +728,8 @@ const Voice = (() => {
           if (rms > thresh) lastVoiceAt = now;
           // only arm the silence cut once we're past MIN_MS AND have heard at least one voiced frame
           if (now - startedAt > REC.MIN_MS && lastVoiceAt && (now - lastVoiceAt) > REC.SILENCE_MS) { stop(); return; }
+          // never-voiced take → give up early instead of sitting hot until HARD_CAP (see REC.NOSPEECH_MS)
+          if (!lastVoiceAt && (now - startedAt) > REC.NOSPEECH_MS) { stop(); return; }
         }
         // surface a coarse "still listening" pulse (no real interim text on this path) — dots by elapsed seconds
         if (cb && cb.onInterim) { const secs = Math.floor((now - startedAt) / 1000); cb.onInterim(secs > 0 ? '·'.repeat(Math.min(secs, 8)) : ''); }

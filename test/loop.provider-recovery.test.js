@@ -1,0 +1,117 @@
+/* node test/loop.provider-recovery.test.js — Lane A items 2 & 3 in the agent loop:
+   (2a) a bounded SAME-provider retry recovers a retryable, non-failover mid-stream error (e.g. `timeout`);
+   (2b) usage that arrived before a FATAL stream error is reconciled into spend before end('error');
+   (3)  the last done-event finishReason ('length'/'content_filter') is surfaced on the run's return value.
+   Zero network — a hand-rolled provider throws/yields canned events. */
+'use strict';
+const A = require('./_assert.js');
+const events = require('../shared/events.js');
+const { makeEmitter } = require('../shared/emitter.js');
+const { makeCostEngine } = require('../sidecar/cost.js');
+const { runAgentLoop } = require('../sidecar/loop.js');
+
+function setup() {
+  const bus = A.makeBus();
+  const seq = A.collectBus(bus, events.names());
+  const emit = makeEmitter(bus, () => {});
+  return { bus, seq, emit };
+}
+const priceOf = () => ({ in: 1, out: 2 });   // $1/$2 per-million so token math is easy to assert
+function cost() { return makeCostEngine({ priceOf }); }
+
+// a provider whose stream() runs a caller-supplied generator function fresh each attempt (so retries re-invoke it)
+function scriptedProvider(genFn) {
+  return { stream: (req) => genFn(req), priceOf, contextLimit: () => 0 };
+}
+const timeoutErr = () => { const e = new Error('provider stream idle timed out after 120000ms'); e.code = 'PROVIDER_STREAM_TIMEOUT'; return e; };
+
+(async () => {
+  // (2a) SAME-PROVIDER RETRY: the first attempt throws a `timeout` (retryable, no failover chain); the loop
+  //      retries the same provider and the second attempt streams a clean answer -> run ends 'done'.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      if (attempt === 1) { throw timeoutErr(); }        // first call: hung stream turned into a timeout
+      yield { type: 'text', delta: 'recovered' };
+      yield { type: 'usage', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(attempt, 2, 'the timeout triggered exactly one same-provider retry');
+    A.eq(res.reason, 'done', 'the retried turn completed the run');
+    A.ok(res.messages.some(m => m.role === 'assistant' && String(m.content).indexOf('recovered') >= 0), 'the recovered text is in the transcript');
+    A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'no run.error was emitted (the retry recovered)');
+  }
+
+  // (2a-bound) a PERSISTENT timeout still terminates: retries are bounded, then the run ends 'error'.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () { attempt++; throw timeoutErr(); yield; });   // always throws
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(res.reason, 'error', 'a persistent timeout eventually ends the run in error');
+    A.eq(attempt, 3, 'bounded: 1 initial + 2 retries then give up');
+    A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'a timeout error is transient');
+  }
+
+  // (2b) FATAL-PATH USAGE RECONCILE: usage arrives, THEN the stream throws a non-retryable error. The billed
+  //      tokens must be recorded before end('error') — spend/tokens on the return value are nonzero, and an
+  //      agent.cost (reconciled) event fired.
+  {
+    const { seq, emit } = setup();
+    const badReq = new Error('http 400 - malformed'); badReq.status = 400;   // 400 -> format_error (not retryable, no fallback)
+    const provider = scriptedProvider(async function* () {
+      yield { type: 'usage', usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 } };
+      throw badReq;
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(res.reason, 'error', 'a 400 mid-stream ends the run error');
+    // 1000 in * $1/M + 500 out * $2/M = 0.001 + 0.001 = 0.002
+    A.ok(Math.abs(res.usd - 0.002) < 1e-9, 'usage received before the fatal error was reconciled into spend');
+    A.eq(res.tokens, 1500, 'the billed tokens are recorded on the fatal path');
+    const costEv = seq.filter(e => e.name === 'agent.cost' && e.payload.reconciled);
+    A.ok(costEv.length >= 1, 'a reconciled agent.cost fired before end(error)');
+  }
+
+  // (2b-neg) no usage before a fatal error -> nothing reconciled (no spurious spend).
+  {
+    const { emit } = setup();
+    const err = new Error('http 400'); err.status = 400;
+    const provider = scriptedProvider(async function* () { throw err; yield; });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(res.reason, 'error', 'fatal with no usage still ends error');
+    A.eq(res.usd, 0, 'no usage -> no phantom spend on the fatal path');
+    A.eq(res.tokens, 0, 'no usage -> zero tokens');
+  }
+
+  // (3) finishReason SURFACED: a turn that finishes with 'length' (truncated) puts finishReason on the return
+  //     value, WITHOUT changing reason (still 'done', so the reflection/study gate in index.js is unaffected).
+  {
+    const { emit } = setup();
+    const provider = scriptedProvider(async function* () {
+      yield { type: 'text', delta: 'a very long truncated answer' };
+      yield { type: 'usage', usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 } };
+      yield { type: 'done', finishReason: 'length' };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(res.reason, 'done', 'a length-truncated turn still ends reason=done (gate unbroken)');
+    A.eq(res.finishReason, 'length', 'finishReason=length is surfaced additively on the return value');
+  }
+
+  // (3-neg) a clean 'stop' finish does NOT attach a finishReason field (only non-clean stops are surfaced).
+  {
+    const { emit } = setup();
+    const provider = scriptedProvider(async function* () {
+      yield { type: 'text', delta: 'ok' };
+      yield { type: 'usage', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(res.reason, 'done', 'clean stop -> done');
+    A.eq(res.finishReason, undefined, 'a clean stop attaches no finishReason field');
+  }
+
+  A.report('loop.provider-recovery.test');
+})();

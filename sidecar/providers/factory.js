@@ -40,6 +40,7 @@
     if (profile.adapter === 'openrouter') {
       return openrouter.makeOpenRouterProvider({
         fetch: opts.fetch,
+        clock: opts.clock,
         key: opts.key,
         baseUrl: opts.baseUrl || profile.baseUrl,
         referer: opts.referer,
@@ -49,6 +50,7 @@
     if (profile.adapter === 'openai-compatible') {
       return openaiCompatible.makeOpenAICompatibleProvider({
         fetch: opts.fetch,
+        clock: opts.clock,
         key: opts.key,
         baseUrl: opts.baseUrl || profile.baseUrl,
         chatPath: profile.chatPath,
@@ -62,6 +64,7 @@
     if (profile.adapter === 'anthropic') {
       return anthropic.makeAnthropicProvider({
         fetch: opts.fetch,
+        clock: opts.clock,
         key: opts.key,
         baseUrl: opts.baseUrl || profile.baseUrl,
         reasoningEffort: opts.reasoningEffort
@@ -70,6 +73,7 @@
     if (profile.adapter === 'gemini') {
       return gemini.makeGeminiProvider({
         fetch: opts.fetch,
+        clock: opts.clock,
         key: opts.key,
         baseUrl: opts.baseUrl || profile.baseUrl,
         reasoningEffort: opts.reasoningEffort

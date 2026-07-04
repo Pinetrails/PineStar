@@ -55,7 +55,7 @@ const SkinStage = (() => {
     };
     if (manifest) start();
     else fetch('assets/sprites/manifest.json', { cache: 'no-store' })
-      .then(r => r.json()).then(j => { manifest = j; start(); })
+      .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => { manifest = j; start(); })
       .catch(() => { manifest = { sprites: {} }; start(); });
   }
 

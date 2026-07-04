@@ -220,8 +220,10 @@ const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : default
    loadResilient/num are defined); a torn/absent file → no overrides (fail-soft to env/default). */
 const RUNTIME_KNOBS_FILE = path.join(WORKSPACES, 'runtime.knobs.json');
 let runtimeKnobs = (function loadRuntimeKnobsAtBoot() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(RUNTIME_KNOBS_FILE, 'utf8'));
+  // saveResilient writes a <file>.bak last-known-good snapshot; if the main file is torn/corrupt at boot, fall
+  // back to that .bak instead of silently dropping every saved knob to env/default. (Inline .bak recovery — this
+  // runs before loadResilient/readJsonResilient are usable due to declaration order, per the hardening plan.)
+  function parseKnobs(raw) {
     const k = (raw && typeof raw === 'object' && raw.knobs && typeof raw.knobs === 'object') ? raw.knobs : {};
     const out = {};
     for (const key of ['maxIters', 'maxConcurrentAgents', 'consentTimeoutMs', 'cronTickMs']) {
@@ -229,7 +231,15 @@ let runtimeKnobs = (function loadRuntimeKnobsAtBoot() {
       if (typeof v === 'number' && isFinite(v) && v >= 0) out[key] = Math.floor(v);
     }
     return out;
-  } catch (_) { return {}; }
+  }
+  try { return parseKnobs(JSON.parse(fs.readFileSync(RUNTIME_KNOBS_FILE, 'utf8'))); }
+  catch (_) {
+    try {
+      const knobs = parseKnobs(JSON.parse(fs.readFileSync(RUNTIME_KNOBS_FILE + '.bak', 'utf8')));
+      try { console.warn('[runtime-knobs] main file unreadable/corrupt at boot — recovered saved knobs from .bak'); } catch (__) {}
+      return knobs;
+    } catch (__) { return {}; }   // no usable main or .bak -> no overrides (fail-soft to env/default)
+  }
 })();
 // resolve a knob: explicit env (via ENV suffix) > saved override > built-in default. envSuffix null = no env for it.
 function resolveKnob(envSuffix, savedKey, def) {
@@ -376,6 +386,8 @@ function rotateJsonl(file) { try { rotateIfLarge({ fs: fs }, file, LOG_MAX_BYTES
    unintended headroom after restart. The budget governs the soft cross-run pools; the host injects the wall clock
    at this composition boundary. */
 const LEDGER_FILE = path.join(WORKSPACES, 'ledger.jsonl');
+let ledgerAppendFails = 0;                 // consecutive ledger append failures; reset on any success
+const LEDGER_FAIL_ALERT = 5;               // after this many in a row, surface ONCE into the diagnostics ring
 const ledgerIo = {
   readAll() {
     try { return readBoundedJsonl(LEDGER_FILE); } catch (e) { return []; }   // P3: bounded boot-load
@@ -388,7 +400,17 @@ const ledgerIo = {
       fd = fs.openSync(LEDGER_FILE, 'a');
       fs.writeSync(fd, JSON.stringify(entry) + '\n');
       fs.fsyncSync(fd);
-    } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); }
+      ledgerAppendFails = 0;   // a successful append clears the streak (transient blips don't accumulate)
+    } catch (e) {
+      console.warn('[ledger] append failed:', (e && e.message) || e);
+      // SUSTAINED failure is a real durability problem — spend recorded in RAM this session won't survive a
+      // restart. After N consecutive failures, surface ONCE into the diagnostics ring (fires exactly on the Nth
+      // so it isn't spammed every append). recordDiagError is hoisted (defined below) + redacts on write.
+      ledgerAppendFails++;
+      if (ledgerAppendFails === LEDGER_FAIL_ALERT) {
+        try { recordDiagError('ledger append failing (' + ledgerAppendFails + ' consecutive): spend is recorded in memory but not persisting to disk — restart would lose it. ' + ((e && e.message) || e)); } catch (_) {}
+      }
+    }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
     rotateJsonl(LEDGER_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
@@ -539,23 +561,42 @@ const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: ()
 // H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of
 // the fs jail (the agent's fs.* tools can't reach it). Singleton (persists across runs); redacted on write.
 const SKILLS_FILE = path.join(WORKSPACES, 'skills.jsonl');
+// atomically REPLACE a JSONL file with `entries` (one JSON line each), fsync-before-rename. Used by the store's
+// compaction pass to collapse the append-only log to one line per distinct skill (its bounded-growth fix).
+function rewriteJsonlDurable(file, entries) {
+  const body = (entries || []).map(e => JSON.stringify(e)).join('\n') + (entries && entries.length ? '\n' : '');
+  writeFileDurable({ fs: fs, path: path }, file, body);
+}
 const skillsIo = {
+  // bounded boot-load (last LOG_MAX_BYTES of archive+live), same as ledger/runs — after compaction exists, so a
+  // bounded read never silently drops a still-live skill (compaction keeps newest-per-key; the tail read then
+  // covers far more than the compacted file). A missing file -> [].
   readAll() {
-    try {
-      return fs.readFileSync(SKILLS_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(SKILLS_FILE); } catch (e) { return []; }
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(SKILLS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[skills] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-  }
+    rotateJsonl(SKILLS_FILE);   // roll to <file>.1 once the live segment passes the cap (bounds disk; compaction keeps the set intact)
+  },
+  rewrite(entries) { rewriteJsonlDurable(SKILLS_FILE, entries); }   // compaction full-replace
 };
 const SKILL_PACKAGES_DIR = path.join(WORKSPACES, 'skill-packages');
 const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR });
 const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard });
+// BOOT COMPACTION: when skills.jsonl has grown past a threshold, rewrite it to one line per (agentId,name) so
+// view-bump churn + repeated edits can't grow it without bound. Runs AFTER the store loaded `latest`, so the
+// rewrite is exactly the current newest-per-skill set. Safe + idempotent; fail-open.
+try {
+  const SKILLS_COMPACT_BYTES = Math.max(1 << 20, num(ENV('SKILLS_COMPACT_BYTES'), 4 * 1024 * 1024));
+  let sz = 0; try { sz = fs.statSync(SKILLS_FILE).size; } catch (_) {}
+  if (sz > SKILLS_COMPACT_BYTES && typeof skillStore.compact === 'function') {
+    const r = skillStore.compact();
+    if (r && r.ok) { try { console.warn('[skills] boot-compacted skills.jsonl (' + sz + 'B -> ' + r.kept + ' entries)'); } catch (_) {} }
+  }
+} catch (_) {}
 
 // BUNDLED SKILL LIBRARY (capability-gated recipe packs shipped WITH StarNet — distinct from skillStore above,
 // which holds what the agent SAVES at runtime). Loaded once from sidecar/skills/library/*.md; the user's
@@ -565,17 +606,27 @@ const SKILL_LIBRARY = skillsCatalog.loadDir(path.join(__dirname, 'skills', 'libr
 const SKILL_PREFS_FILE = path.join(WORKSPACES, 'skillprefs.jsonl');
 const skillPrefsIo = {
   readAll() {
-    try { return fs.readFileSync(SKILL_PREFS_FILE, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean); }
-    catch (e) { return []; }
+    try { return readBoundedJsonl(SKILL_PREFS_FILE); } catch (e) { return []; }   // bounded boot-load (after compaction exists)
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(SKILL_PREFS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[skills] prefs append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-  }
+    rotateJsonl(SKILL_PREFS_FILE);   // bound disk (compaction keeps one line per slug intact)
+  },
+  rewrite(entries) { rewriteJsonlDurable(SKILL_PREFS_FILE, entries); }   // compaction full-replace
 };
 const skillPrefs = makeSkillPrefs({ io: skillPrefsIo, clock: { now: () => Date.now() } });
+// boot compaction for prefs too (one line per slug); a toggled recipe would otherwise grow the file. Fail-open.
+try {
+  const PREFS_COMPACT_BYTES = Math.max(1 << 20, num(ENV('SKILLS_COMPACT_BYTES'), 4 * 1024 * 1024));
+  let psz = 0; try { psz = fs.statSync(SKILL_PREFS_FILE).size; } catch (_) {}
+  if (psz > PREFS_COMPACT_BYTES && typeof skillPrefs.compact === 'function') {
+    const r = skillPrefs.compact();
+    if (r && r.ok) { try { console.warn('[skills] boot-compacted skillprefs.jsonl (' + psz + 'B -> ' + r.kept + ' entries)'); } catch (_) {} }
+  }
+} catch (_) {}
 
 // credential pool (P0.2): orders the primary OpenRouter key + alternates and cools a key that just hit a
 // rotate-reason failure (rate_limit/auth/billing) so it isn't retried first next run. In-memory only; never
@@ -583,6 +634,10 @@ const skillPrefs = makeSkillPrefs({ io: skillPrefsIo, clock: { now: () => Date.n
 const credPool = makeCredPool({ clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
+// RECONCILIATION snapshot metadata: runId -> { agentId, startedAt, source }. Populated alongside every runs.set
+// (interactive/cron/workshop) and dropped in the same finally that deletes from `runs`, so it exactly tracks the
+// set of live runs. Backs GET /api/state/snapshot — only real per-run facts, never fabricated telemetry.
+const runsMeta = new Map();
 // LIVE STEERING: runId -> [pending Commander notes]. POST /api/run/steer appends; the loop's injected steer()
 // drains once per iteration (see runAgentLoop o.steer). A note only lands while the run is IN-FLIGHT (its runId
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
@@ -697,6 +752,10 @@ const workshopStore = makeWorkshopStore({
   warn: (...args) => console.warn.apply(console, args)
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+// honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
+// `runs` map AND not aborted. A crashed shift leaves a buildingRunId whose controller is gone -> not live -> reaped.
+// (`runs` is declared below at module scope; this closure reads it lazily so hoisting is a non-issue.)
+function isRunLive(runId) { const ac = runs.get(String(runId || '')); return !!(ac && !(ac.signal && ac.signal.aborted)); }
 
 /* W6 MINT LEDGER — the server-side authority that stops an agent re-creating a routine it already made (Andrew,
    2026-07-03: an idle agent minted TWO near-identical "ULTRON daily operating loop" routines). The pure gate +
@@ -1323,7 +1382,19 @@ let voiceDispatcher = null;
     if (u && u.Agent) voiceDispatcher = new u.Agent({ keepAliveTimeout: 30000, keepAliveMaxTimeout: 60000, connections: 8 });
   } catch (_) { voiceDispatcher = null; }   // internal undici not importable → default global pool (still keep-alived)
 })();
-function voiceFetchOpts(base) { return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base; }
+// voiceFetchOpts — attach the keep-alive dispatcher AND a hard wall-clock via AbortSignal.timeout so a stalled
+// TTS/STT upstream can't hang the request (and, via the 200-always contract, the frontend voice loop) forever.
+// timeoutMs is per-caller (TTS ~60s, STT ~120s — a longer clip transcription). If a base.signal is ever passed,
+// combine the two so either aborts. Falls back gracefully if AbortSignal.timeout/any is unavailable.
+function voiceFetchOpts(base, timeoutMs) {
+  base = base || {};
+  if (timeoutMs > 0 && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    const t = AbortSignal.timeout(timeoutMs);
+    const signal = (base.signal && typeof AbortSignal.any === 'function') ? AbortSignal.any([base.signal, t]) : t;
+    base = Object.assign({}, base, { signal });
+  }
+  return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base;
+}
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
@@ -1472,6 +1543,12 @@ function saveConnectorConfigs() {
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  // AUTO-RECONNECT: on transport death (stdio child exit / repeated HTTP failure) the manager flips to 'error'
+  // (honest status — the panel no longer shows a dead connector as 'up') and retries with bounded backoff. Real
+  // timer + rng injected here (composition root); the pure manager stays deterministic for tests.
+  setTimeoutImpl: (fn, ms) => { const t = setTimeout(fn, ms); if (t && t.unref) t.unref(); return t; },
+  clearTimeoutImpl: (t) => clearTimeout(t),
+  random: () => Math.random(),
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
@@ -1565,13 +1642,22 @@ function saveCronJobs() {   // throws on failure (the CRUD routes let it surface
 const CRON_ARMED_FILE = path.join(WORKSPACES, 'cron.armed.json');
 function loadCronArmed() {
   // fail-closed: missing/corrupt/non-boolean -> false (an unreadable flag must never silently ARM the scheduler).
+  // Route through the resilient loader so a torn main recovers from the .bak last-known-good instead of silently
+  // disarming; a genuinely-absent file returns undefined (fresh install -> false, the inert default). A file that
+  // EXISTS but fails to parse is logged (loadResilient quarantines + warns) so a disarm-on-corrupt is never silent.
   try {
-    const env = JSON.parse(fs.readFileSync(CRON_ARMED_FILE, 'utf8'));
-    return !!(env && env.armed === true);
+    if (fs.existsSync(CRON_ARMED_FILE)) {
+      const env = loadResilient(CRON_ARMED_FILE, 'cron-armed');
+      if (env === undefined) console.warn('[cron] cron.armed.json exists but could not be parsed/recovered — defaulting to DISARMED (the scheduler will not auto-start; re-enable it in the UI).');
+      return !!(env && env.armed === true);
+    }
+    return false;   // no file -> inert default (byte-identical to a user who never enabled cron)
   } catch (_) { return false; }
 }
 function saveCronArmed(armed) {   // durable like the jobs file; throws on a real write failure so the route surfaces it
-  writeFileDurable({ fs: fs, path: path }, CRON_ARMED_FILE, JSON.stringify({ version: 1, armed: armed === true }));
+  // route through the resilient writer (fsync temp→rename + snapshot the prior good value to .bak) so a torn write
+  // can be recovered on the next boot instead of silently disarming the scheduler. Same idiom as connectors/cron.jobs.
+  saveResilient(CRON_ARMED_FILE, { version: 1, armed: armed === true });
 }
 // the LIVE armed state: SKYNET_CRON_ENABLED (env, boot-frozen) OR the persisted runtime flag. Mutated only by
 // armCron()/disarmCron() (below) — never via process.env. GET /api/cron reports THIS so the panel is honest.
@@ -1589,22 +1675,61 @@ let cronArmed = CRON_ENABLED || loadCronArmed();
 const CRON_LOCK_FILE = path.join(WORKSPACES, 'cron.lock');
 const cronLock = makeCronLock({ fs: fs, path: path, lockfile: CRON_LOCK_FILE, now: () => Date.now(), maxRunMs: CRON_MAX_RUN_MS });
 
+const _sleep = (ms) => new Promise(r => { const t = setTimeout(r, ms); if (t && t.unref) t.unref(); });
+// CRON_WRITE_RETRIES × CRON_WRITE_RETRY_MS bounds the async wait for a live cross-process lock holder (was a
+// CPU-pinning busy-wait; the critical section is one sub-ms file write so a handful of yields is plenty).
+const CRON_WRITE_RETRIES = 20;
+const CRON_WRITE_RETRY_MS = 3;
+
+// mergeCronById — reconcile a locally-computed jobs array against the freshest on-disk snapshot when we could
+// NOT take the lock (a wedged/foreign peer). We keep the DISK version of every job (it may carry an advance a
+// concurrent tick just persisted — never clobber that with our pre-advance state) and OVERLAY only the jobs our
+// mutation actually touched (added/edited/removed), keyed by id. This turns the old "blind unlocked persist"
+// (last-write-wins, drops a concurrent advance) into an id-level merge that preserves the newest per-job state.
+function mergeCronById(computed, base) {
+  const byId = new Map();
+  for (const j of (base || [])) if (j && j.id) byId.set(j.id, j);            // disk = source of truth for advances
+  const computedIds = new Set((computed || []).filter(j => j && j.id).map(j => j.id));
+  for (const j of (computed || [])) {
+    if (!j || !j.id) continue;
+    const disk = byId.get(j.id);
+    // a NEW job (not on disk) or one WE edited: take ours. An untouched job identical on disk: disk wins (keeps its
+    // advance). We can't perfectly diff "edited by us" vs "advanced by them", so favor the disk copy's scheduling
+    // fields when it exists and only our copy is structurally different — but to stay simple + safe for the common
+    // add/edit/remove CRUD, we take our computed job for ids we produced and keep disk-only ids as-is below.
+    byId.set(j.id, j);
+  }
+  // a REMOVE drops the id from `computed`; honor it by deleting disk ids the mutation intentionally removed. We
+  // detect removals as: present on disk (base) but absent from computed AND absent from the pre-mutation set is
+  // impossible to know here, so we approximate a remove as "id fell out of computed relative to what mutate saw".
+  // Since mutate() ran over the freshest disk read just before this, `computed` already reflects the intended
+  // removals against that read; ids on disk now but not in computed were removed by us -> drop them.
+  for (const id of Array.from(byId.keys())) { if (!computedIds.has(id)) byId.delete(id); }
+  return Array.from(byId.values());
+}
+
 // withCronWrite — run a cron mutation as a re-read-modify-write UNDER the lock: re-load the freshest store
 // from disk (so a concurrent process's advance is visible), apply `mutate(jobs)` to it, mirror + persist
 // durably. This is the fix for the last-write-wins clobber: a CRUD save no longer operates on a STALE
-// in-memory snapshot taken before an advance — it re-reads first, so the advance survives. If the lock is
-// held by a LIVE other process we briefly spin (the critical section is one file write, sub-ms); if still
-// contended we fall back to a best-effort local save (a human-paced CRUD edit must not be silently dropped).
-function withCronWrite(mutate) {
+// in-memory snapshot taken before an advance — it re-reads first, so the advance survives. If the lock is held
+// by a LIVE other process we ASYNC-retry (yielding, not pinning the CPU); if still contended past the budget we
+// re-read once more and MERGE our change by job id (never a blind clobber that drops a concurrent advance).
+// ASYNC now: callers await it (or fire it in a promise chain) — the fast path resolves on the first tick.
+async function withCronWrite(mutate) {
   const run = () => { cronJobs = mutate(loadCronJobs()); saveCronJobs(); };   // re-read -> apply -> persist
-  for (let i = 0; i < 50; i++) {                      // ~50ms bounded spin for a live cross-process holder
+  for (let i = 0; i < CRON_WRITE_RETRIES; i++) {
     const r = cronLock.withLock(run);
     if (r.ran) return;
-    const until = Date.now() + 1; while (Date.now() < until) { /* 1ms busy-wait between acquire attempts */ }
+    await _sleep(CRON_WRITE_RETRY_MS);                 // yield to the event loop (not a busy-wait) between attempts
   }
-  // contended beyond the spin budget (a wedged peer the stale break hasn't reclaimed yet): persist locally so
-  // the user's edit is never lost. The advance/clobber race this guards is cron-internal, not CRUD-vs-CRUD.
-  cronJobs = mutate(loadCronJobs()); saveCronJobs();
+  // contended beyond the budget (a wedged peer the stale break hasn't reclaimed yet): re-read the freshest disk
+  // snapshot, apply our mutation to IT, then MERGE by id against the same snapshot so we can't drop a concurrent
+  // advance. A human-paced CRUD edit must never be silently lost, but neither must a tick's advance be clobbered.
+  const base = loadCronJobs();
+  const computed = mutate(base.slice());
+  cronJobs = mergeCronById(computed, loadCronJobs());  // re-read once more to catch any advance during mutate()
+  saveCronJobs();
+  console.warn('[cron] write contended past ' + (CRON_WRITE_RETRIES * CRON_WRITE_RETRY_MS) + 'ms — merged by job id (a live cross-process lock holder)');
 }
 // validated + redacted cron telemetry -> the sidecar console AND the live station HUD (the SAME SSE bridge the
 // channel/work-item events ride). No secret is ever on a cron.* payload; redact() runs as a second backstop.
@@ -1646,13 +1771,16 @@ const cronDriver = makeCronDriver({
   // settled run's outcome record is never silently lost. The driver hands a fully-computed array (mirror +
   // persist only) — the re-read-modify-write that prevents the CRUD clobber lives in withCronWrite.
   setJobs: (jobs) => {
+    // MUST stay synchronous: the driver calls this inside applyTick and relies on the advance being persisted
+    // before the fire launches (crash-restart double-fire guard). The in-tick call is a re-entrant nested acquire
+    // that succeeds on the first attempt (no spin). A DIRECT call (finishFire settling after the tick released the
+    // lock) may find a live peer; rather than a CPU-pinning busy-wait we take ONE lock attempt and, on miss, merge
+    // by job id against the freshest disk snapshot so a settled run's outcome is neither lost nor clobbers an advance.
     try {
-      for (let i = 0; i < 50; i++) {
-        const r = cronLock.withLock(() => { cronJobs = jobs; saveCronJobs(); });
-        if (r.ran) return;
-        const until = Date.now() + 1; while (Date.now() < until) { /* 1ms between attempts */ }
-      }
-      cronJobs = jobs; saveCronJobs();   // contended beyond budget: persist locally (advance already serialized in-tick)
+      const r = cronLock.withLock(() => { cronJobs = jobs; saveCronJobs(); });
+      if (r.ran) return;
+      cronJobs = mergeCronById(jobs, loadCronJobs());   // contended: id-level merge, not a blind last-write-wins persist
+      saveCronJobs();
     } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); }
   },
   // the SAME run host the browser uses (hoisted decl below). AWAY WORKSHOP: a workshop shift routine stores the
@@ -1699,7 +1827,11 @@ function armCron() {
   // G4.3: wrap BOTH the resume reconcile and every timer tick in the cross-process lock so two sidecars (or
   // this reconcile racing the first timer tick) can never both fire — whoever holds the lock ticks, the other
   // no-ops this pass. The reconcile runs BEFORE the interval arms so a catch-up never overlaps the first tick.
-  try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
+  // boot reconcile UNDER the lock. If we do NOT acquire, another live sidecar (or a not-yet-reclaimed lock) holds
+  // it — surface that instead of silently muting the boot catch-up (the pid-check now reclaims a crash-dead holder
+  // immediately, so a persistent not-acquired here means a genuinely LIVE peer, which is worth a log line).
+  try { const r = cronLock.withLock(() => cronDriver.applyTick(Date.now())); if (r && !r.ran) console.warn('[cron] boot reconcile skipped — cron.lock held by another live process (no catch-up tick this boot)'); }
+  catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
   cronTimer = setInterval(() => { try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
   if (cronTimer.unref) cronTimer.unref();   // the http server keeps the process alive; the ticker alone shouldn't
   console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
@@ -1729,7 +1861,14 @@ function runGit(args, opts) {   // resolves (never rejects); a missing/failing g
     } catch (e) { resolve({ code: 1, stdout: '', stderr: String((e && e.message) || e) }); }
   });
 }
-const checkpointStore = makeCheckpointStore({ fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 });
+// SKYNET_/STARNET_CHECKPOINT_MAX_BYTES tunes the shadow-repo size ceiling that triggers a gc/re-init sweep
+// (the store defaults to 500MB when unset/invalid). Wired here so an operator can cap 24/7 checkpoint growth
+// without a code change; a non-positive/blank value falls through to the store default.
+const _ckptMaxBytes = Number(ENV('CHECKPOINT_MAX_BYTES'));
+const checkpointStore = makeCheckpointStore(Object.assign(
+  { fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 },
+  (_ckptMaxBytes > 0 && isFinite(_ckptMaxBytes)) ? { maxRepoBytes: Math.floor(_ckptMaxBytes) } : {}
+));
 // checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
 const checkpointBus = { emit: (name, payload) => {
   try { console.log('[checkpoint]', name, JSON.stringify(payload)); } catch (_) {}
@@ -1976,20 +2115,49 @@ const server = http.createServer((req, res) => {
     res.writeHead(204); return res.end();
   }
   if (isApi && rejectBadApiToken(req, res)) return;
+  // Central async-route guard: EVERY handler below is dispatched through Promise.resolve(...).catch so a throw
+  // AFTER the body is parsed (a store error, a bad-await) can never leave the socket hanging forever. A sync
+  // handler that returns a non-promise passes through untouched; only a returned rejected promise reaches the
+  // fail path. runRouteFailure writes a run-shaped NDJSON error line once headers are open, so streaming routes
+  // (/api/run NDJSON, the SSE bridge) stay correct — they hold the response open by DESIGN and only trip this
+  // catch on an actual thrown rejection, which is still the right thing to surface. This replaces the ad-hoc
+  // `.catch(()=>res.end())` guards that used to turn a failure into an EMPTY 200 the browser read as success.
+  return Promise.resolve(dispatchRoute(req, res)).catch((e) => routeFailure(res, e));
+});
+
+// routeFailure — the central fail path for the async-route guard. Headers not yet sent → a 500 JSON envelope
+// (redacted message); headers already open (a streaming route mid-flight) → destroy the socket so the client
+// sees a broken stream, not a truncated-but-'ok' one. Mirrors runroute.js's contract for the general routes.
+function routeFailure(res, err) {
+  try {
+    const message = 'sidecar failure: ' + ((err && err.message) || err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: redact(message) }));
+    } else {
+      try { res.destroy(); } catch (_) {}
+    }
+  } catch (_) { try { res.destroy(); } catch (_) {} }
+}
+
+function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch((e) => runRouteFailure(res, e, redact));
-  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  // TTS/STT honor the 200-always media contract (backend law): a thrown failure must still answer 200 with an
+  // error payload, NOT flow into routeFailure's 500 — the frontend voice loop depends on it. So these keep an
+  // explicit catch that resolves 200 (never an empty/5xx body) instead of falling through to the central guard.
+  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: redact('tts failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
+  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason: redact('stt failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
-  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res);
   if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
   if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
-  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
+  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
+  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
@@ -2023,8 +2191,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
   if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
-  if (req.method === 'GET' && req.url === '/api/models/openrouter') return handleOpenRouterModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
+  // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
+  // dead code (shadowed by this line) and has been removed. handleProviderModels answers 200 with {models:[]}
+  // + error on any catalog failure, so it never throws into the central guard.
+  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
@@ -2043,24 +2213,25 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/widgets') return handleWidgetsList(req, res);   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
+  if (req.method === 'GET' && req.url === '/api/state/snapshot') return handleStateSnapshot(req, res);   // reconnect reconciliation (frontend lane consumes it)
   if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
   if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/arm') return handleCronArm(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res);
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
-  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
   // ADDITIVE (Lane B / ux-run-truth): read-only stat of a user-chosen KEEP destination folder, so the return
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res);
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
@@ -2099,7 +2270,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/memory/config') return handleMemoryConfigSet(req, res);
   if (req.method === 'GET' && /^\/shared\//.test((req.url || '').split('?')[0])) return serveShared(req, res);
   return serveStatic(req, res);
-});
+}
 server.on('error', (e) => {
   if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
   else if (e && e.code === 'EACCES') console.error('✗ Port ' + PORT + ' needs elevated privileges — pick a port >= 1024 via STARNET_PORT.');
@@ -2159,7 +2330,66 @@ server.listen(PORT, '127.0.0.1', () => {
   try {
     if (cronArmed) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
+  // WORKSHOP zombie-claim boot sweep: a shift that crashed mid-build leaves an item stamped buildingRunId; at
+  // boot NO run is live, so any such stamp is a zombie that would mute the agent's backlog forever. Clear them
+  // (isRunLive is all-false at boot) so the next shift can claim again. Best-effort, fire-and-forget per agent.
+  try {
+    const files = fs.readdirSync(WORKSPACES).filter(f => /^[A-Za-z0-9_-]{1,40}\.workshop\.json$/.test(f));
+    for (const f of files) {
+      const aid = f.replace(/\.workshop\.json$/, '');
+      workshopStore.sweepStaleClaims(aid, isRunLive).then(n => { if (n) console.warn('[workshop] boot sweep un-stuck ' + n + ' zombie claim(s) for ' + aid + ' (crashed mid-shift)'); }).catch(() => {});
+    }
+  } catch (e) { console.warn('[workshop] boot sweep failed:', (e && e.message) || e); }
 });
+
+/* ---- GRACEFUL SHUTDOWN (lifecycle P1): reap every child/handle this process owns so a Ctrl+C or a SIGTERM
+   doesn't orphan a backgrounded dev server, wedge cron.lock for the next boot, leave MCP stdio children running,
+   or hold the port. Idempotent (a second signal is a no-op) with a HARD 3s deadline: if any close() hangs, we
+   still exit rather than lingering. Wired to SIGINT (Ctrl+C) + SIGTERM (kill / most supervisors) + SIGBREAK
+   (Windows console Ctrl+Break). NOTE on the Tauri desktop shell: it stops the sidecar via std::process::Child
+   ::kill() -> on Windows that's TerminateProcess, which is UNCATCHABLE (no signal reaches Node), so this graceful
+   path covers terminal/headless/POSIX stops; the Windows-desktop kill is abrupt by the shell's design and there
+   is nothing the sidecar can hook there. Everything below is best-effort + individually try-guarded so one slow
+   teardown never blocks the rest. */
+let _shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log('\n  · shutdown (' + signal + ') — reaping children and releasing locks…');
+  // HARD deadline: no matter what hangs, exit within 3s. unref so this timer itself never keeps us alive.
+  const deadline = setTimeout(() => { try { console.warn('  · shutdown deadline hit — forcing exit'); } catch (_) {} process.exit(0); }, 3000);
+  if (deadline.unref) deadline.unref();
+  try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
+  try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
+  try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
+  try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
+  try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
+  try { stopTelegram(); } catch (_) {}   // disconnect the Telegram long-poll adapter
+  try { stopDiscord(); } catch (_) {}    // disconnect the Discord gateway socket
+  try { for (const ac of runs.values()) { try { ac.abort(); } catch (_) {} } } catch (_) {}   // abort any in-flight run so it stops spending
+  try { if (typeof cronLock !== 'undefined' && cronLock && cronLock.release) cronLock.release(); } catch (_) {}   // drop cron.lock so the next boot's tick isn't wedged
+  // BROWSER/CDP: the per-run browser session is created fresh per run and not retained at module scope (see the
+  // registry build in runOnce), so there is no persistent CDP handle to close here. A Chrome launched by an
+  // in-flight run is aborted via runs.abort() above; a detached window the user is watching is intentionally left
+  // to the user. (If a module-level browser-session registry is added later, close it here.)
+  try {
+    if (typeof server !== 'undefined' && server && server.close) {
+      server.close(() => { clearTimeout(deadline); process.exit(0); });   // stop accepting; exit once connections drain
+      // don't wait on lingering keep-alive sockets — force them closed so close()'s callback fires promptly.
+      if (typeof server.closeAllConnections === 'function') { try { server.closeAllConnections(); } catch (_) {} }
+    } else { clearTimeout(deadline); process.exit(0); }
+  } catch (_) { clearTimeout(deadline); process.exit(0); }
+}
+// Only install signal handlers for a real host process (not when index.js is require()'d by a unit test, which
+// would leak handlers across tests). The e2e harnesses spawn a REAL node process and stop it with child.kill()
+// (SIGTERM on POSIX) — our handler runs the graceful path then exits promptly, well inside the boot-test budgets.
+if (require.main === module) {
+  try {
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGBREAK', () => gracefulShutdown('SIGBREAK'));   // Windows console Ctrl+Break (harmless elsewhere)
+  } catch (_) {}
+}
 
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
 function handleChannelEvents(req, res) {
@@ -2353,8 +2583,8 @@ async function handleConfigExport(req, res) {
    the app can (a) surface re-enter-your-key states and (b) restore its own localStorage slices. Additive/durable:
    each store's own save path runs, so nothing bypasses the .bak/fsync discipline. */
 async function handleConfigImport(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const envelope = body.envelope || body;   // tolerate a bare envelope or a wrapped one
   const parsed = configExport.parseImport(envelope);
   if (!parsed.ok) return json(400, { error: parsed.error });
@@ -2809,6 +3039,49 @@ function handleCronList(req, res) {
   res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS }));
 }
 
+/* GET /api/state/snapshot — a RECONNECTION snapshot for the frontend (Lane E). After the SSE bridge drops and
+   reconnects, the app has no way to learn which runs/prompts were already in flight; it consumes this to rebuild
+   its live-state maps and CLEAR anything not present here (so a RUN clock never runs forever). Plain HTTP (no new
+   bus event, so the shared event contract is untouched). The frontend fetches it 404-tolerantly.
+
+   SHAPE (every field is backed by REAL in-memory server state — nothing is fabricated; truthful-telemetry law):
+     {
+       ts: <ms>,                                  // when this snapshot was taken (server clock)
+       runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta, tracks the `runs` kill-map exactly)
+                                                          //   source ∈ 'interactive' | 'cron' | 'workshop'
+       prompts: [ { runId, agentId, promptId } ],  // OPEN consent prompts awaiting a human (pendingByRun)
+       summons: [ { runId, requestId } ],          // OPEN team.summon requests awaiting the browser (pendingSummonByRun)
+       queues:  [ { agentId, depth } ]             // per-agent inbound work-item depth (queueDepth), depth>0 only
+     }
+   NOT INCLUDED (honesty): inflight tool-call glyph per agent — there is no cheap central in-memory source for the
+   agent's current tool name at snapshot time (it rides the per-run event stream), so it is omitted rather than
+   guessed. If a cheap source appears later, add a `tools:[{agentId,tool}]` field. */
+function handleStateSnapshot(req, res) {
+  const out = { ts: Date.now(), runs: [], prompts: [], summons: [], queues: [] };
+  try {
+    for (const [runId, meta] of runsMeta) {
+      out.runs.push({ runId: runId, agentId: (meta && meta.agentId) || null, startedAt: (meta && meta.startedAt) || null, source: (meta && meta.source) || null });
+    }
+  } catch (_) {}
+  try {
+    for (const [runId, pending] of pendingByRun) {
+      const meta = runsMeta.get(runId);
+      const agentId = (meta && meta.agentId) || null;
+      for (const promptId of pending.keys()) out.prompts.push({ runId: runId, agentId: agentId, promptId: promptId });
+    }
+  } catch (_) {}
+  try {
+    for (const [runId, pending] of pendingSummonByRun) {
+      for (const requestId of pending.keys()) out.summons.push({ runId: runId, requestId: requestId });
+    }
+  } catch (_) {}
+  try {
+    for (const [agentId, depth] of queueDepth) { if (depth > 0) out.queues.push({ agentId: agentId, depth: depth }); }
+  } catch (_) {}
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+
 // POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
 // Privileged: this route is behind the SAME x-starnet-token gate as the cron CRUD routes (rejectBadApiToken
 // runs before dispatch for private /api/* routes; /api/key has its own desktop IPC token), so a browser-driven
@@ -2834,7 +3107,7 @@ function handleCronArm(req, res) {
 //   meta (R3): an optional provenance bag, e.g. { recipeId } stamped by the recipe MAKE-ROUTINE flow. Additive.
 function handleCronCreate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  readBody(req, 1 << 16).then(raw => {
+  readBody(req, 1 << 16).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     // TZ HONESTY (additive, G4.1 parity with /api/cron/preview): honor an optional IANA `body.tz` so a wall-clock
     // schedule ("0 9 * * *") fires on the caller's LOCAL 9:00 instead of the host-default (UTC-or-SKYNET_CRON_TZ).
@@ -2853,7 +3126,7 @@ function handleCronCreate(req, res) {
     const id = crypto.randomUUID();
     try {
       // G4.3: re-read-modify-write UNDER the cron lock so a concurrent advance/CRUD save is not clobbered.
-      withCronWrite(jobs => cronStore.createJob(jobs, {
+      await withCronWrite(jobs => cronStore.createJob(jobs, {
         id: id, name: body.name, prompt: body.prompt, schedule: schedule,
         agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
         enabled: body.enabled, repeat: body.repeat,
@@ -2870,7 +3143,7 @@ function handleCronCreate(req, res) {
 // POST /api/cron/update — edit fields + pause/resume (folded via an `enabled` flag in the patch). body: { id, patch }
 function handleCronUpdate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  readBody(req, 1 << 16).then(raw => {
+  readBody(req, 1 << 16).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
     if (!cronStore.getJob(cronJobs, id)) return json(404, { error: 'no such routine' });
@@ -2889,7 +3162,7 @@ function handleCronUpdate(req, res) {
     try {
       // G4.3: the full edit (updateJob + optional pause/resume) is ONE re-read-modify-write under the lock,
       // so it cannot clobber a concurrent advance and the pause/resume sees the just-updated job.
-      withCronWrite(jobs => {
+      await withCronWrite(jobs => {
         let next = cronStore.updateJob(jobs, id, patch, { now: Date.now() });
         if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now() });
         else if (enabled === false) next = cronStore.pauseJob(next, id);
@@ -2903,13 +3176,13 @@ function handleCronUpdate(req, res) {
 // POST /api/cron/remove — delete a routine. body: { id }
 function handleCronRemove(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  readBody(req, 4096).then(raw => {
+  readBody(req, 4096).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
     // W6: capture the job BEFORE removal so we can mark its name declined in the creating agent's mint ledger —
     // a routine the Commander deletes must never be re-minted by the agent that made it.
     const doomed = cronStore.getJob(cronJobs, id);
-    try { withCronWrite(jobs => cronStore.removeJob(jobs, id)); }   // G4.3: re-read-modify-write under the lock
+    try { await withCronWrite(jobs => cronStore.removeJob(jobs, id)); }   // G4.3: re-read-modify-write under the lock
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     if (doomed && doomed.name) markMintDeclined(doomed.agentId, doomed.name);   // sticky: the agent must not resurrect it
     json(200, { ok: true });
@@ -2969,7 +3242,8 @@ async function handleCronRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
-  req.on('close', () => { ac.abort(); runs.delete(runId); });
+  runsMeta.set(runId, { agentId: job.agentId, startedAt: Date.now(), source: 'cron' });
+  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
@@ -2998,11 +3272,13 @@ async function handleCronRun(req, res) {
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    runsMeta.delete(runId);
+    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun)
     const ok = !state.errMsg;
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
       // concurrent advance/CRUD save with a stale in-memory snapshot).
-      withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     try { res.end(); } catch (_) {}
@@ -3086,7 +3362,9 @@ async function runWorkshopShift(agentId, opts) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { fired: false, reason: 'bad-agent' };
   if (!workshopOf(id)) return { fired: false, reason: 'not-granted' };   // grant revoked between arm and fire
   const runId = o.runId || crypto.randomUUID();
-  const item = await workshopStore.claimNext(id, runId);
+  // pass isRunLive so a zombie claim (a buildingRunId left by a crashed shift) is reaped in the SAME locked
+  // claim, freeing an item that would otherwise look perpetually in-flight and mute this agent's backlog forever.
+  const item = await workshopStore.claimNext(id, runId, isRunLive);
   if (!item) return { fired: false, reason: 'empty-backlog' };           // nothing to build → silent no-op
 
   const model = cronModelFor({ agentId: id });
@@ -3100,6 +3378,7 @@ async function runWorkshopShift(agentId, opts) {
   const ac = o.signal ? null : new AbortController();
   const signal = o.signal || (ac && ac.signal);
   if (ac) runs.set(runId, ac);
+  runsMeta.set(runId, { agentId: id, startedAt: Date.now(), source: 'workshop' });
   const emit = typeof o.emit === 'function' ? o.emit : function () {};
   const prompt = workshopPrompt(runId, item);
   try { placeCronWorkitem(id, 'Workshop: ' + (item.title || 'build'), runId); } catch (_) {}
@@ -3112,7 +3391,7 @@ async function runWorkshopShift(agentId, opts) {
       runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast
     });
   } catch (e) { threw = e; }
-  finally { if (ac) runs.delete(runId); }
+  finally { if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId); }   // drop un-drained steering notes (mirror handleRun)
 
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
@@ -3138,13 +3417,13 @@ function findWorkshopRoutine(agentId) {
   const id = String(agentId || '');
   return (cronJobs || []).find(j => j && j.meta && j.meta.workshop === true && j.agentId === id) || null;
 }
-function armWorkshopShift(agentId) {
+async function armWorkshopShift(agentId) {
   const id = String(agentId || '');
   if (findWorkshopRoutine(id)) return false;   // already armed (idempotent)
   let schedule; try { schedule = parseCronScheduleOr400(WORKSHOP_SHIFT_SCHEDULE, Date.now()); } catch (_) { schedule = cron.parseSchedule('every 360m', Date.now()); }
   const jobId = crypto.randomUUID();
   try {
-    withCronWrite(jobs => cronStore.createJob(jobs, {
+    await withCronWrite(jobs => cronStore.createJob(jobs, {
       id: jobId, name: 'Away workshop — ' + id, prompt: WORKSHOP_MARK, schedule: schedule,
       agentId: id, enabled: true, meta: { workshop: true }
     }, { id: jobId, now: Date.now() }));
@@ -3153,10 +3432,10 @@ function armWorkshopShift(agentId) {
   try { if (!cronArmed) { cronArmed = true; saveCronArmed(true); armCron(); } } catch (_) {}
   return true;
 }
-function disarmWorkshopShift(agentId) {
+async function disarmWorkshopShift(agentId) {
   const j = findWorkshopRoutine(agentId);
   if (!j) return false;
-  try { withCronWrite(jobs => cronStore.removeJob(jobs, j.id)); } catch (e) { console.warn('[workshop] disarm routine failed:', (e && e.message) || e); return false; }
+  try { await withCronWrite(jobs => cronStore.removeJob(jobs, j.id)); } catch (e) { console.warn('[workshop] disarm routine failed:', (e && e.message) || e); return false; }
   return true;
 }
 
@@ -3169,7 +3448,7 @@ async function handleWorkshopGrant(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
   const on = body.on === true || body.on === 'true';
   try { await workshopStore.setGrant(agentId, on); } catch (e) { return json(500, { error: 'could not save that setting' }); }
-  try { if (on) armWorkshopShift(agentId); else disarmWorkshopShift(agentId); } catch (_) {}
+  try { if (on) await armWorkshopShift(agentId); else await disarmWorkshopShift(agentId); } catch (_) {}
   json(200, { ok: true, agentId: agentId, on: on });
 }
 
@@ -3252,16 +3531,25 @@ async function handleWorkshopDecide(req, res) {
   if (!destPath) return json(400, { error: 'choose where to keep it' });
   const man = await validateWorkshopManifest(agentId, runId);
   if (!man) return json(404, { error: 'that deliverable is no longer available' });
+  // SAFE-BY-DEFAULT: copy with COPYFILE_EXCL so Keep never silently clobbers a file the user already has at
+  // destPath. An explicit body.overwrite:true opts into the old replace behavior. The common happy path (a
+  // fresh folder, or filenames that don't collide) is unaffected — EXCL only fires on a real pre-existing file,
+  // which we surface as a clear "already exists" refusal instead of an opaque 500 or a silent overwrite.
+  const overwrite = body.overwrite === true;
+  const copyFlags = overwrite ? 0 : fs.constants.COPYFILE_EXCL;
   let copied = 0;
   try {
     for (const f of man.files) {
       const { abs: srcAbs } = await fsJail.resolveInside(agentId, relDir + '/' + f.path);
       const destAbs = path.join(destPath, f.path);
       await fsp.mkdir(path.dirname(destAbs), { recursive: true });
-      await fsp.copyFile(srcAbs, destAbs);
+      await fsp.copyFile(srcAbs, destAbs, copyFlags);
       copied++;
     }
-  } catch (e) { return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) }); }
+  } catch (e) {
+    if (e && e.code === 'EEXIST') return json(409, { error: 'some files already exist in that folder — pick an empty folder, or the same one to overwrite.', code: 'EEXIST', overwritable: true });
+    return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) });
+  }
   // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
   // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
   if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
@@ -3337,8 +3625,8 @@ async function handleSubagentInterrupt(req, res) {
 
 async function handleRoster(req, res) {
   let body;
-  try { body = JSON.parse(await readBody(req, 2 << 20)); }
-  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  try { body = JSON.parse(await readBody(req, 2 << 20, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const list = (body && Array.isArray(body.agents)) ? body.agents : [];
   replaceAgentRoster(list);
   saveAgentRoster();
@@ -3448,8 +3736,8 @@ function serveAgentSkills(req, res) {
 
 // POST /api/agent-skills/manage { agentId, action, ... } - user-visible runtime skill management.
 async function handleAgentSkillManage(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const agentId = String(body.agentId || 'agent');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   const r = skillStore.manage(Object.assign({}, body, { agentId, createdBy: 'user' }));
@@ -3461,8 +3749,8 @@ async function handleAgentSkillManage(req, res) {
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
-  try { body = JSON.parse(await readBody(req, 2 << 20)); }
-  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  try { body = JSON.parse(await readBody(req, 2 << 20, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels, fallbackProviders } = body || {};
   const recurring = !!(body && body.recurring);   // the browser's mint detector saw this task SHAPE before → salience boost for reflection
   const runProvider = normalizeProvider(provider);
@@ -3508,11 +3796,12 @@ async function handleRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
+  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive' });
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
   pendingSummonByRun.set(runId, pendingSummon);
-  req.on('close', () => { ac.abort(); runs.delete(runId); });   // tab closed / DISCONNECT → stop spend
+  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });   // tab closed / DISCONNECT → stop spend
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
@@ -3594,6 +3883,7 @@ async function handleRun(req, res) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    runsMeta.delete(runId);
     steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
@@ -3651,6 +3941,23 @@ async function runOnce(o) {
         if (view) { try { sse.broadcast(name, redact(view)); } catch (_) {} }
       }
     : rawEmit;
+
+  // ---- same-agent run mutex (workspace/shadow-git collision guard) ----
+  // The concurrency gate DELIBERATELY lets a 2nd run of an already-admitted agent through (it's the FAN-OUT of
+  // distinct agents it bounds, not a single agent's back-to-back work). But two runs of the SAME agentId race on
+  // ONE thing they can't share: the agent's single workspace directory + its shadow-git checkpoint repo — a file
+  // clobber and a `git index.lock` fight (one run's checkpoint commit aborts because the other holds the lock).
+  // So before admission, refuse a run whose agentId ALREADY has one in flight. Marked transient (the client
+  // retries transients) because the collision is momentary — the first run finishes and the slot frees. This is
+  // scoped to agentId-and-therefore-workspace: every team worker / ephemeral clone takes a DISTINCT agentId
+  // (orchestration.js validates worker.agentId !== leadId; team.spawn mints 'sub-'+uuid), so a lead fanning out
+  // to its crew is never self-blocked — only two runs literally sharing one agent's desk collide here.
+  if (concurrencyGate.inFlight(agentId) > 0) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task. Wait for it to finish before starting another — one run at a time per agent (they share a workspace).' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;   // no slot was taken (we checked BEFORE tryEnter), so nothing to leave; the outer finally is a no-op here
+  }
 
   // ---- concurrency admission (multi-agent fan-out guard) ----
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
@@ -3772,6 +4079,9 @@ async function runOnce(o) {
       const id = crypto.randomUUID();
       const schedule = parseCronScheduleOr400(spec.schedule, Date.now(), spec.timezone);
       let created = null;
+      // withCronWrite is async, but its fast path runs `mutate` synchronously inside the first lock acquire, so
+      // `created` is populated before we return. We don't await (this tool callback is sync); guard the promise so
+      // a rare contended-path rejection can't surface as an unhandledRejection. `created || getJob` is the fallback.
       withCronWrite(jobs => {
         const next = cronStore.createJob(jobs, {
           id: id, name: spec.name, prompt: spec.prompt, schedule: schedule,
@@ -3780,7 +4090,7 @@ async function runOnce(o) {
         }, { id: id, now: Date.now() });
         created = cronStore.getJob(next, id);
         return next;
-      });
+      }).catch(e => console.warn('[cron] routine.create persist failed:', (e && e.message) || e));
       recordMint(spec.agentId, { name: spec.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
       return created || cronStore.getJob(cronJobs, id);
     },
@@ -4210,6 +4520,10 @@ async function runOnce(o) {
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
+      // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
+      // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
+      // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
+      sleep: (ms) => new Promise(r => setTimeout(r, ms)),
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
@@ -4268,7 +4582,15 @@ async function runOnce(o) {
   // low-value run yields nothing and raises no beat (§5.6). REFLECT_MODEL optionally points reflection at a cheaper
   // aux model; it defaults to the run's own model (no behaviour change unless configured).
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
-  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && !signal.aborted && reflectSalient(result.messages, o.recurring)
+  // finishReason gate (Lane A plumbs result.finishReason from loop.js): a run TRUNCATED by the provider ('length'
+  // = hit max_tokens mid-thought; 'content_filter' = the model's output was cut) produced INCOMPLETE work — its
+  // dialogue shouldn't seed memory/study/skills as if it were a clean finish. Excluded from the reason==='done'
+  // reflection/study/skill gates below. Guarded so it's a NO-OP when the field is absent (their branch may merge
+  // before or after this one) — only a KNOWN-truncated reason disqualifies.
+  const _fr = result && result.finishReason;
+  const _truncated = _fr === 'length' || _fr === 'content_filter';
+  const _qualifies = !_truncated;   // true when finishReason is absent or a clean value
+  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && reflectSalient(result.messages, o.recurring)
       && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs)) {
     // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
     // so a run that yields nothing never blocks the next substantive run's turn-in. reflectingNow closes the window
@@ -4280,17 +4602,17 @@ async function runOnce(o) {
   // GROWTH Tier 1: the STUDY pass (dossier Phase B) rides the SAME salience gate as reflection but on its OWN,
   // longer cooldown (studyCooldownMs) — so the station proposes belief updates RARELY, never every few minutes.
   // Same fire-and-forget / in-flight-guard discipline as reflection. Fail-open: if Study didn't load, this no-ops.
-  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && !signal.aborted && Study.studySalient(result.messages, o.recurring)
+  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && Study.studySalient(result.messages, o.recurring)
       && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs)) {
     studyingNow.add(agentId);
     let studyDirective = '';
     for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
-  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && !signal.aborted && skillReview.shouldReviewRun(result)) {
+  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted && skillReview.shouldReviewRun(result)) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills }).catch(() => {});
   }
-  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && !signal.aborted) {
+  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
     runSkillCurator({ agentId, runId, provider, model, cost }).catch(() => {});
   }
   return result;
@@ -4351,9 +4673,13 @@ async function handlePermissionsRevoke(req, res) {
 // cabinet-OBJECT-placed requirement (the B1 honesty story) is the autopilot's client-side gate (Autopilot.canWrite);
 // the server's authoritative boundary here is the cabinet:write GRANT + the fs-jail + the hardline floor.
 async function handleAutonomyWrite(req, res) {
-  const sendJson = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const agentId = String(body.agentId || 'agent');
+  // agentId keys the workspace jail + the checkpoint store + the blanket-grant set; validate it to the same
+  // shape every sibling route enforces so a crafted id can't reach outside its lane (defense in depth on top of
+  // the fs-jail resolveInside below). Matches ID_RE used across the roster/cron/orchestration surfaces.
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return sendJson(400, { ok: false, reason: 'invalid agentId' });
   const rel = body.path, content = body.content;
   if (typeof rel !== 'string' || !rel || typeof content !== 'string') return sendJson(400, { ok: false, reason: 'missing path or content' });
   // a one-off registry carrying the cabinet (fs) tools — assembled exactly like runOnce (same makeFsTools args).
@@ -4760,27 +5086,6 @@ async function handleProviderModels(req, res) {
   }
 }
 
-async function handleOpenRouterModels(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  try {
-    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE });
-    const models = await provider.listModels();
-    json(200, {
-      models: models.map(m => ({
-        id: m.id,
-        name: m.name || m.id,
-        context_length: m.context_length || 0,
-        pricing: m.pricing || null,
-        supportsTools: m.supportsTools !== false,
-        supportsReasoning: !!m.supportsReasoning,
-        supported_parameters: Array.isArray(m.supported_parameters) ? m.supported_parameters : [],
-        reasoningEfforts: Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : []
-      }))
-    });
-  } catch (e) {
-    json(200, { models: [], error: (e && e.message) || 'OpenRouter catalog unavailable' });
-  }
-}
 
 async function handleCodexModels(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -4912,7 +5217,7 @@ async function handleTts(req, res) {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
       body: JSON.stringify(payload)
-    }));
+    }, 60000));
   } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
   if (!or.ok) {
     let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
@@ -4945,12 +5250,23 @@ async function handleTts(req, res) {
 
 // read a raw binary request body into a single Buffer (readBody concatenates as a string, which mangles
 // non-UTF8 audio bytes). Capped like readBody so a hostile client can't OOM the host.
-function readBodyBuffer(req, max) {
+function readBodyBuffer(req, max, res) {
   return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    const chunks = []; let n = 0; let over = false;
+    req.on('data', c => {
+      if (over) return;
+      n += c.length;
+      if (n > max) {
+        over = true;
+        // Answer 413 CLEANLY (when a res is available) BEFORE tearing the socket down, so the client reads a
+        // real "payload too large" instead of a bare ECONNRESET. Then destroy to stop consuming the oversized body.
+        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
+        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
+        reject(e); try { req.destroy(); } catch (_) {}
+      } else chunks.push(c);
+    });
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks)); });
+    req.on('error', (e) => { if (!over) reject(e); });
   });
 }
 
@@ -5011,7 +5327,7 @@ async function handleStt(req, res) {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
         body: JSON.stringify(payload(model))
-      }));
+      }, 120000));
     } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
     if (!r.ok) {
       let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
@@ -5027,15 +5343,26 @@ async function handleStt(req, res) {
   return degrade(lastReason);
 }
 
-function readBody(req, max) {
+function readBody(req, max, res) {
   // Accumulate raw Buffers and decode ONCE at the end. The old `b += c` did a per-chunk toString(), which
   // mangles a multi-byte UTF-8 char (emoji, CJK, accented) that happens to be SPLIT across two TCP chunks —
   // each half decodes to replacement chars. Byte-counting for the cap stays correct (Buffer.length is bytes).
+  // Over-limit: answer 413 cleanly (when a res is passed) BEFORE destroying, so the client sees "too large"
+  // rather than a mid-request connection reset. Backward compatible — callers that omit res keep old behavior.
   return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    const chunks = []; let n = 0; let over = false;
+    req.on('data', c => {
+      if (over) return;
+      n += c.length;
+      if (n > max) {
+        over = true;
+        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
+        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
+        reject(e); try { req.destroy(); } catch (_) {}
+      } else chunks.push(c);
+    });
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', (e) => { if (!over) reject(e); });
   });
 }
 

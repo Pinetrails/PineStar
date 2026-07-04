@@ -41,7 +41,7 @@ const DockGlow = (() => {
   // is the same open-ness probe the kit-out uses (tutorial.js kitGuideToRefit).
   function dockOpen() { const el = q('#bb-build'); return !!(el && el.getClientRects().length); }
 
-  // the element to glow RIGHT NOW: the ⚒ BUILD STATION item if its dock is open, else the BUILD dock toggle.
+  // the element to glow RIGHT NOW: the ⌂ REFIT STATION item if its dock is open, else the BUILD dock toggle.
   function target() {
     if (dockOpen()) return q('#bb-build');
     return q('.bb-group[data-group="build"] .bb-grp');

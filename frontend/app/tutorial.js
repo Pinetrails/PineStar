@@ -188,7 +188,7 @@ const Tutorial = (() => {
 
   /* ---- THE KIT-OUT: a guided, GLOW-DRIVEN placement loop. One self-rescheduling tick (kitTick) is the whole
      goal system: each pass it reads the live UI and lights exactly the single next control along the real path —
-     BUILD dock ▸ BUILD STATION ▸ ⚇ PROP ▸ the right CATEGORY tab ▸ the exact gear tile — naming each with the
+     BUILD dock ▸ REFIT STATION ▸ ⚇ PROP ▸ the right CATEGORY tab ▸ the exact gear tile — naming each with the
      REAL catalog label. A category switch, a placement, or closing REFIT all advance it cleanly: no stale copy,
      no covered buttons, no freeze. resolveKit() pins the labels/categories to the live catalog so they can't drift. */
   const q = sel => document.querySelector(sel);
@@ -214,7 +214,7 @@ const Tutorial = (() => {
     KIT = resolveKit();
     kitNeeded = new Set(KIT.map(k => k.grant));
     try { if (typeof World !== 'undefined' && World.say) World.say('build me a floor.'); } catch (_) {}
-    kitTick();                                        // the loop takes over: glow BUILD ▸ BUILD STATION, then guide inside
+    kitTick();                                        // the loop takes over: glow BUILD ▸ REFIT STATION, then guide inside
   }
   // the goal loop. Catches REFIT open/close from any path; self-clears on finishUp/teardown.
   function kitTick() {
@@ -227,12 +227,12 @@ const Tutorial = (() => {
   }
   function nextKit() { return kitNeeded ? KIT.find(k => kitNeeded.has(k.grant)) : null; }
 
-  // OUTSIDE REFIT: light the REAL path into the builder — the BUILD dock, then BUILD STATION once that dock opens.
+  // OUTSIDE REFIT: light the REAL path into the builder — the BUILD dock, then REFIT STATION once that dock opens.
   function kitGuideToRefit() {
     const station = q('#bb-build');
-    const menuOpen = !!(station && station.getClientRects().length);   // BUILD STATION is only visible once its dock is open
-    if (menuOpen) kitFocus(station, 'now hit ⚒ BUILD STATION — that opens REFIT, where you build my floor.', 'to-refit-station', { scrim: true, zone: 'bottom' });
-    else kitFocus(q('.bb-group[data-group="build"] .bb-grp'), 'open the ⚒ BUILD dock down in the bar, then ⚒ BUILD STATION — that’s where you kit me out.', 'to-refit-grp', { scrim: true, zone: 'bottom' });
+    const menuOpen = !!(station && station.getClientRects().length);   // REFIT STATION is only visible once its dock is open
+    if (menuOpen) kitFocus(station, 'now hit ⌂ REFIT STATION — that opens REFIT, where you build my floor.', 'to-refit-station', { scrim: true, zone: 'bottom' });
+    else kitFocus(q('.bb-group[data-group="build"] .bb-grp'), 'open the ⚒ BUILD dock down in the bar, then ⌂ REFIT STATION — that’s where you kit me out.', 'to-refit-grp', { scrim: true, zone: 'bottom' });
   }
 
   // INSIDE REFIT: compute the single next sub-step and glow exactly that control, named with the REAL label + tab.
@@ -571,7 +571,7 @@ const Tutorial = (() => {
     // REAL run drove it (a demo's post-run state is owned by the harness — don't yank it).
     if (!sawStart) { try { if (typeof World !== 'undefined' && World.setActivity) World.setActivity('idle'); } catch (_) {} }
     state.firstCommandDone = true;
-    if (skipped) state.briefDismissed = true;     // opting out of the tour opts out of the nag — reopen in 📖 MANUAL
+    if (skipped) state.briefDismissed = true;     // opting out of the tour opts out of the nag — reopen in § FIELD MANUAL
     save();
     if (skipped) { if (hasChat()) Chat.localLine('right. i’m here when you need me — just type. the field manual’s in the bottom bar when you want it.'); }
     else { sfx('level'); if (!state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 600); }   // hand them the first-steps map
@@ -773,7 +773,7 @@ const Tutorial = (() => {
     x.onclick = dismissBrief;
     head.appendChild(title); head.appendChild(count); head.appendChild(x);
     const list = document.createElement('ul'); list.className = 'tut-brief-list'; list.setAttribute('aria-live', 'off');   // suppress full-list re-read on each tick (the count carries the delta)
-    const foot = document.createElement('div'); foot.className = 'tut-brief-foot'; foot.textContent = 'reopen any time in 📖 MANUAL';
+    const foot = document.createElement('div'); foot.className = 'tut-brief-foot'; foot.textContent = 'reopen any time — § FIELD MANUAL in the ▣ SYSTEM dock';
     briefEl.appendChild(head); briefEl.appendChild(list); briefEl.appendChild(foot);
     document.body.appendChild(briefEl);
     placeBrief();
@@ -811,7 +811,7 @@ const Tutorial = (() => {
   }
 
   /* ================= P3 — FIELD MANUAL (the reopenable codex) =================
-     Opened from the bottom-bar 📖 MANUAL term (stationui BUILDERS delegates here). Every entry is tagged
+     Opened from the bottom-bar § FIELD MANUAL term, SYSTEM dock (stationui BUILDERS delegates here). Every entry is tagged
      REAL or FOR SHOW, sourced from the live CAP_PROP_MAP + conveyor contract — the honesty mandate, on a page. */
 
   function fmEntry(tag, title, body) {

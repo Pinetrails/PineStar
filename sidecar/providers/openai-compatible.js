@@ -10,8 +10,10 @@
 
   const normalizeFinish = provider.normalizeFinish;
   const classifyApiError = errorClass.classifyApiError;
+  const timeouts = provider.timeouts;
   const DEFAULT_BASE = 'https://api.openai.com/v1';
   const RETRY_DELAYS = [400, 1200];
+  const REWARM_MIN_MS = 5 * 60 * 1000;
 
   function isAbort(e, signal) {
     return !!((signal && signal.aborted) || (e && e.name === 'AbortError'));
@@ -67,11 +69,31 @@
     // context compaction work. Callers may opt out with an explicit includeUsage: false.
     const includeUsage = opts.includeUsage !== false;
     const defaultContext = Number(opts.defaultContext || 0) || 0;
+    const clock = (opts.clock && typeof opts.clock.now === 'function') ? opts.clock : null;
     let catalog = null;
     let catalogPromise = null;
+    let catalogRewarmAt = 0;
+    let rewarmKicked = false;
+
+    // Non-blocking catalog re-warm: an empty catalog (boot-time /models failure) otherwise stays empty forever.
+    // Throttled by the injected clock; no clock -> at most one kick per instance (determinism law: no Date.now).
+    function maybeRewarmCatalog() {
+      if (catalog && catalog.length) return;
+      if (catalogPromise) return;
+      if (clock) {
+        const now = clock.now();
+        if (now - catalogRewarmAt < REWARM_MIN_MS) return;
+        catalogRewarmAt = now;
+      } else {
+        if (rewarmKicked) return;
+        rewarmKicked = true;
+      }
+      Promise.resolve().then(() => loadCatalog()).catch(() => {});
+    }
 
     async function* stream(req) {
       req = req || {};
+      maybeRewarmCatalog();
       const body = { model: req.model, messages: req.messages || [], stream: true };
       if (includeUsage) body.stream_options = { include_usage: true };
       if (req.tools && req.tools.length) {
@@ -82,7 +104,7 @@
       let res;
       try { res = await requestWithRetry(body, req.signal); }
       catch (e) { if (isAbort(e, req.signal)) return; throw e; }
-      const reader = res.body.getReader();
+      const reader = timeouts.idleGuardedReader(res.body.getReader(), { signal: req.signal });
       const dec = new TextDecoder();
       let buf = '';
       const started = {};
@@ -151,7 +173,7 @@
             method: 'POST',
             headers: headerBag(key, opts.headers),
             body: JSON.stringify(body),
-            signal
+            signal: timeouts.connectSignal(signal)
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
@@ -164,9 +186,10 @@
         catch (_) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
         const err = new Error('openai-compatible http ' + res.status + ' - ' + detail);
         err.status = res.status;
+        err.headers = res.headers;
         const cls = classifyApiError(err, { model: body.model });
         err.transient = cls.retryable;
-        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
+        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }
         throw err;
       }
     }
