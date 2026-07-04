@@ -1565,6 +1565,12 @@ const App = (() => {
       launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('Goal milestone') : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
       getRunSummary: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; return (m && m.title) ? m.title : ''; }
     });
+    // NORTH STAR: the one honest, adaptive "how well the station understands the Commander" read (understanding.js
+    // engine) composed from the live dossier beliefs + work-observation count + active goal, and its ambient
+    // bearing-star surface in the live-feed overlay. Init AFTER DossierStore/ProfileStore/GoalStore (it reads all
+    // three) so the first read is grounded; the store recomputes on a clean hero run and flags a RISE for the pulse.
+    if (typeof UnderstandingStore !== 'undefined') UnderstandingStore.init({ now: () => Date.now() });
+    if (typeof NorthStar !== 'undefined') NorthStar.init();
     // G1c MAINTENANCE-QUEST GENERATOR: recurring slag causes (World.slagPostmortems ring) + a jammed routine
     // (cron.skipped streak) become fix-it quests, clearing when the signal clears. Init AFTER World.loadStation
     // (it reads the live SlagLog ring) and after QuestStateStore. Self-persists (own key); never emits.

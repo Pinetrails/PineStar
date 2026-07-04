@@ -17,6 +17,7 @@
 <!-- motion.css last: the Phase-1 premium motion + feedback layer builds ON TOP of every screen's styles -->
 <link rel="stylesheet" href="css/motion.css">
 <link rel="stylesheet" href="css/topbar.css"><!-- topbar instrument cluster: builds on motion.css's premium component vocabulary -->
+<link rel="stylesheet" href="css/northstar.css"><!-- north-star: the ambient bearing instrument in the live-feed overlay (understanding.js surface) -->
 
 </head>
 <body class="theme-amber">
@@ -367,6 +368,7 @@
 <script src="app/pride.js"></script><!-- pure lifetime-record engine (G3a): durable station pride counters (tasks/deliverables/routines/work-minutes/founded) -->
 <script src="app/profile.js"></script>
 <script src="app/dossier.js"></script>
+<script src="app/understanding.js"></script><!-- NORTH STAR: pure "how well the station understands its Commander" read-model over the dossier (per-dim + overall confidence, weakest = the VOI question target) -->
 <script src="app/study.js"></script><!-- GROWTH Tier 1: pure STUDY engine (dossier Phase B) — parse/salience/dedup for work→belief proposals + ratings-taste + archetype classifier -->
 <script src="app/interview.js"></script>
 <script src="app/curiosity.js"></script>
@@ -439,6 +441,8 @@
 <script src="app/pitchstore.js"></script>
 <script src="app/suggeststore.js"></script>
 <script src="app/goalstore.js"></script><!-- GROWTH Tier 2: GOAL-TREE wiring — decomposition confirm (aux model call), persist (own key) + sidecar mirror, milestone→work-quest binding, chaining/evidence/drift; never emits -->
+<script src="app/understandingstore.js"></script><!-- NORTH STAR: composes the understanding read from live dossier beliefs + work-samples + active goal; recomputes on run.end (flags a RISE); read-only bus citizen -->
+<script src="app/northstar.js"></script><!-- NORTH STAR surface: the ambient bearing-star in the live-feed overlay — hazy→crisp with understanding, pulses on a rise, glance-only nameplate -->
 <script src="app/queststore.js"></script>
 <script src="app/queststatestore.js"></script><!-- durable quest memory + completion celebration (G1a); self-persists (own key) -->
 <script src="app/stationqueststore.js"></script><!-- station-quest generator wiring (G1b): agent.tool_call → capability-gap detection → fix-it quest; self-persists (own key), never emits -->
