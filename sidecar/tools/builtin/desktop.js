@@ -52,17 +52,34 @@
 
   function makeShellOpener(deps) {
     deps = deps || {};
-    const spawnSync = deps.spawnSync || CP.spawnSync;
     const platform = deps.platform || process.platform;
     const timeoutMs = deps.timeoutMs || 15000;
-    function run(cmd, args) {
-      const res = spawnSync(cmd, args, { encoding: 'utf8', timeout: timeoutMs, windowsHide: true });
-      if (res.error) throw res.error;
-      if (res.status != null && res.status !== 0) {
+    // ASYNC by default: an OS "open" hands off to the default handler and returns fast, but a wedged handler
+    // could block the whole sidecar event loop for the full timeout under the old spawnSync. execFile runs it
+    // off-thread so /api/health and every other run stay responsive. A test may still inject a SYNCHRONOUS
+    // spawnSync stub (deps.spawnSync) — we adapt its {status,stdout,stderr,error} return into the same async
+    // result so the injected-opener contract is unchanged.
+    const spawnSyncStub = deps.spawnSync;
+    function runViaSpawnSync(cmd, args) {
+      const res = spawnSyncStub(cmd, args, { encoding: 'utf8', timeout: timeoutMs, windowsHide: true });
+      if (res && res.error) throw res.error;
+      if (res && res.status != null && res.status !== 0) {
         throw new Error((res.stderr || res.stdout || (cmd + ' exited ' + res.status)).toString().trim());
       }
       return 'launched';
     }
+    function runViaExecFile(cmd, args) {
+      return new Promise((resolve, reject) => {
+        CP.execFile(cmd, args, { encoding: 'utf8', timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
+          if (err) {
+            // execFile surfaces a non-zero exit / spawn failure / timeout as err; mirror the old error text shape.
+            return reject(new Error((stderr || stdout || (err && err.message) || (cmd + ' failed')).toString().trim()));
+          }
+          resolve('launched');
+        });
+      });
+    }
+    const run = spawnSyncStub ? (cmd, args) => Promise.resolve().then(() => runViaSpawnSync(cmd, args)) : runViaExecFile;
     return async ({ kind, target }) => {
       if (platform === 'win32') {
         // Start-Process resolves both URLs (default browser) and app names (PATH /
