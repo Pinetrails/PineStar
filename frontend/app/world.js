@@ -1386,8 +1386,8 @@ const World = (() => {
   }
 
   /* v7 sit-ON-the-couch: a couch is a blocking prop (you can't path onto it), so the agent walks to
-     a tile ADJACENT to a free cushion, then RENDERS on that cushion while the couch is y-sorted just
-     behind it — exactly v7's sitTiles + sitPy trick. Seats are the inner footprint columns (an arm
+     a tile ADJACENT to a free cushion, then RENDERS on that cushion while the couch (drawn as the sofa's
+     BACK — it faces north) y-sorts just in front, so the sitter peeks over the backrest. Seats are the inner footprint columns (an arm
      is skipped at each end on a wide couch). Each cushion is reserved in occupiedSeats so a second
      agent takes a different one (or, when the couch is full, planProp moves on to another couch).
      tvId != null → goal 'lounge' (watch + light the TV); else a plain couch sit. */
@@ -3041,13 +3041,13 @@ const World = (() => {
         // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
         // (deskProgFor — a live harness run has none and renders none).
         const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
-        // a couch with a seated agent (hero OR crew) sorts JUST BEHIND its sitter, so EVERY sitter renders ON it
-        // (v7's sitPy trick). Any body lounging on THIS prop counts — a crew sitter was previously left to sort by
-        // the couch's own foot, so it rendered BEHIND the couch whenever it approached from the far/side. All
-        // cushions share one seatPy ((couch.y+h)*T-2), so any sitter's seatPy-1 places the couch behind them all.
+        // a couch with a seated agent (hero OR crew) sorts JUST IN FRONT of its sitter: the couch art is the
+        // BACK of the sofa (it faces north, toward the TV wall), so the tall rear panel occludes the sitter's
+        // body and only head/shoulders peek over the cap. Any body lounging on THIS prop counts. All cushions
+        // share one seatPy ((couch.y+h)*T-2), so any sitter's seatPy+1 places the couch in front of them all.
         const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
           : crew.find(b => b.seated && b.usingProp === p.id);
-        const sy = sitter ? sitter.seatPy - 1 : (p.y + (p.h || 1)) * T;
+        const sy = sitter ? sitter.seatPy + 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work, live) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
@@ -3075,7 +3075,7 @@ const World = (() => {
     } });
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
-    for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body renders ON the couch, not behind it)
+    for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body tucks just behind the back-facing couch panel, head over the cap)
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
