@@ -1146,7 +1146,7 @@ const StationUI = (() => {
       '<label class="set-row" style="align-items:flex-start;gap:8px;">' +
         '<input type="checkbox" id="ag-workshop-on"' + (on ? ' checked' : '') + ' aria-label="Build things while I am away">' +
         '<span><b>Build things while I’m away</b>' +
-        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">While you’re gone, this agent works on queued ideas in its own sandbox. Nothing touches your files until you approve it.</span></span>' +
+        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">On a recurring shift while the station is running, this agent builds queued ideas in its own sandbox. Nothing touches your files until you approve it on return.</span></span>' +
       '</label>' +
       '<div id="ag-workshop-msg" class="msg"></div>' +
     '</div>';
@@ -3838,7 +3838,10 @@ const StationUI = (() => {
       if (!prompt || !schedule) { sfx('bad'); msgEl.textContent = 'a prompt and a schedule are required'; return; }
       msgEl.textContent = 'saving…';
       try {
-        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider })).json();
+        // tz honesty (G4.1): send the browser's IANA timezone so a wall-clock schedule ("every morning 9:00")
+        // fires in the user's LOCAL time, not the server host's. Backend validates + persists it (invalid tz 400s).
+        const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (_) { return undefined; } })();
+        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider, tz })).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
         else {
           msgEl.textContent = ''; notify('routine "' + (name || 'unnamed') + '" scheduled for ' + agentLabel(agentId || 'agent'), 'good'); sfx('click');
@@ -4430,9 +4433,12 @@ const StationUI = (() => {
   // OPEN (never toggle-closed) a dock term by key — used by deep links like the COMMS error chip that
   // points a beginner at Settings (fix your model key) or SKILLS (enable a capability). No-op if unknown;
   // if the panel is already open it's left as-is rather than closed.
-  function openTerm(key) {
+  function openTerm(key, section) {
     const def = BUILDERS[key]; if (!def) return;
-    if (open[key]) { if (minimized[key]) restoreTerm(key); return; }   // minimized → restore, not duplicate
+    // optional section arg (Lane A error-door routing): land the console rail on a specific section — same
+    // mechanism as the dossier's "jump to CONFIG" (consoleSection is what mountConsole reads at render).
+    if (section) consoleSection[key] = section;
+    if (open[key]) { if (minimized[key]) restoreTerm(key); if (section) rerender(key); return; }   // minimized → restore, not duplicate
     toggleTerm(key, def[0], def[1], def[2]);
   }
 
