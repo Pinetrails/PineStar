@@ -760,26 +760,65 @@ const Marketplace = (() => {
   }
 
   /* ---------- recommender shelves ---------- */
-  function rankItems(items, excludeId) {
-    const ps = profileApi(); if (!ps) return null;
-    const summ = ps.summary(); if (!summ || !summ.dominant) return null;
-    if (ps.enabled && !ps.enabled()) return null;
-    const ranked = (items || [])
-      .map((it, idx) => ({ it, idx, score: ps.score(it.tags || {}) }))
-      .filter(r => r.it.id !== excludeId && r.score > 0)
-      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
-      .slice(0, 3);
-    return ranked.length ? ranked.map(r => r.it) : null;
-  }
   function becauseText(s) {
     const ps = profileApi(); if (!ps || !ps.explain) return '';
     const t = ps.explain(s.tags || {});
     return t ? (BECAUSE[t] || '') : '';
   }
+  /* ---------- specialist recommendations (deploy AND summon/pick) ----------
+     Mirrors Recipes.rankRecipes: (profile affinity × 4) + (goal-keyword hits × 2), catalog-order tie-break.
+     When BOTH signals are silent (cold start) we fall back to an HONEST lane spread — the first class of each
+     distinct interest lane in catalog order — under a header that says so (never a fake "recommended"). This
+     shelf now renders in the summon/pick flow too: recruiting a NEW agent is exactly when guidance matters. */
+  function specGoalScore(s, gt) {
+    if (!s || !gt) return 0;
+    const words = String(gt).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    if (!words.length) return 0;
+    const seen = {}; let hits = 0;
+    const hay = ((s.name || '') + ' ' + (s.tagline || '') + ' ' + Object.keys(s.tags || {}).join(' ')).toLowerCase();
+    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits++; }
+    return hits;
+  }
+  function dominantLane(s) {
+    let best = 'general', bv = -Infinity; const t = s.tags || {};
+    for (const k in t) { const v = Number(t[k]); if (isFinite(v) && v > bv) { bv = v; best = k; } }
+    return best;
+  }
+  function rankSpecs(items, excludeId) {
+    const ps = profileApi();
+    const learningOn = !!(ps && (!ps.enabled || ps.enabled()));
+    const scoreFn = (learningOn && ps && ps.score) ? (t => ps.score(t)) : null;
+    const gt = goalText();
+    const pool = (items || []).filter(s => s && s.id !== excludeId);
+    let anySignal = false;
+    const scored = pool.map((s, idx) => {
+      const aff = scoreFn ? (Number(scoreFn(s.tags || {})) || 0) : 0;
+      const goal = specGoalScore(s, gt);
+      if (aff > 0 || goal > 0) anySignal = true;
+      // the honest per-pick WHY: profile affinity beats goal match when both fire (it's the stronger signal)
+      const why = (aff > 0 ? becauseText(s) : '') || (goal > 0 ? 'matches your stated goals' : '');
+      return { s, idx, v: aff * 4 + goal * 2, why };
+    });
+    if (anySignal) {
+      return { personalized: true, items: scored.filter(x => x.v > 0).sort((a, b) => (b.v - a.v) || (a.idx - b.idx)).slice(0, 3) };
+    }
+    // honest cold-start fallback: one class per distinct interest lane (dominant tag), catalog order.
+    const byLane = [], used = {}, rest = [];
+    pool.forEach(s => { const l = dominantLane(s); if (!used[l]) { used[l] = true; byLane.push(s); } else rest.push(s); });
+    return { personalized: false, items: byLane.concat(rest).slice(0, 3).map(s => {
+      const lbl = TAG_LABEL[dominantLane(s)] || 'GENERAL OPS';
+      return { s, why: 'covers the ' + lbl.toLowerCase() + ' lane' };
+    }) };
+  }
   function recShelfHTML() {
-    if (ctx && ctx.mode === 'pick') return '';
-    const items = rankItems(Specialties.builtins(), ctx && ctx.currentSpecialtyId); if (!items) return '';
-    return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div><div class="mkt-rec-rail">' + items.map(recCardHTML).join('') + '</div>';
+    if (typeof Specialties === 'undefined' || !Specialties.builtins().length) return '';
+    const res = rankSpecs(Specialties.builtins(), ctx && ctx.currentSpecialtyId);
+    if (!res.items.length) return '';
+    const head = res.personalized
+      ? '★ RECOMMENDED FOR YOU'
+      : '◈ STARTING LINEUP — one per lane while the station learns what you work on';
+    return '<div class="mkt-sect-h mkt-rec-sect">' + head + '</div><div class="mkt-rec-rail">' +
+      res.items.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- R6: the "FOR YOU" row (ranked by dossier interest lanes + goal-text keyword match) ----------
      The plan's discovery-front recommender. Distinct from the profile-affinity "RECOMMENDED FOR YOU" shelf above:
@@ -813,8 +852,8 @@ const Marketplace = (() => {
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
       '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(cat) + '</span>' + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div></button>';
   }
-  function recCardHTML(s) {
-    const why = becauseText(s);
+  function recCardHTML(s, why) {
+    // `why` comes from rankSpecs: the profile-affinity reason, a goal-match note, or the cold-start lane label
     return '<button class="mkt-rec" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
       '<div class="mkt-rec-top">' + sealHTML(s, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(s.name) + '</div><div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div></div>' +
