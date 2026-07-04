@@ -2096,20 +2096,49 @@ const server = http.createServer((req, res) => {
     res.writeHead(204); return res.end();
   }
   if (isApi && rejectBadApiToken(req, res)) return;
+  // Central async-route guard: EVERY handler below is dispatched through Promise.resolve(...).catch so a throw
+  // AFTER the body is parsed (a store error, a bad-await) can never leave the socket hanging forever. A sync
+  // handler that returns a non-promise passes through untouched; only a returned rejected promise reaches the
+  // fail path. runRouteFailure writes a run-shaped NDJSON error line once headers are open, so streaming routes
+  // (/api/run NDJSON, the SSE bridge) stay correct — they hold the response open by DESIGN and only trip this
+  // catch on an actual thrown rejection, which is still the right thing to surface. This replaces the ad-hoc
+  // `.catch(()=>res.end())` guards that used to turn a failure into an EMPTY 200 the browser read as success.
+  return Promise.resolve(dispatchRoute(req, res)).catch((e) => routeFailure(res, e));
+});
+
+// routeFailure — the central fail path for the async-route guard. Headers not yet sent → a 500 JSON envelope
+// (redacted message); headers already open (a streaming route mid-flight) → destroy the socket so the client
+// sees a broken stream, not a truncated-but-'ok' one. Mirrors runroute.js's contract for the general routes.
+function routeFailure(res, err) {
+  try {
+    const message = 'sidecar failure: ' + ((err && err.message) || err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: redact(message) }));
+    } else {
+      try { res.destroy(); } catch (_) {}
+    }
+  } catch (_) { try { res.destroy(); } catch (_) {} }
+}
+
+function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch((e) => runRouteFailure(res, e, redact));
-  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  // TTS/STT honor the 200-always media contract (backend law): a thrown failure must still answer 200 with an
+  // error payload, NOT flow into routeFailure's 500 — the frontend voice loop depends on it. So these keep an
+  // explicit catch that resolves 200 (never an empty/5xx body) instead of falling through to the central guard.
+  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: redact('tts failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
+  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason: redact('stt failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
-  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res);
   if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
   if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
-  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
+  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
+  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
@@ -2143,8 +2172,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
   if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
-  if (req.method === 'GET' && req.url === '/api/models/openrouter') return handleOpenRouterModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
+  // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
+  // dead code (shadowed by this line) and has been removed. handleProviderModels answers 200 with {models:[]}
+  // + error on any catalog failure, so it never throws into the central guard.
+  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
@@ -2170,18 +2201,18 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/arm') return handleCronArm(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res);
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
-  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
   // ADDITIVE (Lane B / ux-run-truth): read-only stat of a user-chosen KEEP destination folder, so the return
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res);
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
@@ -2220,7 +2251,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/memory/config') return handleMemoryConfigSet(req, res);
   if (req.method === 'GET' && /^\/shared\//.test((req.url || '').split('?')[0])) return serveShared(req, res);
   return serveStatic(req, res);
-});
+}
 server.on('error', (e) => {
   if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
   else if (e && e.code === 'EACCES') console.error('✗ Port ' + PORT + ' needs elevated privileges — pick a port >= 1024 via STARNET_PORT.');
@@ -5002,27 +5033,6 @@ async function handleProviderModels(req, res) {
   }
 }
 
-async function handleOpenRouterModels(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  try {
-    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE });
-    const models = await provider.listModels();
-    json(200, {
-      models: models.map(m => ({
-        id: m.id,
-        name: m.name || m.id,
-        context_length: m.context_length || 0,
-        pricing: m.pricing || null,
-        supportsTools: m.supportsTools !== false,
-        supportsReasoning: !!m.supportsReasoning,
-        supported_parameters: Array.isArray(m.supported_parameters) ? m.supported_parameters : [],
-        reasoningEfforts: Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : []
-      }))
-    });
-  } catch (e) {
-    json(200, { models: [], error: (e && e.message) || 'OpenRouter catalog unavailable' });
-  }
-}
 
 async function handleCodexModels(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
