@@ -82,5 +82,22 @@ module.exports = (async () => {
     A.eq(calls[1].url, 'https://example.test/root/catalog/models', 'custom models path is honored');
   }
 
+  // usage reporting defaults ON (no includeUsage passed) and can be opted out explicitly
+  {
+    const mkFetch = (calls) => async (url, init) => {
+      calls.push({ url, init });
+      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const onCalls = [];
+    const pOn = makeOpenAICompatibleProvider({ fetch: mkFetch(onCalls), baseUrl: 'http://local/v1' });
+    await collect(pOn, { model: 'm', messages: [] });
+    A.eq(JSON.parse(onCalls[0].init.body).stream_options, { include_usage: true }, 'usage include defaults ON');
+
+    const offCalls = [];
+    const pOff = makeOpenAICompatibleProvider({ fetch: mkFetch(offCalls), baseUrl: 'http://local/v1', includeUsage: false });
+    await collect(pOff, { model: 'm', messages: [] });
+    A.eq(JSON.parse(offCalls[0].init.body).stream_options, undefined, 'usage include opts out with explicit false');
+  }
+
   A.report('provider.openai-compatible.test');
 })();
