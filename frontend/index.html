@@ -17,6 +17,7 @@
 <!-- motion.css last: the Phase-1 premium motion + feedback layer builds ON TOP of every screen's styles -->
 <link rel="stylesheet" href="css/motion.css">
 <link rel="stylesheet" href="css/topbar.css"><!-- topbar instrument cluster: builds on motion.css's premium component vocabulary -->
+<link rel="stylesheet" href="css/widgets.css"><!-- widget rails: pinnable telemetry instruments in the chrome's dead space (widgets.js) -->
 
 </head>
 <body class="theme-amber">
@@ -190,6 +191,9 @@
 
   <header id="topbar">
     <div id="logo-anchor" aria-hidden="true"></div>
+    <!-- WIDGET RAIL (widgets.js) — user-pinnable telemetry instruments in the bar's dead middle;
+         flex-fills between the logo and the instrument cluster, scrolls thin if over-stuffed -->
+    <div id="wr-top" class="widget-rail" data-rail="top" role="group" aria-label="Pinned widgets (top rail)"></div>
     <div class="tb-stats">
       <!-- AGENT/MODEL are intentionally NOT shown in the HUD: a station runs many agents, so a single
            name+model here misrepresents the crew. Kept hidden as the focused-agent data source that
@@ -333,6 +337,9 @@
         <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
       </div>
     </div>
+    <!-- WIDGET RAIL (widgets.js) — the bottom bar's dead middle; #term-strip (stationui.js) docks
+         AFTER this, just before .bb-right, so minimized-window chips keep their own room -->
+    <div id="wr-bot" class="widget-rail" data-rail="bot" role="group" aria-label="Pinned widgets (bottom rail)"></div>
     <div class="bb-right">
       <!-- CONTEXT-WINDOW gauge, engraved into the bar (replaces the per-desk memory core).
            Fills toward the current agent's REAL context ceiling: latest prompt tokens /
@@ -494,6 +501,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/app.js"></script>
 <script src="app/keycta.js"></script><!-- cold-start honesty: after a KEYLESS awakening, one standing world banner "agent is awake but has no key" → SETTINGS; pure projection of Harness.hasStoredCredential, vanishes the instant a key lands (after app.js so App/Harness/StationUI exist) -->
 <script src="app/topbar.js"></script><!-- topbar instrument cluster: read-only STATION-XP + live SPEND-TODAY wiring (after app.js so Harness/Xp/XpStore/U exist) -->
+<script src="app/widgets.js"></script><!-- widget rails: pinnable read-only telemetry instruments (insights/cron polls + run.end/queue.status/cron.fire folds); own localStorage key, never emits -->
 <script src="app/autosessions.js"></script><!-- surface an unattended cron/routine run as a readable SESSION: cron.fire → adopt a 'cron-<runId>' workstream (busy, no focus-steal), cron.result → fold its durable transcript; boot backfill for runs finished while closed. Read-only on U.bus (after app.js so App/Workstreams/Channels/Chat/U exist) -->
 <script src="app/safety.js"></script>
 <script src="app/warroom.js"></script>
