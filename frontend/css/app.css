@@ -1698,6 +1698,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-dismiss { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;
   color:var(--ph-dim); opacity:.55; font-family:inherit; font-size:11px; line-height:1; padding:1px 4px; cursor:pointer; }
 .q-dismiss:hover { color:var(--ph-bright); border-color:var(--ph-glow2); opacity:1; }
+/* Slice 5: armed (2-step) state — the ✕ becomes an explicit, dangerous "dismiss forever — sure?" until the
+   confirming click (or ~4s auto-disarm). Widen for the label + read as a warning, not a passive glyph. */
+.q-dismiss.armed { opacity:1; color:var(--ink); background:var(--bad); border-color:var(--bad);
+  white-space:nowrap; padding:1px 6px; text-shadow:none; }
+.q-dismiss.armed:hover { color:var(--ink); background:var(--bad); border-color:var(--bad); }
 /* W3 — "build this while I'm away" affordance on an open, buildable quest. Sits before the dismiss ✕; the
    ◈ marks the away-workshop lane. Gold on hover (it opens the sandbox lane, an amber/consent action). */
 .q-queue { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;

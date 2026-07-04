@@ -1317,6 +1317,11 @@ const Chat = (() => {
     const dis = document.createElement('button'); dis.className = 'consent-btn deny'; dis.textContent = 'dismiss';
     dis.onclick = () => vanish(r.d);
     foot.appendChild(dis);
+    // ADOPTION (Lane F): a dim line so dismissing doesn't read as LOSING the runs — they wait on the OUTBOX crate.
+    if (typeof ReturnStore !== 'undefined' && ReturnStore.outboxLine) {
+      const keep = document.createElement('span'); keep.className = 'turnin-queue'; keep.textContent = ReturnStore.outboxLine();
+      foot.appendChild(keep);
+    }
     r.body.appendChild(foot);
     autoscroll();
   }
@@ -2618,19 +2623,11 @@ const Chat = (() => {
   function offerRetry(verdict) {
     if (!log) return;
     if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
-    if (verdict.action === 'settings') {
-      choices([{ label: '⚙ Open Settings', value: 'settings' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      diagAffordance(); return;
-    }
-    if (verdict.action === 'store') {
-      // the STORE (managed credits) lives in the SETTINGS panel; open it so the user can top up or switch to BYOK.
-      choices([{ label: '🛒 Open STORE', value: 'store' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      diagAffordance(); return;
-    }
-    if (verdict.action === 'skills') {
-      choices([{ label: '✦ Open SKILLS', value: 'skills' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); });
-      diagAffordance(); return;
-    }
+    // ADOPTION (Lane A): every error names its DOOR and opens the exact one. Friendly.actionButton maps the
+    // verdict to { label, run } — capdenied -> REFIT (with the named capability), auth/no-key -> the real key
+    // field or "reconnect ChatGPT", model-not-found -> models. One source of truth; no local per-action ladder.
+    const btn = (typeof Friendly !== 'undefined' && Friendly.actionButton) ? Friendly.actionButton(verdict) : null;
+    if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(); return; }
     if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
     // non-retryable with no destination: leave no primary chip rather than inviting a doomed re-run — but a stuck
     // user still gets the quiet bug-report affordance so they can grab a diagnostic readout in place.
@@ -3006,12 +3003,26 @@ const Chat = (() => {
   // agent's away-workshop backlog (POST /api/workshop/queue via WorkshopStore). One line in, one confirm out.
   function buildAwayCommand(args) {
     const text = String(args || '').trim();
-    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build while you’re away.');
+    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build on its own recurring away shift.');
     if (typeof WorkshopStore === 'undefined' || !WorkshopStore.queue) return localLine('Away workshop isn’t available on this station.');
     const agentId = (activeWs && activeWs.agentId) || 'agent';
-    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text' }).then(res => {
-      if (res && res.ok) localLine('◈ queued for the away workshop — ' + name + ' will build this in its sandbox while you’re away. You’ll review it on return.');
-      else localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.');
+    // pass the display name so a needsGrant warning can name the agent.
+    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text', name: name }).then(res => {
+      if (!res || !res.ok) { localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.'); return; }
+      // ADOPTION (Lane F): the confirm copy comes from WorkshopStore.queueConfirmLine — it encodes the TRUTH that
+      // away builds run on a recurring shift WHILE THE STATION IS UP (never "while the app is closed").
+      if (res.needsGrant) {
+        // queued, but the grant is OFF → it will never build. Show the honest warn + a one-tap toggle (openGrant).
+        localLine(res.warn || 'saved to the build list — but “build while away” is off, so it won’t be built yet.');
+        choices([{ label: '⚙ Turn on “build while away”', value: 'grant' }], () => {
+          WorkshopStore.openGrant(res.agentId || agentId).then(g => {
+            localLine((g && g.ok) ? '✓ “build while away” is on — ' + name + ' will build this on its next away shift.'
+              : 'Couldn’t turn it on: ' + ((g && g.error) || 'try the AUTONOMY settings') + '.');
+          });
+        });
+        return;
+      }
+      localLine(WorkshopStore.queueConfirmLine(name));
     });
   }
   function steerCommand(args) {

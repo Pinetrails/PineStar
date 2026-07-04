@@ -4363,18 +4363,28 @@ const StationUI = (() => {
     }));
     // dismissed = stop forever: the row vanishes now and never comes back (and the curiosity nudge for a
     // waved-off dimension stops with it — QuestStateStore.dismiss carries the one anti-nag law end to end).
-    body.querySelectorAll('.q-dismiss').forEach(b => b.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const q = qs.find(x => x && x.id === b.dataset.qid);
-      if (!q) return;
-      // each fix-it/build kind routes to its OWN permanent denylist; the dossier kind goes through QuestState.
-      // Either way: dismissed = stop forever (the one anti-nag law).
-      const took = (q.kind === 'station-gap') ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
-        : (q.kind === 'work') ? (WQS && WQS.dismiss && WQS.dismiss(q.id))
-        : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
-        : (QSS && QSS.dismiss && QSS.dismiss(q));
-      if (took) { sfx('click'); rerender('quests'); }
-    }));
+    // Slice 5 (Lane B): permanent by design, so it's a 2-STEP arm/confirm (shared ArmConfirm helper, ~4s
+    // auto-disarm) — one misclick can no longer nuke a build plan. The glyph arms to "dismiss forever — sure?".
+    body.querySelectorAll('.q-dismiss').forEach(b => {
+      const doDismiss = ev => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        const q = qs.find(x => x && x.id === b.dataset.qid);
+        if (!q) return;
+        // each fix-it/build kind routes to its OWN permanent denylist; the dossier kind goes through QuestState.
+        const took = (q.kind === 'station-gap') ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
+          : (q.kind === 'work') ? (WQS && WQS.dismiss && WQS.dismiss(q.id))
+          : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
+          : (QSS && QSS.dismiss && QSS.dismiss(q));
+        if (took) { sfx('click'); rerender('quests'); }
+      };
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+        // arming shouldn't bubble to the tile; keep restLabel = the ✕ glyph so disarm restores it.
+        b.addEventListener('click', ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); });
+        ArmConfirm.wire(b, { armedLabel: 'dismiss forever — sure?', timeoutMs: 4000, onConfirm: doDismiss });
+      } else {
+        b.addEventListener('click', doDismiss);   // fallback: immediate (helper absent)
+      }
+    });
     // W3 — BUILD THIS WHILE I'M AWAY: queue the quest onto the hero's away-workshop backlog (POST
     // /api/workshop/queue via WorkshopStore). One click; a notice confirms. Never launches a live run —
     // it hands the idea to the sandbox for an unattended shift to pick up.
