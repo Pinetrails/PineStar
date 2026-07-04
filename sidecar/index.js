@@ -561,23 +561,42 @@ const transcriptStore = makeTranscriptStore({ io: transcriptIo, clock: { now: ()
 // H4: the agent's OWNED skill library — per-agent named procedure documents, append-only + fsync'd, a SIBLING of
 // the fs jail (the agent's fs.* tools can't reach it). Singleton (persists across runs); redacted on write.
 const SKILLS_FILE = path.join(WORKSPACES, 'skills.jsonl');
+// atomically REPLACE a JSONL file with `entries` (one JSON line each), fsync-before-rename. Used by the store's
+// compaction pass to collapse the append-only log to one line per distinct skill (its bounded-growth fix).
+function rewriteJsonlDurable(file, entries) {
+  const body = (entries || []).map(e => JSON.stringify(e)).join('\n') + (entries && entries.length ? '\n' : '');
+  writeFileDurable({ fs: fs, path: path }, file, body);
+}
 const skillsIo = {
+  // bounded boot-load (last LOG_MAX_BYTES of archive+live), same as ledger/runs — after compaction exists, so a
+  // bounded read never silently drops a still-live skill (compaction keeps newest-per-key; the tail read then
+  // covers far more than the compacted file). A missing file -> [].
   readAll() {
-    try {
-      return fs.readFileSync(SKILLS_FILE, 'utf8').split('\n').filter(Boolean)
-        .map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-    } catch (e) { return []; }
+    try { return readBoundedJsonl(SKILLS_FILE); } catch (e) { return []; }
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(SKILLS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[skills] append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-  }
+    rotateJsonl(SKILLS_FILE);   // roll to <file>.1 once the live segment passes the cap (bounds disk; compaction keeps the set intact)
+  },
+  rewrite(entries) { rewriteJsonlDurable(SKILLS_FILE, entries); }   // compaction full-replace
 };
 const SKILL_PACKAGES_DIR = path.join(WORKSPACES, 'skill-packages');
 const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR });
 const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard });
+// BOOT COMPACTION: when skills.jsonl has grown past a threshold, rewrite it to one line per (agentId,name) so
+// view-bump churn + repeated edits can't grow it without bound. Runs AFTER the store loaded `latest`, so the
+// rewrite is exactly the current newest-per-skill set. Safe + idempotent; fail-open.
+try {
+  const SKILLS_COMPACT_BYTES = Math.max(1 << 20, num(ENV('SKILLS_COMPACT_BYTES'), 4 * 1024 * 1024));
+  let sz = 0; try { sz = fs.statSync(SKILLS_FILE).size; } catch (_) {}
+  if (sz > SKILLS_COMPACT_BYTES && typeof skillStore.compact === 'function') {
+    const r = skillStore.compact();
+    if (r && r.ok) { try { console.warn('[skills] boot-compacted skills.jsonl (' + sz + 'B -> ' + r.kept + ' entries)'); } catch (_) {} }
+  }
+} catch (_) {}
 
 // BUNDLED SKILL LIBRARY (capability-gated recipe packs shipped WITH StarNet — distinct from skillStore above,
 // which holds what the agent SAVES at runtime). Loaded once from sidecar/skills/library/*.md; the user's
@@ -587,17 +606,27 @@ const SKILL_LIBRARY = skillsCatalog.loadDir(path.join(__dirname, 'skills', 'libr
 const SKILL_PREFS_FILE = path.join(WORKSPACES, 'skillprefs.jsonl');
 const skillPrefsIo = {
   readAll() {
-    try { return fs.readFileSync(SKILL_PREFS_FILE, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean); }
-    catch (e) { return []; }
+    try { return readBoundedJsonl(SKILL_PREFS_FILE); } catch (e) { return []; }   // bounded boot-load (after compaction exists)
   },
   append(entry) {
     let fd = null;
     try { fd = fs.openSync(SKILL_PREFS_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
     catch (e) { console.warn('[skills] prefs append failed:', (e && e.message) || e); }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
-  }
+    rotateJsonl(SKILL_PREFS_FILE);   // bound disk (compaction keeps one line per slug intact)
+  },
+  rewrite(entries) { rewriteJsonlDurable(SKILL_PREFS_FILE, entries); }   // compaction full-replace
 };
 const skillPrefs = makeSkillPrefs({ io: skillPrefsIo, clock: { now: () => Date.now() } });
+// boot compaction for prefs too (one line per slug); a toggled recipe would otherwise grow the file. Fail-open.
+try {
+  const PREFS_COMPACT_BYTES = Math.max(1 << 20, num(ENV('SKILLS_COMPACT_BYTES'), 4 * 1024 * 1024));
+  let psz = 0; try { psz = fs.statSync(SKILL_PREFS_FILE).size; } catch (_) {}
+  if (psz > PREFS_COMPACT_BYTES && typeof skillPrefs.compact === 'function') {
+    const r = skillPrefs.compact();
+    if (r && r.ok) { try { console.warn('[skills] boot-compacted skillprefs.jsonl (' + psz + 'B -> ' + r.kept + ' entries)'); } catch (_) {} }
+  }
+} catch (_) {}
 
 // credential pool (P0.2): orders the primary OpenRouter key + alternates and cools a key that just hit a
 // rotate-reason failure (rate_limit/auth/billing) so it isn't retried first next run. In-memory only; never
