@@ -63,6 +63,39 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
     A.eq(to.isError, true, 'hanging tool -> timeout isError');
     A.eq(to.summary, 'timeout', 'timeout summary');
 
+    // TOOL-TIMEOUT ABORTS THE WORK: the dispatch threads a per-call AbortController into ctx.signal; on timeout it
+    // aborts BEFORE rejecting, so a signal-honoring tool can stop running/spending instead of continuing forever.
+    {
+      let sawSignal = false, abortedAfterTimeout = false;
+      reg.register({
+        name: 'observes_signal', timeoutMs: 20, schema: { type: 'object' },
+        run: (args, ctx) => new Promise((resolve) => {
+          sawSignal = !!(ctx && ctx.signal);
+          if (ctx && ctx.signal) ctx.signal.addEventListener('abort', () => { abortedAfterTimeout = true; resolve('late'); }, { once: true });
+        })
+      });
+      const ot = await reg.dispatch(call('observes_signal', {}), {});
+      A.eq(ot.summary, 'timeout', 'a signal-observing tool still times out');
+      A.ok(sawSignal, 'the dispatched tool received a ctx.signal (per-call AbortController)');
+      A.ok(abortedAfterTimeout, 'ctx.signal was ABORTED on timeout so the tool can stop its work');
+    }
+
+    // parent-signal chaining: aborting the RUN's signal aborts the per-call child signal too (cancel propagates).
+    {
+      const parent = new AbortController();
+      let childAborted = false;
+      reg.register({
+        name: 'watches_parent', timeoutMs: 0, schema: { type: 'object' },
+        run: (args, ctx) => new Promise((resolve) => {
+          ctx.signal.addEventListener('abort', () => { childAborted = true; resolve('cancelled'); }, { once: true });
+        })
+      });
+      const p = reg.dispatch(call('watches_parent', {}), { signal: parent.signal });
+      parent.abort();
+      await p;
+      A.ok(childAborted, 'aborting the parent run signal aborts the per-call child signal (cancel propagates to the tool)');
+    }
+
     // consent denied -> no run
     const d = await reg.dispatch(call('guarded', {}), { consent: async () => ({ allow: false, reason: 'user said no' }) });
     A.eq(d.isError, true, 'consent denied -> isError'); A.eq(consentRuns, 0, 'denied consent did not run');

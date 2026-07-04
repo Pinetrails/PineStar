@@ -41,6 +41,33 @@ A.eq(hub.size(), 2, 'the throwing client is registered before the broadcast');
 hub.broadcast('queue.status', { depth: 4 });
 A.eq(hub.size(), 1, 'a client whose write() throws is evicted (the Set never grows unbounded)');
 
+// a BACKPRESSURED client (write() returns false) is tolerated while its buffer is small, but evicted once the
+// buffered bytes cross the ceiling — the zombie-socket memory-leak guard. write() never throws here (that's the
+// separate dead-socket path above); it just returns false, so only the writableLength ceiling catches it.
+{
+  const hub2 = makeSseHub();
+  const CEIL = hub2._internals.SSE_MAX_BUFFER_BYTES;
+
+  // under the ceiling: kept (a healthy-ish reader that's momentarily behind is not evicted)
+  let slowWrites = 0;
+  const slow = { write: () => { slowWrites++; return false; }, writableLength: 1024, end: () => {}, destroy: () => {} };
+  hub2.add(slow);
+  const reachedSlow = hub2.broadcast('queue.status', { depth: 1 });
+  A.eq(hub2.size(), 1, 'a backpressured-but-under-ceiling client is NOT evicted');
+  A.eq(reachedSlow, 1, 'it still counts as reached while under the ceiling');
+  A.eq(slowWrites, 1, 'the frame was written to it');
+
+  // over the ceiling: evicted + end/destroy called so the buffer is released
+  let ended = false, destroyed = false;
+  const zombie = { write: () => false, writableLength: CEIL + 1, end: () => { ended = true; }, destroy: () => { destroyed = true; } };
+  hub2.add(zombie);
+  A.eq(hub2.size(), 2, 'the zombie is registered before the broadcast');
+  const reached = hub2.broadcast('queue.status', { depth: 2 });
+  A.eq(hub2.size(), 1, 'a client buffering past the ceiling is evicted');
+  A.eq(reached, 1, 'the evicted zombie is NOT counted as reached (only the slow client)');
+  A.ok(ended && destroyed, 'the evicted client is end()ed and destroy()ed so its write buffer is released');
+}
+
 /* ---------- G2.1: the server-initiated-run tee policy (runTeeView) ---------- */
 // run lifecycle passes through whole
 const startP = { agentId: 'a1', runId: 'r1', trigger: 'schedule', model: 'm' };

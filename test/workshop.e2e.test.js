@@ -174,6 +174,30 @@ async function startSse(url) {
     A.ok(ngRes.payload && ngRes.payload.fired === false && ngRes.payload.reason === 'not-granted', 'an UNGRANTED agent cannot run a workshop shift (grant is load-bearing)');
     A.ok(!fs.existsSync(path.join(ws, 'nogrant', 'workshop')), 'the ungranted agent wrote nothing');
 
+    // 7.4 KEEP copies a deliverable OUT to a user-chosen folder — COPYFILE_EXCL by default (never a silent
+    //     clobber). Runs on its OWN queued item so it doesn't retire item-1 (step 8 still needs it). A second
+    //     keep to the SAME folder is refused 409 EEXIST; overwrite:true then replaces.
+    await fetch(B + '/api/workshop/queue', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', id: 'item-keep', title: 'Keep me' }) }).then(r => r.json());
+    const keepShift = await fetch(B + '/api/workshop/shift', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder' }) });
+    const keepStream = await readNdjson(keepShift);
+    const runId2 = ((keepStream.find(e => e.name === 'workshop.shift.result') || {}).payload || {}).runId;
+    A.ok(runId2 && runId2 !== runId, 'a second shift built a second deliverable with its own runId');
+
+    const keepDir = path.join(os.tmpdir(), 'starnet-keep-' + Date.now());
+    const keep1 = await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: runId2, decision: 'keep', destPath: keepDir }) });
+    const keep1j = await keep1.json();
+    A.ok(keep1.status === 200 && keep1j.ok === true && keep1j.copied >= 1, 'keep to a fresh folder copies the deliverable files');
+    A.ok(fs.existsSync(path.join(keepDir, 'cleaner.py')), 'the kept file really landed at destPath');
+
+    const keep2 = await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: runId2, decision: 'keep', destPath: keepDir }) });
+    const keep2j = await keep2.json();
+    A.eq(keep2.status, 409, 'keep to a folder that already has the file is refused 409 (no silent overwrite)');
+    A.ok(keep2j.code === 'EEXIST' && keep2j.overwritable === true, 'the refusal names EEXIST and flags it overwritable');
+
+    const keep3 = await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: runId2, decision: 'keep', destPath: keepDir, overwrite: true }) });
+    A.eq(keep3.status, 200, 'keep with overwrite:true replaces the existing files');
+    try { fs.rmSync(keepDir, { recursive: true, force: true }); } catch (_) {}
+
     // 8. DISCARD removes the run dir + denylists the item (never silently rebuilt).
     const dec = await (await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: runId, decision: 'discard' }) })).json();
     A.ok(dec.ok === true && dec.decision === 'discard', 'discard decision accepted');

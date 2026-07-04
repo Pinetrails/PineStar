@@ -76,6 +76,14 @@ function fakeOpener() {
     await lin({ kind: 'url', target: 'https://example.com/' });
     A.eq(seen[2].cmd, 'xdg-open', 'linux opener uses xdg-open');
     A.eq(seen[2].args[0], 'https://example.com/', 'linux url is its own arg');
+
+    // the opener is ASYNC now (execFile, off event loop): it returns a Promise, and a non-zero exit from the
+    // injected spawnSync adapter still rejects with the stderr message shape (no longer a synchronous throw).
+    const failing = () => ({ status: 1, stdout: '', stderr: 'boom' });
+    const bad = T.makeShellOpener({ spawnSync: failing, platform: 'linux' });
+    const p = bad({ kind: 'url', target: 'https://example.com/' });
+    A.ok(p && typeof p.then === 'function', 'the opener returns a Promise (async, off the event loop)');
+    await rejects(p, /boom/, 'a non-zero exit rejects async with the stderr message');
   }
 
   // capability projection: desktop.open granted by the web/dish object, denied without it

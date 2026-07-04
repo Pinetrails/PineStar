@@ -50,4 +50,20 @@ const { makeConcurrencyGate } = require('../sidecar/concurrency.js');
   A.eq(u.max(), 0, 'max 0 reports unlimited');
 }
 
+// ---- same-agent run mutex predicate (index.js runOnce admission): a run is refused iff the agent ALREADY
+//      has one in flight. The mutex is `inFlight(agentId) > 0` checked BEFORE tryEnter, so two concurrent runs
+//      of ONE agentId (which share a workspace + shadow-git repo) can never both admit, while a fresh agent and
+//      a strictly-sequential re-run of the same agent both pass. ----
+{
+  const g = makeConcurrencyGate({ max: 0 });   // unlimited fan-out; the mutex is orthogonal to the distinct-agent cap
+  const mutexBlocks = (id) => g.inFlight(id) > 0;   // the exact predicate runOnce evaluates before admission
+
+  A.eq(mutexBlocks('hero'), false, 'a fresh agent is NOT mutex-blocked (first run admits)');
+  g.tryEnter('hero');                                // first run admitted
+  A.eq(mutexBlocks('hero'), true, "hero's SECOND concurrent run IS mutex-blocked (shared workspace)");
+  A.eq(mutexBlocks('other'), false, 'a DIFFERENT agent is never blocked by hero (distinct workspace) — team workers stay parallel');
+  g.leave('hero');                                   // first run finishes
+  A.eq(mutexBlocks('hero'), false, 'after the run finishes, a SEQUENTIAL re-run of the same agent admits again');
+}
+
 A.report('concurrency.test');

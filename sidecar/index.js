@@ -1382,7 +1382,19 @@ let voiceDispatcher = null;
     if (u && u.Agent) voiceDispatcher = new u.Agent({ keepAliveTimeout: 30000, keepAliveMaxTimeout: 60000, connections: 8 });
   } catch (_) { voiceDispatcher = null; }   // internal undici not importable → default global pool (still keep-alived)
 })();
-function voiceFetchOpts(base) { return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base; }
+// voiceFetchOpts — attach the keep-alive dispatcher AND a hard wall-clock via AbortSignal.timeout so a stalled
+// TTS/STT upstream can't hang the request (and, via the 200-always contract, the frontend voice loop) forever.
+// timeoutMs is per-caller (TTS ~60s, STT ~120s — a longer clip transcription). If a base.signal is ever passed,
+// combine the two so either aborts. Falls back gracefully if AbortSignal.timeout/any is unavailable.
+function voiceFetchOpts(base, timeoutMs) {
+  base = base || {};
+  if (timeoutMs > 0 && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    const t = AbortSignal.timeout(timeoutMs);
+    const signal = (base.signal && typeof AbortSignal.any === 'function') ? AbortSignal.any([base.signal, t]) : t;
+    base = Object.assign({}, base, { signal });
+  }
+  return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base;
+}
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
@@ -1849,7 +1861,14 @@ function runGit(args, opts) {   // resolves (never rejects); a missing/failing g
     } catch (e) { resolve({ code: 1, stdout: '', stderr: String((e && e.message) || e) }); }
   });
 }
-const checkpointStore = makeCheckpointStore({ fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 });
+// SKYNET_/STARNET_CHECKPOINT_MAX_BYTES tunes the shadow-repo size ceiling that triggers a gc/re-init sweep
+// (the store defaults to 500MB when unset/invalid). Wired here so an operator can cap 24/7 checkpoint growth
+// without a code change; a non-positive/blank value falls through to the store default.
+const _ckptMaxBytes = Number(ENV('CHECKPOINT_MAX_BYTES'));
+const checkpointStore = makeCheckpointStore(Object.assign(
+  { fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 },
+  (_ckptMaxBytes > 0 && isFinite(_ckptMaxBytes)) ? { maxRepoBytes: Math.floor(_ckptMaxBytes) } : {}
+));
 // checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
 const checkpointBus = { emit: (name, payload) => {
   try { console.log('[checkpoint]', name, JSON.stringify(payload)); } catch (_) {}
@@ -2096,20 +2115,49 @@ const server = http.createServer((req, res) => {
     res.writeHead(204); return res.end();
   }
   if (isApi && rejectBadApiToken(req, res)) return;
+  // Central async-route guard: EVERY handler below is dispatched through Promise.resolve(...).catch so a throw
+  // AFTER the body is parsed (a store error, a bad-await) can never leave the socket hanging forever. A sync
+  // handler that returns a non-promise passes through untouched; only a returned rejected promise reaches the
+  // fail path. runRouteFailure writes a run-shaped NDJSON error line once headers are open, so streaming routes
+  // (/api/run NDJSON, the SSE bridge) stay correct — they hold the response open by DESIGN and only trip this
+  // catch on an actual thrown rejection, which is still the right thing to surface. This replaces the ad-hoc
+  // `.catch(()=>res.end())` guards that used to turn a failure into an EMPTY 200 the browser read as success.
+  return Promise.resolve(dispatchRoute(req, res)).catch((e) => routeFailure(res, e));
+});
+
+// routeFailure — the central fail path for the async-route guard. Headers not yet sent → a 500 JSON envelope
+// (redacted message); headers already open (a streaming route mid-flight) → destroy the socket so the client
+// sees a broken stream, not a truncated-but-'ok' one. Mirrors runroute.js's contract for the general routes.
+function routeFailure(res, err) {
+  try {
+    const message = 'sidecar failure: ' + ((err && err.message) || err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: redact(message) }));
+    } else {
+      try { res.destroy(); } catch (_) {}
+    }
+  } catch (_) { try { res.destroy(); } catch (_) {} }
+}
+
+function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
   if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch((e) => runRouteFailure(res, e, redact));
-  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  // TTS/STT honor the 200-always media contract (backend law): a thrown failure must still answer 200 with an
+  // error payload, NOT flow into routeFailure's 500 — the frontend voice loop depends on it. So these keep an
+  // explicit catch that resolves 200 (never an empty/5xx body) instead of falling through to the central guard.
+  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: redact('tts failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
+  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason: redact('stt failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
-  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res);
   if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
   if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
-  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
+  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
+  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
@@ -2143,8 +2191,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
   if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
-  if (req.method === 'GET' && req.url === '/api/models/openrouter') return handleOpenRouterModels(req, res).catch(() => { try { res.end(JSON.stringify({ models: [] })); } catch (_) {} });
+  // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
+  // dead code (shadowed by this line) and has been removed. handleProviderModels answers 200 with {models:[]}
+  // + error on any catalog failure, so it never throws into the central guard.
+  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
@@ -2170,18 +2220,18 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/arm') return handleCronArm(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res);
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
-  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res).catch(() => { try { res.end(); } catch (_) {} });
-  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
   // ADDITIVE (Lane B / ux-run-truth): read-only stat of a user-chosen KEEP destination folder, so the return
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res);
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
@@ -2220,7 +2270,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/memory/config') return handleMemoryConfigSet(req, res);
   if (req.method === 'GET' && /^\/shared\//.test((req.url || '').split('?')[0])) return serveShared(req, res);
   return serveStatic(req, res);
-});
+}
 server.on('error', (e) => {
   if (e && e.code === 'EADDRINUSE') console.error('✗ Port ' + PORT + ' is already in use (another sidecar already running?). Stop it, or set STARNET_PORT=<n> and retry.');
   else if (e && e.code === 'EACCES') console.error('✗ Port ' + PORT + ' needs elevated privileges — pick a port >= 1024 via STARNET_PORT.');
@@ -2533,8 +2583,8 @@ async function handleConfigExport(req, res) {
    the app can (a) surface re-enter-your-key states and (b) restore its own localStorage slices. Additive/durable:
    each store's own save path runs, so nothing bypasses the .bak/fsync discipline. */
 async function handleConfigImport(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const envelope = body.envelope || body;   // tolerate a bare envelope or a wrapped one
   const parsed = configExport.parseImport(envelope);
   if (!parsed.ok) return json(400, { error: parsed.error });
@@ -3481,16 +3531,25 @@ async function handleWorkshopDecide(req, res) {
   if (!destPath) return json(400, { error: 'choose where to keep it' });
   const man = await validateWorkshopManifest(agentId, runId);
   if (!man) return json(404, { error: 'that deliverable is no longer available' });
+  // SAFE-BY-DEFAULT: copy with COPYFILE_EXCL so Keep never silently clobbers a file the user already has at
+  // destPath. An explicit body.overwrite:true opts into the old replace behavior. The common happy path (a
+  // fresh folder, or filenames that don't collide) is unaffected — EXCL only fires on a real pre-existing file,
+  // which we surface as a clear "already exists" refusal instead of an opaque 500 or a silent overwrite.
+  const overwrite = body.overwrite === true;
+  const copyFlags = overwrite ? 0 : fs.constants.COPYFILE_EXCL;
   let copied = 0;
   try {
     for (const f of man.files) {
       const { abs: srcAbs } = await fsJail.resolveInside(agentId, relDir + '/' + f.path);
       const destAbs = path.join(destPath, f.path);
       await fsp.mkdir(path.dirname(destAbs), { recursive: true });
-      await fsp.copyFile(srcAbs, destAbs);
+      await fsp.copyFile(srcAbs, destAbs, copyFlags);
       copied++;
     }
-  } catch (e) { return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) }); }
+  } catch (e) {
+    if (e && e.code === 'EEXIST') return json(409, { error: 'some files already exist in that folder — pick an empty folder, or the same one to overwrite.', code: 'EEXIST', overwritable: true });
+    return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) });
+  }
   // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
   // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
   if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
@@ -3566,8 +3625,8 @@ async function handleSubagentInterrupt(req, res) {
 
 async function handleRoster(req, res) {
   let body;
-  try { body = JSON.parse(await readBody(req, 2 << 20)); }
-  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  try { body = JSON.parse(await readBody(req, 2 << 20, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const list = (body && Array.isArray(body.agents)) ? body.agents : [];
   replaceAgentRoster(list);
   saveAgentRoster();
@@ -3677,8 +3736,8 @@ function serveAgentSkills(req, res) {
 
 // POST /api/agent-skills/manage { agentId, action, ... } - user-visible runtime skill management.
 async function handleAgentSkillManage(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const agentId = String(body.agentId || 'agent');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   const r = skillStore.manage(Object.assign({}, body, { agentId, createdBy: 'user' }));
@@ -3690,8 +3749,8 @@ async function handleAgentSkillManage(req, res) {
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
-  try { body = JSON.parse(await readBody(req, 2 << 20)); }
-  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  try { body = JSON.parse(await readBody(req, 2 << 20, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels, fallbackProviders } = body || {};
   const recurring = !!(body && body.recurring);   // the browser's mint detector saw this task SHAPE before → salience boost for reflection
   const runProvider = normalizeProvider(provider);
@@ -3882,6 +3941,23 @@ async function runOnce(o) {
         if (view) { try { sse.broadcast(name, redact(view)); } catch (_) {} }
       }
     : rawEmit;
+
+  // ---- same-agent run mutex (workspace/shadow-git collision guard) ----
+  // The concurrency gate DELIBERATELY lets a 2nd run of an already-admitted agent through (it's the FAN-OUT of
+  // distinct agents it bounds, not a single agent's back-to-back work). But two runs of the SAME agentId race on
+  // ONE thing they can't share: the agent's single workspace directory + its shadow-git checkpoint repo — a file
+  // clobber and a `git index.lock` fight (one run's checkpoint commit aborts because the other holds the lock).
+  // So before admission, refuse a run whose agentId ALREADY has one in flight. Marked transient (the client
+  // retries transients) because the collision is momentary — the first run finishes and the slot frees. This is
+  // scoped to agentId-and-therefore-workspace: every team worker / ephemeral clone takes a DISTINCT agentId
+  // (orchestration.js validates worker.agentId !== leadId; team.spawn mints 'sub-'+uuid), so a lead fanning out
+  // to its crew is never self-blocked — only two runs literally sharing one agent's desk collide here.
+  if (concurrencyGate.inFlight(agentId) > 0) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task. Wait for it to finish before starting another — one run at a time per agent (they share a workspace).' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;   // no slot was taken (we checked BEFORE tryEnter), so nothing to leave; the outer finally is a no-op here
+  }
 
   // ---- concurrency admission (multi-agent fan-out guard) ----
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
@@ -4444,6 +4520,10 @@ async function runOnce(o) {
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
+      // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
+      // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
+      // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
+      sleep: (ms) => new Promise(r => setTimeout(r, ms)),
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
@@ -4593,9 +4673,13 @@ async function handlePermissionsRevoke(req, res) {
 // cabinet-OBJECT-placed requirement (the B1 honesty story) is the autopilot's client-side gate (Autopilot.canWrite);
 // the server's authoritative boundary here is the cabinet:write GRANT + the fs-jail + the hardline floor.
 async function handleAutonomyWrite(req, res) {
-  const sendJson = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const agentId = String(body.agentId || 'agent');
+  // agentId keys the workspace jail + the checkpoint store + the blanket-grant set; validate it to the same
+  // shape every sibling route enforces so a crafted id can't reach outside its lane (defense in depth on top of
+  // the fs-jail resolveInside below). Matches ID_RE used across the roster/cron/orchestration surfaces.
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return sendJson(400, { ok: false, reason: 'invalid agentId' });
   const rel = body.path, content = body.content;
   if (typeof rel !== 'string' || !rel || typeof content !== 'string') return sendJson(400, { ok: false, reason: 'missing path or content' });
   // a one-off registry carrying the cabinet (fs) tools — assembled exactly like runOnce (same makeFsTools args).
@@ -5002,27 +5086,6 @@ async function handleProviderModels(req, res) {
   }
 }
 
-async function handleOpenRouterModels(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  try {
-    const provider = makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE });
-    const models = await provider.listModels();
-    json(200, {
-      models: models.map(m => ({
-        id: m.id,
-        name: m.name || m.id,
-        context_length: m.context_length || 0,
-        pricing: m.pricing || null,
-        supportsTools: m.supportsTools !== false,
-        supportsReasoning: !!m.supportsReasoning,
-        supported_parameters: Array.isArray(m.supported_parameters) ? m.supported_parameters : [],
-        reasoningEfforts: Array.isArray(m.reasoningEfforts) ? m.reasoningEfforts : []
-      }))
-    });
-  } catch (e) {
-    json(200, { models: [], error: (e && e.message) || 'OpenRouter catalog unavailable' });
-  }
-}
 
 async function handleCodexModels(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -5154,7 +5217,7 @@ async function handleTts(req, res) {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
       body: JSON.stringify(payload)
-    }));
+    }, 60000));
   } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
   if (!or.ok) {
     let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
@@ -5187,12 +5250,23 @@ async function handleTts(req, res) {
 
 // read a raw binary request body into a single Buffer (readBody concatenates as a string, which mangles
 // non-UTF8 audio bytes). Capped like readBody so a hostile client can't OOM the host.
-function readBodyBuffer(req, max) {
+function readBodyBuffer(req, max, res) {
   return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    const chunks = []; let n = 0; let over = false;
+    req.on('data', c => {
+      if (over) return;
+      n += c.length;
+      if (n > max) {
+        over = true;
+        // Answer 413 CLEANLY (when a res is available) BEFORE tearing the socket down, so the client reads a
+        // real "payload too large" instead of a bare ECONNRESET. Then destroy to stop consuming the oversized body.
+        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
+        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
+        reject(e); try { req.destroy(); } catch (_) {}
+      } else chunks.push(c);
+    });
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks)); });
+    req.on('error', (e) => { if (!over) reject(e); });
   });
 }
 
@@ -5253,7 +5327,7 @@ async function handleStt(req, res) {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
         body: JSON.stringify(payload(model))
-      }));
+      }, 120000));
     } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
     if (!r.ok) {
       let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
@@ -5269,15 +5343,26 @@ async function handleStt(req, res) {
   return degrade(lastReason);
 }
 
-function readBody(req, max) {
+function readBody(req, max, res) {
   // Accumulate raw Buffers and decode ONCE at the end. The old `b += c` did a per-chunk toString(), which
   // mangles a multi-byte UTF-8 char (emoji, CJK, accented) that happens to be SPLIT across two TCP chunks —
   // each half decodes to replacement chars. Byte-counting for the cap stays correct (Buffer.length is bytes).
+  // Over-limit: answer 413 cleanly (when a res is passed) BEFORE destroying, so the client sees "too large"
+  // rather than a mid-request connection reset. Backward compatible — callers that omit res keep old behavior.
   return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    const chunks = []; let n = 0; let over = false;
+    req.on('data', c => {
+      if (over) return;
+      n += c.length;
+      if (n > max) {
+        over = true;
+        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
+        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
+        reject(e); try { req.destroy(); } catch (_) {}
+      } else chunks.push(c);
+    });
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', (e) => { if (!over) reject(e); });
   });
 }
 
