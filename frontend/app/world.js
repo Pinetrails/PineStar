@@ -2975,8 +2975,48 @@ const World = (() => {
     }
   }
 
-  /* ---------- render ---------- */
+  /* ---------- render ----------
+     frame() is a CRASH-GUARD WRAPPER around frameBody(): it schedules the NEXT rAF FIRST (so a throw in the
+     render body can never permanently kill the loop), then runs the body in try/catch. A throwing frame is
+     logged ONCE per distinct message (no per-frame spam); after RENDER_FAULT_LIMIT consecutive throws it paints
+     an honest "RENDER FAULT" overlay while still attempting frames, and a single clean frame resets the counter.
+     frameBody() therefore NEVER reschedules rAF itself — the wrapper owns scheduling, so exactly one callback is
+     ever alive (double-scheduling was the old early-out bug). */
+  let renderFaults = 0;         // consecutive throwing frames
+  let lastFaultMsg = '';        // de-dupe console spam: only log a NEW error message
+  const RENDER_FAULT_LIMIT = 30;
   function frame(now) {
+    if (running) raf = requestAnimationFrame(frame);   // schedule next frame FIRST — a throw below can't kill the loop
+    try {
+      frameBody(now);
+      if (renderFaults) { renderFaults = 0; lastFaultMsg = ''; }   // a clean frame clears the fault state
+    } catch (e) {
+      renderFaults++;
+      const msg = (e && e.message) || String(e);
+      if (msg !== lastFaultMsg) { lastFaultMsg = msg; try { console.error('[world] render frame threw (x' + renderFaults + '):', e); } catch (_) {} }
+      if (renderFaults >= RENDER_FAULT_LIMIT) { try { drawRenderFault(); } catch (_) {} }
+    }
+  }
+
+  // an honest fault overlay: the station render loop is faulting, and the app SAYS SO rather than freezing on a
+  // stale frame (truthful telemetry). Screen-space, VT323 + phosphor glow, drawn on the raw device pixels.
+  function drawRenderFault() {
+    if (!ctx || !cv) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const cx = cv.width / 2, cy = cv.height / 2;
+    ctx.font = Math.round(28 * (window.devicePixelRatio || 1)) + 'px VT323, monospace';
+    ctx.shadowColor = 'rgba(255,80,60,0.9)'; ctx.shadowBlur = 12 * (window.devicePixelRatio || 1);
+    ctx.fillStyle = '#ff5a3c';
+    ctx.fillText('RENDER FAULT', cx, cy);
+    ctx.font = Math.round(14 * (window.devicePixelRatio || 1)) + 'px VT323, monospace';
+    ctx.shadowBlur = 6 * (window.devicePixelRatio || 1);
+    ctx.fillStyle = '#ffb0a0';
+    ctx.fillText('the station render loop is faulting — reload if this persists', cx, cy + Math.round(26 * (window.devicePixelRatio || 1)));
+    ctx.shadowBlur = 0; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+
+  function frameBody(now) {
     const dt = Math.min(64, now - last); last = now; fnow = now;
     if (wakeDark !== wakeDarkTarget) { wakeDark += (wakeDarkTarget - wakeDark) * Math.min(1, dt / 260); if (Math.abs(wakeDark - wakeDarkTarget) < 0.002) wakeDark = wakeDarkTarget; }
     if (kindleArmed) {   // THE KINDLING: the user's hold fills the spark; release lets it ebb; full → ignite
@@ -3007,7 +3047,7 @@ const World = (() => {
       ctx.fillRect((s.x * cv.width + now / 1000 * SPD[band]) % cv.width, s.y * cv.height, s.r, s.r);
     }
 
-    if (!cache) { if (running) raf = requestAnimationFrame(frame); return; }
+    if (!cache) return;   // wrapper frame() already scheduled the next rAF — never double-schedule here
     if (fitNeeded && !camAnim) { fitCamera(); fitNeeded = false; }   // the scripted awakening camera owns the transform while it runs
     if (camLerp && !camAnim) {   // gently ease toward a conversation framing (set by focusAgent); the awakening camera wins
       const k = 0.16;
@@ -3123,8 +3163,7 @@ const World = (() => {
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
     drawCurve(now); // barrel-warp the whole feed IN-CANVAS — the original (dot-matrix-era) curve, no dots
     drawCRT(now);   // scanlines + fade, painted in-canvas at device-px OVER the warped feed (no moiré)
-
-    if (running) raf = requestAnimationFrame(frame);
+    // NOTE: the next rAF is scheduled by the frame() crash-guard wrapper, BEFORE this body runs — never here.
   }
 
   // ---- CRT SCANLINES + FADE (screen-space, drawn last, OVER the curved feed) --------
