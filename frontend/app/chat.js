@@ -1494,6 +1494,37 @@ const Chat = (() => {
     autoscroll();
   }
 
+  // R1 MID-TASK FORK — the answer that IS work: render the agent's preference fork as one-tap chips. The
+  // pick does double duty — it banks as a Commander-authored STYLE belief (full confidence weight: given in
+  // context, about a real decision, immediately acted on; + the R4 receipt proves it stuck) AND continues
+  // the conversation as the Commander's next message so the task proceeds with it. "you decide" banks
+  // nothing and hands the choice back. One fork per reply by construction (parse reads the first marker).
+  function offerFork(fk) {
+    const items = fk.options.map(o => ({ label: o, value: o }));
+    items.push({ label: 'you decide', value: '', skip: true });
+    const q = row('agent'); q.d.classList.add('nudge');
+    q.body.textContent = '⌖ ' + fk.question;
+    autoscroll();
+    choices(items, item => {
+      vanish(q.d);
+      const ans = (item && !item.skip) ? String(item.value || '').trim() : '';
+      if (ans) {
+        try {
+          const bt = Fork.beliefText ? Fork.beliefText(fk.question, ans) : ans;
+          if (bt && typeof DossierStore !== 'undefined' && DossierStore.upsert) {
+            DossierStore.upsert('style', { text: bt, source: 'commander' });
+            briefingReceipt('style');
+            // re-read NOW so the gate re-evaluates before the continuation run composes its prompt —
+            // one banked answer usually grounds the style model and retires the fork directive.
+            if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.refresh) { try { UnderstandingStore.refresh(false); } catch (_) {} }
+          }
+        } catch (_) {}
+      }
+      const msg = ans || 'either works — your call.';
+      if (!isBusy()) send(msg); else echoUser(msg);   // continue the task with the answer (busy = a rare race; the echo still records it)
+    });
+  }
+
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
   // feeding the station visibly pays off. Truthful by construction: the dossier block folds into EVERY agent's
   // system prompt (DossierStore.composeBlock), so "every agent now knows" states the wiring, not a wish. Same
@@ -3397,6 +3428,13 @@ const Chat = (() => {
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
+        // R1 MID-TASK FORK: the agent may have ended this reply with one FORK marker (earned only while the
+        // style model's confidence is low — the directive isn't even in the prompt otherwise). Render the
+        // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
+        if (isActiveWs(ws) && replyText && typeof Fork !== 'undefined' && Fork.parse) {
+          const fk = Fork.parse(replyText);
+          if (fk) offerFork(fk);
+        }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.
         if (!isTask && isActiveWs(ws)) World.say(replyText);
@@ -3651,5 +3689,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn };
 })();

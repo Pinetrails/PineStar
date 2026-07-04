@@ -146,6 +146,12 @@ const App = (() => {
       const cd = DossierStore.composeBlock();
       if (cd) p += '\n\n' + cd;
     }
+    // R1 MID-TASK FORK: the fork instruction rides ONLY while the style model's confidence is low
+    // (Fork.shouldOffer over the live understanding read) — self-retiring: once the station knows how the
+    // Commander likes work done, this block vanishes and forks stop appearing. Fail-closed on any hiccup.
+    if (typeof Fork !== 'undefined' && typeof UnderstandingStore !== 'undefined') {
+      try { if (Fork.shouldOffer(UnderstandingStore.read())) p += '\n\n' + Fork.directive(); } catch (_) {}
+    }
     return p;
   }
   // the dossier calls this when the Commander edits & saves a config file: fold the patch into the
@@ -1571,6 +1577,22 @@ const App = (() => {
     // No surface of its own — it AIMS the earned curiosity question at the weakest dimension and upgrades the
     // COMMANDER panel's familiarity meter. Init AFTER DossierStore/ProfileStore/GoalStore (it reads all three).
     if (typeof UnderstandingStore !== 'undefined') UnderstandingStore.init({ now: () => Date.now() });
+    // R1: the fork directive is BAKED into the cached agent.systemPrompt, so a gate flip (style confidence
+    // crossing the floor — e.g. the first banked fork answer grounds the style model) must recompose the
+    // prompt or the directive would never retire. Flips are rare, so the prefix stays cache-warm between.
+    if (typeof UnderstandingStore !== 'undefined' && typeof Fork !== 'undefined' && UnderstandingStore.subscribe) {
+      let forkGate = null;
+      UnderstandingStore.subscribe(u => {
+        const g = Fork.shouldOffer(u);
+        if (forkGate === g) return;
+        const first = forkGate === null;
+        forkGate = g;
+        if (first || !agent) return;   // the initial read only sets the baseline (the boot compose already used it)
+        agent.systemPrompt = composeSystemPrompt(agent);
+        if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
+        persist();   // mirror applyAgentConfig: the recomposed prompt is part of the agent's persisted truth
+      });
+    }
     // G1c MAINTENANCE-QUEST GENERATOR: recurring slag causes (World.slagPostmortems ring) + a jammed routine
     // (cron.skipped streak) become fix-it quests, clearing when the signal clears. Init AFTER World.loadStation
     // (it reads the live SlagLog ring) and after QuestStateStore. Self-persists (own key); never emits.
