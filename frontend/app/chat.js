@@ -1497,6 +1497,26 @@ const Chat = (() => {
     autoscroll();
   }
 
+  // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
+  // feeding the station visibly pays off. Truthful by construction: the dossier block folds into EVERY agent's
+  // system prompt (DossierStore.composeBlock), so "every agent now knows" states the wiring, not a wish. Same
+  // passive gold-inset receipt family as renderReceipts — never claims the beat slot, carries no input. No veto:
+  // the dossier belief it points at is edited/forgotten in the COMMANDER panel, which stays the one owner of undo.
+  function briefingReceipt(dim) {
+    try {
+      const d = (typeof Dossier !== 'undefined' && Dossier.DIMS) ? Dossier.DIMS.find(x => x.key === dim) : null;
+      const label = d ? String(d.label).toLowerCase() : 'profile';
+      const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin'); head.d.classList.add('receipts');
+      const item = document.createElement('div'); item.className = 'receipt-item';
+      const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = 'BRIEFING';
+      const text = document.createElement('span'); text.className = 'receipt-text';
+      text.textContent = '◈ briefing updated — every agent on this station now knows your ' + label + '.';
+      item.appendChild(kind); item.appendChild(text);
+      head.body.appendChild(item);
+      autoscroll();
+    } catch (_) {}
+  }
+
   /* GROWTH Tier 1 — THE STUDY BEAT (dossier Phase B: work → understanding). After a salient run the sidecar
      studies the transcript and stashes DOSSIER belief-update proposals; here we fetch them and — at TURN-IN
      PRIORITY but NEVER stacking a second beat — offer ONE for Keep / Edit / Discard. Keep folds the belief into
@@ -1615,6 +1635,7 @@ const Chat = (() => {
         const ok = StudyStore.accept(prop, editedText, agentId);
         if (!ok) { settle('✕ couldn’t apply — it changed', true); return; }   // honest: never flash "✓ retired" on a failed write
         settle(prop.kind === 'retire' ? '✓ retired' : (editedText != null ? 'saved (edited)' : 'kept'), false);
+        if (prop.kind !== 'retire') briefingReceipt(prop.dim);   // R4: a KEPT observation visibly propagates ("now in every agent's briefing"); a retire removes knowledge — nothing new to announce
         return;
       }
       StudyStore.discard(prop, agentId); settle('✕ discarded', true);
@@ -1933,7 +1954,7 @@ const Chat = (() => {
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
           skip: skip,
-          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity' }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); },
+          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity' }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },   // R4: the answer visibly pays off — one provable "now in every agent's briefing" line (this was the ONE commit path with zero acknowledgment)
           onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); }
         });
       } else if (typeof CuriosityStore !== 'undefined') {
@@ -3633,5 +3654,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, runDidWork, awayDigest, awayReview, workshopReturn };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn };
 })();
