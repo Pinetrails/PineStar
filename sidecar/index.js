@@ -3914,6 +3914,23 @@ async function runOnce(o) {
       }
     : rawEmit;
 
+  // ---- same-agent run mutex (workspace/shadow-git collision guard) ----
+  // The concurrency gate DELIBERATELY lets a 2nd run of an already-admitted agent through (it's the FAN-OUT of
+  // distinct agents it bounds, not a single agent's back-to-back work). But two runs of the SAME agentId race on
+  // ONE thing they can't share: the agent's single workspace directory + its shadow-git checkpoint repo — a file
+  // clobber and a `git index.lock` fight (one run's checkpoint commit aborts because the other holds the lock).
+  // So before admission, refuse a run whose agentId ALREADY has one in flight. Marked transient (the client
+  // retries transients) because the collision is momentary — the first run finishes and the slot frees. This is
+  // scoped to agentId-and-therefore-workspace: every team worker / ephemeral clone takes a DISTINCT agentId
+  // (orchestration.js validates worker.agentId !== leadId; team.spawn mints 'sub-'+uuid), so a lead fanning out
+  // to its crew is never self-blocked — only two runs literally sharing one agent's desk collide here.
+  if (concurrencyGate.inFlight(agentId) > 0) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task. Wait for it to finish before starting another — one run at a time per agent (they share a workspace).' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;   // no slot was taken (we checked BEFORE tryEnter), so nothing to leave; the outer finally is a no-op here
+  }
+
   // ---- concurrency admission (multi-agent fan-out guard) ----
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
   // admitted agent always passes (no new slot). On refusal emit the same start→error→end shape every other
