@@ -141,6 +141,11 @@
 .mkt-chip.pick.sel { color: var(--ink); background: var(--accent, var(--ph)); border-color: var(--accent, var(--ph)); text-shadow: none; }
 .mkt-chip.pick:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
 .mkt-chips-loading { opacity: .7; }
+/* kit picker with a visible capability blurb next to each toggle (custom-class builder) */
+.mkt-kitpicks { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
+.mkt-kitpick { display: flex; align-items: center; gap: 9px; }
+.mkt-kitpick .mkt-chip.pick { flex: 0 0 auto; min-width: 92px; }
+.mkt-kitpick-grant { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; text-transform: none; }
 .mkt-lbl-hint { color: var(--ph-dim); font-size: 10px; letter-spacing: .5px; opacity: .8; text-transform: none; }
 
 /* ---- the DOSSIER (right pane: the focused class detail + the action) ---- */

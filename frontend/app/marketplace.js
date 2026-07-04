@@ -250,7 +250,7 @@ const Marketplace = (() => {
   }
   function subtitle() {
     if (ctx && ctx.mode === 'pick') return ctx.summon
-      ? ('summon a new agent onto your crew — it gets its own workstream'
+      ? ('summon a new agent onto your crew — it gets its own chat thread'
          + (ctx.concurrentCap > 0 ? ' · up to ' + ctx.concurrentCap + ' run at once' : ''))
       : 'choose a specialist to wake your agent as';
     const who = (ctx && ctx.agentName) || 'your agent';
@@ -530,9 +530,9 @@ const Marketplace = (() => {
       const present = have.has(t);
       if (!present) missing++;
       return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
-        '<span class="mkt-kit-obj">' + esc(kitPropLabel(t)) + '</span>' +
+        '<span class="mkt-kit-obj" data-hint="' + esc(t) + '">' + esc(kitPropLabel(t)) + '</span>' +
         '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span>' +
-        '<span class="mkt-kit-state">' + (present ? 'on station' : 'not on station — add in REFIT') + '</span></div>';
+        '<span class="mkt-kit-state">' + (present ? 'on station' : 'not on station — add in REFIT (optional — you can still summon)') + '</span></div>';
     }).join('');
     const note = missing
       ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on the station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
@@ -607,7 +607,7 @@ const Marketplace = (() => {
     const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ SUMMON ' + esc(s.name).toUpperCase());
     const ctaSub = deploy
       ? 're-specs ' + esc((ctx && ctx.agentName) || 'your agent') + '’s purpose &amp; standing orders'
-      : 'opens a fresh workstream · pre-fills name, voice &amp; purpose — <b>you pick its character next</b>';
+      : 'opens its own <span data-hint="workstream">chat thread</span> — name, voice &amp; purpose pre-filled from this class';
     const custActs = s.custom
       ? '<div class="mkt-cta-row"><button class="bb sm mkt-edit" data-id="' + esc(s.id) + '">✎ EDIT</button>' +
         '<button class="bb sm danger mkt-del" data-id="' + esc(s.id) + '">⌫ DELETE</button></div>' : '';
@@ -615,9 +615,9 @@ const Marketplace = (() => {
     // record at summon; the model is a tier that resolves to the pinned/station-default model (advisory pip).
     const effort = s.reasoningEffort ? esc(String(s.reasoningEffort).toUpperCase()) : null;
     const clearRow =
-      '<span class="k">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) +
+      '<span class="k" data-hint="clearance">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) +
         ' <span class="mkt-clr-note">model: station default</span></span>' +
-      '<span class="k">EFFORT</span><span class="v">' +
+      '<span class="k" data-hint="effort">EFFORT</span><span class="v">' +
         (effort ? '<span class="mkt-chip">' + effort + '</span> <span class="mkt-clr-note">applied at summon</span>'
                 : '<span class="mkt-clr-note">station default</span>') + '</span>';
     return '<div class="mkt-dos-label">▮ CLASS DOSSIER</div>' +
@@ -627,15 +627,15 @@ const Marketplace = (() => {
           '<div class="mkt-dos-class">CLASS · ' + esc(codeOf(s)) + '</div></div></div>' +
       '<div class="mkt-spec">' +
         clearRow +
-        '<span class="k">VOICE</span><span class="v">◈ ' + esc(voiceName(s.persona)) + '</span>' +
-        '<span class="k">FOCUS</span><span class="v"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span></span>' +
+        '<span class="k" data-hint="voice">VOICE</span><span class="v">◈ ' + esc(voiceName(s.persona)) + '</span>' +
+        '<span class="k" data-hint="focus">FOCUS</span><span class="v"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span></span>' +
       '</div>' +
       '<div class="mkt-block"><div class="bh">FOCUS LANES</div><div class="mkt-bars">' + bar('code', 'CODE') + bar('research', 'RESEARCH') + bar('general', 'OPS') + '</div></div>' +
       kitBlockHTML(s) +
       skillPackageHTML(s) +
       '<div class="mkt-block"><div class="bh">PURPOSE</div><p class="bp">' + esc(s.purpose) + '</p></div>' +
       (s.manual ? '<div class="mkt-block"><div class="bh">STANDING ORDERS</div><pre>' + esc(s.manual) + '</pre></div>' : '') +
-      (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+      (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING — things you can say to it</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
       '<div class="mkt-dos-cta">' + custActs +
         '<button class="mkt-cta-main mkt-deploy" data-id="' + esc(s.id) + '">' + ctaLabel + ' ▸</button>' +
         '<div class="mkt-cta-sub">' + ctaSub + '</div>' +
@@ -825,8 +825,8 @@ const Marketplace = (() => {
     const res = rankSpecs(Specialties.builtins(), ctx && ctx.currentSpecialtyId);
     if (!res.items.length) return '';
     const head = res.personalized
-      ? '★ RECOMMENDED FOR YOU'
-      : '◈ STARTING LINEUP — one per lane while the station learns what you work on';
+      ? '★ RECOMMENDED FOR YOU — based on your recent runs'
+      : '◈ STARTING LINEUP — one per lane while the station learns what you work on · this shelf changes as you use agents';
     return '<div class="mkt-sect-h mkt-rec-sect">' + head + '</div><div class="mkt-rec-rail">' +
       res.items.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
@@ -841,7 +841,7 @@ const Marketplace = (() => {
       .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
       .filter(x => x.s && x.s.id !== excludeId);
     if (!cards.length) return '';
-    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — the next hire your real work points to</div>' +
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — based on your recent runs · the next hire your real work points to</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- PROSPECTS: bespoke DRAFTS the station authored from the Commander's real work (Slice 4) ----------
@@ -866,7 +866,7 @@ const Marketplace = (() => {
       (p.why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(p.why) + '</div>' : '') +
       '<div class="mkt-prospect-prov">◇ drafted by the station from your work — review &amp; save to add it</div>' +
       '<div class="mkt-prospect-acts"><button class="bb sm mkt-prospect-open" data-prospect="' + esc(p.id) + '">▸ REVIEW &amp; SAVE</button>' +
-        '<button class="bb sm mkt-prospect-dismiss" data-prospect="' + esc(p.id) + '" aria-label="dismiss this drafted role" title="not for me">✕</button></div>' +
+        '<button class="bb sm mkt-prospect-dismiss" data-prospect="' + esc(p.id) + '" aria-label="dismiss this drafted role forever" title="dismiss forever — the station won\'t draft this role again">✕</button></div>' +
     '</div>';
   }
   /* ---------- R6: the "FOR YOU" row (ranked by dossier interest lanes + goal-text keyword match) ----------
@@ -998,9 +998,13 @@ const Marketplace = (() => {
       sfx('click');
       prefillBuilderFromProspect(p);
     }));
+    // dismiss permanently denylists the fingerprint (the station won't re-draft this role), so it takes
+    // a two-step arm/confirm like the class DELETE button — the armed label admits the permanence.
     sc.querySelectorAll('.mkt-prospect-dismiss').forEach(b => b.addEventListener('click', () => {
-      if (ProspectStore.dismiss) ProspectStore.dismiss(b.dataset.prospect);
-      sfx('close'); renderStage();
+      armDelete(b, '✕', () => {
+        if (ProspectStore.dismiss) ProspectStore.dismiss(b.dataset.prospect);
+        renderStage();
+      }, 'DISMISS FOREVER?');
     }));
   }
   // seed the custom-class builder state from a prospect draft, then open it (mirrors the R5 recipeMint pre-fill).
@@ -1100,9 +1104,10 @@ const Marketplace = (() => {
     }));
   }
   // two-step arm/confirm on a destructive button (the bay's idiom — never a native confirm)
-  function armDelete(b, label, run) {
+  // armLabel is the text shown once armed (defaults to 'SURE?'); lets a destructive action admit permanence.
+  function armDelete(b, label, run, armLabel) {
     if (b.dataset.armed !== '1') {
-      b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'SURE?'; sfx('bad');
+      b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = armLabel || 'SURE?'; sfx('bad');
       setTimeout(() => { if (b.isConnected) { b.dataset.armed = '0'; b.classList.remove('armed'); b.textContent = label; } }, 4000);
       return;
     }
@@ -1665,7 +1670,7 @@ const Marketplace = (() => {
       // STATION GEAR — capability objectTypes this class draws on under the overseer (informational; labels from
       // the LIVE catalog). Not per-agent props — shared station gear; the picks round-trip into the saved spec.
       '<label class="mkt-lbl">STATION GEAR IT DRAWS ON <span class="mkt-lbl-hint">— shared gear it uses under the overseer</span></label>' +
-      '<div class="mkt-chips" id="mkt-b-kit">' + buildKitChipsHTML() + '</div>' +
+      '<div class="mkt-kitpicks" id="mkt-b-kit">' + buildKitChipsHTML() + '</div>' +
       // SKILL PACKAGE — bundled recipes enabled for this class (from the live /api/skills catalog, filled async).
       '<label class="mkt-lbl">SKILL PACKAGE <span class="mkt-lbl-hint">— recipes it follows when a task matches</span></label>' +
       '<div class="mkt-chips" id="mkt-b-skills"><span class="mkt-hint mkt-chips-loading">loading the skill library…</span></div>' +
@@ -1676,11 +1681,15 @@ const Marketplace = (() => {
   // the pickable kit objectTypes — the auto-requisitionable capabilities (computer/connector are per-agent
   // manual-bind, per-agent bound props, never shared station gear a class draws on). Labels from the live source.
   const KIT_PICKABLE = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
+  // each kit pick shows its capability blurb (from capGrant) next to the toggle, so a beginner sees what the
+  // gear actually grants ("the WEB — live search & fetch") instead of a bare prop label with a hidden title.
   function buildKitChipsHTML() {
     return KIT_PICKABLE.map(t => {
       const on = buildKit.indexOf(t) >= 0;
-      return '<button type="button" class="mkt-chip pick' + (on ? ' sel' : '') + '" data-kit="' + esc(t) + '" ' +
-        'title="' + esc(capGrant(t)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(kitPropLabel(t)) + '</button>';
+      return '<div class="mkt-kitpick">' +
+        '<button type="button" class="mkt-chip pick' + (on ? ' sel' : '') + '" data-kit="' + esc(t) + '" ' +
+          'title="' + esc(capGrant(t)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(kitPropLabel(t)) + '</button>' +
+        '<span class="mkt-kitpick-grant">' + esc(capGrant(t)) + '</span></div>';
     }).join('');
   }
   const effSeg = (e, l) => '<button type="button" class="mkt-seg' + ((buildEffort === e || (e === null && !buildEffort)) ? ' sel' : '') + '" data-effort="' + (e == null ? '' : e) + '">' + l + '</button>';
@@ -1736,6 +1745,13 @@ const Marketplace = (() => {
       const editing = editingId ? Specialties.get(editingId) : null;
       const name = (stage.querySelector('#mkt-b-name').value || '').trim();
       if (!name) { sfx('bad'); note('give your class a name', 'bad'); stage.querySelector('#mkt-b-name').focus(); return; }
+      // mirror the prospect drafter's constraint (prospect.js:112): a specialist with no gear is not a real role.
+      // an empty kit used to save silently; make it explain itself and point back at the gear picker.
+      if (!buildKit.length) {
+        sfx('bad'); note('a specialist with no gear is not a real role — pick at least one kit item', 'bad');
+        const kitHost = stage.querySelector('#mkt-b-kit'); if (kitHost && kitHost.scrollIntoView) kitHost.scrollIntoView({ block: 'center' });
+        return;
+      }
       // when editing, start from the saved record so non-authored carried fields (persona, tags, starters, blurb)
       // survive the round-trip; the form fields below overwrite what the builder exposes.
       const spec = Object.assign({}, editing || {}, {
