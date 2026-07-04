@@ -42,9 +42,16 @@
   const FETCH_TIMEOUT_MS  = 15000;
 
   // ---------- small utilities ----------
-  function withTimeout(promiseFactory, ms) {
+  // Abort the fetch when EITHER our own timeout fires OR the parent run signal aborts (a tool-timeout in the
+  // registry, or the run being cancelled). Chaining the parent means a cancelled/timed-out web_* call actually
+  // drops its in-flight HTTP request instead of running to completion in the background.
+  function withTimeout(promiseFactory, ms, parent) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), ms);
+    if (parent) {
+      if (parent.aborted) { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }
+      else { try { parent.addEventListener('abort', () => { try { ctrl.abort(parent.reason); } catch (_) { ctrl.abort(); } }, { once: true }); } catch (_) {} }
+    }
     return Promise.resolve(promiseFactory(ctrl.signal)).finally(() => clearTimeout(t));
   }
   function decodeEntities(s) {
@@ -222,23 +229,23 @@
       }, extra || {});
     }
 
-    async function ddgSearch(endpoint, parser, query) {
+    async function ddgSearch(endpoint, parser, query, parent) {
       const html = await withTimeout(signal => doFetch(endpoint, {
         method: 'POST',
         headers: searchHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
         body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
         signal
-      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS);
+      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS, parent);
       if (isDDGBlocked(html.status, html.body)) { const e = new Error('duckduckgo rate-limited (anomaly/202)'); e.__blocked = true; throw e; }
       return parser(html.body);
     }
 
     // PRIMARY: Mojeek — keyless GET, independent index, no aggressive bot-shell. Treat a non-200 (e.g. a
     // 403/429 throttle) as a soft failure so the chain falls through to DDG/OpenRouter.
-    async function mojeekSearch(query) {
+    async function mojeekSearch(query, parent) {
       const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + encodeURIComponent(query), {
         method: 'GET', headers: searchHeaders(), signal
-      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS);
+      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS, parent);
       if (res.status !== 200) throw new Error('mojeek http ' + res.status);
       return parseMojeek(res.body);
     }
@@ -246,7 +253,7 @@
     // FALLBACK3: OpenRouter web plugin. Hides the search as one model turn, but very robust. Enabled via the
     // `plugins:[{id:'web'}]` request field (NOT a tools entry) — results come back as message.annotations of
     // type 'url_citation', which we read below.
-    async function openrouterSearch(query) {
+    async function openrouterSearch(query, parent) {
       if (!or || !or.apiKey) throw new Error('no OpenRouter key for search fallback');
       const body = {
         model: or.model || 'openai/gpt-4o-mini',
@@ -258,7 +265,7 @@
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + or.apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify(body), signal
-      }).then(r => r.json()), SEARCH_TIMEOUT_MS + 8000);
+      }).then(r => r.json()), SEARCH_TIMEOUT_MS + 8000, parent);
       const msg = data && data.choices && data.choices[0] && data.choices[0].message;
       // Prefer structured url_citation annotations when present.
       const ann = (msg && msg.annotations) || [];
@@ -278,13 +285,14 @@
     async function webSearch(query, opts) {
       query = String(query || '').trim();
       if (!query) throw new Error('empty query');
+      const parent = opts && opts.signal;   // the run/tool-timeout signal, threaded down so a cancel drops the fetch
       const errors = [];
       const chain = [
-        ['mojeek',          () => mojeekSearch(query)],
-        ['duckduckgo-html', () => ddgSearch('https://html.duckduckgo.com/html/', parseDDGHtml, query)],
-        ['duckduckgo-lite', () => ddgSearch('https://lite.duckduckgo.com/lite/', parseDDGLite, query)]
+        ['mojeek',          () => mojeekSearch(query, parent)],
+        ['duckduckgo-html', () => ddgSearch('https://html.duckduckgo.com/html/', parseDDGHtml, query, parent)],
+        ['duckduckgo-lite', () => ddgSearch('https://lite.duckduckgo.com/lite/', parseDDGLite, query, parent)]
       ];
-      if (or && or.apiKey) chain.push(['openrouter', () => openrouterSearch(query)]);
+      if (or && or.apiKey) chain.push(['openrouter', () => openrouterSearch(query, parent)]);
       for (const [source, fn] of chain) {
         try {
           const results = await fn();
@@ -301,11 +309,11 @@
     // ====================================================================
 
     // PRIMARY: Jina Reader. Keyless 20 RPM. Add deps.jinaKey later to raise to 500 RPM.
-    async function jinaFetch(targetUrl) {
+    async function jinaFetch(targetUrl, parent) {
       const headers = { 'Accept': 'text/plain', 'X-Return-Format': 'text', 'User-Agent': UA };
       if (deps.jinaKey) headers['Authorization'] = 'Bearer ' + deps.jinaKey;
       const res = await withTimeout(signal => doFetch('https://r.jina.ai/' + targetUrl, { headers, signal })
-        .then(async r => ({ status: r.status, body: await r.text() })), FETCH_TIMEOUT_MS);
+        .then(async r => ({ status: r.status, body: await r.text() })), FETCH_TIMEOUT_MS, parent);
       if (res.status === 401 || res.status === 402 || res.status === 429) {
         const e = new Error('jina ' + res.status); e.__retryDirect = true; throw e;
       }
@@ -322,12 +330,12 @@
     // FALLBACK: direct fetch + strip. No rate limit; great for static pages. Redirects are followed
     // MANUALLY so every hop is re-validated against the SSRF guard — a public page cannot bounce us
     // to an internal address (e.g. a 302 -> http://169.254.169.254/ cloud-metadata endpoint).
-    async function directFetch(u0) {
+    async function directFetch(u0, parent) {
       let u = u0;
       for (let hop = 0; hop < 6; hop++) {
         const res = await withTimeout(signal => doFetch(u.href, {
           headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' }, redirect: 'manual', signal
-        }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS);
+        }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS, parent);
         if (res.status >= 300 && res.status < 400 && res.loc) {
           const next = assertSafeUrl(new URL(res.loc, u.href).href);   // re-validate the redirect target
           await assertResolvedSafe(next, doLookup);
@@ -345,11 +353,12 @@
       const u = assertSafeUrl(rawUrl);
       await assertResolvedSafe(u, doLookup);   // refuse names that RESOLVE to private addresses (rebinding)
       const max = (opts && opts.maxChars) || FETCH_MAX_CHARS;
+      const parent = opts && opts.signal;   // run/tool-timeout signal, threaded down so a cancel drops the fetch
       let text, source, jErr;
-      try { text = await jinaFetch(u.href); source = 'jina'; }
-      catch (e) { jErr = e; text = await directFetch(u); source = 'direct'; }
+      try { text = await jinaFetch(u.href, parent); source = 'jina'; }
+      catch (e) { jErr = e; text = await directFetch(u, parent); source = 'direct'; }
       if (!text || !text.trim()) {
-        if (source === 'jina') { text = await directFetch(u); source = 'direct'; }
+        if (source === 'jina') { text = await directFetch(u, parent); source = 'direct'; }
         if (!text || !text.trim()) throw new Error('web_fetch got empty content' + (jErr ? ' (jina: ' + jErr.message + ')' : ''));
       }
       return { text: clamp(text, max), url: u.href, source };
@@ -364,7 +373,7 @@
       schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } },
       run: async (args, ctx) => {
         // visible tool activity is the loop's frozen agent.tool_call / agent.tool_result events
-        const { results, source } = await webSearch(args.query, {});
+        const { results, source } = await webSearch(args.query, { signal: ctx && ctx.signal });
         const content = results.length
           ? results.map((r, i) => (i + 1) + '. ' + r.title + '\n   ' + r.url + (r.snippet ? '\n   ' + r.snippet : '')).join('\n')
           : 'No results.';
@@ -377,7 +386,7 @@
       description: 'Fetch a web page by URL and return its main text content (cleaned). Use after web_search to read a result.',
       schema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
       run: async (args, ctx) => {
-        const { text, url, source } = await webFetch(args.url, {});
+        const { text, url, source } = await webFetch(args.url, { signal: ctx && ctx.signal });
         return { content: text, summary: text.length + ' chars via ' + source };
       }
     };
