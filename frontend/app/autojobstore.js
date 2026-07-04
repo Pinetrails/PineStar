@@ -36,6 +36,21 @@ const AutoJobStore = (() => {
   async function liveJobNames() {
     try { return deps.getExistingJobs ? ((await deps.getExistingJobs()) || []) : []; } catch (_) { return []; }
   }
+  // is the SIDECAR SCHEDULER armed right now? (GET /api/cron `.enabled` = the live cronArmed). This is the REAL gate
+  // on whether a just-scheduled routine will actually fire — the done-line must not promise a run the scheduler
+  // won't make. Injected accessor wins (app.js already reads /api/cron); else a direct best-effort fetch. Undefined
+  // on any failure so the caller can degrade to the neutral copy rather than assert a scheduler state it can't read.
+  async function schedulerArmed() {
+    try { if (deps.schedulerArmed) return !!(await deps.schedulerArmed()); } catch (_) {}
+    try {
+      if (typeof fetch === 'undefined') return undefined;
+      const r = await fetch('/api/cron', { cache: 'no-store' });
+      if (!r.ok) return undefined;
+      const j = await r.json().catch(() => null);
+      return j && typeof j.enabled === 'boolean' ? j.enabled : undefined;
+    } catch (_) { return undefined; }
+  }
+
   // does a live routine already carry this proposal's name? (exact normalized-name match against the live list).
   function existsAmong(title, liveNames) {
     const fp = nameFp(title);
@@ -144,7 +159,13 @@ const AutoJobStore = (() => {
           try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); if (r && r.ok !== false && !(r && r.duplicate)) { scheduled++; live.push(pr.title); } } catch (_) {}
         }
       }
-      if (Dialogue.isOpen()) { await Dialogue.say(AutoJobs.doneLine(scheduled)); Dialogue.close(); }
+      if (Dialogue.isOpen()) {
+        // HONEST done-line: if we actually scheduled something, name whether the scheduler that fires it is armed
+        // (so we never promise a run the disarmed scheduler won't make). undefined armed-state → neutral copy.
+        const armed = scheduled > 0 ? await schedulerArmed() : undefined;
+        await Dialogue.say(AutoJobs.doneLine(scheduled, armed));
+        Dialogue.close();
+      }
       if (opts.proactive) { state.proposed = true; save(); }   // the one-time proactive offer is spent (delivered)
     } catch (_) {
       try { if (Dialogue.isOpen()) Dialogue.close(); } catch (__) {}
@@ -190,7 +211,12 @@ const AutoJobStore = (() => {
     if (deps.scheduleJob) { try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); duplicate = !!(r && r.duplicate); ok = !!(r && r.ok !== false); } catch (_) { ok = false; } }
     // a real success OR a server-reported duplicate both retire the card (a dup is "already handled", not a failure).
     if (ok || duplicate) { state.pending = state.pending.filter(p => p && p.id !== id); save(); }
-    return { ok, duplicate };
+    // ARM-STATE (item #1): on a genuine schedule, tell the render site whether the scheduler that fires it is armed,
+    // so the board/quest-log can surface AutoJobs.armStateLine() honestly ("saved, but the scheduler is off …").
+    // Only probed on a real success (a dup/failure needs no arm hint). undefined → the render site shows no line.
+    let disarmed = null;
+    if (ok && !duplicate) { const armed = await schedulerArmed(); disarmed = AutoJobs.armStateLine(armed); }
+    return { ok, duplicate, disarmed };
   }
   // DECLINE: drop the card (dismissed → gone; the walk-and-pin already played once, it never re-nags for this one).
   function declinePending(id) {

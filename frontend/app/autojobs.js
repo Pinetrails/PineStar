@@ -39,13 +39,35 @@
   // 5-field numeric cron). The model picks one id per job; the Commander can retune it later in the ROUTINES panel.
   // Kept here (not model-authored) so a routine can never be scheduled with an unparseable expression.
   const CADENCES = [
-    { id: 'morning',  label: 'every morning',        schedule: '0 9 * * *' },
-    { id: 'weekly',   label: 'every Monday morning', schedule: '0 9 * * 1' },
+    { id: 'morning',  label: 'every morning',        schedule: '0 9 * * *', atHour: 9 },
+    { id: 'weekly',   label: 'every Monday morning', schedule: '0 9 * * 1', atHour: 9 },
     { id: 'sixhourly',label: 'every 6 hours',        schedule: 'every 6h' },
     { id: 'hourly',   label: 'every hour',           schedule: 'every 1h' }
   ];
   const DEFAULT_CADENCE = 'morning';
   function cadenceById(id) { return CADENCES.filter(c => c.id === id)[0] || CADENCES.filter(c => c.id === DEFAULT_CADENCE)[0]; }
+
+  // TIMEZONE-HONEST CADENCE LABEL. A wall-clock cadence (`0 9 * * *`) fires on the SIDECAR HOST's local wall-clock
+  // when scheduled with a tz (sidecar/cron.js: a schedule's own tz wins; a tz-less one falls back to the host tz =
+  // UTC-or-SKYNET_CRON_TZ). The old label "every morning" hid BOTH the hour and the zone — a beginner can't tell
+  // whether "morning" is 9am here or 9am UTC. So a wall-clock cadence renders "every morning · 9:00 (your local
+  // time)" ONLY when we actually persist the device tz alongside it (deviceTz()), which we do in toCronBody. An
+  // interval cadence ("every 6 hours") carries no clock time, so it renders its plain label unchanged — never a
+  // fabricated hour. `localTz` false → we could not resolve/persist a tz, so we DON'T claim "your local time".
+  function cadenceLabel(id, opts) {
+    const c = cadenceById(id);
+    opts = opts || {};
+    if (!Number.isFinite(c.atHour)) return c.label;      // interval cadence — no wall-clock time to name
+    const time = (c.atHour | 0) + ':00';                 // 24h, un-padded hour ("9:00"), reads naturally for a beginner
+    // only append "(your local time)" when the schedule genuinely carries the device tz (opts.localTz).
+    return c.label + ' · ' + time + (opts.localTz ? ' (your local time)' : '');
+  }
+
+  // the caller's IANA zone, resolved from the browser at schedule time (pure-safe: guarded, never throws). Absent in
+  // node/headless → '' so toCronBody stays tz-less (the host default applies) and the label omits "your local time".
+  function deviceTz() {
+    try { return (Intl.DateTimeFormat().resolvedOptions().timeZone) || ''; } catch (_) { return ''; }
+  }
 
   // THE GATE — should the station PROACTIVELY offer standing-job proposals right now? Returns { go, reason } (honest
   // telemetry). Order: autonomy-on first, then fire-once, then graduation, then do-we-know-enough, then not-already-
@@ -143,7 +165,7 @@
   function toCronBody(proposal) {
     const p = proposal || {};
     const cad = cadenceById(p.cadenceId);
-    return {
+    const body = {
       name: String(p.title || 'Standing job').slice(0, NAME_CHARS),
       prompt: String(p.prompt || ''),
       schedule: cad.schedule,
@@ -152,6 +174,12 @@
       deliver: 'local',
       repeat: { times: null }
     };
+    // TZ HONESTY (cadence item #4): persist the device zone so a wall-clock cadence FIRES on the Commander's local
+    // 9:00 (not UTC), matching the "your local time" label. Additive: the sidecar's /api/cron accepts an optional
+    // `tz` (IANA); a tz-less body still resolves under the host default, so this never breaks an old caller. Only
+    // attach it for a wall-clock cadence (an interval has no local anchor) and only when we could resolve one.
+    if (Number.isFinite(cad.atHour)) { const tz = deviceTz(); if (tz) body.tz = tz; }
+    return body;
   }
 
   // ----- presentation helpers (the approval beat copy; one tested home, the awakening's wry-genius lowercase) -----
@@ -163,8 +191,9 @@
   }
   function proposalLines(p) {
     if (!p || !p.title) return [];
-    const cad = cadenceById(p.cadenceId);
-    const out = ['▸ ' + p.title + ' — ' + cad.label + '.'];
+    // tz-honest cadence: for a wall-clock cadence we persist the device tz in toCronBody, so name the local time.
+    const label = cadenceLabel(p.cadenceId, { localTz: !!deviceTz() });
+    const out = ['▸ ' + p.title + ' — ' + label + '.'];
     if (p.why) out.push(p.why);
     return out;
   }
@@ -174,16 +203,40 @@
       { label: 'skip', value: 'no', skip: true }
     ];
   }
-  function doneLine(scheduled) {
+
+  // ROUTINES-DISARMED TRUTH (item #1). A scheduled routine only fires when the SIDECAR SCHEDULER is armed — that is
+  // the real, provable gate (GET /api/cron `.enabled` / cronArmed), NOT the autonomy dial. (Autonomy Initiative
+  // gates whether the agent PROPOSES standing jobs — shouldPropose above — it does not gate a routine already on
+  // the schedule.) So "saved but won't fire" is an honest claim ONLY when the scheduler is off; asserting anything
+  // about Autonomy here would be telemetry the harness can't prove. Returns null when armed (no line to show) and
+  // an honest {text, cta} when disarmed, so a render site (ROUTINES list / create confirm) can show it uniformly.
+  //   schedulerArmed — GET /api/cron `.enabled` (the live cronArmed). Undefined/false → treat as disarmed.
+  function armStateLine(schedulerArmed) {
+    if (schedulerArmed) return null;
+    return {
+      text: 'saved, but the scheduler is off — this won’t run until you enable scheduling (ROUTINES → enable scheduling).',
+      cta: { label: 'enable scheduling', panel: 'routines' }
+    };
+  }
+
+  function doneLine(scheduled, schedulerArmed) {
     if (scheduled <= 0) return "no worries — i'll keep waiting for your word. you can ask me to propose jobs anytime from ROUTINES.";
+    // HONEST: don't claim it will run if the scheduler that fires it is off. When armed → the normal line; when off
+    // → say it's saved-but-dormant and where to arm it (matches the ROUTINES panel's own disarmed copy).
+    const where = " you'll find " + (scheduled === 1 ? 'it' : 'them') + " (and what " + (scheduled === 1 ? 'it produces' : 'they produce') + ") in ROUTINES.";
+    if (schedulerArmed === false) {
+      return scheduled === 1
+        ? "done — it's saved, but scheduling is OFF so it won't run yet. enable scheduling in ROUTINES to arm it." + where
+        : "done — " + scheduled + " jobs are saved, but scheduling is OFF so they won't run yet. enable scheduling in ROUTINES to arm them." + where;
+    }
     return scheduled === 1
-      ? "done — it's on the schedule. you'll find it (and what it produces) in ROUTINES."
-      : "done — " + scheduled + " jobs are on the schedule now. you'll find them (and what they produce) in ROUTINES.";
+      ? "done — it's on the schedule." + where
+      : "done — " + scheduled + " jobs are on the schedule now." + where;
   }
 
   return {
-    shouldPropose, buildProposalDirective, parseProposals, toCronBody, cadenceById,
-    introLine, proposalLines, approveChoices, doneLine,
+    shouldPropose, buildProposalDirective, parseProposals, toCronBody, cadenceById, cadenceLabel, deviceTz,
+    introLine, proposalLines, approveChoices, doneLine, armStateLine,
     CADENCES, DEFAULT_CADENCE, REQUIRE_DIMS, MIN_KNOWN, MAX_PROPOSALS, MAX_JOBS, NAME_CHARS
   };
 });

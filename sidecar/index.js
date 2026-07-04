@@ -2802,7 +2802,12 @@ function handleCronCreate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   readBody(req, 1 << 16).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
-    let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    // TZ HONESTY (additive, G4.1 parity with /api/cron/preview): honor an optional IANA `body.tz` so a wall-clock
+    // schedule ("0 9 * * *") fires on the caller's LOCAL 9:00 instead of the host-default (UTC-or-SKYNET_CRON_TZ).
+    // A tz-less body resolves under the host default exactly as before (no signature break, no behavior change for
+    // existing callers); an INVALID tz is REJECTED here (400) rather than silently firing on UTC — so the routine's
+    // rendered cadence label ("9:00 your local time") can never lie about when it actually fires.
+    let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now(), body.tz); } catch (e) { return json(e.code || 400, { error: e.message }); }
     let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
     // W6 MINT GATE — server is the authority. If this agent already has a routine with the same (or near-same)
