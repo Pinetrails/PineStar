@@ -19,6 +19,13 @@
   --bad: #ff5c4d;
   --gold: #ffd34a;
   --text: #eec88f;
+  /* RGB TRIPLETS for the translucent fills (rgba(var(--x-rgb), a)). Every rgba() that used to bake
+     the amber/gold literals routes through these, so beat cards / chips / insets re-tint with the
+     theme instead of leaking amber onto a green/blue/purple station. Plain value tokens (no var()
+     inside), so :root is safe — the body.theme-* blocks override them alongside their hex twins. */
+  --ph-rgb: 255, 170, 51;
+  --ph-bright-rgb: 255, 228, 180;
+  --gold-rgb: 255, 211, 74;
   --ok: #7bc88a;              /* the "online / success" status green — CRT-muted (not neon) so it reads as good without breaking the amber-phosphor grade; tokenized so every surface themes through it */
   /* color grade applied to the station feed so the world sits inside the terminal.
      brightness kept at 1.0 — the darkness now comes from the in-world lightmap (localized,
@@ -49,36 +56,42 @@ body.theme-amber {
   --ph: #ffaa33; --ph-bright: #ffd9a3; --ph-dim: #b9791c; --ph-faint: #1e1404;
   --ink: #190f02; --ph-glow: rgba(255, 170, 51, 0.5); --ph-glow2: rgba(255,170,51,0.14);
   --bg: #030201; --panel: rgba(5, 3, 1, 0.95); --panel2: #0c0704; --text: #eec88f;
+  --gold: #ffd34a; --ph-rgb: 255, 170, 51; --ph-bright-rgb: 255, 228, 180; --gold-rgb: 255, 211, 74;
   --cam-grade: saturate(0.82) sepia(0.12) hue-rotate(-5deg) contrast(1.10) brightness(1.06);
 }
 body.theme-green {
   --ph: #3dff70; --ph-bright: #ccffdb; --ph-dim: #1fae4e; --ph-faint: #0c3a1d;
   --ink: #021407; --ph-glow: rgba(61, 255, 112, 0.45); --ph-glow2: rgba(61,255,112,0.14);
   --bg: #010503; --panel: rgba(2, 16, 8, 0.92); --panel2: #041c0d; --warn: #ffb641; --text: #8fe3ac;
+  --gold: #d8f25a; --ph-rgb: 61, 255, 112; --ph-bright-rgb: 204, 255, 219; --gold-rgb: 216, 242, 90;
   --cam-grade: saturate(0.72) contrast(1.08) brightness(0.88);
 }
 body.theme-blue {
   --ph: #46c8ff; --ph-bright: #c8efff; --ph-dim: #1e87ba; --ph-faint: #0a2c40;
   --ink: #021320; --ph-glow: rgba(70, 200, 255, 0.45); --ph-glow2: rgba(70,200,255,0.14);
   --bg: #010305; --panel: rgba(2, 12, 20, 0.92); --panel2: #051826; --text: #97d5ee;
+  --gold: #5ce8c8; --ph-rgb: 70, 200, 255; --ph-bright-rgb: 200, 239, 255; --gold-rgb: 92, 232, 200;
   --cam-grade: saturate(0.72) contrast(1.08) brightness(0.88);
 }
 body.theme-purple {
   --ph: #b46bff; --ph-bright: #e6d4ff; --ph-dim: #7d3fc4; --ph-faint: #251038;
   --ink: #120720; --ph-glow: rgba(180, 107, 255, 0.45); --ph-glow2: rgba(180,107,255,0.14);
   --bg: #040208; --panel: rgba(10, 4, 20, 0.92); --panel2: #150a26; --text: #c8a9ee;
+  --gold: #f07ae0; --ph-rgb: 180, 107, 255; --ph-bright-rgb: 230, 212, 255; --gold-rgb: 240, 122, 224;
   --cam-grade: saturate(0.72) hue-rotate(8deg) contrast(1.08) brightness(0.88);
 }
 body.theme-red {
   --ph: #ff4136; --ph-bright: #ffc9c2; --ph-dim: #b3271c; --ph-faint: #3a0c08;
   --ink: #1f0603; --ph-glow: rgba(255, 65, 54, 0.45); --ph-glow2: rgba(255,65,54,0.14);
   --bg: #080201; --panel: rgba(18, 4, 3, 0.92); --panel2: #1a0705; --text: #f0a89f;
+  --gold: #ffab4a; --ph-rgb: 255, 65, 54; --ph-bright-rgb: 255, 201, 194; --gold-rgb: 255, 171, 74;
   --cam-grade: saturate(0.78) hue-rotate(-12deg) contrast(1.08) brightness(0.88);
 }
 body.theme-white {
   --ph: #e8f0e8; --ph-bright: #ffffff; --ph-dim: #97a397; --ph-faint: #2c322c;
   --ink: #0c0f0c; --ph-glow: rgba(232, 240, 232, 0.35); --ph-glow2: rgba(232,240,232,0.10);
   --bg: #030403; --panel: rgba(10, 12, 10, 0.92); --panel2: #131713; --text: #d2dcd2;
+  --gold: #ffe9a3; --ph-rgb: 232, 240, 232; --ph-bright-rgb: 255, 255, 255; --gold-rgb: 255, 233, 163;
   --cam-grade: saturate(0.7) contrast(1.06) brightness(0.92);
 }
 
@@ -264,8 +277,8 @@ b { font-weight: normal; color: var(--ph-bright); }
   text-shadow: inherit; margin: 0 14px;
 }
 #tb-mode:hover { background: var(--ph-faint); color: var(--ph-bright); box-shadow: 0 0 14px var(--ph-glow2), inset 0 0 0 1px var(--ph); }
-#tb-mode.auto { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 10px rgba(255, 211, 74, 0.35); }
-#tb-mode.auto:hover { background: rgba(255, 211, 74, 0.12); color: var(--gold); }
+#tb-mode.auto { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 10px rgba(var(--gold-rgb), 0.35); }
+#tb-mode.auto:hover { background: rgba(var(--gold-rgb), 0.12); color: var(--gold); }
 #tb-level { font-size: 11px; color: var(--ph-dim); min-width: 96px; letter-spacing: 2px; }
 #tb-level b { font-size: 20px; color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
 #xpbar { height: 7px; background: var(--ph-faint); margin-top: 2px; border: 1px solid var(--ph-dim); }
@@ -958,7 +971,7 @@ body.no-scan .crt-scan { display: none; }
   letter-spacing: 1px; padding: 2px 6px; margin-top: 4px; cursor: pointer;
   animation: pulse 1.2s infinite;
 }
-.pw-flagrow:hover { background: rgba(255, 211, 74, 0.08); animation: none; }
+.pw-flagrow:hover { background: rgba(var(--gold-rgb), 0.08); animation: none; }
 
 /* arcade cabinet screen (propterm game window) */
 .arc-wrap { margin-bottom: 6px; }

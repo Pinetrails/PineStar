@@ -59,13 +59,13 @@
    app.css treatment (equal specificity + later load would otherwise stomp the gold beat fills). */
 .cmsg.agent:not(.tool):not(.consent):not(.turnin):not(.nudge):not(.deliverable):not(.reply) {
   padding: 1px 10px 5px 11px; border-radius: 0 4px 4px 0;
-  background: linear-gradient(180deg, rgba(255,170,51,.028), transparent 62%);
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.035);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.028), transparent 62%);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.035);
 }
 /* user card: gold right rail, a whisper of gold fill so the Commander's side is visually distinct */
 .cmsg.user {
   padding: 1px 11px 5px 10px; border-radius: 4px 0 0 4px;
-  background: linear-gradient(180deg, rgba(255,211,74,.05), transparent 60%);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.05), transparent 60%);
 }
 
 /* copy button sits inside the padded card — nudge it clear of the header chip */
@@ -99,12 +99,12 @@
 }
 .tool-chip {
   border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
-  background: rgba(255,170,51,.03);
+  background: rgba(var(--ph-rgb),.03);
   overflow: hidden;
   animation: comms-msg-in var(--t-fast) var(--ease-out) backwards;
   transition: border-color var(--t-fast) var(--ease-soft), background-color var(--t-fast) var(--ease-soft);
 }
-.tool-chip:hover { border-color: var(--ph-dim); background: rgba(255,170,51,.055); }
+.tool-chip:hover { border-color: var(--ph-dim); background: rgba(var(--ph-rgb),.055); }
 /* the one-line head — a button so it's keyboard-operable; ellipsis-clamps the args */
 .tool-chip .tc-head {
   display: flex; align-items: baseline; gap: 6px; width: 100%;
@@ -158,7 +158,7 @@
   margin: 6px 0 2px; padding: 6px 11px;
   border-left: 2px solid var(--ph); border-radius: 0 4px 4px 0;
   background: linear-gradient(180deg, var(--ph-faint), rgba(0,0,0,.25));
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.05), 0 0 12px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.05), 0 0 12px var(--ph-glow2);
   font-size: 13px; letter-spacing: .5px; color: var(--ph-bright);
   animation: comms-msg-in var(--t-med) var(--ease-out);
 }

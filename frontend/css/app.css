@@ -324,7 +324,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   padding: 9px 12px 9px 11px; border-radius: 0 5px 5px 0; margin-top: 4px;
   background: linear-gradient(180deg, var(--ph-faint), rgba(0,0,0,.22));
   border-left: 3px solid var(--ph);
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.07), 0 0 14px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.07), 0 0 14px var(--ph-glow2);
 }
 .cmsg.agent.reply .who { display: block !important; color: var(--ph-bright); text-shadow: 0 0 4px var(--ph-glow); }
 .cmsg.agent.reply .body { color: var(--ph-bright); text-shadow: 0 0 6px var(--ph-glow); }
@@ -384,7 +384,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* live consent prompt — the agent paused for approval, INLINE in the flow where it happened (this
    replaced the always-on top APPROVALS panel). A clear gold frame so it reads as "act on me now". */
-.cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(255,211,74,.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }
+.cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(var(--gold-rgb),.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }
 .cmsg.consent .body { color: var(--ph-bright); }
 .consent-btns { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .consent-btn {
@@ -396,7 +396,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .consent-btn:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .consent-btn:focus-visible { outline: none; color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: 0 0 8px var(--ph-glow2); }
 .consent-btn.danger { color: var(--gold); border-color: var(--gold); }
-.consent-btn.danger:hover { color: var(--ph-bright); background: rgba(255, 200, 80, 0.12); }
+.consent-btn.danger:hover { color: var(--ph-bright); background: rgba(var(--gold-rgb), 0.12); }
 .consent-btn.deny { color: var(--bad); border-color: var(--bad); }
 .consent-btn.deny:hover { color: var(--ph-bright); background: rgba(255, 90, 90, 0.12); }
 .consent-result { font-size: 13px; letter-spacing: 0.5px; color: var(--ph); }
@@ -406,8 +406,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg.turnin {
   font-size: 15px; margin: 7px 0; padding: 9px 11px 10px;
   border-left: 2px solid var(--gold); border-radius: 0 5px 5px 0;
-  background: linear-gradient(180deg, rgba(255,211,74,.08), rgba(255,211,74,.035));
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.08), 0 0 10px rgba(255,170,0,.08);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.08), rgba(var(--gold-rgb),.035));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.08), 0 0 10px rgba(var(--gold-rgb),.08);
 }
 .cmsg.turnin .body {
   display: flex; flex-direction: column; gap: 7px;
@@ -416,8 +416,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .turnin-title { display: block; line-height: 1.35; }
 .turnin-queue {
   align-self: flex-start; color: var(--gold); font-size: 11px; letter-spacing: 0.6px;
-  border: 1px solid rgba(255,170,0,.55); border-radius: 2px; padding: 1px 5px;
-  background: rgba(255,170,0,.06);
+  border: 1px solid rgba(var(--gold-rgb),.55); border-radius: 2px; padding: 1px 5px;
+  background: rgba(var(--gold-rgb),.06);
 }
 .turnin-queue[hidden] { display: none; }
 .turnin-slot { display: block; min-width: 0; }
@@ -439,6 +439,14 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   overflow-wrap: anywhere; word-break: break-word;
 }
 .turnin-item .consent-btns { grid-column: 1 / -1; margin-top: 1px; display: flex; flex-wrap: wrap; gap: 6px; }
+/* anything chat.js appends INTO the item grid AFTER the kind/text pair (the ↳ evidence line on
+   study/trust cards, the verdict flash, an in-place rate control) must claim a full row. Auto-placed
+   they land in the `auto` first column — a long evidence string then blows that column out to the
+   container width and crushes the minmax(0,1fr) text column to ~1ch, wrapping the belief text one
+   character per line down the window edge (and stretching the card to fill the whole panel). */
+.turnin-item > .turnin-queue { grid-column: 1 / -1; justify-self: start; min-width: 0; overflow-wrap: anywhere; }
+.turnin-item > .consent-result { grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere; }
+.turnin-item > .turnin-rate { grid-column: 1 / -1; min-width: 0; }
 .turnin-edit {
   grid-column: 1 / -1; width: 100%; box-sizing: border-box; min-width: 0;
   font: inherit; font-size: 14px; color: var(--ph-bright);
@@ -464,7 +472,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-file { text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
   font-family:inherit; font-size:12px; padding:2px 5px; cursor:pointer; overflow-wrap:anywhere; }
 .ws-file:hover { border-color:var(--ph-glow2); color:var(--ph-bright); }
-.ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(255,211,74,.06); }
+.ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(var(--gold-rgb),.06); }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
   border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
   overflow-wrap:anywhere; }
@@ -476,7 +484,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
    quiet stream line (no auto-collapse). Shares the gold-inset turn-in family but reads calmer (thinner border,
    softer fill) — it's a notice, not a prompt. .receipts drops the deck's flex-gap so lines stack tight. */
-.cmsg.turnin.receipts { background: linear-gradient(180deg, rgba(255,211,74,.05), rgba(255,211,74,.02)); }
+.cmsg.turnin.receipts { background: linear-gradient(180deg, rgba(var(--gold-rgb),.05), rgba(var(--gold-rgb),.02)); }
 .cmsg.turnin.receipts .body { gap: 4px; }
 .receipt-item {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 4px 8px;
@@ -502,7 +510,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    soft gold-inset language of the consent / turn-in beats: clearly "the station is asking", visually subordinate
    to the live reply above it. One post-run beat at a time (chat.js retires a nudge if a turn-in claims the moment). */
 .cmsg.agent.nudge {
-  border-left: 2px solid var(--gold); background: rgba(255,211,74,.05);
+  border-left: 2px solid var(--gold); background: rgba(var(--gold-rgb),.05);
   padding: 8px 11px; margin: 6px 0 2px; border-radius: 0 5px 5px 0;
 }
 .cmsg.agent.nudge .who { display: none; }
@@ -919,7 +927,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .ov-leadtag {
   display: inline-flex; align-items: center; gap: 7px; color: var(--gold); font-size: 12px; letter-spacing: 2px;
-  border: 1px solid var(--ph-dim); border-radius: 20px; padding: 2px 11px; margin-bottom: 12px; background: rgba(255,170,51,.05);
+  border: 1px solid var(--ph-dim); border-radius: 20px; padding: 2px 11px; margin-bottom: 12px; background: rgba(var(--ph-rgb),.05);
 }
 .ov-pod {
   position: relative; height: 208px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
@@ -927,7 +935,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   box-shadow: inset 0 0 60px rgba(0,0,0,.9), 0 0 0 1px rgba(0,0,0,.8), 0 0 24px var(--ph-glow2);
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
 }
-.ov-pod::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255,170,51,.04) 22px 23px); pointer-events: none; }
+.ov-pod::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(var(--ph-rgb),.04) 22px 23px); pointer-events: none; }
 .ov-stage { margin: 0 0 20px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; }
 .ov-stage-frame { display: flex; align-items: flex-end; justify-content: center; filter: drop-shadow(0 0 14px var(--ph-glow)); }
 .ov-stage-frame img { height: 136px; width: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
@@ -956,7 +964,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-approve .ov-card-ds { font-size: 12.5px; margin-top: 3px; }
 .ov-card { font: inherit; position: relative; border: 2px solid var(--ph-faint); border-radius: 6px; background: var(--panel2); padding: 9px 10px 8px; cursor: pointer; text-align: left; transition: border-color .12s, background .12s; }
 .ov-card:hover { border-color: var(--ph-dim); background: var(--ph-faint); }
-.ov-card.sel { border-color: var(--ph); background: rgba(255,170,51,.07); box-shadow: 0 0 16px var(--ph-glow2); }
+.ov-card.sel { border-color: var(--ph); background: rgba(var(--ph-rgb),.07); box-shadow: 0 0 16px var(--ph-glow2); }
 .ov-card-ic { color: var(--ph); font-size: 19px; line-height: 1; text-shadow: 0 0 8px var(--ph-glow); }
 .ov-card.sel .ov-card-ic { color: var(--ph-bright); }
 .ov-card-nm { color: var(--ph-bright); font-size: 15px; letter-spacing: 1px; margin-top: 5px; }
@@ -974,7 +982,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-vtune { margin-top: 8px; }
 
 .ov-field-brain { margin-bottom: 0; }
-.ov-brain { border: 2px solid var(--ph-dim); border-radius: 7px; background: rgba(255,170,51,.04); padding: 10px 12px; }
+.ov-brain { border: 2px solid var(--ph-dim); border-radius: 7px; background: rgba(var(--ph-rgb),.04); padding: 10px 12px; }
 /* beginner-funnel lead-in: names the no-API-key path before the provider row so a newcomer knows the easy
    option exists and that BYOK is still one click away. */
 .ov-brain-lead { font-size: 12px; line-height: 1.32; color: var(--ph-bright); margin: 0 0 9px; opacity: .95; }
@@ -996,7 +1004,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   margin: 10px 22px 0; padding: 9px 14px; font-size: 16px; letter-spacing: .4px;
   color: var(--ph-bright); border: 1px solid var(--gold);
   border-left: 4px solid var(--gold); border-radius: 3px;
-  background: rgba(255,170,51,.07); text-shadow: 0 0 6px var(--ph-glow2);
+  background: rgba(var(--ph-rgb),.07); text-shadow: 0 0 6px var(--ph-glow2);
   box-shadow: inset 0 0 22px rgba(0,0,0,.5), 0 0 12px var(--ph-glow2);
 }
 .ov-recovery b { color: var(--gold); }
@@ -1154,7 +1162,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   padding: 1px 12px; border: 2px solid var(--ph); text-shadow: 0 0 5px var(--ph-glow2);
   box-shadow: 0 0 12px var(--ph-glow2), inset 0 0 10px rgba(0,0,0,0.6);
 }
-#status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(255,211,74,0.35); }
+#status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(var(--gold-rgb),0.35); }
 #status-pill.thinking { color: var(--ph-bright); }
 
 /* ============================================================
@@ -1177,7 +1185,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* status dot on the collapsed trigger */
 .bb-grp-dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex: 0 0 auto; transition: background .15s; }
-.bb-group.has-active .bb-grp-dot { background: var(--gold); box-shadow: 0 0 7px rgba(255,211,74,.75); }
+.bb-group.has-active .bb-grp-dot { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb),.75); }
 .bb-group.open.has-active .bb-grp-dot { background: var(--ink); box-shadow: none; }
 .bb-group.has-alert .bb-grp-dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: bb-alert 1.4s ease-in-out infinite; }
 @keyframes bb-alert { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
@@ -1377,7 +1385,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 #ws-archived.on { background: rgba(0,0,0,.34); }
 #ws-archived[hidden] { display: none; }
 /* pinned rows sort to the top AND carry a small gold star so the "kept" state is legible at a glance */
-.ws-pin { flex: 0 0 auto; font-size: 10px; line-height: 1; color: var(--gold); text-shadow: 0 0 6px rgba(255,211,74,.5); }
+.ws-pin { flex: 0 0 auto; font-size: 10px; line-height: 1; color: var(--gold); text-shadow: 0 0 6px rgba(var(--gold-rgb),.5); }
 /* the ⋯ button is the discoverable twin of right-click: hidden until the row is hovered, where it takes the meta slot */
 .ws-kebab {
   display: none; flex: 0 0 auto; font-family: inherit; font-size: 15px; line-height: 1; letter-spacing: 1px;
@@ -1423,7 +1431,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 #chat-panel h3 .h3-right { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; flex: 0 1 auto; overflow: hidden; }
 #chat-panel h3 #chat-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #chat-status.status-thinking { color: var(--ph-bright); text-shadow: 0 0 7px var(--ph-glow2); }
-#chat-status.status-working, #chat-status.status-approval { color: var(--gold); text-shadow: 0 0 7px rgba(255,211,74,.4); }
+#chat-status.status-working, #chat-status.status-approval { color: var(--gold); text-shadow: 0 0 7px rgba(var(--gold-rgb),.4); }
 #chat-status.status-stopping { color: var(--bad); text-shadow: 0 0 7px rgba(255,74,61,.35); }
 
 /* COMMS PROCESSING TIMER — a small engraved readout in the amber header that counts a turn's REAL
@@ -1487,7 +1495,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   background: var(--ph-dim); flex: none;
 }
 .ag-sdot.on { background: var(--ok); box-shadow: 0 0 5px rgba(123,200,138,.55); }
-.ag-sdot.working { background: var(--gold); box-shadow: 0 0 7px rgba(255,211,74,.7); animation: sdot-pulse 1.1s infinite; }
+.ag-sdot.working { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb),.7); animation: sdot-pulse 1.1s infinite; }
 .ag-sdot.thinking { background: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); animation: sdot-pulse .7s infinite; }
 @keyframes sdot-pulse { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
 
@@ -1531,7 +1539,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx-clear { display:inline-flex; align-items:baseline; gap:7px; background:var(--ph-faint);
   border:1px solid var(--gold); border-radius:2px; padding:4px 10px; }
 .gx-clear .k { font-family:inherit; font-size:11px; letter-spacing:.14em; color:var(--gold); }
-.gx-clear .v { font-family:inherit; font-size:23px; line-height:1; color:var(--gold); text-shadow:0 0 10px rgba(255,211,74,.45); }
+.gx-clear .v { font-family:inherit; font-size:23px; line-height:1; color:var(--gold); text-shadow:0 0 10px rgba(var(--gold-rgb),.45); }
 
 .gx-2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:16px; }
 
@@ -1548,7 +1556,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 .gx-trk { position:relative; height:13px; background:var(--ph-faint); border:1px solid var(--ph-glow2); border-radius:2px; overflow:hidden; box-shadow:inset 0 1px 2px rgba(0,0,0,.55); }
 .gx-fill { position:absolute; top:0; left:0; bottom:0; background:var(--ph); opacity:.9; box-shadow:0 0 8px var(--ph-glow); }
-.gx-gfill { position:absolute; top:0; left:0; bottom:0; background:var(--gold); box-shadow:0 0 8px rgba(255,211,74,.4); }
+.gx-gfill { position:absolute; top:0; left:0; bottom:0; background:var(--gold); box-shadow:0 0 8px rgba(var(--gold-rgb),.4); }
 .gx-mark { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ph-bright); box-shadow:0 0 0 1px rgba(0,0,0,.45); }
 
 .gx-confnum { font-family:inherit; font-size:32px; line-height:.8; color:var(--ph-bright); text-shadow:0 0 12px var(--ph-glow2); }
@@ -1576,7 +1584,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx-tro { border:1px solid var(--ph-glow2); border-radius:2px; padding:8px 9px; background:rgba(0,0,0,.18); }
 .gx-tro.on { border-color:var(--gold); background:var(--ph-faint); }
 .gx-tro .gl { font-size:13px; line-height:1; }
-.gx-tro.on .gl { color:var(--gold); text-shadow:0 0 7px rgba(255,211,74,.55); }
+.gx-tro.on .gl { color:var(--gold); text-shadow:0 0 7px rgba(var(--gold-rgb),.55); }
 .gx-tro.off .gl { color:var(--ph-dim); opacity:.5; }
 .gx-tro .nm { font-family:inherit; font-size:11px; letter-spacing:.03em; margin-top:5px; }
 .gx-tro.on .nm { color:var(--gold); }
@@ -1597,8 +1605,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-queue:disabled { opacity:.4; cursor:default; }
 .gx-tro.q-celebrate { border-color:var(--gold); animation:q-celebrate 2.4s ease-out 1; }
 @keyframes q-celebrate {
-  0%   { box-shadow:0 0 18px rgba(255,211,74,.85), inset 0 0 14px rgba(255,211,74,.45); background:rgba(255,211,74,.22); }
-  55%  { box-shadow:0 0 9px rgba(255,211,74,.45), inset 0 0 6px rgba(255,211,74,.22); }
+  0%   { box-shadow:0 0 18px rgba(var(--gold-rgb),.85), inset 0 0 14px rgba(var(--gold-rgb),.45); background:rgba(var(--gold-rgb),.22); }
+  55%  { box-shadow:0 0 9px rgba(var(--gold-rgb),.45), inset 0 0 6px rgba(var(--gold-rgb),.22); }
   100% { box-shadow:none; }
 }
 
@@ -1609,14 +1617,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx-station .agents { margin-left:auto; font-family:inherit; font-size:10px; letter-spacing:.1em; color:var(--ph-dim); }
 .gx-station .body { display:flex; align-items:flex-end; gap:16px; }
 .gx-station .lv { flex:0 0 auto; text-align:center; border-right:1px solid var(--ph-glow2); padding-right:16px; }
-.gx-station .lv .n { font-family:inherit; font-size:28px; line-height:.85; color:var(--gold); text-shadow:0 0 10px rgba(255,211,74,.4); }
+.gx-station .lv .n { font-family:inherit; font-size:28px; line-height:.85; color:var(--gold); text-shadow:0 0 10px rgba(var(--gold-rgb),.4); }
 
 .ag-lv { font-family:inherit; font-size:11px; letter-spacing:.08em; color:var(--gold); border:1px solid var(--gold); border-radius:2px; padding:0 5px; margin-left:7px; }
 
 .tb-stat.station { border:1px solid var(--gold); border-radius:2px; padding:1px 8px; }
 .tb-stat.station b { color:var(--gold); }
 .tb-stat.station.lvup { animation: gx-stationpulse 1.5s ease-out; }
-@keyframes gx-stationpulse { 0%{ box-shadow:0 0 0 0 rgba(255,211,74,.55); } 100%{ box-shadow:0 0 16px 2px rgba(255,211,74,0); } }
+@keyframes gx-stationpulse { 0%{ box-shadow:0 0 0 0 rgba(var(--gold-rgb),.55); } 100%{ box-shadow:0 0 16px 2px rgba(var(--gold-rgb),0); } }
 
 /* narrow-window fallback: the GROWTH dossier collapses gracefully if the term is squeezed */
 @media (max-width: 560px) {
