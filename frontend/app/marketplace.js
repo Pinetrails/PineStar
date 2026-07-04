@@ -998,14 +998,22 @@ const Marketplace = (() => {
       sfx('click');
       prefillBuilderFromProspect(p);
     }));
-    // dismiss permanently denylists the fingerprint (the station won't re-draft this role), so it takes
-    // a two-step arm/confirm like the class DELETE button — the armed label admits the permanence.
-    sc.querySelectorAll('.mkt-prospect-dismiss').forEach(b => b.addEventListener('click', () => {
-      armDelete(b, '✕', () => {
+    // dismiss permanently denylists the fingerprint (the station won't re-draft this role), so it takes a
+    // two-step arm/confirm — the armed label admits the permanence. Reuse the shared ArmConfirm helper (the ONE
+    // tested arm/confirm primitive, index.html loads it before this) rather than a fourth hand-rolled copy;
+    // fall back to the bay's local armDelete only if ArmConfirm isn't loaded in this build, so it never regresses.
+    sc.querySelectorAll('.mkt-prospect-dismiss').forEach(b => {
+      const confirmDismiss = () => {
+        sfx('close');
         if (ProspectStore.dismiss) ProspectStore.dismiss(b.dataset.prospect);
         renderStage();
-      }, 'DISMISS FOREVER?');
-    }));
+      };
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+        ArmConfirm.wire(b, { armedLabel: 'DISMISS FOREVER?', restLabel: '✕', timeoutMs: 4000, onConfirm: confirmDismiss });
+      } else {
+        b.addEventListener('click', () => armDelete(b, '✕', confirmDismiss, 'DISMISS FOREVER?'));
+      }
+    });
   }
   // seed the custom-class builder state from a prospect draft, then open it (mirrors the R5 recipeMint pre-fill).
   // acceptingProspectId is held so a successful CREATE removes the prospect from staging (accept, not dismiss).
