@@ -120,14 +120,30 @@
       }
     }
 
+    // Client-side long-poll deadline: getUpdates parks server-side for pollTimeoutSec; a half-open socket can leave
+    // the fetch hanging FAR past that (no bytes ever arrive). Race the poll against a hard wall-clock =
+    // pollTimeoutSec*1000 + 15s slack so a stall aborts in seconds, not the ~5min default socket timeout. The
+    // disconnect abort (ac.signal) still wins — we compose both so either fires; a deadline-fire is NOT a disconnect
+    // (we distinguish by ac.signal.aborted below) so it just backs off and re-polls. Degrades gracefully on old
+    // platforms without AbortSignal.any/timeout (then only ac.signal governs, as before).
+    const POLL_DEADLINE_MS = pollTimeoutSec * 1000 + 15000;
+    function pollSignal() {
+      if (typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') return ac.signal;
+      const deadline = AbortSignal.timeout(POLL_DEADLINE_MS);
+      return (typeof AbortSignal.any === 'function') ? AbortSignal.any([ac.signal, deadline]) : deadline;
+    }
+
     async function loop() {
       let attempt = 0;
       while (!stopped) {
         let raw;
         try {
-          raw = await transport.getUpdates({ offset: offset, timeoutSec: pollTimeoutSec, signal: ac.signal });
+          raw = await transport.getUpdates({ offset: offset, timeoutSec: pollTimeoutSec, signal: pollSignal() });
         } catch (e) {
-          if (stopped || isAbort(e)) break;
+          // Only a REAL disconnect (stopped / the disconnect signal aborted) exits the loop. A deadline-timeout
+          // abort has stopped=false and ac.signal.aborted=false, so it falls through to backoff+retry (a stalled
+          // poll must recover, not kill the channel).
+          if (stopped || (ac && ac.signal && ac.signal.aborted)) break;
           if (isFatal(e)) { onStatus && onStatus({ state: 'error', detail: (e && e.message) || 'fatal' }); break; }
           statusDown((e && e.message) || 'poll error');
           await sleep(backoff[Math.min(attempt, backoff.length - 1)]);

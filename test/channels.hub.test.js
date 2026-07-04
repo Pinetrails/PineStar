@@ -212,6 +212,33 @@ async function run() {
     A.ok(sends.some(s => s.c === 'A') && sends.some(s => s.c === 'B'), 'each reply went back to its own chat');
   }
 
+  // ---- G. a THROWING injected secrets() degrades to a logged error + polite reply, not an unhandled rejection ----
+  {
+    const store = fakeStore(); const sends = [];
+    const runOnce = async () => { throw new Error('should never run'); };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => { throw new Error('secrets store hiccup'); }, classify: () => false, newId: idGen()
+    });
+    await hub.onInbound(dm('hi'));   // must NOT reject
+    A.eq(sends.length, 1, 'one polite reply sent when secrets() throws');
+    A.ok(/could not read the channel configuration/i.test(sends[0]), 'polite failure reply, no run started');
+  }
+
+  // ---- H. a THROWING injected rosterFn() inside a /command degrades to a polite reply (Discord passes it through) ----
+  {
+    const store = fakeStore(); const sends = [];
+    const runOnce = async () => { throw new Error('should never run'); };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      roster: () => { throw new Error('roster read failed'); }
+    });
+    await hub.onInbound(dm('/agents'));   // a control command that reads the roster; must NOT reject
+    A.eq(sends.length, 1, 'one polite reply sent when rosterFn() throws');
+    A.ok(/could not read the agent roster/i.test(sends[0]), 'polite roster-failure reply');
+  }
+
   A.report('channels.hub.test');
 }
 

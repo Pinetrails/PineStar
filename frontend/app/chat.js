@@ -797,7 +797,8 @@ const Chat = (() => {
     a.href = '#'; a.target = '_blank'; a.rel = 'noopener';
     a.addEventListener('click', ev => {
       ev.preventDefault();
-      fileBlobUrl(title, agentId).then(u => { try { window.open(u, '_blank', 'noopener'); } catch (_) {} }).catch(() => {});
+      fileBlobUrl(title, agentId).then(u => { try { window.open(u, '_blank', 'noopener'); } catch (_) {} })
+        .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — the sidecar may be unreachable', 'warn'); });
     });
   }
 
@@ -1023,7 +1024,10 @@ const Chat = (() => {
           if (btn) { btn.textContent = '⏺ saved'; btn.title = res.name + ' — ' + res.frames + ' frames · ' + res.seconds + 's'; }
           if (typeof SFX !== 'undefined' && SFX.click) { try { SFX.click(); } catch (_) {} }
         })
-        .catch(() => { if (btn) { btn.disabled = false; btn.textContent = '⏺ clip'; } });
+        .catch(() => {
+          if (btn) { btn.disabled = false; btn.textContent = '⏺ clip'; }
+          if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not save the clip — try again', 'warn');
+        });
     }, 20);
   }
 

@@ -168,7 +168,11 @@
     // only claims success after saveChatRecord returns; a model change only confirms after setModel reports ok.
     async function handleCommand(chatId, parsed, boundAgentId, sec) {
       const cmd = parsed.cmd, arg = parsed.arg;
-      const roster = rosterFn ? (rosterFn() || []) : null;
+      // rosterFn is an INJECTED callback (Discord/other wire-ups pass it straight through); a throwing roster must
+      // degrade to a logged error + polite reply, never an unhandled rejection that swallows the whole inbound.
+      let roster;
+      try { roster = rosterFn ? (rosterFn() || []) : null; }
+      catch (e) { try { console.error('[' + channel + '] roster lookup threw in /' + cmd + ':', (e && e.message) || e); } catch (_) {} await deliver(chatId, '⚠ Could not read the agent roster right now — try again in a moment.', '', 'error'); return; }
       const boundId = currentBoundAgent(chatId, boundAgentId, sec);
       // NOTE: no dedicated channel.command/rebind/model bus events — shared/events.js is owned by another
       // workstream (additive-only, by request). The command's honest confirmation is the reply itself; the
@@ -241,7 +245,11 @@
       // REAL agentId + composed system prompt at connect, Telegram runs as the SAME agent as in the app —
       // same notebook (memory), workspace, and identity — just a different session. Absent config falls back
       // to a per-chat agent (tg_<chatId>) + the default persona.
-      const sec = secrets() || {};
+      // secrets() is an INJECTED callback; a throwing one (e.g. a store hiccup) must degrade to a logged error +
+      // polite reply rather than an unhandled rejection (onInbound is driven fire-and-forget by the adapter).
+      let sec;
+      try { sec = secrets() || {}; }
+      catch (e) { try { console.error('[' + channel + '] secrets() threw in onInbound:', (e && e.message) || e); } catch (_) {} try { await deliver(chatId, '⚠ Could not read the channel configuration right now — try again in a moment.', '', 'error'); } catch (_) {} return; }
       const provider = String(sec.provider || 'openrouter').trim().toLowerCase() || 'openrouter';
       const usingCodex = provider === 'codex' || provider === 'openai-codex';
       const reasoningEffort = sec.reasoningEffort || sec.reasoning_effort || (usingCodex ? 'low' : 'medium');

@@ -37,6 +37,37 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.find(e => e.type === 'done').finishReason, 'tool_calls', 'functionCall finish -> tool_calls');
   }
 
+  // B2. a repeated ci:pi:name across SSE frames, each with its OWN nonempty args, is TWO distinct calls — the
+  //     args must NOT be concatenated into invalid JSON ({"q":"x"}{"q":"y"}); each gets its own dense index.
+  {
+    const sse = [
+      line({ candidates: [{ content: { parts: [{ functionCall: { name: 'web_search', args: { q: 'x' } } }] } }] }),
+      line({ candidates: [{ content: { parts: [{ functionCall: { name: 'web_search', args: { q: 'y' } } }] }, finishReason: 'STOP' }] }),
+      ''
+    ].join('\n');
+    const p = makeGeminiProvider({ fetch: sseFetch(sse), key: 'k' });
+    const evs = await collect(p, { model: 'gemini-test', messages: [], tools: [{ type: 'function', function: { name: 'web_search' } }] });
+    const starts = evs.filter(e => e.type === 'tool_start');
+    A.eq(starts.length, 2, 'two distinct tool_start events for the repeated-key-but-distinct-args calls');
+    A.eq(starts.map(e => e.index), [0, 1], 'the second call gets its own dense index (not index 0 again)');
+    const argsByIdx = {};
+    for (const e of evs.filter(e => e.type === 'tool_args')) argsByIdx[e.index] = (argsByIdx[e.index] || '') + e.chunk;
+    A.eq(argsByIdx[0], '{"q":"x"}', 'call 0 args are intact (not corrupted by the second call)');
+    A.eq(argsByIdx[1], '{"q":"y"}', 'call 1 args are their own valid JSON, never concatenated onto call 0');
+  }
+
+  // B3. the NORMAL whole-functionCall case is unchanged: one part, one call, args emitted once.
+  {
+    const sse = [
+      line({ candidates: [{ content: { parts: [{ functionCall: { name: 'lookup', args: { id: 1 } } }] }, finishReason: 'STOP' }] }),
+      ''
+    ].join('\n');
+    const p = makeGeminiProvider({ fetch: sseFetch(sse), key: 'k' });
+    const evs = await collect(p, { model: 'gemini-test', messages: [], tools: [{ type: 'function', function: { name: 'lookup' } }] });
+    A.eq(evs.filter(e => e.type === 'tool_start').length, 1, 'a single whole functionCall is still exactly one call');
+    A.eq(evs.filter(e => e.type === 'tool_args').map(e => e.chunk).join(''), '{"id":1}', 'whole-call args intact');
+  }
+
   // C. request conversion and URL shape.
   {
     let captured = null;

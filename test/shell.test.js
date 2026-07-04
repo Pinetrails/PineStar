@@ -46,6 +46,15 @@ const SLEEP = process.platform === 'win32' ? 'ping -n 5 127.0.0.1 > NUL' : 'slee
     // the floor does NOT trip on git range syntax (main..HEAD) — only `..` as a path segment
     A.eq(shell._internals.escapesWorkspace('git log main..HEAD'), null, 'git range main..HEAD is NOT a floor escape');
     A.ok(shell._internals.escapesWorkspace('cat ../x') !== null, '../x IS a floor escape');
+    // Windows drive-ROOT-relative (backslash-rooted, no drive letter) escapes are refused...
+    A.ok(shell._internals.escapesWorkspace('type \\Users\\andro\\secret.txt') !== null, 'drive-root \\Users path IS a floor escape');
+    A.ok(shell._internals.escapesWorkspace('cd \\') !== null, 'bare cd \\ (drive root) IS a floor escape');
+    A.ok(shell._internals.escapesWorkspace('dir \\Windows') !== null, 'drive-root \\Windows IS a floor escape');
+    // ...but option slashes and in-workspace relative backslash paths are NOT blocked (no false positives)
+    A.eq(shell._internals.escapesWorkspace('robocopy src dst /S /E'), null, 'robocopy /S /E option slashes are NOT a floor escape');
+    A.eq(shell._internals.escapesWorkspace('type subdir\\file.txt'), null, 'in-workspace relative backslash path is NOT a floor escape');
+    A.eq(shell._internals.escapesWorkspace('mkdir foo\\bar'), null, 'relative mkdir foo\\bar is NOT a floor escape');
+    A.throws(() => tool.run({ cmd: 'type \\Users\\andro\\hosts' }, ctx()), 'drive-root path refused by the tool');
 
     // ---- 5. output cap: a tiny maxBytes truncates ----
     const small = makeShellTool({ spawn, fs, pathMod: path, root, clock: makeClock(0), limits: { maxBytes: 5 } }).execTool;

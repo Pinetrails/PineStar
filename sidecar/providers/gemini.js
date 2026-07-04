@@ -222,6 +222,8 @@
       const dec = new TextDecoder();
       let buf = '';
       const toolIndexOf = new Map();
+      const argsSentFor = new Set();   // dense tool indices we've already emitted nonempty args for (dup-call guard)
+      let dupToolSeq = 0;              // disambiguates a repeated ci:pi:name that is actually a NEW call
       let nextToolIndex = 0;
       let sawToolCall = false;
       let doneEmitted = false;
@@ -245,7 +247,18 @@
             const part = parts[pi] || {};
             if (typeof part.text === 'string' && part.text) yield { type: 'text', delta: part.text };
             if (part.functionCall) {
-              const keyOf = ci + ':' + pi + ':' + (part.functionCall.name || nextToolIndex);
+              // Gemini normally delivers each functionCall WHOLE (complete args) in a single part, so ci:pi:name
+              // uniquely maps a call. But if the same ci:pi:name recurs in a LATER SSE frame carrying its OWN
+              // nonempty args, that is a SECOND, distinct tool call — reusing the index would make the consumer
+              // concatenate two whole JSON objects ({"a":1}{"b":2}) into invalid args. So: if a key repeats AND we
+              // already emitted nonempty args for it, treat the recurrence as a NEW call (suffix a counter to force
+              // a fresh key + index + tool_start). Empty-arg recurrences keep the original mapping (no corruption risk).
+              const argsStr = part.functionCall.args != null ? JSON.stringify(part.functionCall.args || {}) : '';
+              const hasArgs = argsStr && argsStr !== '{}';
+              let keyOf = ci + ':' + pi + ':' + (part.functionCall.name || nextToolIndex);
+              if (toolIndexOf.has(keyOf) && argsSentFor.has(toolIndexOf.get(keyOf)) && hasArgs) {
+                keyOf = keyOf + '#' + (++dupToolSeq);   // a distinct repeat call -> its own index, never arg-concatenated
+              }
               let idx = toolIndexOf.get(keyOf);
               if (idx == null) {
                 idx = nextToolIndex++;
@@ -253,7 +266,7 @@
                 sawToolCall = true;
                 yield { type: 'tool_start', index: idx, id: part.functionCall.id || ('call_' + idx), name: part.functionCall.name || '' };
               }
-              if (part.functionCall.args != null) yield { type: 'tool_args', index: idx, chunk: JSON.stringify(part.functionCall.args || {}) };
+              if (part.functionCall.args != null) { yield { type: 'tool_args', index: idx, chunk: argsStr }; if (hasArgs) argsSentFor.add(idx); }
               yield { type: 'tool_done', index: idx };
             }
           }
