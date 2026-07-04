@@ -1402,6 +1402,19 @@ const Chat = (() => {
     }
     const agentId = m.agentId || 'agent';
     const who = (agentId === 'agent') ? name : agentId;
+    // W7 — the Commander receives a TOOL, not a repo. If the deliverable has a web entry point (index.html
+    // preferred, else the first .html), the PRIMARY action becomes "Open it": it opens the RUNNING tool in a
+    // browser tab from the jailed /workshop-run/ static route. No html → no runnable entry, so Keep stays primary.
+    const files = Array.isArray(m.files) ? m.files.filter(f => f && f.path) : [];
+    const htmlFiles = files.filter(f => /\.html?$/i.test(f.path));
+    const htmlEntry = htmlFiles.length
+      ? ((htmlFiles.find(f => /(^|\/)index\.html?$/i.test(f.path)) || htmlFiles[0]).path)
+      : '';
+    const openRunTab = (relPath) => {
+      const url = opts.runUrl ? opts.runUrl(relPath) : '';
+      if (!url) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that — the station may be unreachable', 'warn'); return; }
+      try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+    };
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
 
     // ── collapsed headline (one glance) ──
@@ -1436,6 +1449,16 @@ const Chat = (() => {
     r.body.appendChild(slot);
 
     const foot = document.createElement('div'); foot.className = 'turnin-rate';
+    // PRIMARY = "Open it" when there's a runnable web entry — one glance, one click, the tool runs in a tab.
+    // Otherwise the primary is "review" (expand to the file list / Keep). "review" is always present as the
+    // secondary path to the details + Keep/Discard actions.
+    let openItBtn = null;
+    if (htmlEntry) {
+      openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn'; openItBtn.textContent = 'Open it';
+      openItBtn.title = 'run this tool in a new browser tab';
+      openItBtn.onclick = () => openRunTab(htmlEntry);
+      foot.appendChild(openItBtn);
+    }
     const openBtn = document.createElement('button'); openBtn.className = 'consent-btn'; openBtn.textContent = 'review';
     foot.appendChild(openBtn);
     r.body.appendChild(foot);
@@ -1489,27 +1512,46 @@ const Chat = (() => {
       }
       pane.appendChild(sum);
 
-      // ── pane 2: jailed file browser ──
+      // ── pane 2: the files — clicking a file OPENS it (W7), it does not dump source ──
+      // .html → runs in a new tab (jailed /workshop-run/ static route); anything else → opens in the OS
+      // default app (POST /api/workshop/open). A small demoted "view source" per row keeps the old inline
+      // reader for anyone who wants the code — default is OPEN, source is opt-in.
       const fb = document.createElement('div'); fb.className = 'ws-pane ws-files';
       const fhead = document.createElement('div'); fhead.className = 'ws-fhead'; fhead.textContent = 'files';
       fb.appendChild(fhead);
       const list = document.createElement('div'); list.className = 'ws-flist';
-      const view = document.createElement('pre'); view.className = 'ws-fview'; view.textContent = '(select a file)';
-      const files = Array.isArray(m.files) ? m.files : [];
+      const view = document.createElement('pre'); view.className = 'ws-fview'; view.hidden = true;   // hidden until "view source"
       if (!files.length) { const e = document.createElement('div'); e.className = 'dim'; e.textContent = '(no files listed)'; list.appendChild(e); }
       files.forEach(f => {
         if (!f || !f.path) return;
+        const isHtml = /\.html?$/i.test(f.path);
+        const rowEl = document.createElement('div'); rowEl.className = 'ws-filerow';
+        // the file itself = the OPEN affordance (primary). Label says plainly what a click does.
         const b = document.createElement('button'); b.className = 'ws-file'; b.type = 'button';
         b.textContent = f.path + (f.bytes != null ? '  ·  ' + f.bytes + 'B' : '');
+        b.title = isHtml ? 'run this file in a new tab' : 'open this file in your default app';
         b.onclick = async () => {
+          if (isHtml) { openRunTab(f.path); return; }
+          b.disabled = true; const was = b.textContent; b.textContent = 'opening…';
+          let res = null; try { res = opts.openFile ? await opts.openFile(f.path) : { ok: false }; } catch (_) { res = { ok: false }; }
+          b.disabled = false; b.textContent = was;
+          if (!res || !res.ok) localLine('Could not open that file: ' + ((res && res.error) || 'the station refused') + '.');
+        };
+        rowEl.appendChild(b);
+        // demoted "view source" — the old inline code reader, opt-in.
+        const src = document.createElement('button'); src.className = 'ws-viewsrc'; src.type = 'button'; src.textContent = 'view source';
+        src.title = 'show this file’s code inline';
+        src.onclick = async () => {
           list.querySelectorAll('.ws-file.sel').forEach(x => x.classList.remove('sel'));
           b.classList.add('sel');
-          view.textContent = 'loading…';
+          view.hidden = false; view.textContent = 'loading…';
           let content = '';
           try { content = opts.readFile ? await opts.readFile(agentId, m.runId, f.path) : ''; } catch (_) { content = ''; }
           view.textContent = content || '(no preview available)';
+          autoscroll();
         };
-        list.appendChild(b);
+        rowEl.appendChild(src);
+        list.appendChild(rowEl);
       });
       fb.appendChild(list); fb.appendChild(view);
       pane.appendChild(fb);
@@ -1555,13 +1597,17 @@ const Chat = (() => {
         };
       }
 
+      // W7 (f): "Keep & open folder" — one click copies the files out AND shell-opens the destination folder
+      // (Explorer/Finder) so the kept files are immediately in hand. On the desktop shell this reveals the real
+      // folder; the success line states honestly whether the folder actually opened.
+      keepBtn.textContent = 'Keep & open folder';
       keepBtn.onclick = async () => {
         const dest = String(path.value || '').trim();
         if (!dest) { path.focus(); return; }
         keepBtn.disabled = true; keepBtn.textContent = 'keeping…';
-        let res = null; try { res = await onDecide('keep', dest); } catch (_) { res = { ok: false }; }
-        if (res && res.ok) settle('✓ kept — files copied to ' + (res.destPath || dest), false);
-        else { keepBtn.disabled = false; keepBtn.textContent = 'Keep'; localLine('Could not keep this: ' + ((res && res.error) || 'the station refused the copy') + '.'); }
+        let res = null; try { res = await onDecide('keep', dest, { open: true }); } catch (_) { res = { ok: false }; }
+        if (res && res.ok) settle('✓ kept — files copied to ' + (res.destPath || dest) + (res.opened ? ' (folder opened)' : ''), false);
+        else { keepBtn.disabled = false; keepBtn.textContent = 'Keep & open folder'; localLine('Could not keep this: ' + ((res && res.error) || 'the station refused the copy') + '.'); }
       };
       keepWrap.appendChild(path); if (pickBtn) keepWrap.appendChild(pickBtn); keepWrap.appendChild(keepBtn); keepWrap.appendChild(hint);
       acts.appendChild(keepWrap);

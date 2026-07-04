@@ -772,6 +772,23 @@ const workshopStore = makeWorkshopStore({
   warn: (...args) => console.warn.apply(console, args)
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+// W7 — a shell opener that hands a REAL absolute PATH to the OS default app (Start-Process / open / xdg-open).
+// REUSES desktop.js's makeShellOpener (the same launcher desktop.open uses) rather than rolling a new spawn: for a
+// file we deliberately DON'T classify/assert-url — the path is already jail-proven by resolveInside before we call
+// this — and a non-'app' kind maps to exactly "open this path with the default handler" on win32/darwin/linux.
+// Injectable for tests via the workshopOpener seam (a test stub records the argv without launching anything).
+const _desktopInternals = require('./tools/builtin/desktop.js')._internals;
+let workshopOpener = _desktopInternals.makeShellOpener({});   // ({ kind, target }) -> Promise<'launched'>; kind!=='app' = open-with-default
+function setWorkshopOpener(fn) { workshopOpener = fn; }   // test seam
+// CI seam (never in a shipping build): STARNET_TEST_OPEN_LOG points at a file the opener APPENDS the target path to
+// instead of launching anything — so the e2e can assert /api/workshop/open invoked the opener with the jailed ABS
+// path without spawning a real app on the runner. Guarded strictly to a non-empty env var; production uses the real
+// shell opener above. This proves the wiring (jail-proven abs path reaches the launcher) exactly as required.
+(function installTestOpenLog() {
+  const logFile = String(ENV('TEST_OPEN_LOG') || '').trim();
+  if (!logFile) return;
+  workshopOpener = ({ kind, target }) => { try { fs.appendFileSync(logFile, JSON.stringify({ kind, target }) + '\n'); } catch (_) {} return Promise.resolve('launched'); };
+})();
 // honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
 // `runs` map AND not aborted. A crashed shift leaves a buildingRunId whose controller is gone -> not live -> reaped.
 // (`runs` is declared below at module scope; this closure reads it lazily so hoisting is a non-issue.)
@@ -2248,6 +2265,13 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
+  // W7 — OPEN the deliverable, don't display its code. Two routes let the Commander RUN/OPEN what an agent built:
+  //   POST /api/workshop/open  — shell-open a REAL jailed file with the OS default app (interactive user-click only).
+  if (req.method === 'POST' && req.url === '/api/workshop/open') return handleWorkshopOpen(req, res);
+  //   GET/HEAD /workshop-run/<agentId>/<runId>/<path...> — jailed, read-only static serving so a built web tool
+  //   actually RUNS in a browser tab (correct content-types, no dir listing, ?token= like /api/file, no-store).
+  //   This is NOT under /api/ so it never touches the /api CORS/token gate above — the handler enforces its own token.
+  if ((req.method === 'GET' || req.method === 'HEAD') && req.url.split('?')[0].indexOf('/workshop-run/') === 0) return serveWorkshopRun(req, res);
   // ADDITIVE (Lane B / ux-run-truth): read-only stat of a user-chosen KEEP destination folder, so the return
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
@@ -3324,6 +3348,7 @@ function workshopPrompt(runId, item) {
     + 'You are working in your private workshop while the Commander is away — build something real and reviewable.\n\n'
     + 'BUILD THIS:\n' + what + '\n\n'
     + 'RULES:\n'
+    + '- Prefer a SELF-CONTAINED, double-click-runnable deliverable: when the ask fits, make a SINGLE-FILE HTML tool (all CSS/JS inline, no external files or build step) named index.html so the Commander can just Open it and use it — otherwise ship a script plus a one-line run command in "howToUse". The goal is zero setup on their end.\n'
     + '- Put every file for this deliverable UNDER the folder "' + dir + '/" in your workspace (use fs.write with paths like "' + dir + '/<file>").\n'
     + '- Do the actual work with your real tools (web search/read, files, memory). Ground factual claims in what the tools return.\n'
     + '- You CANNOT run commands or tests here, so do not claim anything was tested — list what a human still needs to verify.\n'
@@ -3573,8 +3598,85 @@ async function handleWorkshopDecide(req, res) {
   // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
   // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
   if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
+  // W7 (c): optional one-click "Open folder" — shell-open Explorer at the destination so the kept files are
+  // immediately in hand. Interactive by definition (the Commander clicked Keep). Best-effort: a failed open never
+  // undoes a successful copy, so `opened` reports honestly whether Explorer actually launched.
+  let opened = false;
+  if (body.open === true) { try { await workshopOpener({ kind: 'file', target: destPath }); opened = true; } catch (_) { opened = false; } }
   try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', destPath: destPath }); } catch (_) {}
-  json(200, { ok: true, decision: 'keep', destPath: destPath, copied: copied });
+  json(200, { ok: true, decision: 'keep', destPath: destPath, copied: copied, opened: opened });
+}
+
+// ---- W7: OPEN the deliverable, don't display its code ------------------------------------------------------------
+const WORKSHOP_RUN_PREFIX = '/workshop-run/';
+
+// GET/HEAD /workshop-run/<agentId>/<runId>/<path...> — jailed, READ-ONLY static serving of a workshop run dir so a
+// built web tool RUNS in a browser tab (an .html loads and executes, unlike /api/file which serves active
+// deliverables as octet-stream+sandbox CSP precisely to STOP them running). Same jail proof /api/file uses
+// (fsJail.resolveInside — the '..'/absolute/symlink escape all throw); correct Content-Type by extension; NO
+// directory listing (a dir 404s); Cache-Control no-store. Browser navigation can't send a header, so the per-launch
+// token rides ?token= on GET/HEAD exactly like /api/file (this route is NOT under /api/, so we enforce it here).
+async function serveWorkshopRun(req, res) {
+  // token gate: same per-launch secret as every API route, accepted as ?token= (a tab navigation has no header seam).
+  if (!apiauth.queryTokenOk(req, API_TOKEN)) { res.writeHead(403); return res.end('forbidden token'); }
+  let abs;
+  try {
+    const rawPath = decodeURIComponent(String(req.url || '').split('?')[0]);
+    const tail = rawPath.slice(WORKSHOP_RUN_PREFIX.length);            // <agentId>/<runId>/<path...>
+    const slash = tail.indexOf('/');
+    if (slash <= 0) { res.writeHead(404); return res.end('not found'); }
+    const agentId = tail.slice(0, slash);
+    const rel = tail.slice(slash + 1);                                 // <runId>/<path...>
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(403); return res.end('forbidden'); }
+    if (!rel || rel.slice(-1) === '/') { res.writeHead(404); return res.end('not found'); }   // no dir/trailing-slash
+    ({ abs } = await fsJail.resolveInside(agentId, 'workshop/' + rel));  // throws on '..'/absolute/symlink/bad agentId
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (/escape|illegal|bad agentId/.test(msg)) { res.writeHead(403); return res.end('forbidden'); }
+    res.writeHead(404); return res.end('not found');
+  }
+  let st;
+  try { st = await fsp.stat(abs); } catch (_) { res.writeHead(404); return res.end('not found'); }
+  if (!st.isFile()) { res.writeHead(404); return res.end('not found'); }   // directories are never listed or served
+  const ext = path.extname(abs).toLowerCase();
+  const headers = {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff'
+  };
+  if (req.method === 'HEAD') { headers['Content-Length'] = st.size; res.writeHead(200, headers); return res.end(); }
+  res.writeHead(200, headers);
+  const stream = fs.createReadStream(abs);
+  stream.on('error', () => { try { res.destroy(); } catch (_) {} });
+  req.on('close', () => { try { stream.destroy(); } catch (_) {} });
+  stream.pipe(res);
+}
+
+// POST /api/workshop/open { agentId, runId, path } — shell-open the REAL jailed file with the OS default app. This is
+// an INTERACTIVE user-click action by definition (a route, not a tool — so its surface is inherently interactive),
+// validated as strictly as decide: agentId regex + resolveInside jail proof. The path is proven inside
+// workshop/<runId>/ before it ever reaches the opener, so no traversal can escape the agent's workspace.
+async function handleWorkshopOpen(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
+  const agentId = String(body.agentId || '');
+  const runId = String(body.runId || '');
+  const relPath = String(body.path || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(runId)) return json(400, { error: 'bad runId' });
+  if (!relPath) return json(400, { error: 'no file to open' });
+  let abs;
+  try { ({ abs } = await fsJail.resolveInside(agentId, 'workshop/' + runId + '/' + relPath)); }   // throws on escape
+  catch (e) {
+    const msg = (e && e.message) || '';
+    if (/escape|illegal|bad agentId/.test(msg)) return json(403, { error: 'forbidden' });
+    return json(400, { error: 'bad path' });
+  }
+  let st; try { st = await fsp.stat(abs); } catch (_) { return json(404, { error: 'that file is no longer there' }); }
+  if (!st.isFile()) return json(404, { error: 'that is not a file' });
+  try { await workshopOpener({ kind: 'file', target: abs }); }        // Start-Process / open / xdg-open the abs path
+  catch (e) { return json(500, { error: 'could not open that file: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, opened: abs });
 }
 
 // POST /api/workshop/shift { agentId } — force-fire ONE workshop shift NOW (attended test of the unattended path).
