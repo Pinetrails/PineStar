@@ -25,6 +25,7 @@
 
   const normalizeFinish = provider.normalizeFinish;
   const classifyApiError = errorClass.classifyApiError;
+  const timeouts = provider.timeouts;
   const BASE = 'https://chatgpt.com/backend-api/codex';
 
   // The ChatGPT-account Codex backend exposes its OWN model list (DIFFERENT from the public OpenAI API
@@ -184,7 +185,7 @@
       let res;
       try { res = await requestWithRetry(body, req.signal); }
       catch (e) { if (isAbort(e, req.signal)) return; throw e; }
-      const reader = res.body.getReader();
+      const reader = timeouts.idleGuardedReader(res.body.getReader(), { signal: req.signal });
       const dec = new TextDecoder();
       let buf = '';
 
@@ -323,7 +324,7 @@
               'originator': 'codex_cli_rs'
             },
             body: JSON.stringify(body),
-            signal
+            signal: timeouts.connectSignal(signal)
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
@@ -336,9 +337,10 @@
         catch (e) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
         const err = new Error('codex http ' + res.status + ' — ' + detail);
         err.status = res.status;
+        err.headers = res.headers;
         const cls = classifyApiError(err, { model: body.model });
         err.transient = cls.retryable;
-        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
+        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }
         throw err;
       }
     }

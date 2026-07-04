@@ -9,8 +9,10 @@
   'use strict';
 
   const classifyApiError = errorClass.classifyApiError;
+  const timeouts = provider.timeouts;
   const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
   const RETRY_DELAYS = [400, 1200];
+  const REWARM_MIN_MS = 5 * 60 * 1000;
 
   function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
@@ -180,8 +182,25 @@
     const key = opts.key || '';
     const baseUrl = cleanBaseUrl(opts.baseUrl);
     const defaultContext = Number(opts.defaultContext || 0) || 0;
+    const clock = (opts.clock && typeof opts.clock.now === 'function') ? opts.clock : null;
     let catalog = null;
     let catalogPromise = null;
+    let catalogRewarmAt = 0;
+    let rewarmKicked = false;
+
+    function maybeRewarmCatalog() {
+      if (catalog && catalog.length) return;
+      if (catalogPromise) return;
+      if (clock) {
+        const now = clock.now();
+        if (now - catalogRewarmAt < REWARM_MIN_MS) return;
+        catalogRewarmAt = now;
+      } else {
+        if (rewarmKicked) return;
+        rewarmKicked = true;
+      }
+      Promise.resolve().then(() => loadCatalog()).catch(() => {});
+    }
 
     function buildBody(req) {
       const converted = messagesToGemini(req.messages || []);
@@ -194,11 +213,12 @@
 
     async function* stream(req) {
       req = req || {};
+      maybeRewarmCatalog();
       const body = buildBody(req);
       let res;
       try { res = await requestWithRetry(req.model, body, req.signal); }
       catch (e) { if (isAbort(e, req.signal)) return; throw e; }
-      const reader = res.body.getReader();
+      const reader = timeouts.idleGuardedReader(res.body.getReader(), { signal: req.signal });
       const dec = new TextDecoder();
       let buf = '';
       const toolIndexOf = new Map();
@@ -280,7 +300,7 @@
             method: 'POST',
             headers: headerBag(key),
             body: JSON.stringify(body),
-            signal
+            signal: timeouts.connectSignal(signal)
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
@@ -293,9 +313,10 @@
         catch (_) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
         const err = new Error('gemini http ' + res.status + ' - ' + detail);
         err.status = res.status;
+        err.headers = res.headers;
         const cls = classifyApiError(err, { model });
         err.transient = cls.retryable;
-        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
+        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }
         throw err;
       }
     }
