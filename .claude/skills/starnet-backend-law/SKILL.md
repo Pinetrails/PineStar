@@ -31,6 +31,12 @@ description: StarNet sidecar/backend laws — architecture shape, event contract
 - Any state a user would expect to survive must round-trip a sidecar restart — and you must
   TEST that round-trip live before claiming done (top recurring bug class).
 - Save-dir writes go through the existing store helpers; no ad-hoc file writes.
+- **One sidecar process per WORKSPACES dir is a HARD INVARIANT.** durable-store.js's concurrency
+  safety is an IN-PROCESS async mutex — sufficient *because* a save dir has a single sidecar owner
+  (`npm start` → one :8787; the desktop shell spawns one sidecar per install). There is no
+  cross-process file lock on the general stores by design; running two sidecars on the same dir
+  would silently clobber updates. (The cron scheduler, which can't assume single ownership, uses
+  its own pid-stamped on-disk lock in cron-lock.js — that's the exception, not the pattern.)
 
 ## Naming reality
 - Internal `skynet.*` keys/event names/schemas are intentionally kept post-rebrand. Do NOT
