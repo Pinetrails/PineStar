@@ -94,4 +94,23 @@ const dsSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/dossierstore
 const upsertSeg = dsSrc.slice(dsSrc.indexOf('function upsert'), dsSrc.indexOf('function forget'));
 A.ok(/CuriosityStore\.markAnswered\(/.test(upsertSeg), 'DossierStore.upsert clears the curiosity ask tally on EVERY answer path (not just the nudge)');
 
+/* ---------- VOI order: pick asks the highest-value dimension first, gates unchanged ---------- */
+// order re-ranks the blank dims (the understanding engine's weight × gap ranking, best first)
+A.eq(C.pick({ blank: ['identity', 'stack', 'ambition'], dismissed: {}, asked: {}, count: 0, cap: 1, order: ['ambition', 'pain', 'identity'] }),
+  'ambition', 'order aims the ask at the highest value-of-information dimension');
+// a dim missing from order falls back AFTER the ordered ones, in canonical position (never unaskable)
+A.eq(C.pick({ blank: ['stack', 'style'], dismissed: {}, asked: {}, count: 0, cap: 1, order: ['ambition', 'style'] }),
+  'style', 'ordered dims come first; unordered dims still follow canonically');
+A.eq(C.pick({ blank: ['stack', 'style'], dismissed: {}, asked: {}, count: 0, cap: 1, order: ['ambition'] }),
+  'stack', 'when no blank dim is in the order, canonical order is preserved');
+// every gate still applies over the re-ordered list
+A.eq(C.pick({ blank: ['identity', 'ambition'], dismissed: { ambition: true }, asked: {}, count: 0, cap: 1, order: ['ambition', 'identity'] }),
+  'identity', 'a dismissed dim is skipped even when it tops the VOI order');
+A.eq(C.pick({ blank: ['identity', 'ambition'], dismissed: {}, asked: { ambition: 2 }, count: 0, cap: 1, order: ['ambition', 'identity'] }),
+  'identity', 'a stop-forever dim is skipped even when it tops the VOI order');
+A.eq(C.pick({ blank: ['ambition'], dismissed: {}, asked: {}, count: 0, cap: 1, order: ['ambition'], work: 1, minWork: 3 }),
+  null, 'the earned-work floor still silences an ordered ask');
+A.eq(C.pick({ blank: ['ambition'], dismissed: {}, asked: {}, count: 1, cap: 1, order: ['ambition'] }),
+  null, 'the session cap still silences an ordered ask');
+
 A.report('curiosity.test');

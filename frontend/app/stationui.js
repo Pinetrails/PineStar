@@ -3918,8 +3918,18 @@ const StationUI = (() => {
     const dims = ds.dims();
     body.innerHTML = '';
 
-    // header: the honest familiarity meter + the observed work-mix + the local-first promise
-    const pct = Math.round((sum.familiarity || 0) * 100);
+    // header: the honest familiarity meter + the observed work-mix + the local-first promise.
+    // DISPLAY prefers the understanding read (belief count × provenance × recency, weighted toward
+    // goals/ambition/pain) over the breadth fraction — it climbs with real learning and sags with drift.
+    // Display-only: Dossier.summary().familiarity itself is untouched (the pitch/suggest gates read it).
+    let fam = sum.familiarity || 0;
+    try {
+      if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) {
+        const u = UnderstandingStore.read();
+        if (u && Number.isFinite(u.overall)) fam = u.overall;
+      }
+    } catch (_) {}
+    const pct = Math.round(fam * 100);
     const obs = sum.observed;
     const obsLine = (obs && obs.dominant && !obs.calibrating)
       ? 'Observed: you work mostly on <b>' + esc(obs.dominant) + '</b> tasks.'

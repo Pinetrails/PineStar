@@ -32,11 +32,26 @@ const CuriosityStore = (() => {
   function earned() { return typeof Curiosity === 'undefined' || !Number.isFinite(Curiosity.MIN_WORK) || workCount >= Curiosity.MIN_WORK; }
 
   // the dimension to gently ask about now, or null. Reads the dossier's still-blank dimensions live.
+  // The ask ORDER is the understanding engine's value-of-information ranking (weight × remaining gap, best
+  // first) when available — the one earned question targets what most sharpens the station's model of the
+  // Commander — and falls back to the canonical dossier order when it isn't (fail-open, behavior unchanged).
+  function voiOrder() {
+    try {
+      if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.read) {
+        const u = UnderstandingStore.read();
+        if (u && u.dims) {
+          return Object.keys(u.dims).sort((a, b) =>
+            (u.dims[b].weight * (1 - u.dims[b].conf)) - (u.dims[a].weight * (1 - u.dims[a].conf)));
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
   function consider() {
     if (!ready()) return null;
     const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
     if (!sum) return null;
-    return Curiosity.pick({ blank: sum.blank, dismissed: state.dismissed, asked: state.asked, count: sessionCount, cap: Curiosity.CAP, work: workCount, minWork: Curiosity.MIN_WORK });
+    return Curiosity.pick({ blank: sum.blank, dismissed: state.dismissed, asked: state.asked, count: sessionCount, cap: Curiosity.CAP, work: workCount, minWork: Curiosity.MIN_WORK, order: voiOrder() });
   }
 
   // spend this session's budget AND durably tally the ask on this dimension (called whether or not the Commander

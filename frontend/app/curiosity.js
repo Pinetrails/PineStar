@@ -46,9 +46,18 @@
   //   work      — completed task-runs THIS session; below minWork the ask is unearned → quiet.
   //               Absent/non-finite = unknown caller (fail-open, no gate) — the live store always passes it.
   //   minWork   — the earned-ask floor (defaults to MIN_WORK)
+  //   order     — OPTIONAL preferred ask order (dimension keys, best-first): the value-of-information ranking
+  //               from the understanding engine, so the ONE earned question targets the dimension whose answer
+  //               most sharpens the station's model of the Commander. Only re-orders — every gate (cap, earned
+  //               floor, dismissed, stop-forever) applies unchanged, and a dim NOT in `order` still falls back
+  //               to its canonical position after the ordered ones (never silently unaskable).
   function pick(opts) {
     opts = opts || {};
-    const blank = Array.isArray(opts.blank) ? opts.blank : [];
+    let blank = Array.isArray(opts.blank) ? opts.blank : [];
+    if (Array.isArray(opts.order) && opts.order.length && blank.length) {
+      const pos = {}; opts.order.forEach((k, i) => { if (!(k in pos)) pos[k] = i; });
+      blank = blank.slice().sort((a, b) => ((a in pos) ? pos[a] : 1e9) - ((b in pos) ? pos[b] : 1e9));
+    }
     const dismissed = (opts.dismissed && typeof opts.dismissed === 'object') ? opts.dismissed : {};
     const asked = (opts.asked && typeof opts.asked === 'object') ? opts.asked : {};
     const count = Number.isFinite(opts.count) ? opts.count : 0;
