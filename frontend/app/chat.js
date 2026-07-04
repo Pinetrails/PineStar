@@ -418,6 +418,9 @@ const Chat = (() => {
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
+    // SPEAKER IDENTITY: re-resolve `name` (the reply-chip + agent-beat speaker, else stuck at init's hero) from the
+    // displayed stream's agent, so switching agents relabels replies. Guard: an unknown id keeps the current name.
+    if (activeWs && typeof App !== 'undefined' && App.agentName) { const nm = App.agentName(activeWs.agentId || 'agent'); if (nm) name = nm; }
     activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
     activeStudy = null;   // the study card is the same kind of visible review layer — it belongs to the outgoing DOM
     activeTrust = null;   // GROWTH Tier 3: the trust offer card is likewise a visible review layer bound to the outgoing DOM
