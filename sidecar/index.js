@@ -1861,7 +1861,14 @@ function runGit(args, opts) {   // resolves (never rejects); a missing/failing g
     } catch (e) { resolve({ code: 1, stdout: '', stderr: String((e && e.message) || e) }); }
   });
 }
-const checkpointStore = makeCheckpointStore({ fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 });
+// SKYNET_/STARNET_CHECKPOINT_MAX_BYTES tunes the shadow-repo size ceiling that triggers a gc/re-init sweep
+// (the store defaults to 500MB when unset/invalid). Wired here so an operator can cap 24/7 checkpoint growth
+// without a code change; a non-positive/blank value falls through to the store default.
+const _ckptMaxBytes = Number(ENV('CHECKPOINT_MAX_BYTES'));
+const checkpointStore = makeCheckpointStore(Object.assign(
+  { fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 },
+  (_ckptMaxBytes > 0 && isFinite(_ckptMaxBytes)) ? { maxRepoBytes: Math.floor(_ckptMaxBytes) } : {}
+));
 // checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
 const checkpointBus = { emit: (name, payload) => {
   try { console.log('[checkpoint]', name, JSON.stringify(payload)); } catch (_) {}
@@ -4513,6 +4520,10 @@ async function runOnce(o) {
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
+      // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
+      // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
+      // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
+      sleep: (ms) => new Promise(r => setTimeout(r, ms)),
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
