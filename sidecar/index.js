@@ -1476,6 +1476,12 @@ function saveConnectorConfigs() {
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  // AUTO-RECONNECT: on transport death (stdio child exit / repeated HTTP failure) the manager flips to 'error'
+  // (honest status — the panel no longer shows a dead connector as 'up') and retries with bounded backoff. Real
+  // timer + rng injected here (composition root); the pure manager stays deterministic for tests.
+  setTimeoutImpl: (fn, ms) => { const t = setTimeout(fn, ms); if (t && t.unref) t.unref(); return t; },
+  clearTimeoutImpl: (t) => clearTimeout(t),
+  random: () => Math.random(),
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
