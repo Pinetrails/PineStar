@@ -4448,7 +4448,7 @@ const StationUI = (() => {
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
-    messaging:['MESSAGING',              buildMessaging, { w: '520px' }],
+    messaging:['CHANNELS',               buildMessaging, { w: '520px' }],   // dock label = window title (it's Telegram/external channels, not COMMS)
     connectors:['TOOLSETS & CONNECTORS', buildConnectors,{ console: true }],
     routines: ['ROUTINES',               buildRoutines,  { console: true }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],

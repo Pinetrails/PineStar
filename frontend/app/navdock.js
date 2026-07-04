@@ -80,13 +80,26 @@
       item.setAttribute('role', 'menuitem');   // a11y: items inside the role=menu popover
       item.addEventListener('click', () => closeAll(null));
     });
-    // a11y: trap Tab inside an open popover so focus can't wander to the page behind it.
+    // a11y: full role=menu keyboard model — ArrowUp/Down cycle the items (wrapping),
+    // Home/End jump, ArrowUp/Down on the closed trigger opens the menu, and Tab is
+    // trapped inside an open popover so focus can't wander to the page behind it.
     g.addEventListener('keydown', ev => {
-      if (ev.key !== 'Tab' || !g.classList.contains('open')) return;
+      const open = g.classList.contains('open');
+      if (!open && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && document.activeElement === trigger) {
+        ev.preventDefault(); toggle(g); return;   // toggle() focuses the first item
+      }
+      if (!open) return;
       const items = itemsOf(g); if (!items.length) return;
       const first = items[0], last = items[items.length - 1], act = document.activeElement;
-      if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
-      else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
+      const i = items.indexOf(act);
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); (items[i + 1] || first).focus(); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); (i > 0 ? items[i - 1] : last).focus(); }
+      else if (ev.key === 'Home') { ev.preventDefault(); first.focus(); }
+      else if (ev.key === 'End') { ev.preventDefault(); last.focus(); }
+      else if (ev.key === 'Tab') {
+        if (ev.shiftKey && act === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && act === last) { ev.preventDefault(); first.focus(); }
+      }
     });
   });
 
@@ -95,10 +108,13 @@
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeAll(null); });
 
   /* ---------- reflect live state onto the collapsed trigger ----------
-     A group lights its dot when one of its panels is open (mirrors stationui's .bb.active),
-     and the SYSTEM group additionally surfaces a pending NOTIFS count so the badge isn't
-     buried inside a closed menu. */
+     A group underlines its trigger while one of its panels is open (mirrors stationui's
+     .bb.active), and the SYSTEM trigger mirrors the pending NOTIFS COUNT into its own chip
+     so the badge isn't buried inside a closed menu. NOTE: never probe the in-menu badge via
+     offsetParent — a closed .bb-menu is display:none, so offsetParent is null exactly when
+     the mirror matters; read the textContent + inline display that stationui.badges() writes. */
   const nfBadge = document.getElementById('nf-badge');
+  const sysBadge = document.getElementById('bb-sys-badge');
   function syncGroupState() {
     groups.forEach(g => {
       const anyOpen = !!g.querySelector('.bb-menu .bb.active');
@@ -106,9 +122,14 @@
     });
     if (nfBadge) {
       const sys = bar.querySelector('.bb-group[data-group="system"]');
-      if (sys) {
-        const shown = nfBadge.textContent && nfBadge.offsetParent !== null;
-        sys.classList.toggle('has-alert', !!shown);
+      const n = (nfBadge.style.display !== 'none' && nfBadge.textContent) ? nfBadge.textContent : '';
+      if (sys) sys.classList.toggle('has-alert', !!n);
+      // guard the writes: this runs inside a MutationObserver on the bar's subtree, and an
+      // unconditional textContent set replaces the text node even when the value is identical —
+      // a new mutation record every pass = an infinite observer loop that pegs the main thread.
+      if (sysBadge) {
+        if (sysBadge.textContent !== n) sysBadge.textContent = n;
+        if (sysBadge.hidden === !!n) sysBadge.hidden = !n;
       }
     }
   }

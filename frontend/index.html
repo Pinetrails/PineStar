@@ -297,44 +297,48 @@
   </aside>
 
   <footer id="bottombar">
-    <!-- 13 panels regrouped into 4 labelled docks; each .bb-grp opens a popover of its items.
-         Every item button keeps its original id / data-term so all existing handlers survive. -->
+    <!-- The panels regrouped into 4 labelled docks; each .bb-grp opens a popover of its items.
+         Every item button keeps its original id / data-term so all existing handlers survive.
+         LABEL LAW (UX audit 2026-07-04): a button's label must match (or prefix) the title of the
+         window it opens, every item carries a one-line title tooltip, and no glyph repeats between
+         a group trigger and any item. data-group keys are internal — never rename them (dockglow,
+         navdock, tutorial select on them); only the visible text is fair game. -->
     <div class="bb-group" data-group="crew">
-      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">☻ CREW<span class="bb-grp-dot"></span></button>
+      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Your agents — dossiers, recruitment, and your own Commander file">☻ CREW</button>
       <div class="bb-menu" role="menu">
-        <button class="bb" data-term="agents">☻ AGENTS</button>
-        <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist presets and deploy one to your agent">☰ ROSTER</button>
+        <button class="bb" data-term="agents" title="AGENT DOSSIER — inspect and tune each crew member: config, memory, model, track record">◉ AGENTS</button>
+        <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist classes and deploy one onto your crew">☰ RECRUIT</button>
         <button class="bb" id="bb-summon" data-hint="workstream" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
         <button class="bb" data-term="commander" title="COMMANDER DOSSIER — what the station has learned about you (local-first; you own it)">◈ COMMANDER</button>
       </div>
     </div>
     <div class="bb-group" data-group="work">
-      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">▤ WORK<span class="bb-grp-dot"></span></button>
+      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="The station's work — tasks, recipes, routines, quests">▤ WORK</button>
       <div class="bb-menu" role="menu">
-        <button class="bb" data-term="tasks">▤ TASKS</button>
+        <button class="bb" data-term="tasks" title="TASK BOARD — the station's queued, running, and done work as cards">☑ TASKS</button>
         <button class="bb" id="bb-missions" data-hint="recipe" title="RECIPE LIBRARY — launch a ready-made recipe into a fresh workstream">❒ RECIPES</button>
-        <button class="bb" data-term="routines" data-hint="routine">⏱ ROUTINES</button>
+        <button class="bb" data-term="routines" data-hint="routine" title="ROUTINES — recurring scheduled work; each run lands as a readable session">⏱ ROUTINES</button>
         <button class="bb" data-term="quests" title="QUEST LOG — your real progress as quests: get-to-know-you, achievements, and any waiting idea (nothing is gated)">⚑ QUESTS</button>
       </div>
     </div>
     <div class="bb-group" data-group="build">
-      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">⚒ BUILD<span class="bb-grp-dot"></span></button>
+      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Shape the station — refit the floor, skills, toolsets, channels">⚒ BUILD</button>
       <div class="bb-menu" role="menu">
-        <button class="bb" id="bb-build" title="BUILD — lay out your station: place rooms, run corridors, paint decks">⚒ BUILD STATION</button>
-        <button class="bb" data-term="manual" title="FIELD MANUAL — every prop and mechanic: what's real, what's for show, and how to wire work">▦ MANUAL</button>
-        <button class="bb" data-term="skills" data-hint="skill">✦ SKILLS</button>
-        <button class="bb" data-term="connectors">⇄ TOOLSETS</button>
+        <button class="bb" id="bb-build" title="REFIT MODE — lay out your station: place rooms, run corridors, paint decks">⌂ REFIT STATION</button>
+        <button class="bb" data-term="skills" data-hint="skill" title="SKILLS &amp; CAPABILITIES — what your agents are equipped and allowed to do">✦ SKILLS</button>
+        <button class="bb" data-term="connectors" title="TOOLSETS &amp; CONNECTORS — wire external tools into the station">⇄ TOOLSETS</button>
+        <button class="bb" data-term="messaging" title="CHANNELS — reach your agents from outside (Telegram DMs, autonomous-run pings)">✉ CHANNELS</button>
       </div>
     </div>
     <div class="bb-group" data-group="system">
-      <button class="bb-grp" aria-haspopup="true" aria-expanded="false">⚙ SYSTEM<span class="bb-grp-dot"></span></button>
+      <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="Station systems — manual, settings, updates, restore, logs, notifications">▣ SYSTEM<span id="bb-sys-badge" class="bb-grp-badge" aria-label="unread notifications" hidden></span></button>
       <div class="bb-menu" role="menu">
-        <button class="bb" data-term="updates">↑ UPDATES</button>
-        <button class="bb" data-term="settings">⚙ SETTINGS</button>
-        <button class="bb" data-term="messaging">✉ MESSAGING</button>
-        <button class="bb" data-term="rewind">↶ REWIND</button>
-        <button class="bb" data-term="logbook">▦ LOGBOOK</button>
-        <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
+        <button class="bb" data-term="manual" title="FIELD MANUAL — every prop and mechanic: what's real, what's for show, and how to wire work">§ FIELD MANUAL</button>
+        <button class="bb" data-term="updates" title="UPDATE CENTER — app version and release notes">↑ UPDATES</button>
+        <button class="bb" data-term="settings" title="SETTINGS — keys, models, voice, spend, data">⚙ SETTINGS</button>
+        <button class="bb" data-term="rewind" title="RESTORE POINTS — rewind the station to an earlier save">↶ RESTORE</button>
+        <button class="bb" data-term="logbook" title="LOGBOOK — the station's event record">▦ LOGBOOK</button>
+        <button class="bb" data-term="notifs" title="NOTIFICATIONS — unread alerts and station events">▲ NOTIFS<span id="nf-badge" class="badge"></span></button>
       </div>
     </div>
     <!-- WIDGET RAIL (widgets.js) — the bottom bar's dead middle; #term-strip (stationui.js) docks
