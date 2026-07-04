@@ -84,13 +84,20 @@ isolation via `test/understanding.test.js`.
 
 ## Phases
 
-| Phase | Build | Files | Touches |
-|---|---|---|---|
-| **P1** *(this PR)* | `understanding.js` pure engine + test; thin `understandingstore.js` read wiring | `frontend/app/understanding.js`, `test/understanding.test.js`, (store) | none owned; no UI |
-| **P1b** | The north-star **surface** — clarity × progress. **Surface style TBD** (Andrew unsure on literal fog/object): ship 2–3 mockups, pick, then build. | `frontend/app/*` render | frontend-law |
-| **P2** | Implicit **corroboration** (each salient run nudges confidence in consistent beliefs, no card) + **workshop→model** loop | `studystore.js`/new store, `chat.js` | may need 1 additive event (request from `cortex-memory` owner) |
-| **P3** | **Value-of-information** question targeting — curiosity asks `understanding.weakest`, same budget/gate/denylist | `curiosity.js`, `chat.js` | frontend-law |
-| **P4** | Belief **recency-decay / drift** — wire staleness so a stale high-weight dim triggers re-ask/re-study | `understanding.js` (already decays), `studystore.js` | backend/frontend-law |
+> **PIVOT (2026-07-03, locked by Andrew):** no dedicated visual surface. The ambient-star concept was
+> built, live-verified, and REJECTED — "it needs to be the daily usage and gameplay… that will better
+> improve the experience due to StarNet adapting to the user." The engine drives BEHAVIOR (question
+> targeting, meter math), presented in the simplest way possible (the existing COMMANDER panel meter).
+> Do not rebuild a star/fog/gauge hero visual for this feature.
+
+| Phase | Build | Status |
+|---|---|---|
+| **P1** | `understanding.js` pure engine + test; `understandingstore.js` read wiring | ✅ SHIPPED (952c73e3; 29+17 assertions) |
+| ~~P1b~~ | ~~north-star surface~~ | ❌ REJECTED — built then removed (197301b1) |
+| **P3** | **Value-of-information** question targeting — `Curiosity.pick()` takes a VOI `order`; the one earned question targets the weakest dim. Gates unchanged; fail-open. | ✅ SHIPPED (197301b1; live-verified: picks 'pain' where canonical asked 'stack') |
+| **Meter** | COMMANDER panel familiarity DISPLAY prefers `understanding.overall` (display-only; `Dossier.summary().familiarity` untouched — pitch/suggest gates still read it) | ✅ SHIPPED (197301b1; live: renders 34% = the read) |
+| **P2** | Implicit **corroboration** (each salient run quietly nudges confidence in consistent beliefs) + **workshop keep/discard→model** loop | next — may need 1 additive event (request from `cortex-memory` owner) |
+| **P4** | **Drift trigger** — the engine already decays stale beliefs; wire a stale high-weight dim to re-open its ask (clear the asked tally) / bump study salience | next |
 
 ## Verification (per doctrine)
 - **P1 done** = `node test/understanding.test.js` green + the module appended to `test:fast:raw` and
