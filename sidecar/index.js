@@ -73,6 +73,7 @@ const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } =
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
 let Study = null; try { Study = require('../frontend/app/study.js'); } catch (_) { Study = null; }
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
+const { makeDiagnostics } = require('./diagnostics.js');   // T3.9: pure paste-ready bug-report assembler (redacted, truthful)
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
@@ -489,6 +490,28 @@ const runsIo = {
   }
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
+
+/* ---- T3.9 DIAGNOSTICS: process start + a small in-memory error ring feeding the paste-ready bug-report block
+   (GET /api/diagnostics). The ring holds only the newest few run-error MESSAGES (already redacted on write) so a
+   public user in a failure state can grab a useful, secret-free report. It is RAM-only + bounded — never persisted,
+   never contains transcript content or a prompt (only the classified run-error message). ---- */
+const PROCESS_START = Date.now();
+const DIAG_ERR_RING = [];             // [{ ts, message }] newest-last, bounded
+const DIAG_ERR_MAX = 8;
+function recordDiagError(message, ts) {
+  const msg = String(message == null ? '' : message).trim();
+  if (!msg) return;
+  DIAG_ERR_RING.push({ ts: num(ts) || Date.now(), message: redact(msg) });   // redact on WRITE (context.js always-on scrubber)
+  while (DIAG_ERR_RING.length > DIAG_ERR_MAX) DIAG_ERR_RING.shift();
+}
+const diagnostics = makeDiagnostics({ redact });   // pure assembler; redact injected for the second sanitization backstop
+// wrap any run emit fn so an `agent.run.error` also lands in the diagnostics ring (one sink for every run path).
+function wrapEmitDiag(emitFn) {
+  return function (name, payload) {
+    try { if (name === 'agent.run.error' && payload && payload.message) recordDiagError(payload.message, payload.ts); } catch (_) {}
+    return emitFn(name, payload);
+  };
+}
 
 // durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
 // the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
@@ -1945,6 +1968,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
+  if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
@@ -2908,7 +2932,7 @@ async function handleCronRun(req, res) {
   runs.set(runId, ac);
   req.on('close', () => { ac.abort(); runs.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
   const state = { buf: '', errMsg: null, reason: null, transient: false };
   const teeEmit = (name, payload) => {
@@ -3209,7 +3233,7 @@ async function handleWorkshopShiftNow(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'choose a valid agent' })); }
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
   try { result = await runWorkshopShift(agentId, { emit: emit, broadcast: true }); }
   catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
@@ -3449,7 +3473,7 @@ async function handleRun(req, res) {
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
 
   // THE LIVE CONSENT CHANNEL: emit a permission.prompt down the NDJSON stream and return a Promise that the loop's
   // dispatch await-pauses on. The browser answers via POST /api/consent (handleConsent), which calls the stored
@@ -4352,6 +4376,58 @@ function handleVersion(req, res) {
   }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(_versionCache));
+}
+
+// GET /api/diagnostics — T3.9: a paste-ready, SECRET-FREE bug report a public user can email. Token-gated (main
+// route table) like all /api. Assembled SERVER-SIDE from real stores/state (never scraped from the DOM). The
+// diagnostics module (sidecar/diagnostics.js) does the pure formatting + a second redact() backstop; here we just
+// collect the honest snapshot. TRUTHFUL TELEMETRY: every field is provable — anything we can't prove is omitted.
+function handleDiagnostics(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let out;
+  try {
+    // version (reuse the cached honest build surface)
+    const ver = { harness: '', app: '', node: process.version };
+    try { ver.harness = String(require('../package.json').version || ''); } catch (_) {}
+    try { const t = require('../src-tauri/tauri.conf.json'); ver.app = String((t && (t.version || (t.package && t.package.version))) || ''); } catch (_) {}
+    // desktop vs browser — provable from the request origin (Tauri custom-scheme origins are the desktop shell)
+    const origin = String((req && req.headers && req.headers.origin) || '').toLowerCase();
+    const mode = (origin.indexOf('tauri') === 0 || origin.indexOf('app://') === 0) ? 'desktop' : (origin ? 'browser' : '');
+    // active provider + model SLUG (never a key): the newest run is the strongest proof of what actually ran; fall
+    // back to the primary roster agent's configured identity when no run has happened yet.
+    const recent = (() => { try { return runStore.list(null, { limit: 1 })[0] || null; } catch (_) { return null; } })();
+    let provider = '', model = '';
+    try {
+      const first = agentRoster.size ? [...agentRoster.values()][0] : null;
+      provider = (first && first.provider) || (runtimeKey ? 'openrouter' : (codexTokens && codexTokens.access_token ? 'codex' : ''));
+      model = (recent && recent.model) || (first && first.model) || '';
+    } catch (_) {}
+    // is ANY credential configured for that provider? bool ONLY — the key itself is never read into the snapshot.
+    let keyPresent = false;
+    try {
+      const pid = normalizeProvider(provider || 'openrouter');
+      keyPresent = providerHasCredential(pid, providerRuntimeKey(pid, ''), providerRuntimeBaseUrl(pid, ''));
+    } catch (_) {}
+    let workspacePresent = false;
+    try { workspacePresent = fs.existsSync(WORKSPACES); } catch (_) {}
+    const snapshot = {
+      version: ver,
+      platform: { os: process.platform, arch: process.arch, node: process.version },
+      mode: mode,
+      provider: provider,
+      model: model,
+      keyPresent: keyPresent,
+      agentCount: agentRoster.size,
+      uptimeMs: Date.now() - PROCESS_START,
+      workspacePresent: workspacePresent,
+      lastRun: recent ? { runId: recent.runId, status: recent.reason, ts: recent.ts } : null,
+      errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
+    };
+    out = diagnostics.assemble(snapshot);
+  } catch (e) {
+    return json(500, { error: 'diagnostics failed' });
+  }
+  json(200, out);   // { report, text } — the app copies `text`
 }
 
 // POST /api/halt — the E-STOP. Abort EVERY in-flight run so one click stops all spend immediately: the browser

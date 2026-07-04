@@ -2321,22 +2321,45 @@ const Chat = (() => {
   // when called without a verdict (legacy callers / unknowns), preserving the old behavior + value:'retry'.
   function offerRetry(verdict) {
     if (!log) return;
-    if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); return; }
+    if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
     if (verdict.action === 'settings') {
       choices([{ label: '⚙ Open Settings', value: 'settings' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      return;
+      diagAffordance(); return;
     }
     if (verdict.action === 'store') {
       // the STORE (managed credits) lives in the SETTINGS panel; open it so the user can top up or switch to BYOK.
       choices([{ label: '🛒 Open STORE', value: 'store' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      return;
+      diagAffordance(); return;
     }
     if (verdict.action === 'skills') {
       choices([{ label: '✦ Open SKILLS', value: 'skills' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); });
-      return;
+      diagAffordance(); return;
     }
-    if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); return; }
-    // non-retryable with no destination: leave no chip rather than inviting a doomed re-run.
+    if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
+    // non-retryable with no destination: leave no primary chip rather than inviting a doomed re-run — but a stuck
+    // user still gets the quiet bug-report affordance so they can grab a diagnostic readout in place.
+    diagAffordance();
+  }
+  // T3.9 — a SECONDARY, quiet "copy diagnostics for a bug report" affordance dropped under a failed turn, alongside
+  // whatever recovery chip offerRetry rendered. Kept low-key (a subdued pill) so it never competes with the primary
+  // action; one tap copies the sidecar-assembled, SECRET-FREE report (Diag.copy) so a user in a failure state can
+  // email a useful report without leaving the moment. Appends its OWN row so picking the primary chip doesn't wipe it.
+  function diagAffordance() {
+    if (!log || typeof Diag === 'undefined' || !Diag.copy) return;
+    const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
+    const b = document.createElement('button'); b.className = 'choice quiet'; b.type = 'button';
+    b.textContent = '📋 copy diagnostics for a bug report';
+    b.addEventListener('click', () => {
+      b.disabled = true;
+      Diag.copy({ notify: false }).then(ok => {
+        b.textContent = ok ? '✓ diagnostics copied — paste into your report' : 'copy failed — try again';
+        if (!ok) { b.disabled = false; return; }
+        if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+        setTimeout(() => { try { rowEl.remove(); } catch (_) {} }, 2600);
+      });
+    });
+    rowEl.appendChild(b);
+    log.appendChild(rowEl); autoscroll();
   }
 
   // show the Stop control + the queued pills for whatever stream is on screen. Called from syncStatus (covers

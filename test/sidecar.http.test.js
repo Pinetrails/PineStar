@@ -180,6 +180,22 @@ function boot(port, workspaces, attemptsLeft) {
     const getWithTok = await fetch(B + '/api/budget/status', { headers: tok });
     A.eq(getWithTok.status, 200, 'GET /api/budget/status WITH the token -> 200');
 
+    // ---- T3.9 DIAGNOSTICS: token-gated, assembled server-side from real state, and SECRET-FREE ----
+    const diagNoTok = await fetch(B + '/api/diagnostics');
+    A.eq(diagNoTok.status, 403, 'GET /api/diagnostics WITHOUT a token -> 403 (gated like other data routes)');
+    const diag = await j('GET', '/api/diagnostics');
+    A.eq(diag.status, 200, 'GET /api/diagnostics WITH the token -> 200');
+    A.ok(diag.body && typeof diag.body.text === 'string' && diag.body.text.length > 0, 'diagnostics returns a paste-ready text block');
+    A.ok(diag.body.report && typeof diag.body.report === 'object', 'diagnostics returns a structured report too');
+    A.ok(/StarNet diagnostics/.test(diag.body.text), 'the block is clearly fenced');
+    A.ok(/no keys, tokens, or message content/.test(diag.body.text), 'the block states it carries no secrets');
+    A.eq(typeof diag.body.report.keyPresent, 'boolean', 'keyPresent is a boolean, never the key itself');
+    // the pre-seeded discord channel carries a fake OpenRouter key (sk-or-v1-fake-discord) + a bot token — NEITHER
+    // may ever appear in the diagnostics payload (the whole point of the sanitization law).
+    const diagBlob = JSON.stringify(diag.body);
+    A.ok(diagBlob.indexOf('sk-or-v1-fake-discord') < 0, 'diagnostics never leaks the seeded provider key');
+    A.ok(diagBlob.indexOf('discord-token') < 0, 'diagnostics never leaks the seeded channel token');
+
     // ---- managed credits: UNCONFIGURED boot exposes ZERO surface (honesty law — no dead STORE, no fake balance) ----
     // This boot sets no STARNET_CREDITS_URL, so /api/credits must 404 with { configured: false } — the frontend
     // reads that and renders no STORE card at all.
