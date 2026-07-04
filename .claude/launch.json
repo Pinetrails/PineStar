@@ -17,6 +17,14 @@
       "autoPort": false
     },
     {
+      "name": "first-run-fresh",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["sidecar/index.js"],
+      "port": 8846,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8846", "SKYNET_WORKSPACES": "C:/Users/andro/gen-trees/ux-first-run/dev/.scratch-firstrun/workspaces" }
+    },
+    {
       "name": "cron-sessions-proof",
       "runtimeExecutable": "node",
       "runtimeArgs": ["dev/seed-mock-cron.js"],
