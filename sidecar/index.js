@@ -4480,13 +4480,16 @@ function handleDiagnostics(req, res) {
 // inflight map). Idempotent. Each run's own finally cleans its maps + auto-denies any open consent prompt; hub
 // runs are marked `superseded` first so their (now stale) partial reply isn't delivered after the kill.
 function handleHalt(req, res) {
-  const inflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
-  const halted = killAll(runs, inflight);   // browser runs + messaging-hub runs, in one kill (see sidecar/halt.js)
+  const tgInflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
+  const dcInflight = (discord && discord.hub && discord.hub._internals) ? discord.hub._internals.inflight : null;
+  const halted = killAll(runs, tgInflight, dcInflight);   // browser runs + Telegram + Discord hub runs, in one kill (see sidecar/halt.js)
+  let cronAborted = 0;
+  try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted }));
+  res.end(JSON.stringify({ halted, cronAborted }));   // honest counts: run-controllers aborted + cron leases aborted
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the

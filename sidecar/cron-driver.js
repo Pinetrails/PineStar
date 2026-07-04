@@ -283,7 +283,19 @@
       return { fired: fires, skipped: skips, planned: plan.fire.length, deferred: deferred };
     }
 
-    return { applyTick: applyTick, leases: leases, _internals: { fireJob: fireJob, finishFire: finishFire } };
+    /* abortAllLeases — the E-STOP hook: abort every in-flight cron run's AbortController so a HALT stops
+       unattended cron spend too. Each aborted run settles through finishFire, which releases its own lease,
+       so we do not delete leases here (double-delete-safe either way). Never throws. Returns the count. */
+    function abortAllLeases() {
+      let n = 0;
+      for (const lease of leases.values()) {
+        try { if (lease && lease.ac && typeof lease.ac.abort === 'function') { lease.ac.abort(); n++; } }
+        catch (_) { /* an E-STOP must not throw */ }
+      }
+      return n;
+    }
+
+    return { applyTick: applyTick, leases: leases, abortAllLeases: abortAllLeases, _internals: { fireJob: fireJob, finishFire: finishFire } };
   }
 
   return { makeCronDriver: makeCronDriver, SILENT_MARKER: SILENT_MARKER };
