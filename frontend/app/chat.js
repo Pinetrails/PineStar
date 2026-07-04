@@ -74,6 +74,22 @@ const Chat = (() => {
                                 // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
                                 // read this to tell a real TASK from casual chat AND to name the run that actually just
                                 // finished. Capped FIFO so a long session can't leak runIds.
+  // G5 SPECTACLE slice 2 — the shareable CLIP recorder. ONE shared bounded ring buffer that quietly samples the
+  // live #stage during a TASK run's active beat (armed at run start, disarmed at run end) so "the last ~10 seconds"
+  // of the floor are always grabbable when the recap card lands. Decoupled from the world rAF loop (its own timer),
+  // so arming never tanks the render loop. Absent module (older bundle) = a null recorder = no clip button. Lazy so
+  // it constructs only when first needed.
+  let clipRecorder = null;
+  const runClip = new Map();   // runId -> [{canvas,t}] the ring-tail snapshot taken at that run's end (FIFO-capped, ≤8 runs)
+  function clipRec() {
+    if (clipRecorder) return clipRecorder;
+    if (typeof Clip === 'undefined' || !Clip.recorder) return null;
+    try { clipRecorder = Clip.recorder({ fps: Clip.DEFAULT_FPS, seconds: Clip.DEFAULT_SECONDS }); } catch (_) { clipRecorder = null; }
+    return clipRecorder;
+  }
+  function armClip() { const r = clipRec(); if (r && !r.armed()) { try { r.arm(); } catch (_) {} } }
+  function disarmClip() { const r = clipRecorder; if (r && r.armed()) { try { r.disarm(); } catch (_) {} } }
+
   const el = id => document.getElementById(id);
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
@@ -808,7 +824,7 @@ const Chat = (() => {
     return d;
   }
   const RECAP_MAX_ROWS = 12;   // a monster run lists the first dozen + a "+N more" note (the RUNS panel has the rest)
-  function recapCard(entry, arts, agentId, durMs) {
+  function recapCard(entry, arts, agentId, durMs, runId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('recap');
     const done = (entry.reason || 'done') === 'done';
     const head = document.createElement('div'); head.className = 'recap-line recap-head';
@@ -832,7 +848,41 @@ const Chat = (() => {
       share.onclick = () => firePostcard(entry, arts, agentId, durMs, share);
       r.body.appendChild(share);
     }
+    // G5 SPECTACLE slice 2 — the SHAREABLE CLIP affordance (⏺). Sibling of ⎙ postcard, same quiet chrome, same
+    // "never the beat slot" rule. Only shown when this run actually captured floor frames (the ring was armed for
+    // a task run AND held frames at run end) — a run with nothing recorded gets no dead button. Mints the ~10s GIF.
+    const frames = (runId && runClip.has(runId)) ? runClip.get(runId) : null;
+    if (typeof Clip !== 'undefined' && Clip.capture && frames && frames.length) {
+      const rec = document.createElement('button'); rec.type = 'button'; rec.className = 'recap-clip';
+      rec.textContent = '⏺ clip'; rec.title = 'save a shareable ~10s GIF of this run';
+      rec.onclick = () => fireClip(entry, arts, agentId, durMs, frames, rec);
+      r.body.appendChild(rec);
+    }
     autoscroll();
+  }
+
+  /* Mint the shareable CLIP for a completed run. Feeds the Clip reducer ONLY provable telemetry (the same run
+     entry the postcard uses) plus the run's captured floor frames; the overlay carries NO XP delta (XP mints only
+     from user feedback, so it is unknowable at clip time). Encodes the GIF in-page (no network) + downloads it. */
+  function fireClip(entry, arts, agentId, durMs, frames, btn) {
+    const agent = (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null;
+    const run = {
+      reason: entry.reason, title: entry.title,
+      artifacts: Array.isArray(arts) ? arts : (entry.artifacts || []),
+      usd: entry.usd, unmetered: entry.unmetered, model: entry.model, tokens: entry.tokens,
+    };
+    // a throwaway recorder-shaped view over the already-captured frames (Clip.capture reads .frames()/.fps()).
+    const view = { frames: () => frames, fps: () => (typeof Clip !== 'undefined' ? Clip.DEFAULT_FPS : 10) };
+    if (btn) { btn.disabled = true; btn.textContent = '⏺ encoding…'; }
+    // encode off the paint path so the button repaint lands first (GIF encode is a few hundred ms of array math).
+    setTimeout(() => {
+      Clip.capture({ run: run, durMs: durMs, agent: agent, recorder: view })
+        .then(res => {
+          if (btn) { btn.textContent = '⏺ saved'; btn.title = res.name + ' — ' + res.frames + ' frames · ' + res.seconds + 's'; }
+          if (typeof SFX !== 'undefined' && SFX.click) { try { SFX.click(); } catch (_) {} }
+        })
+        .catch(() => { if (btn) { btn.disabled = false; btn.textContent = '⏺ clip'; } });
+    }, 20);
   }
 
   /* Capture the postcard for a completed run. Assembles ONLY provable numbers (the Postcard reducer decides
@@ -866,7 +916,7 @@ const Chat = (() => {
       const arts = Array.isArray(entry.artifacts) ? entry.artifacts : [];   // a legacy row fails open to []
       if (!arts.length && (entry.reason || 'done') === 'done') return;      // quiet clean finish — leave the flow untouched
       if (!isActiveWs(ws)) return;   // the work-log register renders on the on-screen stream only, same as tool lines
-      recapCard(entry, arts, agentId, durMs);
+      recapCard(entry, arts, agentId, durMs, runId);
     } catch (_) { /* the recap is best-effort — it must never disturb the turn teardown */ }
   }
 
@@ -3295,6 +3345,9 @@ const Chat = (() => {
     }
 
     const isTask = Classify.isTaskDirective(text);
+    // G5 SPECTACLE — a TASK run is the watchable beat: arm the clip ring buffer so its last ~10s are grabbable
+    // when the recap lands. Casual chat never records (nothing to share). Disarmed at run end (finally block).
+    if (isTask) armClip();
     // fold the interest tag of a real task into the local user-affinity profile (the signal classify.js
     // already computes here and otherwise discards). Captures only a derived {code|research|general}
     // count — never the message text. Gated on the user's learning flag inside the store.
@@ -3468,6 +3521,9 @@ const Chat = (() => {
         // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
         // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
         if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, steps: runToolsOk, cost: runCost });
+        // G5 SPECTACLE — snapshot the clip ring's tail (the run's last ~10s of floor) for THIS run so the recap
+        // card's ⏺ affordance can mint it. Taken at run end while the ring is freshest; disarm happens in finally.
+        if (thisRunId && isTask) { const r = clipRecorder; const fr = (r && r.frames) ? r.frames() : []; if (fr.length) { runClip.set(thisRunId, fr); if (runClip.size > 8) runClip.delete(runClip.keys().next().value); } }
         // WORK VISIBILITY: a passive recap of what this run PRODUCED, fetched from the run's recorded
         // artifacts ledger. A report, not an ask — it never claims the post-run beat slot. Fire-and-forget.
         if (thisRunId) renderRunRecap(ws, thisRunId, Date.now() - wiPlacedTs);
@@ -3498,6 +3554,7 @@ const Chat = (() => {
     } finally {
       aborters.delete(ws.id);
       interrupted.delete(ws.id);   // consume the stop flag (whether or not it fired)
+      disarmClip();   // G5: stop sampling the floor when the run ends (the tail snapshot was already taken above)
       Channels.end(ws.id);
       // P1: drain this directive from the QUEUE gauge on ANY teardown (shipped, in-band error, or abort) —
       // the backlog is "runs in flight", independent of whether the work shipped.

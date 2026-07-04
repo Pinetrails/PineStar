@@ -407,6 +407,20 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .recap-postcard:disabled { color: var(--gold); border-color: var(--ph-dim); cursor: default; opacity: .9; }
 
+/* G5 SPECTACLE slice 2 — the shareable CLIP (~10s GIF) button, a sibling of ⎙ postcard on the recap card.
+   Same quiet phosphor-chrome language; ⏺ records/mints. Not a beat, not an ask — a quiet "keep this" affordance. */
+.recap-clip {
+  font: inherit; font-size: 12px; cursor: pointer; letter-spacing: .4px;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim);
+  border-radius: 3px; margin-top: 8px; margin-left: 6px; padding: 2px 8px;
+  transition: color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.recap-clip:hover:not(:disabled) {
+  color: var(--ph-bright); border-color: var(--ph);
+  box-shadow: 0 0 8px var(--ph-glow);
+}
+.recap-clip:disabled { color: var(--gold); border-color: var(--ph-dim); cursor: default; opacity: .9; }
+
 /* live consent prompt — the agent paused for approval, INLINE in the flow where it happened (this
    replaced the always-on top APPROVALS panel). A clear gold frame so it reads as "act on me now". */
 .cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(var(--gold-rgb),.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }
