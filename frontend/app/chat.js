@@ -195,9 +195,26 @@ const Chat = (() => {
     const started = (activeWs && typeof Channels !== 'undefined') ? Channels.startedAtOf(activeWs.id) : 0;
     if (!isBusy() || !started) return;   // teardown resolves/removes it; never draw an idle presence card
     const card = presenceCard(); if (!card) return;
+    // PAUSED-ON-APPROVAL: the run is stopped on the sidecar waiting for the Commander. Restyle the card so it
+    // reads as a deliberate pause (no working pulse) and NAME the pending action — truth source is the same
+    // Channels.pendingOf payload that renders the approval prompt, so this can never claim a pause that isn't real.
+    const pend = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
+    const paused = !!pend;
+    card.classList.toggle('paused', paused);
     const verb = card.querySelector('.cp-verb'); if (verb) verb.textContent = presenceVerb();
     const tool = card.querySelector('.cp-tool');
-    if (tool) { const t = presenceCurTool ? shortName(presenceCurTool) : ''; if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t); }
+    if (tool) {
+      if (paused) {
+        // e.g. "paused — waiting for you to approve fs.write"
+        const t = 'paused — waiting for you to approve ' + shortName(pend.tool);
+        if (tool.textContent !== t) tool.textContent = t;
+        tool.classList.add('has'); tool.classList.add('paused-note');
+      } else {
+        tool.classList.remove('paused-note');
+        const t = presenceCurTool ? shortName(presenceCurTool) : '';
+        if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t);
+      }
+    }
     const time = card.querySelector('.cp-time'); const txt = fmtElapsed(Date.now() - started);
     if (time && time.textContent !== txt) time.textContent = txt;
   }
@@ -958,6 +975,7 @@ const Chat = (() => {
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id);
+      if (isActiveWs(ws)) renderPresence();   // drop the paused styling the instant the run resumes
       btns.remove();
       const tag = document.createElement('span');
       tag.className = 'consent-result' + (isDeny ? ' err' : '');
@@ -3574,7 +3592,7 @@ const Chat = (() => {
             if (typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold', 'runComplete');   // P1-8 category: run produced a deliverable
           }
         },
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } },
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } },
         // the lead's team.summon tool asked the station to create a worker: run the REAL summon (App.summonForRequest
         // → the Recruitment Bay's own summonAgent), then ack with the new id so the lead can delegate to it. The id
         // resolves only after the roster POST lands (App awaits it), so the lead's next team.dispatch finds the worker.
