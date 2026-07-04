@@ -619,7 +619,7 @@ const Build = (() => {
     g.querySelector('#c-cancel').onclick = closeP;
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
     if (typeof fetch === 'undefined') { rowsEl.innerHTML = '<div class="refit-conn-note">no sidecar — can\'t list connectors here.</div>'; return; }
-    fetch('/api/connectors').then(r => r.json()).then(j => {
+    fetch('/api/connectors').then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       const list = (j && j.connectors) || [];
       if (!list.length) { rowsEl.innerHTML = '<div class="refit-conn-note">No MCP servers yet — add one in the <b>⇄ CONNECTORS</b> panel (bottom bar), then bind it here.</div>'; return; }
       rowsEl.innerHTML = list.map(c => {

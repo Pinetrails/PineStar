@@ -519,6 +519,34 @@ const Chat = (() => {
   }
 
   function setSystem(s) { system = s; }
+  // HISTORY CAP (Lane E3): ws.history grew unbounded across a session, and the WHOLE array was POSTed as `messages`
+  // on every run — memory + payload both climbing forever on a 24/7 station. Cap the STORED history and send only a
+  // capped window. Chosen to preserve behavior for any normal session:
+  //   • The sidecar (index.js) only auto-seeds from the durable transcript when the client sends ≤1 non-system
+  //     message, and its own resume horizon is transcriptStore.reconstruct(streamId,{limit:100}) — the server
+  //     already treats ~100 turns as the memory horizon.
+  //   • Within a run, loop.js token-auto-compacts the working array, so older turns beyond the model's context are
+  //     summarized away server-side regardless of how many the client sends.
+  // So capping at 120 kept turns (> the server's 100 resume horizon) is byte-identical for normal sessions and only
+  // bites pathologically long ones — exactly where the server would have compacted anyway. A single truncation
+  // marker object (role:'system', truncated:true) records the drop honestly for readers of the array.
+  const HISTORY_CAP = 120;
+  function capHistory(ws) {
+    if (!ws || !Array.isArray(ws.history)) return;
+    // count only real dialogue turns (skip a prior truncation marker) so the marker never inflates the count
+    const real = ws.history.filter(m => !(m && m.truncated));
+    if (real.length <= HISTORY_CAP) { if (real.length !== ws.history.length) ws.history = real; return; }
+    const dropped = real.length - HISTORY_CAP;
+    const kept = real.slice(-HISTORY_CAP);
+    ws.history = [{ role: 'system', truncated: true, content: '…(' + dropped + ' earlier turn' + (dropped === 1 ? '' : 's') + ' trimmed from local history)' }].concat(kept);
+  }
+  // the outbound window: the messages actually POSTed as `messages`. Drops the local-only truncation marker (the
+  // server never expects it) and hard-caps to HISTORY_CAP dialogue turns as a belt-and-suspenders bound.
+  function historyWindow(ws) {
+    if (!ws || !Array.isArray(ws.history)) return [];
+    const real = ws.history.filter(m => !(m && m.truncated));
+    return real.length > HISTORY_CAP ? real.slice(-HISTORY_CAP) : real;
+  }
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
   function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
@@ -2522,7 +2550,9 @@ const Chat = (() => {
   function renderHistory() {
     const h = activeWs ? activeWs.history : [];
     for (const m of h) {
+      if (m && m.truncated) continue;   // E3: the local history-cap marker is a data record, not a dialogue turn
       if (m.role === 'user') { addUser(m.content); continue; }
+      if (m.role !== 'assistant') continue;   // only dialogue turns render (a stray system marker never shows as an agent reply)
       if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
       const r = row('agent', { stamp: true });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
@@ -3672,7 +3702,7 @@ const Chat = (() => {
       wiEmit('workitem.placed', { workitemId: wiId, queueId: wiAid, agentId: wiAid, kind: 'directive', preview: String(text || '').replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: wiPlacedTs });
       wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
-    if (!retry) { addUser(text); ws.history.push({ role: 'user', content: text }); }   // on RETRY the user turn is already in the thread + on screen
+    if (!retry) { addUser(text); ws.history.push({ role: 'user', content: text }); capHistory(ws); }   // on RETRY the user turn is already in the thread + on screen
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
@@ -3772,7 +3802,7 @@ const Chat = (() => {
     };
     try {
       const { text: reply, error, endReason } = await Harness.chat({
-        system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
+        system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
         onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
@@ -3932,6 +3962,7 @@ const Chat = (() => {
       }
       App.refreshUsage();
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
+      capHistory(ws);   // E3: bound the stored thread AFTER this turn's assistant reply landed, before it persists
       if (onTurn) onTurn();
       // FIRST-TURN TITLE: replace the instant first-sentence placeholder with a model-written summary. Quiet
       // (internal call, off the floor/telemetry) and fire-and-forget so it never delays this turn's teardown.

@@ -60,6 +60,11 @@ const GAME = (() => {
 
   function bootSeq(done) {
     const box = document.querySelector('#boot-lines');
+    const boot = document.querySelector('#boot');
+    // E6c: the boot overlay may be absent (a variant page, or already removed) — never throw on a missing node,
+    // just run the caller's `done` so the app still starts.
+    if (!box || !boot) { if (done) done(); return; }
+    const showGo = () => { const go = document.querySelector('#boot-go'); if (go) go.style.display = 'block'; };
     let i = 0;
     const typeLine = () => {
       if (i < BOOT_LINES.length) {
@@ -69,18 +74,18 @@ const GAME = (() => {
         i++;
         setTimeout(typeLine, BOOT_LINES[i - 1] === '' ? 240 : 90 + Math.random() * 110);
       } else {
-        document.querySelector('#boot-go').style.display = 'block';
+        showGo();
       }
     };
     typeLine();
     const start = () => {
       if (i < BOOT_LINES.length) { // skip
         i = BOOT_LINES.length; box.innerHTML = BOOT_LINES.map(l => '<div>' + (l ? '&gt; ' + l : '&nbsp;') + '</div>').join('');
-        document.querySelector('#boot-go').style.display = 'block';
+        showGo();
         return;
       }
-      document.querySelector('#boot').classList.add('off');
-      setTimeout(() => document.querySelector('#boot').remove(), 700);
+      boot.classList.add('off');
+      setTimeout(() => { const b = document.querySelector('#boot'); if (b) b.remove(); }, 700);
       document.removeEventListener('click', start);
       document.removeEventListener('keydown', start);
       SFX.boot(); SFX.level();

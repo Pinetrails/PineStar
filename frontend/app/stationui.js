@@ -964,13 +964,13 @@ const StationUI = (() => {
     const onBox = $('#mc-reflect-on'), cd = $('#mc-cooldown'), scope = $('#mc-scope'), msg = $('#mc-reflect-msg'), saveBtn = $('#mc-reflect-save');
     if (!onBox || !cd) return;
     const setMsg = (t, ok) => { if (msg) { msg.textContent = t || ''; msg.className = 'msg' + (ok ? ' ok' : ''); } };
-    fetch('/api/memory/config', { cache: 'no-store' }).then(r => r.json()).then(cfg => {
+    fetch('/api/memory/config', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(cfg => {
       const o = $('#mc-reflect-on'), c = $('#mc-cooldown'), s = $('#mc-scope');
       if (!o || !c) return;   // retabbed mid-fetch
       o.checked = cfg.reflectEnabled !== false;
       c.value = String(Math.round((cfg.reflectCooldownMs != null ? cfg.reflectCooldownMs : 180000) / 60000));
       if (s && cfg.scopeNote) s.textContent = cfg.scopeNote;
-    }).catch(() => {});
+    }).catch(() => { setMsg('could not load reflection settings'); });   // never paint an error body as config
     if (saveBtn && !saveBtn._wired) {
       saveBtn._wired = true;
       saveBtn.addEventListener('click', () => {
@@ -1488,7 +1488,7 @@ const StationUI = (() => {
     // TOOLSET honesty: a family switched OFF in the TOOLSETS console must read as OFF here too, so the two
     // surfaces can't tell different stories. Cheap best-effort: fetch the toolset state and dim matching perks
     // (mapped by the granting objectType == SKILLS[].cap). Never blocks the panel; a fetch miss leaves perks as-is.
-    fetch('/api/toolsets').then(r => r.json()).then(j => {
+    fetch('/api/toolsets').then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       const disabledObjs = {};
       (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
       const perks = body.querySelectorAll('.perk-grid .perk');
@@ -2205,8 +2205,8 @@ const StationUI = (() => {
         spendEl.innerHTML = 'SPENT TODAY <b>' + today + '</b> &nbsp;·&nbsp; LIFETIME <b>' + life + '</b> <span class="dim">(' + runs + ' run' + (runs === 1 ? '' : 's') + ')</span>';
       }
     };
-    const refresh = () => fetch('/api/budget/status', { cache: 'no-store' }).then(r => r.json()).then(paint)
-      .catch(() => { if (spendEl) spendEl.textContent = 'spend unavailable'; });
+    const refresh = () => fetch('/api/budget/status', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(paint)
+      .catch(() => { if (spendEl) spendEl.textContent = 'spend unavailable'; });   // never paint an error body as $0 spend
     refresh();
     if (saveBtn) saveBtn.addEventListener('click', () => {
       const payload = {};
@@ -2287,11 +2287,11 @@ const StationUI = (() => {
       if (st && typeof st.maxEntries === 'number') maxEntries = st.maxEntries;
       paint();
     };
-    fetch('/api/fallback/chain', { cache: 'no-store' }).then(r => r.json()).then(applyStatus)
-      .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });
+    fetch('/api/fallback/chain', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(applyStatus)
+      .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });   // never paint an error body as an empty chain
     // catalog for the ADD picker — the same warmed OpenRouter catalog the model dock uses. Best-effort: an empty
     // catalog just leaves the picker with its placeholder (the chain itself still paints + saves fine).
-    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => r.json()).then(j => {
+    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       if (!addSel || !j || !Array.isArray(j.models)) return;
       const frag = document.createDocumentFragment();
       j.models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
@@ -2354,7 +2354,7 @@ const StationUI = (() => {
     });
     paint();
     // fill the model catalog into all three selects (same warmed catalog the fallback picker uses).
-    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => r.json()).then(j => {
+    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       if (!j || !Array.isArray(j.models)) return;
       const opts = j.models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
       TM_TIERS.forEach(tier => {
@@ -2445,8 +2445,8 @@ const StationUI = (() => {
           .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
       });
     };
-    fetch('/api/runtime/knobs', { cache: 'no-store' }).then(r => r.json()).then(render)
-      .catch(() => { form.innerHTML = '<div class="dim">runtime settings unavailable</div>'; });
+    fetch('/api/runtime/knobs', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(render)
+      .catch(() => { form.innerHTML = '<div class="dim">runtime settings unavailable</div>'; });   // never render an error body as knobs
   }
 
   // P1-7 STATION BACKUP — export/import the whole station config to one JSON file. Export bundles the browser-owned
@@ -2493,7 +2493,7 @@ const StationUI = (() => {
     if (exportBtn) exportBtn.addEventListener('click', () => {
       setMsg('building export…');
       fetch('/api/config/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sections: browserSections() }) })
-        .then(r => r.json()).then(env => {
+        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(env => {   // never download an error body as a "backup"
           const blob = new Blob([JSON.stringify(env, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -3590,10 +3590,19 @@ const StationUI = (() => {
         window.open(j.url, '_blank', 'noopener');
         msgEl.textContent = 'Approve access in the window that opened, then return here — this updates automatically.';
         sfx('click');
-        let n = 0; clearInterval(pollTimer);
+        let n = 0, fails = 0; clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
-          n++; const s = await refreshStatus();
-          if ((s && s.connected) || n > 60) { clearInterval(pollTimer); if (s && s.connected) { msgEl.textContent = '✓ Spotify connected'; notify('Spotify connected', 'good'); sfx('click'); } }
+          // E6d: guard the poll body so a throw can't leak an unhandled rejection AND never stops the timer.
+          // Count consecutive failures toward an EARLY bail so a persistently-broken poll gives up instead of
+          // spinning the full ~120s window; a success resets the streak.
+          n++;
+          let s = null;
+          try { s = await refreshStatus(); fails = 0; }
+          catch (_) { fails++; }
+          if ((s && s.connected) || n > 60 || fails >= 5) {
+            clearInterval(pollTimer);
+            if (s && s.connected) { msgEl.textContent = '✓ Spotify connected'; notify('Spotify connected', 'good'); sfx('click'); }
+          }
         }, 2000);
       } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
     });

@@ -87,7 +87,12 @@ const U = {
   bus: {
     _h: {},
     on(ev, fn) { (U.bus._h[ev] = U.bus._h[ev] || []).push(fn); },
-    emit(ev, data) { (U.bus._h[ev] || []).forEach(fn => { try { fn(data); } catch (e) { console.error('[bus]', ev, e); } }); }
+    // off(ev, fn): remove a single subscription (Lane E5). Splices the exact fn so a panel that subscribes inside a
+    // render/open path can release its listener on close instead of leaking one more handler every time it reopens.
+    off(ev, fn) { const a = U.bus._h[ev]; if (!a) return; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); },
+    // emit over a COPY of the handler list so a listener that calls off() (self-unsubscribe / one-shot) during
+    // dispatch never corrupts the in-flight iteration.
+    emit(ev, data) { const a = U.bus._h[ev]; if (!a || !a.length) return; a.slice().forEach(fn => { try { fn(data); } catch (e) { console.error('[bus]', ev, e); } }); }
   }
 };
 
