@@ -179,6 +179,20 @@
   flex: 0 0 auto; margin-left: auto; color: var(--ph-dim);
   font-size: 12px; font-variant-numeric: tabular-nums; opacity: .9;
 }
+/* PAUSED-ON-APPROVAL — the run is stopped on the sidecar waiting for the Commander.
+   Reads as a deliberate hold, NOT a working state: the ▮ stops blinking (steady, dim) and
+   the whole card takes the gold "attention" accent so a beginner never mistakes it for a
+   crash. Truthful telemetry: this only renders while Channels.pendingOf() is a live consent. */
+#comms-presence.comms-presence.paused {
+  border-left-color: var(--gold);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 14%, transparent), rgba(0,0,0,.25));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.05), 0 0 12px color-mix(in srgb, var(--gold) 30%, transparent);
+}
+#comms-presence.paused .cp-dot { animation: none; color: var(--gold); text-shadow: 0 0 6px color-mix(in srgb, var(--gold) 55%, transparent); opacity: .9; }
+#comms-presence.paused .cp-verb { color: var(--gold); text-shadow: 0 0 5px color-mix(in srgb, var(--gold) 45%, transparent); }
+#comms-presence .cp-tool.paused-note { color: var(--gold); flex: 1 1 auto; white-space: normal; opacity: .95; }
+#comms-presence .cp-tool.paused-note::before { content: ''; }
+
 /* RESOLVED — the card collapses to a single quiet summary line, no blink, no live glow */
 #comms-presence.resolved {
   display: block; color: var(--ph-dim); font-size: 12px; letter-spacing: 1px;

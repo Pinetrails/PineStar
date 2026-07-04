@@ -393,6 +393,16 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .recap-copy:hover { color: var(--ph-bright); opacity: 1; }
 
+/* OPEN-FOLDER affordance on a file deliverable (Theme 4 — outputs are findable). Quiet inline
+   control reusing the phosphor language; desktop reveals the folder, browser copies the path. */
+.deliverable-folder {
+  font: inherit; font-size: 11px; letter-spacing: .3px; cursor: pointer;
+  color: var(--ph-dim); background: transparent;
+  border: 1px solid rgba(var(--ph-bright-rgb), .28); border-radius: 3px;
+  margin-left: 8px; padding: 0 6px; opacity: .85; white-space: nowrap;
+}
+.deliverable-folder:hover { color: var(--ph-bright); border-color: rgba(var(--ph-bright-rgb), .55); opacity: 1; }
+
 /* G5 SPECTACLE — the shareable POSTCARD button on the recap card. Premium-chrome language: phosphor
    border, VT323-ish inherit, hover bloom. Not a beat, not an ask — a quiet "keep this" affordance. */
 .recap-postcard {
@@ -518,6 +528,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-acts { margin-top:8px; gap:6px 8px; }
 .ws-keep { display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap; }
 .ws-path { width:220px; max-width:100%; }
+.ws-pathhint { flex-basis:100%; font-size:11px; color:var(--ph-dim); letter-spacing:.2px; }
+.ws-pick { white-space:nowrap; }
+/* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
+.ws-verdetail { margin-top:6px; }
+.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
+.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.ws-vcmd .ws-vmark { flex:0 0 auto; }
+.ws-vcmd.ok  .ws-vmark { color:var(--gold); }
+.ws-vcmd.bad .ws-vmark { color:var(--bad); }
+.ws-vcmdtext { color:var(--ph-bright); font-family:inherit; }
+.ws-vexit { color:var(--bad); font-size:11px; }
 
 /* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
@@ -1677,6 +1698,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-dismiss { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;
   color:var(--ph-dim); opacity:.55; font-family:inherit; font-size:11px; line-height:1; padding:1px 4px; cursor:pointer; }
 .q-dismiss:hover { color:var(--ph-bright); border-color:var(--ph-glow2); opacity:1; }
+/* Slice 5: armed (2-step) state — the ✕ becomes an explicit, dangerous "dismiss forever — sure?" until the
+   confirming click (or ~4s auto-disarm). Widen for the label + read as a warning, not a passive glyph. */
+.q-dismiss.armed { opacity:1; color:var(--ink); background:var(--bad); border-color:var(--bad);
+  white-space:nowrap; padding:1px 6px; text-shadow:none; }
+.q-dismiss.armed:hover { color:var(--ink); background:var(--bad); border-color:var(--bad); }
 /* W3 — "build this while I'm away" affordance on an open, buildable quest. Sits before the dismiss ✕; the
    ◈ marks the away-workshop lane. Gold on hover (it opens the sandbox lane, an amber/consent action). */
 .q-queue { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;

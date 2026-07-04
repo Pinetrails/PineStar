@@ -42,6 +42,9 @@ const Chat = (() => {
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
   const interrupted = new Set();   // wsIds the Commander deliberately STOPPED this turn — send()'s catch reads this as a
                                    // graceful stop (keep the partial reply, log no error) rather than a disconnect. Consumed in finally.
+  const interruptedStreams = new Set();   // CRASH HONESTY: wsIds whose in-flight run died on a NETWORK drop (sidecar
+                                   // crash / lost connection). On a proven reconnect we tell the Commander the run can't resume.
+  let reconnectTimer = 0;          // the single reconnect health-probe poll (armed only while interruptedStreams is non-empty)
   const queued = new Map();        // TYPE-AHEAD: wsId -> [text,…] follow-ups typed while the stream was busy; auto-sent in order as it frees
   let activeLiveRow = null;     // streaming text controller for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
                                 // CLASSIC HARNESS FLOW: prose and the agent's actions (tool ▶/◀ lines, deliverables, approval
@@ -195,9 +198,26 @@ const Chat = (() => {
     const started = (activeWs && typeof Channels !== 'undefined') ? Channels.startedAtOf(activeWs.id) : 0;
     if (!isBusy() || !started) return;   // teardown resolves/removes it; never draw an idle presence card
     const card = presenceCard(); if (!card) return;
+    // PAUSED-ON-APPROVAL: the run is stopped on the sidecar waiting for the Commander. Restyle the card so it
+    // reads as a deliberate pause (no working pulse) and NAME the pending action — truth source is the same
+    // Channels.pendingOf payload that renders the approval prompt, so this can never claim a pause that isn't real.
+    const pend = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
+    const paused = !!pend;
+    card.classList.toggle('paused', paused);
     const verb = card.querySelector('.cp-verb'); if (verb) verb.textContent = presenceVerb();
     const tool = card.querySelector('.cp-tool');
-    if (tool) { const t = presenceCurTool ? shortName(presenceCurTool) : ''; if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t); }
+    if (tool) {
+      if (paused) {
+        // e.g. "paused — waiting for you to approve fs.write"
+        const t = 'paused — waiting for you to approve ' + shortName(pend.tool);
+        if (tool.textContent !== t) tool.textContent = t;
+        tool.classList.add('has'); tool.classList.add('paused-note');
+      } else {
+        tool.classList.remove('paused-note');
+        const t = presenceCurTool ? shortName(presenceCurTool) : '';
+        if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t);
+      }
+    }
     const time = card.querySelector('.cp-time'); const txt = fmtElapsed(Date.now() - started);
     if (time && time.textContent !== txt) time.textContent = txt;
   }
@@ -230,6 +250,32 @@ const Chat = (() => {
     card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
     card.setAttribute('role', 'note');
     autoscroll();
+  }
+
+  // CRASH HONESTY (Theme 2) — after a run stream died on a network drop, poll /api/health until the sidecar is
+  // PROVABLY back, then tell the Commander their interrupted run can't resume. Truthful telemetry: the
+  // "connection restored" line renders ONLY after a real 200 from the respawned sidecar, never on hope. The
+  // probe self-arms on the drop and self-clears once every interrupted stream has been reported.
+  async function probeReconnect() {
+    if (!interruptedStreams.size) { reconnectTimer = 0; return; }
+    let alive = false;
+    try { const r = await fetch('/api/health', { cache: 'no-store' }); alive = !!(r && r.ok); } catch (_) { alive = false; }
+    if (alive) {
+      // report each interrupted stream once. Only the DISPLAYED stream draws a line (same rule as tool/error
+      // lines); a background stream's flag is cleared quietly — its error row already recorded the failure.
+      const wasActive = activeWs && interruptedStreams.has(activeWs.id);
+      interruptedStreams.clear();
+      reconnectTimer = 0;
+      if (wasActive) toolLine('⏹ connection restored — your last run was interrupted and can\'t resume; start it again.', true);
+    } else {
+      reconnectTimer = setTimeout(probeReconnect, 3000);   // still down — keep watching
+    }
+  }
+  function armReconnectWatch() {
+    if (reconnectTimer) return;
+    // if the browser signals it's back online, probe immediately; otherwise poll on a slow cadence.
+    reconnectTimer = setTimeout(probeReconnect, 2000);
+    try { if (typeof window !== 'undefined' && !window.__runtruthOnlineHook) { window.__runtruthOnlineHook = true; window.addEventListener('online', () => { if (interruptedStreams.size && !reconnectTimer) probeReconnect(); }); } } catch (_) {}
   }
 
   // RETIRE A SETTLED BEAT: a decided memory card / answered nudge fades + collapses, then drops out of the
@@ -726,6 +772,59 @@ const Chat = (() => {
       fileBlobUrl(title, agentId).then(u => { try { window.open(u, '_blank', 'noopener'); } catch (_) {} }).catch(() => {});
     });
   }
+
+  // ── "OPEN FOLDER" AFFORDANCE (Theme 4: outputs are findable) ──────────────────────────────────
+  // A deliverable landed on disk in the agent's workspace; a beginner needs to be able to FIND it.
+  // The absolute per-agent dir comes from the additive /api/workspace/dir route (the frontend otherwise
+  // only knows the relative filename). On desktop we try a native reveal-in-folder command IF the shell
+  // ever exposes one (starnet_reveal_path), and ALWAYS fall back to copying the real path; in the browser
+  // there is no filesystem to open, so the button copies the path. Truthful: the button does exactly what
+  // its label says — it never claims to open a folder it can't.
+  const _wsDirCache = new Map();   // agentId -> Promise<absolute dir | ''>
+  function workspaceDir(agentId) {
+    const aid = agentId || 'agent';
+    if (_wsDirCache.has(aid)) return _wsDirCache.get(aid);
+    const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+    const p = fetch('/api/workspace/dir?agent=' + encodeURIComponent(aid) + (tok ? '&token=' + encodeURIComponent(tok) : ''), { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null).then(j => (j && j.dir) ? String(j.dir) : '').catch(() => '');
+    _wsDirCache.set(aid, p);
+    return p;
+  }
+  function tauriCore() {
+    return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
+  }
+  // Build a small "📁 folder" control. `relPath` (optional) is the deliverable's own path so a future
+  // native reveal can select the file; today it reveals/copies the containing workspace dir.
+  function folderButton(agentId, relPath) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'deliverable-folder';
+    b.textContent = '📁 folder';
+    const desktop = !!tauriCore();
+    b.title = desktop ? 'reveal this deliverable’s folder on disk' : 'copy the folder path on disk';
+    let dirP = null;
+    b.addEventListener('click', () => {
+      if (!dirP) dirP = workspaceDir(agentId);
+      dirP.then(dir => {
+        if (!dir) { b.textContent = '📁 no path'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400); return; }
+        const core = tauriCore();
+        if (core && core.invoke) {
+          // native reveal IF the shell exposes it; otherwise fall through to copy (never a silent no-op)
+          Promise.resolve(core.invoke('starnet_reveal_path', { path: dir })).then(() => {
+            b.textContent = '📁 opened'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400);
+          }).catch(() => copyPathFeedback(b, dir));
+        } else {
+          copyPathFeedback(b, dir);
+        }
+      });
+    });
+    return b;
+  }
+  function copyPathFeedback(btn, dir) {
+    copyText(dir).then(ok => {
+      btn.textContent = ok ? '📁 path copied' : '📁 ' + dir;
+      setTimeout(() => { btn.textContent = '📁 folder'; }, 1600);
+    });
+  }
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
@@ -735,6 +834,7 @@ const Chat = (() => {
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
     r.body.appendChild(a);
+    r.body.appendChild(folderButton(agentId, title));             // Theme 4: make the file findable on disk
     autoscroll();
   }
   // an image the agent generated (image_generate / the `studio` capability) — render it INLINE as a small
@@ -827,12 +927,14 @@ const Chat = (() => {
     link.title = path;
     d.appendChild(link);
     if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
-    // reveal the path: click-to-copy of the workspace path (no shell-open pattern exists in this frontend —
-    // per the design contract we don't invent new Tauri permissions for it).
+    // click-to-copy of the deliverable's own (relative) path — kept for quick reference.
     const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
     cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
     cp.onclick = () => copyText(path).then(ok => { if (!ok) return; cp.textContent = '✓'; setTimeout(() => { cp.textContent = '⧉'; }, 1100); });
     d.appendChild(cp);
+    // Theme 4: an "open folder" affordance that resolves the REAL absolute workspace dir on disk
+    // (desktop reveals if the shell supports it; browser copies the path) so the file is findable.
+    if (a.kind !== 'message') d.appendChild(folderButton(agentId, path));
     return d;
   }
   const RECAP_MAX_ROWS = 12;   // a monster run lists the first dozen + a "+N more" note (the RUNS panel has the rest)
@@ -958,6 +1060,7 @@ const Chat = (() => {
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id);
+      if (isActiveWs(ws)) renderPresence();   // drop the paused styling the instant the run resumes
       btns.remove();
       const tag = document.createElement('span');
       tag.className = 'consent-result' + (isDeny ? ' err' : '');
@@ -1214,6 +1317,11 @@ const Chat = (() => {
     const dis = document.createElement('button'); dis.className = 'consent-btn deny'; dis.textContent = 'dismiss';
     dis.onclick = () => vanish(r.d);
     foot.appendChild(dis);
+    // ADOPTION (Lane F): a dim line so dismissing doesn't read as LOSING the runs — they wait on the OUTBOX crate.
+    if (typeof ReturnStore !== 'undefined' && ReturnStore.outboxLine) {
+      const keep = document.createElement('span'); keep.className = 'turnin-queue'; keep.textContent = ReturnStore.outboxLine();
+      foot.appendChild(keep);
+    }
     r.body.appendChild(foot);
     autoscroll();
   }
@@ -1267,15 +1375,25 @@ const Chat = (() => {
     title.textContent = '◈ while you were away — ' + who + ' built: ' + String(m.title || 'a deliverable');
     r.body.appendChild(title);
 
-    // HONEST verification line — proves off the manifest ONLY.
+    // HONEST verification line — proves off the manifest ONLY. Three truthful states:
+    //   1. the manifest recorded verify commands  → "tested — N of M passed" (+ per-command detail in the pane)
+    //   2. the agent flagged things a human must check (notVerified) → say so, don't imply failure
+    //   3. neither                                → "built — no test commands were defined"
+    // NOTE: today's workshop agent cannot run commands (it is told so in workshopPrompt), so a real manifest
+    // carries no verified.commands — the notVerified path is the common case. State 1 is future-proofing for
+    // when a shift can run tests; it never fabricates a result the manifest doesn't hold.
     const ver = document.createElement('span'); ver.className = 'ws-verline';
-    const vcmds = (m.verified && Array.isArray(m.verified.commands)) ? m.verified.commands : null;
+    const vcmds = (m.verified && Array.isArray(m.verified.commands)) ? m.verified.commands.filter(c => c && c.cmd) : null;
+    const notVer = Array.isArray(m.notVerified) ? m.notVerified.filter(Boolean) : [];
     if (vcmds && vcmds.length) {
-      const passed = vcmds.filter(c => c && Number(c.exit) === 0).length;
+      const passed = vcmds.filter(c => Number(c.exit) === 0).length;
       ver.textContent = 'tested — ' + passed + ' of ' + vcmds.length + ' command' + (vcmds.length > 1 ? 's' : '') + ' passed';
-      if (passed === vcmds.length) ver.classList.add('ok');
+      ver.classList.add(passed === vcmds.length ? 'ok' : 'dim');
+    } else if (notVer.length) {
+      ver.textContent = 'built — the agent couldn’t test here; ' + notVer.length + ' thing' + (notVer.length > 1 ? 's' : '') + ' for you to check';
+      ver.classList.add('dim');
     } else {
-      ver.textContent = 'built, not yet tested';
+      ver.textContent = 'built — no test commands were defined';
       ver.classList.add('dim');
     }
     r.body.appendChild(ver);
@@ -1319,6 +1437,22 @@ const Chat = (() => {
       mkLine('what', m.summary || '');
       mkLine('how to use', m.howToUse || '');
       if (Array.isArray(m.notVerified) && m.notVerified.length) mkLine('not verified', m.notVerified.join('; '));
+      // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
+      // (renders only when the manifest actually recorded them — never invents a command or a result).
+      if (vcmds && vcmds.length) {
+        const vd = document.createElement('div'); vd.className = 'ws-verdetail';
+        const vh = document.createElement('div'); vh.className = 'ws-k'; vh.textContent = 'verification'; vd.appendChild(vh);
+        vcmds.forEach(c => {
+          const ok = Number(c.exit) === 0;
+          const line = document.createElement('div'); line.className = 'ws-vcmd ' + (ok ? 'ok' : 'bad');
+          const mark = document.createElement('span'); mark.className = 'ws-vmark'; mark.textContent = ok ? '✓' : '✕';
+          const cmd = document.createElement('code'); cmd.className = 'ws-vcmdtext'; cmd.textContent = String(c.cmd);
+          line.appendChild(mark); line.appendChild(cmd);
+          if (!ok && c.exit != null) { const ex = document.createElement('span'); ex.className = 'ws-vexit'; ex.textContent = 'exit ' + c.exit; line.appendChild(ex); }
+          vd.appendChild(line);
+        });
+        sum.appendChild(vd);
+      }
       pane.appendChild(sum);
 
       // ── pane 2: jailed file browser ──
@@ -1349,12 +1483,44 @@ const Chat = (() => {
 
       // ── three actions, one row ──
       const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
-      // KEEP — a simple path input (default = the Commander's Desktop) then decide keep.
+      // KEEP — pick a destination folder. On desktop we offer a native folder picker (Tauri) IF the shell
+      // exposes one, and ALWAYS keep the typed path as a fallback with INLINE validation (does the folder
+      // exist? — asked of the sidecar) so a bad path is caught before Keep instead of failing silently.
       const keepWrap = document.createElement('span'); keepWrap.className = 'ws-keep';
       const path = document.createElement('input'); path.className = 'turnin-edit ws-path'; path.type = 'text';
       path.placeholder = 'folder to copy into'; path.value = opts.desktopDefault || '';
       path.setAttribute('aria-label', 'Destination folder to keep the deliverable in');
+      const hint = document.createElement('span'); hint.className = 'ws-pathhint'; hint.hidden = true;
       const keepBtn = document.createElement('button'); keepBtn.className = 'consent-btn'; keepBtn.textContent = 'Keep';
+
+      // inline validation: debounced dirstat; a nonexistent/typo'd folder shows a quiet warning (never blocks —
+      // keep still creates the folder, but the Commander sees the truth about their path first).
+      let validateTimer = null;
+      function validatePath() {
+        const dest = String(path.value || '').trim();
+        if (!dest) { hint.hidden = true; return; }
+        fetch('/api/fs/dirstat?path=' + encodeURIComponent(dest), { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null).then(j => {
+            if (!j) { hint.hidden = true; return; }
+            if (j.exists && j.isDir) { hint.hidden = true; }
+            else if (j.exists && !j.isDir) { hint.hidden = false; hint.textContent = '⚠ that path is a file, not a folder'; }
+            else { hint.hidden = false; hint.textContent = '⚠ that folder doesn’t exist yet — it will be created'; }
+          }).catch(() => { hint.hidden = true; });
+      }
+      path.addEventListener('input', () => { if (validateTimer) clearTimeout(validateTimer); validateTimer = setTimeout(validatePath, 400); });
+
+      const core = tauriCore();
+      let pickBtn = null;
+      if (core && core.invoke) {
+        pickBtn = document.createElement('button'); pickBtn.className = 'consent-btn ws-pick'; pickBtn.textContent = '📁 choose…';
+        pickBtn.title = 'pick a folder';
+        pickBtn.onclick = () => {
+          Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => {
+            if (dir) { path.value = String(dir); validatePath(); }
+          }).catch(() => { /* shell has no picker yet — the typed path is the fallback */ path.focus(); });
+        };
+      }
+
       keepBtn.onclick = async () => {
         const dest = String(path.value || '').trim();
         if (!dest) { path.focus(); return; }
@@ -1363,7 +1529,7 @@ const Chat = (() => {
         if (res && res.ok) settle('✓ kept — files copied to ' + (res.destPath || dest), false);
         else { keepBtn.disabled = false; keepBtn.textContent = 'Keep'; localLine('Could not keep this: ' + ((res && res.error) || 'the station refused the copy') + '.'); }
       };
-      keepWrap.appendChild(path); keepWrap.appendChild(keepBtn);
+      keepWrap.appendChild(path); if (pickBtn) keepWrap.appendChild(pickBtn); keepWrap.appendChild(keepBtn); keepWrap.appendChild(hint);
       acts.appendChild(keepWrap);
 
       // LATER — dismiss; the card may return next session (no confirm).
@@ -1411,7 +1577,11 @@ const Chat = (() => {
   function updateTurninQueueNote() {
     if (!activeTurnin || !activeTurnin.queueNote) return;
     const waiting = turninQueue.length;
-    activeTurnin.queueNote.textContent = waiting ? waiting + ' more review ' + (waiting > 1 ? 'batches' : 'batch') + ' waiting' : '';
+    // A passive counter (NOT a second beat — one-beat-at-a-time is untouched): naming that another
+    // follow-up is queued keeps the ~1-2s inter-beat gap from reading as a hang/crash to a beginner.
+    activeTurnin.queueNote.textContent = waiting
+      ? (waiting === 1 ? '1 more follow-up after this…' : waiting + ' more follow-ups after this…')
+      : '';
     activeTurnin.queueNote.hidden = !waiting;
   }
 
@@ -2453,19 +2623,11 @@ const Chat = (() => {
   function offerRetry(verdict) {
     if (!log) return;
     if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
-    if (verdict.action === 'settings') {
-      choices([{ label: '⚙ Open Settings', value: 'settings' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      diagAffordance(); return;
-    }
-    if (verdict.action === 'store') {
-      // the STORE (managed credits) lives in the SETTINGS panel; open it so the user can top up or switch to BYOK.
-      choices([{ label: '🛒 Open STORE', value: 'store' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      diagAffordance(); return;
-    }
-    if (verdict.action === 'skills') {
-      choices([{ label: '✦ Open SKILLS', value: 'skills' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); });
-      diagAffordance(); return;
-    }
+    // ADOPTION (Lane A): every error names its DOOR and opens the exact one. Friendly.actionButton maps the
+    // verdict to { label, run } — capdenied -> REFIT (with the named capability), auth/no-key -> the real key
+    // field or "reconnect ChatGPT", model-not-found -> models. One source of truth; no local per-action ladder.
+    const btn = (typeof Friendly !== 'undefined' && Friendly.actionButton) ? Friendly.actionButton(verdict) : null;
+    if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(); return; }
     if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
     // non-retryable with no destination: leave no primary chip rather than inviting a doomed re-run — but a stuck
     // user still gets the quiet bug-report affordance so they can grab a diagnostic readout in place.
@@ -2841,12 +3003,26 @@ const Chat = (() => {
   // agent's away-workshop backlog (POST /api/workshop/queue via WorkshopStore). One line in, one confirm out.
   function buildAwayCommand(args) {
     const text = String(args || '').trim();
-    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build while you’re away.');
+    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build on its own recurring away shift.');
     if (typeof WorkshopStore === 'undefined' || !WorkshopStore.queue) return localLine('Away workshop isn’t available on this station.');
     const agentId = (activeWs && activeWs.agentId) || 'agent';
-    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text' }).then(res => {
-      if (res && res.ok) localLine('◈ queued for the away workshop — ' + name + ' will build this in its sandbox while you’re away. You’ll review it on return.');
-      else localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.');
+    // pass the display name so a needsGrant warning can name the agent.
+    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text', name: name }).then(res => {
+      if (!res || !res.ok) { localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.'); return; }
+      // ADOPTION (Lane F): the confirm copy comes from WorkshopStore.queueConfirmLine — it encodes the TRUTH that
+      // away builds run on a recurring shift WHILE THE STATION IS UP (never "while the app is closed").
+      if (res.needsGrant) {
+        // queued, but the grant is OFF → it will never build. Show the honest warn + a one-tap toggle (openGrant).
+        localLine(res.warn || 'saved to the build list — but “build while away” is off, so it won’t be built yet.');
+        choices([{ label: '⚙ Turn on “build while away”', value: 'grant' }], () => {
+          WorkshopStore.openGrant(res.agentId || agentId).then(g => {
+            localLine((g && g.ok) ? '✓ “build while away” is on — ' + name + ' will build this on its next away shift.'
+              : 'Couldn’t turn it on: ' + ((g && g.error) || 'try the AUTONOMY settings') + '.');
+          });
+        });
+        return;
+      }
+      localLine(WorkshopStore.queueConfirmLine(name));
     });
   }
   function steerCommand(args) {
@@ -3574,7 +3750,7 @@ const Chat = (() => {
             if (typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold', 'runComplete');   // P1-8 category: run produced a deliverable
           }
         },
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } },
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } },
         // the lead's team.summon tool asked the station to create a worker: run the REAL summon (App.summonForRequest
         // → the Recruitment Bay's own summonAgent), then ack with the new id so the lead can delegate to it. The id
         // resolves only after the roster POST lands (App awaits it), so the lead's next team.dispatch finds the worker.
@@ -3589,6 +3765,11 @@ const Chat = (() => {
         // PLAIN-LANGUAGE: lead with the beginner-facing message, keep the raw error as a dim sub-line; persist
         // the friendly text (not the plumbing) so a switch-back / replay shows the same readable failure.
         const v = (typeof Friendly !== 'undefined') ? Friendly.friendlyError(error) : { userMessage: error, retryable: true, action: null, raw: error };
+        // CRASH HONESTY: a network-kind failure on an in-flight run = the stream to the sidecar dropped (the
+        // sidecar crashed / the app lost the connection). The run can't be resumed — the sidecar respawns fresh.
+        // Flag this stream so that WHEN the sidecar is provably back (health probe on reconnect) we tell the
+        // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
+        if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…' + (v.userMessage.length > 40 ? v.userMessage.slice(0, 40) + '…' : v.userMessage)); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
