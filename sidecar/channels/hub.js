@@ -170,7 +170,9 @@
       const cmd = parsed.cmd, arg = parsed.arg;
       const roster = rosterFn ? (rosterFn() || []) : null;
       const boundId = currentBoundAgent(chatId, boundAgentId, sec);
-      try { emit('channel.command', { channel, chatId: String(chatId), cmd, arg: arg ? '1' : '' }); } catch (_) {}
+      // NOTE: no dedicated channel.command/rebind/model bus events — shared/events.js is owned by another
+      // workstream (additive-only, by request). The command's honest confirmation is the reply itself; the
+      // downstream binding/roster writes are observable in the chatmap + roster files. See report.
 
       if (cmd === 'help') {
         await deliver(chatId,
@@ -204,7 +206,6 @@
         let saved = false;
         try { if (typeof store.saveChatRecord === 'function') { store.saveChatRecord(chatId, { agentId: String(target.agentId), channel: channel }); saved = true; } } catch (_) { saved = false; }
         if (!saved) { await deliver(chatId, '⚠ Could not persist the switch to "' + (target.name || target.agentId) + '" — this chat is still talking to the previous agent.', '', 'command'); return; }
-        try { emit('channel.rebind', { channel, chatId: String(chatId), agentId: String(target.agentId) }); } catch (_) {}
         const nm = target.name && target.name !== target.agentId ? (target.name + ' (' + target.agentId + ')') : target.agentId;
         await deliver(chatId, 'Now talking to ' + nm + ' — model: ' + (target.model || 'not set') + '.', '', 'command');
         return;
@@ -227,7 +228,6 @@
         if (!setModelFn) { await deliver(chatId, '⚠ Model changes are not available on this channel (no roster write path wired).', '', 'command'); return; }
         let r; try { r = setModelFn(String(me.agentId), arg); } catch (e) { r = { ok: false, error: (e && e.message) || 'write threw' }; }
         if (!r || r.ok === false) { await deliver(chatId, '⚠ Could not change the model — ' + ((r && r.error) || 'roster write failed') + '. It is still ' + (me.model || 'not set') + '.', '', 'command'); return; }
-        try { emit('channel.model', { channel, chatId: String(chatId), agentId: String(me.agentId), model: String(r.model || arg) }); } catch (_) {}
         await deliver(chatId, (me.name || me.agentId) + '\'s model is now ' + (r.model || arg) + ' (saved to the roster).', '', 'command');
         return;
       }
