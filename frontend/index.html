@@ -236,6 +236,16 @@
   <aside id="chat-panel">
     <div id="comms-resizer" class="col-resizer" title="drag to resize COMMS" role="separator" aria-orientation="vertical" aria-label="Resize COMMS panel"><span class="col-resizer-grip"></span></div>
     <h3>▮ COMMS<span class="h3-right"><span class="dim" id="chat-status" role="status" aria-live="polite" aria-atomic="true">offline</span><span class="chat-elapsed" id="chat-elapsed" aria-hidden="true"></span></span></h3>
+    <!-- AGENT LINE (chat.js): pick which roster agent you're talking to + a truthful readout of that agent's
+         current model. The <select> options + the model text are filled from the LIVE roster (App.agents),
+         never hardcoded — the header is honest about who's on the line and what they run on. -->
+    <div id="comms-idbar" class="comms-idbar">
+      <label class="comms-agent-wrap" title="Who you're talking to">
+        <span class="comms-agent-sigil" aria-hidden="true">▸</span>
+        <select id="comms-agent-select" class="comms-agent-select" aria-label="Select agent on the line"></select>
+      </label>
+      <span id="comms-agent-model" class="comms-agent-model" title="the model this agent runs on" aria-live="polite"></span>
+    </div>
     <div id="chat-log" class="scrolly"></div>
     <!-- TYPE-AHEAD: follow-ups typed while the agent is working queue here as pills, auto-sent in order (chat.js) -->
     <div id="chat-queued" class="chat-queued" aria-live="polite"></div>
