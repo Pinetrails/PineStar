@@ -173,6 +173,9 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 .msg { min-height: 20px; color: var(--bad); font-size: 16px; margin: 6px 22px 0; }
 .msg:empty { min-height: 0; margin: 0; }
 .msg.ok { color: var(--gold); }
+/* the "get a key" deep-link in a cold-start connect message — reads as an actionable link, not error text */
+.connect-link { color: var(--gold); text-decoration: underline; text-underline-offset: 2px; }
+.connect-link:hover { filter: brightness(1.2); }
 
 /* "FINE-TUNE THE VOICE" reveal — calms the create screen so it leads with the archetype pick */
 .adv-toggle {
@@ -210,6 +213,28 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 /* the live feed graded into the terminal (warms/tints the world so it reads as a
    security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
 #stage { display: block; width: 100%; height: 100%; image-rendering: pixelated; filter: var(--cam-grade); }
+
+/* KEYLESS-BRAIN CTA — the honest standing banner shown after an awakening that finished with no key.
+   Sits low-center over the feed, above the cam HUD (z3) so it reads clearly; the world stays visible behind
+   it. Only the banner itself takes pointer events. Rendered/hidden purely from Harness.hasStoredCredential. */
+.key-cta {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 4;
+  display: flex; align-items: center; gap: 10px; max-width: 88%;
+  padding: 9px 12px; pointer-events: auto;
+  color: var(--warn, #ffb641); font-size: 13px; line-height: 1.4;
+  background: rgba(4, 8, 5, 0.92); border: 1px solid var(--warn, #ffb641); border-radius: 4px;
+  box-shadow: 0 0 12px rgba(0,0,0,.7), 0 0 10px color-mix(in srgb, var(--warn, #ffb641) 35%, transparent);
+  animation: keyctaIn .5s ease both;
+}
+@keyframes keyctaIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.key-cta[hidden] { display: none; }
+.key-cta-glyph { flex: 0 0 auto; font-weight: 800; }
+.key-cta-txt { min-width: 0; }
+.key-cta-act {
+  flex: 0 0 auto; cursor: pointer; padding: 5px 9px; font: inherit; font-size: 11px; font-weight: 800;
+  color: var(--ink, #010503); background: var(--warn, #ffb641); border: 0; border-radius: 3px; white-space: nowrap;
+}
+.key-cta-act:hover { filter: brightness(1.12); }
 
 /* ---- CRT TUBE FACE: a curved-glass overlay so the feed reads as a convex tube.
    Pure overlay (specular sweep + bowed corner vignette + edge rim) — the pixel
@@ -847,6 +872,19 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .model-dock-empty {
   padding: 18px 6px; color: var(--ph-dim); text-align: center; font-size: 13px;
 }
+/* inline no-key warning inside the dock — one tap opens SETTINGS. Only rendered when the active provider
+   truly has no stored credential (truthful telemetry), so it can't lie about a connection that exists. */
+.model-dock-keywarn {
+  width: 100%; display: flex; gap: 7px; align-items: flex-start; text-align: left; cursor: pointer;
+  margin: 2px 0 6px; padding: 7px 8px; font: inherit; font-size: 12px; line-height: 1.35;
+  color: var(--warn, #e8b64c); background: color-mix(in srgb, var(--warn, #e8b64c) 12%, transparent);
+  border: 1px solid var(--warn, #e8b64c); border-radius: 3px;
+}
+.model-dock-keywarn:hover { background: color-mix(in srgb, var(--warn, #e8b64c) 22%, transparent); }
+.model-dock-keywarn .mdw-glyph { flex: 0 0 auto; font-weight: 800; }
+.model-dock-keywarn .mdw-txt { min-width: 0; }
+/* resting chip flags a missing key with a warm hairline so it's noticeable before the dock is even opened */
+.model-dock-toggle.needs-key { border-color: var(--warn, #e8b64c); box-shadow: 0 0 6px color-mix(in srgb, var(--warn, #e8b64c) 40%, transparent); }
 .model-dock-foot {
   display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
 }
