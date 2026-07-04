@@ -61,14 +61,69 @@
     opts = opts || {};
     const wantNotify = opts.notify !== false;
     return fetchText().then(text => {
-      if (!text) { if (wantNotify) notify('could not read diagnostics — is the sidecar running?', 'warn'); if (opts.onDone) opts.onDone(false, ''); return false; }
+      if (!text) { if (wantNotify) notify('could not read diagnostics — is the app still running?', 'warn'); if (opts.onDone) opts.onDone(false, ''); return false; }
       return copyToClipboard(text).then(ok => {
-        if (wantNotify) notify(ok ? 'diagnostics copied — paste it into an email to ' + SUPPORT_EMAIL : 'copy failed — the report is safe to paste manually', ok ? 'good' : 'warn');
+        if (wantNotify) notify(ok ? 'diagnostics copied — paste it into an email to ' + SUPPORT_EMAIL : 'copy failed — the report is shown below, select it and copy manually', ok ? 'good' : 'warn');
         if (opts.onDone) opts.onDone(!!ok, text);
         return !!ok;
       });
     });
   }
 
-  return { SUPPORT_EMAIL, fetchText, copy, _internals: { copyToClipboard, fallbackCopy } };
+  /* THE COPY-FAILURE FALLBACK (T3.9): clipboard writes fail silently on some desktops / locked-down browsers, which
+     strands a user who was told "copied" but has nothing on their clipboard. showBlock(host) renders the diagnostic
+     text ON-SCREEN in a selectable <pre> with a "copy again" button, so the report is ALWAYS obtainable manually.
+     Idempotent per host (reuses its own `.diag-block` node). opts.text pre-supplies the text (e.g. the block a failed
+     copy() already fetched — avoids a second round-trip); otherwise it fetches. Resolves with the rendered text (''
+     on failure). Never throws — a stuck user must never hit a second dead-end here. */
+  function showBlock(host, opts) {
+    opts = opts || {};
+    if (!host || !host.appendChild) return Promise.resolve('');
+    const paint = (text) => {
+      if (!text) {
+        let err = host.querySelector('.diag-block');
+        if (!err) { err = document.createElement('div'); err.className = 'diag-block msg'; host.appendChild(err); }
+        err.textContent = 'could not read diagnostics — is the app still running?';
+        return '';
+      }
+      let block = host.querySelector('.diag-block');
+      if (!block) {
+        block = document.createElement('div');
+        block.className = 'diag-block';
+        const pre = document.createElement('pre');
+        pre.className = 'diag-pre';
+        // selectable + scrollable; wraps long lines so nothing overflows the panel horizontally.
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.style.overflow = 'auto';
+        pre.style.maxHeight = '40vh';
+        pre.setAttribute('tabindex', '0');
+        block.appendChild(pre);
+        const bar = document.createElement('div'); bar.className = 'diag-block-bar';
+        const again = document.createElement('button'); again.type = 'button'; again.className = 'bb sm'; again.textContent = '📋 copy again';
+        again.addEventListener('click', () => {
+          const t = pre.textContent || '';
+          copyToClipboard(t).then(ok => {
+            again.textContent = ok ? '✓ copied' : 'select the text above to copy';
+            if (ok) setTimeout(() => { try { again.textContent = '📋 copy again'; } catch (_) {} }, 2000);
+          });
+        });
+        bar.appendChild(again);
+        // help the manual path: one click selects the whole block so Ctrl+C just works.
+        const selectAll = document.createElement('button'); selectAll.type = 'button'; selectAll.className = 'bb sm'; selectAll.textContent = 'select all';
+        selectAll.addEventListener('click', () => {
+          try { const r = document.createRange(); r.selectNodeContents(pre); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); pre.focus(); } catch (_) {}
+        });
+        bar.appendChild(selectAll);
+        block.appendChild(bar);
+        host.appendChild(block);
+      }
+      block.querySelector('.diag-pre').textContent = text;
+      block.hidden = false;
+      return text;
+    };
+    if (typeof opts.text === 'string' && opts.text) return Promise.resolve(paint(opts.text));
+    return fetchText().then(paint).catch(() => paint(''));
+  }
+
+  return { SUPPORT_EMAIL, fetchText, copy, showBlock, _internals: { copyToClipboard, fallbackCopy } };
 });
