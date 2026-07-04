@@ -116,3 +116,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-03 agent/env-depth-fx -> 4f4058cf : env depth+polish FX stack (wall shadows, sheen, dust, parallax stars, aberration, grain; CRT LAB Depth+), test:fast GREEN
 - 2026-07-03 merge: agent/workshop-frontend -> feat/harness-backend (8b014407) — W3 away-workshop return surface (toggle/queue/return card); gate test:fast GREEN.
 - 2026-07-03 agent/env-depth-bake -> e28d17f0 : baked Andrew's live-tuned FX defaults (curve 0.09, grain 0.24, wall.up 9, wallShadow 0.5, sheen 0.14), test:fast GREEN
+- 2026-07-03 agent/comms-polish -> e2630472 (ff from 02114dce): COMMS turn-in letter-spill/giant-card fix + per-theme gold accents + rail unread dots; test:fast GREEN (worktree tree == merged tree), live-verified on dev seed :8817
