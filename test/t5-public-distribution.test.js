@@ -11,7 +11,13 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const script = path.join(ROOT, 'scripts', 't5-public-distribution.mjs');
 const lint = path.join(ROOT, 'scripts', 'lint-evidence-secrets.mjs');
-const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8')).version;
+const TAURI_CONF = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+const APP_VERSION = TAURI_CONF.version;
+// The updater endpoint is the single source of truth; the T5 hosting proof compares the
+// evidence's latestJsonUrl against it. Derive the installer asset URL from the same channel
+// so this fixture tracks the configured endpoint instead of hardcoding a dead host.
+const LATEST_JSON_URL = TAURI_CONF.plugins.updater.endpoints[0];
+const INSTALLER_URL = LATEST_JSON_URL.replace(/\/releases\/latest\/download\/latest\.json$/, '/releases/download/v' + APP_VERSION + '/StarNet_' + APP_VERSION + '_x64-setup.exe');
 
 function cleanEnv(extra) {
   const env = Object.assign({}, process.env);
@@ -49,8 +55,8 @@ function proof(hash, bytes, version, overrides) {
       installerBytes: bytes
     },
     hosting: {
-      latestJsonUrl: 'https://updates.starnet.app/desktop/latest.json',
-      installerUrl: 'https://updates.starnet.app/desktop/StarNet_' + APP_VERSION + '_x64-setup.exe',
+      latestJsonUrl: LATEST_JSON_URL,
+      installerUrl: INSTALLER_URL,
       latestStatus: 200,
       installerStatus: 200,
       manifestInstallerUrlMatches: true,
@@ -84,7 +90,7 @@ try {
     platforms: {
       'windows-x86_64': {
         signature: 'fake-updater-signature',
-        url: 'https://updates.starnet.app/desktop/StarNet_' + APP_VERSION + '_x64-setup.exe'
+        url: INSTALLER_URL
       }
     }
   }, true);
