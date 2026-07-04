@@ -1865,7 +1865,8 @@ const App = (() => {
   }
   function rowClass(w, st, activeId) {
     return 'ws-row' + (w.id === activeId ? ' sel' : '') + (st.busy ? ' busy' : '') + (st.attn ? ' attn' : '')
-      + (w.pinned ? ' pinned' : '') + (w.archived ? ' archived' : '');
+      + (w.pinned ? ' pinned' : '') + (w.archived ? ' archived' : '')
+      + (Workstreams.unread(w) ? ' unread' : '');   // real unseen activity (lastActiveAt > lastReadAt, never the open stream)
   }
   function renderRail() {
     const ul = el('workstreams');
@@ -1874,11 +1875,13 @@ const App = (() => {
     ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
       const title = w.title || 'General';
       const st = railRowState(w);
-      const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '') + ' — right-click for actions';
+      const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '')
+        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — right-click for actions';
       return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
         (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
+        '<span class="ws-unread" aria-hidden="true"></span>' +
         '<span class="ws-meta">' + U.esc(st.meta) + '</span>' +
         '<button class="ws-kebab" tabindex="-1" aria-label="session actions" title="session actions">⋯</button>' +
         '</li>';

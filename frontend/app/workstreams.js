@@ -65,7 +65,11 @@
       // standing goal survives a reload/switch exactly like the thread history. Undefined for a stream with no loop.
       goalLoop: (opts.goalLoop && typeof opts.goalLoop === 'object') ? opts.goalLoop : undefined,
       createdAt: opts.createdAt || t,
-      lastActiveAt: opts.lastActiveAt || t
+      lastActiveAt: opts.lastActiveAt || t,
+      // when the Commander last had this stream OPEN. unread = lastActiveAt > lastReadAt (truthful:
+      // both are real stored timestamps — no invented counts). A record saved before this field
+      // existed defaults to its lastActiveAt so an upgrade never floods the rail with false unreads.
+      lastReadAt: opts.lastReadAt != null ? opts.lastReadAt : (opts.lastActiveAt || t)
     };
   }
 
@@ -87,7 +91,9 @@
     generalId = (slice.generalId && find(slice.generalId)) ? slice.generalId : null;
     ensureGeneral();
     activeId = (slice.activeId && find(slice.activeId)) ? slice.activeId : generalId;
-    return active();
+    const a = active();
+    if (a && (a.lastActiveAt || 0) > (a.lastReadAt || 0)) a.lastReadAt = a.lastActiveAt;   // boot renders it — read
+    return a;
   }
 
   // wipe to a single fresh General (NEW AGENT clears everything).
@@ -102,7 +108,13 @@
   function get(id) { return find(id); }
   function getActiveId() { return activeId; }
   function getGeneralId() { return generalId; }
-  function switchTo(id) { const w = find(id); if (w) { activeId = id; } return w; }
+  function switchTo(id) { const w = find(id); if (w) { activeId = id; w.lastReadAt = now(); } return w; }
+  // opening a stream reads it; new activity on the OPEN stream is read as it lands (touch/appendRun sync below).
+  function markRead(id) { const w = find(id); if (!w) return false; w.lastReadAt = now(); return true; }
+  function isUnread(w) {
+    w = (w && w.id) ? w : find(w);
+    return !!w && w.id !== activeId && (w.lastActiveAt || 0) > (w.lastReadAt || 0);
+  }
 
   // display order: pinned first, then most-recently-active; archived hidden unless asked.
   function list(opts) {
@@ -146,7 +158,7 @@
   }
   function setLane(id, lane) { const w = find(id); if (!w || LANES.indexOf(lane) < 0) return false; w.lane = lane; return true; }
   function pin(id, val) { const w = find(id); if (!w) return false; w.pinned = val !== false; return true; }
-  function touch(id) { const w = find(id); if (w) w.lastActiveAt = now(); return !!w; }
+  function touch(id) { const w = find(id); if (w) { w.lastActiveAt = now(); if (id === activeId) w.lastReadAt = w.lastActiveAt; } return !!w; }
 
   // General can never be archived or deleted (it's the always-present chat home); archiving/deleting
   // the active stream falls back to General so the UI is never left pointing at nothing.
@@ -205,6 +217,7 @@
     if (w.runIds.indexOf(runId) < 0) w.runIds.push(runId);   // tolerate dup / no-op runs (e.g. the no-tool-support early error)
     if (w.lane === 'todo') w.lane = 'active';                // hybrid-honest: a REAL run fired
     w.lastActiveAt = now();
+    if (id === activeId) w.lastReadAt = w.lastActiveAt;      // the open stream is being watched, not unread
     return true;
   }
   function recordDeliverable(id, d) {
@@ -271,7 +284,7 @@
   return {
     init, reset, serialize, all, list, search,
     create, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
-    switch: switchTo, rename, setAgent, setLane, pin, archive, del, touch,
+    switch: switchTo, rename, setAgent, setLane, pin, archive, del, touch, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,

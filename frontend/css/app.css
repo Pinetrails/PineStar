@@ -1369,6 +1369,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 }
 .ws-title { flex: 1; min-width: 0; font-size: 14px; color: var(--ph); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-row.sel .ws-title { color: var(--ph-bright); }
+/* UNREAD: the stream did real work since the Commander last had it open (lastActiveAt > lastReadAt) —
+   a small gold spark beside the meta + a lit title. Clears the moment the row is opened. */
+.ws-unread { display: none; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 6px rgba(var(--gold-rgb), .55); }
+.ws-row.unread .ws-unread { display: inline-block; }
+.ws-row.unread .ws-title { color: var(--ph-bright); }
 /* compact right-edge meta: live elapsed while busy (bright / gold when it needs you), a dim "last worked" stamp when idle */
 .ws-meta { flex: 0 0 auto; font-size: 11px; line-height: 1; color: var(--ph-dim); letter-spacing: .3px; font-variant-numeric: tabular-nums; }
 .ws-meta:empty { display: none; }
