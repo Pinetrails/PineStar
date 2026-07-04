@@ -96,7 +96,8 @@ const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tic
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
-const { makeKeyedMutex, readJsonResilient, writeJsonResilient } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
@@ -670,6 +671,19 @@ const notebookStore = makeMemoryStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : (String(key).indexOf('declined:') === 0 ? 'declined' : (String(key).indexOf('minted:') === 0 ? 'minted' : 'notebook'))),
   warn: (...args) => console.warn.apply(console, args)
 });
+
+// WIDGET RAILS Phase 2 — the STATION-scoped agent-fed widget records (one file, not per-agent:
+// widgets are station chrome). Sibling of the notebooks, OUTSIDE every agent's fs jail, same
+// durable+recovery discipline. widget.set (tools/builtin/widgets.js) is the only writer;
+// GET /api/widgets is the read surface the frontend rails poll.
+const widgetStore = makeDurableJsonStore({
+  fs: fs, path: path,
+  fileFor: () => path.join(WORKSPACES, 'station.widgets.json'),
+  writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[widgets] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'widgets')
+});
+const widgetTools = makeWidgetTools({ store: widgetStore, clock: { now: () => Date.now() }, redact });
 
 // AWAY WORKSHOP — per-agent durable state for "Build things while I'm away": the Commander's recorded grant,
 // the build backlog, and the permanent discarded-backlogId denylist. A sibling of the notebooks (WORKSPACES/
@@ -2028,6 +2042,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.indexOf('/api/spotify/callback') === 0) return handleSpotifyCallback(req, res);
   if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
+  if (req.method === 'GET' && req.url === '/api/widgets') return handleWidgetsList(req, res);   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
   if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
   if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
@@ -2780,6 +2795,15 @@ function parseCronProviderOr400(value) {
 // GET /api/cron — the job snapshot the panel renders from (no secrets in a CronJob). `enabled` = is the tick
 // driver actually armed (the LIVE cronArmed = SKYNET_CRON_ENABLED OR the persisted runtime flag, G4.6) so the
 // panel can honestly say whether routines will fire — and reflects a runtime arm/disarm WITHOUT a restart.
+// GET /api/widgets — WIDGET RAILS Phase 2: the agent-fed readout records, verbatim from the durable
+// station store (truthful telemetry: the frontend renders EXACTLY what an agent set, plus provenance —
+// agentId + updatedAt — so the display never claims more than "this agent reported this, then").
+// Read-only; widget.set (the tool) is the only writer. Records are redact()-scrubbed at write time.
+function handleWidgetsList(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ widgets: widgetTools.list() }));
+}
+
 function handleCronList(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS }));
@@ -3695,6 +3719,7 @@ async function runOnce(o) {
   makeDesktopTools({}).register(registry);   // desktop.open: open URL/app on the user's REAL screen (visible), web/dish capability
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
+  widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({
     store: skillStore,

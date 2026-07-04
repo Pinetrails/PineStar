@@ -27,7 +27,8 @@
       { capId: 'memory', tool: 'skill.write', scope: 'write', requiresConsent: false, network: false },        // H4: save/edit a reusable procedure (see skills.js)
       { capId: 'memory', tool: 'skill.manage', scope: 'write', requiresConsent: false, network: false },       // H4: create/patch/archive saved skills
       { capId: 'memory', tool: 'skill.list', scope: 'read', requiresConsent: false, network: false },          // H4: list saved skills (metadata only)
-      { capId: 'memory', tool: 'skill.view', scope: 'read', requiresConsent: false, network: false }           // H4: load a saved skill's full body
+      { capId: 'memory', tool: 'skill.view', scope: 'read', requiresConsent: false, network: false },          // H4: load a saved skill's full body
+      { capId: 'memory', tool: 'widget.set', scope: 'write', requiresConsent: false, network: false }          // WIDGET RAILS Phase 2: publish/update an agent-fed rail readout — sandboxed local write to the station's own chrome, same trust class as notebook.write (see tools/builtin/widgets.js)
     ],
     // M5: object = capability made real — placing these grants the agent real-world reach.
     cabinet: [
