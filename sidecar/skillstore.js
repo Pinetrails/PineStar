@@ -170,6 +170,15 @@
       try { v = str(redact(v)).slice(0, max); } catch (_) {}
       return v;
     }
+    // RAM-only bump: update the in-memory `latest` copy WITHOUT appending a JSONL line. view() is called on
+    // every skill.view / skill load, many times per run — appending each one is what grows skills.jsonl without
+    // bound. The bumped counters (viewCount/useCount/lastUsedAt/state) instead ride along the NEXT real mutation
+    // (write/edit/patch/markUsed/curate all persist the skill, and makeEntry carries viewCount/useCount forward),
+    // or a low-frequency compaction flush. Returns the projected skill (same shape view() returned before).
+    function bumpView(entry) {
+      latest.set(keyOf(entry.agentId, entry.name), clone(entry));
+      return entry;
+    }
     function persist(entry) {
       try {
         if (guard && typeof guard.scanSkillRecord === 'function') {
@@ -383,7 +392,9 @@
         out.useCount = (out.useCount || 0) + 1;
         out.lastUsedAt = now();
         if (out.state === 'stale') out.state = 'active';
-        persist(out);
+        // RAM-only: the bump rides the next real mutation / compaction flush instead of appending a JSONL line
+        // per view (unbounded growth was the whole problem). See bumpView.
+        bumpView(out);
       }
       return projectSkill(out, true);
     }
@@ -400,6 +411,20 @@
         persist(entry); count++;
       }
       return { ok: true, count };
+    }
+    /* compact — rewrite the append-only JSONL keeping ONLY the newest entry per (agentId, name). `latest`
+       already holds exactly that (the boot load + every persist/bumpView collapse duplicates into it), so the
+       compacted file is simply `latest`'s values, one line each. This does two jobs at once:
+         1. bounds the file — months of edits/views collapse to one line per distinct skill;
+         2. FLUSHES the RAM-only view/use bumps to disk (they became part of `latest` but were never appended).
+       Requires an io that can atomically REPLACE the whole file (io.rewrite). Without it, compaction is a no-op
+       (the bounded-read boot loader still keeps memory sane) — reported via `ok:false, reason`. Never throws:
+       a compaction failure must never crash a run (the RAM mirror still answers). Returns counts for tests. */
+    function compact() {
+      const entries = Array.from(latest.values()).map(e => clone(e));
+      if (!io || typeof io.rewrite !== 'function') return { ok: false, reason: 'io has no rewrite', kept: entries.length };
+      try { io.rewrite(entries); return { ok: true, kept: entries.length }; }
+      catch (e) { return { ok: false, reason: (e && e.message) || 'rewrite failed', kept: entries.length }; }
     }
     function curate(agentId, opts2) {
       opts2 = opts2 || {};
@@ -422,10 +447,10 @@
     }
 
     return {
-      write, manage, list, view, markUsed, curate,
+      write, manage, list, view, markUsed, curate, compact,
       all() { return Array.from(latest.values()).map(s => projectSkill(s, true)); },
       count() { return latest.size; },
-      _internals: { slug, keyOf, supportPath, cleanName, normalizeEntry }
+      _internals: { slug, keyOf, supportPath, cleanName, normalizeEntry, bumpView }
     };
   }
 

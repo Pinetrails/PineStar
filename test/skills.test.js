@@ -234,4 +234,45 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(!skillReview.isWriteAction('view') && !skillReview.isWriteAction('list') && !skillReview.isWriteAction(''), 'view/list/empty are not writes');
 }
 
+// ---- O. GROWTH: view() does NOT append a JSONL line (RAM-only bump); counters ride the next real mutation ----
+{
+  const io = memIo();
+  const s = makeSkillStore({ io, clock, redact });
+  s.write({ agentId: 'a', name: 'Deploy', summary: 's', body: 'steps' });
+  const linesAfterWrite = io.lines.length;
+  for (let i = 0; i < 25; i++) s.view('a', 'Deploy');   // many views — the old code appended one line EACH
+  A.eq(io.lines.length, linesAfterWrite, 'view() appended NO new JSONL lines (was unbounded growth)');
+  A.eq(s.view('a', 'Deploy', { bump: false }).viewCount >= 25, true, 'the view bumps still accumulated in RAM');
+  // a real mutation flushes the accumulated counters to disk (makeEntry carries viewCount/useCount forward)
+  s.write({ agentId: 'a', name: 'Deploy', summary: 's2', body: 'steps2' });
+  const reloaded = makeSkillStore({ io, clock, redact });
+  A.ok(reloaded.view('a', 'Deploy', { bump: false }).viewCount >= 25, 'accumulated view counters survived to disk via the next mutation');
+}
+
+// ---- P. COMPACTION: rewrite keeps only the newest entry per (agentId,name); every distinct skill survives ----
+{
+  // an io that can atomically replace the whole file (io.rewrite) — mirrors the index.js JSONL adapter.
+  function rwIo() { let lines = []; return { get lines() { return lines; }, readAll() { return lines.slice(); }, append(e) { lines.push(e); }, rewrite(entries) { lines = entries.slice(); } }; }
+  const io = rwIo();
+  const s = makeSkillStore({ io, clock, redact });
+  // three distinct skills, each edited several times -> many JSONL lines, few distinct skills
+  for (let i = 0; i < 6; i++) { s.write({ agentId: 'a', name: 'Alpha', summary: 's' + i, body: 'a' + i }); }
+  for (let i = 0; i < 4; i++) { s.write({ agentId: 'a', name: 'Beta', summary: 's' + i, body: 'b' + i }); }
+  s.write({ agentId: 'b', name: 'Alpha', summary: 's', body: 'other-agent' });   // same NAME, different agent — distinct key
+  for (let i = 0; i < 10; i++) s.view('a', 'Alpha');
+  const beforeLines = io.lines.length;
+  A.ok(beforeLines >= 11, 'many appends accumulated before compaction');
+  const r = s.compact();
+  A.ok(r.ok, 'compaction ran');
+  A.eq(io.lines.length, 3, 'compacted to exactly one line per distinct (agentId,name)');
+  A.ok(io.lines.length < beforeLines, 'compaction shrank the file');
+  // every distinct skill's NEWEST state survives, and a boot load after compaction sees them all
+  const reloaded = makeSkillStore({ io, clock, redact });
+  A.ok(/a5/.test(reloaded.view('a', 'Alpha', { bump: false }).body), 'Alpha kept its NEWEST body after compaction');
+  A.ok(/b3/.test(reloaded.view('a', 'Beta', { bump: false }).body), 'Beta kept its newest body');
+  A.ok(/other-agent/.test(reloaded.view('b', 'Alpha', { bump: false }).body), 'the other agent\'s same-named skill was NOT dropped');
+  A.eq(reloaded.view('a', 'Alpha', { bump: false }).viewCount >= 10, true, 'compaction flushed accumulated view counters to disk');
+  A.eq(reloaded.list('a').length + reloaded.list('b').length, 3, 'boot load after compaction sees every distinct skill');
+}
+
 A.report('skills.test');
