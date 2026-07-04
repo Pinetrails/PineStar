@@ -1832,6 +1832,28 @@ const StationUI = (() => {
     const h = H();
     return !!(h && h.getProv && h.getProv() === 'codex');
   }
+  // Where do saved API keys actually live? TRUTH SOURCE = the sidecar's keychainMode (DESKTOP_SHELL): the packaged
+  // desktop build holds BYOK keys in the OS keychain; the browser holds them in its own local store. We learn this
+  // lazily from /api/providers (mirrors the codex-status probe) and cache it so the key-save confirmation can name
+  // the REAL store — never claim keychain when the key is in the browser (truthful-telemetry law).
+  let keychainModeKnown = null;
+  let keychainModeChecking = false;
+  function refreshKeychainMode() {
+    if (keychainModeKnown !== null || keychainModeChecking || typeof fetch !== 'function') return;
+    keychainModeChecking = true;
+    fetch('/api/providers', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : {})
+      .then(j => { keychainModeKnown = !!(j && j.keychainMode); })
+      .catch(() => {})
+      .finally(() => { keychainModeChecking = false; });
+  }
+  // honest one-liner for where a just-saved key was stored. Falls back to the neutral "on this machine" until the
+  // probe answers, so we never assert keychain-vs-browser before we actually know it.
+  function keyStoreClause() {
+    if (keychainModeKnown === true) return 'stored in your OS keychain';
+    if (keychainModeKnown === false) return 'stored locally in this browser';
+    return 'stored on this machine';
+  }
   function connectedKeys() {
     const h = H(); if (!h) return [];
     const out = [];
@@ -1880,13 +1902,24 @@ const StationUI = (() => {
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
       const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
+      // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
+      // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
+      const wantsInline = p.live && !connected && providerAcceptsKey(p.id);
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
         '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
         '</div>' +
-        '<div class="prov-stat">' + stat + (connected ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') + '</div>' +
+        '<div class="prov-stat">' + stat + (connected ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
+          (wantsInline ? '<button class="bb xs prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" title="paste a ' + esc(p.name) + ' key without leaving this card">+ ADD KEY</button>' : '') +
+        '</div>' +
+        (wantsInline
+          ? '<div class="key-edit prov-key-edit" id="prov-key-edit-' + esc(p.id) + '" hidden>' +
+            '<input type="password" class="key-input" id="prov-key-in-' + esc(p.id) + '" placeholder="paste ' + esc(p.name) + ' key…" autocomplete="off" spellcheck="false">' +
+            '<button class="bb sm" data-act="prov-add-save" data-provider="' + esc(p.id) + '">SAVE</button>' +
+            '</div>'
+          : '') +
         '</div>';
     }).join('');
   }
@@ -1967,7 +2000,7 @@ const StationUI = (() => {
           if (!v) { sfx('bad'); return; }
           const provider = b.dataset.provider || activeProv();
           if (h.setKey) h.setKey(v, provider);
-          notify('connected ' + provName(provider) + ' API key', 'good');
+          notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
           if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
           if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
           rerender('settings');
@@ -1983,7 +2016,7 @@ const StationUI = (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           if (h.setKey) h.setKey(v, row.provider);
-          notify('updated ' + provName(row.provider) + ' API key', 'good');
+          notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
           if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
           if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
           rerender('settings');
@@ -2012,6 +2045,20 @@ const StationUI = (() => {
 
   /* ============== SETTINGS — connections + real CRT / theme / audio toggles ============== */
   function wireProviderActions(body) {
+    // save a pasted key from a NO-KEY card's inline row, reusing the SAME store path as the key list (Harness.setKey).
+    const saveInline = (provider) => {
+      const h = H();
+      const inp = body.querySelector('#prov-key-in-' + provider);   // provider ids are simple slugs — safe to interpolate
+      const v = inp ? inp.value.trim() : '';
+      if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
+      if (!h || !h.setKey) { sfx('bad'); return; }
+      h.setKey(v, provider);
+      notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
+      if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+      if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+      sfx('click');
+      rerender('settings');
+    };
     body.querySelectorAll('.prov-card[data-provider]').forEach(card => {
       const activate = () => {
         const h = H();
@@ -2022,9 +2069,29 @@ const StationUI = (() => {
         sfx('click');
         rerender('settings');
       };
-      card.addEventListener('click', activate);
+      // clicks on the inline key controls must NOT bubble up to provider-select — they toggle/save the key row.
+      const inlineToggle = card.querySelector('[data-act="prov-add-toggle"]');
+      const inlineSave = card.querySelector('[data-act="prov-add-save"]');
+      const inlineEdit = card.querySelector('.prov-key-edit');
+      const inlineInput = card.querySelector('.key-input');
+      if (inlineToggle) inlineToggle.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (inlineEdit) { inlineEdit.hidden = !inlineEdit.hidden; if (!inlineEdit.hidden && inlineInput) inlineInput.focus(); }
+        sfx('click');
+      });
+      if (inlineSave) inlineSave.addEventListener('click', ev => { ev.stopPropagation(); saveInline(card.dataset.provider); });
+      if (inlineInput) {
+        inlineInput.addEventListener('click', ev => ev.stopPropagation());   // don't select the provider when focusing the field
+        inlineInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); saveInline(card.dataset.provider); } });
+      }
+      card.addEventListener('click', ev => {
+        // ignore clicks that originated inside the inline key row (handled above)
+        if (ev.target.closest && ev.target.closest('.prov-key-edit, [data-act="prov-add-toggle"]')) return;
+        activate();
+      });
       card.addEventListener('keydown', ev => {
         if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        if (ev.target !== card) return;   // let the inline input/buttons handle their own keys
         ev.preventDefault();
         activate();
       });
@@ -2116,9 +2183,19 @@ const StationUI = (() => {
           : (k === 'perRun' && typeof st.perRun === 'number') ? st.perRun
           : (typeof envd[k] === 'number' ? envd[k] : 0);
         el.value = String(v);
-        // annotate whether this value is a saved override or the env default (honest, non-blocking).
+        // annotate whether this value is a saved override or the env default (honest, non-blocking). Visible badge +
+        // hover title. Truthful precedence: a saved value WINS here (env is only the fallback default, never an
+        // override that silences a saved cap), so the badge says "environment default" — not "ignored".
         const savedHere = Object.prototype.hasOwnProperty.call(saved, k);
         el.title = savedHere ? 'saved on this machine' : 'environment default (not yet saved here)';
+        const badge = body.querySelector('#bg-src-' + k);
+        if (badge) {
+          badge.textContent = savedHere ? 'saved here' : 'environment default';
+          badge.title = savedHere ? 'you saved this limit on this machine' : 'follows the environment default until you save your own value here';
+          badge.classList.toggle('src-env', !savedHere);
+          badge.classList.toggle('src-saved', savedHere);
+          badge.hidden = false;
+        }
       });
       const anySaved = BG_KEYS.some(k => Object.prototype.hasOwnProperty.call(saved, k));
       if (resetBtn) resetBtn.style.display = anySaved ? '' : 'none';
@@ -2138,7 +2215,7 @@ const StationUI = (() => {
         const raw = String(el.value).trim();
         if (raw === '') { payload[k] = 0; continue; }   // blank -> "no cap" (0), matching the placeholder semantics
         const n = Number(raw);
-        if (!isFinite(n) || n < 0) { setMsg(k + ': enter a number ≥ 0 (0 = no cap)'); sfx('bad'); el.focus(); return; }
+        if (!isFinite(n) || n < 0) { setMsg(k + ': enter a number ≥ 0 (leave blank or 0 for no cap)'); sfx('bad'); el.focus(); return; }
         payload[k] = n;
       }
       setMsg('saving…');
@@ -2388,6 +2465,12 @@ const StationUI = (() => {
       Diag.copy({ notify: false }).then(ok => {
         btn.disabled = false;
         setMsg(ok ? '✓ copied — paste it into an email to ' + (Diag.SUPPORT_EMAIL || 'support') : 'copy failed — try again', ok);
+        // Clipboard-failure fallback: if Lane A's on-screen renderer is present, show the report block so the user can
+        // select-and-copy it by hand. Defensive: the helper may not exist in this build yet — keep current behavior then.
+        // (Orchestrator reconciles the exact API at merge.)
+        if (!ok && typeof Diag !== 'undefined' && typeof Diag.showBlock === 'function') {
+          try { Diag.showBlock(body.querySelector('#diag-block') || body); } catch (_) {}
+        }
       });
     });
   }
@@ -2457,6 +2540,7 @@ const StationUI = (() => {
 
   function buildSettings(body) {
     refreshCodexConnectionStatus();
+    refreshKeychainMode();   // learn keychain-vs-browser once, so the key-save confirmation can name the real store
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
     const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
@@ -2520,16 +2604,16 @@ const StationUI = (() => {
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
       // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
       '<h4 class="ms-h">BUDGET <span class="dim">— real USD spend limits</span></h4>' +
-      '<p class="set-about">Hard money limits your agents cannot exceed. Enforced by the sidecar against the real spend ledger. <b>0 or blank = no cap.</b> Saved here on this machine; live defaults come from the environment.</p>' +
+      '<p class="set-about">Hard money limits your agents cannot exceed. Enforced by the sidecar against the real spend ledger. <b>Leave blank or 0 for no cap.</b> Saved here on this machine; until you save, each limit follows its environment default.</p>' +
       '<div id="budget-spend" class="set-row dim">reading spend…</div>' +
       '<div class="mc-form" id="budget-form">' +
-        '<div class="set-row"><label for="bg-perRun">PER RUN</label><input id="bg-perRun" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-perRun">PER RUN <span class="src-badge" id="bg-src-perRun" hidden></span></label><input id="bg-perRun" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">Hard ceiling for a single agent run. The run stops the moment it would exceed this.</div>' +
-        '<div class="set-row"><label for="bg-perAgent">PER AGENT</label><input id="bg-perAgent" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-perAgent">PER AGENT <span class="src-badge" id="bg-src-perAgent" hidden></span></label><input id="bg-perAgent" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">Lifetime cap on any one agent’s total spend across all its runs.</div>' +
-        '<div class="set-row"><label for="bg-perDay">PER DAY</label><input id="bg-perDay" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-perDay">PER DAY <span class="src-badge" id="bg-src-perDay" hidden></span></label><input id="bg-perDay" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">Total spend across every agent in a rolling 24-hour window.</div>' +
-        '<div class="set-row"><label for="bg-global">GLOBAL</label><input id="bg-global" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-global">GLOBAL <span class="src-badge" id="bg-src-global" hidden></span></label><input id="bg-global" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">All-time ceiling across everything. The last line of defence.</div>' +
         '<div class="mc-acts">' +
           '<button class="bb sm" id="bg-save">SAVE LIMITS</button>' +

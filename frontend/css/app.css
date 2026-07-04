@@ -1391,6 +1391,25 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .key-row.rm-armed .key-main { opacity: 0.72; }
 .rm-hint { font-size: 10px; letter-spacing: 1px; color: var(--bad); text-align: right; margin-top: 2px; }
 
+/* settings-truth: inline "+ ADD KEY" on a NO-KEY provider card — a collapsible paste-and-save row that reuses the
+   same Harness.setKey path as the key list, so a beginner never hunts for where keys live. The card wraps so the
+   editor sits on its own full-width line below the name/status; gold accent = actionable, matching "NO KEY". */
+.prov-card { flex-wrap: wrap; }
+.prov-addkey { margin-top: 4px; }
+.prov-key-edit { flex-basis: 100%; margin-top: 6px; }
+.prov-key-edit[hidden] { display: none; }
+
+/* settings-truth: per-field source badge (BUDGET) — is this limit a value you SAVED here, or the environment default
+   it currently follows? Honest, non-blocking. Env default is a neutral gold-inset chip (it is NOT "ignored" — env is
+   the fallback, and a saved value always wins); a saved value reads calmer. Never a literal amber — --gold-rgb only. */
+.src-badge {
+  font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 0 5px; border-radius: 2px;
+  border: 1px solid var(--ph-faint); color: var(--ph-dim); vertical-align: middle; white-space: nowrap;
+}
+.src-badge[hidden] { display: none; }
+.src-badge.src-env { color: var(--gold); border-color: rgba(var(--gold-rgb), .55); background: rgba(var(--gold-rgb), .06); }
+.src-badge.src-saved { color: var(--ph); border-color: var(--ph-faint); background: rgba(0, 0, 0, .25); }
+
 /* ---------- WORKSTREAMS rail (left) ---------- */
 #ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; }
 .ws-head {
