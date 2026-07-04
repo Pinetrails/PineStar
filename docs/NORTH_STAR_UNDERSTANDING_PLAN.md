@@ -104,12 +104,17 @@ isolation via `test/understanding.test.js`.
 Build order **R2 → R5 → R3 → R4**. (R1 "mid-task questions that are work" = PARKED, Andrew unsure —
 do not build without his go.)
 
-| # | Build | Shape |
+| # | Build | Status |
 |---|---|---|
-| **R2** | **Ratings → preference signal.** The shipped 👍/👌/👎 rate-the-work verdicts feed the understanding layer: positive ratings corroborate the current style/standing-orders model; a 👎 is counter-evidence that LOWERS style confidence — which re-aims the earned VOI question at style ("how do you actually want this done?"). Truthful: a downvote honestly means "our model of how you like work done is less certain." Engine needs SIGNED corroboration (currently clamps negatives). | this branch |
-| **R5** | **Rhythm → routine offers.** A pure engine over run history (task tag × time-of-day × recurrence) detects honest patterns ("standup prep every morning") and surfaces ONE one-tap routine offer through the existing seeds/cron path + the same earned-beat gates. Big enough for its own lane/worktree. | own lane |
-| **R3** | **Suggestions as silent belief probes (the P4 realization).** When a high-weight belief goes stale (engine freshness already computes this), the next earned suggestion aims at it; accept = corroboration, decline = counter-evidence. Drift detection with ZERO new asks. Needs beliefId threading through the suggestion directive + outcome capture. | this branch |
-| **R4** | **Payoff receipts.** When an answer/observation lands in the dossier, one provable "◈ briefing updated: …" line in the existing receipt style at the commit site (chat.js) — no new event, no meter. Teaches that feeding the station is never wasted. | this branch, rides with R2/R3 |
+| **R2** | **Ratings → preference signal.** 👍/👌/👎 verdicts feed the style-model confidence via a direct `UnderstandingStore.noteRating` hand-off in `rateWork` (👍 +1, 👎 −1, 👌 nothing; clamped ±6, persisted `starnet.understanding.v1`, new-hero reset). Engine gained SIGNED corroboration (floored at 0). Complements the 3-streak taste beat (that mints a belief; this moves confidence). | ✅ SHIPPED (1bc80b85 + c366ab7c; live-verified: style 0.51 → two 👎 → 0, overall 0.383→0.34, restored by 👍) |
+| **R5** | **Rhythm → routine offers.** Pure engine over run history (tag × time-of-day × recurrence ≥3 distinct days) → ONE one-tap routine offer via existing seeds/cron + earned-beat gates. | own lane — spawned (agent/rhythm-routines brief) |
+| **R3** | **Suggestions as silent belief probes (realizes P4 drift).** `probeTarget()` names a north-star-critical belief whose conf sagged <0.45; suggeststore aims the next earned idea at it (additive `Pitch.buildDirective` probe line, silent aiming); accept/decline → `noteProbe` ±1. | ✅ SHIPPED (3f954cd1; store loop live-verified w/ 90-day clock shift; aimed beat through a live LLM not yet driven) |
+| **R4** | **Payoff receipts.** `Chat.briefingReceipt(dim)` — "◈ briefing updated — every agent on this station now knows your <dim>" at both commit sites (curiosity answer = previously zero acknowledgment; kept study observation). No veto (COMMANDER panel owns undo). | ✅ SHIPPED (ff6f3b48; live-verified render) |
+| ~~R1~~ | ~~Mid-task questions that are work~~ | PARKED — Andrew unsure; do not build without his go |
+
+**Still open after this branch:** P2 implicit corroboration from run CONTENT (runs consistent with a belief
+quietly corroborate it — needs a consistency signal, possibly sidecar-side) + workshop keep/discard→model;
+attended live-LLM check of the aimed suggestion beat; merge to trunk (full `test:fast` at merge time).
 
 ## Verification (per doctrine)
 - **P1 done** = `node test/understanding.test.js` green + the module appended to `test:fast:raw` and
